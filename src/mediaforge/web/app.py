@@ -11148,7 +11148,7 @@ def start_web_ui(
     )
     display_host = "localhost" if host in ("127.0.0.1", "0.0.0.0") else host
     url = f"http://{display_host}:{port}"
-    print(f"Starting MMediaForge Web UI on {url}")
+    print(f"Starting MediaForge Web UI on {url}")
 
     debug = os.getenv("MEDIAFORGE_DEBUG_MODE", "0") == "1"
 
