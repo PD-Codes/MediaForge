@@ -13,6 +13,10 @@ services:
       #       are stored in the database and configurable via the WebUI.
       #       Existing .env files are automatically imported on first start.
       - mediaforge-data:/home/mediaforge/.mediaforge
+      # Scratch space for full episode downloads/transcodes (yt-dlp + ffmpeg
+      # intermediates). Kept as a real disk-backed volume instead of the /tmp
+      # tmpfs below, since a single episode can be several GB — too big for RAM.
+      - mediaforge-tmp:/tmp/mediaforge
       - aniworld-data:/home/mediaforge/.aniworld:ro # for the migration
 
       # --- One-time migration from the old "AniWorld Downloader" container ---
@@ -59,11 +63,19 @@ services:
     tmpfs:
       # Writable scratch space for Xvfb, Chromium/patchright temp files, and runtime sockets
       - /run:size=128m
+      # Needed because read_only:true otherwise makes /tmp read-only too. Only
+      # covers small stuff (log file, dbus socket, captcha browser-profile
+      # fallback, transcoder session dirs) — the big scratch dir is the
+      # mediaforge-tmp volume above, mounted over /tmp/mediaforge, so it isn't
+      # limited by this tmpfs size.
+      - /tmp:size=256m
 
     restart: unless-stopped
 
 volumes:
   mediaforge-data:
+  mediaforge-tmp:
+  aniworld-data: # temporary adding for migration
   # Only needed while the migration line above is uncommented — points Compose
   # at the existing old volume instead of creating an empty new one.
   # aniworld-data:
