@@ -36,8 +36,8 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Operating System :: OS Independent",
 ]
-license = "MIT"
-license-files = ["LICENSE"]
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "COPYRIGHT"]
 
 [project.urls]
 homepage = "https://github.com/PD-Codes/MediaForge"
