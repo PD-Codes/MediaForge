@@ -795,8 +795,8 @@ button {
 .chb-main {
   appearance: none; 
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
   border: 2px solid var(--bg-hover, #6b7280);
   border-radius: 6px;
   background-color: transparent;
