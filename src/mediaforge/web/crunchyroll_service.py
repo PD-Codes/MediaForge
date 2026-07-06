@@ -34,7 +34,13 @@ from datetime import date as _date, datetime
 from typing import Any, Dict, List, Optional
 
 from ..config import MEDIAFORGE_CONFIG_DIR
-from .db import get_setting, set_setting
+from .db import (
+    get_setting,
+    set_setting,
+    get_provider_cache,
+    set_provider_cache,
+    clear_provider_cache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +80,10 @@ _client: Any = None
 _client_signature: Optional[str] = None
 _client_logged_in_at: float = 0.0
 
-# title (lower) -> (bool available, fetched_at)
-_avail_cache: Dict[str, "tuple[bool, float]"] = {}
-_avail_lock = threading.Lock()
+# "on Crunchyroll?" lookups are cached persistently (SQLite, same mechanism as
+# the TMDB cache) so a restart doesn't lose 24h of work and negative results
+# don't need to be re-fetched on every process start.
+_PROVIDER_CACHE_NS = "crunchyroll_avail"
 
 # ── Settings helpers ──────────────────────────────────────────────────────────
 def _s(key: str, default: str = "") -> str:
@@ -233,9 +240,17 @@ def invalidate_client() -> None:
         _client = None
         _client_signature = None
         _client_logged_in_at = 0.0
-    with _avail_lock:
-        _avail_cache.clear()
+    clear_provider_cache(_PROVIDER_CACHE_NS)
     _titles_cache.clear()
+
+
+def invalidate_availability_cache() -> None:
+    """Drop only the cached "on Crunchyroll?" pill results.
+
+    Lighter-weight than :func:`invalidate_client` — used by the manual
+    "clear cache" button so it doesn't also force a fresh login.
+    """
+    clear_provider_cache(_PROVIDER_CACHE_NS)
 
 
 def list_account_profiles() -> List[Dict[str, Any]]:
@@ -336,18 +351,17 @@ def test_connection(email: str, password: str, locale: str, anon: bool,
 def is_available(title: str) -> bool:
     """True if a series matching ``title`` exists in the Crunchyroll catalog.
 
-    Cached for :data:`_AVAIL_TTL`. Used to add a "Crunchyroll" provider pill in
-    the detail modal — especially for new simulcasts TMDB doesn't list yet.
+    Cached persistently (SQLite) for :data:`_AVAIL_TTL`, same mechanism as the
+    TMDB cache — survives restarts. Used to add a "Crunchyroll" provider pill
+    in the detail modal — especially for new simulcasts TMDB doesn't list yet.
     """
     title = (title or "").strip()
     if not title or not is_enabled():
         return False
     key = title.lower()
-    now = time.time()
-    with _avail_lock:
-        hit = _avail_cache.get(key)
-        if hit and (now - hit[1]) < _AVAIL_TTL:
-            return hit[0]
+    cached = get_provider_cache(_PROVIDER_CACHE_NS, key, _AVAIL_TTL)
+    if cached is not None:
+        return bool(cached.get("found"))
 
     client = get_client()
     if client is None:
@@ -385,8 +399,7 @@ def is_available(title: str) -> bool:
         logger.debug("[Crunchyroll] availability lookup failed for %r: %s", title, exc)
         found = False
 
-    with _avail_lock:
-        _avail_cache[key] = (found, now)
+    set_provider_cache(_PROVIDER_CACHE_NS, key, {"found": found})
     return found
 
 

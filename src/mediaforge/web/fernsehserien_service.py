@@ -35,12 +35,16 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 import unicodedata
 import re as _re
 from typing import Any, Dict, Optional
 
-from .db import get_setting
+from .db import (
+    get_setting,
+    get_provider_cache,
+    set_provider_cache,
+    clear_provider_cache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +74,10 @@ _scraper_lock = threading.Lock()
 _scraper: Any = None
 _scraper_delay: Optional[float] = None  # delay the cached instance was built with
 
-# title (lower) -> (info_dict, fetched_at)
-_avail_cache: Dict[str, "tuple[Dict[str, Any], float]"] = {}
-_avail_lock = threading.Lock()
+# Slug/provider lookups are cached persistently (SQLite, same mechanism as the
+# TMDB cache) so a restart doesn't lose 24h of work and a bad slug guess
+# doesn't get retried on every process start.
+_PROVIDER_CACHE_NS = "fernsehserien_avail"
 
 
 # ── Settings helpers ──────────────────────────────────────────────────────────
@@ -110,8 +115,7 @@ def _get_scraper() -> Any:
 
 def invalidate_cache() -> None:
     """Drop all cached slug lookups (call after settings change / manual clear)."""
-    with _avail_lock:
-        _avail_cache.clear()
+    clear_provider_cache(_PROVIDER_CACHE_NS)
 
 
 # ── Slug guessing ──────────────────────────────────────────────────────────────
@@ -241,11 +245,9 @@ def get_provider_info(title: str) -> Dict[str, Any]:
         return empty
 
     key = title.lower()
-    now = time.time()
-    with _avail_lock:
-        hit = _avail_cache.get(key)
-        if hit and (now - hit[1]) < _AVAIL_TTL:
-            return dict(hit[0])
+    cached = get_provider_cache(_PROVIDER_CACHE_NS, key, _AVAIL_TTL)
+    if cached is not None:
+        return dict(cached)
 
     slug = _slugify(title)
     result = dict(empty)
@@ -271,8 +273,7 @@ def get_provider_info(title: str) -> Dict[str, Any]:
             except Exception as exc:
                 logger.debug("[Fernsehserien] lookup failed for %r: %s", title, exc)
 
-    with _avail_lock:
-        _avail_cache[key] = (result, now)
+    set_provider_cache(_PROVIDER_CACHE_NS, key, result)
     return dict(result)
 
 

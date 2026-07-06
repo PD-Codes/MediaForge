@@ -135,6 +135,8 @@ from .db import (
     set_tmdb_cache,
     clear_tmdb_cache,
     evict_tmdb_cache,
+    init_provider_cache_db,
+    evict_provider_cache,
     init_calendar_db,
     save_calendar_media,
     save_calendar_episode,
@@ -3347,9 +3349,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     init_app_settings_db()
     init_download_history_db()
     init_tmdb_cache_db()
+    init_provider_cache_db()
     init_calendar_db()
 
-    # Periodically evict expired TMDB cache entries so the table doesn't grow unboundedly
+    # Periodically evict expired TMDB / provider cache entries so the tables
+    # don't grow unboundedly.
     def _tmdb_cache_eviction_loop():
         import time as _t
         while True:
@@ -3360,6 +3364,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                     get_logger(__name__).debug("[DB] Evicted %d expired TMDB cache entries", removed)
             except Exception as exc:
                 get_logger(__name__).warning("[DB] TMDB cache eviction failed: %s", exc)
+            try:
+                removed = evict_provider_cache()
+                if removed:
+                    get_logger(__name__).debug("[DB] Evicted %d expired provider cache entries", removed)
+            except Exception as exc:
+                get_logger(__name__).warning("[DB] Provider cache eviction failed: %s", exc)
 
     threading.Thread(target=_tmdb_cache_eviction_loop, daemon=True,
                      name="tmdb-cache-evict").start()
@@ -7483,13 +7493,19 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         """
         clear_tmdb_cache()
         _browse_cache.clear()   # force re-evaluation of inline TMDB data
-        # Also drop the Fernsehserien slug/provider cache — it's part of the
-        # same "Cache Options" section in the UI.
+        # Also drop the Fernsehserien and Crunchyroll provider caches — they're
+        # part of the same "Cache Options" section in the UI and now use the
+        # same persistent (SQLite) caching mechanism as TMDB.
         try:
             from . import fernsehserien_service
             fernsehserien_service.invalidate_cache()
         except Exception:
             logger.debug("[Fernsehserien] could not invalidate cache", exc_info=True)
+        try:
+            from . import crunchyroll_service
+            crunchyroll_service.invalidate_availability_cache()
+        except Exception:
+            logger.debug("[Crunchyroll] could not invalidate cache", exc_info=True)
         # Start a fresh prefetch in background — returns immediately to caller
         threading.Thread(
             target=_prefetch_cycle,

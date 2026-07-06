@@ -2698,6 +2698,103 @@ def evict_tmdb_cache(ttl: float = 86400.0) -> int:
         conn.close()
 
 
+# ============================================================
+# Generic provider-availability cache (persistent, 24 h TTL)
+# ============================================================
+# Same shape/behaviour as the TMDB cache above, but namespaced so several
+# independent providers (Crunchyroll, Fernsehserien.de, ...) can share one
+# table without key collisions. Used so pill lookups survive a restart
+# instead of living only in a process-memory dict.
+
+def init_provider_cache_db() -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS provider_cache (
+                namespace  TEXT    NOT NULL,
+                cache_key  TEXT    NOT NULL,
+                data_json  TEXT    NOT NULL,
+                cached_at  REAL    NOT NULL,
+                PRIMARY KEY (namespace, cache_key)
+            )
+            """
+        )
+        # Remove expired entries so the table does not grow unboundedly
+        conn.execute(
+            "DELETE FROM provider_cache WHERE cached_at < strftime('%s', 'now') - 86400"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_provider_cache(namespace: str, cache_key: str, ttl: float = 86400.0) -> "dict | None":
+    """Return cached provider data if it exists and is within TTL, else None."""
+    import time as _time
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT data_json, cached_at FROM provider_cache WHERE namespace = ? AND cache_key = ?",
+            (namespace, cache_key),
+        ).fetchone()
+        if row and (_time.time() - row["cached_at"]) < ttl:
+            import json as _json
+            return _json.loads(row["data_json"])
+        return None
+    finally:
+        conn.close()
+
+
+def set_provider_cache(namespace: str, cache_key: str, data: dict) -> None:
+    """Persist a provider-lookup result. Upserts so repeated calls refresh the TTL."""
+    import json as _json
+    import time as _time
+    conn = get_db()
+    try:
+        conn.execute(
+            """
+            INSERT INTO provider_cache (namespace, cache_key, data_json, cached_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(namespace, cache_key) DO UPDATE SET
+                data_json = excluded.data_json,
+                cached_at = excluded.cached_at
+            """,
+            (namespace, cache_key, _json.dumps(data, ensure_ascii=False), _time.time()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def clear_provider_cache(namespace: "str | None" = None) -> None:
+    """Wipe cached entries for *namespace* (e.g. after credential changes), or all if None."""
+    conn = get_db()
+    try:
+        if namespace is None:
+            conn.execute("DELETE FROM provider_cache")
+        else:
+            conn.execute("DELETE FROM provider_cache WHERE namespace = ?", (namespace,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def evict_provider_cache(ttl: float = 86400.0) -> int:
+    """Delete entries older than *ttl* seconds across all namespaces."""
+    import time as _time
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "DELETE FROM provider_cache WHERE cached_at < ?",
+            (_time.time() - ttl,),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 # ===========================================================================
 # Calendar Watcher database tables & helpers
 # ===========================================================================
