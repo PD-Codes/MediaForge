@@ -83,10 +83,19 @@ ENV TZ=Europe/Berlin \
 # Install patchright browsers to a global path accessible by the unprivileged runtime user.
 # This step is intentionally placed BEFORE copying source code so that the heavy
 # Chromium download is cached independently and only re-runs when pyproject.toml changes.
+#
+# The version installed here MUST match the "patchright==" pin in pyproject.toml
+# exactly (not just "patchright", unpinned) — otherwise `pip install .` below can
+# resolve a different patchright/playwright version against the full dependency
+# graph than the standalone install above, leaving the downloaded Chromium
+# revision (baked into this layer) mismatched against what actually runs at
+# startup. That mismatch is exactly what triggers Patchright's
+# "Looks like Playwright was just installed or updated — run patchright install"
+# warning at container start. Bump both places together when upgrading.
 COPY pyproject.toml README.md LICENSE MANIFEST.in /app/
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir patchright && \
+    pip install --no-cache-dir "patchright==1.61.2" && \
     patchright install chromium && \
     chmod -R 755 /opt/ms-playwright
 

@@ -25,7 +25,7 @@ dependencies = [
   "waitress",
   "packaging",
   "cryptography",
-  "patchright",
+  "patchright==1.61.2",
   "pywebpush",
   "watchdog",
   "dnspython",
