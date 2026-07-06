@@ -6358,8 +6358,15 @@ body.player-open #playerOverlay * {
   /* text set via JS textContent */
 
   /* ── Karte: Provider-Badge (nur Text, kein "Marker"-Look) ───────── */
+  /* Layout lives here in CSS, not as inline styles set from JS, so a card
+     that's re-enriched (TMDB own badge reset, then a Crunchyroll/Fernsehserien
+     fallback pill added later) can never end up with stale inline styles on
+     an otherwise-empty container. */
   .browse-tmdb-meta {
-    margin-top: 5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 4px 0 16px;
   }
 
   .tmdb-badge {

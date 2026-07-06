@@ -235,10 +235,12 @@ function enrichCardWithTmdb(card, title) {
   }
 }
 
-// ── Crunchyroll-only card enrichment (works without TMDB) ──
-// When TMDB is configured, _applyTmdbToCard already calls _crCardPill, so this
-// path is only used when TMDB is off — avoiding duplicate availability calls.
-function _crCheckCard(card, title) {
+// ── Crunchyroll/Fernsehserien card enrichment (works without TMDB) ──
+// When TMDB is configured, _applyTmdbToCard already runs the full chain via
+// _cardProviderChain, so this path is only used when TMDB is off entirely —
+// avoiding duplicate availability calls. Still follows the same
+// Crunchyroll → Fernsehserien.de fallback order (TMDB is simply skipped here).
+async function _crCheckCard(card, title) {
   const info = card.querySelector('.browse-info');
   if (!info) return;
   let meta = info.querySelector('.browse-tmdb-meta');
@@ -247,7 +249,8 @@ function _crCheckCard(card, title) {
     meta.className = 'browse-tmdb-meta';
     info.appendChild(meta);
   }
-  _crProviderPill(title, meta, { small: true });
+  const crAdded = await _crProviderPill(title, meta, { small: true });
+  if (!crAdded) await _fsProviderPill(title, meta, { small: true });
 }
 
 const _crObserver = ('IntersectionObserver' in window)
@@ -773,7 +776,7 @@ function refreshSyncBadges() {
 
 // Apply already-fetched TMDB data to a browse card synchronously (no network)
 function _applyTmdbToCard(card, d) {
-  _crCardPill(card, d);                 // independent of TMDB (covers new simulcasts)
+  _cardProviderChain(card, d);           // TMDB → Crunchyroll → Fernsehserien.de fallback pill
   if (!d || !d.found) return;
   const info = card.querySelector(".browse-info");
   if (!info) return;
@@ -814,19 +817,14 @@ function _applyTmdbToCard(card, d) {
     meta.className = "browse-tmdb-meta";
     info.appendChild(meta);
   }
+  // Only clear the children — layout (flex/wrap/gap/margin) lives in the
+  // .browse-tmdb-meta CSS rule now, not as an inline style set from JS, so
+  // there's nothing stray left behind on an empty container to reset.
   meta.innerHTML = '';
   if (cineinfoSettings.show_providers !== '0' && d.providers && d.providers.length) {
-    const pill = _makeProviderPill(d.providers[0]);
-    pill.style.fontSize = '0.7rem';
-    pill.style.padding = '2px 8px 2px 6px';
-    pill.style.maxWidth = '100%';
-    pill.style.overflow = 'hidden';
-    pill.title = d.providers.join(', ');
-    const lbl = pill.querySelector('span:last-child');
-    if (lbl) {
-      lbl.style.overflow = 'hidden'; lbl.style.textOverflow = 'ellipsis';
-      lbl.style.whiteSpace = 'nowrap'; lbl.style.minWidth = '0';
-    }
+    // Same small-pill styling as the Crunchyroll/Fernsehserien fallback pills
+    // (see _makeProviderPill) so all three sources render identically.
+    const pill = _makeProviderPill(d.providers[0], { small: true, title: d.providers.join(', ') });
     meta.appendChild(pill);
   }
 
@@ -2090,7 +2088,14 @@ function getProviderColor(name) {
   return exactKey ? _providerColors[exactKey] : '#888';
 }
 
-function _makeProviderPill(name) {
+// Builds a provider pill. Every caller — TMDB's own card/modal badge, the
+// Crunchyroll pill and the Fernsehserien.de pill — goes through this single
+// function so all three always look and behave identically, regardless of
+// which provider source actually supplied the name. `opts.small` is the card
+// variant (compact size, truncates with an ellipsis instead of wrapping);
+// `opts.title` sets a hover tooltip (e.g. the full, un-truncated provider list).
+function _makeProviderPill(name, opts) {
+  opts = opts || {};
   const pill = document.createElement('span');
   pill.className = 'tmdb-provider-pill';
   const color = getProviderColor(name);
@@ -2099,9 +2104,9 @@ function _makeProviderPill(name) {
     'display:inline-flex',
     'align-items:center',
     'gap:6px',
-    'font-size:0.75rem',
+    'font-size:' + (opts.small ? '0.7rem' : '0.75rem'),
     'font-weight:600',
-    'padding:4px 12px 4px 8px',
+    'padding:' + (opts.small ? '2px 8px 2px 6px' : '4px 12px 4px 8px'),
     'border-radius:99px',
     'border:1.5px solid ' + (color ? color + '60' : 'rgba(148,163,184,.35)'),
     'background:var(--bg-elevated,#1a1a28)',
@@ -2109,7 +2114,8 @@ function _makeProviderPill(name) {
     'white-space:nowrap',
     'line-height:1.4',
     'cursor:default',
-  ].join(';');
+  ].concat(opts.small ? ['max-width:100%', 'overflow:hidden'] : []).join(';');
+  if (opts.title) pill.title = opts.title;
   if (color) {
     const dot = document.createElement('span');
     dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:' + color + ';flex-shrink:0;display:inline-block';
@@ -2117,6 +2123,9 @@ function _makeProviderPill(name) {
   }
   const label = document.createElement('span');
   label.textContent = name;
+  if (opts.small) {
+    label.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
+  }
   pill.appendChild(label);
   return pill;
 }
@@ -2124,94 +2133,124 @@ function _makeProviderPill(name) {
 // Add a "Crunchyroll" provider pill to a container if the title is on
 // Crunchyroll. Gated on the frontend flag so no request fires when the
 // integration is off. Works for fresh simulcasts TMDB doesn't list yet.
+// Returns true iff a pill was actually inserted — callers use this to decide
+// whether to fall through to the next provider in the resolution chain
+// (TMDB → Crunchyroll → Fernsehserien.de, see _cardProviderChain / _crCheckCard
+// / enrichModalWithTmdb).
 async function _crProviderPill(title, containerEl, opts) {
   opts = opts || {};
-  if (!crunchyrollSettings || crunchyrollSettings.enabled !== '1') return;
-  if (crunchyrollSettings.show_providers === '0') return;
-  if (!title || !containerEl) return;
+  if (!crunchyrollSettings || crunchyrollSettings.enabled !== '1') return false;
+  if (crunchyrollSettings.show_providers === '0') return false;
+  if (!title || !containerEl) return false;
   try {
     const resp = await fetch('/api/crunchyroll/availability?title=' +
       encodeURIComponent(title).replace(/'/g, "%27"));
     const cd = await resp.json();
-    if (!cd || !cd.available) return;
+    if (!cd || !cd.available) return false;
     const already = Array.from(containerEl.querySelectorAll('span')).some(
       el => /crunchyroll/i.test(el.textContent || ''));
-    if (already) return;
-    if (!containerEl.style.display) {
-      containerEl.style.cssText = ['display:flex', 'flex-wrap:wrap', 'gap:5px',
-        'margin:4px 0 16px'].join(';');
-    }
-    const pill = _makeProviderPill('Crunchyroll');
-    if (opts.small) {
-      pill.style.fontSize = '0.7rem';
-      pill.style.padding = '2px 8px 2px 6px';
-      pill.style.maxWidth = '100%';
-    }
+    if (already) return true;
+    // Layout (flex/wrap/gap/margin) comes from CSS on the container
+    // (.browse-tmdb-meta or .tmdb-providers) — no inline style set here, so
+    // there's nothing stray left behind if this container ends up empty.
+    const pill = _makeProviderPill('Crunchyroll', { small: !!opts.small, title: opts.small ? 'Crunchyroll' : undefined });
     containerEl.insertBefore(pill, containerEl.firstChild);
-  } catch (e) { /* silent */ }
+    return true;
+  } catch (e) { /* silent */ return false; }
 }
 
 // Add a "Fernsehserien" provider pill naming the German streaming premiere
-// provider fernsehserien.de reports for a title. Modal-only (unlike the
-// Crunchyroll pill, this is not wired into browse-card hover): the site is a
-// self-rate-limited, unofficial scraper (no real API), so it's only queried
-// for the one title a user is actively looking at, not for every card in a
-// list. Gated on the frontend flag so no request fires when the integration
-// is off. Fails silently — a miss just means no pill.
+// provider fernsehserien.de reports for a title. This is the last link in the
+// provider resolution chain (TMDB → Crunchyroll → Fernsehserien.de) — callers
+// only reach it once both TMDB and Crunchyroll came up empty, which keeps
+// request volume against this self-rate-limited, unofficial scraper low even
+// though it's now wired into card hover too (see _cardProviderChain).
+// Gated on the frontend flag so no request fires when the integration is off.
+// Fails silently — a miss just means no pill. Returns true iff a pill was
+// actually inserted.
 async function _fsProviderPill(title, containerEl, opts) {
   opts = opts || {};
-  if (!fernsehserienSettings || fernsehserienSettings.enabled !== '1') return;
-  if (fernsehserienSettings.show_providers === '0') return;
-  if (!title || !containerEl) return;
+  if (!fernsehserienSettings || fernsehserienSettings.enabled !== '1') return false;
+  if (fernsehserienSettings.show_providers === '0') return false;
+  if (!title || !containerEl) return false;
   try {
     const resp = await fetch('/api/fernsehserien/availability?title=' +
       encodeURIComponent(title).replace(/'/g, "%27"));
     const fd = await resp.json();
-    if (!fd || !fd.available || !fd.provider) return;
+    if (!fd || !fd.available || !fd.provider) return false;
     const already = Array.from(containerEl.querySelectorAll('span')).some(
       el => el.textContent === fd.provider);
-    if (already) return;
-    if (!containerEl.style.display) {
-      containerEl.style.cssText = ['display:flex', 'flex-wrap:wrap', 'gap:5px',
-        'margin:4px 0 16px'].join(';');
-    }
-    const pill = _makeProviderPill(fd.provider);
-    if (opts.small) {
-      pill.style.fontSize = '0.7rem';
-      pill.style.padding = '2px 8px 2px 6px';
-      pill.style.maxWidth = '100%';
-    }
+    if (already) return true;
+    // Layout (flex/wrap/gap/margin) comes from CSS on the container
+    // (.browse-tmdb-meta or .tmdb-providers) — no inline style set here, so
+    // there's nothing stray left behind if this container ends up empty.
+    const pill = _makeProviderPill(fd.provider, { small: !!opts.small, title: opts.small ? fd.provider : undefined });
     containerEl.insertBefore(pill, containerEl.firstChild);
-  } catch (e) { /* silent */ }
+    return true;
+  } catch (e) { /* silent */ return false; }
 }
 
 // Card-level wrapper: skips when TMDB already shows Crunchyroll, otherwise adds
 // the pill (creating the meta container if the card had no TMDB data at all).
-function _crCardPill(card, d) {
-  if (!crunchyrollSettings || crunchyrollSettings.enabled !== '1') return;
-  if (crunchyrollSettings.show_providers === '0') return;
-  if (d && d.providers && d.providers.some(pp => /crunchyroll/i.test(pp))) return;
+// Returns true iff a pill is present afterwards (already-there or newly added)
+// so _cardProviderChain knows whether to fall through to Fernsehserien.de.
+async function _crCardPill(card, d) {
+  if (!crunchyrollSettings || crunchyrollSettings.enabled !== '1') return false;
+  if (crunchyrollSettings.show_providers === '0') return false;
+  if (d && d.providers && d.providers.some(pp => /crunchyroll/i.test(pp))) return true;
   // Prefer the canonical TMDB title — it lines up with Crunchyroll's catalog
   // better than the raw site title.
   const title = (d && d.title) || card.dataset.title || card.dataset.tmdbTitle || "";
-  if (!title) return;
+  if (!title) return false;
   const info = card.querySelector('.browse-info');
-  if (!info) return;
+  if (!info) return false;
   let meta = info.querySelector('.browse-tmdb-meta');
   if (!meta) {
     meta = document.createElement('div');
     meta.className = 'browse-tmdb-meta';
     info.appendChild(meta);
   }
-  _crProviderPill(title, meta, { small: true });
+  return _crProviderPill(title, meta, { small: true });
+}
+
+// Card-level Fernsehserien wrapper, mirroring _crCardPill. Only ever called
+// as the last step of _cardProviderChain (TMDB and Crunchyroll both empty),
+// so this does not add extra load against the scraper for cards that are
+// already covered by TMDB or Crunchyroll.
+async function _fsCardPill(card, d) {
+  if (!fernsehserienSettings || fernsehserienSettings.enabled !== '1') return false;
+  if (fernsehserienSettings.show_providers === '0') return false;
+  const title = (d && d.title) || card.dataset.title || card.dataset.tmdbTitle || "";
+  if (!title) return false;
+  const info = card.querySelector('.browse-info');
+  if (!info) return false;
+  let meta = info.querySelector('.browse-tmdb-meta');
+  if (!meta) {
+    meta = document.createElement('div');
+    meta.className = 'browse-tmdb-meta';
+    info.appendChild(meta);
+  }
+  return _fsProviderPill(title, meta, { small: true });
+}
+
+// Provider resolution order for browse cards: TMDB → Crunchyroll →
+// Fernsehserien.de. TMDB's own provider badge is rendered separately in
+// _applyTmdbToCard; this only decides whether the fallback pill (CR, then FS)
+// is worth trying at all — skipped entirely once TMDB already has providers.
+async function _cardProviderChain(card, d) {
+  const tmdbHasProviders = !!(d && d.found && d.providers && d.providers.length);
+  if (tmdbHasProviders) return;
+  const crAdded = await _crCardPill(card, d);
+  if (!crAdded) await _fsCardPill(card, d);
 }
 
 async function enrichModalWithTmdb(title, imdbId) {
   const provEl = document.getElementById('tmdbProviders');
   if (!provEl) return;
   if (!cineinfoSettings || !cineinfoSettings.tmdb_api_key) {
-    _crProviderPill(title, provEl);
-    _fsProviderPill(title, provEl);
+    // TMDB is off entirely — start the chain at Crunchyroll.
+    const crAdded = await _crProviderPill(title, provEl);
+    if (!crAdded) await _fsProviderPill(title, provEl);
     return;
   }
   try {
@@ -2225,11 +2264,13 @@ async function enrichModalWithTmdb(title, imdbId) {
     const sRecs = cineinfoSettings?.show_recommendations ?? "1";
     console.log("[CineInfo] Final Checks - show_trailer:", sTrailer, "show_recs:", sRecs);
     if (!d.found) {
-      _crProviderPill(title, provEl);
-      _fsProviderPill(title, provEl);
+      // No TMDB data at all — start the chain at Crunchyroll.
+      const crAdded = await _crProviderPill(title, provEl);
+      if (!crAdded) await _fsProviderPill(title, provEl);
       return;
     }
-    if (cineinfoSettings.show_providers !== '0' && d.providers && d.providers.length) {
+    const tmdbHasProviders = !!(d.providers && d.providers.length);
+    if (cineinfoSettings.show_providers !== '0' && tmdbHasProviders) {
       provEl.innerHTML = '';
       provEl.style.cssText = [
         'display:flex',
@@ -2263,11 +2304,14 @@ async function enrichModalWithTmdb(title, imdbId) {
         provEl.appendChild(more);
       }
     }
-    // Crunchyroll pill — covers fresh simulcasts TMDB's provider list misses.
-    _crProviderPill((d && d.title) || title, provEl);
-    // Fernsehserien pill — the German streaming premiere provider it reports,
-    // useful as a fallback when TMDB has no German provider data.
-    _fsProviderPill((d && d.title) || title, provEl);
+    // Provider resolution order: TMDB → Crunchyroll → Fernsehserien.de. Only
+    // fall through to CR/FS when TMDB itself has no provider data for this
+    // title (not just when the display toggle is off) — avoids a redundant
+    // or conflicting pill next to TMDB's own list.
+    if (!tmdbHasProviders) {
+      const crAdded = await _crProviderPill((d && d.title) || title, provEl);
+      if (!crAdded) await _fsProviderPill((d && d.title) || title, provEl);
+    }
     // TMDB Genres — ersetze die Seiten-Genres wenn aktiviert
     if (cineinfoSettings.show_genres === '1' && d.genres && d.genres.length) {
       const genresEl = document.getElementById('modalGenres');
