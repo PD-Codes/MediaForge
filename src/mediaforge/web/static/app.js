@@ -48,21 +48,56 @@ const staticProviders = providerSelect ? Array.from(providerSelect.options).map(
 // Site toggle state
 let currentSite = "aniworld"; // kept for modal language detection via URL
 
+let _upscaleModeCache = null;
+let _upscaleModePromise = null;
+function _loadUpscaleMode(force) {
+  if (_upscaleModePromise && !force) return _upscaleModePromise;
+  _upscaleModePromise = fetch("/api/upscale/settings")
+    .then(r => r.json())
+    .then(d => { _upscaleModeCache = (d.settings && d.settings.mode) || "disabled"; return _upscaleModeCache; })
+    .catch(() => { _upscaleModeCache = "disabled"; return _upscaleModeCache; });
+  return _upscaleModePromise;
+}
+// Preload once at startup so the cache is ready before any modal opens.
+_loadUpscaleMode();
+
+function _applyUpscaleCheckbox(url, mode, respectUserChoice) {
+  const wrapper = document.getElementById("upscaleCheckWrapper");
+  const check = document.getElementById("upscaleCheck");
+  if (!wrapper || !check) return;
+  if (!mode || mode === "disabled") {
+    wrapper.style.display = "none";
+    check.checked = false;
+    return;
+  }
+  wrapper.style.display = "";
+  // Never overwrite a box the user has already toggled since the modal opened.
+  if (!respectUserChoice || !check.dataset.userTouched) {
+    // Default: checked for aniworld.to, unchecked for others
+    check.checked = (url || "").includes("aniworld.to");
+  }
+}
+
 function _updateUpscaleCheckbox(url) {
   const wrapper = document.getElementById("upscaleCheckWrapper");
   const check = document.getElementById("upscaleCheck");
   if (!wrapper || !check) return;
-  // Fetch upscaling_mode setting to decide visibility
-  fetch("/api/upscale/settings").then(r => r.json()).then(d => {
-    const mode = d.settings && d.settings.mode;
-    if (!mode || mode === "disabled") {
-      wrapper.style.display = "none";
-      return;
-    }
-    wrapper.style.display = "";
-    // Default: checked for aniworld.to, unchecked for others
-    check.checked = (url || "").includes("aniworld.to");
-  }).catch(() => { wrapper.style.display = "none"; });
+  // Fresh modal open: forget the previous manual toggle, and (once) attach a
+  // guard that records any future user interaction with the box.
+  delete check.dataset.userTouched;
+  if (!check._upscaleTouchBound) {
+    check._upscaleTouchBound = true;
+    check.addEventListener("change", () => { check.dataset.userTouched = "1"; });
+  }
+  if (_upscaleModeCache !== null) {
+    // Cache ready -> configure synchronously, before the user can interact.
+    // No async callback is left that could overwrite their later choice.
+    _applyUpscaleCheckbox(url, _upscaleModeCache, false);
+  } else {
+    // Very first open before the preload resolved: apply once it lands, but do
+    // not clobber the box if the user has already ticked it in the meantime.
+    _loadUpscaleMode().then(mode => _applyUpscaleCheckbox(url, mode, true));
+  }
 }
 
 // Downloaded folders cache
