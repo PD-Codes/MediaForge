@@ -356,13 +356,23 @@ def _ip_provider(ip):
 # ── Source-site monitoring (shared by DNS test + UpTime) ──────────────────────
 # Ordered mapping of trackable source sites. Keys match the source ids used by
 # the ``source_enabled_<id>`` settings and the UpTime per-source tracking toggles.
-#   id -> (label, url, expected_domain, body_markers)
+#   id -> (label, url, expected_domain, body_markers, expected_headers)
+#
+# expected_headers is the reachability/identity signature: a dict of
+# response-header-name -> substring that must appear in it (case-insensitive).
+# Verified empirically per site (curl -I) rather than assumed — aniworld.to and
+# serienstream.to sit behind DDoS-Guard ("server: ddos-guard"), while
+# filmpalast.to, megakino.to and hanime.tv sit behind Cloudflare
+# ("server: cloudflare", plus a cf-ray id on every response). This is checked
+# instead of the resolved IP because both CDNs rotate their edge IPs
+# constantly (anycast across many PoPs) — the header signature is what stays
+# stable, not the address.
 _MONITOR_SITES = {
-    "aniworld":   ("AniWorld",   "https://aniworld.to",   "aniworld.to",   ["aniworld"]),
-    "sto":        ("SerienStream", "https://serienstream.to", "serienstream.to", ["serienstream"]),
-    "filmpalast": ("FilmPalast", "https://filmpalast.to", "filmpalast.to", ["filmpalast"]),
-    "megakino":   ("MegaKino",   "https://megakino.to",   "megakino.to",   ["megakino"]),
-    "hanime":     ("hanime",     "https://hanime.tv",     "hanime.tv",     ["hanime"]),
+    "aniworld":   ("AniWorld",     "https://aniworld.to",     "aniworld.to",     ["aniworld"],     {"server": "ddos-guard"}),
+    "sto":        ("SerienStream", "https://serienstream.to", "serienstream.to", ["serienstream"], {"server": "ddos-guard"}),
+    "filmpalast": ("FilmPalast",   "https://filmpalast.to",   "filmpalast.to",   ["filmpalast"],   {"server": "cloudflare"}),
+    "megakino":   ("MegaKino",     "https://megakino.to",     "megakino.to",     ["megakino"],     {"server": "cloudflare"}),
+    "hanime":     ("hanime",       "https://hanime.tv",       "hanime.tv",       ["hanime"],       {"server": "cloudflare"}),
 }
 
 # Signatures of ISP / CUII (Clearingstelle Urheberrecht im Internet) block pages
@@ -389,24 +399,42 @@ _BLOCK_MARKERS = [
 ]
 
 
-def _probe_site(url, expected_domain, markers, timeout=10):
-    """Resolve + fetch a site and verify we reached the real thing.
+def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10):
+    """Fetch a site and verify we reached the real thing via response headers.
 
-    Returns a dict with: hostname, ip, socket_ok, http_status, http_ok,
-    site_verified, response_ms, and optional socket_error / http_error.
-    Shared by the DNS diagnostics endpoint and the UpTime monitor so both use
-    identical reachability + identity checks (final-URL domain, then body
-    markers as a fallback for Cloudflare-challenged pages).
+    Verification is header-based, not IP-based. Cloudflare and DDoS-Guard (the
+    two CDNs fronting these sites) both rotate their edge IPs constantly
+    (anycast, load-balanced across many PoPs) — a resolved IP tells us almost
+    nothing reliable about whether we actually reached the genuine site. What
+    stays stable is the CDN fingerprint in the response headers (e.g.
+    ``server: cloudflare`` or ``server: ddos-guard``, see ``expected_headers``
+    on ``_MONITOR_SITES``) — an ISP block page or DNS hijack is very unlikely
+    to reproduce that exact signature.
+
+    A cheap HEAD request (headers only, no body download) is used first and is
+    the *only* request made in the common case. Only when the header signature
+    does not match do we fall back to a full GET so the body can still be
+    checked against known ISP/CUII block-page markers, purely for diagnostics.
+
+    Returns a dict with: hostname, http_status, http_ok, site_verified,
+    headers_matched, response_ms, server_header, and optional ip/ip_provider
+    (informational only — resolved for display, plays no part in verification)
+    plus blocked / socket_error / http_error where applicable. Shared by the
+    DNS diagnostics endpoint and the UpTime monitor so both use identical
+    checks.
     """
     import socket as _sock
     import time as _time
     from ..config import GLOBAL_SESSION as _GS
 
+    expected_headers = expected_headers or {}
     hostname = url.replace("https://", "").replace("http://", "").rstrip("/")
     entry = {"hostname": hostname, "ip": None, "socket_ok": False,
-             "http_ok": False, "site_verified": False, "response_ms": None}
+             "http_ok": False, "site_verified": False, "headers_matched": False,
+             "blocked": False, "response_ms": None}
 
-    # DNS resolve (tests the getaddrinfo patch; ffmpeg/mpv rely on it locally)
+    # DNS resolve — informational only (shown as the resolved edge IP in the
+    # DNS diagnostics UI). NOT used to decide reachability/verification.
     try:
         infos = _sock.getaddrinfo(hostname, 443, proto=_sock.IPPROTO_TCP)
         entry["ip"] = infos[0][4][0] if infos else None
@@ -415,30 +443,42 @@ def _probe_site(url, expected_domain, markers, timeout=10):
     except Exception as e:
         entry["socket_error"] = str(e)
 
-    # HTTP reachability + identity check via the global (DoH) session
+    def _headers_match(headers):
+        if not expected_headers:
+            return True  # no signature configured for this site — skip the check
+        for key, expect_sub in expected_headers.items():
+            actual = (headers.get(key) or "").lower()
+            if expect_sub.lower() not in actual:
+                return False
+        return True
+
+    # Primary check: HEAD request, verified via response headers only.
     try:
         _t0 = _time.monotonic()
-        resp = _GS.get(url, allow_redirects=True, timeout=timeout)
+        resp = _GS.head(url, allow_redirects=True, timeout=timeout)
         entry["response_ms"] = int((_time.monotonic() - _t0) * 1000)
         entry["http_status"] = resp.status_code
         entry["http_ok"] = resp.status_code < 500
-        final_url = str(getattr(resp, "url", url) or url)
-        entry["final_url"] = final_url
-        body_lower = (resp.text or "").lower()
-        # Real-content check: the page must carry a site-specific brand marker
-        # AND must not look like an ISP/CUII block interstitial. This prevents
-        # reporting "verified" when the ISP injected a block page (even if that
-        # block page happens to name the blocked domain/brand).
-        has_marker = any(m.lower() in body_lower for m in markers)
-        url_on_domain = expected_domain in final_url
-        is_block = any(b in body_lower for b in _BLOCK_MARKERS)
-        entry["blocked"] = bool(is_block)
-        # Verified when it is NOT a block/ISP page AND we either saw a site-
-        # specific brand marker OR at least stayed on the correct domain (the
-        # latter covers Cloudflare challenge pages, which are the real site
-        # behind a bot check — an ISP block would redirect off-domain or inject
-        # a block signature, both handled above).
-        entry["site_verified"] = bool((not is_block) and (has_marker or url_on_domain))
+        entry["final_url"] = str(getattr(resp, "url", url) or url)
+        entry["server_header"] = resp.headers.get("server")
+        entry["headers_matched"] = _headers_match(resp.headers)
+        entry["site_verified"] = bool(entry["http_ok"] and entry["headers_matched"])
+
+        # Fallback: header signature didn't match — do a full GET so we can
+        # still distinguish a genuine (if differently configured) server from
+        # a known ISP/CUII block interstitial, for diagnostic purposes.
+        if entry["http_ok"] and not entry["headers_matched"]:
+            _t1 = _time.monotonic()
+            full = _GS.get(url, allow_redirects=True, timeout=timeout)
+            entry["response_ms"] += int((_time.monotonic() - _t1) * 1000)
+            entry["final_url"] = str(getattr(full, "url", url) or url)
+            body_lower = (full.text or "").lower()
+            is_block = any(b in body_lower for b in _BLOCK_MARKERS)
+            entry["blocked"] = bool(is_block)
+            if not is_block:
+                has_marker = any(m.lower() in body_lower for m in markers)
+                url_on_domain = expected_domain in entry["final_url"]
+                entry["site_verified"] = bool(has_marker or url_on_domain)
     except Exception as e:
         entry["http_error"] = str(e)
 
@@ -477,11 +517,11 @@ def _uptime_config():
 def _uptime_run_round(cfg=None):
     """Probe every tracked source once and store a heartbeat each; then prune."""
     cfg = cfg or _uptime_config()
-    for _sid, (_label, _url, _domain, _markers) in _MONITOR_SITES.items():
+    for _sid, (_label, _url, _domain, _markers, _headers) in _MONITOR_SITES.items():
         if not cfg["tracked"].get(_sid):
             continue
         try:
-            r = _probe_site(_url, _domain, _markers, timeout=cfg["timeout"])
+            r = _probe_site(_url, _domain, _markers, expected_headers=_headers, timeout=cfg["timeout"])
             if r.get("http_ok") and r.get("site_verified"):
                 status, msg = "up", None
             elif r.get("blocked"):
@@ -7465,21 +7505,25 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         """
         Test the current DNS configuration by:
           1. Reporting which DNS mode / server is active in memory.
-          2. Resolving each hostname via the patched socket (covers ffmpeg etc.).
-          3. Making a real GET request to each site via GLOBAL_SESSION (niquests/DoH)
-             and verifying the response body contains a known marker so we know we
-             actually reached the correct site (not a block page).
+          2. Resolving each hostname via the patched socket (covers ffmpeg etc.,
+             shown for information only — not used to judge reachability).
+          3. Making a HEAD request to each site via GLOBAL_SESSION (niquests/DoH)
+             and comparing the response headers against that site's known CDN
+             signature (see _MONITOR_SITES) so we know we actually reached the
+             correct site (not a block page) — headers instead of IP because
+             Cloudflare/DDoS-Guard rotate edge IPs constantly.
         """
         _saved_mode = get_setting("dns_mode", "system")
         _saved_server = get_setting("dns_server", "")
 
         # Reachability + site-identity check for every trackable source site.
         # Verification priority inside _probe_site:
-        #   1. Final URL after redirects contains the expected domain, else
-        #   2. Response body contains a known marker (handles CDN challenges).
+        #   1. Response headers match the site's known CDN signature, else
+        #   2. (fallback GET) body contains a known marker or final URL stayed
+        #      on the expected domain (handles CDN challenge pages).
         results = {}
-        for _sid, (label, url, expected_domain, markers) in _MONITOR_SITES.items():
-            results[label] = _probe_site(url, expected_domain, markers, timeout=10)
+        for _sid, (label, url, expected_domain, markers, headers) in _MONITOR_SITES.items():
+            results[label] = _probe_site(url, expected_domain, markers, expected_headers=headers, timeout=10)
 
         return jsonify({
             "dns_mode":          _saved_mode,
@@ -7533,7 +7577,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
 
         n_buckets = 50
         sources = []
-        for _sid, (_label, _url, _domain, _markers) in _MONITOR_SITES.items():
+        for _sid, (_label, _url, _domain, _markers, _headers) in _MONITOR_SITES.items():
             rr = get_uptime_range(_sid, start, end, n_buckets=n_buckets)
             latest = rr["latest"] or {}
             _src_def = "0" if _sid == "hanime" else "1"
