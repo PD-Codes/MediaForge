@@ -21,6 +21,7 @@ dependencies = [
   "authlib",
   "joserfc",
   "requests",
+  "beautifulsoup4",
   "waitress",
   "packaging",
   "cryptography",

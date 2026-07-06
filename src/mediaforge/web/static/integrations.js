@@ -593,9 +593,86 @@ document.addEventListener("DOMContentLoaded", () => {
   loadUptimeSettings();
   loadCineinfoSettings();
   loadCrunchyrollSettings();
+  loadFernsehserienSettings();
   loadMediaplayerSettings();
   loadMediascanSettings();
 });
+
+// ===== Fernsehserien.de =====
+async function loadFernsehserienSettings() {
+  try {
+    const data = await _getSettings();
+    const d = data.fernsehserien || {};
+    const chk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+
+    chk("fsEnabled", d.enabled === "1");
+    chk("fsShowProviders", d.show_providers !== "0");
+    _applyFernsehserienState();
+  } catch (e) {
+    showToast(t("Fernsehserien-Einstellungen konnten nicht geladen werden: ", "Fernsehserien settings could not be loaded: ") + e.message);
+  }
+}
+
+function _applyFernsehserienState() {
+  const enabled = !!document.getElementById("fsEnabled")?.checked;
+  ["fsShowProviders", "fsTestBtn"].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !enabled;
+  });
+}
+
+// Persist the toggle-style options immediately on change.
+async function saveFernsehserienOptions() {
+  _applyFernsehserienState();
+  const body = {
+    enabled:        document.getElementById("fsEnabled")?.checked ? "1" : "0",
+    show_providers: document.getElementById("fsShowProviders")?.checked ? "1" : "0",
+  };
+  try {
+    await fetch("/api/settings/fernsehserien", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) { /* silent */ }
+}
+
+async function testFernsehserien(btn) {
+  const result = document.getElementById("fsTestResult");
+  if (btn) { btn.disabled = true; btn.textContent = t("Teste…", "Testing…"); }
+  try {
+    const resp = await fetch("/api/settings/fernsehserien/test", { method: "POST" });
+    const d = await resp.json();
+    if (result) {
+      result.style.display = "block";
+      if (d.ok) {
+        const msg = t("✓ Scraper funktioniert", "✓ Scraper working") + (d.title ? " · " + d.title : "");
+        result.textContent = msg;
+        result.style.color = "var(--success, #2ecc71)";
+        showToast(msg, "success");
+      } else {
+        const map = {
+          library_unavailable: t("✗ Fernsehserien-Bibliothek nicht verfügbar (beautifulsoup4 fehlt?)", "✗ Fernsehserien library unavailable (beautifulsoup4 missing?)"),
+          request_failed: t("✗ Seite konnte nicht geladen werden", "✗ Could not load page"),
+        };
+        const errMsg = map[d.error] || t("✗ Test fehlgeschlagen", "✗ Test failed");
+        result.textContent = errMsg;
+        result.style.color = "var(--danger, #e74c3c)";
+        showToast(errMsg, "error");
+      }
+    }
+  } catch (e) {
+    if (result) {
+      result.style.display = "block";
+      result.textContent = t("✗ Fehler: " + e.message, "✗ Error: " + e.message);
+      result.style.color = "var(--danger, #e74c3c)";
+    }
+  } finally {
+    if (btn) {
+      setTimeout(() => { btn.disabled = false; btn.textContent = t("Verbindung testen", "Test connection"); _applyFernsehserienState(); }, 300);
+    }
+  }
+}
 
 
 // ===== Mediaplayer (Jellyfin / Plex) =====
@@ -1266,3 +1343,12 @@ function _startMediascanPoll() {
     } catch (_) { /* network hiccup — keep polling */ }
   }, 1500);
 }
+
+
+
+// == Third Party Plugins ==
+
+// -- Crunchyroll --
+
+
+// -- Fernsehserien.de --

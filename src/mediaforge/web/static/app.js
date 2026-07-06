@@ -116,6 +116,7 @@ let autoSyncUrlMap = {};
 let cineinfoSettings = null;
 let generalSettings = null;
 let crunchyrollSettings = null;
+let fernsehserienSettings = null;
 
 let _generalSettingsPromise = null;
 function loadGeneralSettings() {
@@ -127,6 +128,7 @@ function loadGeneralSettings() {
         generalSettings = data;
         cineinfoSettings = data.cineinfo || {};
         crunchyrollSettings = data.crunchyroll || {};
+        fernsehserienSettings = data.fernsehserien || {};
         console.log("[General] Settings loaded (combined):", generalSettings);
         _reEnrichPendingCards();
         _reEnrichCrunchyrollCards();
@@ -136,6 +138,7 @@ function loadGeneralSettings() {
         generalSettings = {};
         cineinfoSettings = {};
         crunchyrollSettings = {};
+        fernsehserienSettings = {};
         return {};
       }
     })();
@@ -2148,6 +2151,40 @@ async function _crProviderPill(title, containerEl, opts) {
   } catch (e) { /* silent */ }
 }
 
+// Add a "Fernsehserien" provider pill naming the German streaming premiere
+// provider fernsehserien.de reports for a title. Modal-only (unlike the
+// Crunchyroll pill, this is not wired into browse-card hover): the site is a
+// self-rate-limited, unofficial scraper (no real API), so it's only queried
+// for the one title a user is actively looking at, not for every card in a
+// list. Gated on the frontend flag so no request fires when the integration
+// is off. Fails silently — a miss just means no pill.
+async function _fsProviderPill(title, containerEl, opts) {
+  opts = opts || {};
+  if (!fernsehserienSettings || fernsehserienSettings.enabled !== '1') return;
+  if (fernsehserienSettings.show_providers === '0') return;
+  if (!title || !containerEl) return;
+  try {
+    const resp = await fetch('/api/fernsehserien/availability?title=' +
+      encodeURIComponent(title).replace(/'/g, "%27"));
+    const fd = await resp.json();
+    if (!fd || !fd.available || !fd.provider) return;
+    const already = Array.from(containerEl.querySelectorAll('span')).some(
+      el => el.textContent === fd.provider);
+    if (already) return;
+    if (!containerEl.style.display) {
+      containerEl.style.cssText = ['display:flex', 'flex-wrap:wrap', 'gap:5px',
+        'margin:4px 0 16px'].join(';');
+    }
+    const pill = _makeProviderPill(fd.provider);
+    if (opts.small) {
+      pill.style.fontSize = '0.7rem';
+      pill.style.padding = '2px 8px 2px 6px';
+      pill.style.maxWidth = '100%';
+    }
+    containerEl.insertBefore(pill, containerEl.firstChild);
+  } catch (e) { /* silent */ }
+}
+
 // Card-level wrapper: skips when TMDB already shows Crunchyroll, otherwise adds
 // the pill (creating the meta container if the card had no TMDB data at all).
 function _crCardPill(card, d) {
@@ -2172,7 +2209,11 @@ function _crCardPill(card, d) {
 async function enrichModalWithTmdb(title, imdbId) {
   const provEl = document.getElementById('tmdbProviders');
   if (!provEl) return;
-  if (!cineinfoSettings || !cineinfoSettings.tmdb_api_key) { _crProviderPill(title, provEl); return; }
+  if (!cineinfoSettings || !cineinfoSettings.tmdb_api_key) {
+    _crProviderPill(title, provEl);
+    _fsProviderPill(title, provEl);
+    return;
+  }
   try {
     let tmdbUrl = '/api/tmdb/info?title=' + encodeURIComponent(title).replace(/'/g, "%27");
     if (imdbId) tmdbUrl += '&imdb_id=' + encodeURIComponent(imdbId).replace(/'/g, "%27");
@@ -2183,7 +2224,11 @@ async function enrichModalWithTmdb(title, imdbId) {
     const sTrailer = cineinfoSettings?.show_trailer ?? "1";
     const sRecs = cineinfoSettings?.show_recommendations ?? "1";
     console.log("[CineInfo] Final Checks - show_trailer:", sTrailer, "show_recs:", sRecs);
-    if (!d.found) { _crProviderPill(title, provEl); return; }
+    if (!d.found) {
+      _crProviderPill(title, provEl);
+      _fsProviderPill(title, provEl);
+      return;
+    }
     if (cineinfoSettings.show_providers !== '0' && d.providers && d.providers.length) {
       provEl.innerHTML = '';
       provEl.style.cssText = [
@@ -2220,6 +2265,9 @@ async function enrichModalWithTmdb(title, imdbId) {
     }
     // Crunchyroll pill — covers fresh simulcasts TMDB's provider list misses.
     _crProviderPill((d && d.title) || title, provEl);
+    // Fernsehserien pill — the German streaming premiere provider it reports,
+    // useful as a fallback when TMDB has no German provider data.
+    _fsProviderPill((d && d.title) || title, provEl);
     // TMDB Genres — ersetze die Seiten-Genres wenn aktiviert
     if (cineinfoSettings.show_genres === '1' && d.genres && d.genres.length) {
       const genresEl = document.getElementById('modalGenres');

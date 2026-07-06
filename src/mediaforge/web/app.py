@@ -5864,6 +5864,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                     "calendar_lists":     get_setting("crunchyroll_calendar_lists",     "0"),
                     "calendar_release":   get_setting("crunchyroll_calendar_release",   "0"),
                 },
+                "fernsehserien": {
+                    "enabled":        get_setting("fernsehserien_enabled",        "0"),
+                    "show_providers": get_setting("fernsehserien_show_providers", "1"),
+                    "delay":          get_setting("fernsehserien_delay",          "1.5"),
+                },
                 "sources": {
                     "order": get_setting("home_source_order", "aniworld,sto,filmpalast,megakino,hanime"),
                     "section_order": {
@@ -6126,7 +6131,71 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             logger.debug("[Crunchyroll] availability endpoint error: %s", exc)
             return jsonify({"available": False, "reason": "error"})
 
+    # ── Fernsehserien.de integration (sub-section of CineInfo) ────────
+    # Unlike Crunchyroll this has no login — it's an unofficial scraper of
+    # public pages, so "settings" only covers the master toggle, the pill
+    # display toggle and the self-imposed request delay.
+    @app.route("/api/settings/fernsehserien", methods=["GET"])
+    def api_settings_fernsehserien_get():
+        return jsonify({
+            "enabled":        get_setting("fernsehserien_enabled",        "0"),
+            "show_providers": get_setting("fernsehserien_show_providers", "1"),
+            "delay":          get_setting("fernsehserien_delay",          "1.5"),
+        })
 
+    @app.route("/api/settings/fernsehserien", methods=["PUT"])
+    def api_settings_fernsehserien_put():
+        data = request.get_json(silent=True) or {}
+        for key in ["enabled", "show_providers", "delay"]:
+            if key in data:
+                set_setting("fernsehserien_" + key, str(data[key]))
+
+        try:
+            from . import fernsehserien_service
+            fernsehserien_service.invalidate_cache()
+        except Exception:
+            logger.debug("[Fernsehserien] could not invalidate cache", exc_info=True)
+
+        return jsonify({"ok": True})
+
+    @app.route("/api/settings/fernsehserien/test", methods=["POST"])
+    def api_settings_fernsehserien_test():
+        """Verify the fernsehserien.de scraper still works (settings UI).
+
+        There are no credentials to validate — this just fetches a known,
+        stable page to confirm the site isn't blocking us and the page layout
+        still parses.
+        """
+        try:
+            from . import fernsehserien_service
+            result = fernsehserien_service.test_connection()
+        except Exception as exc:
+            logger.debug("[Fernsehserien] test endpoint error: %s", exc)
+            result = {"ok": False, "error": "unknown", "detail": str(exc)}
+        return jsonify(result)
+
+    @app.route("/api/fernsehserien/availability", methods=["GET"])
+    def api_fernsehserien_availability():
+        """Return the streaming provider fernsehserien.de names for a title (cached).
+
+        Powers the "Fernsehserien" provider pill in the detail modal — the
+        title is matched to a page via a best-effort slug guess (there is no
+        search endpoint on the site), so a miss just means no pill, never
+        wrong information.
+        """
+        title = (request.args.get("title") or "").strip()
+        if not title:
+            return jsonify({"available": False, "reason": "no_title"})
+        try:
+            from . import fernsehserien_service
+            if (not fernsehserien_service.is_enabled()
+                    or get_setting("fernsehserien_show_providers", "1") != "1"):
+                return jsonify({"available": False, "reason": "disabled"})
+            info = fernsehserien_service.get_provider_info(title)
+            return jsonify(info)
+        except Exception as exc:
+            logger.debug("[Fernsehserien] availability endpoint error: %s", exc)
+            return jsonify({"available": False, "reason": "error"})
 
     @app.route("/api/settings/env-file", methods=["GET"])
     def api_settings_env_file_get():
@@ -7351,6 +7420,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         """
         clear_tmdb_cache()
         _browse_cache.clear()   # force re-evaluation of inline TMDB data
+        # Also drop the Fernsehserien slug/provider cache — it's part of the
+        # same "Cache Options" section in the UI.
+        try:
+            from . import fernsehserien_service
+            fernsehserien_service.invalidate_cache()
+        except Exception:
+            logger.debug("[Fernsehserien] could not invalidate cache", exc_info=True)
         # Start a fresh prefetch in background — returns immediately to caller
         threading.Thread(
             target=_prefetch_cycle,

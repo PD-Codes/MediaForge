@@ -697,6 +697,49 @@
       <div class="settings-row-desc" id="crCalTmdbHint" style="display:none;padding-left:44px;color:var(--warning)">{{ _('Calendar sync requires a TMDB API key — configure it in CineInfo above.') }}</div>
       </div>
       <div class="settings-section">
+      <!-- ══ Fernsehserien.de (unofficial scraper, provider pill) ══ -->
+      <div class="integ-subsection-header">
+        <span class="integ-subsection-title">Fernsehserien.de</span>
+        <span class="integ-subsection-badge" style="background:#555;color:#fff;">{{ _('Scraper') }}</span>
+      </div>
+      <div class="integ-subsection-hint">
+        {{ _('Reads public pages on fernsehserien.de (no official API, no login) to add a provider pill in the detail modal showing the German streaming premiere provider — useful as a fallback when TMDB has no German provider data. Titles are matched to pages by a best-effort guess, so this sometimes shows no pill rather than a wrong one.') }}
+      </div>
+
+      <!-- Master toggle -->
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Enable Fernsehserien.de integration') }}</div>
+          <div class="settings-row-desc">{{ _('Master switch for the Fernsehserien provider pill below.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" id="fsEnabled" onchange="saveFernsehserienOptions()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="integ-input-row" id="fsTestRow">
+        <button class="btn-secondary" id="fsTestBtn" onclick="testFernsehserien(this)">{{ _('Test connection') }}</button>
+      </div>
+      <div class="settings-row-desc" id="fsTestResult" style="display:none;margin-top:-6px;"></div>
+
+      <!-- Provider pill -->
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Fernsehserien provider pill') }}</div>
+          <div class="settings-row-desc">{{ _('Adds a pill in the detail modal naming the streaming provider fernsehserien.de reports for the German premiere.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" id="fsShowProviders" onchange="saveFernsehserienOptions()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      </div>
+      <div class="settings-section">
       <!-- ── Cache / Info ── -->
        <div class="integ-subsection-header">
         <span class="integ-subsection-title">{{ _('Cache Options') }}</span>
@@ -705,7 +748,7 @@
       <div class="settings-row">
         <div class="settings-row-left">
           <div class="settings-row-label">{{ _('Clear cache &amp; reload') }}</div>
-          <div class="settings-row-desc">{{ _('Deletes all stored TMDB data and restarts the preloading process. Useful when info is outdated or after an API key change.') }}</div>
+          <div class="settings-row-desc">{{ _('Deletes all stored TMDB data and restarts the preloading process. Also clears cached Fernsehserien.de provider lookups. Useful when info is outdated or after an API key change.') }}</div>
         </div>
         <div class="settings-row-right">
           <button id="clearCineinfoBtn" onclick="clearCineinfoCache(this)">{{ _('Clear cache') }}</button>
@@ -713,7 +756,7 @@
       </div>
 
       <div class="settings-hint">
-        {{ _('Metadata is preloaded in the background and cached in the database for 24 h.') }}
+        {{ _('Metadata is preloaded in the background and cached in the database for 24 h. Fernsehserien.de provider lookups are cached for 24 h as well.') }}
       </div>
     </div>
   </div><!-- /tab-cineinfo -->

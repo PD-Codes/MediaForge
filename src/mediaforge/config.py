@@ -304,6 +304,7 @@ _CHROMIUM_MAP_HOSTS = (
     "serienstream.to", "www.serienstream.to",
     "aniworld.to", "www.aniworld.to",
     "filmpalast.to", "www.filmpalast.to",
+    "megakino.to", "www.megakino.to",
 )
 
 _CHROMIUM_MAP_LOCK = threading.Lock()
