@@ -16,13 +16,38 @@ function switchIntegTab(name) {
 (function restoreIntegTab() {
   var hash = "";
   try { hash = (window.location.hash || "").replace("#", "").trim(); } catch (e) {}
-  var valid = ["seerr", "mediaplayer", "cineinfo", "syncplay", "uptime"];
+  var valid = ["seerr", "mediaplayer", "cineinfo", "thirdparty", "syncplay", "uptime"];
   var tab = (hash && valid.indexOf(hash) !== -1) ? hash : "";
   if (!tab) {
     try { tab = localStorage.getItem("integActiveTab") || "seerr"; } catch (e) { tab = "seerr"; }
   }
   if (valid.indexOf(tab) === -1) tab = "seerr";
   switchIntegTab(tab);
+})();
+
+// ─── Third Party tab: collapsible integration cards ───────────────────────
+// Each card (Crunchyroll, Fernsehserien.de) can be expanded/collapsed; the
+// state is remembered per-card in localStorage, mirroring the AutoSync
+// group-collapse pattern (see autosync.js / .autosync-group).
+function toggleIntegCollapse(name) {
+  const card = document.getElementById("integCard-" + name);
+  if (!card) return;
+  const collapsed = card.classList.toggle("collapsed");
+  try { localStorage.setItem("integCollapsed_" + name, collapsed ? "1" : "0"); } catch (e) {}
+}
+
+(function restoreIntegCollapse() {
+  // Default is collapsed (see the "collapsed" class already on the cards in
+  // integrations.html) — only expand a card if the user explicitly opened it
+  // before. This also avoids a flash of expanded content before JS runs.
+  ["crunchyroll", "fernsehserien"].forEach(function (name) {
+    try {
+      if (localStorage.getItem("integCollapsed_" + name) === "0") {
+        const card = document.getElementById("integCard-" + name);
+        if (card) card.classList.remove("collapsed");
+      }
+    } catch (e) {}
+  });
 })();
 
 // ===== Settings Caching Helper =====

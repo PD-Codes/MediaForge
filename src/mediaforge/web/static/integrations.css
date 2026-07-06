@@ -464,6 +464,35 @@
 }
 
 
+/* ──────────────────────────────────────────────
+   Third Party tab — collapsible integration cards
+   (Crunchyroll, Fernsehserien.de). Mirrors the
+   AutoSync group-collapse chevron pattern.
+   ────────────────────────────────────────────── */
+
+.integ-collapsible-header {
+  cursor: pointer;
+  user-select: none;
+}
+.integ-collapsible-header:hover .integ-subsection-title {
+  color: var(--text-primary);
+}
+.integ-collapsible-chevron {
+  display: inline-block;
+  font-size: 1.72rem;
+  color: var(--text-secondary);
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.integ-card.collapsed .integ-collapsible-chevron {
+  transform: rotate(0deg);
+}
+.integ-card.collapsed .integ-collapsible-body {
+  display: none;
+}
+
+
 /* ── UpTime tab config ─────────────────────────────────────────────────── */
 .settings-subhead {
   font-size: 0.9rem;

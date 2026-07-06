@@ -3886,6 +3886,37 @@ msgstr "Fügt deine Crunchyroll-Watchlist-Serien zum Kalender hinzu — funktion
 msgid "Adds the series from your Crunchyroll custom lists (Crunchylists) to the calendar — works even when the general Crunchyroll display is off, as long as a Crunchyroll account is configured. Episode dates come from TMDB (CineInfo API key required)."
 msgstr "Fügt die Serien aus deinen Crunchyroll-Listen (Crunchylists) zum Kalender hinzu — funktioniert auch, wenn die allgemeine Crunchyroll-Anzeige aus ist, solange ein Crunchyroll-Konto konfiguriert ist. Episodendaten kommen von TMDB (CineInfo-API-Key erforderlich)."
 
+# ── Integrations: "Third Party" tab (Crunchyroll, Fernsehserien.de) ──────────
+
+msgid "Third Party"
+msgstr "Drittanbieter"
+
+msgid "Scraper"
+msgstr "Scraper"
+
+# ── Fernsehserien.de (CineInfo) ───────────────────────────────────────────────
+
+msgid "Enable Fernsehserien.de integration"
+msgstr "Fernsehserien.de-Integration aktivieren"
+
+msgid "Master switch for the Fernsehserien provider pill below."
+msgstr "Hauptschalter für die Fernsehserien-Anzeige unten."
+
+msgid "Reads public pages on fernsehserien.de (no official API, no login) to add a provider pill in the detail modal showing the German streaming premiere provider — useful as a fallback when TMDB has no German provider data. Titles are matched to pages by a best-effort guess, so this sometimes shows no pill rather than a wrong one."
+msgstr "Liest öffentliche Seiten auf fernsehserien.de (keine offizielle API, kein Login), um im Detail-Fenster eine Provider-Pill mit dem deutschen Streaming-Premierenanbieter anzuzeigen — nützlich als Fallback, wenn TMDB keine deutschen Anbieterdaten hat. Titel werden den Seiten per Best-Effort-Schätzung zugeordnet, daher wird manchmal keine Pill statt einer falschen angezeigt."
+
+msgid "Fernsehserien provider pill"
+msgstr "Fernsehserien-Provider-Pill"
+
+msgid "Adds a pill in the detail modal naming the streaming provider fernsehserien.de reports for the German premiere."
+msgstr "Fügt im Detail-Fenster eine Pill hinzu, die den von fernsehserien.de gemeldeten Streaming-Anbieter der deutschen Premiere nennt."
+
+msgid "Deletes all stored TMDB data and restarts the preloading process. Also clears cached Fernsehserien.de provider lookups. Useful when info is outdated or after an API key change."
+msgstr "Löscht alle gespeicherten TMDB-Daten und startet den Vorladevorgang neu. Löscht außerdem zwischengespeicherte Fernsehserien.de-Anbieterabfragen. Nützlich wenn Infos veraltet sind oder nach einem API-Key-Wechsel."
+
+msgid "Metadata is preloaded in the background and cached in the database for 24 h. Fernsehserien.de provider lookups are cached for 24 h as well."
+msgstr "Metadaten werden im Hintergrund vorgeladen und 24 h in der Datenbank gecacht. Fernsehserien.de-Anbieterabfragen werden ebenfalls 24 h lang gecacht."
+
 # ── legacy import (MediaForge rename) ──
 
 msgid "Coming from AniWorld Downloader? Your data from ~/.aniworld is imported automatically on first start — nothing gets lost."

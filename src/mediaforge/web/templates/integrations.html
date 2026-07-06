@@ -13,6 +13,7 @@
     <button class="settings-tab active" data-tab="seerr" onclick="switchIntegTab('seerr')">Seerr</button>
     <button class="settings-tab" data-tab="mediaplayer" onclick="switchIntegTab('mediaplayer')">Mediaplayer</button>
     <button class="settings-tab" data-tab="cineinfo" onclick="switchIntegTab('cineinfo')">CineInfo</button>
+    <button class="settings-tab" data-tab="thirdparty" onclick="switchIntegTab('thirdparty')">{{ _('Third Party') }}</button>
     <button class="settings-tab" data-tab="syncplay" onclick="switchIntegTab('syncplay')">SyncPlay</button>
     <button class="settings-tab" data-tab="uptime" onclick="switchIntegTab('uptime')">UpTime</button>
   </div>
@@ -563,11 +564,40 @@
       </div>
       </div>
       <div class="settings-section">
-      <!-- ══ Crunchyroll (login, provider pill, calendar sync) ══ -->
-      <div class="integ-subsection-header">
+      <!-- ── Cache / Info ── -->
+       <div class="integ-subsection-header">
+        <span class="integ-subsection-title">{{ _('Cache Options') }}</span>
+        <span class="integ-subsection-badge" style="background:#f42121;color:#fff;">{{ _('ATTENTION') }}</span>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Clear cache &amp; reload') }}</div>
+          <div class="settings-row-desc">{{ _('Deletes all stored TMDB data and restarts the preloading process. Also clears cached Fernsehserien.de provider lookups. Useful when info is outdated or after an API key change.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <button id="clearCineinfoBtn" onclick="clearCineinfoCache(this)">{{ _('Clear cache') }}</button>
+        </div>
+      </div>
+
+      <div class="settings-hint">
+        {{ _('Metadata is preloaded in the background and cached in the database for 24 h. Fernsehserien.de provider lookups are cached for 24 h as well.') }}
+      </div>
+    </div>
+  </div><!-- /tab-cineinfo -->
+
+  <!-- ══════════════════════════════════════════════════════
+       Tab: Third Party (Crunchyroll, Fernsehserien.de — collapsible cards)
+  ══════════════════════════════════════════════════════ -->
+  <div class="settings-tab-panel" id="tab-thirdparty">
+
+    <!-- ══ Crunchyroll (login, provider pill, calendar sync) ══ -->
+    <div class="settings-section integ-card collapsed" id="integCard-crunchyroll">
+      <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('crunchyroll')">
+        <span class="integ-collapsible-chevron">▸</span>
         <span class="integ-subsection-title">Crunchyroll</span>
         <span class="integ-subsection-badge" style="background:#F47521;color:#fff;">API</span>
       </div>
+      <div class="integ-collapsible-body">
       <div class="integ-subsection-hint">
         {{ _('Logs in to Crunchyroll to add provider pills for current simulcasts (which TMDB often lacks) and to sync the Crunchyroll calendar. Your password is stored encrypted. Without login, only public metadata is available in anonymous mode.') }}
       </div>
@@ -696,12 +726,16 @@
 
       <div class="settings-row-desc" id="crCalTmdbHint" style="display:none;padding-left:44px;color:var(--warning)">{{ _('Calendar sync requires a TMDB API key — configure it in CineInfo above.') }}</div>
       </div>
-      <div class="settings-section">
-      <!-- ══ Fernsehserien.de (unofficial scraper, provider pill) ══ -->
-      <div class="integ-subsection-header">
+    </div>
+
+    <!-- ══ Fernsehserien.de (unofficial scraper, provider pill) ══ -->
+    <div class="settings-section integ-card collapsed" id="integCard-fernsehserien">
+      <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('fernsehserien')">
+        <span class="integ-collapsible-chevron">▸</span>
         <span class="integ-subsection-title">Fernsehserien.de</span>
         <span class="integ-subsection-badge" style="background:#555;color:#fff;">{{ _('Scraper') }}</span>
       </div>
+      <div class="integ-collapsible-body">
       <div class="integ-subsection-hint">
         {{ _('Reads public pages on fernsehserien.de (no official API, no login) to add a provider pill in the detail modal showing the German streaming premiere provider — useful as a fallback when TMDB has no German provider data. Titles are matched to pages by a best-effort guess, so this sometimes shows no pill rather than a wrong one.') }}
       </div>
@@ -739,27 +773,9 @@
         </div>
       </div>
       </div>
-      <div class="settings-section">
-      <!-- ── Cache / Info ── -->
-       <div class="integ-subsection-header">
-        <span class="integ-subsection-title">{{ _('Cache Options') }}</span>
-        <span class="integ-subsection-badge" style="background:#f42121;color:#fff;">{{ _('ATTENTION') }}</span>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-left">
-          <div class="settings-row-label">{{ _('Clear cache &amp; reload') }}</div>
-          <div class="settings-row-desc">{{ _('Deletes all stored TMDB data and restarts the preloading process. Also clears cached Fernsehserien.de provider lookups. Useful when info is outdated or after an API key change.') }}</div>
-        </div>
-        <div class="settings-row-right">
-          <button id="clearCineinfoBtn" onclick="clearCineinfoCache(this)">{{ _('Clear cache') }}</button>
-        </div>
-      </div>
-
-      <div class="settings-hint">
-        {{ _('Metadata is preloaded in the background and cached in the database for 24 h. Fernsehserien.de provider lookups are cached for 24 h as well.') }}
-      </div>
     </div>
-  </div><!-- /tab-cineinfo -->
+
+  </div><!-- /tab-thirdparty -->
 
   <!-- ══════════════════════════════════════════════════════
        Tab: SyncPlay (native watch-together, own server)
