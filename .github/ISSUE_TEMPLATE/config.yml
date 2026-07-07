@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "💬 Support & Discord Community"
+    url: "https://discord.gg/TGaZ9hFFhC"
+    about: "Need help with installation, setup, or have general questions? Ask our community on Discord!"
+  - name: "📖 Documentation & Wiki"
+    url: "https://github.com/PD-Codes/MediaForge/wiki"
+    about: "Check out the installation guides, FAQs, and documentation in our Wiki."

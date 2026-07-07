@@ -23,11 +23,23 @@ body:
   - type: dropdown
     id: os
     attributes:
-      label: "Operating System"
+      label: "Operating System / Environment"
       options:
         - Windows
         - macOS
         - Linux
+        - Docker / Container
+        - Synology / NAS
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: python_version
+    attributes:
+      label: "Python Version"
+      description: "Which Python version are you using? (or enter 'Docker' if using the container image)"
+      placeholder: "e.g. 3.11.5, 3.12, or Docker"
     validations:
       required: true
 
@@ -55,8 +67,8 @@ body:
     id: url
     attributes:
       label: "Affected URL (optional)"
-      description: "If the bug occurs with a specific AniWorld/SerienStream URL, enter it here."
-      placeholder: "e.g. https://aniworld.to/anime/stream/..."
+      description: "If the bug occurs with a specific URL from one of the 5 supported sources (AniWorld, SerienStream, FilmPalast, MegaKino, or hanime.tv), enter it here."
+      placeholder: "e.g. https://aniworld.to/..., https://filmpalast.to/..., https://megakino.co/..., etc."
 
   - type: textarea
     id: log
