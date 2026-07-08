@@ -1,0 +1,54 @@
+# German translations for the Example Integration reference integration.
+# msgid = English source (template/Python key)
+# msgstr = German translation
+#
+# This catalog is scoped to this integration only (see this integration's
+# own babel.cfg) and is merged into the app's combined translation catalog
+# at startup by web/thirdparties/discover_translation_dirs() — see that
+# module's docstring. It only needs to contain strings this integration
+# introduces; strings it reuses from the core app are already translated
+# there and do not need to be repeated here.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-07-07 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.8.0\n"
+
+# ── templates/example_integration.html ─────────────────────────────────
+msgid "Example Integration"
+msgstr "Beispiel-Integration"
+
+msgid "A small demo page showing placeholder items loaded from this integration's own cached data source."
+msgstr "Eine kleine Demoseite mit Platzhalter-Einträgen aus der eigenen zwischengespeicherten Datenquelle dieser Integration."
+
+msgid "Loading items…"
+msgstr "Einträge werden geladen…"
+
+msgid "No items could be loaded right now. Please try again later."
+msgstr "Es konnten gerade keine Einträge geladen werden. Bitte versuche es später erneut."
+
+# ── __init__.py: register_thirdparty(...) card shown in Integrations → Third Party ──
+msgid "Demo"
+msgstr "Demo"
+
+msgid "Menu"
+msgstr "Menü"
+
+msgid "A minimal, self-contained reference integration that demonstrates the thirdparties/ plug-in contract end to end: its own Blueprint, page, cached data source, and translation catalog. Safe to enable — it only ever shows local placeholder data, no external network calls."
+msgstr "Eine minimale, in sich geschlossene Referenz-Integration, die den thirdparties/-Plug-in-Vertrag vollständig zeigt: eigenes Blueprint, eigene Seite, eigene zwischengespeicherte Datenquelle und eigener Übersetzungskatalog. Gefahrlos aktivierbar — es werden ausschließlich lokale Platzhalterdaten angezeigt, keine externen Netzwerkaufrufe."
+
+msgid "Enable Example Integration"
+msgstr "Beispiel-Integration aktivieren"
+
+msgid "Adds an \"Example Integration\" entry under Discover in the sidebar."
+msgstr "Fügt einen \"Beispiel-Integration\"-Eintrag unter Entdecken in der Seitenleiste hinzu."

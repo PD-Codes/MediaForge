@@ -61,6 +61,15 @@ mediaforge = [
   "anime4k/shader/*.glsl",
   "web/translations/de/LC_MESSAGES/*.mo",
   "web/translations/de/LC_MESSAGES/*.po",
+  # Third-party integrations (web/thirdparties/<name>/) each bring their own
+  # templates/static — a recursive glob so a new drop-in folder is packaged
+  # automatically, without editing this list.
+  "web/thirdparties/**/templates/*.html",
+  "web/thirdparties/**/static/*.css",
+  "web/thirdparties/**/static/*.js",
+  "web/thirdparties/**/translations/*/LC_MESSAGES/*.mo",
+  "web/thirdparties/**/translations/*/LC_MESSAGES/*.po",
+  "web/thirdparties/**/babel.cfg",
 ]
 
 [project.scripts]

@@ -1093,8 +1093,32 @@ msgid "Download performance details will be shown here."
 msgstr "Hier werden Details zur Download-Performance angezeigt."
 
 # ── shared_modals.html ────────────────────────────────────────────────────
-msgid "Paste a serienstream.to or aniworld.to series URL"
-msgstr "serienstream.to oder aniworld.to Serien-URL einfügen"
+msgid "Paste a series URL (serienstream.to, aniworld.to, ...) or any direct media link, e.g. an .m3u8 stream"
+msgstr "Serien-URL (serienstream.to, aniworld.to, ...) oder einen direkten Medienlink einfügen, z. B. einen .m3u8-Stream"
+
+msgid "Choose Quality"
+msgstr "Qualität wählen"
+
+msgid "MediaForge is checking which streams are available for this link."
+msgstr "MediaForge prüft, welche Streams für diesen Link verfügbar sind."
+
+msgid "Continue"
+msgstr "Weiter"
+
+msgid "Save Direct Link"
+msgstr "Direct Link speichern"
+
+msgid "Give this download a name and choose where to save it."
+msgstr "Gib diesem Download einen Namen und wähle den Speicherort."
+
+msgid "Filename"
+msgstr "Dateiname"
+
+msgid "e.g. Movie Title"
+msgstr "z. B. Filmtitel"
+
+msgid "Save location"
+msgstr "Speicherort"
 
 msgid "Bookmark"
 msgstr "Merken"

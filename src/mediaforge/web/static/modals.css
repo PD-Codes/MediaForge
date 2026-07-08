@@ -15,7 +15,9 @@
 .queue-overlay,
 .captcha-overlay,
 .modal-overlay,
-.directlink-overlay {
+.directlink-overlay,
+.directlink-format-overlay,
+.directlink-finalize-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.7);
@@ -33,7 +35,9 @@
 .queue-overlay[style*="block"],
 .captcha-overlay[style*="block"],
 .modal-overlay[style*="block"],
-.directlink-overlay[style*="block"] {
+.directlink-overlay[style*="block"],
+.directlink-format-overlay[style*="block"],
+.directlink-finalize-overlay[style*="block"] {
   display: grid !important;
   place-items: center;
 }

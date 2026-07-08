@@ -466,15 +466,30 @@ def _queue_worker():
                 _ep_size_bytes = 0
                 for attempt in range(1, MAX_EP_RETRIES + 1):
                     try:
-                        prov = resolve_provider(ep_url)
-                        ep_kwargs = {
-                            "url": ep_url,
-                            "selected_language": item["language"],
-                            "selected_provider": item["provider"],
-                        }
-                        if selected_path:
-                            ep_kwargs["selected_path"] = selected_path
-                        episode = prov.episode_cls(**ep_kwargs)
+                        if item.get("provider") == "Direct":
+                            # Direct Link job (see routes/direct_link.py): a raw
+                            # yt-dlp URL with no series/season/provider/language
+                            # structure, so resolve_provider() is bypassed entirely.
+                            from ..models.direct_link.episode import DirectLinkEpisode
+                            ep_kwargs = {
+                                "url": ep_url,
+                                "title": item["title"],
+                                "format_id": item.get("format_id"),
+                                "source_provider": item.get("source_provider"),
+                            }
+                            if selected_path:
+                                ep_kwargs["selected_path"] = selected_path
+                            episode = DirectLinkEpisode(**ep_kwargs)
+                        else:
+                            prov = resolve_provider(ep_url)
+                            ep_kwargs = {
+                                "url": ep_url,
+                                "selected_language": item["language"],
+                                "selected_provider": item["provider"],
+                            }
+                            if selected_path:
+                                ep_kwargs["selected_path"] = selected_path
+                            episode = prov.episode_cls(**ep_kwargs)
                         from ..playwright import captcha as _captcha_mod
                         from ..models.common.common import get_ffmpeg_progress
                         _queue_id = item["id"]
@@ -663,7 +678,9 @@ def _queue_worker():
 
                 # Send notifications (all services)
                 from .notifications import notify_all
-                _is_movie = _is_filmpalast_url(item.get("url", ""))
+                # Direct Link jobs are always a single file, so they get the
+                # same "Film" notification wording as a FilmPalast movie.
+                _is_movie = _is_filmpalast_url(item.get("url", "")) or item.get("provider") == "Direct"
                 if status == "completed":
                     _body = "✅ Film heruntergeladen" if _is_movie else f"✅ {len(episodes)} Episode(n) heruntergeladen"
                     _event = "on_completed"
@@ -717,7 +734,9 @@ def _queue_worker():
 
                         try:
                             from .notifications import notify_all
-                            _is_movie = _is_filmpalast_url(item.get("url", ""))
+                            # Direct Link jobs are always a single file, so they get
+                            # the same "Film" notification wording as a FilmPalast movie.
+                            _is_movie = _is_filmpalast_url(item.get("url", "")) or item.get("provider") == "Direct"
                             notify_all(
                                 title=item.get("title", "Unbekannt"),
                                 body=f"❌ Download durch internen Fehler abgebrochen: {e}",

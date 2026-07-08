@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ slot.label }} — {{ _('Anime Seasons') }} — MediaForge{% endblock %}
+{% block styles %}
+<!-- advanced_search.css styles the cross-provider search modal opened via
+     openAniSearchModal() (see .adv-search-overlay/.ani-search-modal below).
+     Without it the modal has no layout/positioning at all — it renders as an
+     unstyled full-page block (looking like a single stuck image) while
+     body scroll stays locked, since the JS still sets overflow:hidden. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='advanced_search.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
+<link rel="stylesheet" href="{{ url_for('anime_seasons.static', filename='anime_seasons.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="aniseason-page-container" data-slug="{{ slot.slug }}">
+  <div class="page-header aniseason-view-header">
+    <div>
+      <a class="aniseason-back-link" href="{{ url_for('.anime_seasons_page') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        {{ _('Anime Seasons') }}
+      </a>
+      <h1 class="page-title">{{ slot.label }}{% if slot.is_current %} <span class="section-badge" style="background:var(--accent);color:#fff;">{{ _('Current') }}</span>{% endif %}</h1>
+      <p class="page-subtitle">{{ _('Data from MyAnimeList (Jikan). Click a title to search your configured sources.') }}</p>
+    </div>
+  </div>
+
+  <div class="aniseason-loading" id="aniSeasonLoading">
+    <span class="aniseason-spinner"></span>
+    <span>{{ _('Loading season…') }}</span>
+  </div>
+
+  <div class="aniseason-empty" id="aniSeasonEmpty" style="display:none">
+    <p>{{ _('This season could not be loaded from Jikan right now. Please try again later.') }}</p>
+  </div>
+
+  <div class="browse-grid aniseason-grid" id="aniSeasonGrid" style="display:none"></div>
+</div>
+
+<!-- Cross-provider search modal (same one Advanced Search uses) -->
+<div class="adv-search-overlay" id="aniSearchModalOverlay" style="display:none;"
+  onclick="closeAniSearchModalOutside(event)">
+  <div class="ani-search-modal" id="aniSearchModal">
+    <button class="close ani-search-close" onclick="closeAniSearchModal()" aria-label="{{ _('Close') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+        stroke-linejoin="round" style="width:16px;height:16px;">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+    <div class="ani-search-container">
+      <h2 id="aniSearchTitle">{{ _('Searching...') }}</h2>
+      <div id="aniSearchSpinner" class="spinner" style="display:none;">{{ _('Searching streams on AniWorld, SerienStream & FilmPalast...') }}</div>
+      <div id="aniSearchResults" class="results-poster-grid"></div>
+    </div>
+  </div>
+</div>
+{% include "shared_modals.html" %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('anime_seasons.static', filename='anime_seasons_view.js') }}"></script>
+{% endblock %}

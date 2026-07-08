@@ -660,7 +660,7 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
         raise RuntimeError(f"ffmpeg error (rc={process.returncode}): {detail}")
 
 
-def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=None, impersonate=None, audio_lang=None):
+def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=None, impersonate=None, audio_lang=None, format_override=None):
     """Download an HLS stream using yt-dlp with concurrent fragment downloads.
 
     Significantly faster than ffmpeg for HLS/m3u8 streams because yt-dlp fetches
@@ -680,6 +680,11 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
                       default yt-dlp picks "bestaudio" by bitrate and can grab the
                       wrong language (thanks for nothing).  When set we constrain the format selector to
                       that language (with a fallback to bestaudio if no match).
+        format_override: Optional literal yt-dlp format selector (e.g. "303+bestaudio")
+                      that takes precedence over the audio_lang-based selector below.
+                      Used by the Direct Link feature (models/direct_link/episode.py),
+                      where the user picks an exact format from a probed list rather
+                      than a dub/sub language.
     """
     global _ffmpeg_active_count
     import yt_dlp
@@ -699,7 +704,9 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
         "eng": ["en", "eng", "en-US", "en-GB"],
         "jpn": ["ja", "jpn", "jp", "ja-JP"],
     }
-    if audio_lang and audio_lang in _LANG_VARIANTS:
+    if format_override:
+        _fmt = format_override
+    elif audio_lang and audio_lang in _LANG_VARIANTS:
         _variants = _LANG_VARIANTS[audio_lang]
         # Prefer video + language-matched audio, then any video+audio, then best
         _fmt = "/".join(

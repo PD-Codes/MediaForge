@@ -11,6 +11,7 @@ register_xxx_routes(app) calls near the end of create_app().
 import secrets
 import threading
 import os
+from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 from flask_wtf.csrf import CSRFError, CSRFProtect
@@ -102,6 +103,16 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     app.config['TEMPLATES_AUTO_RELOAD'] = False
 
     # ── i18n / Flask-Babel ──────────────────────────────────────────────────
+    # Translations are modular: every web/thirdparties/<name>/translations/
+    # folder (if present) is merged into the catalog alongside the core one,
+    # so an integration can ship its own strings without touching
+    # web/translations/ at all. This has to happen *before* init_app() below
+    # — that's when Flask-Babel reads BABEL_TRANSLATION_DIRECTORIES.
+    from .thirdparties import discover_translation_dirs
+    _core_translations_dir = str((Path(__file__).parent / "translations").resolve())
+    _translation_dirs = [_core_translations_dir] + discover_translation_dirs()
+    app.config["BABEL_TRANSLATION_DIRECTORIES"] = ";".join(_translation_dirs)
+
     babel = Babel()
 
     def get_locale():
@@ -253,6 +264,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         def _inject_auth():
             from flask import session as _sess
             from .db import get_setting as _get_setting
+            from .thirdparties.registry import resolve_discover_menu_items, resolve_settings_cards
             return {
                 "current_user": get_current_user(),
                 "ui_language": _sess.get("ui_language", "en"),
@@ -266,6 +278,8 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "cineinfo_calendar": _get_setting("cineinfo_calendar", "0") == "1",
                 "syncplay_enabled": _get_setting("syncplay_enabled", "0") == "1",
                 "uptime_enabled": _get_setting("uptime_enabled", "0") == "1",
+                "discover_menu_items": resolve_discover_menu_items(),
+                "thirdparty_cards": resolve_settings_cards(),
             }
     else:
         # No-auth mode still needs a secret key for flask.session
@@ -285,6 +299,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         def _inject_no_auth():
             from flask import session as _sess
             from .db import get_setting as _get_setting
+            from .thirdparties.registry import resolve_discover_menu_items, resolve_settings_cards
             return {
                 "current_user": None,
                 "ui_language": _sess.get("ui_language", "en"),
@@ -298,6 +313,8 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "cineinfo_calendar": _get_setting("cineinfo_calendar", "0") == "1",
                 "syncplay_enabled": _get_setting("syncplay_enabled", "0") == "1",
                 "uptime_enabled": _get_setting("uptime_enabled", "0") == "1",
+                "discover_menu_items": resolve_discover_menu_items(),
+                "thirdparty_cards": resolve_settings_cards(),
             }
 
     # Initialize download queue, custom paths and autosync (works with or without auth)
@@ -549,6 +566,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     from .routes.syncplay import register_syncplay_routes
     from .routes.uptime import register_uptime_routes
     from .routes.calendar_routes import register_calendar_routes
+    from .thirdparties import discover_and_register as _discover_and_register_thirdparties
     from .routes.encoding import register_encoding_routes
     from .routes.upscale import register_upscale_routes
     from .routes.browse import register_browse_routes
@@ -563,9 +581,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     from .routes.captcha import register_captcha_routes
     from .routes.stream import register_stream_routes
     from .routes.progress import register_progress_routes
+    from .routes.direct_link import register_direct_link_routes
 
     register_search_routes(app)
     register_queue_routes(app)
+    register_direct_link_routes(app)
     register_push_notifications_routes(app)
     register_library_routes(app)
     register_settings_routes(app)
@@ -573,6 +593,10 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     register_syncplay_routes(app)
     register_uptime_routes(app)
     register_calendar_routes(app)
+    # Third-party integrations (web/thirdparties/<name>/) are auto-discovered
+    # and registered here — see web/thirdparties/__init__.py. Adding a new
+    # one means adding a new subfolder, not editing this file.
+    _discover_and_register_thirdparties(app)
     register_encoding_routes(app)
     register_upscale_routes(app)
     register_browse_routes(app)

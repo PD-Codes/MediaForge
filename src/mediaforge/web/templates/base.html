@@ -171,6 +171,17 @@
         <span>{{ _('Calendar') }}</span>
       </a>
 
+      {# Third-party Discover entries (e.g. Anime Seasons) register themselves
+         via web/menu_registry.py instead of adding another hardcoded block
+         here — see register_discover_menu_item() for how a new integration
+         plugs in. #}
+      {% for item in discover_menu_items %}
+      <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
+        {{ item.icon|safe }}
+        <span>{{ item.label }}</span>
+      </a>
+      {% endfor %}
+
       <span class="sidebar-category">{{ _('Management') }}</span>
       <a href="{{ url_for('seerr_page') }}" class="sidebar-link" data-page="seerr">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"

@@ -584,6 +584,28 @@ def init_queue_db():
         except sqlite3.OperationalError as _mig_err:
             if "duplicate column" not in str(_mig_err).lower():
                 logger.warning("[Migration] Unexpected error adding column: %s", _mig_err)
+        # Add format_id column (migration for existing DBs) — the yt-dlp
+        # format selector picked in the Direct Link format-picker modal
+        # (see models/direct_link/probe.py). NULL for all non-direct-link
+        # jobs; those are identified by provider = 'Direct'.
+        try:
+            conn.execute(
+                "ALTER TABLE download_queue ADD COLUMN format_id TEXT"
+            )
+        except sqlite3.OperationalError as _mig_err:
+            if "duplicate column" not in str(_mig_err).lower():
+                logger.warning("[Migration] Unexpected error adding column: %s", _mig_err)
+        # Add source_provider column (migration for existing DBs) — the
+        # embed host (e.g. "VOE") a Direct Link job's URL was recognized as
+        # at probe time, if any (see models/direct_link/probe.py). NULL for
+        # generic direct links and all non-direct-link jobs.
+        try:
+            conn.execute(
+                "ALTER TABLE download_queue ADD COLUMN source_provider TEXT"
+            )
+        except sqlite3.OperationalError as _mig_err:
+            if "duplicate column" not in str(_mig_err).lower():
+                logger.warning("[Migration] Unexpected error adding column: %s", _mig_err)
         # Migrate CHECK constraint to include 'partial' status (existing DBs)
         # SQLite cannot ALTER constraints — must recreate the table
         try:
@@ -608,6 +630,8 @@ def init_queue_db():
                     ("source",      "ALTER TABLE download_queue ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"),
                     ("captcha_url", "ALTER TABLE download_queue ADD COLUMN captcha_url TEXT"),
                     ("hidden",      "ALTER TABLE download_queue ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0"),
+                    ("format_id",   "ALTER TABLE download_queue ADD COLUMN format_id TEXT"),
+                    ("source_provider", "ALTER TABLE download_queue ADD COLUMN source_provider TEXT"),
                 ]:
                     try:
                         conn.execute(sql)
@@ -622,7 +646,9 @@ def init_queue_db():
                             custom_path_id = (SELECT custom_path_id FROM _download_queue_old WHERE id = new.id),
                             source = (SELECT source FROM _download_queue_old WHERE id = new.id),
                             captcha_url = (SELECT captcha_url FROM _download_queue_old WHERE id = new.id),
-                            hidden = (SELECT hidden FROM _download_queue_old WHERE id = new.id)"""
+                            hidden = (SELECT hidden FROM _download_queue_old WHERE id = new.id),
+                            format_id = (SELECT format_id FROM _download_queue_old WHERE id = new.id),
+                            source_provider = (SELECT source_provider FROM _download_queue_old WHERE id = new.id)"""
                     )
                 except Exception as _mig_err:
                     logger.warning("[Migration] Could not copy extra columns: %s", _mig_err)
@@ -650,14 +676,16 @@ def add_to_queue(
     custom_path_id=None,
     source="manual",
     upscale=False,
+    format_id=None,
+    source_provider=None,
 ):
     import json
 
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO download_queue (title, series_url, episodes, total_episodes, language, provider, username, custom_path_id, source, upscale) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO download_queue (title, series_url, episodes, total_episodes, language, provider, username, custom_path_id, source, upscale, format_id, source_provider) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 title,
                 series_url,
@@ -669,6 +697,8 @@ def add_to_queue(
                 custom_path_id,
                 source,
                 1 if upscale else 0,
+                format_id,
+                source_provider,
             ),
         )
         row_id = cur.lastrowid

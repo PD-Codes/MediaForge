@@ -40,11 +40,13 @@ function toggleIntegCollapse(name) {
   // Default is collapsed (see the "collapsed" class already on the cards in
   // integrations.html) — only expand a card if the user explicitly opened it
   // before. This also avoids a flash of expanded content before JS runs.
-  ["crunchyroll", "fernsehserien"].forEach(function (name) {
+  // Scans the DOM instead of a hardcoded name list so auto-registered
+  // third-party cards (see web/thirdparties/) are covered for free too.
+  document.querySelectorAll('.integ-card[id^="integCard-"]').forEach(function (card) {
+    const name = card.id.slice("integCard-".length);
     try {
       if (localStorage.getItem("integCollapsed_" + name) === "0") {
-        const card = document.getElementById("integCard-" + name);
-        if (card) card.classList.remove("collapsed");
+        card.classList.remove("collapsed");
       }
     } catch (e) {}
   });
@@ -621,7 +623,68 @@ document.addEventListener("DOMContentLoaded", () => {
   loadFernsehserienSettings();
   loadMediaplayerSettings();
   loadMediascanSettings();
+  loadThirdpartyToggles();
 });
+
+// ===== Auto-registered third-party integrations (web/thirdparties/<name>/) =====
+// Every card rendered from `thirdparty_cards` (see app.py's context
+// processors / web/thirdparties/registry.py) shares one generic
+// enable/disable toggle backed by /api/settings/thirdparty/<id> — no
+// per-integration JS needed for the simple "just a toggle" case.
+async function loadThirdpartyToggles() {
+  document.querySelectorAll(".thirdparty-toggle[data-thirdparty-id]").forEach(async function (el) {
+    const id = el.dataset.thirdpartyId;
+    try {
+      const resp = await fetch("/api/settings/thirdparty/" + encodeURIComponent(id));
+      const d = await resp.json();
+      el.checked = d.enabled === "1";
+      // Extra per-integration toggles for this same card (see registry.py's
+      // extra_settings) -- one fetch already has everything needed, so
+      // populate them here instead of a second request per checkbox.
+      const extra = d.extra || {};
+      document
+        .querySelectorAll('.thirdparty-extra-toggle[data-thirdparty-id="' + id + '"][data-extra-key]')
+        .forEach(function (extraEl) {
+          extraEl.checked = extra[extraEl.dataset.extraKey] === "1";
+        });
+    } catch (e) { /* best-effort */ }
+  });
+}
+
+// Reload so the sidebar entry appears/disappears immediately (same pattern
+// as saveUptimeSettings(reload)).
+async function saveThirdpartyToggle(id, el) {
+  const enabled = el && el.checked ? "1" : "0";
+  try {
+    await fetch("/api/settings/thirdparty/" + encodeURIComponent(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    setTimeout(function () { location.reload(); }, 250);
+  } catch (e) {
+    showToast(t("Fehler: ", "Error: ") + e.message);
+  }
+}
+
+// Extra per-integration toggle (registry.py's extra_settings) -- unlike the
+// master toggle above, this never gates the sidebar entry, so no page
+// reload is needed; the next time the integration's own pages/API calls
+// read this setting they'll see the new value (each reads it fresh via
+// get_setting(), nothing caches it in-process).
+async function saveThirdpartyExtraSetting(id, key, el) {
+  const value = el && el.checked ? "1" : "0";
+  try {
+    await fetch("/api/settings/thirdparty/" + encodeURIComponent(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ extra: { [key]: value } }),
+    });
+    showToast(t("Gespeichert", "Saved"));
+  } catch (e) {
+    showToast(t("Fehler: ", "Error: ") + e.message);
+  }
+}
 
 // ===== Fernsehserien.de =====
 async function loadFernsehserienSettings() {

@@ -137,3 +137,97 @@
 .recommendations-header {
   padding: 10px 10px;
 }
+
+/* ===================================================================
+   Direct Link: format-picker + finalize modals (issue #8 — generic
+   yt-dlp direct-link support with a quality picker before the usual
+   filename/save-location step). Overlay show/hide (display:none/grid)
+   lives in modals.css alongside .directlink-overlay; this is just the
+   feature-specific inner layout.
+   =================================================================== */
+.dl-format-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0;
+}
+.dl-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.08);
+  border-top-color: var(--accent);
+  animation: dl-spin 0.85s linear infinite;
+}
+@keyframes dl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.dl-format-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.dl-format-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  transition: border-color var(--transition), background var(--transition);
+}
+.dl-format-row:hover {
+  border-color: var(--accent);
+}
+.dl-format-row input[type="radio"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.dl-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.dl-modal-actions button {
+  width: 100%;
+}
+.dl-finalize-field {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dl-finalize-field label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.dl-finalize-field input[type="text"],
+.dl-finalize-field select {
+  height: 44px;
+  border-radius: var(--radius-md);
+  padding: 0 14px;
+  font-size: 0.9rem;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text-primary);
+  font-family: inherit;
+  box-sizing: border-box;
+  width: 100%;
+}
+.dl-finalize-field input[type="text"]:focus,
+.dl-finalize-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Example Integration') }} — MediaForge{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('example_integration.static', filename='example_integration.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="exint-page-container">
+  <div class="page-header">
+    <h1 class="page-title">{{ _('Example Integration') }}</h1>
+    <p class="page-subtitle">{{ _('A small demo page showing placeholder items loaded from this integration\'s own cached data source.') }}</p>
+  </div>
+
+  <div class="exint-loading" id="exintLoading">
+    <span class="exint-spinner"></span>
+    <span>{{ _('Loading items…') }}</span>
+  </div>
+
+  <div class="exint-empty" id="exintEmpty" style="display:none">
+    <p>{{ _('No items could be loaded right now. Please try again later.') }}</p>
+  </div>
+
+  <div class="exint-grid" id="exintGrid" style="display:none"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('example_integration.static', filename='example_integration.js') }}"></script>
+{% endblock %}

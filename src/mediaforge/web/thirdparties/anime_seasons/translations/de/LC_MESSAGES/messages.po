@@ -1,0 +1,80 @@
+# German translations for the Anime Seasons third-party integration.
+# msgid = English source (template/Python key)
+# msgstr = German translation
+#
+# This catalog is scoped to this integration only (see this integration's
+# own babel.cfg) and is merged into the app's combined translation catalog
+# at startup by web/thirdparties/discover_translation_dirs() — see that
+# module's docstring. It only needs to contain strings this integration
+# introduces; strings it reuses from the core app (e.g. "Close",
+# "Searching...") are already translated there and do not need to be
+# repeated here.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-07-07 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.8.0\n"
+
+# ── templates/anime_seasons.html / templates/anime_seasons_view.html ──────
+msgid "Anime Seasons"
+msgstr "Anime Seasons"
+
+msgid "Browse what aired this season and the three before it, powered by MyAnimeList (Jikan)."
+msgstr "Durchstöbere die aktuelle und die drei vorherigen Anime-Seasons, powered by MyAnimeList (Jikan)."
+
+msgid "Current"
+msgstr "Aktuell"
+
+msgid "Data from MyAnimeList (Jikan). Click a title to search your configured sources."
+msgstr "Daten von MyAnimeList (Jikan). Klicke auf einen Titel, um deine konfigurierten Quellen zu durchsuchen."
+
+msgid "Loading season…"
+msgstr "Season wird geladen…"
+
+msgid "This season could not be loaded from Jikan right now. Please try again later."
+msgstr "Diese Season konnte gerade nicht von Jikan geladen werden. Bitte versuche es später erneut."
+
+# ── __init__.py: register_thirdparty(...) card shown in Integrations → Third Party ──
+msgid "Anime"
+msgstr "Anime"
+
+msgid "Menu"
+msgstr "Menü"
+
+msgid "Fetches the current and three preceding anime seasons from Jikan (an unofficial MyAnimeList API) and shows them as a browsable overview, enriched with the same CineInfo/Crunchyroll/Fernsehserien.de pills as the home page. Clicking a title searches your configured sources, just like Advanced Search."
+msgstr "Lädt die aktuelle und die drei vorherigen Anime-Seasons von Jikan (eine inoffizielle MyAnimeList-API) und zeigt sie als durchstöberbare Übersicht, angereichert mit denselben CineInfo/Crunchyroll/Fernsehserien.de-Pills wie auf der Startseite. Ein Klick auf einen Titel durchsucht deine konfigurierten Quellen, genau wie bei der Erweiterten Suche."
+
+msgid "Enable Anime Seasons"
+msgstr "Anime Seasons aktivieren"
+
+msgid "Adds an \"Anime Seasons\" entry under Discover in the sidebar."
+msgstr "Fügt einen \"Anime Seasons\"-Eintrag unter Entdecken in der Seitenleiste hinzu."
+
+msgid "Show adult content"
+msgstr "Adult-Inhalte anzeigen"
+
+msgid "Shows Hentai/adult-rated (MAL rating \"Rx\") entries in the season grid. Off by default."
+msgstr "Zeigt Hentai-/Adult-Einträge (MAL-Rating \"Rx\") im Season-Raster an. Standardmäßig deaktiviert."
+
+# ── service.py: season names (interpolated with a year, e.g. "Summer 2026") ──
+msgid "Winter"
+msgstr "Winter"
+
+msgid "Spring"
+msgstr "Frühling"
+
+msgid "Summer"
+msgstr "Sommer"
+
+msgid "Fall"
+msgstr "Herbst"

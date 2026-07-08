@@ -777,6 +777,60 @@
       </div>
     </div>
 
+    <!-- ══ Auto-registered third-party integrations (web/thirdparties/<name>/) ══
+         Each integration calls register_thirdparty(...) from its own
+         register(app) — see web/thirdparties/registry.py — so a new
+         integration folder shows up here automatically, no template edits
+         required. -->
+    {% for card in thirdparty_cards %}
+    <div class="settings-section integ-card collapsed" id="integCard-{{ card.id }}">
+      <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('{{ card.id }}')">
+        <span class="integ-collapsible-chevron">▸</span>
+        <span class="integ-subsection-title">{{ card.title }}</span>
+        {% for badge_text, badge_color in card.badges %}
+        <span class="integ-subsection-badge" style="background:{{ badge_color }};color:#fff;">{{ badge_text }}</span>
+        {% endfor %}
+      </div>
+      <div class="integ-collapsible-body">
+      {% if card.description %}
+      <div class="integ-subsection-hint">{{ card.description }}</div>
+      {% endif %}
+
+      <!-- Master toggle (generic — backed by /api/settings/thirdparty/<id>) -->
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ card.enable_label }}</div>
+          {% if card.enable_desc %}<div class="settings-row-desc">{{ card.enable_desc }}</div>{% endif %}
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" class="thirdparty-toggle" data-thirdparty-id="{{ card.id }}" onchange="saveThirdpartyToggle('{{ card.id }}', this)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Extra per-integration toggles (generic — also backed by
+           /api/settings/thirdparty/<id>, see registry.py's extra_settings).
+           Empty for integrations that only registered the master toggle. -->
+      {% for extra in card.extra_settings %}
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ extra.label }}</div>
+          {% if extra.description %}<div class="settings-row-desc">{{ extra.description }}</div>{% endif %}
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" class="thirdparty-extra-toggle" data-thirdparty-id="{{ card.id }}" data-extra-key="{{ extra.key }}" onchange="saveThirdpartyExtraSetting('{{ card.id }}', '{{ extra.key }}', this)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
   </div><!-- /tab-thirdparty -->
 
   <!-- ══════════════════════════════════════════════════════

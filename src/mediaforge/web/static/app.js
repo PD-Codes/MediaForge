@@ -702,12 +702,24 @@ function _isDownloadedByTitle(title) {
   return norm ? mediascanTitles.has(norm) : false;
 }
 
+// Shared vertical stacking for every top-right corner pill (Vorhanden, Sync,
+// and anime_seasons' own "Neu" badge -- see anime_seasons_view.js). Each
+// stackable pill carries the "card-top-badge" marker class; a badge being
+// attached counts how many are already on the card and picks its own "top"
+// offset accordingly, so any combination/order of these three pills stacks
+// cleanly without any one of them needing to know about the others by name.
+// 27px = ~20px badge height + ~7px gap, same spacing the old hardcoded
+// "hasVorhanden ? 34 : 7" constant used.
+function _nextTopBadgeOffset(card) {
+  return 7 + card.querySelectorAll(".card-top-badge").length * 27;
+}
+
 function _attachDownloadedBadge(card) {
   const badge = document.createElement("div");
-  badge.className = "downloaded-badge";
+  badge.className = "downloaded-badge card-top-badge";
   badge.textContent = "✓ " + t("Vorhanden", "Downloaded");
   badge.style.cssText = [
-    "position:absolute", "top:7px", "right:7px",
+    "position:absolute", "top:" + _nextTopBadgeOffset(card) + "px", "right:7px",
     "background:var(--success)", "color:#fff",
     "font-size:0.65rem", "font-weight:700",
     "padding:2px 7px", "border-radius:99px",
@@ -742,18 +754,33 @@ function addDownloadedBadgeForTmdb(card, title, tmdbId) {
   if (isDownloaded(title)) _attachDownloadedBadge(card);
 }
 
-function addSyncBadge(card, url) {
-  if (!url) return;
-  const normUrl = url.replace(/\/+$/, "").toLowerCase();
-  if (!autoSyncUrlMap[normUrl]) return;
-  // downloaded-badge: top 7px + ~20px height + 4px gap = 31px → use 34px
-  const hasVorhanden = !!card.querySelector(".downloaded-badge");
-  const topPx = hasVorhanden ? 34 : 7;
+// Same as addDownloadedBadge, but tries several title candidates in
+// priority order instead of just one -- needed when the "canonical" title
+// for a card (e.g. MyAnimeList's romaji/English title on the Anime Seasons
+// page) isn't what downloaded folders/library entries are actually named
+// after (a localized/German title, matching what AniWorld/S.to display).
+// Only the FIRST candidate is stored as card.dataset.title for
+// _applyTmdbToCard's later TMDB-id re-check, since that's the one most
+// likely to match a TMDB-resolved display title too.
+function addDownloadedBadgeMulti(card, titles) {
+  const candidates = (titles || []).filter(Boolean);
+  if (!candidates.length) return;
+  if (mediascanActive) {
+    card.dataset.title = candidates[0];
+    if (candidates.some((title) => _isDownloadedByTitle(title))) {
+      _attachDownloadedBadge(card);
+    }
+    return;
+  }
+  if (candidates.some((title) => isDownloaded(title))) _attachDownloadedBadge(card);
+}
+
+function _createSyncBadge(card) {
   const badge = document.createElement("div");
-  badge.className = "sync-badge";
+  badge.className = "sync-badge card-top-badge";
   badge.textContent = "⟳ Sync";
   badge.style.cssText = [
-    "position:absolute", "top:" + topPx + "px", "right:7px",
+    "position:absolute", "top:" + _nextTopBadgeOffset(card) + "px", "right:7px",
     "background:var(--info)", "color:#fff",
     "font-size:0.6rem", "font-weight:700",
     "padding:2px 7px", "border-radius:99px",
@@ -765,6 +792,13 @@ function addSyncBadge(card, url) {
   card.appendChild(badge);
 }
 
+function addSyncBadge(card, url) {
+  if (!url) return;
+  const normUrl = url.replace(/\/+$/, "").toLowerCase();
+  if (!autoSyncUrlMap[normUrl]) return;
+  _createSyncBadge(card);
+}
+
 function addSyncBadgeForTmdb(card, title) {
   if (!title) return;
   const normTitle = _normalizeForMediascan(title);
@@ -774,22 +808,22 @@ function addSyncBadgeForTmdb(card, title) {
     return _normalizeForMediascan(jobTitle) === normTitle;
   });
   if (!hasMatchingJob) return;
-  const hasVorhanden = !!card.querySelector(".downloaded-badge");
-  const topPx = hasVorhanden ? 34 : 7;
-  const badge = document.createElement("div");
-  badge.className = "sync-badge";
-  badge.textContent = "⟳ Sync";
-  badge.style.cssText = [
-    "position:absolute", "top:" + topPx + "px", "right:7px",
-    "background:var(--info)", "color:#fff",
-    "font-size:0.6rem", "font-weight:700",
-    "padding:2px 7px", "border-radius:99px",
-    "line-height:1.6", "letter-spacing:.03em",
-    "z-index:2", "pointer-events:none",
-    "box-shadow:0 1px 6px rgba(59,130,246,.4)"
-  ].join(";");
-  card.style.position = "relative";
-  card.appendChild(badge);
+  _createSyncBadge(card);
+}
+
+// Same as addSyncBadgeForTmdb, but against several title candidates -- see
+// addDownloadedBadgeMulti's comment for why (AutoSync jobs are also keyed by
+// whatever title the job was created with, typically the localized/German
+// one, not MyAnimeList's romaji/English title).
+function addSyncBadgeForTmdbMulti(card, titles) {
+  const candidates = (titles || []).map(_normalizeForMediascan).filter(Boolean);
+  if (!candidates.length) return;
+  const hasMatchingJob = Object.values(autoSyncUrlMap).some((j) => {
+    const jobTitle = _normalizeForMediascan(j.title || "");
+    return candidates.includes(jobTitle);
+  });
+  if (!hasMatchingJob) return;
+  _createSyncBadge(card);
 }
 
 function refreshSyncBadges() {
@@ -2771,17 +2805,16 @@ function submitDirectLink() {
   // Normalize: strip trailing slash
   url = url.replace(/\/+$/, "");
 
+  error.textContent = "";
+  error.style.display = "none";
+
+  if (!url) return;
+
   const isSto = /s\.to\/serie\/[^\/]+/.test(url);
   const isAniworld = /aniworld\.to\/anime\/stream\/[^\/]+/.test(url);
   const isMegakino = /megakino[^/]*\/watch\/[^/]+\/[a-f0-9]{24}/i.test(url);
   const isHanime = /hanime\.tv\/videos\/hentai\/[^/?#]+/.test(url);
-
-  if (!isSto && !isAniworld && !isMegakino && !isHanime) {
-    error.textContent = t("Ungültige URL. Bitte eine serienstream.to, aniworld.to, megakino oder hanime.tv Serien-/Film-URL eingeben.", "Invalid URL. Please enter a serienstream.to, aniworld.to, megakino or hanime.tv series/movie URL.");
-    error.style.display = "block";
-    input.focus();
-    return;
-  }
+  const isKnownSite = isSto || isAniworld || isMegakino || isHanime;
 
   // hanime is an adult source: a direct link must not bypass the 18+ gate.
   if (isHanime) {
@@ -2794,24 +2827,40 @@ function submitDirectLink() {
     }
   }
 
-  // Extract base series URL (strip staffel/episode sub-paths)
-  let seriesUrl = url;
-  if (isSto) {
-    const m = url.match(/(https?:\/\/[^/]*s\.to\/serie\/[^\/]+)/);
-    if (m) seriesUrl = m[1];
-  } else if (isAniworld) {
-    const m = url.match(/(https?:\/\/[^/]*aniworld\.to\/anime\/stream\/[^\/]+)/);
-    if (m) seriesUrl = m[1];
-  } else if (isMegakino) {
-    // megakino: the post URL itself is the series/movie; drop any ?episode=N
-    seriesUrl = url.split("?")[0];
-  } else if (isHanime) {
-    // hanime: strip any ?ep=N / query -> canonical franchise (series) URL
-    seriesUrl = url.split("?")[0].split("#")[0];
+  if (isKnownSite) {
+    // Extract base series URL (strip staffel/episode sub-paths)
+    let seriesUrl = url;
+    if (isSto) {
+      const m = url.match(/(https?:\/\/[^/]*s\.to\/serie\/[^\/]+)/);
+      if (m) seriesUrl = m[1];
+    } else if (isAniworld) {
+      const m = url.match(/(https?:\/\/[^/]*aniworld\.to\/anime\/stream\/[^\/]+)/);
+      if (m) seriesUrl = m[1];
+    } else if (isMegakino) {
+      // megakino: the post URL itself is the series/movie; drop any ?episode=N
+      seriesUrl = url.split("?")[0];
+    } else if (isHanime) {
+      // hanime: strip any ?ep=N / query -> canonical franchise (series) URL
+      seriesUrl = url.split("?")[0].split("#")[0];
+    }
+
+    closeDirectLinkModal();
+    openSeries(seriesUrl);
+    return;
   }
 
-  closeDirectLinkModal();
-  openSeries(seriesUrl);
+  // Not one of the known scraper sites -- try it as a generic yt-dlp direct
+  // link (e.g. a raw .m3u8 HLS master playlist). MediaForge fetches the
+  // available quality variants first so the user can pick one, instead of
+  // just guessing "best" (see GitHub issue #8).
+  if (!/^https?:\/\//i.test(url)) {
+    error.textContent = t("Bitte eine gültige URL eingeben.", "Please enter a valid URL.");
+    error.style.display = "block";
+    input.focus();
+    return;
+  }
+
+  startDirectLinkProbe(url);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -2822,9 +2871,214 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.key === "Escape") closeDirectLinkModal();
     });
   }
+  const dlNameInput = document.getElementById("dlFinalizeName");
+  if (dlNameInput) {
+    dlNameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submitDirectLinkDownload();
+      if (e.key === "Escape") closeDirectLinkFinalizeModal();
+    });
+  }
 });
 
 // ── Ende Direkt-Link Modal ───────────────────────────────────────────────────
+
+// ── Direct Link: format-picker + finalize modals (yt-dlp probe, issue #8) ───
+
+let _dlProbeUrl = "";
+let _dlProbeTitle = "";
+let _dlProbeProvider = null;
+let _dlSelectedFormat = "bestvideo+bestaudio/best";
+
+async function startDirectLinkProbe(url) {
+  _dlProbeUrl = url;
+  _dlProbeTitle = "";
+  _dlProbeProvider = null;
+  _dlSelectedFormat = "bestvideo+bestaudio/best";
+  closeDirectLinkModal();
+  openDirectLinkFormatModal();
+
+  const listEl = document.getElementById("dlFormatList");
+  const spinnerEl = document.getElementById("dlFormatSpinner");
+  const errorEl = document.getElementById("dlFormatError");
+  const continueBtn = document.getElementById("dlFormatContinueBtn");
+  listEl.innerHTML = "";
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  continueBtn.disabled = true;
+  spinnerEl.style.display = "flex";
+
+  try {
+    const resp = await fetch("/api/direct-link/probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const data = await resp.json();
+    spinnerEl.style.display = "none";
+    if (data.error) {
+      errorEl.textContent = t("Konnte diesen Link nicht analysieren: ", "Could not analyze this link: ") + data.error;
+      errorEl.style.display = "block";
+      return;
+    }
+    renderDirectLinkFormats(data);
+  } catch (e) {
+    spinnerEl.style.display = "none";
+    errorEl.textContent = t("Konnte diesen Link nicht analysieren: ", "Could not analyze this link: ") + e.message;
+    errorEl.style.display = "block";
+  }
+}
+
+function renderDirectLinkFormats(data) {
+  const listEl = document.getElementById("dlFormatList");
+  const errorEl = document.getElementById("dlFormatError");
+  const continueBtn = document.getElementById("dlFormatContinueBtn");
+  const formats = data.formats || [];
+  _dlProbeTitle = data.title || "";
+  _dlProbeProvider = data.provider || null;
+  listEl.innerHTML = "";
+
+  formats.forEach((f, idx) => {
+    const row = document.createElement("label");
+    row.className = "dl-format-row";
+
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "dlFormatChoice";
+    radio.value = f.selector;
+    radio.checked = idx === 0;
+    if (idx === 0) _dlSelectedFormat = f.selector;
+    radio.addEventListener("change", () => { _dlSelectedFormat = f.selector; });
+
+    const labelSpan = document.createElement("span");
+    if (f.best) {
+      labelSpan.textContent = t("Automatisch (beste Qualität)", "Automatic (best quality)");
+    } else {
+      let txt = f.height ? `${f.height}p` : t("Unbekannte Qualität", "Unknown quality");
+      if (f.filesize_mb) {
+        txt += f.filesize_mb >= 1024
+          ? ` (${(f.filesize_mb / 1024).toFixed(1)} GB)`
+          : ` (${f.filesize_mb} MB)`;
+      }
+      labelSpan.textContent = txt;
+    }
+
+    row.appendChild(radio);
+    row.appendChild(labelSpan);
+    listEl.appendChild(row);
+  });
+
+  continueBtn.disabled = formats.length === 0;
+  if (!formats.length) {
+    errorEl.textContent = t("Keine Streams gefunden.", "No streams found.");
+    errorEl.style.display = "block";
+  }
+}
+
+function openDirectLinkFormatModal() {
+  document.getElementById("dlFormatOverlay").style.display = "block";
+  document.body.style.overflow = "hidden";
+}
+
+function closeDirectLinkFormatModal() {
+  document.getElementById("dlFormatOverlay").style.display = "none";
+  document.body.style.overflow = "";
+}
+
+function closeDLFormatModalOutside(event) {
+  if (event.target === document.getElementById("dlFormatOverlay")) {
+    closeDirectLinkFormatModal();
+  }
+}
+
+function confirmDirectLinkFormat() {
+  closeDirectLinkFormatModal();
+  openDirectLinkFinalizeModal();
+}
+
+function openDirectLinkFinalizeModal() {
+  const nameInput = document.getElementById("dlFinalizeName");
+  const errorEl = document.getElementById("dlFinalizeError");
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  nameInput.value = _dlProbeTitle || "";
+  loadDirectLinkPaths();
+  document.getElementById("dlFinalizeOverlay").style.display = "block";
+  document.body.style.overflow = "hidden";
+  setTimeout(() => nameInput.focus(), 50);
+}
+
+function closeDirectLinkFinalizeModal() {
+  document.getElementById("dlFinalizeOverlay").style.display = "none";
+  document.body.style.overflow = "";
+}
+
+function closeDLFinalizeModalOutside(event) {
+  if (event.target === document.getElementById("dlFinalizeOverlay")) {
+    closeDirectLinkFinalizeModal();
+  }
+}
+
+async function loadDirectLinkPaths() {
+  const select = document.getElementById("dlFinalizePathSelect");
+  if (!select) return;
+  try {
+    const resp = await fetch("/api/custom-paths");
+    const data = await resp.json();
+    const paths = data.paths || [];
+    while (select.options.length > 1) select.remove(1);
+    paths.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      select.appendChild(opt);
+    });
+  } catch (e) {
+    /* best-effort */
+  }
+}
+
+async function submitDirectLinkDownload() {
+  const nameInput = document.getElementById("dlFinalizeName");
+  const pathSelect = document.getElementById("dlFinalizePathSelect");
+  const errorEl = document.getElementById("dlFinalizeError");
+  const btn = document.getElementById("dlFinalizeDownloadBtn");
+  const title = nameInput.value.trim() || t("Direkter Download", "Direct Download");
+
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  btn.disabled = true;
+  try {
+    const body = {
+      url: _dlProbeUrl,
+      title,
+      format_id: _dlSelectedFormat || "bestvideo+bestaudio/best",
+    };
+    if (_dlProbeProvider) body.provider = _dlProbeProvider;
+    if (pathSelect && pathSelect.value) body.custom_path_id = parseInt(pathSelect.value);
+
+    const resp = await fetch("/api/direct-link/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.error) {
+      errorEl.textContent = data.error;
+      errorEl.style.display = "block";
+      return;
+    }
+    closeDirectLinkFinalizeModal();
+    showToast(t("Zur Download-Warteschlange hinzugefügt", "Added to download queue"));
+    if (typeof loadQueue === "function") loadQueue();
+  } catch (e) {
+    errorEl.textContent = t("Download-Anfrage fehlgeschlagen: ", "Download request failed: ") + e.message;
+    errorEl.style.display = "block";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Ende Direct-Link Format-/Finalize-Modals ────────────────────────────────
 
 // Auto-open modal if ?open=<encoded-url> is in the query string (e.g. from Favourites page)
 // Or trigger search if ?q=<search> is present
@@ -3779,7 +4033,7 @@ async function fetchSeasonsInfo(id, cardElement) {
 
 // ---- AniWorld Search Modal Logic ----
 
-function openAniSearchModal(title, tmdbId, type, posterPath) {
+function openAniSearchModal(title, tmdbId, type, posterPath, presetLocalizedTitle) {
   const modal = document.getElementById('aniSearchModalOverlay');
   if (!modal) return;
   modal.style.display = 'flex';
@@ -3790,7 +4044,12 @@ function openAniSearchModal(title, tmdbId, type, posterPath) {
   document.getElementById('aniSearchSpinner').style.display = 'block';
   document.getElementById('aniSearchResults').innerHTML = '';
 
-  runAniSearch(cleanTitle, tmdbId, type, posterPath);
+  // presetLocalizedTitle: an already-known localized (e.g. German) title,
+  // used as an extra search variant WITHOUT needing MediaForge's own TMDB
+  // integration configured — e.g. Anime Seasons passes item.title_localized
+  // here, which the self-hosted jikan-rest instance's own TMDB translator
+  // already resolved server-side. See runAniSearch().
+  runAniSearch(cleanTitle, tmdbId, type, posterPath, presetLocalizedTitle);
 }
 
 function closeAniSearchModal() {
@@ -3812,7 +4071,7 @@ window.openAniSearchModal = openAniSearchModal;
 window.closeAniSearchModal = closeAniSearchModal;
 window.closeAniSearchModalOutside = closeAniSearchModalOutside;
 
-async function runAniSearch(primaryTitle, tmdbId, type, posterPath) {
+async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocalizedTitle) {
   await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]).catch(() => {});
 
   const grid = document.getElementById('aniSearchResults');
@@ -3850,6 +4109,26 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath) {
   const primaryVariants = getApostropheVariants(primaryTitle);
   let searchTitles = [...primaryVariants];
   let enCleaned = "";
+  let localizedCleaned = "";
+
+  // Seed the localized variant from a preset (e.g. Anime Seasons passing
+  // jikan-rest's own title_localized) BEFORE the TMDB lookup below — this
+  // way German search results work even when MediaForge's own TMDB
+  // integration isn't configured, since the self-hosted Jikan instance
+  // already resolved it server-side. The TMDB lookup further below still
+  // runs and can add its own (usually identical) variant on top; dedup
+  // against searchTitles prevents that from showing as a true duplicate.
+  if (presetLocalizedTitle) {
+    const presetCleaned = cleanTitleForSearch(presetLocalizedTitle);
+    if (presetCleaned && presetCleaned.toLowerCase() !== primaryCleaned.toLowerCase()) {
+      localizedCleaned = presetCleaned;
+      getApostropheVariants(presetLocalizedTitle).forEach(variant => {
+        if (!searchTitles.some(t => t.toLowerCase() === variant.toLowerCase())) {
+          searchTitles.push(variant);
+        }
+      });
+    }
+  }
 
   console.log("Primary search titles:", searchTitles);
 
@@ -3857,6 +4136,32 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath) {
     if (tmdbId && type) {
       const detailRes = await fetch(`/api/tmdb/details?id=${tmdbId}&type=${type}`);
       const detailData = await detailRes.json();
+
+      // /api/tmdb/details asks TMDB for language=de (or "en" only if the
+      // UI itself is set to English — see routes/search.py's
+      // api_tmdb_details), so detailData.name/title IS already the
+      // localized (typically German) title — add it as its own search
+      // variant. This matters for callers whose primaryTitle is NOT
+      // already German, e.g. Anime Seasons: its primary title comes
+      // straight from MyAnimeList/Jikan in English/Romaji, so without
+      // this AniWorld/S.to (German sites, usually listing the German
+      // name) would never be searched under the name they actually use.
+      const localizedName = detailData.name || detailData.title || "";
+      if (localizedName) {
+        localizedCleaned = cleanTitleForSearch(localizedName);
+        if (localizedCleaned.toLowerCase() !== primaryCleaned.toLowerCase()) {
+          const localizedVariants = getApostropheVariants(localizedName);
+          console.log("Localized search titles:", localizedVariants);
+          localizedVariants.forEach(variant => {
+            if (!searchTitles.some(t => t.toLowerCase() === variant.toLowerCase())) {
+              searchTitles.push(variant);
+            }
+          });
+        } else {
+          localizedCleaned = ""; // same as primary — nothing extra to show/search
+        }
+      }
+
       if (detailData.translations && detailData.translations.translations) {
         const enTrans = detailData.translations.translations.find(t => t.iso_639_1 === 'en');
         if (enTrans && enTrans.data && enTrans.data.name) {
@@ -3908,7 +4213,10 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath) {
     document.getElementById('aniSearchSpinner').style.display = 'none';
 
     let displayTitle = primaryCleaned;
-    if (enCleaned && enCleaned.toLowerCase() !== primaryCleaned.toLowerCase()) {
+    if (localizedCleaned && localizedCleaned.toLowerCase() !== primaryCleaned.toLowerCase()) {
+      displayTitle += ` / ${localizedCleaned}`;
+    }
+    if (enCleaned && enCleaned.toLowerCase() !== primaryCleaned.toLowerCase() && enCleaned.toLowerCase() !== localizedCleaned.toLowerCase()) {
       displayTitle += ` / ${enCleaned}`;
     }
     document.getElementById('aniSearchTitle').textContent = `Ergebnisse für "${displayTitle}"`;

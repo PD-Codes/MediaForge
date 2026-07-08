@@ -1,0 +1,67 @@
+/* ===== Example Integration ===== */
+/* Namespaced with an "exint-" prefix so these rules can never collide with
+   the shared app CSS or another integration's own stylesheet — every
+   integration should pick its own short prefix the same way. */
+
+.exint-page-container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 24px 60px;
+}
+
+.exint-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 70px 0;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.exint-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: exint-spin 0.75s linear infinite;
+}
+
+@keyframes exint-spin { to { transform: rotate(360deg); } }
+
+.exint-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 70px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.exint-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.exint-card {
+  padding: 20px;
+  border-radius: var(--radius-lg, 14px);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.exint-card-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.exint-card-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Anime Seasons') }} — MediaForge{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('anime_seasons.static', filename='anime_seasons.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="aniseason-page-container">
+  <div class="page-header">
+    <h1 class="page-title">{{ _('Anime Seasons') }}</h1>
+    <p class="page-subtitle">{{ _('Browse what aired this season and the three before it, powered by MyAnimeList (Jikan).') }}</p>
+  </div>
+
+  <div class="aniseason-tiles">
+    {% for s in slots %}
+    <a class="aniseason-tile{% if s.is_current %} aniseason-tile-current{% endif %}" href="{{ url_for('.anime_seasons_view_page', slug=s.slug) }}">
+      {% if s.is_current %}<span class="aniseason-tile-badge">{{ _('Current') }}</span>{% endif %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="aniseason-tile-icon">
+        <rect x="3" y="3" width="7" height="7"></rect>
+        <rect x="14" y="3" width="7" height="7"></rect>
+        <rect x="14" y="14" width="7" height="7"></rect>
+        <rect x="3" y="14" width="7" height="7"></rect>
+      </svg>
+      <span class="aniseason-tile-label">{{ s.label }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
