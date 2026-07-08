@@ -1,0 +1,99 @@
+name: AI Issue Triage & Helper
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install REST SDK for GitHub Models
+        run: pip install openai
+
+      - name: Analyze Issue with GitHub Models and Post Comment
+        env:
+          MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN || secrets.MODELS_TOKEN || secrets.GITHUB_TOKEN }}
+          MODELS_MODEL: ${{ vars.MODELS_MODEL || 'gpt-4o' }}
+          MODELS_ENDPOINT: ${{ vars.MODELS_ENDPOINT || 'https://models.inference.ai.azure.com' }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import os
+          import sys
+          from openai import OpenAI
+
+          token = os.environ.get("MODELS_TOKEN")
+          if not token:
+              print("No GITHUB_MODELS_TOKEN or MODELS_TOKEN secret found. Skipping AI triage.")
+              sys.exit(0)
+
+          # We use the standard OpenAI Python SDK as a generic REST client to connect to GitHub Models' Azure endpoint
+          client = OpenAI(
+              api_key=token,
+              base_url=os.environ.get("MODELS_ENDPOINT", "https://models.inference.ai.azure.com")
+          )
+
+          title = os.environ.get("ISSUE_TITLE", "")
+          body = os.environ.get("ISSUE_BODY", "")
+          model = os.environ.get("MODELS_MODEL", "gpt-4o")
+
+          system_prompt = (
+              "You are an expert AI co-maintainer and troubleshooter for 'MediaForge', "
+              "a Python WebUI tool for downloading anime, series, and movies from AniWorld, SerienStream, "
+              "FilmPalast, MegaKino, and hanime.tv. It runs locally via Python or in Docker.\n\n"
+              "Your task is to analyze newly opened GitHub bug reports and issues:\n"
+              "1. Greet the user friendly and thank them for reporting.\n"
+              "2. Analyze the logs, tracebacks, and description to identify the likely root cause "
+              "(e.g., Cloudflare/Captcha blocks, site layout changes, missing ffmpeg, Docker permission/network issues, Python version incompatibility).\n"
+              "3. Suggest potential workarounds, fixes, or next steps for the user.\n"
+              "4. Mention for the developers which part of the codebase might be involved "
+              "(e.g., `src/mediaforge/extractors/...`, `src/mediaforge/providers.py`, or Docker/WebUI layer).\n"
+              f"5. Start your response with an appropriate header like '🤖 **AI Triage Assistant**' (translated into the user's language).\n"
+              f"6. End your response with `---` and an italic disclaimer in the user's language stating that this is an automated preliminary AI analysis (Model: {model}) to assist troubleshooting, and that developers will review it soon.\n\n"
+              "CRITICAL RULE: You MUST write your entire response (including header, greeting, analysis, and disclaimer) "
+              "in the EXACT same language that the user wrote their issue in (e.g. German, English, French, Spanish, etc.). "
+              "Format your response in clean GitHub Markdown."
+          )
+
+          user_prompt = f"### Issue Title: {title}\n\n### Issue Description & Logs:\n{body}"
+
+          try:
+              response = client.chat.completions.create(
+                  model=model,
+                  messages=[
+                      {"role": "system", "content": system_prompt},
+                      {"role": "user", "content": user_prompt}
+                  ],
+                  temperature=0.3,
+                  max_tokens=1200,
+              )
+              ai_comment = response.choices[0].message.content
+              
+              with open("comment.md", "w", encoding="utf-8") as f:
+                  f.write(ai_comment)
+              
+              print("Successfully generated AI triage comment.")
+          except Exception as e:
+              print(f"Error calling GitHub Models API: {e}")
+              sys.exit(0)
+          EOF
+
+          if [ -f comment.md ]; then
+            gh issue comment "$ISSUE_NUMBER" --body-file comment.md
+          fi

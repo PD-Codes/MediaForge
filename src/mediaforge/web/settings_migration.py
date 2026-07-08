@@ -55,6 +55,8 @@ def _migrate_dotenv_to_db():
         "MEDIAFORGE_DOWNLOAD_PATH":     "download_path",
         "MEDIAFORGE_LANG_SEPARATION":   "lang_separation",
         "MEDIAFORGE_DISABLE_ENGLISH_SUB": "disable_english_sub",
+        "MEDIAFORGE_MOVIE_SUBFOLDER":   "movie_subfolder",
+        "FILMPALAST_MOVIE_SUBFOLDER":   "filmpalast_movie_subfolder",
         "MEDIAFORGE_LANGUAGE":          "download_language",
         "MEDIAFORGE_PROVIDER":          "download_provider",
         "MEDIAFORGE_NAMING_TEMPLATE":   "naming_template",
@@ -151,6 +153,13 @@ def _sync_db_settings_to_env():
         val = get_setting(db_key)
         if val is not None and val != "":
             os.environ[env_key] = val
+
+    # Ensure all movie subfolder environment variables stay in sync
+    subfolder_val = get_setting("movie_subfolder") or get_setting("filmpalast_movie_subfolder")
+    if subfolder_val is not None and subfolder_val != "":
+        os.environ["MEDIAFORGE_MOVIE_SUBFOLDER"] = subfolder_val
+        os.environ["FILMPALAST_MOVIE_SUBFOLDER"] = subfolder_val
+        os.environ["MEGAKINO_MOVIE_SUBFOLDER"] = subfolder_val
 
 
 def _apply_captcha_env():

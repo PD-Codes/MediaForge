@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="{{ ui_language }}" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ _('Setup') }} — MediaForge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='variables.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}" />
+    <script>
+      (function() {
+        try {
+          var t = localStorage.getItem('aw-theme') || 'dark';
+          document.documentElement.setAttribute('data-theme', t);
+        } catch(e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="auth-container">
+
+      <!-- Language switcher -->
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:6px;">
+        <a href="{{ url_for('auth.setup') }}?lang=en"
+           style="font-size:0.78rem;font-weight:600;padding:3px 10px;border-radius:6px;text-decoration:none;
+                  border:1px solid var(--border);
+                  background:{{ 'var(--accent)' if ui_language == 'en' else 'transparent' }};
+                  color:{{ '#fff' if ui_language == 'en' else 'var(--text-muted)' }};">EN</a>
+        <a href="{{ url_for('auth.setup') }}?lang=de"
+           style="font-size:0.78rem;font-weight:600;padding:3px 10px;border-radius:6px;text-decoration:none;
+                  border:1px solid var(--border);
+                  background:{{ 'var(--accent)' if ui_language == 'de' else 'transparent' }};
+                  color:{{ '#fff' if ui_language == 'de' else 'var(--text-muted)' }};">DE</a>
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px;display:block;margin:0 auto;">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+      </div>
+      <h1>MediaForge</h1>
+      <h2>{{ _('Initial Setup') }}</h2>
+      <p class="auth-info" style="margin-bottom:16px;">
+        {{ _('To secure your initial setup, a setup token is required.') }}<br>
+        {{ _('You can find the token in your server console or Docker container logs.') }}
+      </p>
+      {% if error %}
+      <div class="auth-error">{{ error }}</div>
+      {% endif %}
+      <form method="get" action="{{ url_for('auth.setup') }}">
+        <input type="text" name="token" placeholder="{{ _('Enter setup token') }}" required autofocus />
+        <button type="submit">{{ _('Start setup') }}</button>
+      </form>
+    </div>
+  </body>
+</html>

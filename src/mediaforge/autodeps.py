@@ -13,6 +13,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import List
 
@@ -415,7 +416,7 @@ def ensure_patchright_chromium():
     try:
         _log.debug("Ensuring patchright chromium is installed...")
         subprocess.run(
-            ["patchright", "install", "chromium"],
+            [sys.executable, "-m", "patchright", "install", "chromium"],
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

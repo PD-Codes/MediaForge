@@ -309,6 +309,8 @@ def setup():
         if _time.time() > expires:
             return render_template("setup_locked.html", ui_language=session.get("ui_language", "en")), 403
         provided = (request.args.get("token") or request.form.get("setup_token") or "").strip()
+        if not provided:
+            return render_template("setup_token.html", ui_language=session.get("ui_language", "en"))
         try:
             token_ok = secrets.compare_digest(provided.encode(), expected_token.encode())
         except Exception:
