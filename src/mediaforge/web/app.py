@@ -361,8 +361,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         _server = _DNS_PRESETS.get(_saved_dns_mode) or _saved_dns_server or None
         _apply_dns_patch(_server, mode=_saved_dns_mode)
 
-    # Apply saved filmpalast subfolder setting on startup
-    os.environ["FILMPALAST_MOVIE_SUBFOLDER"] = get_setting("filmpalast_movie_subfolder", "0")
+    # Apply saved movie subfolder setting on startup
+    _subfolder_val = get_setting("movie_subfolder") or get_setting("filmpalast_movie_subfolder", "0")
+    os.environ["MEDIAFORGE_MOVIE_SUBFOLDER"] = _subfolder_val
+    os.environ["FILMPALAST_MOVIE_SUBFOLDER"] = _subfolder_val
+    os.environ["MEGAKINO_MOVIE_SUBFOLDER"] = _subfolder_val
 
     # One-time migration: import .env values into DB (runs only once)
     _migrate_dotenv_to_db()

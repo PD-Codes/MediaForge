@@ -58,7 +58,7 @@ async function loadSettings() {
     if (downloadPathInput) downloadPathInput.value = data.download_path || "";
     if (langSeparationCb) langSeparationCb.checked = data.lang_separation === "1";
     if (disableEnglishSubCb) disableEnglishSubCb.checked = data.disable_english_sub === "1";
-    if (filmpalastSubfolderCb) filmpalastSubfolderCb.checked = data.filmpalast_movie_subfolder === "1";
+    if (filmpalastSubfolderCb) filmpalastSubfolderCb.checked = data.movie_subfolder === "1" || data.filmpalast_movie_subfolder === "1";
 
     const dlLangEl = document.getElementById("downloadLanguage");
     if (dlLangEl && data.download_language) dlLangEl.value = data.download_language;
@@ -249,20 +249,25 @@ async function saveDisableEnglishSub() {
   }
 }
 
-async function saveFilmpalastSubfolder() {
+async function saveMovieSubfolder() {
   try {
+    const checked = filmpalastSubfolderCb ? filmpalastSubfolderCb.checked : false;
     const resp = await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filmpalast_movie_subfolder: filmpalastSubfolderCb ? filmpalastSubfolderCb.checked : false }),
+      body: JSON.stringify({
+        filmpalast_movie_subfolder: checked,
+        movie_subfolder: checked
+      }),
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
-    showToast(t("Film-Unterordner ", "Movie subfolder ") + (filmpalastSubfolderCb && filmpalastSubfolderCb.checked ? t("aktiviert","activated") : t("deaktiviert","deactivated")));
+    showToast(t("Film-Unterordner ", "Movie subfolder ") + (checked ? t("aktiviert","activated") : t("deaktiviert","deactivated")));
   } catch (e) {
     showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
   }
 }
+window.saveFilmpalastSubfolder = saveMovieSubfolder;
 
 async function saveDownloadPath() {
   const download_path = downloadPathInput ? downloadPathInput.value.trim() : "";

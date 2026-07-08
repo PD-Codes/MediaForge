@@ -94,7 +94,7 @@ def register_settings_routes(app):
             resolved = str(Path.home() / "Downloads")
         lang_separation      = get_setting("lang_separation")      or os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0")
         disable_english_sub  = get_setting("disable_english_sub")  or os.environ.get("MEDIAFORGE_DISABLE_ENGLISH_SUB", "0")
-        filmpalast_movie_subfolder = get_setting("filmpalast_movie_subfolder", "0")
+        movie_subfolder      = get_setting("movie_subfolder")      or get_setting("filmpalast_movie_subfolder", "0")
         sync_schedule        = get_setting("sync_schedule")        or os.environ.get("MEDIAFORGE_SYNC_SCHEDULE", "0")
         sync_mode            = get_setting("sync_mode")            or os.environ.get("MEDIAFORGE_SYNC_MODE", "interval")
         sync_days            = get_setting("sync_days")            or os.environ.get("MEDIAFORGE_SYNC_DAYS", "0,1,2,3,4,5,6")
@@ -128,7 +128,8 @@ def register_settings_routes(app):
                 "download_path":             resolved,
                 "lang_separation":           lang_separation,
                 "disable_english_sub":       disable_english_sub,
-                "filmpalast_movie_subfolder": filmpalast_movie_subfolder,
+                "filmpalast_movie_subfolder": movie_subfolder,
+                "movie_subfolder":            movie_subfolder,
                 "sync_schedule":             sync_schedule,
                 "sync_mode":                 sync_mode,
                 "sync_days":                 sync_days,
@@ -633,10 +634,14 @@ def register_settings_routes(app):
             val = "1" if data["disable_english_sub"] else "0"
             set_setting("disable_english_sub", val)
             os.environ["MEDIAFORGE_DISABLE_ENGLISH_SUB"] = val
-        if "filmpalast_movie_subfolder" in data:
-            val = "1" if data["filmpalast_movie_subfolder"] else "0"
+        if "filmpalast_movie_subfolder" in data or "movie_subfolder" in data:
+            raw_val = data.get("movie_subfolder") if "movie_subfolder" in data else data.get("filmpalast_movie_subfolder")
+            val = "1" if raw_val else "0"
+            set_setting("movie_subfolder", val)
             set_setting("filmpalast_movie_subfolder", val)
+            os.environ["MEDIAFORGE_MOVIE_SUBFOLDER"] = val
             os.environ["FILMPALAST_MOVIE_SUBFOLDER"] = val
+            os.environ["MEGAKINO_MOVIE_SUBFOLDER"] = val
         if "sync_schedule" in data:
             sched = str(data["sync_schedule"])
             if sched != "0" and sched not in SYNC_SCHEDULE_MAP:

@@ -347,7 +347,11 @@ class FilmPalastEpisode:
     @property
     def _folder_path(self):
         if self.__folder_path is None:
-            use_subfolder = os.getenv("FILMPALAST_MOVIE_SUBFOLDER", "0") == "1"
+            use_subfolder = (
+                os.getenv("MEDIAFORGE_MOVIE_SUBFOLDER", "0") == "1"
+                or os.getenv("FILMPALAST_MOVIE_SUBFOLDER", "0") == "1"
+                or os.getenv("MEGAKINO_MOVIE_SUBFOLDER", "0") == "1"
+            )
             if use_subfolder:
                 # Jellyfin local-metadata layout: <path>/<Title (Year)>/<Title (Year)>.mkv
                 self.__folder_path = self._base_folder / self._file_name

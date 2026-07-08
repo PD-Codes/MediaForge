@@ -387,8 +387,8 @@ msgstr "Englische Untertitel-Downloads deaktivieren"
 msgid "Hides English Sub from the language selection."
 msgstr "Blendet Englisch Sub aus der Sprachauswahl aus."
 
-msgid "Enable movie subfolders (Filmpalast)"
-msgstr "Film-Unterordner aktivieren (Filmpalast)"
+msgid "Enable movie subfolders"
+msgstr "Film-Unterordner aktivieren"
 
 msgid "Each movie gets its own subfolder — recommended for Jellyfin."
 msgstr "Jeder Film erhält einen eigenen Unterordner — empfohlen für Jellyfin."
