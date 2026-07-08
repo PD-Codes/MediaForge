@@ -11,14 +11,18 @@ via web/routes/direct_link.py's POST /api/direct-link/download.
 """
 
 import re
+import time
 
 from ...logger import get_logger
 from ..common.common import _YtdlpQuietLogger
 from ..megakino_to.scraper import classify_hoster
-from .browser_sniff import sniff_media_url
+from .browser_sniff import _MEDIA_URL_RE, sniff_media_url
 from .resolver import DIRECT_LINK_USER_AGENT, FAST_PROVIDERS, resolve_stream_for_provider
 
 logger = get_logger(__name__)
+
+_RESOLVE_CACHE = {}
+_RESOLVE_CACHE_TTL = 600  # 10 minutes (600 seconds)
 
 
 def _clean_title(raw):
@@ -39,6 +43,11 @@ def detect_fast_provider(url):
 # an inline <script> block's JSON blob are matched too, not just plain
 # href/src attributes.
 _URL_IN_HTML = re.compile(r"""https?://[^\s"'<>\\]+""")
+
+_NATIVE_YTDLP_HOSTS_RE = re.compile(
+    r"://(?:www\.|m\.)?(?:youtube\.com|youtu\.be|dailymotion\.com|vimeo\.com|twitch\.tv|soundcloud\.com|tiktok\.com|twitter\.com|x\.com|instagram\.com|facebook\.com|reddit\.com|bilibili\.com)",
+    re.IGNORECASE,
+)
 
 
 def find_candidate_urls_in_page(url, timeout=15):
@@ -83,6 +92,14 @@ def find_candidate_urls_in_page(url, timeout=15):
     candidates = []
     for candidate in _URL_IN_HTML.findall(html):
         candidate = candidate.rstrip("\\/,.;)")
+        low_cand = candidate.lower()
+        # Ignore API calls, JS string templates, or non-embed paths
+        if any(bad in low_cand for bad in ("/api/", "/api2/", "/session/", "/sync?", "${", "generate-token", "fonts.gstatic")):
+            continue
+        # Ignore bare root domains (e.g. https://voe.sx without a video ID/path)
+        parts = candidate.split("://", 1)[-1].split("/")
+        if len(parts) < 2 or not parts[1].strip():
+            continue
         name = classify_hoster(candidate)
         if name in FAST_PROVIDERS and candidate not in seen:
             seen.add(candidate)
@@ -91,7 +108,7 @@ def find_candidate_urls_in_page(url, timeout=15):
     return candidates
 
 
-def discover_and_resolve(url, timeout=12):
+def discover_and_resolve(url, timeout=12, use_cache=True):
     """Full Direct Link discovery pipeline, used identically by the probe
     step and by DirectLinkEpisode's fresh re-resolution at download time.
 
@@ -115,11 +132,23 @@ def discover_and_resolve(url, timeout=12):
     """
     default_headers = {"User-Agent": DIRECT_LINK_USER_AGENT}
 
+    if _MEDIA_URL_RE.search(url) or _NATIVE_YTDLP_HOSTS_RE.search(url):
+        return None, url, default_headers
+
+    if use_cache and url in _RESOLVE_CACHE:
+        ts, c_name, c_url, c_headers = _RESOLVE_CACHE[url]
+        if time.time() - ts < _RESOLVE_CACHE_TTL:
+            logger.debug(f"[DirectLink] {url}: resolved instantly from short-term memory cache")
+            return c_name, c_url, c_headers
+        else:
+            _RESOLVE_CACHE.pop(url, None)
+
     name = detect_fast_provider(url)
     if name:
         try:
             stream_url, headers = resolve_stream_for_provider(name, url, timeout=timeout)
             logger.warning(f"[DirectLink] {url} is itself a known embed link ({name}), resolved successfully")
+            _RESOLVE_CACHE[url] = (time.time(), name, stream_url, headers)
             return name, stream_url, headers
         except Exception as e:
             logger.warning(f"[DirectLink] {url} is itself a known embed link ({name}) but resolution failed: {e}")
@@ -128,6 +157,7 @@ def discover_and_resolve(url, timeout=12):
         try:
             stream_url, headers = resolve_stream_for_provider(cand_name, cand_url, timeout=timeout)
             logger.warning(f"[DirectLink] {url}: resolved via embedded {cand_name} link ({cand_url})")
+            _RESOLVE_CACHE[url] = (time.time(), cand_name, stream_url, headers)
             return cand_name, stream_url, headers
         except Exception as e:
             logger.warning(f"[DirectLink] {url}: embedded {cand_name} link ({cand_url}) failed, trying next candidate: {e}")
@@ -137,6 +167,7 @@ def discover_and_resolve(url, timeout=12):
     if sniffed:
         stream_url, headers = sniffed
         logger.warning(f"[DirectLink] {url}: resolved via browser network-sniff ({stream_url[:100]})")
+        _RESOLVE_CACHE[url] = (time.time(), None, stream_url, headers)
         return None, stream_url, headers
 
     logger.warning(f"[DirectLink] No resolvable embed-host link found for {url}; falling back to generic yt-dlp extraction")
@@ -188,6 +219,8 @@ def probe_direct_link_formats(url):
         "http_headers": headers,
         "socket_timeout": 20,
         "nocheckcertificate": True,
+        "noplaylist": True,
+        "js_runtimes": {"node": {}, "deno": {}},
     }
 
     try:

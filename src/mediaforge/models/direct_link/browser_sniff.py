@@ -71,6 +71,15 @@ def sniff_media_url(url, timeout=20):
                     logger.debug(f"[DirectLink] browser-sniff: page load failed for {url}: {e}")
                     return None
 
+                def _smart_sleep(ms=1500, step=100):
+                    waited = 0
+                    while not media_url and waited < ms:
+                        page.wait_for_timeout(step)
+                        waited += step
+
+                # Give player scripts / iframe overlays time to render, short-circuiting as soon as stream is seen
+                _smart_sleep(1200)
+
                 # Nudge playback: many players only issue the real media
                 # request once the player area is clicked (autoplay blocked,
                 # or a "click to play" overlay sits on top of the <video>).
@@ -81,12 +90,9 @@ def sniff_media_url(url, timeout=20):
                         page.mouse.click(640, 360)
                     except Exception:
                         pass
-                    page.wait_for_timeout(1000)
+                    _smart_sleep(800)
 
-                waited_ms = 0
-                while not media_url and waited_ms < timeout * 1000:
-                    page.wait_for_timeout(500)
-                    waited_ms += 500
+                _smart_sleep(max(0, (timeout * 1000) - 2800))
             finally:
                 browser.close()
     except Exception as e:

@@ -92,14 +92,15 @@ class DirectLinkEpisode:
 
         stream_url = self.url
         headers = {"User-Agent": DIRECT_LINK_USER_AGENT}
-        if self.source_provider:
-            # Re-run discovery fresh rather than reusing anything resolved
-            # at probe time (covers both a direct embed link and a page
-            # whose embedded hoster link needs a fresh page-scan), since
-            # signed CDN tokens from probe time may have expired by now.
-            # discover_and_resolve() already falls back to (self.url, a
-            # default User-Agent) on any failure, so this never raises.
-            _, stream_url, headers = discover_and_resolve(self.url, timeout=20)
+        self._download_attempts = getattr(self, "_download_attempts", 0) + 1
+        # Always run discover_and_resolve (which short-circuits instantly if
+        # self.url is already a direct .m3u8/.mp4 URL or cached). This ensures
+        # embed/player pages whose stream was found via browser_sniff.py get
+        # resolved to their actual .m3u8/.mp4 stream right before download.
+        # Uses cache on 1st attempt (0 ms delay after probe), forces fresh on retry.
+        _, stream_url, headers = discover_and_resolve(
+            self.url, timeout=20, use_cache=(self._download_attempts <= 1)
+        )
 
         _run_ytdlp_download(
             stream_url,

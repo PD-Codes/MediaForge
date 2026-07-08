@@ -771,6 +771,8 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
         "noprogress": True,
         "logger": _YtdlpQuietLogger(),  # custom logger suppresses console spam
         "progress_hooks": [_progress_hook],
+        "noplaylist": True,  # download only the requested video when URLs contain playlist params (&list=...)
+        "js_runtimes": {"node": {}, "deno": {}},  # allow yt-dlp to use node/deno for JS deciphering (e.g. YouTube)
         "merge_output_format": "mkv",
         # Do not try to fix broken streams — our HLS URLs are fine
         "fixup": "never",
