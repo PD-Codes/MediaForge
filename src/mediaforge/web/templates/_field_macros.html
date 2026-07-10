@@ -1,0 +1,193 @@
+{# Standalone, general-purpose settings-row macros for building a fully
+   custom page — as opposed to _settings_card_macro.html's render_settings_card(),
+   which only ever renders the fixed shape register_thirdparty()'s
+   extra_settings produces, bound to the generic
+   /api/settings/thirdparty/<id> GET/PUT API.
+
+   These macros exist for the other case: a thirdparty module (or a core
+   page) that builds its own page/tab with its own routes/JS/data loading
+   (e.g. web/thirdparties/mediacalendar/'s own "Einstellungen" tab, built by
+   hand in mediacalendar.js/mediacalendar.css instead of reusing anything
+   here) but still wants the *exact* same look, spacing and behaviour as
+   every other settings page in the app — same .settings-row layout, same
+   .toggle switch, same number-stepper pill (input[type=number] is enhanced
+   for free by the global static/number_input.js, no matter which macro or
+   hand-written markup produced it), same collapsible-card chrome. Import
+   this file once and call whichever macros the page needs instead of
+   copy-pasting/reinventing the row markup (see mc-field/mc-toggle-row in
+   thirdparties/mediacalendar/static/mediacalendar.css for what that
+   reinvention looks like, and why it doesn't quite match the rest of the
+   app).
+
+   Usage from any template:
+     {% import "_field_macros.html" as fields %}
+     ...
+     {{ fields.toggle_field("myThing", _("Enable my thing"), checked=my_value) }}
+     {{ fields.number_field("myCount", _("How many"), value=5, min=1, max=20) }}
+
+   Every field macro is display-only wiring: it renders the row/control and
+   an optional onchange="..." attribute (a plain JS expression/function
+   call, same convention every hand-written settings row in this app
+   already uses — see integrations.html/settings.html). Loading the
+   current value and persisting a change is entirely up to the page's own
+   JS/routes; these macros don't assume or require the generic thirdparty
+   settings API. #}
+
+{# A plain settings-row with a label (+ optional description) on the left
+   and an arbitrary trailing control on the right, supplied via the calling
+   template through a call-block. Every other *_field macro below is built
+   on top of this one; reach for it directly when none of them fit (a
+   button, a custom widget, ...). #}
+{% macro row(label, description=None) %}
+<div class="settings-row">
+  <div class="settings-row-left">
+    <div class="settings-row-label">{{ label }}</div>
+    {% if description %}<div class="settings-row-desc">{{ description }}</div>{% endif %}
+  </div>
+  <div class="settings-row-right">
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}
+
+{# Boolean toggle switch (the same pill-shaped .toggle/.toggle-slider every
+   other on/off setting in the app uses). "checked" is the field's current
+   value; "onchange" (optional) is a JS expression run on change, "this"
+   inside it refers to the <input>, e.g. onchange="saveMyThing(this.checked)". #}
+{% macro toggle_field(id, label, checked=False, description=None, onchange=None, disabled=False) %}
+<div class="settings-row">
+  <div class="settings-row-left">
+    <div class="settings-row-label">{{ label }}</div>
+    {% if description %}<div class="settings-row-desc">{{ description }}</div>{% endif %}
+  </div>
+  <div class="settings-row-right">
+    <label class="toggle">
+      <input type="checkbox" id="{{ id }}"
+             {%- if checked %} checked{% endif %}
+             {%- if disabled %} disabled{% endif %}
+             {%- if onchange %} onchange="{{ onchange }}"{% endif %} />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+</div>
+{% endmacro %}
+
+{# input[type=number] — automatically gets the themed [ − ][ value ][ + ]
+   stepper pill from static/number_input.js, exactly like every other
+   number input in the app (no markup changes needed for that, it's a
+   global progressive enhancement keyed off input[type=number]). Don't set
+   a fixed style="width"/"min-width" on the input yourself — the pill
+   supplies its own sizing and clears any leftover inline width so the two
+   don't fight (see number_input.js's enhance()). #}
+{% macro number_field(id, label, value=None, description=None, min=None, max=None, step=None, onchange=None, disabled=False) %}
+<div class="settings-row">
+  <div class="settings-row-left">
+    <div class="settings-row-label">{{ label }}</div>
+    {% if description %}<div class="settings-row-desc">{{ description }}</div>{% endif %}
+  </div>
+  <div class="settings-row-right">
+    <input type="number" id="{{ id }}"
+           {%- if value is not none %} value="{{ value }}"{% endif %}
+           {%- if min is not none %} min="{{ min }}"{% endif %}
+           {%- if max is not none %} max="{{ max }}"{% endif %}
+           {%- if step is not none %} step="{{ step }}"{% endif %}
+           {%- if disabled %} disabled{% endif %}
+           {%- if onchange %} onchange="{{ onchange }}"{% endif %} />
+  </div>
+</div>
+{% endmacro %}
+
+{# Single-line text input. secret=True renders type="password" (for API
+   keys/tokens, matching extra_settings' "secret" type) instead of "text". #}
+{% macro text_field(id, label, value="", description=None, placeholder="", secret=False, onchange=None, disabled=False) %}
+<div class="settings-row">
+  <div class="settings-row-left">
+    <div class="settings-row-label">{{ label }}</div>
+    {% if description %}<div class="settings-row-desc">{{ description }}</div>{% endif %}
+  </div>
+  <div class="settings-row-right">
+    <input type="{{ 'password' if secret else 'text' }}" id="{{ id }}"
+           value="{{ value }}" placeholder="{{ placeholder }}" autocomplete="off"
+           {%- if disabled %} disabled{% endif %}
+           {%- if onchange %} onchange="{{ onchange }}"{% endif %} />
+  </div>
+</div>
+{% endmacro %}
+
+{# Dropdown. "options" is a list of (value, label) tuples (or plain
+   strings, used as both) — same shape register_thirdparty()'s "select"
+   extra_settings type takes. #}
+{% macro select_field(id, label, options, selected=None, description=None, onchange=None, disabled=False) %}
+<div class="settings-row">
+  <div class="settings-row-left">
+    <div class="settings-row-label">{{ label }}</div>
+    {% if description %}<div class="settings-row-desc">{{ description }}</div>{% endif %}
+  </div>
+  <div class="settings-row-right">
+    <select id="{{ id }}" {% if disabled %}disabled{% endif %} {% if onchange %}onchange="{{ onchange }}"{% endif %}>
+      {% for opt in options %}
+      {% set opt_value = opt[0] if opt is not string else opt %}
+      {% set opt_label = opt[1] if opt is not string else opt %}
+      <option value="{{ opt_value }}" {% if opt_value == selected %}selected{% endif %}>{{ opt_label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+{% endmacro %}
+
+{# Read-only boolean indicator — a small colored pill (reuses the same
+   .integ-subsection-badge look as card header badges), for showing a
+   status the user can't directly toggle from this row (e.g. "is this
+   dependency currently enabled" — see registry.py's requires_enabled).
+   For an actual on/off control the user *can* flip, use toggle_field
+   instead. #}
+{% macro boolean_badge(label, value, true_label=None, false_label=None, description=None) %}
+<div class="settings-row">
+  <div class="settings-row-left">
+    <div class="settings-row-label">{{ label }}</div>
+    {% if description %}<div class="settings-row-desc">{{ description }}</div>{% endif %}
+  </div>
+  <div class="settings-row-right">
+    <span class="integ-subsection-badge" style="background:{{ '#2fa64f' if value else '#555' }};color:#fff;">
+      {{ (true_label or _('On')) if value else (false_label or _('Off')) }}
+    </span>
+  </div>
+</div>
+{% endmacro %}
+
+{# Full collapsible card shell — same chrome as every card
+   _settings_card_macro.html produces (.integ-card/.integ-collapsible-*),
+   including working expand/collapse (static/extension_cards.js's
+   toggleIntegCollapse()/restoreIntegCollapse(), which scans for
+   .integ-card[id^="integCard-"] generically, so this is picked up for
+   free) — but with arbitrary content instead of a fixed extra_settings
+   field list. Wrap whichever *_field macros (or anything else) the page
+   needs in a {% call %} block:
+
+     {% call fields.collapsible_card("my_module", _("My Module"), badges=[("Beta", "#7c3aed")]) %}
+       {{ fields.toggle_field("myEnabled", _("Enable my thing")) }}
+       {{ fields.number_field("myCount", _("How many"), value=5) }}
+     {% endcall %}
+
+   "id" only needs to be unique on the page (it becomes the DOM id
+   integCard-<id> and the localStorage key integCollapsed_<id>) — it does
+   NOT need to be a registered thirdparty item id, since this doesn't touch
+   the generic settings API at all. Requires static/extension_cards.js to
+   be loaded on the host page (integrations.html, notifications.html,
+   settings.html and extensions.html already do; a brand-new custom page
+   needs to add that one <script> tag itself). #}
+{% macro collapsible_card(id, title, badges=[], description=None) %}
+<div class="settings-section integ-card collapsed" id="integCard-{{ id }}">
+  <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('{{ id }}')">
+    <span class="integ-collapsible-chevron">▸</span>
+    <span class="integ-subsection-title">{{ title }}</span>
+    {% for badge_text, badge_color in badges %}
+    <span class="integ-subsection-badge" style="background:{{ badge_color }};color:#fff;">{{ badge_text }}</span>
+    {% endfor %}
+  </div>
+  <div class="integ-collapsible-body">
+    {% if description %}<div class="integ-subsection-hint">{{ description }}</div>{% endif %}
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}

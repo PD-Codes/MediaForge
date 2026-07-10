@@ -16,7 +16,14 @@ function switchIntegTab(name) {
 (function restoreIntegTab() {
   var hash = "";
   try { hash = (window.location.hash || "").replace("#", "").trim(); } catch (e) {}
-  var valid = ["seerr", "mediaplayer", "cineinfo", "thirdparty", "syncplay", "uptime"];
+  // Read from the DOM instead of a hardcoded list, so tabs an extension
+  // registers dynamically (see registry.py's resolve_dynamic_tabs(), which
+  // adds extra buttons to #integTabs at render time) are restorable via
+  // #hash / localStorage exactly like the built-in ones.
+  var valid = Array.prototype.map.call(
+    document.querySelectorAll("#integTabs .settings-tab"),
+    function (btn) { return btn.dataset.tab; }
+  );
   var tab = (hash && valid.indexOf(hash) !== -1) ? hash : "";
   if (!tab) {
     try { tab = localStorage.getItem("integActiveTab") || "seerr"; } catch (e) { tab = "seerr"; }
@@ -25,32 +32,40 @@ function switchIntegTab(name) {
   switchIntegTab(tab);
 })();
 
-// ─── Third Party tab: collapsible integration cards ───────────────────────
-// Each card (Crunchyroll, Fernsehserien.de) can be expanded/collapsed; the
-// state is remembered per-card in localStorage, mirroring the AutoSync
-// group-collapse pattern (see autosync.js / .autosync-group).
-function toggleIntegCollapse(name) {
-  const card = document.getElementById("integCard-" + name);
-  if (!card) return;
-  const collapsed = card.classList.toggle("collapsed");
-  try { localStorage.setItem("integCollapsed_" + name, collapsed ? "1" : "0"); } catch (e) {}
-}
-
-(function restoreIntegCollapse() {
-  // Default is collapsed (see the "collapsed" class already on the cards in
-  // integrations.html) — only expand a card if the user explicitly opened it
-  // before. This also avoids a flash of expanded content before JS runs.
-  // Scans the DOM instead of a hardcoded name list so auto-registered
-  // third-party cards (see web/thirdparties/) are covered for free too.
-  document.querySelectorAll('.integ-card[id^="integCard-"]').forEach(function (card) {
-    const name = card.id.slice("integCard-".length);
-    try {
-      if (localStorage.getItem("integCollapsed_" + name) === "0") {
-        card.classList.remove("collapsed");
-      }
-    } catch (e) {}
+// ─── Deep link from the Modulmanager ("Open module" button) ───────────────
+// extensions.html links here as .../integrations?open=<item_id>#<tab> — the
+// #tab half is already handled by restoreIntegTab() above (tab ids are read
+// generically off the DOM, so this works for dynamic tabs too); this part
+// additionally force-expands that one item's settings card (overriding its
+// collapsed-by-default state) and scrolls it into view, so "Open module"
+// actually lands the admin on the right field instead of just the right tab.
+(function openDeepLinkedThirdpartyCard() {
+  var openId = "";
+  try { openId = new URLSearchParams(window.location.search).get("open") || ""; } catch (e) {}
+  if (!openId) return;
+  document.addEventListener("DOMContentLoaded", function () {
+    // Deferred a tick: extension_cards.js's restoreIntegCollapse() (which
+    // this overrides for this one card) runs synchronously as its own
+    // script loads, but giving layout a moment to settle first makes the
+    // scrollIntoView land correctly even on slower first paints.
+    setTimeout(function () {
+      var card = document.getElementById("integCard-" + openId);
+      if (!card) return;
+      card.classList.remove("collapsed");
+      try { localStorage.setItem("integCollapsed_" + openId, "0"); } catch (e) {}
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.add("integ-card-highlight");
+      setTimeout(function () { card.classList.remove("integ-card-highlight"); }, 2200);
+    }, 60);
   });
 })();
+
+// ─── Third Party tab: collapsible integration cards ───────────────────────
+// toggleIntegCollapse/restoreIntegCollapse and the thirdparty-toggle load/
+// save helpers used to live here; they moved to static/extension_cards.js
+// (included from integrations.html and notifications.html) so extension
+// cards behave identically wherever they're rendered, not just here. See
+// that file for the implementation.
 
 // ===== Settings Caching Helper =====
 let _combinedSettingsPromise = null;
@@ -623,68 +638,10 @@ document.addEventListener("DOMContentLoaded", () => {
   loadFernsehserienSettings();
   loadMediaplayerSettings();
   loadMediascanSettings();
-  loadThirdpartyToggles();
+  // loadThirdpartyToggles() and restoreIntegCollapse() now run on their own
+  // from static/extension_cards.js — see the <script> tag in
+  // integrations.html.
 });
-
-// ===== Auto-registered third-party integrations (web/thirdparties/<name>/) =====
-// Every card rendered from `thirdparty_cards` (see app.py's context
-// processors / web/thirdparties/registry.py) shares one generic
-// enable/disable toggle backed by /api/settings/thirdparty/<id> — no
-// per-integration JS needed for the simple "just a toggle" case.
-async function loadThirdpartyToggles() {
-  document.querySelectorAll(".thirdparty-toggle[data-thirdparty-id]").forEach(async function (el) {
-    const id = el.dataset.thirdpartyId;
-    try {
-      const resp = await fetch("/api/settings/thirdparty/" + encodeURIComponent(id));
-      const d = await resp.json();
-      el.checked = d.enabled === "1";
-      // Extra per-integration toggles for this same card (see registry.py's
-      // extra_settings) -- one fetch already has everything needed, so
-      // populate them here instead of a second request per checkbox.
-      const extra = d.extra || {};
-      document
-        .querySelectorAll('.thirdparty-extra-toggle[data-thirdparty-id="' + id + '"][data-extra-key]')
-        .forEach(function (extraEl) {
-          extraEl.checked = extra[extraEl.dataset.extraKey] === "1";
-        });
-    } catch (e) { /* best-effort */ }
-  });
-}
-
-// Reload so the sidebar entry appears/disappears immediately (same pattern
-// as saveUptimeSettings(reload)).
-async function saveThirdpartyToggle(id, el) {
-  const enabled = el && el.checked ? "1" : "0";
-  try {
-    await fetch("/api/settings/thirdparty/" + encodeURIComponent(id), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled }),
-    });
-    setTimeout(function () { location.reload(); }, 250);
-  } catch (e) {
-    showToast(t("Fehler: ", "Error: ") + e.message);
-  }
-}
-
-// Extra per-integration toggle (registry.py's extra_settings) -- unlike the
-// master toggle above, this never gates the sidebar entry, so no page
-// reload is needed; the next time the integration's own pages/API calls
-// read this setting they'll see the new value (each reads it fresh via
-// get_setting(), nothing caches it in-process).
-async function saveThirdpartyExtraSetting(id, key, el) {
-  const value = el && el.checked ? "1" : "0";
-  try {
-    await fetch("/api/settings/thirdparty/" + encodeURIComponent(id), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ extra: { [key]: value } }),
-    });
-    showToast(t("Gespeichert", "Saved"));
-  } catch (e) {
-    showToast(t("Fehler: ", "Error: ") + e.message);
-  }
-}
 
 // ===== Fernsehserien.de =====
 async function loadFernsehserienSettings() {

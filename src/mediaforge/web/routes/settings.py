@@ -791,13 +791,24 @@ def register_settings_routes(app):
             import logging
             enabled = (val == "1")
             level = logging.DEBUG if enabled else logging.WARNING
-            # Root logger — covers werkzeug and any propagating loggers.
+            # Root logger — covers loggers that purely inherit its level.
             logging.getLogger().setLevel(level)
             # The app's own "mediaforge" logger has propagate=False, so changing
             # the root level alone has no effect on it. It must be toggled
             # directly — this is what actually makes debug output start/stop
             # live without a restart (both for enabling AND disabling).
             logging.getLogger("mediaforge").setLevel(level)
+            # Werkzeug's dev-server request logger installs its OWN handler at
+            # INFO and does NOT merely inherit the root level, so lowering root
+            # to WARNING does not silence its per-request log lines. When the app
+            # booted with debug_mode=1 it runs under app.run(debug=True) (the
+            # Flask dev server), whose request logging would otherwise keep
+            # flooding the Web Console on every ~1.5s /api/console poll even after
+            # debug is switched off here. Toggle it explicitly so disabling debug
+            # actually quietens it. Note: fully leaving dev-server/reloader mode
+            # still needs a restart — the dev-server-vs-waitress choice in
+            # app.py's run() is read from MEDIAFORGE_DEBUG_MODE once at startup.
+            logging.getLogger("werkzeug").setLevel(level)
             try:
                 from ...logger import set_debug_mode as _set_debug_mode
                 _set_debug_mode(enabled)

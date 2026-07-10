@@ -1,4 +1,5 @@
 {% extends "base.html" %} {% block title %}{{ _('Integrations') }} — MediaForge{% endblock %}
+{% import "_settings_card_macro.html" as ext %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">{% endblock %}
@@ -17,6 +18,13 @@
     <button class="settings-tab" data-tab="thirdparty" onclick="switchIntegTab('thirdparty')">{{ _('Third Party') }}</button>
     <button class="settings-tab" data-tab="syncplay" onclick="switchIntegTab('syncplay')">SyncPlay</button>
     <button class="settings-tab" data-tab="uptime" onclick="switchIntegTab('uptime')">UpTime</button>
+    {# Brand-new tabs requested by a registered extension whose settings_tab
+       doesn't match one of the ids above (see registry.py's
+       resolve_dynamic_tabs / _KNOWN_TABS). No template edit needed to add
+       one — see the matching panel loop after the UpTime tab below. #}
+    {% for t in get_dynamic_tabs('integrations') %}
+    <button class="settings-tab" data-tab="{{ t.id }}" onclick="switchIntegTab('{{ t.id }}')">{{ t.label }}</button>
+    {% endfor %}
   </div>
 
   <!-- ══════════════════════════════════════════════════════
@@ -40,6 +48,11 @@
         <button onclick="saveSeerrSettings()">{{ _('Save') }}</button>
       </div>
     </div>
+    {# Extensions attaching to this existing tab (settings_host="integrations",
+       settings_tab="seerr") — see register_thirdparty() in registry.py. #}
+    {% for card in get_settings_cards('integrations', 'seerr') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div><!-- /tab-seerr -->
 
   <!-- ══════════════════════════════════════════════════════
@@ -327,6 +340,9 @@
       </div>
     </div>
 
+    {% for card in get_settings_cards('integrations', 'mediaplayer') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div><!-- /tab-mediaplayer -->
 
   <!-- ══════════════════════════════════════════════════════
@@ -584,6 +600,9 @@
         {{ _('Metadata is preloaded in the background and cached in the database for 24 h. Fernsehserien.de provider lookups are cached for 24 h as well.') }}
       </div>
     </div>
+    {% for card in get_settings_cards('integrations', 'cineinfo') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div><!-- /tab-cineinfo -->
 
   <!-- ══════════════════════════════════════════════════════
@@ -639,8 +658,8 @@
             <option value="pt-BR">🇧🇷 Português</option>
           </select>
         </div>
-        <button onclick="saveCrunchyrollSettings()">{{ _('Save') }}</button>
-        <button class="btn-secondary" id="crTestBtn" onclick="testCrunchyroll(this)">{{ _('Test connection') }}</button>
+        <button class="btn btn-primary" onclick="saveCrunchyrollSettings()">{{ _('Save') }}</button>
+        <button class="btn btn-secondary" id="crTestBtn" onclick="testCrunchyroll(this)">{{ _('Test connection') }}</button>
       </div>
       <div class="settings-row-desc" id="crTestResult" style="display:none;margin-top:-6px;"></div>
 
@@ -757,7 +776,7 @@
       </div>
 
       <div class="integ-input-row" id="fsTestRow">
-        <button class="btn-secondary" id="fsTestBtn" onclick="testFernsehserien(this)">{{ _('Test connection') }}</button>
+        <button class="btn btn-secondary" id="fsTestBtn" onclick="testFernsehserien(this)">{{ _('Test connection') }}</button>
       </div>
       <div class="settings-row-desc" id="fsTestResult" style="display:none;margin-top:-6px;"></div>
 
@@ -783,52 +802,7 @@
          integration folder shows up here automatically, no template edits
          required. -->
     {% for card in thirdparty_cards %}
-    <div class="settings-section integ-card collapsed" id="integCard-{{ card.id }}">
-      <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('{{ card.id }}')">
-        <span class="integ-collapsible-chevron">▸</span>
-        <span class="integ-subsection-title">{{ card.title }}</span>
-        {% for badge_text, badge_color in card.badges %}
-        <span class="integ-subsection-badge" style="background:{{ badge_color }};color:#fff;">{{ badge_text }}</span>
-        {% endfor %}
-      </div>
-      <div class="integ-collapsible-body">
-      {% if card.description %}
-      <div class="integ-subsection-hint">{{ card.description }}</div>
-      {% endif %}
-
-      <!-- Master toggle (generic — backed by /api/settings/thirdparty/<id>) -->
-      <div class="settings-row">
-        <div class="settings-row-left">
-          <div class="settings-row-label">{{ card.enable_label }}</div>
-          {% if card.enable_desc %}<div class="settings-row-desc">{{ card.enable_desc }}</div>{% endif %}
-        </div>
-        <div class="settings-row-right">
-          <label class="toggle">
-            <input type="checkbox" class="thirdparty-toggle" data-thirdparty-id="{{ card.id }}" onchange="saveThirdpartyToggle('{{ card.id }}', this)" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Extra per-integration toggles (generic — also backed by
-           /api/settings/thirdparty/<id>, see registry.py's extra_settings).
-           Empty for integrations that only registered the master toggle. -->
-      {% for extra in card.extra_settings %}
-      <div class="settings-row">
-        <div class="settings-row-left">
-          <div class="settings-row-label">{{ extra.label }}</div>
-          {% if extra.description %}<div class="settings-row-desc">{{ extra.description }}</div>{% endif %}
-        </div>
-        <div class="settings-row-right">
-          <label class="toggle">
-            <input type="checkbox" class="thirdparty-extra-toggle" data-thirdparty-id="{{ card.id }}" data-extra-key="{{ extra.key }}" onchange="saveThirdpartyExtraSetting('{{ card.id }}', '{{ extra.key }}', this)" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-      </div>
-      {% endfor %}
-      </div>
-    </div>
+    {{ ext.render_settings_card(card) }}
     {% endfor %}
 
   </div><!-- /tab-thirdparty -->
@@ -866,6 +840,9 @@
         </div>
       </div>
     </div>
+    {% for card in get_settings_cards('integrations', 'syncplay') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div><!-- /tab-syncplay -->
 
   <!-- ══════════════════════════════════════════════════════
@@ -966,9 +943,29 @@
         </div>
       </div>
     </div>
+    {% for card in get_settings_cards('integrations', 'uptime') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div><!-- /tab-uptime -->
+
+  <!-- ══════════════════════════════════════════════════════
+       Dynamic tabs — brand-new tabs an extension asked for via
+       settings_tab=<something not in _KNOWN_TABS> (see the button loop
+       in #integTabs above and registry.py's resolve_dynamic_tabs()).
+  ══════════════════════════════════════════════════════ -->
+  {% for t in get_dynamic_tabs('integrations') %}
+  <div class="settings-tab-panel" id="tab-{{ t.id }}">
+    {% for card in get_settings_cards('integrations', t.id) %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
+  </div><!-- /tab-{{ t.id }} -->
+  {% endfor %}
 
 </div>
 <div id="toast" class="toast"></div>
+<!-- Shared collapsible-card behaviour + generic enable toggle for
+     auto-registered extensions (see _settings_card_macro.html /
+     web/thirdparties/registry.py). Also used by notifications.html. -->
+<script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
 <script src="{{ url_for('static', filename='integrations.js') }}"></script>
 {% endblock %}

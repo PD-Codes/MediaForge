@@ -58,8 +58,16 @@
     // The pill has its own fixed-ish sizing (button + text + button), so any
     // leftover fixed width from the plain-input days (style="width:70px" on
     // the CRF fields etc.) would just cramp it — drop it and let the pill
-    // use its natural/flex sizing instead.
+    // use its natural/flex sizing instead. min-width/max-width need the same
+    // treatment: e.g. the shared thirdparty-extra-field markup sets
+    // style="min-width:160px" (sized for its "text"/"secret" siblings), and
+    // min-width always wins over the pill's own width:100% !important (CSS
+    // clamps used width to at least min-width), so left alone it forces the
+    // input past the pill's 120px box and pushes the "+" button out past the
+    // wrap's clipped edge — right where the row's Save button sits.
     input.style.width = "";
+    input.style.minWidth = "";
+    input.style.maxWidth = "";
 
     input.parentNode.insertBefore(wrap, input);
 

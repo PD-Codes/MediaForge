@@ -264,7 +264,7 @@ async function _crCheckCard(card, title) {
     info.appendChild(meta);
   }
   const crAdded = await _crProviderPill(title, meta, { small: true });
-  if (!crAdded) await _fsProviderPill(title, meta, { small: true });
+  if (!crAdded) await _enqueueFsLookup(title, meta, { small: true });
 }
 
 const _crObserver = ('IntersectionObserver' in window)
@@ -2289,6 +2289,45 @@ async function _crProviderPill(title, containerEl, opts) {
   } catch (e) { /* silent */ return false; }
 }
 
+// ─── Fernsehserien.de lookup queue ──────────────────────────────────────
+// fernsehserien_service.py rate-limits itself to ~1 request/1.5s through a
+// single shared scraper instance, on purpose — it's a small, independently
+// run site, and hammering it risks getting the scraper IP-blocked (see that
+// file's docstring). If every card on a season/browse grid fires its own
+// fetch() the moment it needs an FS check, they all just pile up behind that
+// same server-side sleep at once — wasting browser connection slots and
+// making pills pop in in a random, bursty order instead of steadily.
+//
+// _enqueueFsLookup funnels every FS lookup (grid cards AND the detail modal)
+// through one client-side FIFO queue drained by a single consumer loop, so
+// exactly one FS request is ever in flight, matching the server's own
+// pacing. As soon as one title's result comes back (pill shown or not), the
+// very next queued title starts immediately — no dead air, and pills appear
+// steadily in the order titles became ready rather than all-at-once-then-wait.
+const _fsQueue = [];
+let _fsQueueRunning = false;
+
+function _enqueueFsLookup(title, containerEl, opts) {
+  return new Promise((resolve) => {
+    _fsQueue.push({ title, containerEl, opts, resolve });
+    _runFsQueue();
+  });
+}
+
+async function _runFsQueue() {
+  if (_fsQueueRunning) return;
+  _fsQueueRunning = true;
+  while (_fsQueue.length) {
+    const job = _fsQueue.shift();
+    let added = false;
+    try {
+      added = await _fsProviderPill(job.title, job.containerEl, job.opts);
+    } catch (e) { /* _fsProviderPill already fails silently on its own */ }
+    job.resolve(added);
+  }
+  _fsQueueRunning = false;
+}
+
 // Add a "Fernsehserien" provider pill naming the German streaming premiere
 // provider fernsehserien.de reports for a title. This is the last link in the
 // provider resolution chain (TMDB → Crunchyroll → Fernsehserien.de) — callers
@@ -2297,7 +2336,9 @@ async function _crProviderPill(title, containerEl, opts) {
 // though it's now wired into card hover too (see _cardProviderChain).
 // Gated on the frontend flag so no request fires when the integration is off.
 // Fails silently — a miss just means no pill. Returns true iff a pill was
-// actually inserted.
+// actually inserted. Not called directly by pill callers below — see
+// _enqueueFsLookup above, which all of them go through instead so every FS
+// request across the whole page shares one queue.
 async function _fsProviderPill(title, containerEl, opts) {
   opts = opts || {};
   if (!fernsehserienSettings || fernsehserienSettings.enabled !== '1') return false;
@@ -2360,18 +2401,88 @@ async function _fsCardPill(card, d) {
     meta.className = 'browse-tmdb-meta';
     info.appendChild(meta);
   }
-  return _fsProviderPill(title, meta, { small: true });
+  return _enqueueFsLookup(title, meta, { small: true });
+}
+
+// ─── Registered extension provider pills ────────────────────────────────
+// A thirdparty integration can add its own entry to the provider-pill
+// fallback chain by calling the global registerProviderPill(name,
+// resolverFn) from a small JS file it registers via
+// register_thirdparty(provider_pill_script=...) (see
+// web/thirdparties/registry.py) — that file is included as a <script> on
+// every page (see base.html) while the integration is enabled, and just
+// needs to call registerProviderPill() once at load time. resolverFn
+// receives (title, imdbId) and must return (or resolve to) either
+// null/undefined/false (no pill for this title) or {name, tooltip?}
+// describing the pill to render via _makeProviderPill.
+//
+// window._providerPillResolvers is defined as an empty array as early as
+// possible in base.html — before this file or any thirdparty script has
+// necessarily loaded — so registerProviderPill() is always safe to call
+// regardless of script order; the `||` below is just a defensive fallback
+// in case app.js somehow loads first.
+window._providerPillResolvers = window._providerPillResolvers || [];
+window.registerProviderPill = window.registerProviderPill || function (name, resolverFn) {
+  window._providerPillResolvers.push({ name: name, resolverFn: resolverFn });
+};
+
+// Last link in the provider resolution chain (TMDB → Crunchyroll →
+// Fernsehserien.de → registered extensions), mirroring _crProviderPill's
+// exact signature/contract: (title, containerEl, opts) -> Promise<boolean>.
+// Tries each registered resolver in registration order and stops at the
+// first one that returns a pill. A resolver that throws or returns garbage
+// is treated as "no pill" — one broken extension resolver never blocks
+// another, or the CR/FS pills that already ran before this.
+async function _extensionProviderPill(title, containerEl, opts) {
+  opts = opts || {};
+  if (!title || !containerEl || !window._providerPillResolvers || !window._providerPillResolvers.length) return false;
+  for (const entry of window._providerPillResolvers) {
+    try {
+      const result = await entry.resolverFn(title, opts.imdbId);
+      if (!result || !result.name) continue;
+      const already = Array.from(containerEl.querySelectorAll('span')).some(
+        el => el.textContent === result.name);
+      if (already) return true;
+      const pill = _makeProviderPill(result.name, {
+        small: !!opts.small,
+        title: opts.small ? (result.tooltip || result.name) : result.tooltip,
+      });
+      containerEl.insertBefore(pill, containerEl.firstChild);
+      return true;
+    } catch (e) { /* one broken resolver shouldn't block the rest */ }
+  }
+  return false;
+}
+
+// Card-level wrapper, mirroring _crCardPill/_fsCardPill — only reached once
+// TMDB, Crunchyroll and Fernsehserien.de all came up empty for this card.
+async function _extensionCardPill(card, d) {
+  const title = (d && d.title) || card.dataset.title || card.dataset.tmdbTitle || "";
+  if (!title) return false;
+  const info = card.querySelector('.browse-info');
+  if (!info) return false;
+  let meta = info.querySelector('.browse-tmdb-meta');
+  if (!meta) {
+    meta = document.createElement('div');
+    meta.className = 'browse-tmdb-meta';
+    info.appendChild(meta);
+  }
+  return _extensionProviderPill(title, meta, { small: true, imdbId: d && d.imdb_id });
 }
 
 // Provider resolution order for browse cards: TMDB → Crunchyroll →
-// Fernsehserien.de. TMDB's own provider badge is rendered separately in
-// _applyTmdbToCard; this only decides whether the fallback pill (CR, then FS)
-// is worth trying at all — skipped entirely once TMDB already has providers.
+// Fernsehserien.de → registered extensions. TMDB's own provider badge is
+// rendered separately in _applyTmdbToCard; this only decides whether the
+// fallback pill (CR, then FS, then extensions) is worth trying at all —
+// skipped entirely once TMDB already has providers.
 async function _cardProviderChain(card, d) {
   const tmdbHasProviders = !!(d && d.found && d.providers && d.providers.length);
   if (tmdbHasProviders) return;
   const crAdded = await _crCardPill(card, d);
-  if (!crAdded) await _fsCardPill(card, d);
+  if (crAdded) return;
+  const fsAdded = await _fsCardPill(card, d);
+  if (fsAdded) return;
+  await _extensionCardPill(card, d);
 }
 
 async function enrichModalWithTmdb(title, imdbId, _seq) {
@@ -2386,7 +2497,10 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
     // TMDB is off entirely — start the chain at Crunchyroll.
     const crAdded = await _crProviderPill(title, provEl);
     if (_stale()) return;
-    if (!crAdded) await _fsProviderPill(title, provEl);
+    if (crAdded) return;
+    const fsAdded = await _enqueueFsLookup(title, provEl);
+    if (_stale()) return;
+    if (!fsAdded) await _extensionProviderPill(title, provEl, { imdbId });
     return;
   }
   try {
@@ -2404,7 +2518,10 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
       // No TMDB data at all — start the chain at Crunchyroll.
       const crAdded = await _crProviderPill(title, provEl);
       if (_stale()) return;
-      if (!crAdded) await _fsProviderPill(title, provEl);
+      if (crAdded) return;
+      const fsAdded = await _enqueueFsLookup(title, provEl);
+      if (_stale()) return;
+      if (!fsAdded) await _extensionProviderPill(title, provEl, { imdbId });
       return;
     }
     const tmdbHasProviders = !!(d.providers && d.providers.length);
@@ -2449,8 +2566,12 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
     if (!tmdbHasProviders) {
       const crAdded = await _crProviderPill((d && d.title) || title, provEl);
       if (_stale()) return;
-      if (!crAdded) await _fsProviderPill((d && d.title) || title, provEl);
-      if (_stale()) return;
+      if (!crAdded) {
+        const fsAdded = await _enqueueFsLookup((d && d.title) || title, provEl);
+        if (_stale()) return;
+        if (!fsAdded) await _extensionProviderPill((d && d.title) || title, provEl, { imdbId: imdbId || (d && d.imdb_id) });
+        if (_stale()) return;
+      }
     }
     // TMDB Genres — ersetze die Seiten-Genres wenn aktiviert
     if (cineinfoSettings.show_genres === '1' && d.genres && d.genres.length) {

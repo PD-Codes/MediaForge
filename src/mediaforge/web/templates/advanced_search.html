@@ -167,24 +167,10 @@
     </div>
   </div>
 
-  <!-- AniWorld Search Modal (pops up when clicking a TMDB result) -->
-  <div class="adv-search-overlay" id="aniSearchModalOverlay" style="display:none;"
-    onclick="closeAniSearchModalOutside(event)">
-    <div class="ani-search-modal" id="aniSearchModal">
-      <button class="close ani-search-close" onclick="closeAniSearchModal()" aria-label="{{ _('Close') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-          stroke-linejoin="round" style="width:16px;height:16px;">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
-      <div class="ani-search-container">
-        <h2 id="aniSearchTitle">{{ _('Searching...') }}</h2>
-        <div id="aniSearchSpinner" class="spinner" style="display:none;">{{ _('Searching streams on AniWorld, SerienStream & FilmPalast...') }}</div>
-        <div id="aniSearchResults" class="results-poster-grid"></div>
-      </div>
-    </div>
-  </div>
+  <!-- The AniWorld/S.TO/FilmPalast search modal (aniSearchModalOverlay) now
+       lives in shared_modals.html itself, included below, since three pages
+       (this one, anime_seasons_view.html, mediacalendar.html) all need the
+       identical markup. -->
   {% include "shared_modals.html" %}
 {% endblock %}
 {% block scripts %}

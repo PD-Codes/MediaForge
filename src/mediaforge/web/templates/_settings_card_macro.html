@@ -1,0 +1,81 @@
+{# Shared collapsible settings card for auto-registered extensions (see
+   web/thirdparties/registry.py's register_thirdparty()). Rendered
+   wherever a "card" dict from resolve_settings_cards()/thirdparty_cards
+   shows up — the classic Integrations "Third Party" tab, any other
+   existing tab/pill an extension attaches to, or a brand-new one
+   (get_dynamic_tabs()). One macro instead of copy-pasting this markup
+   into integrations.html and notifications.html keeps every host visually
+   and behaviourally identical for free.
+
+   The toggle(s) are backed by the generic
+   GET/PUT /api/settings/thirdparty/<id> API (registry.py's
+   register_generic_settings_routes) via static/extension_cards.js, which
+   scans the whole document for .thirdparty-toggle[data-thirdparty-id] —
+   so this works no matter which page/tab the card ends up rendered on,
+   with zero extra JS wiring per host. #}
+{% macro render_settings_card(card) %}
+<div class="settings-section integ-card collapsed" id="integCard-{{ card.id }}">
+  <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('{{ card.id }}')">
+    <span class="integ-collapsible-chevron">▸</span>
+    <span class="integ-subsection-title">{{ card.title }}</span>
+    {% for badge_text, badge_color in card.badges %}
+    <span class="integ-subsection-badge" style="background:{{ badge_color }};color:#fff;">{{ badge_text }}</span>
+    {% endfor %}
+  </div>
+  <div class="integ-collapsible-body">
+  {% if card.description %}
+  <div class="integ-subsection-hint">{{ card.description }}</div>
+  {% endif %}
+
+  <!-- Master toggle (generic — backed by /api/settings/thirdparty/<id>) -->
+  <div class="settings-row">
+    <div class="settings-row-left">
+      <div class="settings-row-label">{{ card.enable_label }}</div>
+      {% if card.enable_desc %}<div class="settings-row-desc">{{ card.enable_desc }}</div>{% endif %}
+    </div>
+    <div class="settings-row-right">
+      <label class="toggle">
+        <input type="checkbox" class="thirdparty-toggle" data-thirdparty-id="{{ card.id }}" onchange="saveThirdpartyToggle('{{ card.id }}', this)" />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Extra per-integration fields (generic — also backed by
+       /api/settings/thirdparty/<id>, see registry.py's extra_settings).
+       Empty for integrations that only registered the master toggle. One
+       row per field, shaped by its declared type ("toggle" the original
+       checkbox; "text"/"secret"/"number" an input + inline Save button;
+       "select" a dropdown that saves on change). -->
+  {% for extra in card.extra_settings %}
+  <div class="settings-row">
+    <div class="settings-row-left">
+      <div class="settings-row-label">{{ extra.label }}</div>
+      {% if extra.description %}<div class="settings-row-desc">{{ extra.description }}</div>{% endif %}
+    </div>
+    <div class="settings-row-right">
+      {% if extra.type == 'toggle' %}
+      <label class="toggle">
+        <input type="checkbox" class="thirdparty-extra-toggle" data-thirdparty-id="{{ card.id }}" data-extra-key="{{ extra.key }}" onchange="saveThirdpartyExtraSetting('{{ card.id }}', '{{ extra.key }}', this)" />
+        <span class="toggle-slider"></span>
+      </label>
+      {% elif extra.type == 'select' %}
+      <select class="thirdparty-extra-field" data-thirdparty-id="{{ card.id }}" data-extra-key="{{ extra.key }}" onchange="saveThirdpartyExtraField('{{ card.id }}', '{{ extra.key }}', this)">
+        {% for value, opt_label in extra.options %}
+        <option value="{{ value }}">{{ opt_label }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
+      <div class="integ-input-row" style="gap:6px;">
+        <input type="{{ 'password' if extra.type == 'secret' else ('number' if extra.type == 'number' else 'text') }}"
+               class="thirdparty-extra-field" data-thirdparty-id="{{ card.id }}" data-extra-key="{{ extra.key }}"
+               placeholder="{{ extra.placeholder }}" autocomplete="off" style="min-width:160px;" />
+        <button class="btn btn-secondary" onclick="saveThirdpartyExtraField('{{ card.id }}', '{{ extra.key }}', this.previousElementSibling)">{{ _('Save') }}</button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+</div>
+{% endmacro %}

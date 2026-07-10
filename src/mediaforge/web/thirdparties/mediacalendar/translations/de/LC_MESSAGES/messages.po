@@ -1,0 +1,458 @@
+# German translations for the Media Kalender third-party integration.
+# msgid = English source (template/Python key)
+# msgstr = German translation
+#
+# This catalog is scoped to this integration only (see this integration's
+# own babel.cfg) and is merged into the app's combined translation catalog
+# at startup by web/thirdparties/discover_translation_dirs() — see that
+# module's docstring. It only needs to contain strings this integration
+# introduces; strings it reuses from the core app (e.g. "Save", "Cancel")
+# are already translated there, but are repeated here too since this
+# integration's own catalog is what Flask-Babel consults while rendering
+# its templates.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-07-09 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: PD-Codes\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.8.0\n"
+
+# ── templates/mediacalendar.html ───────────────────────────────────────
+msgid "Media Calendar"
+msgstr "Media Kalender"
+
+msgid "Saved TMDB filters as calendars, curated lists, and upcoming releases at a glance."
+msgstr "Gespeicherte TMDB-Filter als Kalender, kuratierte Listen und kommende Veröffentlichungen auf einen Blick."
+
+msgid "TMDB is not configured yet. Media Calendar needs the CineInfo TMDB connection to look up movies and shows."
+msgstr "TMDB ist noch nicht konfiguriert. Media Kalender benötigt die CineInfo-TMDB-Anbindung, um Filme und Serien nachzuschlagen."
+
+msgid "Open Integrations settings"
+msgstr "Integrationseinstellungen öffnen"
+
+msgid "My Calendars"
+msgstr "Meine Kalender"
+
+msgid "My Lists"
+msgstr "Meine Listen"
+
+msgid "Settings"
+msgstr "Einstellungen"
+
+msgid "New calendar"
+msgstr "Neuer Kalender"
+
+msgid "New list"
+msgstr "Neue Liste"
+
+msgid "Planned Downloads"
+msgstr "Geplante Downloads"
+
+msgid "Releases flagged for automatic download once they become available -- checked hourly from their release date on."
+msgstr "Veröffentlichungen, die für den automatischen Download vorgemerkt sind, sobald sie verfügbar sind -- ab dem Erscheinungsdatum stündlich geprüft."
+
+msgid "Cancel"
+msgstr "Abbrechen"
+
+msgid "Save"
+msgstr "Speichern"
+
+# ── static/mediacalendar.js (client-built filter builder / cards) ─────────
+# These are not extracted by pybabel (this integration's babel.cfg only
+# scans *.py/templates/**.html) -- they're consulted at runtime via
+# window.MC_I18N, built by routes.py's _client_i18n() from the
+# _CLIENT_STRINGS tuple, and picked up by mediacalendar.js's _mcT(). Keep
+# this section in sync with that tuple.
+
+msgid "Search movie or show..."
+msgstr "Film oder Serie suchen..."
+
+msgid "Movie"
+msgstr "Film"
+
+msgid "TV Show"
+msgstr "Serie"
+
+msgid "No results"
+msgstr "Keine Ergebnisse"
+
+msgid "No calendars yet -- create one to start tracking upcoming releases."
+msgstr "Noch keine Kalender vorhanden -- erstelle einen, um kommende Veröffentlichungen zu verfolgen."
+
+msgid "Movies"
+msgstr "Filme"
+
+msgid "TV Shows"
+msgstr "Serien"
+
+msgid "Open"
+msgstr "Öffnen"
+
+msgid "Edit"
+msgstr "Bearbeiten"
+
+msgid "Duplicate"
+msgstr "Duplizieren"
+
+msgid "Delete"
+msgstr "Löschen"
+
+msgid "Delete this calendar?"
+msgstr "Diesen Kalender löschen?"
+
+msgid "Loading..."
+msgstr "Wird geladen..."
+
+msgid "Refresh"
+msgstr "Aktualisieren"
+
+msgid "Export .ics"
+msgstr ".ics exportieren"
+
+msgid "Nothing found for the current filter."
+msgstr "Für den aktuellen Filter wurde nichts gefunden."
+
+msgid "In library"
+msgstr "In Bibliothek"
+
+msgid "Requested"
+msgstr "Angefragt"
+
+msgid "Watched"
+msgstr "Gesehen"
+
+msgid "Hide"
+msgstr "Ausblenden"
+
+msgid "Edit calendar"
+msgstr "Kalender bearbeiten"
+
+msgid "Name"
+msgstr "Name"
+
+msgid "Color"
+msgstr "Farbe"
+
+msgid "Media types"
+msgstr "Medientypen"
+
+msgid "Source"
+msgstr "Quelle"
+
+msgid "TMDB Discover filter"
+msgstr "TMDB-Discover-Filter"
+
+msgid "From my lists"
+msgstr "Aus meinen Listen"
+
+msgid "Discover filter"
+msgstr "Discover-Filter"
+
+msgid "From lists"
+msgstr "Aus Listen"
+
+msgid "My media library"
+msgstr "Meine Mediathek"
+
+msgid "Genres"
+msgstr "Genres"
+
+msgid "Keywords"
+msgstr "Schlagwörter"
+
+msgid "Search keyword..."
+msgstr "Schlagwort suchen..."
+
+msgid "Streaming providers"
+msgstr "Streaming-Anbieter"
+
+msgid "Provider filter mode"
+msgstr "Anbieter-Filtermodus"
+
+msgid "Only these providers"
+msgstr "Nur diese Anbieter"
+
+msgid "Exclude these providers"
+msgstr "Diese Anbieter ausschließen"
+
+msgid "Linked lists"
+msgstr "Verknüpfte Listen"
+
+msgid "Combine with filter"
+msgstr "Mit Filter kombinieren"
+
+msgid "Also include Discover results"
+msgstr "Discover-Ergebnisse zusätzlich einbeziehen"
+
+msgid "Adds TMDB Discover matches (genres/keywords/providers above) on top of the linked lists."
+msgstr "Fügt TMDB-Discover-Treffer (Genres/Schlagwörter/Anbieter oben) zusätzlich zu den verknüpften Listen hinzu."
+
+msgid "Fold in / subtract lists"
+msgstr "Listen einbeziehen / abziehen"
+
+msgid "Manually included / excluded titles"
+msgstr "Manuell ein-/ausgeschlossene Titel"
+
+msgid "Add title"
+msgstr "Titel hinzufügen"
+
+msgid "Always included"
+msgstr "Immer enthalten"
+
+msgid "Always excluded"
+msgstr "Immer ausgeschlossen"
+
+msgid "Pick a search result, then use the buttons that appear to add it to either list."
+msgstr "Wähle ein Suchergebnis aus und nutze die erscheinenden Schaltflächen, um es einer der beiden Listen hinzuzufügen."
+
+msgid "Invalid -- not applied. Remove and re-add it from the suggestions below."
+msgstr "Ungültig -- wird nicht angewendet. Entfernen und aus den Vorschlägen unten neu hinzufügen."
+
+msgid "Adds these lists on top of whatever the Discover filter above matches -- with no genre/keyword/provider set, that's an unrestricted (large) result set, not \"nothing\". To show only these lists, switch Source to \"From my lists\" instead."
+msgstr "Diese Listen werden zu allem hinzugefügt, was der Discover-Filter oben bereits liefert -- ohne gesetzten Genre-/Keyword-/Anbieter-Filter ist das ein uneingeschränktes (großes) Ergebnis, nicht \"nichts\". Um wirklich nur diese Listen anzuzeigen, stelle die Quelle stattdessen auf \"Aus meinen Listen\" um."
+
+msgid "Library / request status filter"
+msgstr "Bibliotheks-/Anfragestatus-Filter"
+
+msgid "Library status"
+msgstr "Bibliotheksstatus"
+
+msgid "Any"
+msgstr "Beliebig"
+
+msgid "Only in my library"
+msgstr "Nur in meiner Bibliothek"
+
+msgid "Only missing from my library"
+msgstr "Nur fehlend in meiner Bibliothek"
+
+msgid "Request status (Seerr)"
+msgstr "Anfragestatus (Seerr)"
+
+msgid "Only requested"
+msgstr "Nur angefragt"
+
+msgid "Only not requested"
+msgstr "Nur nicht angefragt"
+
+msgid "Add as EXCLUDED? (Cancel = add as always-included)"
+msgstr "Als AUSGESCHLOSSEN hinzufügen? (Abbrechen = als immer enthalten hinzufügen)"
+
+msgid "None"
+msgstr "Keine"
+
+msgid "No lists yet -- create one under \"My Lists\" first."
+msgstr "Noch keine Listen vorhanden -- erstelle zuerst eine unter \"Meine Listen\"."
+
+msgid "Use these lists"
+msgstr "Diese Listen verwenden"
+
+msgid "Fold in (positive)"
+msgstr "Einbeziehen (positiv)"
+
+msgid "Subtract (negative)"
+msgstr "Abziehen (negativ)"
+
+msgid "Please enter a name."
+msgstr "Bitte einen Namen eingeben."
+
+msgid "No lists yet -- create one to curate titles or import from AniList."
+msgstr "Noch keine Listen vorhanden -- erstelle eine, um Titel zu kuratieren oder von AniList zu importieren."
+
+msgid "titles"
+msgstr "Titel"
+
+msgid "Dynamic"
+msgstr "Dynamisch"
+
+msgid "Delete this list?"
+msgstr "Diese Liste löschen?"
+
+msgid "Remove"
+msgstr "Entfernen"
+
+msgid "No titles added yet."
+msgstr "Noch keine Titel hinzugefügt."
+
+msgid "Titles in this list"
+msgstr "Titel in dieser Liste"
+
+msgid "Edit list"
+msgstr "Liste bearbeiten"
+
+msgid "Name & items"
+msgstr "Name & Einträge"
+
+msgid "Save first, then add titles."
+msgstr "Zuerst speichern, dann Titel hinzufügen."
+
+msgid "Dynamic filter"
+msgstr "Dynamischer Filter"
+
+msgid "Enable dynamic matching"
+msgstr "Dynamischen Abgleich aktivieren"
+
+msgid "Also auto-match new TMDB releases against genres/keywords/providers below, in addition to manually added titles."
+msgstr "Gleicht neue TMDB-Veröffentlichungen zusätzlich zu manuell hinzugefügten Titeln automatisch mit den Genres/Schlagwörtern/Anbietern unten ab."
+
+msgid "Import from AniList"
+msgstr "Von AniList importieren"
+
+msgid "AniList username"
+msgstr "AniList-Benutzername"
+
+msgid "Import watching + planning"
+msgstr "\"Watching\" + \"Planning\" importieren"
+
+msgid "Save the list first, then import from AniList."
+msgstr "Zuerst die Liste speichern, dann von AniList importieren."
+
+msgid "Importing..."
+msgstr "Wird importiert..."
+
+msgid "Added"
+msgstr "Hinzugefügt"
+
+msgid "Unmatched"
+msgstr "Nicht zugeordnet"
+
+msgid "Lookahead (weeks)"
+msgstr "Vorlaufzeit (Wochen)"
+
+msgid "How many weeks ahead calendars resolve releases for."
+msgstr "Wie viele Wochen im Voraus Kalender Veröffentlichungen auflösen."
+
+msgid "Lookback (weeks)"
+msgstr "Rückblick (Wochen)"
+
+msgid "How many weeks in the past calendars also resolve releases for, in addition to the forward-looking lookahead window. 0 keeps calendars showing today onward only."
+msgstr "Wie viele Wochen in der Vergangenheit Kalender zusätzlich zum vorausschauenden Vorlauf-Fenster auflösen. 0 zeigt weiterhin nur ab heute an."
+
+msgid "Cache duration"
+msgstr "Cache-Dauer"
+
+msgid "How long resolved calendar results are cached before being refreshed automatically."
+msgstr "Wie lange aufgelöste Kalenderergebnisse zwischengespeichert werden, bevor sie automatisch aktualisiert werden."
+
+msgid "Use my media library"
+msgstr "Meine Mediathek verwenden"
+
+msgid "Lets the \"My media library\" calendar source and library-status badges read your existing library data (a connected Jellyfin/Plex server via MediaScan, and/or MediaForge's own native library scan)."
+msgstr "Ermöglicht der Kalenderquelle \"Meine Mediathek\" und den Bibliotheksstatus-Badges, deine vorhandenen Bibliotheksdaten zu lesen (ein verbundener Jellyfin/Plex-Server via MediaScan und/oder MediaForges eigener nativer Bibliotheks-Scan)."
+
+msgid "Reminder notifications"
+msgstr "Erinnerungsbenachrichtigungen"
+
+msgid "Sends a notification (via MediaForge's configured notification channels) shortly before a release date."
+msgstr "Sendet kurz vor einem Veröffentlichungstermin eine Benachrichtigung (über die konfigurierten Benachrichtigungskanäle von MediaForge)."
+
+msgid "Reminder lead time (days)"
+msgstr "Erinnerungsvorlauf (Tage)"
+
+msgid "How many days in advance to send the reminder."
+msgstr "Wie viele Tage im Voraus die Erinnerung gesendet wird."
+
+msgid "Add to Auto Sync"
+msgstr "Zu Auto-Sync hinzufügen"
+
+msgid "Searches AniWorld/S.TO/MegaKino right now and sets up regular Auto-Sync for the whole series immediately if a match is found -- does not wait for this specific release."
+msgstr "Sucht sofort auf AniWorld/S.TO/MegaKino und richtet bei einem Treffer sofort reguläres Auto-Sync für die ganze Serie ein -- wartet nicht auf diese eine Veröffentlichung."
+
+msgid "Added to Auto Sync."
+msgstr "Zu Auto-Sync hinzugefügt."
+
+msgid "No matching site found for this title."
+msgstr "Keine passende Seite für diesen Titel gefunden."
+
+msgid "Could not add to Auto Sync."
+msgstr "Konnte nicht zu Auto-Sync hinzugefügt werden."
+
+# ── Release calendar (month/week view) -- static/mediacalendar.js's
+# McCalendars module (mcCalRender*/mcCalActionsHtml/mcCalBadgesHtml) ──────
+
+msgid "Today"
+msgstr "Heute"
+
+msgid "Back"
+msgstr "Zurück"
+
+msgid "Next"
+msgstr "Weiter"
+
+msgid "Month"
+msgstr "Monat"
+
+msgid "Week"
+msgstr "Woche"
+
+msgid "Grid view"
+msgstr "Rasteransicht"
+
+msgid "List view"
+msgstr "Listenansicht"
+
+msgid "more"
+msgstr "weitere"
+
+msgid "release"
+msgstr "Veröffentlichung"
+
+msgid "releases"
+msgstr "Veröffentlichungen"
+
+msgid "No releases"
+msgstr "Keine Veröffentlichungen"
+
+msgid "New"
+msgstr "Neu"
+
+msgid "In-Sync"
+msgstr "In-Sync"
+
+msgid "Planned Download"
+msgstr "Geplanter Download"
+
+msgid "Search in MediaForge"
+msgstr "In MediaForge suchen"
+
+msgid "Plan auto-download"
+msgstr "Für Auto-Download vormerken"
+
+msgid "Remove planned download"
+msgstr "Vormerkung entfernen"
+
+msgid "Edit planned download"
+msgstr "Vormerkung bearbeiten"
+
+msgid "Pending"
+msgstr "Ausstehend"
+
+msgid "Failed"
+msgstr "Fehlgeschlagen"
+
+msgid "Language"
+msgstr "Sprache"
+
+msgid "Download path"
+msgstr "Download-Pfad"
+
+msgid "Default path"
+msgstr "Standardpfad"
+
+msgid "No planned downloads yet."
+msgstr "Noch keine geplanten Downloads."
+
+msgid "Remove this planned download?"
+msgstr "Diese Vormerkung entfernen?"
+
+msgid "Used once this release is found and turned into an Auto-Sync job -- checked hourly from the release date on."
+msgstr "Wird verwendet, sobald diese Veröffentlichung gefunden und in einen Auto-Sync-Job umgewandelt wird -- ab dem Erscheinungsdatum stündlich geprüft."

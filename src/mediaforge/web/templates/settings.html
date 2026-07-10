@@ -8,11 +8,17 @@ function setUiLanguage(lang) {
 }
 </script>
 {% endblock %}
+{% import "_settings_card_macro.html" as ext %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_schedule.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='sources.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='hanime.css') }}">{% endblock %}
+<link rel="stylesheet" href="{{ url_for('static', filename='hanime.css') }}">
+<!-- _settings_card_macro.html's card markup (.integ-card/.integ-collapsible-*/
+     .integ-subsection-*) lives in integrations.css -- needed here too since
+     this page can render that same macro for any thirdparty registered with
+     settings_host="settings" (see registry.py's _KNOWN_TABS). -->
+<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">{% endblock %}
 {% set is_admin = not auth_enabled or (current_user and current_user.role == 'admin') %}
 {% block content %}
 <div class="settings-container">
@@ -59,12 +65,20 @@ function setUiLanguage(lang) {
     <button class="settings-tab" data-tab="api" onclick="switchTab('api')">API</button>
     {% endif %}
     <button class="settings-tab" data-tab="updates" onclick="switchTab('updates')">{{ _('Updates') }}</button>
+    {# Brand-new tabs a thirdparty registers with settings_host="settings"
+       and a settings_tab that isn't one of the ids above (see
+       registry.py's resolve_dynamic_tabs() / _KNOWN_TABS["settings"]).
+       Mirrors integrations.html's identical loop. #}
+    {% for t in get_dynamic_tabs('settings') %}
+    <button class="settings-tab" data-tab="{{ t.id }}" onclick="switchTab('{{ t.id }}')">{{ t.label }}</button>
+    {% endfor %}
   </div>
 
   <!-- ══════════════════════════════════════════════════════
        Tab: Allgemein
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-general">
+    {% for card in get_settings_cards('settings', 'general') %}{{ ext.render_settings_card(card) }}{% endfor %}
     <div class="settings-section" id="legacyImportSection" style="display:none;">
       <h2>{{ _('Data from previous installation') }}</h2>
       <div class="settings-hint" style="margin-bottom:14px;">
@@ -228,6 +242,7 @@ function setUiLanguage(lang) {
        Tab: Design
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel active" id="tab-design">
+    {% for card in get_settings_cards('settings', 'design') %}{{ ext.render_settings_card(card) }}{% endfor %}
     <div class="settings-section">
       <h2>{{ _('Design') }}</h2>
       <h3 class="settings-subtitle">{{ _('Appearance') }}</h3>
@@ -335,6 +350,7 @@ function setUiLanguage(lang) {
        Tab: Quellen / Sources
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-sources">
+    {% for card in get_settings_cards('settings', 'sources') %}{{ ext.render_settings_card(card) }}{% endfor %}
     <div class="settings-section">
       <h2>{{ _('Sources') }}</h2>
       <div class="settings-hint">{{ _('Enable or disable the available sources. Disabled sources are hidden on the start page and are no longer loaded there.') }}</div>
@@ -377,6 +393,7 @@ function setUiLanguage(lang) {
        Tab: Downloads
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel active" id="tab-downloads">
+    {% for card in get_settings_cards('settings', 'downloads') %}{{ ext.render_settings_card(card) }}{% endfor %}
 
     {% if is_admin %}
     <div class="settings-section">
@@ -539,6 +556,7 @@ function setUiLanguage(lang) {
        Tab: Auto-Sync
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-autosync">
+    {% for card in get_settings_cards('settings', 'autosync') %}{{ ext.render_settings_card(card) }}{% endfor %}
     {% if is_admin %}
     <div class="settings-section">
       <h2>{{ _('Auto-Sync Defaults') }}</h2>
@@ -696,6 +714,7 @@ function setUiLanguage(lang) {
        Tab: Netzwerk
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-network">
+    {% for card in get_settings_cards('settings', 'network') %}{{ ext.render_settings_card(card) }}{% endfor %}
     <div class="settings-section">
       <h2>{{ _('Network / DNS') }}</h2>
       {% if is_admin %}
@@ -837,6 +856,7 @@ function setUiLanguage(lang) {
   ══════════════════════════════════════════════════════ -->
   {% if is_admin %}
   <div class="settings-tab-panel" id="tab-auth">
+    {% for card in get_settings_cards('settings', 'auth') %}{{ ext.render_settings_card(card) }}{% endfor %}
 
     <div class="settings-section">
       <h2>{{ _('User Management') }}</h2>
@@ -939,6 +959,7 @@ function setUiLanguage(lang) {
   ══════════════════════════════════════════════════════ -->
   {% if is_admin %}
   <div class="settings-tab-panel" id="tab-api">
+    {% for card in get_settings_cards('settings', 'api') %}{{ ext.render_settings_card(card) }}{% endfor %}
     <div class="settings-section">
       <h2>MediaForge API</h2>
       <div class="settings-hint">
@@ -1045,6 +1066,7 @@ function setUiLanguage(lang) {
        Tab: Updates
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-updates">
+    {% for card in get_settings_cards('settings', 'updates') %}{{ ext.render_settings_card(card) }}{% endfor %}
     <div class="settings-section">
       <h2>Updates</h2>
       <div class="settings-row" style="align-items:center;gap:16px;flex-wrap:wrap">
@@ -1129,6 +1151,15 @@ function setUiLanguage(lang) {
     </div>
   </div><!-- /tab-updates -->
 
+  {# Brand-new tabs a thirdparty registers with settings_host="settings"
+     (see the dynamic tab-button loop in the tab bar above and
+     registry.py's resolve_dynamic_tabs()/_KNOWN_TABS["settings"]). #}
+  {% for t in get_dynamic_tabs('settings') %}
+  <div class="settings-tab-panel" id="tab-{{ t.id }}">
+    {% for card in get_settings_cards('settings', t.id) %}{{ ext.render_settings_card(card) }}{% endfor %}
+  </div>
+  {% endfor %}
+
 </div><!-- /settings-container -->
 
 <!-- hanime 18+ age confirmation (two-step; read carefully!) -->
@@ -1169,4 +1200,9 @@ function setUiLanguage(lang) {
 <script>var settingsCanEdit = {{ 'true' if is_admin else 'false' }};</script>
 <script src="{{ url_for('static', filename='settings.js') }}"></script>
 <script src="{{ url_for('static', filename='pwa.js') }}"></script>
+<!-- Generic collapsible-card behaviour + enable toggle for any thirdparty
+     registered with settings_host="settings" (see _settings_card_macro.html
+     / web/thirdparties/registry.py) -- same script integrations.html/
+     notifications.html/extensions.html load for the identical purpose. -->
+<script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
 {% endblock %}

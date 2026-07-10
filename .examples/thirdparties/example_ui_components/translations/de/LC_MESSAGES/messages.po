@@ -1,0 +1,154 @@
+# German translations for the "Example: UI Components" reference integration.
+# msgid = English source (template/Python key)
+# msgstr = German translation
+#
+# See .examples/thirdparties/README.md's "Translations" section for how
+# this file is discovered and compiled.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-07-09 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.8.0\n"
+
+# ── templates/example_ui_components.html ───────────────────────────────
+msgid "Example: UI Components"
+msgstr "Beispiel: UI-Bausteine"
+
+msgid "Core CSS/JS building blocks, live -- copy the markup straight from this page's source (view-source or the template file next to this folder's __init__.py)."
+msgstr "Zentrale CSS/JS-Bausteine, live -- das Markup direkt aus dem Quelltext dieser Seite kopieren (Seitenquelltext oder die Template-Datei neben der __init__.py dieses Ordners)."
+
+msgid "Icons"
+msgstr "Icons"
+
+msgid "No sprite sheet -- every icon is inline SVG, viewBox=\"0 0 24 24\", stroke=\"currentColor\" (so it inherits the surrounding text color automatically), stroke-width=\"2\", stroke-linecap/linejoin=\"round\". Same convention for sidebar links, buttons, badges -- anywhere an icon appears."
+msgstr "Kein Sprite-Sheet -- jedes Icon ist Inline-SVG, viewBox=\"0 0 24 24\", stroke=\"currentColor\" (übernimmt automatisch die umgebende Textfarbe), stroke-width=\"2\", stroke-linecap/linejoin=\"round\". Dieselbe Konvention für Sidebar-Links, Buttons, Badges -- überall wo ein Icon vorkommt."
+
+msgid "Badges"
+msgstr "Badges"
+
+msgid "web/static/tabs-badges.css — small status/tag chips. Also used, with an inline background-color instead of a modifier class, for a settings card's own colored badges (see registry.py's badges= param)."
+msgstr "web/static/tabs-badges.css — kleine Status-/Tag-Chips. Wird auch, mit einer inline background-color statt einer Modifier-Klasse, für die farbigen Badges einer Settings-Karte verwendet (siehe registry.py's badges=-Parameter)."
+
+msgid "Accent"
+msgstr "Akzent"
+
+msgid "Success"
+msgstr "Erfolg"
+
+msgid "Warning"
+msgstr "Warnung"
+
+msgid "Error"
+msgstr "Fehler"
+
+msgid "Neutral"
+msgstr "Neutral"
+
+msgid "Service pills"
+msgstr "Service-Pillen"
+
+msgid "web/static/settings_rows.css — the pill-shaped tab selector the Notifications page uses for Web Push / Telegram / ntfy / etc. (each thirdparty gets one of these automatically if it attaches to Notifications — see the README's \"Settings placement\" section). Click one below."
+msgstr "web/static/settings_rows.css — der pillenförmige Tab-Auswähler, den die Notifications-Seite für Web Push / Telegram / ntfy / etc. nutzt (jede Thirdparty bekommt automatisch eine davon, wenn sie sich an Notifications anhängt — siehe den README-Abschnitt \"Settings placement\"). Unten anklicken."
+
+msgid "Pill A"
+msgstr "Pille A"
+
+msgid "Pill B"
+msgstr "Pille B"
+
+msgid "Pill C"
+msgstr "Pille C"
+
+msgid "Toggle switches"
+msgstr "Toggle-Schalter"
+
+msgid "web/static/tables.css — the on/off switch used everywhere in Settings. Inside a real settings card this is wired automatically (class=\"thirdparty-toggle\" data-thirdparty-id=\"...\") — see _settings_card_macro.html and static/extension_cards.js. Standalone, it just needs a plain onchange like below."
+msgstr "web/static/tables.css — der Ein/Aus-Schalter, der überall in den Einstellungen verwendet wird. In einer echten Settings-Karte wird das automatisch verdrahtet (class=\"thirdparty-toggle\" data-thirdparty-id=\"...\") — siehe _settings_card_macro.html und static/extension_cards.js. Alleinstehend braucht es nur ein einfaches onchange wie unten."
+
+msgid "Demo toggle"
+msgstr "Demo-Toggle"
+
+msgid "Flips the label on the right when clicked."
+msgstr "Ändert beim Klicken die Beschriftung rechts."
+
+msgid "State:"
+msgstr "Status:"
+
+msgid "Number stepper"
+msgstr "Zahlen-Stepper"
+
+msgid "web/static/forms.css + web/static/number_input.js (loaded globally by base.html). Zero markup needed — a plain input[type=number] is auto-enhanced with -/+ buttons on page load (and for anything injected into the DOM later, e.g. a modal built by JS). It respects min/max/step via the native stepUp()/stepDown()."
+msgstr "web/static/forms.css + web/static/number_input.js (wird global von base.html geladen). Kein Markup nötig — ein einfaches input[type=number] wird beim Laden automatisch mit -/+-Buttons erweitert (auch für später per JS eingefügte Elemente, z. B. in einem Modal). Respektiert min/max/step über die native stepUp()/stepDown()-Funktion."
+
+msgid "Demo quantity"
+msgstr "Demo-Menge"
+
+msgid "Buttons"
+msgstr "Buttons"
+
+msgid "web/static/buttons.css"
+msgstr "web/static/buttons.css"
+
+msgid "Primary"
+msgstr "Primär"
+
+msgid "Secondary"
+msgstr "Sekundär"
+
+msgid "Ghost"
+msgstr "Ghost"
+
+msgid "Danger"
+msgstr "Gefahr"
+
+msgid "Small"
+msgstr "Klein"
+
+msgid "Large"
+msgstr "Groß"
+
+msgid "Disabled"
+msgstr "Deaktiviert"
+
+msgid "Settings row layout"
+msgstr "Settings-Row-Layout"
+
+msgid "web/static/settings_rows.css — the label/description-on-the-left, control-on-the-right row every Settings page uses. This whole page is built from it (.settings-section is the outer card, .settings-row one line inside it)."
+msgstr "web/static/settings_rows.css — die Zeile mit Label/Beschreibung links und Steuerelement rechts, die jede Settings-Seite verwendet. Diese ganze Seite ist damit aufgebaut (.settings-section ist die äußere Karte, .settings-row eine Zeile darin)."
+
+msgid "A setting"
+msgstr "Eine Einstellung"
+
+msgid "Optional description text underneath the label."
+msgstr "Optionaler Beschreibungstext unter dem Label."
+
+msgid "Action"
+msgstr "Aktion"
+
+msgid "Progress bar"
+msgstr "Fortschrittsbalken"
+
+msgid "web/static/tabs-badges.css. Real usages in the app prefix their own bar class (e.g. lib-move-progress-bar) instead of styling .progress-bar directly, so several independent progress bars on one page don't fight over width — do the same in your own integration."
+msgstr "web/static/tabs-badges.css. Echte Verwendungen in der App stellen ihrer eigenen Balken-Klasse ein Präfix voran (z. B. lib-move-progress-bar) statt .progress-bar direkt zu stylen, damit sich mehrere unabhängige Fortschrittsbalken auf einer Seite nicht um die Breite \"streiten\" — mach das in deiner eigenen Integration genauso."
+
+msgid "Empty state"
+msgstr "Leerer Zustand"
+
+msgid "web/static/feedback.css — the centered icon/title/description block for \"nothing here yet\" states (e.g. an empty list before the user has added anything)."
+msgstr "web/static/feedback.css — der zentrierte Icon-/Titel-/Beschreibungsblock für \"noch nichts hier\"-Zustände (z. B. eine leere Liste, bevor der Nutzer etwas hinzugefügt hat)."
+
+msgid "Nothing here yet"
+msgstr "Noch nichts hier"
+
+msgid "This is where a short explanation and maybe a call-to-action button would go."
+msgstr "Hier würde eine kurze Erklärung und vielleicht ein Call-to-Action-Button stehen."

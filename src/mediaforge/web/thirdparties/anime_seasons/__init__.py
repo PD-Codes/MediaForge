@@ -9,6 +9,18 @@ automatically (see the parent package's docstring).
 from .routes import ADULT_SETTING_KEY, bp, SETTING_KEY
 from ..registry import register_thirdparty
 
+# The MODULE_* constants the admin Modulmanager page (/extensions) reads
+# off every thirdparty's __init__.py -- see web/thirdparties/__init__.py's
+# docstring. Purely descriptive except MODULE_ENABLED_DEFAULT, which only
+# ever applies once, the first time this module is discovered.
+# MODULE_DESCRIPTION_DE overrides MODULE_DESCRIPTION for admins with the
+# UI set to German -- MODULE_DESCRIPTION itself stays the English fallback.
+MODULE_NAME = "Anime Seasons"
+MODULE_DESCRIPTION = "Seasonal anime listings from Jikan (MyAnimeList), enriched with the same provider pills as the home page."
+MODULE_DESCRIPTION_DE = "Saisonale Anime-Übersichten von Jikan (MyAnimeList), angereichert mit den gleichen Anbieter-Badges wie auf der Startseite."
+MODULE_AUTHOR = "PD Codes"
+MODULE_ENABLED_DEFAULT = False
+
 # 2x2 grid icon — four quadrants standing in for the four seasons; same
 # stroke-based style as every other sidebar icon in base.html.
 _ICON_SVG = (

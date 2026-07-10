@@ -44,6 +44,26 @@
     // Show loader immediately before any paint
     document.documentElement.setAttribute('data-page-loading', '');
   </script>
+  <script>
+    // Provider-pill extension registry shim — defined here, as early as
+    // possible, so a registered extension's provider_pill_script (see
+    // web/thirdparties/registry.py) can always call registerProviderPill()
+    // safely no matter the <script> tag order relative to app.js (which
+    // owns the actual resolution chain — see its _extensionProviderPill).
+    window._providerPillResolvers = window._providerPillResolvers || [];
+    window.registerProviderPill = window.registerProviderPill || function (name, resolverFn) {
+      window._providerPillResolvers.push({ name: name, resolverFn: resolverFn });
+    };
+  </script>
+  {# Provider-pill scripts from enabled extensions (see
+     register_thirdparty(provider_pill_script=...) in
+     web/thirdparties/registry.py) — each one just calls
+     registerProviderPill() at load time, using the shim above, regardless
+     of whether app.js has loaded yet. Included on every page since pills
+     can render on any page with browse cards or a detail modal. #}
+  {% for script_url in provider_pill_scripts %}
+  <script src="{{ script_url }}"></script>
+  {% endfor %}
 </head>
 
 <body>
@@ -103,187 +123,245 @@
       {# App navigation is hidden for SyncPlay guests (auth on, not logged in) — they only watch. #}
       {% if not auth_enabled or current_user %}
       <span class="sidebar-category">{{ _('Discover') }}</span>
-      <a href="{{ url_for('index') }}" class="sidebar-link" data-page="index">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-          <polyline points="9 22 9 12 15 12 15 22" />
-        </svg>
-        <span>{{ _('Home') }}</span>
-      </a>
-      <a href="{{ url_for('favourites_page') }}" class="sidebar-link" data-page="favourites">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <polygon
-            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-        </svg>
-        <span>{{ _('Favorites') }}</span>
-      </a>
-      <a href="{{ url_for('library_page') }}" class="sidebar-link" data-page="library">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-        <span>{{ _('Library') }}</span>
-        <span class="queue-badge" id="streamBadge" style="display:none">0</span>
-      </a>
-      <button class="sidebar-link sidebar-queue-btn" id="sidebarQueueBtn" onclick="openQueueModal()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <line class="moving-line line-1" x1="8" y1="6" x2="21" y2="6"></line>
-          <line class="moving-line line-2" x1="8" y1="12" x2="21" y2="12"></line>
-          <line class="moving-line line-3" x1="8" y1="18" x2="21" y2="18"></line>
-          
-          <line class="moving-line line-1" x1="3" y1="6" x2="3.01" y2="6"></line>
-          <line class="moving-line line-2" x1="3" y1="12" x2="3.01" y2="12"></line>
-          <line class="moving-line line-3" x1="3" y1="18" x2="3.01" y2="18"></line>
-        </svg>
-        <span>{{ _('Queue') }}</span>
-        <span class="queue-badge" id="queueBadge" style="display:none">0</span>
-      </button>
-      <button class="sidebar-link sidebar-queue-btn" id="sidebarUpscaleBtn" onclick="openUpscaleModal()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8" class="moving-arrow arrow-head"/>
-          <line x1="12" y1="3" x2="12" y2="15" class="moving-arrow arrow-shift"/>
-        </svg>
-        <span>Upscaling</span>
-        <span class="queue-badge" id="upscaleBadge" style="display:none">0</span>
-      </button>
+      <div class="sidebar-category-group">
+        <div class="sidebar-category-inner">
+          <a href="{{ url_for('index') }}" class="sidebar-link" data-page="index">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            <span>{{ _('Home') }}</span>
+          </a>
+          <a href="{{ url_for('favourites_page') }}" class="sidebar-link" data-page="favourites">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+            <span>{{ _('Favorites') }}</span>
+          </a>
+          <a href="{{ url_for('library_page') }}" class="sidebar-link" data-page="library">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span>{{ _('Library') }}</span>
+            <span class="queue-badge" id="streamBadge" style="display:none">0</span>
+          </a>
+          <button class="sidebar-link sidebar-queue-btn" id="sidebarQueueBtn" onclick="openQueueModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <line class="moving-line line-1" x1="8" y1="6" x2="21" y2="6"></line>
+              <line class="moving-line line-2" x1="8" y1="12" x2="21" y2="12"></line>
+              <line class="moving-line line-3" x1="8" y1="18" x2="21" y2="18"></line>
+              
+              <line class="moving-line line-1" x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line class="moving-line line-2" x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line class="moving-line line-3" x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+            <span>{{ _('Queue') }}</span>
+            <span class="queue-badge" id="queueBadge" style="display:none">0</span>
+          </button>
+          <button class="sidebar-link sidebar-queue-btn" id="sidebarUpscaleBtn" onclick="openUpscaleModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8" class="moving-arrow arrow-head"/>
+              <line x1="12" y1="3" x2="12" y2="15" class="moving-arrow arrow-shift"/>
+            </svg>
+            <span>Upscaling</span>
+            <span class="queue-badge" id="upscaleBadge" style="display:none">0</span>
+          </button>
 
-      <a href="{{ url_for('advanced_search_page') }}" class="sidebar-link" data-page="advanced_search" id="sidebarAdvancedSearch" style="display: {% if cineinfo_advanced_search %}flex{% else %}none{% endif %};">
-        <svg viewBox="0 0 24 24" fill="none" class="advancedSearchIcon" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          <line x1="11" y1="8" x2="11" y2="14"></line>
-          <line x1="8" y1="11" x2="14" y2="11"></line>
-        </svg>
-        <span>{{ _('Advanced Search') }}</span>
-      </a>
+          <a href="{{ url_for('advanced_search_page') }}" class="sidebar-link" data-page="advanced_search" id="sidebarAdvancedSearch" style="display: {% if cineinfo_advanced_search %}flex{% else %}none{% endif %};">
+            <svg viewBox="0 0 24 24" fill="none" class="advancedSearchIcon" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              <line x1="11" y1="8" x2="11" y2="14"></line>
+              <line x1="8" y1="11" x2="14" y2="11"></line>
+            </svg>
+            <span>{{ _('Advanced Search') }}</span>
+          </a>
 
-      <a href="{{ url_for('calendar_page') }}" class="sidebar-link" data-page="calendar" id="sidebarCalendar" style="display: {% if cineinfo_calendar %}flex{% else %}none{% endif %};">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-          <line x1="16" y1="2" x2="16" y2="6"></line>
-          <line x1="8" y1="2" x2="8" y2="6"></line>
-          <line x1="3" y1="10" x2="21" y2="10"></line>
-        </svg>
-        <span>{{ _('Calendar') }}</span>
-      </a>
+          <a href="{{ url_for('calendar_page') }}" class="sidebar-link" data-page="calendar" id="sidebarCalendar" style="display: {% if cineinfo_calendar %}flex{% else %}none{% endif %};">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <span>{{ _('Calendar') }}</span>
+          </a>
 
-      {# Third-party Discover entries (e.g. Anime Seasons) register themselves
-         via web/menu_registry.py instead of adding another hardcoded block
-         here — see register_discover_menu_item() for how a new integration
-         plugs in. #}
-      {% for item in discover_menu_items %}
-      <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
-        {{ item.icon|safe }}
-        <span>{{ item.label }}</span>
-      </a>
-      {% endfor %}
-
+          {# Third-party Discover entries (e.g. Anime Seasons) register themselves
+             via register_thirdparty(section="discover", ...) in
+             web/thirdparties/registry.py instead of adding another hardcoded
+             block here — see the Management/System loops further down for the
+             same mechanism with a different section=. #}
+          {% for item in discover_menu_items %}
+          <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
+            {{ item.icon|safe }}
+            <span>{{ item.label }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
       <span class="sidebar-category">{{ _('Management') }}</span>
-      <a href="{{ url_for('seerr_page') }}" class="sidebar-link" data-page="seerr">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-        <span>Seerr</span>
-        <span class="seerr-badge" id="seerrBadge" style="display:none">0</span>
-      </a>
-      <a href="{{ url_for('autosync_page') }}" class="sidebar-link" data-page="autosync">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <polyline points="23 4 23 10 17 10" />
-          <polyline points="1 20 1 14 7 14" />
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-        </svg>
-        <span>Auto-Sync</span>
-      </a>
-      <a href="{{ url_for('stats_page') }}" class="sidebar-link" data-page="stats">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <line x1="18" y1="20" x2="18" y2="10" />
-          <line x1="12" y1="20" x2="12" y2="4" />
-          <line x1="6" y1="20" x2="6" y2="14" />
-        </svg>
-        <span>{{ _('Statistics') }}</span>
-      </a>
-      <a href="{{ url_for('history_page') }}" class="sidebar-link" data-page="history">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M3 3v5h5" />
-          <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-          <polyline points="12 7 12 12 15 15" />
-        </svg>
-        <span>{{ _('Download History') }}</span>
-      </a>
+      <div class="sidebar-category-group">
+        <div class="sidebar-category-inner">
+          <a href="{{ url_for('seerr_page') }}" class="sidebar-link" data-page="seerr">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+            <span>Seerr</span>
+            <span class="seerr-badge" id="seerrBadge" style="display:none">0</span>
+          </a>
+          <a href="{{ url_for('autosync_page') }}" class="sidebar-link" data-page="autosync">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            <span>Auto-Sync</span>
+          </a>
+          <a href="{{ url_for('stats_page') }}" class="sidebar-link" data-page="stats">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+            <span>{{ _('Statistics') }}</span>
+          </a>
+          <a href="{{ url_for('history_page') }}" class="sidebar-link" data-page="history">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M3 3v5h5" />
+              <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+              <polyline points="12 7 12 12 15 15" />
+            </svg>
+            <span>{{ _('Download History') }}</span>
+          </a>
 
-      {% if uptime_enabled %}
-      <a href="{{ url_for('uptime_page') }}" class="sidebar-link" data-page="uptime">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <!-- pathLength="100" normalizes stroke-dash units to a 0–100 scale so the
-               hover "pulse monitor" animation (see shell.css) doesn't depend on this
-               path's actual (irregular) geometry. -->
-          <path d="M22 12h-4l-3 9L9 3l-3 9H2" pathLength="100" />
-        </svg>
-        <span>UpTime</span>
-      </a>
-      {% endif %}
+          {# Third-party Management entries — same registration mechanism as the
+             Discover entries above, just with section="management" passed to
+             register_thirdparty(). See web/thirdparties/registry.py. #}
+          {% for item in management_menu_items %}
+          <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
+            {{ item.icon|safe }}
+            <span>{{ item.label }}</span>
+          </a>
+          {% endfor %}
+
+          {% if uptime_enabled %}
+          <a href="{{ url_for('uptime_page') }}" class="sidebar-link" data-page="uptime">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <!-- pathLength="100" normalizes stroke-dash units to a 0–100 scale so the
+                   hover "pulse monitor" animation (see shell.css) doesn't depend on this
+                   path's actual (irregular) geometry. -->
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2" pathLength="100" />
+            </svg>
+            <span>UpTime</span>
+          </a>
+          {% endif %}
+        </div>
+      </div>
 
       {% endif %}{# /guest-hidden app navigation #}
 
       {% if syncplay_enabled and (not auth_enabled or current_user) %}
       <span class="sidebar-category">SyncPlay</span>
-      <a href="{{ url_for('syncplay_page') }}" class="sidebar-link" data-page="syncplay">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 2.1l4 4-4 4"/><path d="M3 12.95v-1a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.05v1a4 4 0 0 1-4 4H3"/>
-        </svg>
-        <span>SyncPlay</span>
-      </a>
+      <div class="sidebar-category-group">
+        <div class="sidebar-category-inner">
+          <a href="{{ url_for('syncplay_page') }}" class="sidebar-link" data-page="syncplay">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 2.1l4 4-4 4"/><path d="M3 12.95v-1a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.05v1a4 4 0 0 1-4 4H3"/>
+            </svg>
+            <span>SyncPlay</span>
+          </a>
+
+          {# Third-party SyncPlay entries — section="syncplay" passed to
+             register_thirdparty(). Same registration mechanism as the Discover/
+             Management/System loops elsewhere in this file — see
+             web/thirdparties/registry.py. Gated by the same syncplay_enabled
+             check as the built-in link above (each entry is additionally only
+             returned by resolve_menu_items while its own enabled_setting_key
+             is on). #}
+          {% for item in syncplay_menu_items %}
+          <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
+            {{ item.icon|safe }}
+            <span>{{ item.label }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
       {% endif %}
       {% if not auth_enabled or current_user %}
       <span class="sidebar-category">{{ _('System') }}</span>
-      <a href="{{ url_for('notifications_page') }}" class="sidebar-link" data-page="notifications">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
-        <span>{{ _('Notifications') }}</span>
-      </a>
-      {% if not auth_enabled or (current_user and current_user.role == 'admin') %}
-      <a href="{{ url_for('integrations_page') }}" class="sidebar-link" data-page="integrations">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-        </svg>
-        <span>{{ _('Integrations') }}</span>
-      </a>
-      {% endif %}
-      <a href="{{ url_for('encoding_page') }}" class="sidebar-link" data-page="encoding">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-        <span>{{ _('Encoding') }}</span>
-      </a>
-      <a href="{{ url_for('settings_page') }}" class="sidebar-link" data-page="settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3" />
-          <path
-            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-        <span>{{ _('Settings') }}</span>
-        {% if update_available %}<span class="update-badge" id="updateBadge">&#8593;</span>{% endif %}
-      </a>
+      <div class="sidebar-category-group">
+        <div class="sidebar-category-inner">
+          <a href="{{ url_for('notifications_page') }}" class="sidebar-link" data-page="notifications">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span>{{ _('Notifications') }}</span>
+          </a>
+          {% if not auth_enabled or (current_user and current_user.role == 'admin') %}
+          <a href="{{ url_for('integrations_page') }}" class="sidebar-link" data-page="integrations">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            <span>{{ _('Integrations') }}</span>
+          </a>
+          <a href="{{ url_for('extensions_page') }}" class="sidebar-link" data-page="extensions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <rect x="7" y="7" width="10" height="10" rx="2"></rect>
+              <path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"></path>
+            </svg>
+            <span>{{ _('Module Manager') }}</span>
+          </a>
+          {% endif %}
+
+          {# Third-party System entries — section="system" passed to
+             register_thirdparty(). See web/thirdparties/registry.py. #}
+          {% for item in system_menu_items %}
+          <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
+            {{ item.icon|safe }}
+            <span>{{ item.label }}</span>
+          </a>
+          {% endfor %}
+
+          <a href="{{ url_for('encoding_page') }}" class="sidebar-link" data-page="encoding">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+            <span>{{ _('Encoding') }}</span>
+          </a>
+          <a href="{{ url_for('settings_page') }}" class="sidebar-link" data-page="settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            <span>{{ _('Settings') }}</span>
+            {% if update_available %}<span class="update-badge" id="updateBadge">&#8593;</span>{% endif %}
+          </a>
+        </div>
+      </div>
       {% endif %}
     </nav>
 
@@ -862,7 +940,8 @@
         '/syncplay': 'syncplay',
         '/notifications': 'notifications',
         '/encoding': 'encoding',
-        '/seerr': 'seerr'
+        '/seerr': 'seerr',
+        '/extensions': 'extensions'
       };
       var page = map[path] || map[path.replace(/\/$/, '')];
       if (page) {
@@ -1159,6 +1238,35 @@
           }
         });
       }
+
+      // Collapsible sidebar categories
+      (function() {
+        document.querySelectorAll('.sidebar-category').forEach(function (category) {
+          var group = category.nextElementSibling;
+          if (group && group.classList.contains('sidebar-category-group')) {
+            var key = 'sidebar-collapsed-' + category.textContent.trim();
+            var isCollapsed = localStorage.getItem(key) === 'true';
+            
+            if (isCollapsed) {
+              category.classList.add('collapsed');
+              group.classList.add('collapsed');
+            }
+            
+            category.addEventListener('click', function () {
+              var collapsed = !category.classList.contains('collapsed');
+              category.classList.toggle('collapsed', collapsed);
+              group.classList.toggle('collapsed', collapsed);
+              localStorage.setItem(key, collapsed);
+            });
+          }
+        });
+
+        // Fade in the navigation after setting up the categories collapse state
+        var nav = document.querySelector('.sidebar-nav');
+        if (nav) {
+          nav.style.opacity = '1';
+        }
+      })();
     })();
   </script>
 

@@ -3593,6 +3593,27 @@ def get_mediascan_ids() -> dict:
         conn.close()
 
 
+def get_mediascan_ids_by_type(media_type: str) -> set:
+    """Same tmdb_id set get_mediascan_ids() returns, but scoped to one
+    media_type ('movie' or 'tv') via mediascan_cache's own media_type
+    column -- get_mediascan_ids() intentionally merges both into one flat
+    set for its existing callers (front-end "is this downloaded" checks,
+    where the type is already known from context), but a caller that needs
+    to look up TMDB detail by id (movie ids and tv ids are separate TMDB
+    namespaces, an id can coincidentally exist in both) needs the type-
+    scoped version to avoid querying the wrong endpoint for every id --
+    see web/thirdparties/mediacalendar/service.py's _resolve_library()."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT tmdb_id FROM mediascan_cache WHERE media_type = ? AND tmdb_id IS NOT NULL AND tmdb_id != ''",
+            (media_type,),
+        ).fetchall()
+        return {r["tmdb_id"] for r in rows}
+    finally:
+        conn.close()
+
+
 def get_mediascan_count() -> int:
     """Return the number of entries in the mediascan cache."""
     conn = get_db()

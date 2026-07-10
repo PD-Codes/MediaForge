@@ -1,0 +1,41 @@
+/* Only page-specific layout glue lives here -- every actual component
+   (badges, pills, toggles, buttons, ...) is styled by core CSS already
+   loaded globally (or, for settings_rows.css, linked explicitly by this
+   page's <link> in the template -- see its block styles). */
+
+.uic-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.uic-icon-row {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.uic-icon-row svg {
+  width: 24px;
+  height: 24px;
+  color: var(--text-secondary);
+}
+
+.uic-hint {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.uic-snippet {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  overflow-x: auto;
+  white-space: pre;
+}

@@ -265,7 +265,10 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         def _inject_auth():
             from flask import session as _sess
             from .db import get_setting as _get_setting
-            from .thirdparties.registry import resolve_discover_menu_items, resolve_settings_cards
+            from .thirdparties.registry import (
+                resolve_menu_items, resolve_settings_cards, resolve_dynamic_tabs,
+                resolve_provider_pill_scripts, resolve_dashboard_widgets, resolve_card,
+            )
             return {
                 "current_user": get_current_user(),
                 "ui_language": _sess.get("ui_language", "en"),
@@ -279,8 +282,32 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "cineinfo_calendar": _get_setting("cineinfo_calendar", "0") == "1",
                 "syncplay_enabled": _get_setting("syncplay_enabled", "0") == "1",
                 "uptime_enabled": _get_setting("uptime_enabled", "0") == "1",
-                "discover_menu_items": resolve_discover_menu_items(),
-                "thirdparty_cards": resolve_settings_cards(),
+                # Sidebar entries per category (see web/thirdparties/registry.py's
+                # section= param and base.html's per-category loops).
+                "discover_menu_items": resolve_menu_items("discover"),
+                "management_menu_items": resolve_menu_items("management"),
+                "syncplay_menu_items": resolve_menu_items("syncplay"),
+                "system_menu_items": resolve_menu_items("system"),
+                # Back-compat: Integrations page's "Third Party" tab, unchanged.
+                "thirdparty_cards": resolve_settings_cards("integrations", "thirdparty"),
+                # Generic hooks any settings template can call directly to pull
+                # in cards for one of its own tabs/pills, or to discover which
+                # brand-new tabs/pills it needs to render for the rest (see
+                # integrations.html / notifications.html).
+                "get_settings_cards": resolve_settings_cards,
+                "get_dynamic_tabs": resolve_dynamic_tabs,
+                # Modulmanager (templates/extensions.html) uses this to
+                # reuse _settings_card_macro.html's render_settings_card()
+                # for one registered item at a time -- see registry.py's
+                # resolve_card().
+                "get_thirdparty_card": resolve_card,
+                # Rendered as <script> tags in base.html's <head> — see
+                # provider_pill_script in registry.py's register_thirdparty().
+                "provider_pill_scripts": resolve_provider_pill_scripts(),
+                # Rendered on index.html only, but injected globally like
+                # everything else here — see dashboard_widget_template in
+                # registry.py's register_thirdparty().
+                "dashboard_widgets": resolve_dashboard_widgets(),
             }
     else:
         # No-auth mode still needs a secret key for flask.session
@@ -300,7 +327,10 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         def _inject_no_auth():
             from flask import session as _sess
             from .db import get_setting as _get_setting
-            from .thirdparties.registry import resolve_discover_menu_items, resolve_settings_cards
+            from .thirdparties.registry import (
+                resolve_menu_items, resolve_settings_cards, resolve_dynamic_tabs,
+                resolve_provider_pill_scripts, resolve_dashboard_widgets, resolve_card,
+            )
             return {
                 "current_user": None,
                 "ui_language": _sess.get("ui_language", "en"),
@@ -314,8 +344,20 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "cineinfo_calendar": _get_setting("cineinfo_calendar", "0") == "1",
                 "syncplay_enabled": _get_setting("syncplay_enabled", "0") == "1",
                 "uptime_enabled": _get_setting("uptime_enabled", "0") == "1",
-                "discover_menu_items": resolve_discover_menu_items(),
-                "thirdparty_cards": resolve_settings_cards(),
+                "discover_menu_items": resolve_menu_items("discover"),
+                "management_menu_items": resolve_menu_items("management"),
+                "syncplay_menu_items": resolve_menu_items("syncplay"),
+                "system_menu_items": resolve_menu_items("system"),
+                "thirdparty_cards": resolve_settings_cards("integrations", "thirdparty"),
+                "get_settings_cards": resolve_settings_cards,
+                "get_dynamic_tabs": resolve_dynamic_tabs,
+                # Modulmanager (templates/extensions.html) uses this to
+                # reuse _settings_card_macro.html's render_settings_card()
+                # for one registered item at a time -- see registry.py's
+                # resolve_card().
+                "get_thirdparty_card": resolve_card,
+                "provider_pill_scripts": resolve_provider_pill_scripts(),
+                "dashboard_widgets": resolve_dashboard_widgets(),
             }
 
     # Initialize download queue, custom paths and autosync (works with or without auth)
@@ -567,6 +609,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     from .routes.library import register_library_routes
     from .routes.settings import register_settings_routes
     from .routes.integrations import register_integrations_routes
+    from .routes.extensions import register_extensions_routes
     from .routes.syncplay import register_syncplay_routes
     from .routes.uptime import register_uptime_routes
     from .routes.calendar_routes import register_calendar_routes
@@ -601,6 +644,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # and registered here — see web/thirdparties/__init__.py. Adding a new
     # one means adding a new subfolder, not editing this file.
     _discover_and_register_thirdparties(app)
+    # Reads whatever the discovery pass above just populated in
+    # web/thirdparties/registry.py's _MODULES/_ITEMS at *request* time, not
+    # at registration time, so placement relative to the discovery call
+    # above doesn't actually matter — kept next to it for readability.
+    register_extensions_routes(app)
     register_encoding_routes(app)
     register_upscale_routes(app)
     register_browse_routes(app)
@@ -629,6 +677,14 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
 
     if auth_enabled:
         from .auth import admin_required
+        from .thirdparties.registry import admin_required_blueprints
+
+        # Blueprint names any thirdparty registered with auth_required="admin"
+        # (see register_thirdparty) -- every route under one of these
+        # blueprints is wrapped with admin_required below, exactly like the
+        # hand-maintained _admin_only set, without needing an entry added
+        # here by hand for each one.
+        _admin_blueprints = admin_required_blueprints()
 
         # Endpoints that require admin instead of just login
         _admin_only = {
@@ -655,6 +711,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_autosync_update",
             "api_autosync_delete",
             "api_autosync_trigger",
+            # Imports and executes arbitrary code found on disk (any new
+            # web/thirdparties/<name>/ folder) -- more sensitive than just
+            # viewing the Extensions overview page, so this one is
+            # admin-only even though extensions_page itself isn't.
+            "api_extensions_rescan",
         }
 
         # Wrap all non-auth, non-static view functions with login_required
@@ -711,15 +772,25 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         }
         for endpoint, view_func in list(app.view_functions.items()):
             if endpoint not in _exempt:
-                if endpoint in _admin_only:
+                endpoint_blueprint = endpoint.rsplit(".", 1)[0] if "." in endpoint else None
+                if endpoint in _admin_only or (endpoint_blueprint and endpoint_blueprint in _admin_blueprints):
                     app.view_functions[endpoint] = admin_required(view_func)
                 else:
                     app.view_functions[endpoint] = login_required(view_func)
 
         # Exempt JSON API routes from CSRF (they use Content-Type: application/json
-        # which provides implicit cross-origin protection via CORS preflight)
+        # which provides implicit cross-origin protection via CORS preflight).
+        # Endpoint names are "viewfunc" for routes added directly on the app
+        # object, but "blueprintname.viewfunc" for anything registered via a
+        # Blueprint (every thirdparties/<name>/routes.py, e.g. mediacalendar's
+        # "mediacalendar.api_calendars_create") -- so the api_ prefix check
+        # has to look at the part after the last dot, not the raw endpoint
+        # string, or every Blueprint-based integration's write routes silently
+        # 400 with a CSRF error on every POST/PUT/DELETE (its own fetch()
+        # calls, like mediacalendar.js's mcApi(), send no CSRF token at all).
         for endpoint in list(app.view_functions):
-            if endpoint.startswith("api_") or endpoint.startswith("auth.admin_"):
+            view_name = endpoint.rsplit(".", 1)[-1] if "." in endpoint else endpoint
+            if view_name.startswith("api_") or endpoint.startswith("auth.admin_"):
                 csrf.exempt(app.view_functions[endpoint])
 
     # Resolve any update state left behind by the self-update helper.
@@ -863,7 +934,7 @@ def start_web_ui(
             try:
                 signal.signal(_sig, _graceful_shutdown)
             except (ValueError, AttributeError, OSError):
-                pass
+                   pass
 
         try:
             server.run()

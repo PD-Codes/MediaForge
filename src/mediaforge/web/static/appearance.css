@@ -639,6 +639,32 @@ body.icon-move .sidebar-link[data-page="settings"]:hover svg {
   animation: spin-infinite 3s linear infinite;
 }
 
+/* Third-party integrations animations */
+body.icon-move .sidebar-link[data-page="anime_seasons"]:hover svg {
+  animation: grid-pulse 1.5s ease-in-out infinite;
+}
+
+body.icon-move .sidebar-link[data-page="mediacalendar"] svg {
+  transform-origin: top center;
+}
+body.icon-move .sidebar-link[data-page="mediacalendar"]:hover svg {
+  animation: calendar-wiggle 0.6s ease-in-out infinite;
+}
+
+body.icon-move .sidebar-link[data-page="extensions"]:hover svg {
+  animation: chip-breathe 1.5s ease-in-out infinite;
+}
+
+@keyframes grid-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); filter: drop-shadow(0 0 2px rgba(124,58,237,0.5)); }
+}
+
+@keyframes chip-breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.8; filter: drop-shadow(0 0 3px var(--accent)); }
+}
+
 
 /* ===== Appearance Popup ===== */
 .appearance-popup {

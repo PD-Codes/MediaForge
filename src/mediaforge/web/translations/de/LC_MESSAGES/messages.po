@@ -8,7 +8,7 @@ msgstr ""
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2026-06-28 13:22+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Last-Translator: PD-Codes\n"
 "Language: de\n"
 "Language-Team: de <LL@li.org>\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
@@ -4224,4 +4224,59 @@ msgstr "Setup-Token eingeben"
 
 msgid "Start setup"
 msgstr "Setup starten"
+
+# ── extensions.html / Module Manager (base.html sidebar link + page) ──────
+msgid "Module Manager"
+msgstr "Modulmanager"
+
+msgid "Every discovered web/thirdparties/ folder, who made it, and a working on/off switch for what it registered"
+msgstr "Jeder gefundene web/thirdparties/-Ordner, wer ihn gemacht hat, und ein funktionierender Ein/Aus-Schalter für das, was er registriert hat"
+
+msgid "No extension folders discovered."
+msgstr "Keine Erweiterungsordner gefunden."
+
+msgid "Loaded"
+msgstr "Geladen"
+
+msgid "Skipped"
+msgstr "Übersprungen"
+
+msgid "Sidebar"
+msgstr "Sidebar"
+
+msgid "Author"
+msgstr "Autor"
+
+msgid "Dashboard widget"
+msgstr "Dashboard-Widget"
+
+msgid "Provider pill"
+msgstr "Anbieter-Pille"
+
+msgid "This folder registered no sidebar/settings item — could be a background-job-only integration, or one that failed before reaching register_thirdparty()."
+msgstr "Dieser Ordner hat kein Sidebar-/Settings-Element registriert — kann eine reine Hintergrundaufgaben-Integration sein, oder eine, die abgebrochen ist, bevor register_thirdparty() erreicht wurde."
+
+msgid "DEPENDS_ON"
+msgstr "DEPENDS_ON"
+
+msgid "Requires"
+msgstr "Benötigt"
+
+msgid "One or more required modules are not currently enabled — this module will not work until they are."
+msgstr "Ein oder mehrere benötigte Module sind derzeit nicht aktiviert — dieses Modul funktioniert erst, wenn sie es sind."
+
+msgid "Enable module"
+msgstr "Modul aktivieren"
+
+msgid "Open module"
+msgstr "Modul öffnen"
+
+msgid "Configure its settings on the"
+msgstr "Einstellungen dafür auf der"
+
+msgid "page"
+msgstr "Seite konfigurieren"
+
+msgid "Scan web/thirdparties/ for new module folders and register them without restarting the app."
+msgstr "web/thirdparties/ nach neuen Modul-Ordnern durchsuchen und diese registrieren, ohne die App neu zu starten."
 

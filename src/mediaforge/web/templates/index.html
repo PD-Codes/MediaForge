@@ -230,6 +230,21 @@
   <div class="spinner" id="searchSpinner">{{ _('Searching...') }}</div>
   <div class="results" id="results"></div>
   <div id="sourceStatusBanner"></div>
+  {# Dashboard widgets from enabled extensions (see
+     register_thirdparty(dashboard_widget_template=...) in
+     web/thirdparties/registry.py) — each entry's own template is included
+     as-is, so the widget's markup/behaviour is entirely up to the
+     extension; this just provides the slot + consistent spacing
+     (.browse-provider-block, reused for its margin only — no provider dot
+     styling implied). Nothing renders here if no extension registered one. #}
+  {% for widget in dashboard_widgets %}
+  <div class="browse-provider-block dashboard-widget" id="widget-{{ widget.id }}">
+    {# "ignore missing" -- a widget template that was removed/renamed after
+       being registered (e.g. mid-upgrade) silently disappears instead of
+       taking down the entire home page for every user. #}
+    {% include widget.template ignore missing %}
+  </div>
+  {% endfor %}
   <div id="browse">
     <div class="browse-provider-block" data-provider="aniworld">
       <div class="browse-provider-header browse-provider-aniworld">AniWorld</div>

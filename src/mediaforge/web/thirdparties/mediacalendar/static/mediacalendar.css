@@ -1,0 +1,655 @@
+/* Media Calendar -- scoped "mc-" prefix throughout so nothing here can
+   collide with core MediaForge styles or another thirdparty's CSS. Reuses
+   the app's existing CSS custom properties (--bg-card, --border, --accent,
+   ...) defined in web/static/variables.css instead of hardcoding a second
+   palette. */
+
+.mc-page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 4px 40px;
+}
+
+.mc-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md, 10px);
+  margin-bottom: 18px;
+  font-size: 0.92em;
+  flex-wrap: wrap;
+}
+.mc-banner-warn {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--text-primary);
+}
+.mc-banner-warn a {
+  color: var(--warning);
+  font-weight: 600;
+  text-decoration: underline;
+}
+.mc-banner-error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--text-primary);
+}
+
+.mc-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--bg-elevated);
+  padding: 4px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.mc-tab {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  font-size: 0.92em;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 6px);
+  transition: color var(--transition, 0.15s ease), background var(--transition, 0.15s ease);
+}
+.mc-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+.mc-tab-active {
+  color: #fff !important;
+  background: var(--accent) !important;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
+}
+
+.mc-panel { display: none; }
+.mc-panel-active { display: block; }
+
+.mc-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+.mc-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background var(--transition), border-color var(--transition);
+}
+.mc-btn:hover { background: var(--bg-hover); }
+.mc-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.mc-btn-primary:hover { background: var(--accent-hover); }
+.mc-btn-danger { color: var(--error); border-color: rgba(239,68,68,0.4); }
+.mc-btn-sm { padding: 5px 10px; font-size: 0.82em; }
+
+.mc-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.mc-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: 
+    border-color var(--transition, 0.2s ease), 
+    transform var(--transition, 0.2s ease), 
+    box-shadow var(--transition, 0.2s ease), 
+    background var(--transition, 0.2s ease);
+  position: relative;
+}
+.mc-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-focus);
+  background: var(--bg-hover);
+  box-shadow: var(--shadow-md);
+}
+.mc-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.mc-color-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.mc-card-title { font-weight: 600; color: var(--text-primary); flex: 1; }
+.mc-card-meta { color: var(--text-secondary); font-size: 0.82em; margin-bottom: 10px; }
+.mc-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.mc-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.72em;
+  font-weight: 600;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+.mc-badge-accent { background: var(--accent-soft); color: var(--accent); }
+.mc-badge-success { background: rgba(34,197,94,0.15); color: var(--success); }
+.mc-badge-warn { background: rgba(245,158,11,0.15); color: var(--warning); }
+
+.mc-detail {
+  margin-top: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  padding: 18px 20px;
+}
+.mc-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.mc-detail-head h2 { margin: 0; font-size: 1.15em; }
+.mc-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.mc-release-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.mc-release-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+  position: relative;
+  transition: 
+    border-color var(--transition, 0.2s ease), 
+    transform var(--transition, 0.2s ease), 
+    box-shadow var(--transition, 0.2s ease);
+}
+.mc-release-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(124, 58, 237, 0.35);
+  box-shadow: var(--shadow-md);
+}
+.mc-release-card.mc-release-hidden { opacity: 0.4; }
+.mc-release-poster {
+  width: 100%;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+  background: var(--bg-hover);
+  display: block;
+}
+.mc-release-body { padding: 8px 10px; }
+.mc-release-title { font-size: 0.85em; font-weight: 600; color: var(--text-primary); line-height: 1.25; margin-bottom: 3px; }
+.mc-release-date { font-size: 0.76em; color: var(--text-secondary); margin-bottom: 6px; }
+.mc-release-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.mc-release-actions { display: flex; gap: 4px; }
+.mc-release-actions button {
+  flex: 1;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  font-size: 0.72em;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+.mc-release-actions button.mc-active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+.mc-empty { color: var(--text-muted); font-size: 0.9em; padding: 20px 0; text-align: center; }
+
+/* Accordion filter editor */
+.mc-accordion-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.mc-accordion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  background: var(--bg-elevated);
+  font-weight: 600;
+  font-size: 0.9em;
+}
+.mc-accordion-header:after { content: '▾'; color: var(--text-secondary); transition: transform 0.15s; }
+.mc-accordion-item.mc-open .mc-accordion-header:after { transform: rotate(180deg); }
+.mc-accordion-body { display: none; padding: 12px 14px; }
+.mc-accordion-item.mc-open .mc-accordion-body { display: block; }
+
+.mc-field { margin-bottom: 12px; }
+.mc-field label { display: block; font-size: 0.82em; color: var(--text-secondary); margin-bottom: 4px; }
+.mc-field input[type=text], .mc-field input[type=number], .mc-field input[type=color],
+.mc-field select {
+  width: 100%;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm, 6px);
+  padding: 7px 10px;
+  font-size: 0.88em;
+}
+.mc-field-row { display: flex; gap: 10px; }
+.mc-field-row .mc-field { flex: 1; }
+
+.mc-chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.mc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 0.8em;
+}
+.mc-chip button {
+  background: none; border: none; color: inherit; cursor: pointer;
+  font-size: 1em; line-height: 1; padding: 0;
+}
+/* Keyword chip with no valid TMDB id (pre schema-v3 row) -- silently
+   dropped from the actual filter, flagged here so it's not a mystery. */
+.mc-chip-stale { background: rgba(245,158,11,0.15); color: var(--warning); }
+.mc-chip-poster {
+  width: 20px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-left: -6px;
+}
+
+.mc-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.mc-search-row input { flex: 1; }
+.mc-search-results {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+}
+.mc-search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.mc-search-result:last-child { border-bottom: none; }
+.mc-search-result:hover { background: var(--bg-hover); }
+.mc-search-result img { width: 32px; height: 48px; object-fit: cover; border-radius: 3px; background: var(--bg-hover); }
+.mc-search-result-title { font-size: 0.85em; color: var(--text-primary); }
+.mc-search-result-meta { font-size: 0.72em; color: var(--text-secondary); }
+
+.mc-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mc-toggle-row:last-child { border-bottom: none; }
+.mc-toggle-row-label { font-size: 0.9em; color: var(--text-primary); }
+.mc-toggle-row-desc { font-size: 0.78em; color: var(--text-secondary); margin-top: 2px; }
+
+.mc-switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+.mc-switch input { opacity: 0; width: 0; height: 0; }
+.mc-switch-track {
+  position: absolute; inset: 0; background: var(--bg-hover);
+  border: 1px solid var(--border); border-radius: 22px; cursor: pointer; transition: 0.15s;
+}
+.mc-switch-track:before {
+  content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
+  background: var(--text-secondary); border-radius: 50%; transition: 0.15s;
+}
+.mc-switch input:checked + .mc-switch-track { background: var(--accent-soft); border-color: var(--accent); }
+.mc-switch input:checked + .mc-switch-track:before { transform: translateX(18px); background: var(--accent); }
+
+/* Modal */
+.mc-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  /* Deliberately above .mc-cal-popover's 1000 (below), not equal to it --
+     the "Plan auto-download"/"Edit planned download" modal (#mcPlannedModal,
+     also using this class) is opened from an action button *inside* the
+     day popover, which stays open underneath rather than closing itself.
+     With an equal z-index the later-in-DOM element wins ties, and the
+     popover (appended fresh to document.body on every open, see
+     mcCalShowDayPopover()) is always added after this modal's static
+     markup -- so it rendered visually ON TOP of the modal it supposedly
+     opened. Same root cause as advanced_search.css's .adv-search-overlay
+     bump, just self-contained within this module. */
+  z-index: 1100; padding: 20px;
+}
+.mc-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: var(--shadow-modal);
+  width: 100%; max-width: 640px; max-height: 88vh;
+  display: flex; flex-direction: column;
+}
+.mc-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.mc-modal-header h2 { margin: 0; font-size: 1.1em; }
+.mc-modal-close { background: none; border: none; color: var(--text-secondary); font-size: 1.4em; cursor: pointer; line-height: 1; }
+.mc-modal-body { padding: 16px 20px; overflow-y: auto; }
+.mc-modal-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 14px 20px; border-top: 1px solid var(--border);
+}
+
+.mc-settings-form { max-width: 560px; }
+.mc-hint { color: var(--text-muted); font-size: 0.8em; margin-top: 4px; }
+
+/* ===== Release calendar (month/week view) ==============================
+   Ported from web/static/calendar.css's .cal-* classes (the app's existing
+   /calendar page) so Media Kalender's own release view looks and behaves
+   the same way -- toolbar, month grid, week/list agenda, popover -- but
+   under its own "mc-cal-" prefix since it's driven by a different data
+   shape (TMDB releases, not AutoSync/Seerr/Crunchyroll events) and only
+   needs a single accent color instead of per-source colors. See
+   mediacalendar.js's McCalendars module for the renderer. */
+
+.mc-cal-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.mc-cal-view { margin-top: 4px; }
+.mc-cal-toolbar-spacer { flex: 1; }
+.mc-cal-nav { display: flex; align-items: center; gap: 8px; }
+.mc-cal-nav-btn {
+  width: 34px; height: 34px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.mc-cal-nav-btn svg { width: 16px; height: 16px; }
+.mc-cal-period-label {
+  font-size: 1em; font-weight: 600; color: var(--text-primary);
+  margin-left: 6px; min-width: 130px; white-space: nowrap;
+}
+
+.mc-cal-segmented {
+  display: inline-flex;
+  background: var(--bg-surface, var(--bg-elevated));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  padding: 3px; gap: 2px;
+}
+.mc-cal-seg-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: none; background: transparent; color: var(--text-secondary);
+  font-size: 0.82rem; font-weight: 600; padding: 6px 12px;
+  border-radius: calc(var(--radius-md, 10px) - 4px);
+  cursor: pointer; transition: background 0.15s ease, color 0.15s ease;
+}
+.mc-cal-seg-btn svg { width: 15px; height: 15px; }
+.mc-cal-seg-btn:hover { color: var(--text-primary); }
+.mc-cal-seg-btn.mc-active { background: var(--accent); color: #fff; }
+
+/* ── Month grid ── */
+.mc-cal-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 14px);
+  overflow: hidden;
+}
+.mc-cal-weekday {
+  background: var(--bg-surface, var(--bg-elevated));
+  padding: 8px 10px;
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-muted); text-align: left;
+}
+.mc-cal-day {
+  background: var(--bg-card);
+  min-height: 108px;
+  padding: 7px;
+  display: flex; flex-direction: column; gap: 5px;
+  position: relative;
+}
+.mc-cal-day.mc-cal-day-muted { background: var(--bg-base); }
+.mc-cal-day-clickable { cursor: pointer; }
+.mc-cal-day-num {
+  font-size: 0.78rem; font-weight: 600; color: var(--text-secondary);
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+}
+.mc-cal-day-muted .mc-cal-day-num { color: var(--text-muted); }
+.mc-cal-day.mc-cal-today .mc-cal-day-num { background: var(--accent); color: #fff; }
+.mc-cal-day-num.mc-cal-has-events { cursor: pointer; }
+.mc-cal-day-num.mc-cal-has-events:hover { background: var(--bg-hover); color: var(--accent); }
+.mc-cal-day.mc-cal-today .mc-cal-day-num.mc-cal-has-events:hover { background: var(--accent); color: #fff; opacity: 0.85; }
+.mc-cal-day-events { display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+.mc-cal-day-more {
+  font-size: 0.68rem; font-weight: 600; color: var(--text-link, var(--accent));
+  cursor: pointer; padding: 2px 4px; text-align: center; display: block;
+}
+.mc-cal-day-more:hover { text-decoration: underline; }
+
+/* Mobile-only "at a glance" dots -- hidden by default (desktop shows the
+   real pills via .mc-cal-day-events instead), turned on by the
+   max-width:640px block below, which is also where .mc-cal-day-events
+   itself gets hidden. See mcCalRenderMonth()'s docstring comment. */
+.mc-cal-day-dots { display: none; gap: 3px; flex-wrap: wrap; margin-top: 3px; cursor: pointer; }
+.mc-cal-day-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.mc-cal-day-dot-more { font-size: 0.55rem; font-weight: 700; line-height: 5px; color: var(--accent); }
+
+/* Pill inside a month cell */
+.mc-cal-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--accent-soft); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm, 6px); padding: 4px 6px;
+  cursor: pointer; transition: background 0.15s ease;
+}
+.mc-cal-pill:hover { background: var(--bg-hover); }
+.mc-cal-pill-poster { width: 20px; height: 28px; object-fit: cover; border-radius: 3px; flex-shrink: 0; display: none; }
+.mc-cal-pill-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.mc-cal-pill-title {
+  font-size: 0.72rem; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mc-cal-pill-ep { font-size: 0.66rem; font-weight: 600; color: var(--accent); }
+
+/* Grid (poster) layout toggle for the month view */
+.mc-cal-month-grid.mc-cal-layout-grid .mc-cal-pill {
+  flex-direction: column; align-items: stretch; gap: 0;
+  border-left: none; border: 1px solid var(--border);
+  padding: 0; overflow: hidden; background: var(--bg-elevated);
+}
+.mc-cal-month-grid.mc-cal-layout-grid .mc-cal-pill-poster { display: block; width: 100%; aspect-ratio: 2/3; border-radius: 0; }
+.mc-cal-month-grid.mc-cal-layout-grid .mc-cal-pill-text { padding: 4px 6px 6px; }
+
+/* ── Week / list agenda ── */
+.mc-cal-list { display: flex; flex-direction: column; gap: 16px; }
+.mc-cal-list-day { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg, 14px); overflow: hidden; }
+.mc-cal-list-day-header {
+  display: flex; align-items: baseline; gap: 10px; padding: 10px 16px;
+  border-bottom: 1px solid var(--border); background: var(--bg-surface, var(--bg-elevated));
+}
+.mc-cal-list-day.mc-cal-today .mc-cal-list-day-header { background: var(--accent-soft); }
+.mc-cal-list-day-weekday { font-size: 0.92rem; font-weight: 700; color: var(--text-primary); }
+.mc-cal-list-day-date { font-size: 0.8rem; color: var(--text-secondary); }
+.mc-cal-list-day-badge { margin-left: auto; font-size: 0.7rem; font-weight: 600; color: var(--text-muted); }
+.mc-cal-list-events { display: flex; flex-direction: column; }
+.mc-cal-list-empty { padding: 10px 16px; color: var(--text-muted); font-size: 0.82rem; }
+
+.mc-cal-row { display: flex; align-items: center; gap: 12px; padding: 9px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.mc-cal-row:last-child { border-bottom: none; }
+.mc-cal-row:hover { background: var(--bg-hover); }
+.mc-cal-row-poster { width: 40px; height: 58px; border-radius: var(--radius-sm, 6px); object-fit: cover; flex-shrink: 0; background: var(--bg-base); }
+.mc-cal-row-info { min-width: 0; flex: 1; }
+.mc-cal-row-title { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-cal-row-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.mc-cal-row-ep-badge { font-size: 0.72rem; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 3px 9px; flex-shrink: 0; }
+
+.mc-cal-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; padding: 14px 16px; }
+.mc-cal-tile { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-md, 10px); overflow: hidden; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.mc-cal-tile:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.mc-cal-tile-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; background: var(--bg-base); }
+.mc-cal-tile-body { padding: 7px 9px 9px; }
+.mc-cal-tile-title { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-cal-tile-sub { font-size: 0.74rem; color: var(--accent); font-weight: 600; margin-top: 2px; }
+.mc-cal-tile-badges { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 5px; }
+
+/* ── Status pills (New / In library / In-Sync / Planned download) ── */
+:root { --mc-cal-planned: #ec4899; }
+.mc-cal-badge {
+  display: inline-block; font-size: 0.6rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 2px 7px; border-radius: 999px; line-height: 1.5;
+  white-space: nowrap;
+}
+.mc-cal-badge-new { background: var(--accent-soft); color: var(--accent); }
+.mc-cal-badge-lib { background: rgba(34,197,94,0.15); color: var(--success); }
+.mc-cal-badge-sync { background: rgba(59,130,246,0.15); color: var(--info, #3b82f6); }
+.mc-cal-badge-planned { background: rgba(236,72,153,0.15); color: var(--mc-cal-planned); }
+.mc-cal-badge-req { background: rgba(245,158,11,0.15); color: var(--warning); }
+.mc-cal-badge-failed { background: rgba(239,68,68,0.15); color: var(--error); }
+
+/* ── "Planned Downloads" management tab ── */
+.mc-planned-list { display: flex; flex-direction: column; gap: 8px; }
+.mc-planned-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px); padding: 10px 14px;
+}
+.mc-planned-poster { width: 40px; height: 58px; border-radius: var(--radius-sm, 6px); object-fit: cover; flex-shrink: 0; background: var(--bg-hover); }
+.mc-planned-info { min-width: 0; flex: 1; }
+.mc-planned-title { font-size: 0.9em; font-weight: 600; color: var(--text-primary); }
+.mc-planned-ep { font-weight: 500; color: var(--text-secondary); font-size: 0.9em; }
+.mc-planned-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 5px; font-size: 0.8em; color: var(--text-secondary); }
+.mc-planned-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── Popover (click a day / "+N more") ── */
+.mc-cal-popover {
+  position: absolute;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 14px);
+  box-shadow: var(--shadow-lg, 0 10px 30px rgba(0,0,0,0.4));
+  z-index: 1000; width: 320px; max-width: 92vw;
+  padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.mc-cal-popover-header {
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-muted);
+  border-bottom: 1px solid var(--border); padding-bottom: 6px;
+}
+.mc-cal-popover-list { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+.mc-cal-popover-item {
+  display: flex; align-items: center; gap: 10px; padding: 6px;
+  border-radius: var(--radius-md, 10px); background: var(--bg-surface, transparent);
+  border: 1px solid transparent; cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.mc-cal-popover-item:hover { background: var(--bg-hover); border-color: var(--border); }
+.mc-cal-popover-img { width: 34px; height: 50px; border-radius: var(--radius-sm, 6px); object-fit: cover; flex-shrink: 0; background: var(--bg-base); }
+.mc-cal-popover-info { min-width: 0; flex: 1; }
+.mc-cal-popover-title { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-cal-popover-sub { font-size: 0.72rem; color: var(--text-secondary); margin-top: 1px; }
+.mc-cal-popover-badges { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 3px; }
+.mc-cal-popover-actions { display: flex; gap: 4px; margin-top: 4px; }
+.mc-cal-popover-actions button {
+  background: var(--bg-hover); border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 4px; font-size: 0.68em; padding: 3px 7px; cursor: pointer;
+}
+.mc-cal-popover-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.mc-cal-popover-actions button.mc-active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+/* ── Action row shared by list rows / tiles / popover items ── */
+.mc-cal-actions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+.mc-cal-actions button {
+  background: var(--bg-hover); border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 4px; font-size: 0.7em; padding: 4px 8px; cursor: pointer;
+}
+.mc-cal-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.mc-cal-actions button.mc-active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+@media (max-width: 640px) {
+  .mc-cal-toolbar { gap: 8px; }
+  .mc-cal-toolbar-spacer { flex-basis: 100%; height: 0; }
+  .mc-cal-segmented { flex: 1; }
+  .mc-cal-segmented .mc-cal-seg-btn { flex: 1; padding: 8px 6px; }
+  .mc-cal-day { min-height: 70px; padding: 5px 3px; }
+  .mc-cal-day-events { display: none; }
+  .mc-cal-day-dots { display: flex; }
+}
+
+/* ── Collapsible Selection Groups in Media Calendar ── */
+.mc-collapsible-group {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin-bottom 0.25s ease;
+  opacity: 1;
+  margin-bottom: 20px;
+}
+
+.mc-collapsible-group.collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  margin-bottom: 0;
+}
+
+.mc-collapsible-group > div {
+  overflow: hidden;
+}
+
+.mc-collapsible-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.mc-collapsible-title:hover {
+  color: var(--text-secondary);
+}
+
+.mc-collapse-chevron {
+  transition: transform var(--transition, 0.2s ease);
+  display: inline-block;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.mc-collapsible-title.collapsed-title .mc-collapse-chevron {
+  transform: rotate(-90deg);
+}
+
+.mc-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}

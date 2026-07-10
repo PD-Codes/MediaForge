@@ -254,16 +254,18 @@ input[type="number"]::-webkit-outer-spin-button {
   box-shadow: none;
 }
 .num-step-btn {
-  flex: 0 0 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  padding: 0;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background var(--transition), color var(--transition);
+      height: 35px;
+    padding: 0 8px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.88rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background var(--transition);
+    white-space: nowrap;
 }
 .num-step-btn:hover:not(:disabled) {
   background: var(--bg-hover);

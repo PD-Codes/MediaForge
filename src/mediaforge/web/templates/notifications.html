@@ -1,7 +1,13 @@
 {% extends "base.html" %} {% block title %}{{ _('Notifications') }} — MediaForge{% endblock %}
+{% import "_settings_card_macro.html" as ext %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='notifications.css') }}">
+<!-- _settings_card_macro.html's card markup (.integ-card/.integ-collapsible-*/
+     .integ-subsection-*) is defined in integrations.css -- needed here too
+     since this page renders the exact same macro for any thirdparty
+     registered with settings_host="notifications". -->
+<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">
 {% endblock %}
 {% block content %}
 <div class="settings-container">
@@ -40,6 +46,16 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
       {{ _('Storage') }}
     </button>
+    {# Brand-new pills requested by a registered extension whose settings_tab
+       doesn't match one of the built-in ids above (see registry.py's
+       resolve_dynamic_tabs / _KNOWN_TABS). No template edit needed to add
+       one — see the matching panel loop at the bottom of this file. #}
+    {% for t in get_dynamic_tabs('notifications') %}
+    <button class="service-pill" onclick="showService('{{ t.id }}',this)">
+      {{ t.icon_svg|safe }}
+      {{ t.label }}
+    </button>
+    {% endfor %}
   </div>
 
   <!-- ═══ WEB PUSH ═══ -->
@@ -167,6 +183,11 @@
         </div>
       </div>
     </div>
+    {# Extensions attaching to this existing pill (settings_host="notifications",
+       settings_tab="webpush") — see register_thirdparty() in registry.py. #}
+    {% for card in get_settings_cards('notifications', 'webpush') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div>
 
   <!-- ═══ TELEGRAM ═══ -->
@@ -332,6 +353,9 @@
         </div>
       </div>
     </div>
+    {% for card in get_settings_cards('notifications', 'telegram') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div>
 
   <!-- ═══ PUSHOVER ═══ -->
@@ -497,6 +521,9 @@
         </div>
       </div>
     </div>
+    {% for card in get_settings_cards('notifications', 'pushover') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div>
 
   <!-- ═══ NTFY ═══ -->
@@ -677,6 +704,9 @@
         </div>
       </div>
     </div>
+    {% for card in get_settings_cards('notifications', 'ntfy') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div>
 
   <!-- ═══ DISCORD ═══ -->
@@ -818,6 +848,9 @@
       </div>
     </div>
     {% endif %}
+    {% for card in get_settings_cards('notifications', 'discord') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div>
 
   <!-- ═══ WHATSAPP ═══ -->
@@ -1002,6 +1035,9 @@
         </div>
       </div>
     </div>
+    {% for card in get_settings_cards('notifications', 'whatsapp') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div>
 
   <!-- ═══ SPEICHER ═══ -->
@@ -1027,7 +1063,23 @@
       </div>
 
     </div>
+    {% for card in get_settings_cards('notifications', 'storage') %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
   </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       Dynamic pills — brand-new pills an extension asked for via
+       settings_tab=<something not in _KNOWN_TABS> (see the pill loop in
+       .service-pills above and registry.py's resolve_dynamic_tabs()).
+  ══════════════════════════════════════════════════════ -->
+  {% for t in get_dynamic_tabs('notifications') %}
+  <div class="service-panel" id="panel-{{ t.id }}">
+    {% for card in get_settings_cards('notifications', t.id) %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
+  </div>
+  {% endfor %}
 
 </div><!-- /.settings-container -->
 {% endblock %}
@@ -1097,6 +1149,12 @@
 }
 </style>
 
+<!-- Shared collapsible-card behaviour + generic enable toggle for
+     auto-registered extensions (see _settings_card_macro.html /
+     web/thirdparties/registry.py). Also used by integrations.html — kept
+     in its own file instead of app.js since app.js isn't loaded here. -->
+<script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
+
 <script>
 /* ── Toast (defined here because app.js is not loaded on this page) ── */
 function showToast(msg) {
@@ -1118,6 +1176,39 @@ function showService(id, pill) {
   pill.classList.add('active');
   document.getElementById('panel-' + id).classList.add('active');
 }
+
+/* ── Deep link from the Modulmanager ("Open module" button) ──
+   Mirrors integrations.js's openDeepLinkedThirdpartyCard(): extensions.html
+   links here as .../notifications?open=<item_id>#<pill_id> for any
+   thirdparty registered with settings_host="notifications". Pills don't
+   carry a dedicated data-id (their onclick already encodes it as
+   showService('id', this)), so this pulls it back out of that attribute
+   instead of requiring a template change on every existing pill. */
+(function openDeepLinkedNotificationPanel() {
+  var openId = "";
+  try { openId = new URLSearchParams(window.location.search).get("open") || ""; } catch (e) {}
+  var hash = "";
+  try { hash = (window.location.hash || "").replace("#", "").trim(); } catch (e) {}
+  if (!hash) return;
+  document.addEventListener("DOMContentLoaded", function () {
+    var pills = Array.prototype.slice.call(document.querySelectorAll(".service-pill"));
+    var match = pills.find(function (p) {
+      var m = (p.getAttribute("onclick") || "").match(/showService\('([^']+)'/);
+      return m && m[1] === hash;
+    });
+    if (match) showService(hash, match);
+    if (!openId) return;
+    setTimeout(function () {
+      var card = document.getElementById("integCard-" + openId);
+      if (!card) return;
+      card.classList.remove("collapsed");
+      try { localStorage.setItem("integCollapsed_" + openId, "0"); } catch (e) {}
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.add("integ-card-highlight");
+      setTimeout(function () { card.classList.remove("integ-card-highlight"); }, 2200);
+    }, 60);
+  });
+})();
 
 /* ── API helpers ── */
 async function _post(url, body) {

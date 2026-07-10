@@ -11,7 +11,18 @@
   top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(8px);
-  z-index: 1000;
+  /* This overlay (window.openAniSearchModal(), shared_modals.html) is
+     opened via a click-through action from several other pages' own
+     dialogs -- e.g. Media Kalender's day popover (mediacalendar.css's
+     .mc-cal-popover, z-index 1000) -- not just as a standalone page. Left
+     at the standard modal-layer 1000 (modals.css), it tied with whatever
+     it was opened from and lost the stacking order (later-in-DOM element
+     wins on a tie), so it rendered *behind* the popover it was launched
+     from. Bumped one tier up, same convention feedback.css's toasts use
+     ("above the standard modal layer") -- still safely below
+     autosync_filter.css's .asf-overlay (10050), which can itself open
+     nested from inside this modal and must stay on top of it. */
+  z-index: 1500;
   display: flex;
   justify-content: center;
   align-items: center;

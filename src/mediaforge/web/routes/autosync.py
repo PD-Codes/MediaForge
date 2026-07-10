@@ -38,6 +38,96 @@ from ...logger import get_logger
 logger = get_logger(__name__)
 
 
+def find_site_candidates(title: str) -> list:
+    """Resolve a free-text title to candidate series/movie pages on
+    AniWorld / S.TO / MegaKino (+ hanime if enabled), each scored against
+    `title` by fuzzy string similarity, best match first (top 12).
+
+    Extracted out of api_autosync_site_search's body (see that route,
+    still the only in-app caller reachable over HTTP, via
+    static/library.js's libAddToAutosync()) so other code that needs the
+    same "is this actually findable on a site" check can call it directly
+    in-process instead of round-tripping through HTTP -- see
+    web/thirdparties/mediacalendar/service.py's planned-download worker,
+    which polls this once an hour per pending release to auto-create an
+    AutoSync job the moment a release becomes available on one of these
+    sites.
+    """
+    import difflib
+
+    def _norm(s):
+        return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+    target = _norm(title)
+
+    candidates = []
+    seen = set()
+
+    def _collect(items, site, site_label, base, pattern):
+        if isinstance(items, dict):
+            items = [items]
+        for item in (items or []):
+            link = item.get("link") or item.get("url", "")
+            if not pattern.match(link):
+                continue
+            name = _html_unescape(
+                item.get("title") or item.get("name", "Unknown")
+            ).replace("<em>", "").replace("</em>", "")
+            url = base + link
+            if url in seen:
+                continue
+            seen.add(url)
+            score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+            candidates.append({
+                "site": site, "site_label": site_label,
+                "title": name, "url": url, "score": round(score, 3),
+            })
+
+    try:
+        _collect(aniworld_query(title), "aniworld", "AniWorld",
+                 "https://aniworld.to", _SERIES_LINK_PATTERN)
+    except Exception as e:
+        logger.debug("[AutosyncSearch] AniWorld search failed: %s", e)
+    try:
+        _collect(query_s_to(title), "sto", "S.TO",
+                 "https://serienstream.to", _STO_SERIES_LINK_PATTERN)
+    except Exception as e:
+        logger.debug("[AutosyncSearch] S.TO search failed: %s", e)
+    try:
+        for item in (megakino_search(title) or []):
+            url = item.get("url", "")
+            if not item.get("is_series"):  # Auto-Sync tracks series only
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            name = _html_unescape(item.get("title") or "Unknown")
+            score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+            candidates.append({
+                "site": "megakino", "site_label": "MegaKino",
+                "title": name, "url": url, "score": round(score, 3),
+            })
+    except Exception as e:
+        logger.debug("[AutosyncSearch] MegaKino search failed: %s", e)
+    if _hanime_enabled():
+        try:
+            for item in (hanime_search(title) or []):
+                url = item.get("url", "")
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                name = _html_unescape(item.get("title") or "Unknown")
+                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+                candidates.append({
+                    "site": "hanime", "site_label": "hanime 18+",
+                    "title": name, "url": url, "score": round(score, 3),
+                })
+        except Exception as e:
+            logger.debug("[AutosyncSearch] hanime search failed: %s", e)
+
+    candidates.sort(key=lambda c: c["score"], reverse=True)
+    return candidates[:12]
+
+
 def register_autosync_routes(app):
     """Register all AutoSync job management routes (CRUD, triggering, batch
     operations, import/export) on the given Flask app."""
@@ -114,83 +204,11 @@ def register_autosync_routes(app):
         Route: POST /api/autosync/site-search. Called from static/library.js's
         `libAddToAutosync()`.
         """
-        import difflib
         data = request.get_json(silent=True) or {}
         title = (data.get("title") or "").strip()
         if not title:
             return jsonify({"error": "title is required"}), 400
-
-        def _norm(s):
-            return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
-        target = _norm(title)
-
-        candidates = []
-        seen = set()
-
-        def _collect(items, site, site_label, base, pattern):
-            if isinstance(items, dict):
-                items = [items]
-            for item in (items or []):
-                link = item.get("link") or item.get("url", "")
-                if not pattern.match(link):
-                    continue
-                name = _html_unescape(
-                    item.get("title") or item.get("name", "Unknown")
-                ).replace("<em>", "").replace("</em>", "")
-                url = base + link
-                if url in seen:
-                    continue
-                seen.add(url)
-                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-                candidates.append({
-                    "site": site, "site_label": site_label,
-                    "title": name, "url": url, "score": round(score, 3),
-                })
-
-        try:
-            _collect(aniworld_query(title), "aniworld", "AniWorld",
-                     "https://aniworld.to", _SERIES_LINK_PATTERN)
-        except Exception as e:
-            logger.debug("[AutosyncSearch] AniWorld search failed: %s", e)
-        try:
-            _collect(query_s_to(title), "sto", "S.TO",
-                     "https://serienstream.to", _STO_SERIES_LINK_PATTERN)
-        except Exception as e:
-            logger.debug("[AutosyncSearch] S.TO search failed: %s", e)
-        try:
-            for item in (megakino_search(title) or []):
-                url = item.get("url", "")
-                if not item.get("is_series"):  # Auto-Sync tracks series only
-                    continue
-                if url in seen:
-                    continue
-                seen.add(url)
-                name = _html_unescape(item.get("title") or "Unknown")
-                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-                candidates.append({
-                    "site": "megakino", "site_label": "MegaKino",
-                    "title": name, "url": url, "score": round(score, 3),
-                })
-        except Exception as e:
-            logger.debug("[AutosyncSearch] MegaKino search failed: %s", e)
-        if _hanime_enabled():
-            try:
-                for item in (hanime_search(title) or []):
-                    url = item.get("url", "")
-                    if not url or url in seen:
-                        continue
-                    seen.add(url)
-                    name = _html_unescape(item.get("title") or "Unknown")
-                    score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-                    candidates.append({
-                        "site": "hanime", "site_label": "hanime 18+",
-                        "title": name, "url": url, "score": round(score, 3),
-                    })
-            except Exception as e:
-                logger.debug("[AutosyncSearch] hanime search failed: %s", e)
-
-        candidates.sort(key=lambda c: c["score"], reverse=True)
-        return jsonify({"results": candidates[:12]})
+        return jsonify({"results": find_site_candidates(title)})
     @app.route("/api/autosync/<int:job_id>", methods=["PUT"])
     def api_autosync_update(job_id):
         """Update an AutoSync job's settings (owner or admin only).

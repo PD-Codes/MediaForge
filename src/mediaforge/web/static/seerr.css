@@ -304,3 +304,65 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* Restored -- lost in the style.css -> per-page split (git 6c73c3f):
+   seerr.js (rendering each search hit) has always targeted these four
+   classes, but the split only carried .seerr-search-results itself over
+   into this file, not the per-row classes below it in the original
+   style.css. Without them every search result rendered as an unstyled
+   block (no poster sizing, no hover feedback, no source pill) -- exactly
+   the "nicht mehr schön" regression reported. */
+.seerr-search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+  border: 1px solid transparent;
+}
+
+.seerr-search-result:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.seerr-search-poster {
+  width: 36px;
+  min-width: 36px;
+  height: 54px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--bg-elevated);
+}
+
+.seerr-search-title {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+}
+
+.seerr-source-pill {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  letter-spacing: 0.02em;
+}
+
+/* Never actually styled even before the split (checked git history) --
+   just the two action buttons (Cancel/Decline) below the results list,
+   so give them a proper row instead of default block stacking now that
+   we're in here fixing this file's other gaps anyway. */
+.seerr-search-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

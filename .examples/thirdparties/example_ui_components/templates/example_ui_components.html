@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Example: UI Components') }} — MediaForge{% endblock %}
+{% block styles %}
+{# settings_rows.css isn't loaded globally by base.html (only pages that
+   use .settings-row/.settings-section link it themselves, e.g.
+   integrations.html, extensions.html) -- every other class on this page
+   (badges, pills, toggles, buttons, empty-state, progress bar, the number
+   stepper) comes from CSS base.html already loads on every page, so
+   nothing else needs a <link> here. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
+<link rel="stylesheet" href="{{ url_for('example_ui_components.static', filename='example_ui_components.css') }}">
+{% endblock %}
+{% block content %}
+<div class="settings-container">
+  <div class="page-header">
+    <h1 class="page-title">{{ _('Example: UI Components') }}</h1>
+    <p class="page-subtitle">{{ _('Core CSS/JS building blocks, live -- copy the markup straight from this page\'s source (view-source or the template file next to this folder\'s __init__.py).') }}</p>
+  </div>
+
+  <!-- ─── Icons ──────────────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Icons') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">
+        {{ _('No sprite sheet -- every icon is inline SVG, viewBox="0 0 24 24", stroke="currentColor" (so it inherits the surrounding text color automatically), stroke-width="2", stroke-linecap/linejoin="round". Same convention for sidebar links, buttons, badges -- anywhere an icon appears.') }}
+      </div>
+      <div class="uic-icon-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"></path></svg>
+      </div>
+      <pre class="uic-snippet">&lt;svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round"&gt;
+  &lt;rect x="3" y="4" width="18" height="18" rx="2"&gt;&lt;/rect&gt;
+  ...
+&lt;/svg&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Badges / pills / tags ──────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Badges') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/tabs-badges.css — small status/tag chips. Also used, with an inline background-color instead of a modifier class, for a settings card\'s own colored badges (see registry.py\'s badges= param).') }}</div>
+      <div class="uic-row">
+        <span class="badge badge-accent">{{ _('Accent') }}</span>
+        <span class="badge badge-success">{{ _('Success') }}</span>
+        <span class="badge badge-warning">{{ _('Warning') }}</span>
+        <span class="badge badge-error">{{ _('Error') }}</span>
+        <span class="badge badge-neutral">{{ _('Neutral') }}</span>
+      </div>
+      <pre class="uic-snippet">&lt;span class="badge badge-accent"&gt;Accent&lt;/span&gt;
+&lt;span class="badge badge-success"&gt;Success&lt;/span&gt;
+&lt;span class="badge badge-warning"&gt;Warning&lt;/span&gt;
+&lt;span class="badge badge-error"&gt;Error&lt;/span&gt;
+&lt;span class="badge badge-neutral"&gt;Neutral&lt;/span&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Service pills (tab-style selector) ────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Service pills') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/settings_rows.css — the pill-shaped tab selector the Notifications page uses for Web Push / Telegram / ntfy / etc. (each thirdparty gets one of these automatically if it attaches to Notifications — see the README\'s "Settings placement" section). Click one below.') }}</div>
+      <div class="service-pills" id="uicPills">
+        <button class="service-pill active" data-pill="a" onclick="uicSwitchPill('a', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle></svg>
+          {{ _('Pill A') }}
+        </button>
+        <button class="service-pill" data-pill="b" onclick="uicSwitchPill('b', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
+          {{ _('Pill B') }}
+        </button>
+        <button class="service-pill" data-pill="c" onclick="uicSwitchPill('c', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"></path></svg>
+          {{ _('Pill C') }}
+        </button>
+      </div>
+      <div class="uic-hint" id="uicPillResult">{{ _('Selected: a') }}</div>
+      <pre class="uic-snippet">&lt;div class="service-pills"&gt;
+  &lt;button class="service-pill active" onclick="showService('a', this)"&gt;...&lt;/button&gt;
+  &lt;button class="service-pill" onclick="showService('b', this)"&gt;...&lt;/button&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Toggle switches ────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Toggle switches') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/tables.css — the on/off switch used everywhere in Settings. Inside a real settings card this is wired automatically (class="thirdparty-toggle" data-thirdparty-id="...") — see _settings_card_macro.html and static/extension_cards.js. Standalone, it just needs a plain onchange like below.') }}</div>
+      <div class="settings-row" style="border:none;">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Demo toggle') }}</div>
+          <div class="settings-row-desc">{{ _('Flips the label on the right when clicked.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" onchange="document.getElementById('uicToggleResult').textContent = this.checked ? 'On' : 'Off';" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="uic-hint">{{ _('State:') }} <span id="uicToggleResult">Off</span></div>
+      <pre class="uic-snippet">&lt;label class="toggle"&gt;
+  &lt;input type="checkbox" onchange="..." /&gt;
+  &lt;span class="toggle-slider"&gt;&lt;/span&gt;
+&lt;/label&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Number stepper (+ / -) ─────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Number stepper') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/forms.css + web/static/number_input.js (loaded globally by base.html). Zero markup needed — a plain input[type=number] is auto-enhanced with -/+ buttons on page load (and for anything injected into the DOM later, e.g. a modal built by JS). It respects min/max/step via the native stepUp()/stepDown().') }}</div>
+      <div class="settings-row" style="border:none;">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Demo quantity') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <input type="number" value="5" min="0" max="20" step="1">
+        </div>
+      </div>
+      <pre class="uic-snippet">&lt;input type="number" value="5" min="0" max="20" step="1"&gt;
+&lt;!-- that's it — number_input.js does the rest --&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Buttons ─────────────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Buttons') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/buttons.css') }}</div>
+      <div class="uic-row">
+        <button class="btn btn-primary">{{ _('Primary') }}</button>
+        <button class="btn btn-secondary">{{ _('Secondary') }}</button>
+        <button class="btn btn-ghost">{{ _('Ghost') }}</button>
+        <button class="btn btn-danger">{{ _('Danger') }}</button>
+        <button class="btn btn-primary btn-sm">{{ _('Small') }}</button>
+        <button class="btn btn-primary btn-lg">{{ _('Large') }}</button>
+        <button class="btn btn-primary" disabled>{{ _('Disabled') }}</button>
+      </div>
+      <pre class="uic-snippet">&lt;button class="btn btn-primary"&gt;Primary&lt;/button&gt;
+&lt;button class="btn btn-secondary"&gt;Secondary&lt;/button&gt;
+&lt;button class="btn btn-ghost"&gt;Ghost&lt;/button&gt;
+&lt;button class="btn btn-danger"&gt;Danger&lt;/button&gt;
+&lt;button class="btn btn-primary btn-sm"&gt;Small&lt;/button&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Settings row layout ────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Settings row layout') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/settings_rows.css — the label/description-on-the-left, control-on-the-right row every Settings page uses. This whole page is built from it (.settings-section is the outer card, .settings-row one line inside it).') }}</div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('A setting') }}</div>
+          <div class="settings-row-desc">{{ _('Optional description text underneath the label.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <button class="btn btn-secondary btn-sm">{{ _('Action') }}</button>
+        </div>
+      </div>
+      <pre class="uic-snippet">&lt;div class="settings-row"&gt;
+  &lt;div class="settings-row-left"&gt;
+    &lt;div class="settings-row-label"&gt;A setting&lt;/div&gt;
+    &lt;div class="settings-row-desc"&gt;Optional description...&lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="settings-row-right"&gt;...control...&lt;/div&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Progress bar ───────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Progress bar') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/tabs-badges.css. Real usages in the app prefix their own bar class (e.g. lib-move-progress-bar) instead of styling .progress-bar directly, so several independent progress bars on one page don\'t fight over width — do the same in your own integration.') }}</div>
+      <div class="progress-wrap" style="margin-bottom:8px;"><div class="progress-bar" style="width:35%;"></div></div>
+      <div class="progress-wrap"><div class="progress-bar" style="width:80%;"></div></div>
+      <pre class="uic-snippet">&lt;div class="progress-wrap"&gt;&lt;div class="progress-bar" style="width:35%;"&gt;&lt;/div&gt;&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Empty state ─────────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Empty state') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/feedback.css — the centered icon/title/description block for "nothing here yet" states (e.g. an empty list before the user has added anything).') }}</div>
+      <div class="empty-state">
+        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path></svg>
+        <div class="empty-state-title">{{ _('Nothing here yet') }}</div>
+        <div class="empty-state-desc">{{ _('This is where a short explanation and maybe a call-to-action button would go.') }}</div>
+      </div>
+      <pre class="uic-snippet">&lt;div class="empty-state"&gt;
+  &lt;svg class="empty-state-icon" ...&gt;...&lt;/svg&gt;
+  &lt;div class="empty-state-title"&gt;Nothing here yet&lt;/div&gt;
+  &lt;div class="empty-state-desc"&gt;...&lt;/div&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('example_ui_components.static', filename='example_ui_components.js') }}"></script>
+{% endblock %}

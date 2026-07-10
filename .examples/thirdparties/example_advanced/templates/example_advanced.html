@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Example: Advanced Placement') }} — MediaForge{% endblock %}
+{% block content %}
+<div class="settings-container">
+  <div class="page-header">
+    <h1 class="page-title">{{ _('Example: Advanced Placement') }}</h1>
+    <p class="page-subtitle">{{ _('Own page under SyncPlay, a settings card on a new Settings tab, a soft dependency on Example: Own Menu, and admin-only routes. See __init__.py.') }}</p>
+  </div>
+  <div class="settings-section">
+    <div class="settings-hint" style="padding:20px 24px;">
+      {{ _('If you can see this page at all: you are logged in as an admin (auth_required="admin"), and either Example: Own Menu is enabled or the requires_enabled check simply did not block this page load -- requires_enabled only hides the sidebar link and flags the Module Manager row, it does not by itself 404 the page. A real integration that truly cannot function without its dependency should also check registry.dependencies_satisfied() in its own route and redirect/404 accordingly.') }}
+    </div>
+  </div>
+</div>
+{% endblock %}

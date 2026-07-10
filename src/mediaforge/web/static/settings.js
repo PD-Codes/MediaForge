@@ -21,13 +21,42 @@ function switchTab(name) {
 (function restoreTab() {
   var hash = "";
   try { hash = (window.location.hash || "").replace("#", "").trim(); } catch (e) { }
-  var validTabs = ["general", "design", "sources", "downloads", "autosync", "network", "auth", "api", "updates"];
+  // Read valid tab ids off the DOM instead of a hardcoded list, so a tab a
+  // thirdparty registers dynamically (settings_host="settings", see
+  // registry.py's resolve_dynamic_tabs()) is restorable via #hash exactly
+  // like the built-in ones -- same pattern as integrations.js's
+  // restoreIntegTab().
+  var validTabs = Array.prototype.map.call(
+    document.querySelectorAll("#settingsTabs .settings-tab"),
+    function (btn) { return btn.dataset.tab; }
+  );
   var tab = (hash && validTabs.indexOf(hash) !== -1) ? hash : "";
   if (!tab) {
     try { tab = localStorage.getItem("settingsActiveTab") || "downloads"; } catch (e) { tab = "downloads"; }
   }
   if (validTabs.indexOf(tab) === -1) tab = "downloads";
   switchTab(tab);
+})();
+
+// ─── Deep link from the Modulmanager ("Open module" button) ───────────────
+// Mirrors integrations.js's openDeepLinkedThirdpartyCard(): extensions.html
+// links here as .../settings?open=<item_id>#<tab> for any thirdparty
+// registered with settings_host="settings".
+(function openDeepLinkedThirdpartyCard() {
+  var openId = "";
+  try { openId = new URLSearchParams(window.location.search).get("open") || ""; } catch (e) {}
+  if (!openId) return;
+  document.addEventListener("DOMContentLoaded", function () {
+    setTimeout(function () {
+      var card = document.getElementById("integCard-" + openId);
+      if (!card) return;
+      card.classList.remove("collapsed");
+      try { localStorage.setItem("integCollapsed_" + openId, "0"); } catch (e) {}
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.add("integ-card-highlight");
+      setTimeout(function () { card.classList.remove("integ-card-highlight"); }, 2200);
+    }, 60);
+  });
 })();
 
 // ─── Element references ─────────────────────────────────────────────────────

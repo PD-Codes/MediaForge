@@ -1,0 +1,176 @@
+{% extends "base.html" %} {% block title %}{{ _('Module Manager') }} — MediaForge{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">
+{% endblock %}
+{% block content %}
+<div class="settings-container">
+  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+    <div>
+      <h1 class="page-title">{{ _('Module Manager') }}</h1>
+      <p class="page-subtitle">{{ _('Every discovered web/thirdparties/ folder, who made it, and a working on/off switch for what it registered') }}</p>
+    </div>
+    <button class="btn btn-secondary" id="extRescanBtn" style="white-space:nowrap;" title="{{ _('Scan web/thirdparties/ for new module folders and register them without restarting the app.') }}">
+      {{ _('Refresh') }}
+    </button>
+  </div>
+
+  {% if not extensions %}
+  <div class="settings-section">
+    <div class="settings-hint" style="padding:20px 24px;">{{ _('No extension folders discovered.') }}</div>
+  </div>
+  {% endif %}
+
+  <!-- One card per web/thirdparties/<name>/ folder — built from
+       resolve_extensions_overview() (see registry.py), which is fed by
+       every phase of discover_and_register() (routes/extensions.py /
+       web/thirdparties/__init__.py). A folder that failed to import, has
+       no register(app), or was skipped for an unmet DEPENDS_ON still gets
+       a card here, with the reason — that's the whole point of this page.
+       module_name/description/author come from the folder's own
+       MODULE_NAME/MODULE_DESCRIPTION/MODULE_AUTHOR constants (see
+       web/thirdparties/__init__.py's docstring), falling back to the
+       folder name / nothing when a module doesn't declare them. -->
+  {% for ext in extensions %}
+  <div class="settings-section integ-card collapsed" id="integCard-ext-{{ ext.name }}">
+    <div class="integ-subsection-header integ-collapsible-header" style="padding:14px 20px !important;" onclick="toggleIntegCollapse('ext-{{ ext.name }}')">
+      <span class="integ-collapsible-chevron">▸</span>
+      <span class="integ-subsection-title">{{ ext.module_name }}</span>
+       {% if ext.author %}
+      <span class="integ-subsection-badge badge-author" title="{{ _('Author') }}">{{ ext.author }}</span>
+      {% endif %}
+      {% if ext.registered %}
+      <span class="integ-subsection-badge badge-loaded">{{ _('Loaded') }}</span>
+      {% elif ext.imported == false %}
+      <span class="integ-subsection-badge badge-import-failed">{{ _('Import failed') }}</span>
+      {% elif ext.registered == false %}
+      <span class="integ-subsection-badge badge-skipped">{{ _('Skipped') }}</span>
+      {% else %}
+      <span class="integ-subsection-badge badge-unknown">{{ _('Unknown') }}</span>
+      {% endif %}
+      {% if ext.registered_items %}
+      {% if ext.registered_items|selectattr("enabled")|list %}
+      <span class="integ-subsection-badge badge-enabled">{{ _('Enabled') }}</span>
+      {% else %}
+      <span class="integ-subsection-badge badge-disabled">{{ _('Disabled') }}</span>
+      {% endif %}
+      {% endif %}
+      {% if ext.depends_on %}
+      <span class="integ-subsection-badge badge-depends" title="{{ _('DEPENDS_ON') }}">
+        → {{ ext.depends_on|join(', ') }}
+      </span>
+      {% endif %}
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      {% if ext.description %}
+      <div class="integ-subsection-hint">{{ ext.description }}</div>
+      {% endif %}
+      {% if ext.error %}
+      <div class="settings-hint" style="color:var(--error);">{{ ext.error }}</div>
+      {% endif %}
+
+      {% if ext.registered_items %}
+      <!-- Deliberately NOT the full settings card here (that used to be
+           render_settings_card(card), showing every extra_settings field —
+           e.g. Media Kalender's Lookahead/Cache/Reminder rows — duplicated
+           on top of the Integrations/Notifications page that already owns
+           them). The Modulmanager's job is just "is this module on, and
+           where do I configure it", not a second copy of every field: two
+           rows per registered item — a plain enable/disable toggle (same
+           generic /api/settings/thirdparty/<id> master toggle every card
+           uses, see extension_cards.js) and a jump link to that item's full
+           card on whichever settings_host/settings_tab it actually
+           registered onto (normally Integrations' Third Party tab). The
+           link's ?open=<id>#<tab> is read by integrations.js /
+           notifications.html on load to switch to the right tab, expand
+           that one card, and scroll it into view. -->
+      {% for item in ext.registered_items %}
+      {% set card = get_thirdparty_card(item.id) %}
+      {% if card %}
+      <div class="settings-row" style="border-bottom:none;padding-bottom:0;">
+        <div class="settings-row-left">
+          <div class="settings-row-desc">
+            <code style="opacity:.6;font-size:.9em;">{{ item.id }}</code>
+            {% if item.section %} · {{ _('Sidebar') }}: {{ _(item.section|capitalize) }}{% endif %}
+            · {{ _('Settings') }}: {{ _(item.settings_host|capitalize) }} / {{ item.settings_tab }}
+            {%- if item.has_dashboard_widget %} · {{ _('Dashboard widget') }}{% endif -%}
+            {%- if item.has_provider_pill %} · {{ _('Provider pill') }}{% endif %}
+            {%- if item.requires_enabled %} · {{ _('Requires') }}: {{ item.requires_enabled|join(', ') }}{% endif %}
+          </div>
+          {% if item.requires_enabled and not item.requires_enabled_ok %}
+          <div class="settings-row-desc" style="color:var(--error, #e74c3c);">
+            {{ _('One or more required modules are not currently enabled — this module will not work until they are.') }}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Enable module') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" class="thirdparty-toggle" data-thirdparty-id="{{ card.id }}" onchange="saveThirdpartyToggle('{{ card.id }}', this)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="settings-row" style="border-bottom:none;">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Open module') }}</div>
+          <div class="settings-row-desc">{{ _('Configure its settings on the') }} {{ _(item.settings_host|capitalize) }} {{ _('page') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <a class="btn btn-secondary" style="text-decoration:none;display:inline-block;" href="{{ url_for(item.settings_host + '_page') }}?open={{ item.id }}#{{ item.settings_tab }}">{{ _('Open module') }} →</a>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+      {% else %}
+      <div class="settings-hint">{{ _('This folder registered no sidebar/settings item — could be a background-job-only integration, or one that failed before reaching register_thirdparty().') }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<!-- Generic enable-toggle load/save helpers (see web/thirdparties/registry.py's
+     register_generic_settings_routes) -- the "Enable module" toggle above
+     is the same .thirdparty-toggle every settings card uses, populated and
+     saved via loadThirdpartyToggles()/saveThirdpartyToggle() from this file,
+     exactly like integrations.html/notifications.html. -->
+<script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
+<script>
+// "Refresh" button -- POST /api/extensions/rescan (see routes/extensions.py /
+// web/thirdparties/__init__.py's rescan_new_modules()) picks up any NEW
+// web/thirdparties/<name>/ folder live, no app restart needed. Simplest
+// correct way to show the result is a full page reload afterwards rather
+// than duplicating this template's card-rendering logic in JS -- this
+// button is clicked rarely (only right after dropping in a new module
+// folder), so the reload's cost doesn't matter.
+document.getElementById("extRescanBtn").addEventListener("click", async function () {
+  const btn = this;
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = t("Scanne…", "Scanning…");
+  try {
+    const resp = await fetch("/api/extensions/rescan", { method: "POST" });
+    const data = await resp.json();
+    const found = (data.new_modules || []).length;
+    showToast(found
+      ? t(`${found} neue(s) Modul(e) gefunden und geladen: ${data.new_modules.join(", ")}`,
+          `${found} new module(s) found and loaded: ${data.new_modules.join(", ")}`)
+      : t("Keine neuen Module gefunden.", "No new modules found."));
+    if (found) {
+      setTimeout(() => window.location.reload(), 900);
+    } else {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  } catch (e) {
+    showToast(t("Fehler: ", "Error: ") + e.message);
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
+</script>
+{% endblock %}
