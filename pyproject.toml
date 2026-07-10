@@ -31,6 +31,8 @@ dependencies = [
   "dnspython",
   "curl_cffi",
   "flask-babel",
+  "markdown",
+  "bleach",
 ]
 
 classifiers = [

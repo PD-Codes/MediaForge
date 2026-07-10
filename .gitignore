@@ -228,3 +228,6 @@ FINDINGS.txt
 _backups/
 
 /MediaForge Wiki
+
+# Standalone Dev Info admin server (separate app, holds admin credentials/DB — never public)
+/devinfo_server/
