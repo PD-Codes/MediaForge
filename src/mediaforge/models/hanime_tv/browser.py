@@ -37,14 +37,35 @@ def _sync_playwright():
 
 
 def _new_page(p):
-    # Quiet launch args so headless Chromium doesn't spam the captured console.
-    browser = p.chromium.launch(headless=True, args=[
-        "--log-level=3", "--disable-logging", "--disable-dev-shm-usage",
-        "--mute-audio", "--no-first-run",
-    ])
-    context = browser.new_context(ignore_https_errors=True)
+    """Open a hardened page for hanime.tv.
+
+    hanime.tv now fronts its player with Cloudflare Turnstile
+    (``window.AppConfig.turnstile_public_site_key``), so a bare, ephemeral,
+    headless context gets flagged and the signed .m3u8 request never fires.
+    Reuse the same hardened launch path every other Cloudflare-protected
+    provider in this codebase already relies on (see
+    ``mediaforge.playwright.captcha._launch_browser_context``): persistent
+    profile (warm cf_clearance), stealth launch args/context kwargs and
+    fingerprint hardening (overlay/WebGL defences via ``_install_stealth``).
+
+    Turnstile requires a real (non-headless) renderer, so this — like the
+    rest of the captcha infrastructure — runs headed and, on Linux, relies on
+    ``autodeps._ensure_xvfb()`` to provide a virtual display when none is set.
+    """
+    try:
+        from ...autodeps import _ensure_xvfb
+        _ensure_xvfb()
+    except Exception:
+        pass
+    try:
+        from ...playwright.captcha import _launch_browser_context
+    except ImportError:
+        from mediaforge.playwright.captcha import _launch_browser_context
+
+    handle = _launch_browser_context(p, offscreen=True)
+    context = handle.context
     page = context.new_page()
-    return browser, context, page
+    return handle, context, page
 
 
 def _best_stream(detail):
@@ -103,12 +124,18 @@ _EXTRACT_JS = r"""
 """
 
 # JS to start playback so the player requests the signed .m3u8.
+# #HTVPlayerContainer is the current (Vue/Astro) player root; #HTVPlayerRoot
+# and the video.js classes are kept as harmless fallbacks in case a cached or
+# alternate page still serves the older markup.
 _PLAY_JS = r"""
 () => {
   const sels = ['[aria-label="Play video"]', '[aria-label="Play"]',
-                '.vjs-big-play-button', '#HTVPlayerRoot', '.vjs-poster'];
+                '.vjs-big-play-button', '#HTVPlayerContainer', '#HTVPlayerRoot',
+                '.vjs-poster'];
   for (const s of sels) { const el = document.querySelector(s); if (el) { try { el.click(); } catch (e) {} } }
-  const v = document.querySelector('#HTVPlayer_html5_api') || document.querySelector('video');
+  const scope = document.querySelector('#HTVPlayerContainer') || document;
+  const v = scope.querySelector('#HTVPlayer_html5_api') || scope.querySelector('video')
+            || document.querySelector('#HTVPlayer_html5_api') || document.querySelector('video');
   if (v) { try { v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
 }
 """
@@ -132,15 +159,30 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
     seen = []
     title = ""
     with spw() as p:
-        browser, context, page = _new_page(p)
+        handle, context, page = _new_page(p)
         try:
             def _on_response(resp):
                 try:
                     u = resp.url
-                    if ".m3u8" in u and m3u8[0] is None:
-                        m3u8[0] = u
-                        seen.append((u[:70], resp.status))
-                    elif "handshake" in u or "sign.bin" in u:
+                    # hanime no longer always puts ".m3u8" in the manifest URL
+                    # (current player fetches "/hls/<id>/<token>" with no file
+                    # extension at all) — the reliable signal is the response's
+                    # Content-Type, which the HLS manifest always sends as
+                    # application/x-mpegurl (also accept the literal ".m3u8"
+                    # URL as a fallback in case an older/alternate path is used).
+                    if m3u8[0] is None:
+                        is_manifest = ".m3u8" in u
+                        if not is_manifest and "/hls/" in u:
+                            try:
+                                ct = (resp.header_value("content-type") or "").lower()
+                            except Exception:
+                                ct = ""
+                            is_manifest = "mpegurl" in ct or "vnd.apple.mpegurl" in ct
+                        if is_manifest:
+                            m3u8[0] = u
+                            seen.append((u[:70], resp.status))
+                            return
+                    if "handshake" in u or "sign.bin" in u:
                         seen.append((u[:70], resp.status))
                 except Exception:
                     pass
@@ -149,6 +191,26 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
                 page.goto(f"{_BASE}/videos/hentai/{slug}", wait_until="domcontentloaded", timeout=timeout_ms)
             except Exception as e:
                 logger.debug("hanime goto failed: %s", e)
+
+            # hanime.tv now fronts the page with Cloudflare Turnstile
+            # (window.AppConfig.turnstile_public_site_key). If a challenge
+            # widget is present, click it and give it a moment to validate
+            # before doing anything else — a no-op (returns False quickly)
+            # when no Turnstile widget exists on this page.
+            try:
+                from ...playwright.captcha import _click_turnstile, _is_turnstile_token_ready
+            except ImportError:
+                from mediaforge.playwright.captcha import _click_turnstile, _is_turnstile_token_ready
+            try:
+                if not _is_turnstile_token_ready(page):
+                    if _click_turnstile(page, logger):
+                        for _ in range(10):
+                            if _is_turnstile_token_ready(page):
+                                break
+                            page.wait_for_timeout(500)
+            except Exception as e:
+                logger.debug("hanime turnstile handling failed: %s", e)
+
             # The SPA hydrates the ld+json block + episode links asynchronously
             # after domcontentloaded, so *some* wait is unavoidable. Rather than
             # always blocking for the full _SETTLE_MS regardless of how fast the
@@ -173,7 +235,10 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
 
             if want_stream:
                 try:
-                    page.wait_for_selector("#HTVPlayer_html5_api, video", timeout=8000)
+                    page.wait_for_selector(
+                        "#HTVPlayerContainer, #HTVPlayerRoot, #HTVPlayer_html5_api, video",
+                        timeout=8000,
+                    )
                 except Exception:
                     pass
                 try:
@@ -181,7 +246,9 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
                 except Exception:
                     pass
                 try:
-                    box = page.query_selector("#HTVPlayerRoot") or page.query_selector("#HTVPlayer_html5_api")
+                    box = (page.query_selector("#HTVPlayerContainer")
+                           or page.query_selector("#HTVPlayerRoot")
+                           or page.query_selector("#HTVPlayer_html5_api"))
                     if box:
                         bb = box.bounding_box()
                         if bb:
@@ -198,7 +265,7 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
                 pass
         finally:
             try:
-                browser.close()
+                handle.close()
             except Exception:
                 pass
 
