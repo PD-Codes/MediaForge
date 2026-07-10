@@ -147,6 +147,19 @@
 // than duplicating this template's card-rendering logic in JS -- this
 // button is clicked rarely (only right after dropping in a new module
 // folder), so the reload's cost doesn't matter.
+// extensions.html doesn't load app.js/integrations.js/etc. (the only
+// scripts that define a global showToast()), so calling the bare
+// showToast(...) here throws a ReferenceError -- which, since it happened
+// inside the try (and, worse, inside the catch's own error-toast call
+// too), silently aborted this whole handler before it ever reached the
+// btn.disabled=false / reload lines. That's why "Scanne…" used to get
+// stuck forever even on a fast, successful 200 response. Guard against
+// showToast not existing instead of assuming every page defines it.
+function extRescanToast(msg) {
+  if (window.showToast) { window.showToast(msg); return; }
+  console.log("[Modulmanager]", msg);
+}
+
 document.getElementById("extRescanBtn").addEventListener("click", async function () {
   const btn = this;
   btn.disabled = true;
@@ -156,7 +169,7 @@ document.getElementById("extRescanBtn").addEventListener("click", async function
     const resp = await fetch("/api/extensions/rescan", { method: "POST" });
     const data = await resp.json();
     const found = (data.new_modules || []).length;
-    showToast(found
+    extRescanToast(found
       ? t(`${found} neue(s) Modul(e) gefunden und geladen: ${data.new_modules.join(", ")}`,
           `${found} new module(s) found and loaded: ${data.new_modules.join(", ")}`)
       : t("Keine neuen Module gefunden.", "No new modules found."));
@@ -167,7 +180,7 @@ document.getElementById("extRescanBtn").addEventListener("click", async function
       btn.textContent = originalText;
     }
   } catch (e) {
-    showToast(t("Fehler: ", "Error: ") + e.message);
+    extRescanToast(t("Fehler: ", "Error: ") + e.message);
     btn.disabled = false;
     btn.textContent = originalText;
   }

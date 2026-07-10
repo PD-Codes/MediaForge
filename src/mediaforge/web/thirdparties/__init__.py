@@ -199,7 +199,26 @@ def _register_modules(app, modules: dict, registered: set) -> list:
             continue
         try:
             before_ids = item_ids()
-            register_fn(app)
+            # Flask >=2.2 refuses register_blueprint()/app.route() once the
+            # app has handled its first request (Scaffold.
+            # _check_setup_finished(), gated on the private app.
+            # _got_first_request flag) -- which is always the case by the
+            # time rescan_new_modules() (this function's other caller) runs,
+            # since it's only ever triggered by an admin clicking "Refresh"
+            # on an already-running app. That flag has no purpose beyond
+            # this one assertion in current Flask (it's not used for
+            # before-first-request hooks anymore, and full_dispatch_request()
+            # unconditionally sets it back to True on every request
+            # regardless of what we do here), so it's safe to flip off just
+            # for the duration of this one register(app) call -- without
+            # this, a genuinely new module's Blueprint can never be added
+            # live, defeating the entire point of "Refresh".
+            had_first_request = getattr(app, "_got_first_request", False)
+            app._got_first_request = False
+            try:
+                register_fn(app)
+            finally:
+                app._got_first_request = had_first_request
             logger.info("[Thirdparties] Registered integration: %s", name)
             registered.add(name)
             newly_registered.append(name)
@@ -281,6 +300,16 @@ def rescan_new_modules(app) -> list:
     -- check the Extensions overview page for why).
     """
     package_dir = Path(__file__).parent
+    # Without this, a folder copied in after the process started can stay
+    # invisible to pkgutil.iter_modules() indefinitely: Python's import
+    # machinery caches each directory's listing (importlib.machinery.
+    # FileFinder) and only a handful of code paths (an actual import
+    # attempt, mainly) trigger a refresh -- iter_modules() alone doesn't.
+    # See importlib.invalidate_caches()'s own docs: "If you are dynamically
+    # importing a module that was created since the interpreter began
+    # execution [...] you may need to call invalidate_caches()". This is
+    # exactly that case, every time this is called.
+    importlib.invalidate_caches()
     known = known_module_names()
     names = sorted(
         name for _finder, name, is_pkg in pkgutil.iter_modules([str(package_dir)])
