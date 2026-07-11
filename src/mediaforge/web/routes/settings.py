@@ -1059,6 +1059,30 @@ def register_settings_routes(app):
             "registry": registry_export(),
         })
 
+    def _telemetry_kick():
+        """Best-effort: submit one system_info event right now, in this
+        request, instead of waiting for the next app start.
+
+        Previously the only "proof of life" event was the one-shot
+        system_info sent from hooks.init_telemetry() at create_app() time --
+        which meant granting consent (or raising the stage) mid-session
+        produced no visible signal on the devInfo server until the app was
+        restarted (the actual crash/feature/download events all check
+        settings.is_key_enabled() live and never needed a restart; system_info
+        was the only piece of the pipeline gated to "once per process start").
+        Called after every change that could newly enable something, so the
+        Settings page's Save/consent buttons are self-evidently working
+        without needing a restart to confirm it. Never raises -- a failure
+        here must not turn a settings change into a 500."""
+        try:
+            from ...telemetry import events as _tel_events
+            from ...telemetry.client import get_client as _tel_get_client
+            event = _tel_events.build_system_info_event()
+            if event:
+                _tel_get_client().submit(event)
+        except Exception:
+            logger.debug("[Telemetry] immediate kick-event failed", exc_info=True)
+
     @app.route("/api/settings/telemetry", methods=["PUT"])
     def api_settings_telemetry_put():
         """Serve PUT /api/settings/telemetry: overwrite the full set of
@@ -1084,7 +1108,17 @@ def register_settings_routes(app):
         # always_on flag) but is implicitly present whenever anything else is.
         if valid:
             valid.add("install_id")
+        grew = bool(valid - _tel.get_enabled_keys())
         _tel.set_enabled_keys(valid)
+        if grew:
+            # Something new was just turned on (e.g. raised to a higher stage).
+            # The actual downloads/watch/feature events for it were already live
+            # (is_key_enabled() is checked at the moment of use, no restart ever
+            # needed for those) -- this kick just makes sure the install shows up
+            # on the server with an up to date enabled_keys snapshot right away,
+            # rather than only after whatever action the new stage tracks next
+            # happens to occur.
+            _telemetry_kick()
         return jsonify({"ok": True, "enabled_keys": sorted(valid)})
 
     @app.route("/api/settings/telemetry/consent", methods=["POST"])
@@ -1100,6 +1134,8 @@ def register_settings_routes(app):
         data = request.get_json(silent=True) or {}
         granted = bool(data.get("granted"))
         _tel.set_consent(granted)
+        if granted:
+            _telemetry_kick()
         return jsonify({
             "ok": True,
             "consent_given": granted,
