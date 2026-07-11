@@ -4280,6 +4280,36 @@ msgstr "Seite konfigurieren"
 msgid "Scan web/thirdparties/ for new module folders and register them without restarting the app."
 msgstr "web/thirdparties/ nach neuen Modul-Ordnern durchsuchen und diese registrieren, ohne die App neu zu starten."
 
+# Module versioning / module-store metadata (MODULE_VERSION, MODULE_ID,
+# MODULE_MIN/MAX_APP_VERSION, MODULE_LICENSE, MODULE_HOMEPAGE) shown on the
+# Module Manager page -- see web/thirdparties/__init__.py's docstring.
+msgid "MediaForge core version"
+msgstr "MediaForge-Kernversion"
+
+msgid "Module version"
+msgstr "Modulversion"
+
+msgid "Incompatible"
+msgstr "Inkompatibel"
+
+msgid "Module ID"
+msgstr "Modul-ID"
+
+msgid "Folder"
+msgstr "Ordner"
+
+msgid "Requires MediaForge"
+msgstr "Benötigt MediaForge"
+
+msgid "up to"
+msgstr "bis"
+
+msgid "License"
+msgstr "Lizenz"
+
+msgid "This module declares a MediaForge version range the running version is outside of, so it was not loaded."
+msgstr "Dieses Modul gibt einen MediaForge-Versionsbereich an, außerhalb dessen die laufende Version liegt — es wurde daher nicht geladen."
+
 
 # -- Dev Infos --------------------------------------------------------------
 msgid "Dev Infos"

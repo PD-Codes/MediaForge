@@ -34,6 +34,23 @@ MODULE_DESCRIPTION_DE = "Minimale Referenzintegration -- eigene Seite, eigene Ei
 MODULE_AUTHOR = "Your Name"
 MODULE_ENABLED_DEFAULT = False
 
+# Version + module-store metadata -- see the "Versioning & module-store
+# metadata" section of ../README.md. MODULE_VERSION is your module's own
+# version (bump it whenever you ship a change; the future module store
+# compares exactly this string). MODULE_MIN_APP_VERSION / MODULE_MAX_APP_VERSION
+# declare which MediaForge versions this module works on -- they're checked
+# against the running app *before* register(app) is called, and a module
+# outside the range is skipped with that reason on the Modulmanager page
+# rather than loading against an API it wasn't written for. Leave a bound
+# empty (or omit it) for "no limit in that direction". MODULE_ID is the
+# stable id the store knows this module by, independent of the folder name.
+MODULE_VERSION = "1.0.0"
+MODULE_MIN_APP_VERSION = "1.1.0"
+MODULE_MAX_APP_VERSION = ""
+MODULE_ID = "example_integration"
+MODULE_HOMEPAGE = ""
+MODULE_LICENSE = "MIT"
+
 # Simple clock-face icon — stroke-based style matching every other sidebar
 # icon in base.html (stroke="currentColor" so it inherits the sidebar's
 # icon color automatically, in both light and dark theme).

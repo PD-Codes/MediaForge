@@ -9,6 +9,19 @@
     <div>
       <h1 class="page-title">{{ _('Module Manager') }}</h1>
       <p class="page-subtitle">{{ _('Every discovered web/thirdparties/ folder, who made it, and a working on/off switch for what it registered') }}</p>
+      <!-- The app's own version, next to the per-module MODULE_VERSION badges
+           below: a module's compatibility range (MODULE_MIN/MAX_APP_VERSION)
+           is checked against exactly this, so an admin looking at a module
+           skipped as incompatible shouldn't have to go hunting for what it
+           was compared against. app_version is the same context variable the
+           sidebar brand uses (see app.py's context processor / base.html) —
+           the display version, so a dev install shows its -dev+<sha> suffix
+           here too. -->
+      {% if app_version %}
+      <p class="page-subtitle" style="opacity:.7;">
+        {{ _('MediaForge core version') }}: <code>v{{ app_version }}</code>
+      </p>
+      {% endif %}
     </div>
     <button class="btn btn-secondary" id="extRescanBtn" style="white-space:nowrap;" title="{{ _('Scan web/thirdparties/ for new module folders and register them without restarting the app.') }}">
       {{ _('Refresh') }}
@@ -36,8 +49,16 @@
     <div class="integ-subsection-header integ-collapsible-header" style="padding:14px 20px !important;" onclick="toggleIntegCollapse('ext-{{ ext.name }}')">
       <span class="integ-collapsible-chevron">▸</span>
       <span class="integ-subsection-title">{{ ext.module_name }}</span>
+      <!-- MODULE_VERSION, always rendered (falls back to 0.0.0 for a module
+           that declares none) so every card has a version to point at — the
+           planned module store compares exactly this string against what it
+           has on offer. -->
+      <span class="integ-subsection-badge badge-version" title="{{ _('Module version') }}">v{{ ext.version }}</span>
        {% if ext.author %}
       <span class="integ-subsection-badge badge-author" title="{{ _('Author') }}">{{ ext.author }}</span>
+      {% endif %}
+      {% if ext.incompatible_reason %}
+      <span class="integ-subsection-badge badge-incompatible" title="{{ ext.incompatible_reason }}">{{ _('Incompatible') }}</span>
       {% endif %}
       {% if ext.registered %}
       <span class="integ-subsection-badge badge-loaded">{{ _('Loaded') }}</span>
@@ -65,7 +86,40 @@
       {% if ext.description %}
       <div class="integ-subsection-hint">{{ ext.description }}</div>
       {% endif %}
-      {% if ext.error %}
+
+      <!-- Version / module-store metadata line: MODULE_ID (the store's stable
+           id, which survives a folder rename — the folder name is shown too
+           when they differ, since that's what DEPENDS_ON and the log refer to),
+           the MODULE_MIN/MAX_APP_VERSION compatibility range (only shown when
+           the module declares one), MODULE_LICENSE and MODULE_HOMEPAGE. All
+           optional; a module declaring none of them shows just the id line. -->
+      <div class="settings-row" style="border-bottom:none;padding-bottom:0;">
+        <div class="settings-row-left">
+          <div class="settings-row-desc">
+            {{ _('Module ID') }}: <code style="opacity:.6;font-size:.9em;">{{ ext.module_id }}</code>
+            {%- if ext.module_id != ext.name %} · {{ _('Folder') }}: <code style="opacity:.6;font-size:.9em;">{{ ext.name }}</code>{% endif %}
+            {%- if ext.min_app_version %} · {{ _('Requires MediaForge') }} ≥ {{ ext.min_app_version }}{% endif %}
+            {%- if ext.max_app_version %} · {{ _('up to') }} ≤ {{ ext.max_app_version }}{% endif %}
+            {%- if ext.license %} · {{ _('License') }}: {{ ext.license }}{% endif %}
+          </div>
+          {% if ext.homepage %}
+          <div class="settings-row-desc">
+            <a href="{{ ext.homepage }}" target="_blank" rel="noopener noreferrer">{{ ext.homepage }}</a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if ext.incompatible_reason %}
+      <div class="settings-hint" style="color:var(--error);">
+        {{ _('This module declares a MediaForge version range the running version is outside of, so it was not loaded.') }}
+        <code>{{ ext.incompatible_reason }}</code>
+      </div>
+      {% endif %}
+      <!-- ...and not the recorded error when that error IS the incompatibility
+           (which is exactly what discover_and_register() records as the skip
+           reason), or the same sentence would render twice in a row. -->
+      {% if ext.error and ext.error != ext.incompatible_reason %}
       <div class="settings-hint" style="color:var(--error);">{{ ext.error }}</div>
       {% endif %}
 

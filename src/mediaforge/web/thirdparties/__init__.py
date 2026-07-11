@@ -40,11 +40,44 @@ itself for the admin Modulmanager page (``/extensions``):
     MODULE_AUTHOR = "Your Name"
     MODULE_ENABLED_DEFAULT = False
 
+    MODULE_VERSION = "1.0.0"              # this module's own version
+    MODULE_MIN_APP_VERSION = "1.1.0"      # optional compatibility range
+    MODULE_MAX_APP_VERSION = ""           # optional; "" = no upper bound
+    MODULE_ID = "my_integration"          # stable id for the module store
+    MODULE_HOMEPAGE = "https://example.com/my-integration"
+    MODULE_LICENSE = "MIT"
+
 All are optional and read with ``getattr(module, ..., <fallback>)`` --
 ``MODULE_NAME`` falls back to the folder name, ``MODULE_DESCRIPTION``/
 ``MODULE_DESCRIPTION_DE``/``MODULE_DESCRIPTION_EN``/``MODULE_AUTHOR`` to
-``""``, ``MODULE_ENABLED_DEFAULT`` to ``False``, so a module that skips
-them entirely (or only declares some) keeps working exactly as before.
+``""``, ``MODULE_ENABLED_DEFAULT`` to ``False``, ``MODULE_VERSION`` to
+``"0.0.0"``, ``MODULE_ID`` to the folder name, and the rest to ``""``, so a
+module that skips them entirely (or only declares some) keeps working
+exactly as before.
+
+``MODULE_VERSION`` is displayed as a badge next to the module's name on the
+Modulmanager page. It's purely informational *today* -- nothing compares it
+against anything -- but it's what the planned module store will use to
+decide whether an installed module is out of date, which is why every
+shipped module should declare (and bump) one now rather than retrofitting
+versions onto an already-published module later.
+
+``MODULE_MIN_APP_VERSION`` / ``MODULE_MAX_APP_VERSION`` are the only two of
+these that *do* something at load time: they declare which MediaForge
+versions the module works on (inclusive bounds, either or both omittable)
+and are checked against the running app's own version by
+:func:`registry.check_app_compatibility` before ``register(app)`` is called.
+A module the running MediaForge falls outside the range of is skipped with
+that reason shown on the Modulmanager page, exactly like an unmet
+``DEPENDS_ON`` -- better than letting it register and fail in some less
+obvious way against an API it wasn't written for.
+
+``MODULE_ID`` / ``MODULE_HOMEPAGE`` / ``MODULE_LICENSE`` are for the module
+store and are not used for anything at runtime (the folder name is still
+what identifies a module to discovery, ``DEPENDS_ON``, and everything else
+here). ``MODULE_ID`` exists so a module keeps a stable store identity even
+if its folder gets renamed on disk; the other two are shown on the
+Modulmanager card.
 
 ``MODULE_DESCRIPTION_DE``/``MODULE_DESCRIPTION_EN`` are optional overrides
 of ``MODULE_DESCRIPTION`` for one specific UI language -- the Modulmanager
@@ -66,7 +99,7 @@ from pathlib import Path
 
 from .registry import (
     register_generic_settings_routes, record_module_status, item_ids, seed_default_enabled,
-    known_module_names, registered_module_names,
+    known_module_names, registered_module_names, check_app_compatibility,
 )
 from ...logger import get_logger
 
@@ -159,6 +192,17 @@ def _import_folders(names: list) -> dict:
                 description_en=getattr(module, "MODULE_DESCRIPTION_EN", None),
                 author=getattr(module, "MODULE_AUTHOR", None),
                 enabled_default=getattr(module, "MODULE_ENABLED_DEFAULT", None),
+                # Version, compatibility range and module-store metadata --
+                # see this package's docstring. record_module_status() ignores
+                # a None (its "not passed" marker), so a module declaring none
+                # of these keeps the defaults seeded there ("0.0.0" / "" /
+                # folder name).
+                version=getattr(module, "MODULE_VERSION", None),
+                min_app_version=getattr(module, "MODULE_MIN_APP_VERSION", None),
+                max_app_version=getattr(module, "MODULE_MAX_APP_VERSION", None),
+                module_id=getattr(module, "MODULE_ID", None),
+                homepage=getattr(module, "MODULE_HOMEPAGE", None),
+                license=getattr(module, "MODULE_LICENSE", None),
             )
         except Exception as exc:
             logger.exception("[Thirdparties] Failed to import '%s'", name)
@@ -184,6 +228,23 @@ def _register_modules(app, modules: dict, registered: set) -> list:
         module = modules[name]
         depends_on = tuple(getattr(module, "DEPENDS_ON", None) or ())
         record_module_status(name, depends_on=depends_on)
+
+        # MODULE_MIN_APP_VERSION / MODULE_MAX_APP_VERSION (see this package's
+        # docstring) -- checked before register(app), so a module written
+        # against an API this MediaForge doesn't have yet (or no longer has)
+        # never gets to run against it. Skipped exactly like an unmet
+        # DEPENDS_ON: not registered, reason recorded, everything else keeps
+        # loading. Note the module is deliberately left out of `registered`,
+        # so anything DEPENDS_ON-ing it is skipped too rather than being
+        # handed a half-loaded dependency.
+        incompatible = check_app_compatibility(
+            getattr(module, "MODULE_MIN_APP_VERSION", None),
+            getattr(module, "MODULE_MAX_APP_VERSION", None),
+        )
+        if incompatible:
+            logger.warning("[Thirdparties] '%s' skipped — %s", name, incompatible)
+            record_module_status(name, registered=False, error=incompatible)
+            continue
 
         missing = [d for d in depends_on if d not in registered]
         if missing:

@@ -21,6 +21,19 @@ MODULE_DESCRIPTION_DE = "Saisonale Anime-Übersichten von Jikan (MyAnimeList), a
 MODULE_AUTHOR = "PD Codes"
 MODULE_ENABLED_DEFAULT = False
 
+# Version + module-store metadata. MODULE_VERSION is this module's own
+# version (bump it on every change that ships), shown as a badge on the
+# Modulmanager page and, later, what the module store compares against.
+# MODULE_MIN_APP_VERSION is the compatibility floor checked against
+# MediaForge's own version before register(app) runs (see
+# registry.check_app_compatibility()); no ceiling is declared, so any newer
+# MediaForge is assumed fine until a breaking change makes it not.
+MODULE_VERSION = "1.0.0"
+MODULE_MIN_APP_VERSION = "1.1.0"
+MODULE_ID = "anime_seasons"
+MODULE_HOMEPAGE = "https://github.com/PD-Codes/MediaForge"
+MODULE_LICENSE = "GPL-3.0"
+
 # 2x2 grid icon — four quadrants standing in for the four seasons; same
 # stroke-based style as every other sidebar icon in base.html.
 _ICON_SVG = (

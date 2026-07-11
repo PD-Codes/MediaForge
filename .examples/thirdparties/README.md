@@ -303,6 +303,55 @@ declares none of them (or was written before this convention existed)
 keeps working exactly as before, just with a plainer-looking card on the
 Modulmanager page.
 
+## Versioning & module-store metadata
+
+Six further constants, read exactly like the ones above, carry a module's
+version, the MediaForge versions it works on, and the identity fields the
+planned **module store** will index it by:
+
+```python
+MODULE_VERSION = "1.0.0"              # this module's own version
+MODULE_MIN_APP_VERSION = "1.1.0"      # optional; "" = no lower bound
+MODULE_MAX_APP_VERSION = ""           # optional; "" = no upper bound
+MODULE_ID = "my_integration"          # stable store id, survives a rename
+MODULE_HOMEPAGE = "https://example.com/my-integration"
+MODULE_LICENSE = "MIT"
+```
+
+- `MODULE_VERSION` — your module's own version, shown as a badge next to
+  its name on the Modulmanager page. Bump it on every change you ship.
+  Nothing compares it against anything *yet*, but it's what the module
+  store will use to tell an installed module apart from a newer one on
+  offer — so declare it from the start rather than retrofitting versions
+  onto an already-published module. Falls back to `"0.0.0"` if omitted
+  (which is exactly how an unversioned module shows up in the UI: as one
+  that never declared a version).
+- `MODULE_MIN_APP_VERSION` / `MODULE_MAX_APP_VERSION` — the only two here
+  that do anything at load time. They declare the (inclusive) range of
+  MediaForge versions your module supports, checked against the running
+  app's version by `registry.check_app_compatibility()` *before*
+  `register(app)` is called. If the running MediaForge falls outside the
+  range, the module is skipped with that reason — the same treatment an
+  unmet `DEPENDS_ON` gets, and for the same reason: better a clearly
+  labelled skip on the Modulmanager page than a module half-registering
+  against an API it wasn't written for. Declare a floor when you start
+  using a `registry.py`/API feature that didn't exist in older
+  MediaForge versions; declare a ceiling only when you actually know
+  something breaks. Anything unparseable (a typo'd bound, or no installed
+  version to compare against, e.g. running straight from a source tree)
+  is treated as compatible rather than as a failure.
+- `MODULE_ID` — the stable id the module store knows your module by, so it
+  survives the folder being renamed on disk. Nothing at runtime uses it
+  (the folder name is still what discovery, `DEPENDS_ON` and the log refer
+  to); Modulmanager shows both when they differ. Falls back to the folder
+  name.
+- `MODULE_HOMEPAGE` / `MODULE_LICENSE` — purely descriptive, shown on the
+  Modulmanager card. Fall back to nothing.
+
+Same story as everything else here: all six are optional, and a module
+declaring none of them loads exactly as before — it just shows up as
+`v0.0.0` with no compatibility range.
+
 ## Richer settings fields
 
 `extra_settings` entries aren't limited to a checkbox. Each dict's `type`
@@ -406,10 +455,13 @@ extension's resolver.
 
 Every discovered `web/thirdparties/<name>/` folder — including ones that
 failed to import, have no `register(app)`, or were skipped for an unmet
-`DEPENDS_ON` — shows up on the admin **Module Manager** page (`/extensions`,
+`DEPENDS_ON` or an unsupported MediaForge version — shows up on the admin
+**Module Manager** page (`/extensions`,
 linked from the sidebar next to Integrations as "Module Manager"), with the
 reason if it isn't fully loaded, its `MODULE_NAME`/`MODULE_DESCRIPTION`/
-`MODULE_AUTHOR` (see "Module metadata & the Modulmanager" above), and a
+`MODULE_AUTHOR` (see "Module metadata & the Modulmanager" above), its
+`MODULE_VERSION` and compatibility range (see "Versioning & module-store
+metadata" above) alongside MediaForge's own version, and a
 fully working enable/disable toggle (plus any `extra_settings`) for
 everything it registered — the page isn't just diagnostic, it's a real
 place to turn a module on/off. Nothing to opt into: this is fed by

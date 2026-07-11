@@ -613,3 +613,24 @@
   color: var(--accent);
   border-color: rgba(124, 58, 237, 0.3);
 }
+
+/* Module Manager: a module's own MODULE_VERSION (see
+   web/thirdparties/__init__.py). Monospaced and deliberately quiet — it sits
+   right next to the module name on every single card, so it reads as part of
+   the title rather than competing with the status badges next to it. */
+.integ-subsection-badge.badge-version {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-color: var(--border);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  letter-spacing: 0;
+}
+
+/* Module Manager: MODULE_MIN/MAX_APP_VERSION range not met by the running
+   MediaForge — the module was skipped, so this needs the same weight as the
+   "Import failed" badge rather than the quiet version badge above. */
+.integ-subsection-badge.badge-incompatible {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+  border-color: rgba(239, 68, 68, 0.3);
+}

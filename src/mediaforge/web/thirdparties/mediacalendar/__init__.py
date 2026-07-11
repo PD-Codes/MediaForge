@@ -29,6 +29,16 @@ MODULE_DESCRIPTION_DE = "Persönliche Veröffentlichungskalender, kuratierte Lis
 MODULE_AUTHOR = "PD Codes"
 MODULE_ENABLED_DEFAULT = False
 
+# Version + module-store metadata -- see web/thirdparties/__init__.py's
+# docstring. MODULE_VERSION is bumped on every shipped change to this
+# module; MODULE_MIN_APP_VERSION is the compatibility floor checked against
+# MediaForge's own version before register(app) runs.
+MODULE_VERSION = "1.0.0"
+MODULE_MIN_APP_VERSION = "1.1.0"
+MODULE_ID = "mediacalendar"
+MODULE_HOMEPAGE = "https://github.com/PD-Codes/MediaForge"
+MODULE_LICENSE = "GPL-3.0"
+
 # Simple calendar-grid icon, consistent stroke style with the other
 # sidebar icons in base.html.
 _ICON_SVG = (

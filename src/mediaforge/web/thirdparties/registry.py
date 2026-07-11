@@ -28,6 +28,16 @@ optional and all fully dynamic:
    the admin Modulmanager page (:func:`resolve_extensions_overview`) and,
    for ``MODULE_ENABLED_DEFAULT``, the one-time initial value of a newly
    installed module's enable toggle (:func:`seed_default_enabled`).
+7. Version & store metadata -- ``MODULE_VERSION`` plus the compatibility
+   range (``MODULE_MIN_APP_VERSION`` / ``MODULE_MAX_APP_VERSION``) and the
+   future module store's identity fields (``MODULE_ID`` / ``MODULE_HOMEPAGE``
+   / ``MODULE_LICENSE``), read off ``__init__.py`` exactly like the metadata
+   above. The version is shown as a badge on the Modulmanager page next to
+   the module name; the compatibility range is checked against MediaForge's
+   own version at discovery time (:func:`check_app_compatibility`), and a
+   module declaring a range the running app falls outside of is skipped with
+   that reason instead of being registered -- see
+   ``web/thirdparties/__init__.py``'s ``_register_modules()``.
 
 An integration needs none of these axes -- a background-job-only
 integration can register with no ``endpoint`` and no card content beyond
@@ -101,6 +111,75 @@ _DEFAULT_TAB_ICON_SVG = (
     '<path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"></path>'
     '</svg>'
 )
+
+# Shown as a module's version badge on the Modulmanager page when it declares
+# no MODULE_VERSION at all -- every module predating the constant, and any
+# module whose author simply didn't bother, still renders a well-formed badge
+# instead of an empty gap.
+_UNKNOWN_VERSION = "0.0.0"
+
+
+def app_version():
+    """MediaForge's own version, as a plain comparable string ("1.1.0").
+
+    Deliberately the *base* version from package metadata rather than
+    version_info._get_display_version(): the latter appends a
+    "-dev+<sha>" suffix on git installs, which parses as a
+    pre-release/local version and would make a dev checkout of 1.1.0 count
+    as *older* than 1.1.0 for a module declaring
+    MODULE_MIN_APP_VERSION = "1.1.0" -- i.e. every dev install would refuse
+    to load modules that work perfectly well on it. The display version is
+    still what the Modulmanager page *shows* (see base.html's app_version);
+    this one is only ever used for the compatibility comparison.
+
+    Returns "" when the package isn't installed (running straight from a
+    source tree without an install), which check_app_compatibility() treats
+    as "can't tell, don't block".
+    """
+    from ..version_info import _get_version
+
+    return _get_version()
+
+
+def check_app_compatibility(min_app_version=None, max_app_version=None):
+    """Return None if the running MediaForge satisfies a module's declared
+    compatibility range, or a human-readable reason string if it doesn't.
+
+    Both bounds are optional and inclusive: MODULE_MIN_APP_VERSION = "1.1.0"
+    means "needs 1.1.0 or newer", MODULE_MAX_APP_VERSION = "1.9.9" means
+    "not tested past 1.9.9". A module declaring neither (i.e. every module
+    that existed before this constant did) is always compatible.
+
+    Anything that can't be compared cleanly -- no installed version to check
+    against, or a bound that isn't a valid version string -- is treated as
+    compatible rather than as a failure: a typo'd bound in one module must
+    not be able to keep that module (or, worse, its dependents) from loading
+    on an otherwise fine app. The mismatch is still visible in the log via
+    the caller.
+    """
+    if not min_app_version and not max_app_version:
+        return None
+
+    from packaging.version import InvalidVersion, Version
+
+    current_raw = app_version()
+    if not current_raw:
+        return None
+    try:
+        current = Version(current_raw)
+    except InvalidVersion:
+        return None
+
+    try:
+        if min_app_version and current < Version(str(min_app_version)):
+            return (f"requires MediaForge >= {min_app_version} "
+                    f"(running {current_raw})")
+        if max_app_version and current > Version(str(max_app_version)):
+            return (f"requires MediaForge <= {max_app_version} "
+                    f"(running {current_raw})")
+    except InvalidVersion:
+        return None
+    return None
 
 
 def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
@@ -356,6 +435,15 @@ def record_module_status(name, **fields):
     picks between them by the current UI language at render time; plain
     description is still what's stored/shown when neither is declared.
 
+    Also recognized, from the same import phase: version (MODULE_VERSION,
+    falling back to _UNKNOWN_VERSION), min_app_version/max_app_version (the
+    MediaForge compatibility range, see check_app_compatibility()), and the
+    module store's identity fields module_id/homepage/license (MODULE_ID --
+    the stable store id, falling back to the folder name -- plus
+    MODULE_HOMEPAGE/MODULE_LICENSE, both ""). None of them are required:
+    they're descriptive, except min/max_app_version, which
+    web/thirdparties/__init__.py checks before calling register(app).
+
     This exists purely for the admin Modulmanager / Extensions overview
     (resolve_extensions_overview) -- nothing else reads _MODULES.
     """
@@ -364,6 +452,8 @@ def record_module_status(name, **fields):
         "error": None, "item_ids": [],
         "module_name": name, "description": "", "description_de": "", "description_en": "",
         "author": "", "enabled_default": False,
+        "version": _UNKNOWN_VERSION, "min_app_version": "", "max_app_version": "",
+        "module_id": name, "homepage": "", "license": "",
     })
     for key, value in fields.items():
         if value is not None:
@@ -465,6 +555,21 @@ def resolve_extensions_overview():
             "description": _localized_module_description(mod),
             "author": mod["author"],
             "enabled_default": mod["enabled_default"],
+            # Version & store metadata (see this module's docstring, axis 7).
+            # compatible is recomputed here rather than read back off the
+            # recorded error string, so the page states it as a fact of the
+            # *current* app version rather than of whatever version was
+            # running when the module was first discovered -- the two only
+            # differ across an in-place upgrade, but that's exactly the case
+            # this row exists for.
+            "version": mod["version"],
+            "min_app_version": mod["min_app_version"],
+            "max_app_version": mod["max_app_version"],
+            "incompatible_reason": check_app_compatibility(
+                mod["min_app_version"], mod["max_app_version"]),
+            "module_id": mod["module_id"],
+            "homepage": mod["homepage"],
+            "license": mod["license"],
             # Named registered_items, not items -- a plain dict's own
             # .items() method shadows a same-named key under Jinja's
             # attribute-then-subscript lookup (ext.items would silently
