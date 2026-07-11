@@ -1,6 +1,10 @@
 """
 Self-update support for **pip** and **pipx** installations.
 
+TODO(telemetry): wire up flag.self_update (usage counter) and
+detail.self_update (success/failure of an update run) -- see
+telemetry/registry.py. Registry-only for now.
+
 Capabilities by install type:
 
   - ``pip-release`` / ``pip-dev`` / ``pipx``  → self-update + channel switch

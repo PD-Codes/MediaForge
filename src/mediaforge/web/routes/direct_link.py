@@ -3,6 +3,11 @@
 available quality variants, then queue a download using the variant the
 user picked.
 
+TODO(telemetry): wire up flag.direct_link (usage counter) and
+direct_link.urls (the URLs used, query-stripped -- see
+telemetry.events.build_direct_link_event()) -- see telemetry/registry.py.
+Registry-only for now.
+
 Kept as its own route module rather than folded into routes/queue.py's
 POST /api/download, since this feature has a different data shape (a
 single raw URL + a yt-dlp format selector, no series/season/provider/

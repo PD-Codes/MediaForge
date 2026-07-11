@@ -1,6 +1,12 @@
 """Extensions overview — admin page listing every discovered
 web/thirdparties/<name>/ folder and its load status, plus the module store.
 
+# TODO(telemetry): wire up flag.extensions (usage counter, how many
+# extensions loaded) and detail.extensions (names of loaded thirdparty
+# folders) -- see telemetry/registry.py. Registry-only for now. Note: this
+# is about THIS route module only, not the Module Store/Manager code under
+# web/thirdparties/ itself, which is explicitly out of scope for telemetry.
+
 Extracted as a plain route-registration function (no Flask blueprint,
 same convention as routes/integrations.py) so it can be dropped into
 create_app() with one register_extensions_routes(app) call.

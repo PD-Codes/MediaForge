@@ -2,6 +2,10 @@
 
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
+
+# TODO(telemetry): wire up flag.captcha (usage counter) and detail.captcha
+# (solve success/failure statistic) -- see telemetry/registry.py.
+# Registry-only for now.
 """
 
 from ..db import get_queue_item

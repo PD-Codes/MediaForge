@@ -1570,6 +1570,32 @@ def add_download_history(
         conn.close()
 
 
+def get_download_history_meta_for_path(target_path: str):
+    """Return {provider, title, season, episode} from the most recent
+    download_history row whose target_path matches, or None if no match.
+
+    Used by: telemetry instrumentation in routes/progress.py, to look up
+    which provider/title a watched *file path* (all that
+    api_progress_save() receives from the player) actually came from --
+    needed both for the watch.* event payload and, critically, to apply the
+    hanime_tv exclusion guard (sanitize.is_adult_provider()) correctly, since
+    provider is not otherwise known at watch-progress time. Best-effort: a
+    file played from outside the download history (e.g. manually placed in
+    the library) simply yields no provider/title, and the caller treats a
+    lookup miss as "unknown provider" (never as "safe to send").
+    """
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT provider, title, season, episode FROM download_history "
+            "WHERE target_path = ? ORDER BY id DESC LIMIT 1",
+            (target_path,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def _history_where(username=None, search=None, status=None, source=None, since=None):
     """Build a (where_sql, params) pair shared by list/export/clear."""
     where = []

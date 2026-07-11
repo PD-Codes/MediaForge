@@ -97,6 +97,83 @@
   transition: background var(--transition), color var(--transition);
 }
 
+/* ===================================================================
+   Telemetry: first-run consent dialog (templates/base.html,
+   TELEMETRY_PLAN.md §4.0). A genuinely global, app-wide component (can
+   appear on any page on first load), so it lives here alongside the other
+   modal/overlay primitives rather than in a page-specific stylesheet.
+
+   The two action buttons are intentionally IDENTICAL in size/weight/color
+   -- no accent-colored "primary" button, no pre-selection. That's a
+   deliberate deviation from this project's usual btn-primary/btn-secondary
+   pattern: an optically favoured "Yes" would undercut the "active, free
+   decision" this dialog exists to capture (GDPR reasoning, see
+   TELEMETRY_PLAN.md §7a). Do not add a primary/secondary distinction here.
+   =================================================================== */
+.telemetry-consent-overlay {
+  /* Highest tier: this dialog must win over anything else that could
+     conceivably be open on first load. */
+  z-index: 1100;
+}
+
+.telemetry-consent-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-modal);
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 28px;
+  animation: modal-in 0.2s ease;
+}
+
+.telemetry-consent-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+.telemetry-consent-text {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+}
+
+.telemetry-consent-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.telemetry-consent-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.telemetry-consent-btn {
+  flex: 1;
+  min-width: 180px;
+  padding: 12px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.telemetry-consent-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
 .modal-close:hover {
   background: var(--bg-hover);
   color: var(--text-primary);

@@ -2,6 +2,11 @@
 
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
+
+# TODO(telemetry): wire up flag.syncplay / detail.syncplay (session count,
+# participant-count bucket, no room content) and syncplay.room_content
+# (stage 5 -- which title is playing in a room) -- see registry.py. Not
+# wired in this pass; only the registry entries exist so far.
 """
 
 from ..db import get_setting

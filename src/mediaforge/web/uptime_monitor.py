@@ -1,4 +1,8 @@
-"""Source-site monitoring — shared probe (DNS test + UpTime) and the UpTime monitor."""
+"""Source-site monitoring — shared probe (DNS test + UpTime) and the UpTime monitor.
+
+# TODO(telemetry): wire up flag.uptime_monitor (usage counter) -- see
+# telemetry/registry.py. Registry-only for now.
+"""
 
 import threading
 

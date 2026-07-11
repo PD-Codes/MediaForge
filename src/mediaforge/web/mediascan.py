@@ -12,6 +12,10 @@ Used by: ``web/app.py`` starts the 24-h scheduler at boot; ``web/queue_worker.py
 calls the post-download refresh + delayed rescan after a completed download;
 ``web/routes/integrations.py`` exposes the manual-trigger and status-polling
 endpoints backed by ``_run_mediascan`` / ``_mediascan_status``.
+
+TODO(telemetry): wire up flag.library_scan / detail.library_scan (scan
+duration, new-finds count, errors) at the scan-finished point in this
+module -- see telemetry/registry.py. Registry-only for now.
 """
 
 import threading
