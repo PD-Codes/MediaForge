@@ -28,6 +28,31 @@
     </button>
   </div>
 
+  <!-- Restart banner. Everything the store does (install, update, uninstall)
+       is staged into web/thirdparties/_pending/ and applied at the next start
+       by apply_pending_changes() — Flask can add a Blueprint to a running app
+       but can't remove or replace one, so "restart required" is a real state
+       of the system, not politeness. Rendered server-side from pending_changes()
+       so it's correct on first paint, and kept in sync by module_store.js
+       after every staged action. -->
+  <div class="settings-section" id="extPendingBanner"
+       style="{% if not pending.install and not pending.remove %}display:none;{% endif %}border-color:var(--warning);">
+    <div class="settings-row" style="border-bottom:none;">
+      <div class="settings-row-left">
+        <div class="settings-row-label" style="color:var(--warning);">{{ _('Restart required') }}</div>
+        <div class="settings-row-desc" id="extPendingText">
+          {%- if pending.install %}{{ _('To be installed/updated') }}: {{ pending.install|join(', ') }}{% endif %}
+          {%- if pending.install and pending.remove %} · {% endif %}
+          {%- if pending.remove %}{{ _('To be removed') }}: {{ pending.remove|join(', ') }}{% endif %}
+        </div>
+        <div class="settings-row-desc">{{ _('These changes are applied the next time MediaForge starts.') }}</div>
+      </div>
+      <div class="settings-row-right">
+        <button class="btn btn-secondary" id="extPendingCancelBtn">{{ _('Discard staged changes') }}</button>
+      </div>
+    </div>
+  </div>
+
   {% if not extensions %}
   <div class="settings-section">
     <div class="settings-hint" style="padding:20px 24px;">{{ _('No extension folders discovered.') }}</div>
@@ -54,6 +79,23 @@
            planned module store compares exactly this string against what it
            has on offer. -->
       <span class="integ-subsection-badge badge-version" title="{{ _('Module version') }}">v{{ ext.version }}</span>
+      <!-- Trust, derived from the module's own MODULE.sig (see signing.py) and
+           never from anything a store or the module itself merely claims:
+             official  = signed by a MediaForge maintainer key
+             verified  = signed by a key trusted to bless third-party modules
+             unverified = unsigned, unknown key, or modified after signing
+           The last case is called out separately below, in red — a signature
+           that no longer matches the files is a different kind of event from
+           never having had one. -->
+      {% if ext.trust == 'official' %}
+      <span class="integ-subsection-badge badge-official" title="{{ _('Signed by') }} {{ ext.signature.signer }}">{{ _('Official') }}</span>
+      {% elif ext.trust == 'verified' %}
+      <span class="integ-subsection-badge badge-verified" title="{{ _('Signed by') }} {{ ext.signature.signer }}">{{ _('Verified') }}</span>
+      {% elif ext.signature.signed %}
+      <span class="integ-subsection-badge badge-incompatible" title="{{ ext.signature.reason }}">{{ _('Signature invalid') }}</span>
+      {% else %}
+      <span class="integ-subsection-badge badge-unsigned" title="{{ _('No MODULE.sig — nobody vouches for this code') }}">{{ _('Unsigned') }}</span>
+      {% endif %}
        {% if ext.author %}
       <span class="integ-subsection-badge badge-author" title="{{ _('Author') }}">{{ ext.author }}</span>
       {% endif %}
@@ -100,6 +142,8 @@
             {%- if ext.module_id != ext.name %} · {{ _('Folder') }}: <code style="opacity:.6;font-size:.9em;">{{ ext.name }}</code>{% endif %}
             {%- if ext.min_app_version %} · {{ _('Requires MediaForge') }} ≥ {{ ext.min_app_version }}{% endif %}
             {%- if ext.max_app_version %} · {{ _('up to') }} ≤ {{ ext.max_app_version }}{% endif %}
+            · {{ _('Registry API') }}: v{{ ext.api_version }}
+            {%- if ext.requirements %} · {{ _('Requirements') }}: {{ ext.requirements|join(', ') }}{% endif %}
             {%- if ext.license %} · {{ _('License') }}: {{ ext.license }}{% endif %}
           </div>
           {% if ext.homepage %}
@@ -109,6 +153,23 @@
           {% endif %}
         </div>
       </div>
+
+      <!-- A signature that exists but doesn't verify is the one case worth
+           shouting about: either the module was modified after it was signed, or
+           it's signed by somebody this MediaForge has no reason to believe.
+           An *unsigned* module gets no warning at all — that's the normal state
+           of most third-party modules, not a fault. -->
+      {% if ext.signature.signed and not ext.signature.valid %}
+      <div class="settings-hint" style="color:var(--error);">
+        {{ _('This module carries a signature that does not check out.') }}
+        <code>{{ ext.signature.reason }}</code>
+      </div>
+      {% elif ext.signature.valid %}
+      <div class="settings-hint">
+        {{ _('Signed by') }}: {{ ext.signature.signer }}
+        <code style="opacity:.6;">{{ ext.signature.key_id }}</code>
+      </div>
+      {% endif %}
 
       {% if ext.incompatible_reason %}
       <div class="settings-hint" style="color:var(--error);">
@@ -183,9 +244,142 @@
       {% else %}
       <div class="settings-hint">{{ _('This folder registered no sidebar/settings item — could be a background-job-only integration, or one that failed before reaching register_thirdparty().') }}</div>
       {% endif %}
+
+      <!-- Uninstall. Deliberately available for every folder, not just
+           store-installed ones and not just healthy ones: a module too broken
+           to import is one you especially want to be able to get rid of from
+           the UI. Staged, never immediate — see the restart banner above. -->
+      <div class="settings-row" style="border-bottom:none;">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Uninstall module') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Removes the folder and its namespaced settings on the next start. Data in its own tables is kept.') }}
+          </div>
+        </div>
+        <div class="settings-row-right">
+          <button class="btn btn-danger ext-uninstall-btn" data-folder="{{ ext.name }}"
+                  data-label="{{ ext.module_name }}">{{ _('Uninstall') }}</button>
+        </div>
+      </div>
     </div>
   </div>
   {% endfor %}
+
+  <!-- ── Module store ──────────────────────────────────────────────────────
+       Rendered only once an admin has configured a store URL. A MediaForge
+       that was never pointed at a store shows the one-row config form below
+       and nothing else — no catalog, no network request, no install buttons.
+       Modules are arbitrary Python running in this process, so trusting a
+       remote is an explicit act, never a default. -->
+  <div class="settings-section" id="extStoreSection">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Module Store') }}</span>
+      {% if store_enabled %}
+      <span class="integ-subsection-badge badge-version" id="extStoreName">{{ store_url }}</span>
+      {% else %}
+      <span class="integ-subsection-badge badge-disabled">{{ _('Not configured') }}</span>
+      {% endif %}
+      <button class="btn btn-secondary" id="extStoreRefreshBtn" style="margin-left:auto;{% if not store_enabled %}display:none;{% endif %}">
+        {{ _('Refresh store') }}
+      </button>
+    </div>
+    <div style="padding:0 20px 16px;">
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Store repository URL') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Base URL or index.json of a MediaForge module repository. Leave empty to disable the store entirely.') }}
+          </div>
+        </div>
+        <div class="settings-row-right" style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="extStoreUrl" style="min-width:320px;"
+                 placeholder="https://modules.example.com" value="{{ store_url }}">
+          <button class="btn btn-primary" id="extStoreSaveBtn">{{ _('Save') }}</button>
+        </div>
+      </div>
+      <!-- Additional repositories. Only offered once a main store is configured
+           (the server enforces that too — see store.extra_urls()). These are
+           ordinary stores: a module from one of them proves its tier with the
+           same signature check as anything else, which in practice means
+           "unverified", because a third-party repo does not hold MediaForge's
+           maintainer keys. That's the correct outcome, not a restriction. -->
+      <div class="settings-row" id="extStoreExtraRow" {% if not store_enabled %}style="display:none;"{% endif %}>
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Additional repositories') }}</div>
+          <div class="settings-row-desc">
+            {{ _('One URL per line. Modules from a third-party repository are unverified unless they carry a signature this MediaForge trusts.') }}
+          </div>
+        </div>
+        <div class="settings-row-right" style="display:flex;gap:8px;align-items:flex-start;">
+          <textarea id="extStoreExtraUrls" rows="3" style="min-width:320px;"
+                    placeholder="https://someone-else.example/modules">{{ extra_urls|join('\n') }}</textarea>
+          <button class="btn btn-primary" id="extStoreExtraSaveBtn">{{ _('Save') }}</button>
+        </div>
+      </div>
+
+      <div class="settings-row" id="extStoreUnverifiedRow" {% if not store_enabled %}style="display:none;"{% endif %}>
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Allow unverified modules') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Unverified entries are community links nobody reviewed — the code can change under the same URL at any time. Installing one runs it inside MediaForge with full access to your data.') }}
+          </div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" id="extStoreUnverified" {% if allow_unverified %}checked{% endif %}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Trusted signing keys. This is what decides whether a module is
+           "Official" on THIS install — not the store, which can only ever make a
+           claim. MediaForge ships the maintainer keys; an admin running their own
+           store pastes its public key here (the store's dashboard prints it
+           ready to copy). Note what this does NOT do: pointing MediaForge at a
+           repository changes nothing about what it trusts. A key gets trusted
+           because an admin deliberately pasted it in — the same weight as
+           installing a module by hand. -->
+      <div class="settings-row" id="extStoreKeysRow" {% if not store_enabled %}style="display:none;"{% endif %}>
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Trusted signing keys') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Public keys whose signatures this install believes, as JSON. A module is "Official" because a key in this list signed it — a store cannot decide that for you. Only ever paste a PUBLIC key here.') }}
+          </div>
+          <!-- Honest about when this takes effect: the store checks signatures at
+               download time (so a key pasted now applies to the very next install),
+               but an already-installed module's badge was decided when it was
+               imported at startup, and only changes on the next restart. -->
+          <div class="settings-row-desc">
+            {{ _('Takes effect immediately for new installs. Modules already installed keep their current badge until the next restart.') }}
+          </div>
+          {% if trusted_keys %}
+          <div class="settings-row-desc" style="margin-top:6px;">
+            {% for key in trusted_keys %}
+            <span class="integ-subsection-badge {% if 'official' in key.tiers %}badge-official{% else %}badge-verified{% endif %}"
+                  title="{{ key.key_id }} · {{ key.tiers|join(', ') }}">
+              {{ key.name }}{% if key.admin_added %} ({{ _('added here') }}){% endif %}
+            </span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        <div class="settings-row-right" style="display:flex;gap:8px;align-items:flex-start;">
+          <textarea id="extStoreTrustedKeys" rows="4" style="min-width:320px;font-family:ui-monospace,monospace;font-size:.85em;"
+                    placeholder='[{"key_id": "…", "name": "…", "public_key": "…", "tiers": ["official"]}]'>{{ trusted_keys_raw }}</textarea>
+          <button class="btn btn-primary" id="extStoreKeysSaveBtn">{{ _('Save') }}</button>
+        </div>
+      </div>
+
+      <!-- Catalog is fetched client-side (see module_store.js): a slow or
+           unreachable store must not be able to delay the page whose actual
+           job is showing the modules already installed here. -->
+      <div id="extStoreCatalog" {% if not store_enabled %}style="display:none;"{% endif %}>
+        <div class="settings-hint" id="extStoreStatus">{{ _('Loading store…') }}</div>
+        <div id="extStoreList"></div>
+      </div>
+    </div>
+  </div>
 </div>
 <!-- Generic enable-toggle load/save helpers (see web/thirdparties/registry.py's
      register_generic_settings_routes) -- the "Enable module" toggle above
@@ -193,6 +387,10 @@
      saved via loadThirdpartyToggles()/saveThirdpartyToggle() from this file,
      exactly like integrations.html/notifications.html. -->
 <script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
+<!-- Module store client: store config form, catalog rendering, install/
+     uninstall/discard actions, restart banner. Everything it does is gated on
+     a store URL being configured — see web/thirdparties/store.py. -->
+<script src="{{ url_for('static', filename='module_store.js') }}"></script>
 <script>
 // "Refresh" button -- POST /api/extensions/rescan (see routes/extensions.py /
 // web/thirdparties/__init__.py's rescan_new_modules()) picks up any NEW

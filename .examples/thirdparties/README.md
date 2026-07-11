@@ -311,8 +311,10 @@ planned **module store** will index it by:
 
 ```python
 MODULE_VERSION = "1.0.0"              # this module's own version
+MODULE_API_VERSION = 1                # registry contract it was written against
 MODULE_MIN_APP_VERSION = "1.1.0"      # optional; "" = no lower bound
 MODULE_MAX_APP_VERSION = ""           # optional; "" = no upper bound
+MODULE_REQUIREMENTS = ("icalendar>=6.0",)   # pip deps — checked, never installed
 MODULE_ID = "my_integration"          # stable store id, survives a rename
 MODULE_HOMEPAGE = "https://example.com/my-integration"
 MODULE_LICENSE = "MIT"
@@ -348,9 +350,89 @@ MODULE_LICENSE = "MIT"
 - `MODULE_HOMEPAGE` / `MODULE_LICENSE` — purely descriptive, shown on the
   Modulmanager card. Fall back to nothing.
 
-Same story as everything else here: all six are optional, and a module
+- `MODULE_API_VERSION` — the version of the *registry contract* this module was
+  written against (`registry.py`'s `REGISTRY_API_VERSION`, currently **1**).
+  This — not `MODULE_MIN_APP_VERSION` — is the number you should normally pin:
+  MediaForge's own version moves for reasons that have nothing to do with
+  modules, while this one only ever changes when `register_thirdparty()`, the
+  field types or the hooks break in a way an older module can't survive. A
+  module asking for a *newer* API than the running MediaForge provides is
+  skipped with that reason; an older one keeps working. Omitted = 1.
+- `MODULE_REQUIREMENTS` — pip distributions your module imports but MediaForge
+  doesn't ship, as PEP 508 strings. They are **checked, never installed**:
+  pip-installing into a running app's environment would mean silently upgrading
+  a dependency the core also uses, and in Docker it wouldn't survive the
+  container anyway. A module whose requirement is missing or too old is skipped
+  with `missing dependency: icalendar>=6.0 (not installed)` on its Modulmanager
+  card — which is a much better first clue than an ImportError in the log.
+
+Same story as everything else here: all of these are optional, and a module
 declaring none of them loads exactly as before — it just shows up as
 `v0.0.0` with no compatibility range.
+
+## Lifecycle hooks
+
+`register(app)` is the only function a module *must* export. Four more are
+optional, all called by `web/thirdparties/__init__.py`:
+
+```python
+def on_install(app): ...                            # first ever start on this install
+def on_upgrade(app, from_version, to_version): ...  # MODULE_VERSION changed
+def on_enable(app): ...                             # master toggle switched on
+def on_disable(app): ...                            # master toggle switched off
+```
+
+- **`on_install` / `on_upgrade`** are driven by `MODULE_VERSION`: MediaForge
+  records the version it last saw installed (per module, in the settings) and
+  compares it to the version in the code on every start. Nothing recorded →
+  `on_install`. Different → `on_upgrade(app, old, new)`. Same → neither is
+  called. That's your migration point, and it means you don't hand-roll a
+  schema-version column like `mediacalendar` had to before this existed. The
+  new version is only recorded *after* the hook returns, so a hook that raised
+  is retried on the next start rather than being skipped forever.
+- **`on_enable` / `on_disable`** fire on the *edge* only — the admin actually
+  flipping the toggle, not every save — so they can be treated as start/stop
+  (spin up a worker, clear a cache) rather than "re-check whether I'm on".
+- A hook that raises is logged and shown on the module's Modulmanager card, but
+  never takes the app down. A broken `on_disable` that made a module impossible
+  to switch off would be exactly backwards.
+
+## Settings namespacing (and why uninstall needs it)
+
+```python
+from ..registry import module_setting_key
+
+ENABLED_KEY  = module_setting_key(MODULE_ID, "enabled")     # module:my_integration:enabled
+GREETING_KEY = module_setting_key(MODULE_ID, "greeting")    # module:my_integration:greeting
+```
+
+Flat keys (`my_integration_enabled`) still work and nothing rewrites them — but
+they cannot be cleaned up. When a module is uninstalled, MediaForge deletes
+every setting under `module:<MODULE_ID>:` and nothing else: there is no safe way
+to guess which *flat* keys belonged to a module without deleting a core setting
+that happens to start with the same word. So an un-namespaced key is one you're
+choosing to leave behind on every install of your module, forever. Namespace
+anything you want removable — which, for a module you intend to publish to the
+store, is everything.
+
+Data in tables your module created is deliberately **not** dropped on uninstall.
+Deleting a user's calendars because they removed the module that displayed them
+is not a decision MediaForge is willing to make on their behalf.
+
+## Installing, updating, uninstalling
+
+Dropping a folder into `web/thirdparties/` is still all it takes to install a
+module by hand, and the Modulmanager's **Refresh** button picks up a brand-new
+folder without a restart.
+
+Everything *else* is staged and applied at the next start (`_pending/`, see
+`apply_pending_changes()`): updates, uninstalls, and store installs. Not out of
+caution — out of Flask. `app.register_blueprint()` works on a running app; there
+is no supported way to *un*register one, replace one, or re-run an
+already-imported module's top-level code. "Swap the folder while nothing is
+looking" only exists between process start and first request, so that's where it
+happens. The Modulmanager shows a "restart required" banner while anything is
+staged, and lets you discard it.
 
 ## Richer settings fields
 

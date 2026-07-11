@@ -45,8 +45,16 @@ MODULE_ENABLED_DEFAULT = False
 # empty (or omit it) for "no limit in that direction". MODULE_ID is the
 # stable id the store knows this module by, independent of the folder name.
 MODULE_VERSION = "1.0.0"
+# The registry contract this module was written against -- the number you
+# normally want to pin (see ../README.md): it changes only when the module API
+# itself breaks, not every time MediaForge releases.
+MODULE_API_VERSION = 1
 MODULE_MIN_APP_VERSION = "1.1.0"
 MODULE_MAX_APP_VERSION = ""
+# pip distributions this module needs. Checked before register(app), never
+# installed -- a missing one means "skipped: missing dependency", not a crash.
+# This example needs nothing beyond what MediaForge already ships.
+MODULE_REQUIREMENTS = ()
 MODULE_ID = "example_integration"
 MODULE_HOMEPAGE = ""
 MODULE_LICENSE = "MIT"
@@ -111,3 +119,48 @@ def register(app) -> None:
         # filename='pill.js') for a detail-modal/browse-card provider pill.
         # See the README's "Dashboard widgets" / "Provider pills" sections.
     )
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle hooks — all four optional, all shown here for reference. See the
+# README's "Lifecycle hooks" section; a module that needs none of them simply
+# doesn't define them, exactly as before these existed.
+# ---------------------------------------------------------------------------
+
+def on_install(app) -> None:
+    """First start after this module appeared on this installation.
+
+    "First" is decided by MediaForge, not by you: it records MODULE_VERSION
+    after this returns, and calls on_upgrade() instead next time the two differ.
+    Create your tables here, seed your defaults — and do it idempotently anyway,
+    because a hook that raised is retried on the next start.
+    """
+    app.logger.info("[example_integration] installed (v%s)", MODULE_VERSION)
+
+
+def on_upgrade(app, from_version, to_version) -> None:
+    """First start after MODULE_VERSION changed from what was last installed.
+
+    This is the migration point: `from_version` is what wrote the data that's
+    currently on disk, `to_version` is what the code now expects. Also fires on
+    a *downgrade* (someone reinstalled an older package) — compare the two
+    yourself if that matters to you.
+    """
+    app.logger.info("[example_integration] upgraded %s -> %s", from_version, to_version)
+
+
+def on_enable(app) -> None:
+    """The admin switched this module's master toggle on (the edge only — not
+    on every settings save). Start workers, warm caches."""
+    app.logger.info("[example_integration] enabled")
+
+
+def on_disable(app) -> None:
+    """The admin switched it off. Stop whatever on_enable() started.
+
+    Note the module's routes stay registered until a restart (Flask can't remove
+    a Blueprint) — so its own views should still check the enabled setting, the
+    same way its background jobs do. Turning a module off means "stop doing
+    things", not "stop existing".
+    """
+    app.logger.info("[example_integration] disabled")

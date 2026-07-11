@@ -634,3 +634,38 @@
   color: var(--error);
   border-color: rgba(239, 68, 68, 0.3);
 }
+
+/* Module Manager: trust tier, derived from the module's MODULE.sig (see
+   web/thirdparties/signing.py). Green "Official" = signed by a maintainer key
+   MediaForge ships; purple "Verified" = signed by a key trusted to bless
+   third-party modules; grey "Unsigned" = nobody vouches for it (the normal state
+   for most community modules — informative, not an accusation). A signature that
+   exists but doesn't verify uses .badge-incompatible instead: that one IS an
+   accusation. */
+.integ-subsection-badge.badge-official {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.integ-subsection-badge.badge-verified {
+  background: rgba(124, 58, 237, 0.14);
+  color: var(--accent);
+  border-color: rgba(124, 58, 237, 0.4);
+}
+
+.integ-subsection-badge.badge-unsigned {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+/* Module Manager: the store has a newer MODULE_VERSION than the one installed
+   (added to an installed module's card by module_store.js). Informational, not
+   a failure — warning-coloured so it reads as "you may want to act", the same
+   register the "Skipped" badge uses. */
+.integ-subsection-badge.badge-update {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--warning);
+  border-color: rgba(245, 158, 11, 0.3);
+}

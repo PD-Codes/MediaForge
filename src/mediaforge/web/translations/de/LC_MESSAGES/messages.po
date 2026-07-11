@@ -4310,6 +4310,93 @@ msgstr "Lizenz"
 msgid "This module declares a MediaForge version range the running version is outside of, so it was not loaded."
 msgstr "Dieses Modul gibt einen MediaForge-Versionsbereich an, außerhalb dessen die laufende Version liegt — es wurde daher nicht geladen."
 
+# Registry API version + pip requirements (MODULE_API_VERSION /
+# MODULE_REQUIREMENTS), shown on each module's Module Manager card.
+msgid "Registry API"
+msgstr "Registry-API"
+
+msgid "Requirements"
+msgstr "Abhängigkeiten"
+
+# Staged install/uninstall — everything the store does is applied on the next
+# start (web/thirdparties/__init__.py's apply_pending_changes).
+msgid "Restart required"
+msgstr "Neustart erforderlich"
+
+msgid "To be installed/updated"
+msgstr "Zu installieren/aktualisieren"
+
+msgid "To be removed"
+msgstr "Zu entfernen"
+
+msgid "These changes are applied the next time MediaForge starts."
+msgstr "Diese Änderungen werden beim nächsten Start von MediaForge angewendet."
+
+msgid "Discard staged changes"
+msgstr "Vorgemerkte Änderungen verwerfen"
+
+msgid "Uninstall module"
+msgstr "Modul deinstallieren"
+
+msgid "Uninstall"
+msgstr "Deinstallieren"
+
+msgid "Removes the folder and its namespaced settings on the next start. Data in its own tables is kept."
+msgstr "Entfernt beim nächsten Start den Ordner und die Einstellungen im Namensraum des Moduls. Daten in eigenen Tabellen bleiben erhalten."
+
+# Module store (web/thirdparties/store.py). The whole section is hidden until a
+# store URL is configured.
+msgid "Module Store"
+msgstr "Modulestore"
+
+msgid "Refresh store"
+msgstr "Store aktualisieren"
+
+msgid "Store repository URL"
+msgstr "Store-Repository-URL"
+
+msgid "Base URL or index.json of a MediaForge module repository. Leave empty to disable the store entirely."
+msgstr "Basis-URL oder index.json eines MediaForge-Modul-Repositorys. Leer lassen, um den Store komplett zu deaktivieren."
+
+msgid "Allow unverified modules"
+msgstr "Unverifizierte Module erlauben"
+
+msgid "Unverified entries are community links nobody reviewed — the code can change under the same URL at any time. Installing one runs it inside MediaForge with full access to your data."
+msgstr "Unverifizierte Einträge sind Community-Links, die niemand geprüft hat — der Code hinter derselben URL kann sich jederzeit ändern. Ein solches Modul läuft nach der Installation innerhalb von MediaForge mit vollem Zugriff auf deine Daten."
+
+msgid "Loading store…"
+msgstr "Lade Store…"
+
+# Trust tiers, derived from the module's MODULE.sig (web/thirdparties/signing.py).
+# "official" = written by the MediaForge team; "verified" = written by someone
+# else and reviewed + signed by us; everything else is unverified.
+msgid "Official"
+msgstr "Offiziell"
+
+msgid "Verified"
+msgstr "Verifiziert"
+
+msgid "Unsigned"
+msgstr "Unsigniert"
+
+msgid "Signature invalid"
+msgstr "Signatur ungültig"
+
+msgid "Signed by"
+msgstr "Signiert von"
+
+msgid "No MODULE.sig — nobody vouches for this code"
+msgstr "Keine MODULE.sig — niemand bürgt für diesen Code"
+
+msgid "This module carries a signature that does not check out."
+msgstr "Dieses Modul hat eine Signatur, die nicht aufgeht."
+
+msgid "Additional repositories"
+msgstr "Weitere Repositories"
+
+msgid "One URL per line. Modules from a third-party repository are unverified unless they carry a signature this MediaForge trusts."
+msgstr "Eine URL pro Zeile. Module aus fremden Repositories gelten als unverifiziert, solange sie keine Signatur tragen, der dieses MediaForge vertraut."
+
 
 # -- Dev Infos --------------------------------------------------------------
 msgid "Dev Infos"

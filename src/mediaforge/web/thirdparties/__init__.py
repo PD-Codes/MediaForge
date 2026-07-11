@@ -41,8 +41,10 @@ itself for the admin Modulmanager page (``/extensions``):
     MODULE_ENABLED_DEFAULT = False
 
     MODULE_VERSION = "1.0.0"              # this module's own version
+    MODULE_API_VERSION = 1                # registry contract it was written for
     MODULE_MIN_APP_VERSION = "1.1.0"      # optional compatibility range
     MODULE_MAX_APP_VERSION = ""           # optional; "" = no upper bound
+    MODULE_REQUIREMENTS = ("icalendar>=6.0",)   # pip deps, checked not installed
     MODULE_ID = "my_integration"          # stable id for the module store
     MODULE_HOMEPAGE = "https://example.com/my-integration"
     MODULE_LICENSE = "MIT"
@@ -56,28 +58,70 @@ module that skips them entirely (or only declares some) keeps working
 exactly as before.
 
 ``MODULE_VERSION`` is displayed as a badge next to the module's name on the
-Modulmanager page. It's purely informational *today* -- nothing compares it
-against anything -- but it's what the planned module store will use to
-decide whether an installed module is out of date, which is why every
-shipped module should declare (and bump) one now rather than retrofitting
-versions onto an already-published module later.
+Modulmanager page, drives the on_install/on_upgrade hooks below, and is what
+the module store compares an installed module against to decide whether it's
+out of date -- so bump it on every change you ship.
 
-``MODULE_MIN_APP_VERSION`` / ``MODULE_MAX_APP_VERSION`` are the only two of
-these that *do* something at load time: they declare which MediaForge
-versions the module works on (inclusive bounds, either or both omittable)
-and are checked against the running app's own version by
+``MODULE_API_VERSION`` is the version of *this contract*
+(``registry.py``'s ``REGISTRY_API_VERSION``) the module was written against
+-- see :func:`registry.check_api_compatibility`. It is the number a module
+should really be pinning: MediaForge's own version can move for reasons that
+have nothing to do with modules, while this one only ever changes when the
+module contract itself breaks. A module asking for a *newer* API than the
+running MediaForge provides is skipped; an older one keeps working.
+
+``MODULE_MIN_APP_VERSION`` / ``MODULE_MAX_APP_VERSION`` declare which
+MediaForge versions the module works on (inclusive bounds, either or both
+omittable), checked against the running app's own version by
 :func:`registry.check_app_compatibility` before ``register(app)`` is called.
 A module the running MediaForge falls outside the range of is skipped with
 that reason shown on the Modulmanager page, exactly like an unmet
 ``DEPENDS_ON`` -- better than letting it register and fail in some less
 obvious way against an API it wasn't written for.
 
+``MODULE_REQUIREMENTS`` is a tuple of PEP 508 requirement strings naming pip
+distributions the module needs. MediaForge *checks* them before
+``register(app)`` and skips the module with "missing dependency: ..." if one
+isn't installed or is too old -- it never installs anything itself (see
+:func:`_check_requirements` for why).
+
 ``MODULE_ID`` / ``MODULE_HOMEPAGE`` / ``MODULE_LICENSE`` are for the module
 store and are not used for anything at runtime (the folder name is still
 what identifies a module to discovery, ``DEPENDS_ON``, and everything else
 here). ``MODULE_ID`` exists so a module keeps a stable store identity even
 if its folder gets renamed on disk; the other two are shown on the
-Modulmanager card.
+Modulmanager card. ``MODULE_ID`` is also the namespace every setting the
+module owns should live under (:func:`registry.module_setting_key`), which
+is what makes a clean uninstall possible -- an un-namespaced key can't be
+told apart from a core one and is deliberately left behind.
+
+Lifecycle hooks
+---------------
+Besides ``register(app)`` (the only required one), a module may define any of
+four optional module-level functions -- see :func:`fire_module_hook`:
+
+    def on_install(app): ...                            # first ever start
+    def on_upgrade(app, from_version, to_version): ...  # MODULE_VERSION changed
+    def on_enable(app): ...                             # master toggle switched on
+    def on_disable(app): ...                            # master toggle switched off
+
+``on_install``/``on_upgrade`` are driven by comparing ``MODULE_VERSION``
+against the version last recorded for this install
+(:func:`registry.installed_version`), so a module gets a real migration point
+without hand-rolling its own schema-version tracking -- see
+:func:`_run_lifecycle_hooks`. ``on_enable``/``on_disable`` fire on the *edge*
+only (registry.py's generic settings route), so they can be treated as
+start/stop rather than "re-check on every save".
+
+Installing, updating, uninstalling
+----------------------------------
+Dropping a folder into ``web/thirdparties/`` is still all it takes to install
+a module by hand. The store client (``store.py``) instead stages downloads
+into ``_pending/`` and uninstalls into ``_pending/_remove.txt``, which
+:func:`apply_pending_changes` applies at the next start, before anything has
+been imported or registered -- because Flask can add a Blueprint to a running
+app (that's what :func:`rescan_new_modules` exploits) but cannot remove or
+replace one. See that function's docstring.
 
 ``MODULE_DESCRIPTION_DE``/``MODULE_DESCRIPTION_EN`` are optional overrides
 of ``MODULE_DESCRIPTION`` for one specific UI language -- the Modulmanager
@@ -93,17 +137,306 @@ first time each of the module's registered items is seen -- see
 (or a previous run) already set.
 """
 
+import ast
 import importlib
 import pkgutil
+import shutil
 from pathlib import Path
 
 from .registry import (
     register_generic_settings_routes, record_module_status, item_ids, seed_default_enabled,
     known_module_names, registered_module_names, check_app_compatibility,
+    check_api_compatibility, installed_version, record_installed_version,
+    purge_module_settings,
 )
+from .signing import verify_module
 from ...logger import get_logger
 
 logger = get_logger(__name__)
+
+# Successfully imported module objects, keyed by folder name -- kept so the
+# lifecycle hooks (on_enable/on_disable, fired from registry.py's generic
+# settings route long after discovery) can be looked up by name. Only ever
+# holds modules that imported cleanly; a folder that failed to import has
+# nothing to call a hook on.
+_LOADED: dict = {}
+
+# Folder name of the staging area the module store downloads into -- see
+# apply_pending_changes(). Leading underscore so every scan in this file
+# (which all skip names starting with "_") ignores it as a module folder.
+PENDING_DIR = "_pending"
+
+# One folder name per line: modules to remove on the next start. Written by the
+# store client's uninstall (see store.py), applied by apply_pending_changes().
+REMOVE_MANIFEST = "_remove.txt"
+
+# Module ids whose folders apply_pending_changes() removed on this start, so
+# discover_and_register() can purge their settings once the DB is available --
+# the filesystem work happens before Flask (and therefore the DB) is up, so
+# these two halves of "uninstall" can't be done in the same place.
+_PENDING_SETTING_PURGES: list = []
+
+
+def apply_pending_changes() -> dict:
+    """Apply anything the module store staged for the next start: install or
+    upgrade every folder sitting in ``_pending/``, and remove every folder
+    named in ``_pending/_remove.txt``. Returns
+    ``{"installed": [...], "removed": [...], "failed": [...]}``.
+
+    Must be called *before* anything reads web/thirdparties/ -- i.e. before
+    discover_translation_dirs() in app.py's create_app(), which is the first
+    thing to touch these folders and (worse) feeds Flask-Babel's
+    BABEL_TRANSLATION_DIRECTORIES, which is read once at init_app() and can't
+    be changed afterwards. A module installed after that point would have its
+    routes but not its translations.
+
+    Doing it here, at startup, rather than live at download time, is the whole
+    design: Flask can register a Blueprint on a running app (rescan_new_modules()
+    does exactly that), but it has no supported way to *un*register one, replace
+    one, or re-run an already-imported module's top-level code. An upgrade and
+    an uninstall are therefore both "swap the folder while nothing is looking",
+    which on a running process only exists between "process started" and "first
+    request" -- exactly here. The store client downloads into _pending/ and
+    tells the admin a restart is needed; this is the other half of that.
+    """
+    package_dir = Path(__file__).parent
+    pending_dir = package_dir / PENDING_DIR
+    result = {"installed": [], "removed": [], "failed": []}
+    if not pending_dir.is_dir():
+        return result
+
+    # ---- removals first: uninstall-then-reinstall of the same name in one
+    # go must not delete the folder that was just installed.
+    manifest = pending_dir / REMOVE_MANIFEST
+    if manifest.is_file():
+        try:
+            names = [line.strip() for line in manifest.read_text(encoding="utf-8").splitlines()]
+        except Exception as exc:
+            logger.exception("[Thirdparties] Could not read %s", manifest)
+            names = []
+            result["failed"].append(f"{REMOVE_MANIFEST}: {exc}")
+        for name in names:
+            if not name or name.startswith("_") or "/" in name or "\\" in name or name == "..":
+                continue
+            target = package_dir / name
+            module_id = _module_id_on_disk(target)
+            try:
+                if target.is_dir():
+                    shutil.rmtree(target)
+                    logger.info("[Thirdparties] Removed module folder '%s'", name)
+                result["removed"].append(name)
+                # The settings can only be purged once the DB is up -- see
+                # _PENDING_SETTING_PURGES / discover_and_register().
+                _PENDING_SETTING_PURGES.append(module_id or name)
+            except Exception as exc:
+                logger.exception("[Thirdparties] Failed to remove '%s'", name)
+                result["failed"].append(f"{name}: {exc}")
+        try:
+            manifest.unlink()
+        except Exception:
+            logger.exception("[Thirdparties] Could not clear %s", manifest)
+
+    # ---- then installs/upgrades: each staged folder replaces the live one.
+    for staged in sorted(pending_dir.iterdir()):
+        if not staged.is_dir() or staged.name.startswith("_"):
+            continue
+        target = package_dir / staged.name
+        try:
+            if not (staged / "__init__.py").is_file():
+                raise ValueError("staged folder has no __init__.py")
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.move(str(staged), str(target))
+            logger.info("[Thirdparties] Installed/updated module folder '%s'", staged.name)
+            result["installed"].append(staged.name)
+        except Exception as exc:
+            logger.exception("[Thirdparties] Failed to apply staged module '%s'", staged.name)
+            result["failed"].append(f"{staged.name}: {exc}")
+
+    return result
+
+
+def _module_id_on_disk(folder: Path):
+    """Best-effort MODULE_ID of a module folder we're about to delete, read
+    straight out of its __init__.py *without importing it* -- importing a
+    module purely to find out how to erase it would run its top-level code
+    (and, for a module being removed because it's broken, quite possibly
+    fail). Returns None if the folder is gone or declares no MODULE_ID, in
+    which case the caller falls back to the folder name -- which is what
+    MODULE_ID defaults to anyway.
+    """
+    init = folder / "__init__.py"
+    if not init.is_file():
+        return None
+    try:
+        tree = ast.parse(init.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "MODULE_ID":
+                if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                    return node.value.value
+    return None
+
+
+def stage_removal(name: str) -> None:
+    """Queue thirdparties/<name>/ for removal on the next start by appending it
+    to ``_pending/_remove.txt`` -- the store client's uninstall (see store.py's
+    uninstall()). Deliberately does not touch the live folder: the module is
+    imported and its Blueprint is registered on the running app, and pulling
+    its files out from under it mid-request is a good way to produce a very
+    confusing traceback.
+    """
+    package_dir = Path(__file__).parent
+    pending_dir = package_dir / PENDING_DIR
+    pending_dir.mkdir(exist_ok=True)
+    manifest = pending_dir / REMOVE_MANIFEST
+    existing = []
+    if manifest.is_file():
+        existing = [line.strip() for line in manifest.read_text(encoding="utf-8").splitlines()
+                    if line.strip()]
+    if name not in existing:
+        existing.append(name)
+    manifest.write_text("\n".join(existing) + "\n", encoding="utf-8")
+
+
+def pending_changes() -> dict:
+    """What's currently staged and waiting for a restart:
+    ``{"install": [folder names], "remove": [folder names]}``. Powers the
+    Modulmanager's "restart required" banner -- and, since it's a plain
+    filesystem read, it stays correct across an admin refreshing the page,
+    a second admin looking at it, or the process having been restarted since
+    (in which case _pending/ is empty again and the banner disappears on its
+    own).
+    """
+    package_dir = Path(__file__).parent
+    pending_dir = package_dir / PENDING_DIR
+    out = {"install": [], "remove": []}
+    if not pending_dir.is_dir():
+        return out
+    out["install"] = sorted(
+        entry.name for entry in pending_dir.iterdir()
+        if entry.is_dir() and not entry.name.startswith("_")
+    )
+    manifest = pending_dir / REMOVE_MANIFEST
+    if manifest.is_file():
+        out["remove"] = [line.strip() for line in manifest.read_text(encoding="utf-8").splitlines()
+                         if line.strip()]
+    return out
+
+
+def _check_requirements(module) -> str:
+    """Return "" if every distribution in the module's ``MODULE_REQUIREMENTS``
+    (a tuple of PEP 508 requirement strings, e.g. ``("icalendar>=6.0",)``) is
+    installed and satisfies its version specifier, or a human-readable reason
+    if not.
+
+    MediaForge deliberately *checks* rather than installs: pip-installing into
+    a running app's environment at import time is how you get a half-upgraded
+    dependency shared with the core (Flask, niquests, packaging are all in
+    here), and in a Docker install the change wouldn't survive the container
+    anyway. A module store package that needs a dependency the app doesn't
+    ship is therefore something the admin has to install deliberately -- what
+    this function buys is that they find out from a one-line "skipped: missing
+    dependency icalendar>=6.0" on the Modulmanager page instead of an
+    ImportError traceback in the log.
+    """
+    requirements = tuple(getattr(module, "MODULE_REQUIREMENTS", None) or ())
+    if not requirements:
+        return ""
+    from importlib.metadata import PackageNotFoundError, version as dist_version
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    missing = []
+    for raw in requirements:
+        try:
+            req = Requirement(str(raw))
+        except InvalidRequirement:
+            missing.append(f"{raw} (unparseable)")
+            continue
+        try:
+            have = dist_version(req.name)
+        except PackageNotFoundError:
+            missing.append(f"{raw} (not installed)")
+            continue
+        if req.specifier and not req.specifier.contains(have, prereleases=True):
+            missing.append(f"{raw} (have {have})")
+    if not missing:
+        return ""
+    return "missing dependency: " + ", ".join(missing)
+
+
+def fire_module_hook(name, hook, *args):
+    """Call an optional lifecycle hook on a loaded module, swallowing (but
+    logging) whatever it raises.
+
+    The four hooks, all optional, all plain module-level functions in a
+    thirdparty's ``__init__.py``:
+
+    - ``on_install(app)`` -- the very first start after this module appeared on
+      this install (nothing recorded in registry.installed_version()). Create
+      tables, seed defaults.
+    - ``on_upgrade(app, from_version, to_version)`` -- the first start after
+      MODULE_VERSION changed from what was last recorded. Migrate.
+    - ``on_enable(app)`` / ``on_disable(app)`` -- the admin flipped the
+      module's master toggle (fired on the *edge* only, see registry.py's
+      generic PUT route). Start/stop workers, clear caches.
+
+    A hook raising must never take the app down with it -- a broken on_disable
+    would otherwise make a module impossible to switch off, which is precisely
+    when you most want to switch it off. The failure is logged and recorded on
+    the module's Modulmanager card instead.
+    """
+    module = _LOADED.get(name)
+    if module is None:
+        return
+    fn = getattr(module, hook, None)
+    if not callable(fn):
+        return
+    try:
+        fn(*args)
+        logger.info("[Thirdparties] %s(%s) ok", hook, name)
+    except Exception as exc:
+        logger.exception("[Thirdparties] %s() failed for '%s'", hook, name)
+        record_module_status(name, error=f"{hook}() failed: {exc}")
+
+
+def _run_lifecycle_hooks(app, name, module) -> None:
+    """Fire on_install/on_upgrade for a module that just registered
+    successfully, by comparing its MODULE_VERSION against the version last
+    recorded as installed (registry.installed_version()).
+
+    Three cases, and the version is only re-recorded after the matching hook
+    ran, so a hook that blew up is retried on the next start rather than being
+    silently skipped forever:
+    - nothing recorded  -> on_install(app)          (new to this install)
+    - recorded != code  -> on_upgrade(app, old, new) (also fires on a
+      *downgrade*; a module that cares can compare the two strings itself)
+    - recorded == code  -> nothing at all (the normal start)
+    """
+    module_id = getattr(module, "MODULE_ID", None) or name
+    code_version = str(getattr(module, "MODULE_VERSION", "") or "")
+    try:
+        known = installed_version(module_id)
+    except Exception:
+        # No DB yet / DB error -- skip the hooks rather than guessing; the next
+        # start tries again.
+        logger.exception("[Thirdparties] Could not read installed version of '%s'", name)
+        return
+
+    if known is None:
+        fire_module_hook(name, "on_install", app)
+    elif known != code_version:
+        fire_module_hook(name, "on_upgrade", app, known, code_version)
+    else:
+        return
+    try:
+        record_installed_version(module_id, code_version)
+    except Exception:
+        logger.exception("[Thirdparties] Could not record installed version of '%s'", name)
 
 
 def discover_translation_dirs() -> list:
@@ -179,11 +512,26 @@ def _import_folders(names: list) -> dict:
     for this part. An import failure is logged and that folder is left out
     of the returned dict entirely (:func:`_resolve_load_order` never sees
     it, so nothing can depend on it)."""
+    package_dir = Path(__file__).parent
     modules = {}
     for name in names:
         try:
             module = importlib.import_module(f"{__name__}.{name}")
             modules[name] = module
+            _LOADED[name] = module
+            # Signature check (see signing.py). Purely informational at load
+            # time -- an unsigned module loads exactly like a signed one; what
+            # the signature decides is what the module may *claim* (the trust
+            # badge in the Modulmanager, and whether the store is willing to
+            # install it without an explicit "I know this is unreviewed"). The
+            # module's own MODULE_ID/MODULE_VERSION are passed in so a valid
+            # signature for a *different* module can't be used to launder this
+            # one.
+            signature = verify_module(
+                package_dir / name,
+                module_id=getattr(module, "MODULE_ID", None) or name,
+                version=str(getattr(module, "MODULE_VERSION", "") or ""),
+            )
             record_module_status(
                 name, imported=True,
                 module_name=getattr(module, "MODULE_NAME", None),
@@ -203,6 +551,9 @@ def _import_folders(names: list) -> dict:
                 module_id=getattr(module, "MODULE_ID", None),
                 homepage=getattr(module, "MODULE_HOMEPAGE", None),
                 license=getattr(module, "MODULE_LICENSE", None),
+                api_version=getattr(module, "MODULE_API_VERSION", None),
+                requirements=tuple(getattr(module, "MODULE_REQUIREMENTS", None) or ()) or None,
+                signature=signature,
             )
         except Exception as exc:
             logger.exception("[Thirdparties] Failed to import '%s'", name)
@@ -229,21 +580,28 @@ def _register_modules(app, modules: dict, registered: set) -> list:
         depends_on = tuple(getattr(module, "DEPENDS_ON", None) or ())
         record_module_status(name, depends_on=depends_on)
 
-        # MODULE_MIN_APP_VERSION / MODULE_MAX_APP_VERSION (see this package's
-        # docstring) -- checked before register(app), so a module written
-        # against an API this MediaForge doesn't have yet (or no longer has)
-        # never gets to run against it. Skipped exactly like an unmet
-        # DEPENDS_ON: not registered, reason recorded, everything else keeps
-        # loading. Note the module is deliberately left out of `registered`,
-        # so anything DEPENDS_ON-ing it is skipped too rather than being
-        # handed a half-loaded dependency.
-        incompatible = check_app_compatibility(
-            getattr(module, "MODULE_MIN_APP_VERSION", None),
-            getattr(module, "MODULE_MAX_APP_VERSION", None),
+        # Three gates before register(app) -- the registry API contract, the
+        # MediaForge version range, and the module's pip dependencies (see this
+        # package's docstring for all three). All are checked here rather than
+        # at import, because a module is allowed to *exist* on disk in a state
+        # this app can't run: what must not happen is it registering routes,
+        # settings cards and background jobs against a contract or environment
+        # it wasn't written for. Each failure is treated exactly like an unmet
+        # DEPENDS_ON: not registered, reason recorded for the Modulmanager
+        # card, everything else keeps loading -- and the module stays out of
+        # `registered`, so anything DEPENDS_ON-ing it is skipped too rather
+        # than being handed a half-loaded dependency.
+        blocked = (
+            check_api_compatibility(getattr(module, "MODULE_API_VERSION", None))
+            or check_app_compatibility(
+                getattr(module, "MODULE_MIN_APP_VERSION", None),
+                getattr(module, "MODULE_MAX_APP_VERSION", None),
+            )
+            or _check_requirements(module)
         )
-        if incompatible:
-            logger.warning("[Thirdparties] '%s' skipped — %s", name, incompatible)
-            record_module_status(name, registered=False, error=incompatible)
+        if blocked:
+            logger.warning("[Thirdparties] '%s' skipped — %s", name, blocked)
+            record_module_status(name, registered=False, error=blocked)
             continue
 
         missing = [d for d in depends_on if d not in registered]
@@ -294,6 +652,11 @@ def _register_modules(app, modules: dict, registered: set) -> list:
             # module just registered -- a no-op after the very first run,
             # see seed_default_enabled()'s docstring.
             seed_default_enabled(new_ids, getattr(module, "MODULE_ENABLED_DEFAULT", False))
+            # ...and only now, once the module is actually registered and its
+            # defaults are seeded, fire on_install/on_upgrade -- a hook that
+            # creates tables or migrates data has no business running for a
+            # module that turned out not to load.
+            _run_lifecycle_hooks(app, name, module)
         except Exception as exc:
             logger.exception("[Thirdparties] register(app) failed for '%s'", name)
             record_module_status(name, registered=False, error=str(exc))
@@ -325,6 +688,20 @@ def discover_and_register(app) -> None:
     )
     modules = _import_folders(names)
     _register_modules(app, modules, set())
+
+    # Second half of "uninstall": apply_pending_changes() deleted the folders
+    # before Flask (and therefore the DB) existed, so the settings those
+    # modules owned are purged here, at the first point where get_setting/
+    # set_setting actually work. Only namespaced keys are removed -- see
+    # registry.purge_module_settings().
+    while _PENDING_SETTING_PURGES:
+        module_id = _PENDING_SETTING_PURGES.pop()
+        try:
+            removed = purge_module_settings(module_id)
+            logger.info("[Thirdparties] Purged %d setting(s) of uninstalled module '%s'",
+                        removed, module_id)
+        except Exception:
+            logger.exception("[Thirdparties] Could not purge settings of '%s'", module_id)
 
     # Shared enable/disable API for the simple "just a toggle" settings card
     # every registered thirdparty gets automatically — see registry.py.

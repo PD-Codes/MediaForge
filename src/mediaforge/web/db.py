@@ -2492,6 +2492,31 @@ def delete_setting(key: str) -> None:
         conn.close()
 
 
+def delete_settings_by_prefix(prefix: str) -> int:
+    """Delete every app_settings row whose key starts with `prefix`, returning
+    how many were removed.
+
+    Exists for uninstalling a thirdparty module: everything a module stores
+    lives under the "module:<module_id>:" prefix (see
+    web/thirdparties/registry.py's module_setting_key()), so removing the
+    module's folder can also remove its settings instead of leaving orphaned
+    rows behind forever. `prefix` is escaped for LIKE (a module id containing
+    % or _ would otherwise match far more than its own keys) -- note "_" is a
+    LIKE wildcard and folder names use it constantly, which is exactly the
+    trap this avoids.
+    """
+    escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "DELETE FROM app_settings WHERE key LIKE ? ESCAPE '\\'", (escaped + "%",)
+        )
+        conn.commit()
+        return cur.rowcount or 0
+    finally:
+        conn.close()
+
+
 # ============================================================
 # Notification tables: per-user prefs + push subscriptions
 # ============================================================

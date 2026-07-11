@@ -118,6 +118,33 @@ _DEFAULT_TAB_ICON_SVG = (
 # instead of an empty gap.
 _UNKNOWN_VERSION = "0.0.0"
 
+# Version of the contract THIS file exposes to modules: register_thirdparty()'s
+# parameters, the recognized extra_settings field types, the lifecycle hooks
+# web/thirdparties/__init__.py calls, and the module-level MODULE_* constants
+# it reads. A module declares the API version it was written against as
+# MODULE_API_VERSION; see check_api_compatibility() for what happens when the
+# two don't line up.
+#
+# Deliberately separate from MediaForge's own version (see app_version()):
+# MediaForge can go to 2.0 for reasons that have nothing to do with modules,
+# and a module pinning MODULE_MAX_APP_VERSION out of caution would then have
+# to be re-released for no reason. Bumping *this* number is a deliberate act
+# that means exactly one thing -- "the module contract changed in a way older
+# modules can't be assumed to survive" -- so it's the number a module should
+# actually be pinning against. Bump it only for breaking changes; a purely
+# additive one (a new optional parameter, a new MODULE_* constant a module can
+# ignore) doesn't need it.
+REGISTRY_API_VERSION = 1
+
+# Prefix every setting a module owns lives under -- see module_setting_key().
+_MODULE_SETTING_PREFIX = "module:"
+
+# Key (under a module's own namespace) where the version last seen installed is
+# recorded, so the next start can tell a fresh install from an upgrade from an
+# unchanged module and fire the right lifecycle hook. Double underscore so it
+# can't collide with a setting key a module itself declares.
+_INSTALLED_VERSION_KEY = "__installed_version"
+
 
 def app_version():
     """MediaForge's own version, as a plain comparable string ("1.1.0").
@@ -180,6 +207,93 @@ def check_app_compatibility(min_app_version=None, max_app_version=None):
     except InvalidVersion:
         return None
     return None
+
+
+def check_api_compatibility(module_api_version):
+    """Return None if this MediaForge's registry API can serve a module written
+    against `module_api_version` (its MODULE_API_VERSION), or a reason string
+    if it can't.
+
+    Only a module asking for a *newer* API than REGISTRY_API_VERSION is
+    refused: it was written against a contract this MediaForge doesn't have,
+    and calling its register(app) would mean handing it a registry missing
+    whatever it's counting on. A module written against an *older* API is
+    accepted -- that's the whole point of only bumping REGISTRY_API_VERSION on
+    breaking changes, and of every MODULE_* constant having a fallback: an API
+    1 module keeps working on an API 1 MediaForge forever, and the day API 2
+    exists it's this function's job to say so out loud rather than let it fail
+    somewhere less obvious.
+
+    A module that declares no MODULE_API_VERSION at all (None) is treated as
+    "API 1" -- i.e. every module written before this constant existed.
+    """
+    if module_api_version in (None, ""):
+        return None
+    try:
+        requested = int(module_api_version)
+    except (TypeError, ValueError):
+        return f"invalid MODULE_API_VERSION {module_api_version!r}"
+    if requested > REGISTRY_API_VERSION:
+        return (f"needs registry API v{requested}, "
+                f"this MediaForge provides v{REGISTRY_API_VERSION}")
+    return None
+
+
+def module_setting_key(module_id, key):
+    """The app_settings key a module's setting `key` should live under:
+    ``module:<module_id>:<key>``.
+
+    Modules are free to keep using flat, unnamespaced keys (anime_seasons's
+    "anime_seasons_enabled" predates this and still works -- nothing here
+    rewrites or requires anything), but a module that wants to be
+    *uninstallable* by the module store should namespace everything it stores
+    through this helper: purge_module_settings() can then remove all of it in
+    one go when the module's folder is removed, instead of leaving orphaned
+    rows in app_settings forever. Namespacing is therefore a soft requirement
+    for store-published modules and a no-op for everything else.
+    """
+    return f"{_MODULE_SETTING_PREFIX}{module_id}:{key}"
+
+
+def purge_module_settings(module_id):
+    """Delete every namespaced setting belonging to `module_id` (see
+    module_setting_key()), returning how many rows were removed.
+
+    Called when a module is uninstalled (see web/thirdparties/__init__.py's
+    apply_pending_changes()). Un-namespaced keys a module wrote directly are
+    deliberately *not* touched -- there's no way to know which flat keys were
+    a module's without it telling us, and guessing by prefix-matching the
+    folder name would risk deleting a core setting that merely starts with the
+    same word.
+    """
+    from ..db import delete_settings_by_prefix
+
+    return delete_settings_by_prefix(f"{_MODULE_SETTING_PREFIX}{module_id}:")
+
+
+def installed_version(module_id):
+    """The MODULE_VERSION last recorded as installed for this module, or None
+    if it's never been seen on this install before (a fresh install).
+
+    This is what makes on_install/on_upgrade possible without the module
+    tracking its own state: the folder on disk says which version the *code*
+    is, this says which version the *data* (settings, DB tables, caches) was
+    last written by. See web/thirdparties/__init__.py's _run_lifecycle_hooks().
+    """
+    from ..db import get_setting
+
+    return get_setting(module_setting_key(module_id, _INSTALLED_VERSION_KEY), None)
+
+
+def record_installed_version(module_id, version):
+    """Persist `version` as the installed version of `module_id` -- called
+    right after a successful on_install/on_upgrade hook (or right after a
+    successful register(app) for a module with no hooks), so the next start
+    sees an unchanged module and fires nothing.
+    """
+    from ..db import set_setting
+
+    set_setting(module_setting_key(module_id, _INSTALLED_VERSION_KEY), str(version or ""))
 
 
 def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
@@ -437,11 +551,14 @@ def record_module_status(name, **fields):
 
     Also recognized, from the same import phase: version (MODULE_VERSION,
     falling back to _UNKNOWN_VERSION), min_app_version/max_app_version (the
-    MediaForge compatibility range, see check_app_compatibility()), and the
-    module store's identity fields module_id/homepage/license (MODULE_ID --
-    the stable store id, falling back to the folder name -- plus
-    MODULE_HOMEPAGE/MODULE_LICENSE, both ""). None of them are required:
-    they're descriptive, except min/max_app_version, which
+    MediaForge compatibility range, see check_app_compatibility()),
+    api_version (MODULE_API_VERSION, see check_api_compatibility()),
+    requirements (MODULE_REQUIREMENTS, the pip distributions the module needs
+    -- checked, not installed) and the module store's identity fields
+    module_id/homepage/license (MODULE_ID -- the stable store id, falling back
+    to the folder name -- plus MODULE_HOMEPAGE/MODULE_LICENSE, both "").
+    None of them are required: they're descriptive, except
+    min/max_app_version, api_version and requirements, which
     web/thirdparties/__init__.py checks before calling register(app).
 
     This exists purely for the admin Modulmanager / Extensions overview
@@ -454,10 +571,47 @@ def record_module_status(name, **fields):
         "author": "", "enabled_default": False,
         "version": _UNKNOWN_VERSION, "min_app_version": "", "max_app_version": "",
         "module_id": name, "homepage": "", "license": "",
+        "api_version": None, "requirements": (),
+        # Result of signing.verify_module() -- see its docstring. The default is
+        # what an unsigned module gets, which is most of them: perfectly loadable,
+        # just not vouched for by anybody.
+        "signature": {"tier": "unverified", "signed": False, "valid": False,
+                      "signer": "", "key_id": "", "reason": "not signed"},
     })
     for key, value in fields.items():
         if value is not None:
             entry[key] = value
+
+
+def module_entry(name):
+    """The raw recorded status of one thirdparties/<name>/ folder (see
+    record_module_status), or None. Used by the store client
+    (web/thirdparties/store.py) to compare an installed module's version and
+    module_id against what the store offers, without re-deriving either.
+    """
+    entry = _MODULES.get(name)
+    return dict(entry) if entry else None
+
+
+def module_entries():
+    """Every recorded folder, keyed by folder name -- the store client's
+    "what's installed" snapshot. Copies, so a caller can't mutate _MODULES.
+    """
+    return {name: dict(entry) for name, entry in _MODULES.items()}
+
+
+def module_name_for_item(item_id):
+    """The thirdparties/<name>/ folder that registered `item_id`, or None.
+
+    The registered items and the folders that registered them are tracked
+    separately on purpose (see _MODULES' docstring), but the enable/disable
+    toggle only knows an item_id -- and the lifecycle hooks
+    (on_enable/on_disable) live on the *module*. This is the bridge.
+    """
+    for name, mod in _MODULES.items():
+        if item_id in (mod.get("item_ids") or ()):
+            return name
+    return None
 
 
 def seed_default_enabled(new_item_ids, enabled_default):
@@ -570,6 +724,15 @@ def resolve_extensions_overview():
             "module_id": mod["module_id"],
             "homepage": mod["homepage"],
             "license": mod["license"],
+            "api_version": mod["api_version"] or REGISTRY_API_VERSION,
+            "requirements": tuple(mod["requirements"] or ()),
+            # Trust, as *derived from the signature in the module* (signing.py)
+            # -- never as claimed by a store's index or by the module's own
+            # constants. An unsigned module is "unverified"; a signed one whose
+            # files were touched afterwards is "unverified" *and* loudly says so
+            # via signature.reason, which the card renders in red.
+            "trust": mod["signature"]["tier"],
+            "signature": dict(mod["signature"]),
             # Named registered_items, not items -- a plain dict's own
             # .items() method shadows a same-named key under Jinja's
             # attribute-then-subscript lookup (ext.items would silently
@@ -829,7 +992,20 @@ def register_generic_settings_routes(app):
             return jsonify({"error": "unknown"}), 404
         data = request.get_json(silent=True) or {}
         if "enabled" in data:
-            set_setting(item["enabled_setting_key"], "1" if str(data["enabled"]) == "1" else "0")
+            was_enabled = get_setting(item["enabled_setting_key"], "0") == "1"
+            now_enabled = str(data["enabled"]) == "1"
+            set_setting(item["enabled_setting_key"], "1" if now_enabled else "0")
+            # Lifecycle hooks: on_enable(app)/on_disable(app) fire only on an
+            # actual state *change*, so a module can treat them as edges
+            # (start/stop a worker, clear a cache) rather than having to
+            # de-duplicate repeated saves of the same value itself. Imported
+            # lazily -- web/thirdparties/__init__.py imports this module, so a
+            # top-level import here would be circular.
+            if was_enabled != now_enabled:
+                from . import fire_module_hook
+
+                fire_module_hook(module_name_for_item(item_id),
+                                 "on_enable" if now_enabled else "on_disable", app)
 
         # Only ever writes keys this item itself registered via
         # extra_settings -- an unrecognized key in the "extra" payload is

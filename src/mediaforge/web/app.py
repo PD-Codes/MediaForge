@@ -113,7 +113,14 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # so an integration can ship its own strings without touching
     # web/translations/ at all. This has to happen *before* init_app() below
     # — that's when Flask-Babel reads BABEL_TRANSLATION_DIRECTORIES.
-    from .thirdparties import discover_translation_dirs
+    from .thirdparties import apply_pending_changes, discover_translation_dirs
+    # Anything the module store staged for this start (installs, upgrades,
+    # removals) is applied *here*, before the very first read of
+    # web/thirdparties/ -- see apply_pending_changes()'s docstring. It has to
+    # be before discover_translation_dirs() in particular: Flask-Babel reads
+    # BABEL_TRANSLATION_DIRECTORIES once, at init_app() below, so a module
+    # installed after this line would come up without its translations.
+    apply_pending_changes()
     _core_translations_dir = str((Path(__file__).parent / "translations").resolve())
     _translation_dirs = [_core_translations_dir] + discover_translation_dirs()
     app.config["BABEL_TRANSLATION_DIRECTORIES"] = ";".join(_translation_dirs)
@@ -726,11 +733,25 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_autosync_update",
             "api_autosync_delete",
             "api_autosync_trigger",
+            # The Module Manager. Its sidebar link was always admin-only
+            # (base.html), but the route itself wasn't -- harmless while the
+            # page merely *listed* modules, no longer true now that it hosts
+            # the store configuration (which remote MediaForge trusts) and the
+            # uninstall buttons. Gate the page, not just the link.
+            "extensions_page",
             # Imports and executes arbitrary code found on disk (any new
-            # web/thirdparties/<name>/ folder) -- more sensitive than just
-            # viewing the Extensions overview page, so this one is
-            # admin-only even though extensions_page itself isn't.
+            # web/thirdparties/<name>/ folder).
             "api_extensions_rescan",
+            # Module store (web/thirdparties/store.py): these decide which
+            # remote MediaForge trusts, download code from it, and stage it to
+            # be imported into this very process on the next start. Strictly
+            # admin, all of them -- including the read-only ones, since the
+            # catalog also reveals the configured store URL.
+            "api_store_config",
+            "api_store_catalog",
+            "api_store_install",
+            "api_store_uninstall",
+            "api_store_pending",
         }
 
         # Wrap all non-auth, non-static view functions with login_required
