@@ -88,6 +88,16 @@ class TelemetryClient:
                 "os": platform.system(),
                 "python_version": platform.python_version(),
                 "arch": platform.machine(),
+                # Declarative snapshot of "what this install currently has toggled
+                # on" -- sent with every batch (not just when one of these keys
+                # happens to produce a real event) so the server's Install.enabled_keys
+                # always reflects the actual current Settings-page state instead of
+                # drifting to "whatever data_key last happened to fire an event"
+                # (see telemetry_ingest.py's use of this field on the server side --
+                # a raised stage with no matching event yet, e.g. downloads.titles
+                # enabled but no download attempted, would otherwise look like it
+                # was never actually enabled).
+                "enabled_keys": sorted(settings.get_enabled_keys()),
                 "events": batch,
             }
             GLOBAL_SESSION.post(
