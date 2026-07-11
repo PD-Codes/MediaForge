@@ -602,6 +602,32 @@
     </div>
   </div>
 
+  <!-- ===== Telemetry: first-run consent dialog (TELEMETRY_PLAN.md §4.0) =====
+       Shown once, before any telemetry call is ever made, gated on
+       consent_given === null (see the bootstrap script near the bottom of
+       this file). Deliberately NOT built from the generic #confirmModal:
+       no X button, no click-outside-to-close, no Escape shortcut, and the
+       two actions are visually equal (same size/color, neither is the
+       accent-colored "primary" button this project otherwise uses for
+       confirmations) -- an optically favoured "Yes" would undercut the
+       "active, free decision" requirement behind this dialog (see
+       TELEMETRY_PLAN.md §7a's GDPR research). -->
+  <div class="modal-overlay telemetry-consent-overlay" id="telemetryConsentOverlay" style="display:none">
+    <div class="telemetry-consent-card">
+      <h2 class="telemetry-consent-title">{{ _('Send crash reports to the developer?') }}</h2>
+      <p class="telemetry-consent-text">
+        {{ _('If MediaForge crashes unexpectedly, it can automatically send a technical error report (file/line/error type) plus basic system info (app version, OS, Python version) to the developer -- this helps find and fix bugs. Passwords, credentials and file contents are never included.') }}
+      </p>
+      <p class="telemetry-consent-text telemetry-consent-hint">
+        {{ _('You can change this decision at any time under Settings -> Privacy & Telemetry. More extensive data points (e.g. download titles or watch behaviour) always stay separate, off by default, and individually toggled -- this question only covers crash reports and basic system info.') }}
+      </p>
+      <div class="telemetry-consent-actions">
+        <button type="button" class="telemetry-consent-btn" onclick="_telemetryConsentAnswer(false)">{{ _('No, thanks') }}</button>
+        <button type="button" class="telemetry-consent-btn" onclick="_telemetryConsentAnswer(true)">{{ _('Yes, send crash reports') }}</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== Library: Move Modal ===== -->
   <div class="modal-overlay" id="libMoveModal" style="display:none"
     onclick="if(event.target===this)libMoveModalBgClick()">
@@ -1051,6 +1077,36 @@
         _confirmResolveCallback = null;
         cb(result);
       }
+    }
+
+    // ===== Telemetry: first-run consent dialog bootstrap =====
+    // Runs on every page (this script lives in base.html), but only ever
+    // shows the dialog when consent_given is still null (i.e. truly the
+    // first run) -- once answered, either "Yes" or "No" is a permanent
+    // answer that only changes again via the Settings page.
+    (function () {
+      fetch('/api/settings/telemetry')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          // A non-ok response (not logged in yet, non-admin account, or the
+          // route simply not reachable this early) must never block the
+          // rest of the UI -- just skip showing the dialog this time.
+          if (!data || data.consent_given !== null) return;
+          var overlay = document.getElementById('telemetryConsentOverlay');
+          if (overlay) overlay.style.display = 'block';
+        })
+        .catch(function () { /* offline first load -- skip, never block the UI */ });
+    })();
+
+    function _telemetryConsentAnswer(granted) {
+      var overlay = document.getElementById('telemetryConsentOverlay');
+      fetch('/api/settings/telemetry/consent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ granted: granted })
+      }).finally(function () {
+        if (overlay) overlay.style.display = 'none';
+      });
     }
   </script>
   <div class="appearance-popup" id="appearancePopup">

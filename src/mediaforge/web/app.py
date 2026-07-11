@@ -82,6 +82,7 @@ from .settings_migration import (
 )
 from .tmdb_keywords_sync import _ensure_tmdb_keywords_sync_worker
 from .markdown_utils import render_markdown
+from ..telemetry.hooks import init_telemetry
 
 
 def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
@@ -417,6 +418,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     _start_uptime_monitor()
     init_devinfos_db()
     _start_devinfos_poller()
+    # Telemetry: sys.excepthook + Flask error handler + background sender
+    # thread. Consent-gated (see mediaforge/telemetry/settings.py) — safe to
+    # always initialize since nothing is ever sent before the user has
+    # actively granted consent via the first-run dialog or Settings.
+    init_telemetry(app)
     _load_queue_paused_from_db()
     # Start MediaScan 24-h background scheduler
     _start_mediascan_scheduler()
@@ -752,6 +758,14 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_store_install",
             "api_store_uninstall",
             "api_store_pending",
+            # Telemetry: device-wide consent/data-collection decision, same
+            # admin-only tier as SSO/DNS/API-key -- not a per-user preference.
+            "api_settings_telemetry_get",
+            "api_settings_telemetry_put",
+            "api_settings_telemetry_consent",
+            "api_settings_telemetry_regenerate_id",
+            "api_settings_telemetry_request",
+            "api_settings_telemetry_request_status",
         }
 
         # Wrap all non-auth, non-static view functions with login_required

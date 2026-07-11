@@ -1,0 +1,74 @@
+/* ===================================================================
+   MediaForge — Privacy & Telemetry settings tab (templates/settings.html's
+   #tab-privacy, populated by static/telemetry.js).
+
+   Page-specific on purpose (per this project's CSS convention: one file per
+   page/feature, nothing new buried in a shared global stylesheet) — the
+   generic building blocks (.settings-section/.settings-row/.toggle/
+   .integ-card/.integ-subsection-badge) come from settings_rows.css,
+   tables.css and integrations.css and are reused as-is; only the bits that
+   are genuinely specific to this tab live here.
+
+   The first-run consent dialog (base.html) is a different, truly app-wide
+   component and lives in modals.css instead — see that file for why.
+   =================================================================== */
+
+/* Stage 6 (watch behaviour) gets a visibly different card border so it
+   reads as "this one is different" at a glance while browsing the stage
+   list, even before opening it. */
+.telemetry-stage-card.telemetry-stage-sensitive {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.telemetry-badge-sensitive {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* ===== Confirmation dialog content (rendered inside the project's
+   existing generic #confirmModal via showConfirm(), see base.html /
+   static/telemetry.js's telemetrySave()) ===== */
+
+.telemetry-confirm-warning {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  color: var(--error);
+  text-align: left;
+}
+
+.telemetry-confirm-group {
+  text-align: left;
+  margin-bottom: 10px;
+}
+
+.telemetry-confirm-group:last-child {
+  margin-bottom: 0;
+}
+
+.telemetry-confirm-group ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.telemetry-confirm-group li {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+}
+
+.telemetry-confirm-group li span {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 2px;
+}

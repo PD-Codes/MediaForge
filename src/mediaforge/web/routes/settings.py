@@ -951,3 +951,143 @@ def register_settings_routes(app):
         new_key = secrets.token_hex(32)
         set_setting("external_api_key", new_key)
         return jsonify({"ok": True, "key": new_key})
+
+    # ===== Telemetry (Privacy & Telemetry tab) =====
+    # See TELEMETRY_PLAN.md / TELEMETRY_IMPLEMENTATION_PLAN.md (devinfo_server
+    # checkout) for the full design. Persistence goes through the existing
+    # DB-first settings store via mediaforge.telemetry.settings, same pattern
+    # as every other setting in this file -- no new table.
+
+    @app.route("/api/settings/telemetry", methods=["GET"])
+    def api_settings_telemetry_get():
+        """Serve GET /api/settings/telemetry: current consent/enabled_keys
+        state plus the full data-point registry (labels/explain text/stage),
+        so the frontend confirmation dialog never needs a second,
+        hand-copied source for what each data_key means. Called from
+        static/telemetry.js's loadTelemetrySettings() and from base.html's
+        first-run consent-dialog bootstrap (checks consent_given === null)."""
+        from ...telemetry import settings as _tel
+        from ...telemetry.registry import registry_export
+        return jsonify({
+            "install_id": _tel.get_install_id(),
+            "consent_given": _tel.is_consent_given(),
+            "consent_at": _tel.get_consent_at(),
+            "enabled_keys": sorted(_tel.get_enabled_keys()),
+            "registry": registry_export(),
+        })
+
+    @app.route("/api/settings/telemetry", methods=["PUT"])
+    def api_settings_telemetry_put():
+        """Serve PUT /api/settings/telemetry: overwrite the full set of
+        enabled data_keys (not additive -- the frontend always sends the
+        complete desired end state after its own confirmation dialog, see
+        TELEMETRY_IMPLEMENTATION_PLAN.md §3.7). Refuses to store anything
+        until consent has been granted -- the Settings page can only ever
+        widen what's enabled after the first-run consent dialog said "Yes".
+        Called from static/telemetry.js's saveTelemetrySettings()."""
+        from ...telemetry import settings as _tel
+        from ...telemetry.registry import DATA_REGISTRY
+        if _tel.is_consent_given() is not True:
+            return jsonify({"ok": False, "error": "Consent not given yet"}), 403
+        data = request.get_json(silent=True) or {}
+        requested = data.get("enabled_keys", [])
+        if not isinstance(requested, list):
+            return jsonify({"ok": False, "error": "enabled_keys must be a list"}), 400
+        # Only persist keys the registry actually knows about -- an
+        # unrecognized key would be dead weight the server-side registry
+        # mirror could never explain to an admin either.
+        valid = {k for k in requested if k in DATA_REGISTRY}
+        # install_id has no toggle of its own (see registry.DATA_REGISTRY's
+        # always_on flag) but is implicitly present whenever anything else is.
+        if valid:
+            valid.add("install_id")
+        _tel.set_enabled_keys(valid)
+        return jsonify({"ok": True, "enabled_keys": sorted(valid)})
+
+    @app.route("/api/settings/telemetry/consent", methods=["POST"])
+    def api_settings_telemetry_consent():
+        """Serve POST /api/settings/telemetry/consent: record the first-run
+        consent decision (granted=true/false). Called once from the
+        first-run consent dialog (base.html), and again from the Privacy
+        tab whenever the user later flips telemetry fully on/off -- both
+        paths go through this same endpoint so consent_at always reflects
+        the most recent explicit decision (TELEMETRY_PLAN.md §7a: withdrawal
+        must be exactly as easy as granting)."""
+        from ...telemetry import settings as _tel
+        data = request.get_json(silent=True) or {}
+        granted = bool(data.get("granted"))
+        _tel.set_consent(granted)
+        return jsonify({
+            "ok": True,
+            "consent_given": granted,
+            "consent_at": _tel.get_consent_at(),
+            "enabled_keys": sorted(_tel.get_enabled_keys()),
+        })
+
+    @app.route("/api/settings/telemetry/regenerate-id", methods=["POST"])
+    def api_settings_telemetry_regenerate_id():
+        """Serve POST /api/settings/telemetry/regenerate-id: "Identität
+        zurücksetzen" -- generate a brand-new install_id with no link kept
+        to the old one (TELEMETRY_IMPLEMENTATION_PLAN.md §3.1)."""
+        from ...telemetry import settings as _tel
+        new_id = _tel.regenerate_install_id()
+        return jsonify({"ok": True, "install_id": new_id})
+
+    @app.route("/api/settings/telemetry/request", methods=["POST"])
+    def api_settings_telemetry_request():
+        """Serve POST /api/settings/telemetry/request: submit a data
+        deletion/export request from inside the app ("Meine Daten
+        verwalten"), forwarded to the devInfo server's
+        POST /telemetry/request-from-app with the shared project-key header
+        (TELEMETRY_IMPLEMENTATION_PLAN.md §3.8). install_id is attached here
+        server-side from the local settings -- never typed by the user, so
+        the resulting request proves it came from this actual installation."""
+        from ...config import GLOBAL_SESSION
+        from ...telemetry import settings as _tel
+        from ...telemetry.registry import TELEMETRY_PROJECT_KEY, TELEMETRY_REQUEST_URL
+        data = request.get_json(silent=True) or {}
+        request_type = data.get("request_type")
+        if request_type not in ("delete", "export"):
+            return jsonify({"ok": False, "error": "request_type must be 'delete' or 'export'"}), 400
+        payload = {
+            "request_type": request_type,
+            "install_id": _tel.get_install_id(),
+            "submitted_username": str(data.get("username", "")).strip()[:80],
+            "submitted_email": str(data.get("email", "")).strip()[:255],
+        }
+        try:
+            resp = GLOBAL_SESSION.post(
+                TELEMETRY_REQUEST_URL, json=payload,
+                headers={"X-Project-Key": TELEMETRY_PROJECT_KEY}, timeout=8,
+            )
+            if resp.status_code >= 400:
+                return jsonify({"ok": False, "error": f"devInfo server returned {resp.status_code}"}), 502
+        except Exception as e:
+            logger.warning("[Telemetry] request-from-app call failed: %s", e)
+            return jsonify({"ok": False, "error": "devInfo server unreachable"}), 502
+        return jsonify({"ok": True})
+
+    @app.route("/api/settings/telemetry/request-status", methods=["GET"])
+    def api_settings_telemetry_request_status():
+        """Serve GET /api/settings/telemetry/request-status: check the
+        status of this install's own delete/export requests, so "Meine
+        Daten verwalten" can show "in Bearbeitung" / "Löschung
+        abgeschlossen" / a download button -- entirely over the
+        project-key-secured app channel, no email round-trip
+        (TELEMETRY_IMPLEMENTATION_PLAN.md §3.8). On success, forwards the
+        devInfo server's response array unchanged (shared contract); the
+        dict shape below is only used for this proxy's own failure case."""
+        from ...config import GLOBAL_SESSION
+        from ...telemetry import settings as _tel
+        from ...telemetry.registry import TELEMETRY_PROJECT_KEY, TELEMETRY_REQUEST_STATUS_URL
+        try:
+            resp = GLOBAL_SESSION.get(
+                TELEMETRY_REQUEST_STATUS_URL,
+                params={"install_id": _tel.get_install_id()},
+                headers={"X-Project-Key": TELEMETRY_PROJECT_KEY}, timeout=8,
+            )
+            resp.raise_for_status()
+            return jsonify(resp.json())
+        except Exception as e:
+            logger.warning("[Telemetry] request-status fetch failed: %s", e)
+            return jsonify({"requests": [], "error": "devInfo server unreachable"}), 502

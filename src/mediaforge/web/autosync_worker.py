@@ -17,6 +17,8 @@ from .db import (
     update_autosync_job,
 )
 from .queue_worker import _dl_lock
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
 from .runtime_state import (
     SYNC_ADAPTIVE_PAUSE_MAP,
     SYNC_ADAPTIVE_UNIT_MAP,
@@ -180,6 +182,10 @@ def _run_autosync_for_job(job, force_notify=False):
         _syncing_jobs.add(job_id)
 
     try:
+        # Telemetry: stage-2 usage counter — fires once per actual sync
+        # attempt (not for skipped/held jobs above), no title/URL involved.
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.autosync"))
+
         # ------------------------------------------------------------------ #
         # Custom Path availability check                                       #
         # If the job has a custom_path_id, verify the directory is accessible #
@@ -561,6 +567,13 @@ def _run_autosync_for_job(job, force_notify=False):
         update_fields["last_error"] = None  # clear any previous error on success
         update_autosync_job(job["id"], **update_fields)
 
+        # Telemetry: stage-3 run statistic — no series title/URL, just the
+        # outcome of this one sync attempt.
+        telemetry_client.submit(telemetry_events.build_feature_detail_event(
+            "detail.autosync", action="run", status="success",
+            metadata={"episodes_found": total_online_count, "newly_queued": total_new_queued},
+        ))
+
         # Notify when episodes were actually queued for download
         if total_new_queued > 0:
             from .notifications import notify_all
@@ -592,6 +605,10 @@ def _run_autosync_for_job(job, force_notify=False):
                 last_check=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
                 last_error=f"[Netzwerkfehler] {e}",
             )
+            telemetry_client.submit(telemetry_events.build_feature_detail_event(
+                "detail.autosync", action="run", status="transient_error",
+                metadata={"error_type": type(e).__name__},
+            ))
         else:
             logger.error("Auto-sync failed for '%s': %s", job.get("title", "?"), e, exc_info=True)
 
@@ -605,6 +622,10 @@ def _run_autosync_for_job(job, force_notify=False):
                 last_error=str(e),
                 retry_count=new_retry,
             )
+            telemetry_client.submit(telemetry_events.build_feature_detail_event(
+                "detail.autosync", action="run", status="failed",
+                metadata={"error_type": type(e).__name__},
+            ))
 
         # Only send error notifications for non-transient failures
         if not _is_transient:

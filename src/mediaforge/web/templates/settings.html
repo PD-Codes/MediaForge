@@ -14,6 +14,7 @@ function setUiLanguage(lang) {
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_schedule.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='sources.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='hanime.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='telemetry.css') }}">
 <!-- _settings_card_macro.html's card markup (.integ-card/.integ-collapsible-*/
      .integ-subsection-*) lives in integrations.css -- needed here too since
      this page can render that same macro for any thirdparty registered with
@@ -63,6 +64,7 @@ function setUiLanguage(lang) {
     {% if is_admin %}
     <button class="settings-tab" data-tab="auth" onclick="switchTab('auth')">{{ _('Authentication') }}</button>
     <button class="settings-tab" data-tab="api" onclick="switchTab('api')">API</button>
+    <button class="settings-tab" data-tab="privacy" onclick="switchTab('privacy')">{{ _('Privacy & Telemetry') }}</button>
     {% endif %}
     <button class="settings-tab" data-tab="updates" onclick="switchTab('updates')">{{ _('Updates') }}</button>
     {# Brand-new tabs a thirdparty registers with settings_host="settings"
@@ -1060,6 +1062,78 @@ function setUiLanguage(lang) {
       </div>
     </div>
   </div><!-- /tab-api -->
+
+  <!-- ══════════════════════════════════════════════════════
+       Tab: Privacy & Telemetry
+  ══════════════════════════════════════════════════════ -->
+  <div class="settings-tab-panel" id="tab-privacy">
+
+    <div class="settings-section">
+      <h2>{{ _('Your installation') }}</h2>
+      <div class="settings-hint">
+        {{ _('This ID is generated once per installation and is pseudonymous, not anonymous, from stage 2 onward -- it lets usage over time be linked to this one installation. It is never linked to your MediaForge account or username.') }}
+      </div>
+      <div class="settings-row" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
+        <div class="settings-field" style="flex:1;min-width:260px">
+          <label class="settings-field-label">{{ _('Installation ID') }}</label>
+          <input type="text" id="telemetryInstallId" readonly style="font-family:monospace;font-size:0.82rem;" />
+        </div>
+        <button class="btn btn-secondary" onclick="telemetryRegenerateInstallId()">{{ _('Reset identity') }}</button>
+      </div>
+      <div class="settings-hint" id="telemetryConsentSummary"></div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Manage my data') }}</h2>
+      <div class="settings-hint">
+        {{ _('Request deletion or export of any data already sent under your installation ID -- available whether or not telemetry is currently enabled. The request is sent from this app, with your installation ID attached automatically (never typed by hand).') }}
+      </div>
+      <div class="settings-row" style="flex-wrap:wrap;gap:16px;">
+        <div class="settings-field" style="flex:1;min-width:160px;">
+          <label class="settings-field-label">{{ _('Username') }}</label>
+          <input type="text" id="telemetryReqUsername" placeholder="{{ _('Your name') }}" />
+        </div>
+        <div class="settings-field" style="flex:1;min-width:200px;">
+          <label class="settings-field-label">{{ _('Email (for contact only)') }}</label>
+          <input type="email" id="telemetryReqEmail" placeholder="you@example.com" />
+        </div>
+      </div>
+      <div class="settings-row" style="gap:10px;">
+        <button class="btn btn-secondary" onclick="telemetrySubmitRequest('export')">{{ _('Request data export') }}</button>
+        <button class="btn btn-danger" onclick="telemetrySubmitRequest('delete')">{{ _('Request data deletion') }}</button>
+      </div>
+      <div id="telemetryRequestStatus" class="settings-hint"></div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Data collection stages') }}</h2>
+      <div class="settings-hint">
+        {{ _('Nothing here is sent unless you actively enable it. Turning a stage on enables every data point in it at once; you can then switch individual points back off -- the stage switch always reflects the combined state of its data points.') }}
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Telemetry active at all') }}</div>
+          <div class="settings-row-desc" id="telemetryConsentDesc"></div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" id="telemetryMasterConsent" onchange="telemetryMasterConsentToggle(this)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div id="telemetryStageTree"><!-- populated by static/telemetry.js --></div>
+
+    <div class="settings-section">
+      <div class="settings-row" style="justify-content:flex-start;gap:12px;">
+        <button class="btn btn-primary" onclick="telemetrySave()">{{ _('Save') }}</button>
+        <span id="telemetrySaveHint" style="font-size:0.82rem;color:var(--text-muted);"></span>
+      </div>
+    </div>
+
+  </div><!-- /tab-privacy -->
   {% endif %}
 
   <!-- ══════════════════════════════════════════════════════
@@ -1205,4 +1279,5 @@ function setUiLanguage(lang) {
      / web/thirdparties/registry.py) -- same script integrations.html/
      notifications.html/extensions.html load for the identical purpose. -->
 <script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
+<script src="{{ url_for('static', filename='telemetry.js') }}"></script>
 {% endblock %}

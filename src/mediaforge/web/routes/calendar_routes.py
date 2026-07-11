@@ -2,6 +2,9 @@
 
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
+
+# TODO(telemetry): wire up flag.calendar (usage counter, opened/used) --
+# see telemetry/registry.py. Registry-only for now.
 """
 
 from ..db import delete_calendar_episodes_except

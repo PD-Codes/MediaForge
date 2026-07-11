@@ -2,6 +2,10 @@
 
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
+
+# TODO(telemetry): wire up flag.v1_api (usage counter) and detail.v1_api
+# (per-endpoint usage frequency) -- see telemetry/registry.py.
+# Registry-only for now.
 """
 
 from .. import selfupdate

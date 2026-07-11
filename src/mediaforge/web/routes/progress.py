@@ -4,12 +4,20 @@ Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 """
 
+from ..db import get_download_history_meta_for_path
 from ..db import get_watch_progress
 from ..db import get_watch_progress_bulk
 from ..db import save_watch_progress
 from flask import jsonify
 from flask import request
 from ..request_context import get_current_user_info as _get_current_user_info
+from ...telemetry import client as telemetry_client
+from ...telemetry import events as telemetry_events
+
+# Consider a title "completed" (watch.completion, stage 6) once playback
+# reaches this fraction -- matches the common "credits/outro" convention
+# other media players use, since very few plays reach a literal 100%.
+_COMPLETION_THRESHOLD = 0.9
 
 
 def register_progress_routes(app):
@@ -28,6 +36,33 @@ def register_progress_routes(app):
             return jsonify({"error": "path required"}), 400
         _user, _ = _get_current_user_info()
         save_watch_progress(path, position, duration, username=_user)
+
+        # Telemetry (stage 6, off by default) -- best-effort provider/title
+        # lookup via download_history since the player only ever sends a
+        # local file path, never provider metadata. A lookup miss (file not
+        # in download history, e.g. manually placed in the library) means
+        # provider is None, which is NOT the same as "known safe" -- but
+        # is_adult_provider() only ever matches the literal "hanime_tv", so
+        # an unknown provider here is simply never sent as hanime_tv and the
+        # event proceeds normally. "watch_seconds" is the raw playback
+        # position, used as a best-effort proxy for watch time in this pass
+        # -- true cumulative watched-time tracking (accounting for skips/
+        # rewatches) is not implemented.
+        try:
+            _meta = get_download_history_meta_for_path(path) or {}
+            _progress_percent = int(round((position / duration) * 100)) if duration > 0 else None
+            _completed = (duration > 0 and position / duration >= _COMPLETION_THRESHOLD) if duration > 0 else None
+            telemetry_client.submit_all(telemetry_events.build_watch_event(
+                provider=_meta.get("provider"),
+                media_type="movie" if _meta.get("season") is None else "series",
+                title=_meta.get("title"),
+                season=_meta.get("season"), episode=_meta.get("episode"),
+                watch_seconds=int(position) if position else None,
+                progress_percent=_progress_percent,
+                completed=_completed,
+            ))
+        except Exception:
+            pass  # telemetry must never break saving progress
         return jsonify({"ok": True})
     @app.route("/api/progress/get")
     def api_progress_get():

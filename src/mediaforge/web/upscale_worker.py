@@ -7,6 +7,10 @@ to enqueue newly-downloaded episodes for upscaling.
 
 Used by: web/app.py (starts the worker at startup) and web/queue_worker.py
 (enqueues episodes after a download finishes).
+
+# TODO(telemetry): wire up flag.upscale / detail.upscale (preset used,
+# success/failure) at the point a queued job finishes below -- see
+# telemetry/registry.py. Registry-only for now.
 """
 
 import threading

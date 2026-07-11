@@ -21,6 +21,8 @@ from .db import (
 )
 from .download_history import _record_download_history
 from .mediascan import _schedule_mediascan_delayed, _trigger_mediaplayer_refresh
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
 from .runtime_state import (
     _active_cancel_events,
     _active_cancel_events_lock,
@@ -39,6 +41,28 @@ _queue_lock = threading.Lock()
 # both pass the "already queued?" check and double-queue the same episodes.
 # Used by: routes/queue.py's add endpoint and autosync_worker.py's queuing step.
 _dl_lock = threading.Lock()
+
+
+_EP_URL_SEASON_EPISODE_RE = re.compile(r"staffel-(\d+)/episode-(\d+)", re.IGNORECASE)
+_EP_URL_EPISODE_QS_RE = re.compile(r"[?&]episode=(\d+)", re.IGNORECASE)
+
+
+def _parse_season_episode_from_url(ep_url: str):
+    """Best-effort (season, episode) extraction from a provider episode URL,
+    for the downloads.titles/downloads.errors telemetry events below --
+    there's no already-parsed season/episode int available at this point in
+    the queue worker (unlike autosync_worker, which has the season/episode
+    objects handy). Covers the aniworld.to/serienstream.to
+    ".../staffel-N/episode-M" shape and megakino.to's "...?episode=N"
+    synthetic URL; returns (None, None) for anything else (e.g. FilmPalast/
+    Direct Link movie URLs, which have no season/episode concept)."""
+    m = _EP_URL_SEASON_EPISODE_RE.search(ep_url or "")
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    m = _EP_URL_EPISODE_QS_RE.search(ep_url or "")
+    if m:
+        return None, int(m.group(1))
+    return None, None
 
 
 def _is_job_adaptive_paused(job) -> bool:
@@ -611,11 +635,28 @@ def _queue_worker():
                         break
 
                 from ..models.common.common import print_episode_summary
+                _tel_season, _tel_episode = _parse_season_episode_from_url(ep_url)
+                # Best-effort movie/series classification for telemetry: Direct
+                # Link jobs are always a single file, and a URL with neither a
+                # parsed season/episode nor a "staffel-" segment is treated as
+                # a movie (matches FilmPalast/megakino movie URLs); everything
+                # else is a series episode.
+                if item.get("provider") == "Direct":
+                    _tel_media_type = "movie"
+                elif _tel_season is None and _tel_episode is None and "staffel" not in (ep_url or ""):
+                    _tel_media_type = "movie"
+                else:
+                    _tel_media_type = "series"
                 if last_error is not None:
                     errors.append({"url": ep_url, "error": str(last_error)})
                     update_queue_errors(item["id"], json.dumps(errors))
                     print_episode_summary(item["title"], ep_url, success=False)
                     _record_download_history(item, ep_url, _ep_start_time, None, 0, "failed", error=last_error)
+                    telemetry_client.submit_all(telemetry_events.build_download_event(
+                        provider=item.get("provider"), media_type=_tel_media_type, title=item.get("title"),
+                        season=_tel_season, episode=_tel_episode, status="failed",
+                        error_message=str(last_error),
+                    ))
                 elif _episode_cancelled:
                     print_episode_summary(item["title"], ep_url, success="Abgebrochen")
                     _record_download_history(item, ep_url, _ep_start_time, None, 0, "cancelled")
@@ -624,6 +665,10 @@ def _queue_worker():
                         downloaded_count += 1
                         print_episode_summary(item["title"], ep_url, success=True)
                         _record_download_history(item, ep_url, _ep_start_time, _ep_path, _ep_size_bytes, "completed")
+                        telemetry_client.submit_all(telemetry_events.build_download_event(
+                            provider=item.get("provider"), media_type=_tel_media_type, title=item.get("title"),
+                            season=_tel_season, episode=_tel_episode, status="completed",
+                        ))
                     else:
                         print_episode_summary(item["title"], ep_url, success="Bereits vorhanden")
                         _record_download_history(item, ep_url, _ep_start_time, _ep_path, 0, "skipped", error="Bereits vorhanden")

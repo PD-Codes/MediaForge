@@ -2,6 +2,11 @@
 
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
+
+# TODO(telemetry): wire up flag.integrations.crunchyroll/fernsehserien/seerr/
+# mediascan (usage counters) and detail.integrations (per-integration
+# connection errors, no credentials) -- see telemetry/registry.py.
+# Registry-only for now.
 """
 
 from ..db import get_mediascan_count

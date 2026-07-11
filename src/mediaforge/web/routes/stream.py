@@ -2,6 +2,11 @@
 
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
+
+# TODO(telemetry): wire up stream.play_events (stage 5 -- which title/
+# episode was started, no watch time) and syncplay.room_content (stage 5,
+# in routes/syncplay.py) -- see telemetry.events.build_play_event() and
+# telemetry/registry.py. Registry-only for now.
 """
 
 from ...providers import resolve_provider
