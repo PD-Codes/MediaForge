@@ -65,7 +65,19 @@
         </div>
         <div class="settings-row-desc">{{ _('These changes are applied the next time MediaForge starts.') }}</div>
       </div>
-      <div class="settings-row-right">
+      <div class="settings-row-right" style="display:flex;gap:8px;align-items:center;">
+        <!-- The restart is not a chore attached to the update — it *is* the update. A
+             module upgrade can only be applied by a process that has not imported the
+             old version yet (see web/restart.py), so this button is the step that makes
+             the new code actually run. Without it the banner is a note asking the admin
+             to go and do the important part in a terminal. -->
+        {% if restart_supported %}
+        <button class="btn btn-primary" id="extRestartBtn">{{ _('Restart now') }}</button>
+        {% else %}
+        <span class="settings-row-desc">
+          {{ _('Restart MediaForge to apply — this process cannot restart itself (debug mode).') }}
+        </span>
+        {% endif %}
         <button class="btn btn-secondary" id="extPendingCancelBtn">{{ _('Discard staged changes') }}</button>
       </div>
     </div>

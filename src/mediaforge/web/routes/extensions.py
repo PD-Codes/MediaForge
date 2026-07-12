@@ -39,9 +39,32 @@ from ..thirdparties import (
     rescan_new_modules,
     uninstall_module_live,
 )
+from .. import restart as web_restart
 from ..thirdparties import store as module_store
 from ..thirdparties.registry import REGISTRY_API_VERSION, resolve_extensions_overview
 from ..thirdparties.trusted_keys import trusted_keys
+
+
+def _active_job_count() -> int:
+    """How many downloads/upscales a restart would cancel right now.
+
+    Imported lazily and defensively: this is a courtesy warning for the confirm dialog,
+    and a failure to count must never be the reason an admin cannot finish an upgrade.
+    """
+    try:
+        from ..runtime_state import (
+            _active_cancel_events,
+            _active_cancel_events_lock,
+            _upscale_active_cancel_events,
+            _upscale_cancel_lock,
+        )
+        with _active_cancel_events_lock:
+            downloads = len(_active_cancel_events)
+        with _upscale_cancel_lock:
+            upscales = len(_upscale_active_cancel_events)
+        return downloads + upscales
+    except Exception:
+        return 0
 
 
 def _page_context():
@@ -59,6 +82,10 @@ def _page_context():
         # manual-install procedure, and an admin should not have to read the source to
         # find out where "here" is.
         "modules_dir": str(MODULES_DIR),
+        # Whether the "Restart now" button can do anything here. A button that silently
+        # does nothing is worse than no button, so the template hides it and says how to
+        # restart instead — see web/restart.py's restart_supported().
+        "restart_supported": web_restart.restart_supported(),
         # Read-only: the keys this *build* ships (thirdparties/trusted_keys.py). Shown
         # so an admin can see why a module is (or isn't) official — not so they can
         # change it. There is deliberately no route that writes this list; a trust root
@@ -242,3 +269,47 @@ def register_extensions_routes(app):
             result["pending"] = pending_changes()
             return jsonify(result), (200 if result["ok"] else 400)
         return jsonify({"ok": True, "pending": pending_changes()})
+
+    @app.route("/api/store/restart", methods=["POST"])
+    def api_store_restart():
+        """Finish a staged upgrade by replacing this process (see web/restart.py).
+
+        The restart is the mechanism, not a convenience: an upgrade cannot be applied
+        to a process that has already imported the old version of the module, so the
+        only correct way to run the new code is to stop being this process. The button
+        exists so that "restart required" ends in a restart instead of in a banner the
+        admin learns to ignore while running last week's module.
+
+        Answers *before* it goes: the response is flushed, then the socket closes. The
+        page polls /api/health until the new process answers.
+        """
+        if not web_restart.restart_supported():
+            return jsonify({
+                "ok": False,
+                "error": "This MediaForge cannot restart itself (debug mode, or it is "
+                         "embedded in another server). Restart it the way you started it — "
+                         "the staged changes are applied on the next start either way.",
+            }), 400
+
+        # What a restart costs right now, so the UI can ask rather than surprise. Running
+        # downloads and upscales are cancelled by the shutdown (their ffmpeg/Chromium
+        # children would otherwise be orphaned), so this is a real price, not a formality.
+        result = web_restart.request_restart(delay=1.0)
+        result["active_jobs"] = _active_job_count()
+        return jsonify(result), (200 if result["ok"] else 400)
+
+    @app.route("/api/health")
+    def api_health():
+        """Cheap liveness probe. Exists because the restart button needs something to
+        poll: "is the new process up yet" has to be answerable without a session, a
+        database round-trip or a template render — otherwise the page reloads into a
+        half-started app and the admin sees an error instead of their module.
+
+        Also the endpoint a Docker HEALTHCHECK or a reverse proxy would want, which is
+        why it is deliberately not under /api/store/.
+        """
+        return jsonify({
+            "ok": True,
+            "restart_pending": web_restart.restart_pending(),
+            "restart_supported": web_restart.restart_supported(),
+        })

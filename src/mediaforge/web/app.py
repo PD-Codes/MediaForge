@@ -19,6 +19,7 @@ from flask_babel import Babel
 
 from ..config import LANG_LABELS
 from ..logger import get_logger
+from . import restart as web_restart
 from . import selfupdate
 from .db import (
     clear_captcha_url,
@@ -773,6 +774,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_store_install",
             "api_store_uninstall",
             "api_store_pending",
+            # Restarting the server is about as privileged as an action gets. Note
+            # api_health is deliberately NOT here: it must answer before anyone is
+            # logged in, or the restart button could never tell that the new process
+            # is up, and a Docker HEALTHCHECK could never see it either.
+            "api_store_restart",
             # Telemetry: device-wide consent/data-collection decision, same
             # admin-only tier as SSO/DNS/API-key -- not a per-user preference.
             "api_settings_telemetry_get",
@@ -792,6 +798,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "auth.setup",
             "auth.oidc_login",
             "auth.oidc_callback",
+            # Liveness probe. Must answer without a session: it is what the Modulmanager's
+            # restart button polls to find out whether the *new* process is up — and after
+            # a restart the browser's session cookie is for a server that no longer exists,
+            # so requiring a login here would make the button unable to see its own result.
+            # It exposes nothing: an "ok" and two booleans.
+            "api_health",
             # SyncPlay guest endpoints — gated by room token + enabled flag,
             # so invited guests can watch together without an account.
             "api_syncplay_config",
@@ -990,6 +1002,43 @@ def start_web_ui(
             # Hard-exit: daemon worker threads and the waitress loop must not
             # keep the process alive after the user pressed Ctrl+C.
             os._exit(0)
+
+        # ---- restart-in-place -------------------------------------------------
+        # The Modulmanager's "Restart now" button (see web/restart.py). A module
+        # upgrade can only be applied by a process that has not imported the old
+        # version yet, so the honest way to finish an upgrade is to stop being this
+        # process. Everything before the re-exec is the same shutdown Ctrl+C does —
+        # in-flight downloads and upscales are cancelled so their ffmpeg/Chromium
+        # children die with us instead of being orphaned onto the new process.
+        def _restart_in_place():
+            if _shutting_down.is_set():
+                return
+            _shutting_down.set()
+            print("\nRestarting MediaForge Web UI…")
+
+            try:
+                with _active_cancel_events_lock:
+                    for ev in list(_active_cancel_events.values()):
+                        ev.set()
+            except Exception:
+                pass
+            try:
+                with _upscale_cancel_lock:
+                    for ev in list(_upscale_active_cancel_events.values()):
+                        ev.set()
+            except Exception:
+                pass
+
+            # Free the port before the replacement tries to bind it.
+            try:
+                server.close()
+            except Exception:
+                pass
+            _time.sleep(1.5)
+
+            web_restart.replace_process()   # does not return
+
+        web_restart.register_restart_handler(_restart_in_place)
 
         # Signal handlers can only be installed from the main thread; degrade
         # gracefully (rely on the except below) if we are not on it.

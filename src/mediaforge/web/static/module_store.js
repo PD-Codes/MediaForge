@@ -337,6 +337,58 @@
   const refreshBtn = $("extStoreRefreshBtn");
   if (refreshBtn) refreshBtn.addEventListener("click", () => loadCatalog(true));
 
+  // ---- restart ------------------------------------------------------------
+  // The other half of an upgrade. The server answers, *then* replaces itself, so the
+  // page has to survive a window where there is no server at all: poll /api/health
+  // until the new process answers, and only then reload. Reloading straight away lands
+  // on a connection error and looks exactly like a crash we caused.
+  async function waitForServer(deadlineMs) {
+    const until = Date.now() + deadlineMs;
+    // Give the old process time to actually close its socket first — otherwise the very
+    // first poll succeeds against the process that is on its way out, and we reload into
+    // a server that then vanishes.
+    await new Promise((r) => setTimeout(r, 2500));
+    while (Date.now() < until) {
+      try {
+        const resp = await fetch("/api/health", { cache: "no-store" });
+        if (resp.ok) return true;
+      } catch (e) { /* expected: the server is not there yet */ }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    return false;
+  }
+
+  const restartBtn = $("extRestartBtn");
+  if (restartBtn) {
+    restartBtn.addEventListener("click", async () => {
+      const data = await post("/api/store/restart", {});
+      if (!data.ok) { toast(t("Fehler: ", "Error: ") + (data.error || "")); return; }
+
+      // Say what it cost, honestly: a restart cancels running downloads/upscales, because
+      // their ffmpeg and Chromium children have to die with the process rather than be
+      // orphaned onto the new one.
+      if (data.active_jobs) {
+        toast(t(`${data.active_jobs} laufende(r) Job(s) wurden abgebrochen.`,
+                `${data.active_jobs} running job(s) were cancelled.`));
+      }
+
+      restartBtn.disabled = true;
+      restartBtn.textContent = t("Startet neu…", "Restarting…");
+      const cancelBtn2 = $("extPendingCancelBtn");
+      if (cancelBtn2) cancelBtn2.disabled = true;
+
+      const back = await waitForServer(90000);
+      if (back) {
+        window.location.reload();
+      } else {
+        restartBtn.disabled = false;
+        restartBtn.textContent = t("Jetzt neu starten", "Restart now");
+        toast(t("MediaForge ist nach 90s nicht zurück — bitte Logs prüfen.",
+                "MediaForge did not come back within 90s — check the logs."));
+      }
+    });
+  }
+
   // ---- view switching ------------------------------------------------------
   // Installed modules and the store are two destinations, not one long scroll: an
   // admin arrived to do one or the other. The header button swaps between them.
