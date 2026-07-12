@@ -1,0 +1,112 @@
+/* ===================================================================
+   Module Manager + Module Store — page-specific mobile/responsive fixes.
+   Both views (#extInstalledView / #extStoreView) live in one template
+   (templates/extensions.html) and share settings_rows.css/integrations.css
+   for their card/row primitives, but that shared CSS never wraps a
+   .settings-row or a .integ-subsection-header on narrow screens (both are
+   plain, non-wrapping flex rows -- fine everywhere else, since no other
+   page using them packs this many badges/controls into one row). Here,
+   that showed up as three concrete overflow bugs on mobile:
+     1. The top page-header (title block + "Module Store"/"Refresh"
+        buttons) never wrapped, so the button row forced the whole page
+        wider than the viewport -- the page could be swiped/scrolled
+        sideways.
+     2. Each module card's header packs a title plus up to ~7 badges
+        (version, trust, author, incompatible, loaded/skipped,
+        enabled/disabled, depends-on) into one non-wrapping row -- badges
+        ran past the card edge and, at some widths, visually overlapped
+        the title text.
+     3. The store's "Additional repositories" textarea had an inline
+        min-width:320px, wider than most phone screens on its own, in a
+        row whose .settings-row-right (settings_rows.css) refuses to
+        shrink (flex-shrink:0).
+   Scoped under .extensions-page (templates/extensions.html's outer
+   .settings-container) so none of this leaks into Settings/Encoding/
+   Integrations/Notifications/Autosync, which share the same base classes
+   but don't have this page's specific layout problems.
+   =================================================================== */
+
+.extensions-page .page-header {
+  flex-wrap: wrap;
+}
+
+.extensions-page .ext-header-actions {
+  flex-wrap: wrap;
+}
+
+/* Module-card headers and the two Module Store section headers all use this
+   one class -- letting the badges wrap keeps every one of them readable
+   instead of running off the card edge or overlapping the title. */
+.extensions-page .integ-subsection-header {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.extensions-page .ext-store-extra-controls {
+  flex-wrap: wrap;
+}
+
+.extensions-page .ext-store-extra-textarea {
+  min-width: 260px;
+  max-width: 100%;
+  flex: 1 1 260px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  /* settings_rows.css's .settings-row is a plain, non-wrapping flex row with
+     .settings-row-right set to flex-shrink:0 -- fine for a lone toggle/button,
+     but the store's "Additional repositories" row puts a textarea + Save
+     button there. Without this, .settings-row-right's refusal to shrink is
+     exactly what forces the row (and the whole page) wider than the
+     viewport. Stack label above control, like every other card on this page
+     does at this width. */
+  .extensions-page .settings-row {
+    flex-wrap: wrap;
+  }
+
+  .extensions-page .settings-row-right {
+    flex: 1 1 100%;
+  }
+
+  .extensions-page .page-header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .extensions-page .ext-header-actions {
+    width: 100%;
+  }
+
+  .extensions-page .ext-header-actions button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  /* Module cards: title/subtitle text can get tight next to the version
+     app-version line inside the header's left column -- let it use the
+     full row width instead of competing with badges beside it. */
+  .extensions-page .page-header > div:first-child {
+    width: 100%;
+  }
+
+  .extensions-page .integ-subsection-title {
+    flex: 1 1 100%;
+  }
+
+  /* Additional-repositories row: label above, textarea+button stacked
+     full-width below, instead of a fixed 320px box fighting the label
+     column for space. */
+  .extensions-page .ext-store-extra-controls {
+    width: 100%;
+  }
+
+  .extensions-page .ext-store-extra-textarea {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .extensions-page #extStoreRefreshBtn {
+    margin-left: 0 !important;
+  }
+}

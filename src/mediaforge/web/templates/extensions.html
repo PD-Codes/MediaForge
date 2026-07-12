@@ -2,9 +2,14 @@
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">
+<!-- Page-specific mobile/responsive fixes for the Module Manager + Module Store
+     views below -- both live in this one template, and both were overflowing
+     horizontally on narrow screens (unwrapped badge rows, a fixed-min-width
+     textarea, an unwrapped header button row). See extensions.css. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='extensions.css') }}">
 {% endblock %}
 {% block content %}
-<div class="settings-container">
+<div class="settings-container extensions-page">
   <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
     <div>
       <h1 class="page-title">{{ _('Module Manager') }}</h1>
@@ -27,7 +32,7 @@
          from. They are separate destinations, not one long scroll — an admin came to
          do one or the other. The store button carries the update count, so the reason
          to go there is visible from the installed view without opening it. -->
-    <div style="display:flex;gap:8px;align-items:center;">
+    <div class="ext-header-actions" style="display:flex;gap:8px;align-items:center;">
       {% if store_enabled %}
       <button class="btn btn-primary" id="extStoreToggleBtn" style="white-space:nowrap;"
               title="{{ _('Browse the module store') }}">
@@ -340,8 +345,8 @@
             {{ _('One URL per line. Modules from a third-party repository are unverified unless they carry a signature this MediaForge trusts.') }}
           </div>
         </div>
-        <div class="settings-row-right" style="display:flex;gap:8px;align-items:flex-start;">
-          <textarea id="extStoreExtraUrls" rows="3" style="min-width:320px;"
+        <div class="settings-row-right ext-store-extra-controls" style="display:flex;gap:8px;align-items:flex-start;">
+          <textarea id="extStoreExtraUrls" rows="3" class="ext-store-extra-textarea"
                     placeholder="https://someone-else.example/modules">{{ extra_urls|join('\n') }}</textarea>
           <button class="btn btn-primary" id="extStoreExtraSaveBtn">{{ _('Save') }}</button>
         </div>
