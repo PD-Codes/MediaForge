@@ -4444,3 +4444,122 @@ msgstr "Alternative Domains pro Seite, die von oben nach unten probiert werden, 
 
 msgid "Which source may show its provider pill first. The first source that knows the title wins; the others are skipped. Modules that register their own pill appear here automatically."
 msgstr "Welche Quelle ihre Provider-Pille zuerst anzeigen darf. Die erste Quelle, die den Titel kennt, gewinnt; die übrigen werden übersprungen. Module, die eine eigene Pille registrieren, erscheinen hier automatisch."
+
+# ── Newly extracted strings, added after messages.mo was found corrupt and
+#    several templates (base.html consent dialog, history.html, settings.html's
+#    Privacy & Telemetry tab, calendar/autosync) turned out to have no catalog
+#    entry at all yet -- see the .mo corruption + missing-translation fix. ──
+msgid "On"
+msgstr "An"
+
+msgid "Seasons & episodes"
+msgstr "Staffeln & Episoden"
+
+msgid "Send crash reports to the developer?"
+msgstr "Absturzberichte an den Entwickler senden?"
+
+msgid "If MediaForge crashes unexpectedly, it can automatically send a technical error report (file/line/error type) plus basic system info (app version, OS, Python version) to the developer -- this helps find and fix bugs. Passwords, credentials and file contents are never included."
+msgstr "Wenn MediaForge unerwartet abstürzt, kann automatisch ein technischer Fehlerbericht (Datei/Zeile/Fehlertyp) sowie grundlegende Systeminfos (App-Version, Betriebssystem, Python-Version) an den Entwickler gesendet werden -- das hilft, Fehler zu finden und zu beheben. Passwörter, Zugangsdaten und Dateiinhalte werden nie mitgeschickt."
+
+msgid "You can change this decision at any time under Settings -> Privacy & Telemetry. More extensive data points (e.g. download titles or watch behaviour) always stay separate, off by default, and individually toggled -- this question only covers crash reports and basic system info."
+msgstr "Du kannst diese Entscheidung jederzeit unter Einstellungen -> Privatsphäre & Telemetrie ändern. Umfangreichere Datenpunkte (z. B. Download-Titel oder Sehverhalten) bleiben immer separat, standardmäßig aus und einzeln zuschaltbar -- diese Frage betrifft nur Absturzberichte und grundlegende Systeminfos."
+
+msgid "No, thanks"
+msgstr "Nein, danke"
+
+msgid "Yes, send crash reports"
+msgstr "Ja, Absturzberichte senden"
+
+msgid "Seerr is active, but none of your open requests have an upcoming air or release date yet — so there is nothing to show here."
+msgstr "Seerr ist aktiv, aber keine deiner offenen Anfragen hat bisher ein bevorstehendes Ausstrahlungs- oder Erscheinungsdatum -- deshalb gibt es hier noch nichts zu zeigen."
+
+msgid "The first synchronization may take a while — your calendar is being filled in the background."
+msgstr "Die erste Synchronisierung kann etwas dauern -- dein Kalender wird im Hintergrund befüllt."
+
+msgid "Export"
+msgstr "Export"
+
+msgid "Clear history"
+msgstr "Verlauf löschen"
+
+msgid "Search by title..."
+msgstr "Nach Titel suchen..."
+
+msgid "All sources"
+msgstr "Alle Quellen"
+
+msgid "Manual"
+msgstr "Manuell"
+
+msgid "Time range"
+msgstr "Zeitraum"
+
+msgid "All time"
+msgstr "Gesamter Zeitraum"
+
+msgid "Last 7 days"
+msgstr "Letzte 7 Tage"
+
+msgid "Last 30 days"
+msgstr "Letzte 30 Tage"
+
+msgid "Results per page"
+msgstr "Ergebnisse pro Seite"
+
+msgid "Delete selected"
+msgstr "Auswahl löschen"
+
+msgid "Loading history..."
+msgstr "Verlauf wird geladen..."
+
+msgid "No downloads recorded yet."
+msgstr "Noch keine Downloads aufgezeichnet."
+
+msgid "Episode"
+msgstr "Episode"
+
+msgid "Start"
+msgstr "Start"
+
+msgid "End"
+msgstr "Ende"
+
+msgid "Duration"
+msgstr "Dauer"
+
+msgid "Download details"
+msgstr "Download-Details"
+
+msgid "Retry"
+msgstr "Wiederholen"
+
+msgid "Popular Movies"
+msgstr "Beliebte Filme"
+
+msgid "Set up Auto-Sync"
+msgstr "Auto-Sync einrichten"
+
+msgid "Language not available"
+msgstr "Sprache nicht verfügbar"
+
+msgid "Privacy & Telemetry"
+msgstr "Privatsphäre & Telemetrie"
+
+msgid "Reset identity"
+msgstr "Identität zurücksetzen"
+
+msgid "Request deletion or export of any data already sent under your installation ID -- available whether or not telemetry is currently enabled. The request is sent from this app, with your installation ID attached automatically (never typed by hand)."
+msgstr "Löschung oder Export aller bereits unter deiner Installations-ID gesendeten Daten beantragen -- verfügbar unabhängig davon, ob Telemetrie gerade aktiv ist. Die Anfrage wird direkt aus dieser App gesendet, deine Installations-ID wird automatisch angehängt (nie von Hand eingetippt)."
+
+msgid "Your name"
+msgstr "Dein Name"
+
+msgid "Request data export"
+msgstr "Datenexport beantragen"
+
+msgid "Request data deletion"
+msgstr "Datenlöschung beantragen"
+
+msgid "Telemetry active at all"
+msgstr "Telemetrie grundsätzlich aktiv"
+

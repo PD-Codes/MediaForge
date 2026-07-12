@@ -379,6 +379,23 @@
 
   // Note this checks the catalog box's own display, not the store view's: the view
   // is hidden at rest, the box is only hidden when this build ships no store at all.
+  //
+  // Deferred to DOMContentLoaded rather than called directly: this <script> tag sits
+  // inside {% block content %} in extensions.html, which runs BEFORE base.html's own
+  // later inline script block that defines the global t() -- and loadCatalog()'s very
+  // first line calls t(). Calling it directly here used to throw "t is not defined"
+  // immediately, silently killing this initial background load every single time (the
+  // error is uncaught -- this call has no .catch()) -- the catalog then only populated
+  // once an admin clicked "Store aktualisieren" themselves, by which point every script
+  // on the page (t() included) had long since finished running. The event handlers
+  // below that also call t() (refreshBtn, extraSaveBtn, ...) never had this problem --
+  // they only run later, in response to a click, well after the whole page has loaded.
   const catalogBox = $("extStoreCatalog");
-  if (catalogBox && catalogBox.style.display !== "none") loadCatalog(false);
+  if (catalogBox && catalogBox.style.display !== "none") {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => loadCatalog(false));
+    } else {
+      loadCatalog(false);
+    }
+  }
 })();
