@@ -28,7 +28,19 @@
   border: 1px solid var(--border, rgba(255,255,255,0.08));
   border-radius: 14px;
   padding: 16px 20px;
-  transition: border-color .2s;
+  transition: border-color .2s, opacity .2s;
+}
+
+/* Read posts are visually receded rather than hidden -- the whole point of
+   the "mark as read" button is a manual, reversible-feeling record of "I've
+   seen this", not a way to make posts disappear. */
+.devinfo-card-read {
+  opacity: 0.6;
+  border-color: var(--border, rgba(255,255,255,0.05));
+}
+
+.devinfo-card-read:hover {
+  opacity: 0.85;
 }
 
 .devinfo-card-head {
@@ -75,6 +87,31 @@
   font-size: 0.76rem;
   color: var(--text-muted, rgba(255,255,255,0.5));
   white-space: nowrap;
+}
+
+.devinfo-mark-read-btn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--accent, #7c3aed);
+  background: transparent;
+  color: var(--accent, #7c3aed);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s, opacity .15s;
+}
+
+.devinfo-mark-read-btn:hover:not(:disabled) {
+  background: var(--accent, #7c3aed);
+  color: #fff;
+}
+
+.devinfo-mark-read-btn:disabled {
+  cursor: default;
+  border-color: var(--border, rgba(255,255,255,0.12));
+  color: var(--text-muted, rgba(255,255,255,0.5));
+  opacity: 0.8;
 }
 
 .devinfo-title {

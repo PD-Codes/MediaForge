@@ -15,6 +15,7 @@ from datetime import datetime
 
 from ..db import get_devinfo_count
 from ..db import get_devinfo_posts
+from ..db import mark_devinfo_read
 from ..devinfos_monitor import request_immediate_refresh
 from ..markdown_utils import render_markdown
 from flask import jsonify
@@ -77,9 +78,30 @@ def register_devinfos_routes(app):
         """Cached Dev Info post count + posts, for the sidebar badge poll
         (static/devinfos.js) and the page's own live refresh.
 
+        ``count`` is the *unread* count (see db.get_devinfo_count()) -- what
+        the sidebar badge shows. Each post in ``posts`` carries its own
+        ``is_read`` flag for the page's per-post "mark as read" button.
+
         Route: GET /api/devinfos/status.
         """
         return jsonify({
             "count": get_devinfo_count(),
             "posts": _posts_with_rendered_html(),
         })
+
+    @app.route("/api/devinfos/<post_id>/read", methods=["POST"])
+    def api_devinfos_mark_read(post_id):
+        """Mark one Dev Info post as read.
+
+        Read state is instance-wide (see db.mark_devinfo_read()), matching
+        the rest of this feature -- the underlying feed itself has no
+        per-user concept either. Returns the updated unread count so the
+        caller (static/devinfos.js) can update the sidebar badge immediately
+        instead of waiting for its next 60s poll.
+
+        Route: POST /api/devinfos/<post_id>/read.
+        """
+        existed = mark_devinfo_read(post_id)
+        if not existed:
+            return jsonify({"error": "unknown post id"}), 404
+        return jsonify({"ok": True, "count": get_devinfo_count()})

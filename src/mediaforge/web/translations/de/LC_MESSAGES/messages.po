@@ -4420,6 +4420,12 @@ msgstr "Ankündigung"
 msgid "No dev infos yet."
 msgstr "Noch keine Dev Infos."
 
+msgid "Mark as read"
+msgstr "Als gelesen markieren"
+
+msgid "Read"
+msgstr "Gelesen"
+
 msgid "Dismiss"
 msgstr "Schließen"
 

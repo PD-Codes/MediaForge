@@ -4062,13 +4062,28 @@ CREATE TABLE IF NOT EXISTS devinfo_posts (
 )
 """
 
+# Read-state lives in its own table, deliberately separate from devinfo_posts:
+# replace_devinfo_posts() below does a full DELETE + reinsert of that table on
+# every poll round (every 5 min, plus on-page-visit), so a "read" flag stored
+# as a column on devinfo_posts would get silently wiped the next time the feed
+# refreshes. Keying this table by the post's own id (not a local rowid) means
+# a read post stays read across those wipes, as long as the remote server
+# keeps handing back the same id for it.
+_CREATE_DEVINFO_READ_TABLE = """
+CREATE TABLE IF NOT EXISTS devinfo_read (
+    id      TEXT    PRIMARY KEY,
+    read_at INTEGER
+)
+"""
+
 
 def init_devinfos_db():
-    """Create the devinfo_posts table used to cache the remote Dev Info feed."""
+    """Create the devinfo_posts + devinfo_read tables used by the Dev Info feed."""
     MEDIAFORGE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     conn = get_db()
     try:
         conn.execute(_CREATE_DEVINFO_TABLE)
+        conn.execute(_CREATE_DEVINFO_READ_TABLE)
         # Migration: add author column for existing DBs (this table predates the
         # devInfo server exposing who wrote each post via /api/posts).
         try:
@@ -4088,13 +4103,18 @@ def replace_devinfo_posts(posts):
     upsert-by-id. ``posts`` is a list of dicts with keys: id, title, body,
     type, author, remote_created_at (already mapped from the remote payload's
     ``created_at`` by the caller).
+
+    Also prunes devinfo_read down to only the ids still present in this batch
+    -- otherwise a post that's gone (deleted upstream, or an old id that will
+    never come back) leaves a permanent, pointless row behind.
     """
     import time as _t
     now = int(_t.time())
+    posts = posts or []
     conn = get_db()
     try:
         conn.execute("DELETE FROM devinfo_posts")
-        for p in posts or []:
+        for p in posts:
             conn.execute(
                 "INSERT OR REPLACE INTO devinfo_posts "
                 "(id, title, body, type, author, remote_created_at, fetched_at) "
@@ -4109,29 +4129,79 @@ def replace_devinfo_posts(posts):
                     now,
                 ),
             )
+        current_ids = [str(p.get("id")) for p in posts]
+        if current_ids:
+            placeholders = ",".join("?" * len(current_ids))
+            conn.execute(
+                f"DELETE FROM devinfo_read WHERE id NOT IN ({placeholders})",
+                current_ids,
+            )
+        else:
+            conn.execute("DELETE FROM devinfo_read")
         conn.commit()
     finally:
         conn.close()
 
 
 def get_devinfo_posts():
-    """Return all cached Dev Info posts as a list of dicts, newest first."""
+    """Return all cached Dev Info posts as a list of dicts, newest first.
+
+    Each dict includes ``is_read`` (bool) from a LEFT JOIN against
+    devinfo_read -- a post with no matching row there is unread.
+    """
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, title, body, type, author, remote_created_at, fetched_at "
-            "FROM devinfo_posts ORDER BY remote_created_at DESC, fetched_at DESC"
+            "SELECT p.id, p.title, p.body, p.type, p.author, p.remote_created_at, "
+            "p.fetched_at, (r.id IS NOT NULL) AS is_read "
+            "FROM devinfo_posts p LEFT JOIN devinfo_read r ON r.id = p.id "
+            "ORDER BY p.remote_created_at DESC, p.fetched_at DESC"
         ).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["is_read"] = bool(d["is_read"])
+            out.append(d)
+        return out
     finally:
         conn.close()
 
 
 def get_devinfo_count():
-    """Return the number of cached Dev Info posts (for the sidebar badge)."""
+    """Return the number of *unread* cached Dev Info posts (for the sidebar badge)."""
     conn = get_db()
     try:
-        row = conn.execute("SELECT COUNT(*) AS n FROM devinfo_posts").fetchone()
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM devinfo_posts p "
+            "WHERE p.id NOT IN (SELECT id FROM devinfo_read)"
+        ).fetchone()
         return (row["n"] if row else 0) or 0
+    finally:
+        conn.close()
+
+
+def mark_devinfo_read(post_id) -> bool:
+    """Mark a single Dev Info post as read. Idempotent -- marking an already-read
+    (or nonexistent) id again is a harmless no-op.
+
+    Returns True if the post id exists in devinfo_posts (so the caller can
+    tell a real post from a stale/garbage id), False otherwise -- the read
+    row is inserted either way, since a post that arrives moments later with
+    that id shouldn't un-hide itself as unread.
+
+    Used by: routes/devinfos.py's POST /api/devinfos/<id>/read.
+    """
+    import time as _t
+    conn = get_db()
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM devinfo_posts WHERE id = ?", (str(post_id),)
+        ).fetchone() is not None
+        conn.execute(
+            "INSERT OR IGNORE INTO devinfo_read (id, read_at) VALUES (?, ?)",
+            (str(post_id), int(_t.time())),
+        )
+        conn.commit()
+        return exists
     finally:
         conn.close()

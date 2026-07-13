@@ -16,7 +16,7 @@
   <div class="devinfos-list" id="devinfosList">
     {% if posts %}
       {% for post in posts %}
-      <div class="devinfo-card" data-type="{{ post.type or 'announcement' }}">
+      <div class="devinfo-card{% if post.is_read %} devinfo-card-read{% endif %}" data-type="{{ post.type or 'announcement' }}" data-id="{{ post.id }}">
         <div class="devinfo-card-head">
           <span class="devinfo-tag devinfo-tag-{{ post.type or 'announcement' }}">
             {% if post.type == 'feature' %}{{ _('Feature') }}
@@ -28,6 +28,9 @@
           <span class="devinfo-meta">
             {% if post.author %}<span class="devinfo-author">{{ post.author }}</span>{% endif %}
             <span class="devinfo-time" data-ts="{{ post.remote_created_at or '' }}">{{ post.formatted_time or post.remote_created_at or '' }}</span>
+            <button type="button" class="devinfo-mark-read-btn" data-id="{{ post.id }}" {% if post.is_read %}disabled{% endif %}>
+              {% if post.is_read %}✓ {{ _('Read') }}{% else %}{{ _('Mark as read') }}{% endif %}
+            </button>
           </span>
         </div>
         <h3 class="devinfo-title">{{ post.title }}</h3>
