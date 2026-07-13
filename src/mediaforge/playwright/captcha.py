@@ -643,6 +643,223 @@ def _is_turnstile_token_ready(page) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Second-widget support (reCAPTCHA / hCaptcha stacked below Turnstile)
+# ---------------------------------------------------------------------------
+# Some VOE modals ("Video wird vorbereitet...") stack a second checkbox
+# captcha *underneath* the Cloudflare Turnstile widget in the same form —
+# typically Google reCAPTCHA v2's "I'm not a robot" checkbox. Only Turnstile
+# was being auto-solved, so "Weiter" got clicked while the second widget was
+# still unticked and the site rejected the submit ("Please tick this box if
+# you want to proceed."). The helpers below detect *all* checkbox-style
+# challenge widgets present on the page, click whichever ones aren't solved
+# yet, and only report "ready" once every widget actually present has a
+# token.
+
+_CHALLENGE_IFRAME_SELECTORS = {
+    "turnstile": (
+        "iframe[src*='challenges.cloudflare.com']",
+        "iframe[src*='turnstile']",
+        "iframe[src*='cdn-cgi/challenge-platform']",
+    ),
+    "recaptcha": (
+        "iframe[src*='google.com/recaptcha']",
+        "iframe[src*='recaptcha.net']",
+    ),
+    "hcaptcha": (
+        "iframe[src*='hcaptcha.com']",
+    ),
+}
+
+_TOKEN_READY_JS = {
+    "turnstile": (
+        "() => { const el = document.querySelector"
+        "('input[name=\"cf-turnstile-response\"]');"
+        " return !!(el && el.value && el.value.length > 20); }"
+    ),
+    "recaptcha": (
+        "() => { const el = document.querySelector"
+        "('#g-recaptcha-response, textarea[name=\"g-recaptcha-response\"]');"
+        " return !!(el && el.value && el.value.length > 20); }"
+    ),
+    "hcaptcha": (
+        "() => { const el = document.querySelector"
+        "('textarea[name=\"h-captcha-response\"]');"
+        " return !!(el && el.value && el.value.length > 20); }"
+    ),
+}
+
+
+def _looks_like_challenge_iframe(u: str, kind: str) -> bool:
+    u = (u or "").lower()
+    if kind == "turnstile":
+        return ("challenges.cloudflare.com" in u
+                or "cdn-cgi/challenge-platform" in u
+                or "turnstile" in u)
+    if kind == "recaptcha":
+        return "google.com/recaptcha" in u or "recaptcha.net" in u
+    if kind == "hcaptcha":
+        return "hcaptcha.com" in u
+    return False
+
+
+def _present_challenge_kinds(page) -> set:
+    """Which checkbox-captcha kinds ('turnstile' / 'recaptcha' / 'hcaptcha')
+    currently have an iframe on the page. A modal can show more than one at
+    once (e.g. Turnstile + reCAPTCHA stacked), so this returns a set."""
+    kinds = set()
+    try:
+        for fr in page.frames:
+            for kind in ("turnstile", "recaptcha", "hcaptcha"):
+                if kind not in kinds and _looks_like_challenge_iframe(fr.url, kind):
+                    kinds.add(kind)
+    except Exception:
+        pass
+    return kinds
+
+
+def _is_challenge_token_ready(page, kind: str) -> bool:
+    """Like _is_turnstile_token_ready(), generalised to reCAPTCHA/hCaptcha."""
+    js = _TOKEN_READY_JS.get(kind)
+    if not js:
+        return False
+    try:
+        if page.evaluate(js):
+            return True
+        for fr in page.frames:
+            try:
+                if fr.evaluate(js):
+                    return True
+            except Exception:
+                continue
+        return False
+    except Exception:
+        return False
+
+
+def _click_challenge_checkbox(page, kind: str, logger=None) -> bool:
+    """Locate a checkbox-captcha iframe of *kind* and click it.
+
+    Same human-like-mouse-move approach as _click_turnstile(), generalised so
+    it also works for reCAPTCHA's / hCaptcha's checkbox iframe.
+    """
+    if _env_flag("MEDIAFORGE_CAPTCHA_MANUAL"):
+        if logger:
+            logger.debug(f"Captcha manual mode — auto-click skipped ({kind})")
+        return True
+
+    iframe_el = None
+    try:
+        for fr in page.frames:
+            if _looks_like_challenge_iframe(fr.url, kind):
+                try:
+                    el = fr.frame_element()
+                except Exception:
+                    el = None
+                if el:
+                    iframe_el = el
+                    break
+    except Exception:
+        pass
+
+    if iframe_el is None:
+        for selector in _CHALLENGE_IFRAME_SELECTORS.get(kind, ()):
+            try:
+                loc = page.locator(selector).first
+                loc.wait_for(state="visible", timeout=1500)
+                iframe_el = loc.element_handle()
+                if iframe_el:
+                    break
+            except Exception:
+                continue
+
+    if iframe_el is None:
+        if logger:
+            logger.debug(f"No {kind} iframe found to click")
+        return False
+
+    try:
+        try:
+            iframe_el.scroll_into_view_if_needed(timeout=1500)
+        except Exception:
+            pass
+
+        box = None
+        for _ in range(8):
+            b = iframe_el.bounding_box()
+            if b and b["width"] > 0 and b["height"] > 0:
+                box = b
+                if b["width"] > 40:
+                    break
+            page.wait_for_timeout(150)
+        if not box:
+            if logger:
+                logger.warning(f"{kind} iframe found but has no bounding box yet")
+            return False
+
+        _remove_ad_overlays(page)
+
+        if box["width"] > 40:
+            inset = min(30.0, box["width"] * 0.12)
+        else:
+            inset = box["width"] / 2
+        x = box["x"] + inset + _random.uniform(-2, 2)
+        y = box["y"] + box["height"] / 2 + _random.uniform(-2, 2)
+
+        page.mouse.move(x, y, steps=_random.randint(8, 20))
+        page.wait_for_timeout(_random.randint(80, 220))
+        page.mouse.down()
+        page.wait_for_timeout(_random.randint(40, 100))
+        page.mouse.up()
+
+        if logger:
+            logger.warning(
+                f"{kind} checkbox clicked at (%d,%d) [box %dx%d]"
+                % (int(x), int(y), int(box["width"]), int(box["height"]))
+            )
+        return True
+    except Exception as e:
+        if logger:
+            logger.warning(f"{kind} click failed: {e}")
+        return False
+
+
+class _ChallengeSolver:
+    """Drives *all* checkbox-captcha widgets present in a modal (not just
+    Turnstile) across a polling loop.
+
+    Clicks each unsolved widget (with an 8s grace period before re-clicking
+    one that still has no token — a checkbox mid-validation resets if
+    clicked again), and reports "ready" only once every widget currently on
+    the page has a token, so the caller doesn't submit the form while a
+    second, stacked captcha (e.g. a reCAPTCHA "I'm not a robot" box under
+    Turnstile) is still unticked.
+    """
+
+    def __init__(self):
+        self._clicked = {}
+        self._last_click = {}
+
+    def ready_to_submit(self, page, logger=None) -> bool:
+        kinds = _present_challenge_kinds(page)
+        if not kinds:
+            return False
+        all_ready = True
+        for kind in kinds:
+            if _is_challenge_token_ready(page, kind):
+                continue
+            all_ready = False
+            now = _time.time()
+            if not self._clicked.get(kind):
+                if _click_challenge_checkbox(page, kind, logger):
+                    self._clicked[kind] = True
+                    self._last_click[kind] = now
+                    page.wait_for_timeout(_random.randint(1500, 2500))
+            elif now - self._last_click.get(kind, 0) > 8:
+                self._clicked[kind] = False
+        return all_ready
+
+
 def _is_captcha_page_dom(page) -> bool:
     """Lightweight DOM query to detect an active CF challenge — avoids full page.content() serialization."""
     try:
@@ -747,7 +964,7 @@ def _solve_captcha_cli(url: str) -> bool:
                 timeout = _captcha_timeout(300)  # default 5 minutes
                 start = _time.time()
                 solved = False
-                turnstile_clicked = False
+                challenge_solver = _ChallengeSolver()
 
                 while _time.time() - start < timeout:
                     # Standard Cloudflare full-page challenge
@@ -773,18 +990,10 @@ def _solve_captcha_cli(url: str) -> bool:
                         solved = True
                         break
 
-                    # Click Turnstile checkbox if not yet clicked
-                    if not turnstile_clicked and not _is_turnstile_token_ready(page):
-                        if _click_turnstile(page, logger):
-                            turnstile_clicked = True
-                            page.wait_for_timeout(_random.randint(2000, 4000))
-                            continue
-                    elif turnstile_clicked and not _is_turnstile_token_ready(page):
-                        # Turnstile may have reset — allow re-click
-                        turnstile_clicked = False
-
-                    # Auto-click Weiter once Turnstile token is present
-                    if _is_turnstile_token_ready(page):
+                    # Click any unsolved captcha checkbox (Turnstile, plus a
+                    # second stacked reCAPTCHA/hCaptcha widget if present) and
+                    # only submit once every widget on the page has a token.
+                    if challenge_solver.ready_to_submit(page, logger):
                         try:
                             weiter = page.locator('button[type="submit"]')
                             weiter.wait_for(state="visible", timeout=1500)
@@ -887,7 +1096,7 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
             _sync_session_user_agent(page)
 
             solved = False
-            turnstile_clicked = False
+            challenge_solver = _ChallengeSolver()
             for _ in range(_captcha_timeout(300)):  # ~1s per iteration
                 # Stream screenshot to Web UI
                 try:
@@ -926,17 +1135,10 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
                     solved = True
                     break
 
-                # Click Turnstile checkbox if not yet clicked
-                if not turnstile_clicked and not _is_turnstile_token_ready(page):
-                    if _click_turnstile(page):
-                        turnstile_clicked = True
-                        page.wait_for_timeout(_random.randint(2000, 4000))
-                        continue
-                elif turnstile_clicked and not _is_turnstile_token_ready(page):
-                    turnstile_clicked = False
-
-                # Auto-click Weiter button once Turnstile token is present
-                if _is_turnstile_token_ready(page):
+                # Click any unsolved captcha checkbox (Turnstile, plus a
+                # second stacked reCAPTCHA/hCaptcha widget if present) and
+                # only submit once every widget on the page has a token.
+                if challenge_solver.ready_to_submit(page, logger):
                     try:
                         weiter_button = page.locator('button[type="submit"]')
                         weiter_button.wait_for(state="visible", timeout=2000)
@@ -1210,8 +1412,7 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
 
             final_url = None
             weiter_clicked = False
-            turnstile_clicked = False
-            last_turnstile_click = 0.0
+            challenge_solver = _ChallengeSolver()
             start = _time.time()
 
             while _time.time() - start < _captcha_timeout(90):
@@ -1302,12 +1503,16 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                     logger.debug(f"Provider tab URL found: {final_url}")
                     break
 
-                # ── Turnstile solving ────────────────────────────────────────
+                # ── Captcha solving ──────────────────────────────────────────
+                # Clicks every checkbox-style widget present in the modal —
+                # not just Turnstile.  VOE's "Video wird vorbereitet..." modal
+                # sometimes stacks a second widget (Google reCAPTCHA v2's
+                # "I'm not a robot" checkbox) directly underneath Turnstile;
+                # submitting while it's still unticked gets the form rejected
+                # ("Please tick this box if you want to proceed."), so Weiter
+                # is only clicked once *every* widget on the page has a token.
                 if not weiter_clicked:
-                    token_ready = _is_turnstile_token_ready(page)
-
-                    if token_ready:
-                        # Token present — submit the modal form.
+                    if challenge_solver.ready_to_submit(page, logger):
                         try:
                             # Remove ad overlays before clicking Weiter so the
                             # submit button click isn't hijacked by the overlay.
@@ -1318,35 +1523,10 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                             # never races ahead of the flag being set.
                             _weiter_submitted.set()
                             weiter.click()
-                            logger.warning("Submit clicked (Turnstile token ready)")
+                            logger.warning("Submit clicked (all captcha tokens ready)")
                             weiter_clicked = True
                         except Exception as e:
                             logger.warning(f"Submit button error: {e}")
-                    else:
-                        # No token yet.  Click the Turnstile checkbox ONCE, then
-                        # give the widget time to validate.  Re-clicking a
-                        # checkbox that is already validating/solved resets it,
-                        # so only re-click after a grace period without a token.
-                        now = _time.time()
-                        if not turnstile_clicked:
-                            if _click_turnstile(page, logger):
-                                turnstile_clicked = True
-                                last_turnstile_click = now
-                                logger.warning(
-                                    "Turnstile checkbox clicked — waiting for token"
-                                )
-                            else:
-                                logger.warning(
-                                    "Turnstile iframe not found yet — modal may "
-                                    "still be loading"
-                                )
-                            page.wait_for_timeout(_random.randint(1500, 2500))
-                        elif now - last_turnstile_click > 8:
-                            logger.warning(
-                                "Turnstile token still missing after 8s — "
-                                "re-clicking checkbox"
-                            )
-                            turnstile_clicked = False
 
                 _time.sleep(0.8)
 
