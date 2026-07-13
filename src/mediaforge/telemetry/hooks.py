@@ -175,9 +175,20 @@ def register_error_handler(app):
 
     Used by: init_telemetry(app), called once from create_app().
     """
+    from werkzeug.exceptions import HTTPException
 
     @app.errorhandler(Exception)
     def _telemetry_flask_error_handler(e):
+        # Exception's MRO covers HTTPException too (404, 403, 405, ...) -- those are
+        # Flask/Werkzeug doing their normal job (a browser requesting /favicon.ico on an
+        # app that doesn't serve one, a bad method on a route, ...), not application
+        # crashes. Reporting them would flood crash_reports with routing noise, and
+        # re-raising one here breaks Flask's own default HTTPException handling and
+        # turns a harmless 404 into a logged 500 (this is the standard Flask "generic
+        # exception handler" pitfall -- see Flask's docs on errorhandler(Exception)).
+        # Returning the exception itself lets Flask render its normal error response.
+        if isinstance(e, HTTPException):
+            return e
         exc_type, exc_value, tb = type(e), e, e.__traceback__
         _report_exception(exc_type, exc_value, tb)
         raise e
