@@ -647,14 +647,117 @@ def _is_turnstile_token_ready(page) -> bool:
 # Second-widget support (reCAPTCHA / hCaptcha stacked below Turnstile)
 # ---------------------------------------------------------------------------
 # Some VOE modals ("Video wird vorbereitet...") stack a second checkbox
-# captcha *underneath* the Cloudflare Turnstile widget in the same form —
-# typically Google reCAPTCHA v2's "I'm not a robot" checkbox. Only Turnstile
-# was being auto-solved, so "Weiter" got clicked while the second widget was
-# still unticked and the site rejected the submit ("Please tick this box if
-# you want to proceed."). The helpers below detect *all* checkbox-style
-# challenge widgets present on the page, click whichever ones aren't solved
-# yet, and only report "ready" once every widget actually present has a
-# token.
+# captcha *underneath* the Cloudflare Turnstile widget in the same form.
+# Turns out this second "I'm not a robot ☺" box is NOT real Google reCAPTCHA
+# (the icon is a plain smiley, not the reCAPTCHA robot glyph, and there is no
+# google.com/recaptcha iframe on the page at all) — it's VOE's own fake
+# checkbox: a plain <input type="checkbox"> + label with client-side JS that
+# blocks submit ("Please tick this box if you want to proceed.") until it's
+# ticked. Only Turnstile was being auto-solved, so "Weiter" got clicked while
+# this plain checkbox was still unticked. The helpers below detect *all*
+# checkbox-style challenge widgets present on the page — both real iframe
+# captchas (Turnstile/reCAPTCHA/hCaptcha) and this kind of plain in-page
+# checkbox — click whichever ones aren't solved yet, and only report "ready"
+# once every widget actually present has a token / is checked.
+
+_HUMAN_CHECKBOX_KEYWORDS = ("robot", "roboter", "human", "mensch", "captcha", "bot")
+
+# Scans every checkbox <input> on the page/frame for one whose label/parent
+# text mentions "robot"/"human"/etc. Returns 'checked' | 'unchecked' | null.
+_HUMAN_CHECKBOX_SCAN_JS = """
+(kws) => {
+  const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+  for (const cb of boxes) {
+    if (cb.disabled) continue;
+    let text = '';
+    if (cb.id) {
+      try {
+        const lbl = document.querySelector(`label[for="${CSS.escape(cb.id)}"]`);
+        if (lbl) text += ' ' + lbl.textContent;
+      } catch (e) {}
+    }
+    const pl = cb.closest('label');
+    if (pl) text += ' ' + pl.textContent;
+    if (cb.parentElement) text += ' ' + cb.parentElement.textContent;
+    text = text.toLowerCase();
+    if (kws.some(k => text.includes(k))) {
+      return cb.checked ? 'checked' : 'unchecked';
+    }
+  }
+  return null;
+}
+"""
+
+# Same scan, but marks the matching unchecked box with a data attribute so
+# Playwright can locate + click it as a real element (native click, not a
+# simulated mouse-move — it's a normal form control, not an iframe overlay).
+_HUMAN_CHECKBOX_MARK_JS = """
+(kws) => {
+  const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+  for (const cb of boxes) {
+    if (cb.checked || cb.disabled) continue;
+    let text = '';
+    if (cb.id) {
+      try {
+        const lbl = document.querySelector(`label[for="${CSS.escape(cb.id)}"]`);
+        if (lbl) text += ' ' + lbl.textContent;
+      } catch (e) {}
+    }
+    const pl = cb.closest('label');
+    if (pl) text += ' ' + pl.textContent;
+    if (cb.parentElement) text += ' ' + cb.parentElement.textContent;
+    text = text.toLowerCase();
+    if (kws.some(k => text.includes(k))) {
+      cb.setAttribute('data-mf-human-cb', '1');
+      return true;
+    }
+  }
+  return false;
+}
+"""
+
+
+def _human_checkbox_state(page):
+    """Return 'checked' / 'unchecked' if a plain "I'm not a robot"-style
+    checkbox is found anywhere on the page (main document or any frame),
+    else None."""
+    for ctx in [page] + list(page.frames):
+        try:
+            r = ctx.evaluate(_HUMAN_CHECKBOX_SCAN_JS, list(_HUMAN_CHECKBOX_KEYWORDS))
+        except Exception:
+            r = None
+        if r:
+            return r
+    return None
+
+
+def _click_human_checkbox(page, logger=None) -> bool:
+    """Find and click a plain (non-iframe) "I'm not a robot"-style checkbox."""
+    if _env_flag("MEDIAFORGE_CAPTCHA_MANUAL"):
+        if logger:
+            logger.debug("Captcha manual mode — auto-click skipped (checkbox)")
+        return True
+    for ctx in [page] + list(page.frames):
+        try:
+            found = ctx.evaluate(_HUMAN_CHECKBOX_MARK_JS, list(_HUMAN_CHECKBOX_KEYWORDS))
+        except Exception:
+            found = False
+        if not found:
+            continue
+        try:
+            loc = ctx.locator('[data-mf-human-cb="1"]').first
+            loc.wait_for(state="attached", timeout=1000)
+            loc.scroll_into_view_if_needed(timeout=1500)
+            loc.click(timeout=2000)
+            if logger:
+                logger.warning("Clicked plain 'not a robot' checkbox")
+            return True
+        except Exception as e:
+            if logger:
+                logger.warning(f"Human-checkbox click failed: {e}")
+            return False
+    return False
+
 
 _CHALLENGE_IFRAME_SELECTORS = {
     "turnstile": (
@@ -704,9 +807,11 @@ def _looks_like_challenge_iframe(u: str, kind: str) -> bool:
 
 
 def _present_challenge_kinds(page) -> set:
-    """Which checkbox-captcha kinds ('turnstile' / 'recaptcha' / 'hcaptcha')
-    currently have an iframe on the page. A modal can show more than one at
-    once (e.g. Turnstile + reCAPTCHA stacked), so this returns a set."""
+    """Which challenge kinds currently need attention on the page: the iframe
+    captchas ('turnstile' / 'recaptcha' / 'hcaptcha') plus 'checkbox' for a
+    plain in-page "I'm not a robot" checkbox (VOE's fake-captcha pattern). A
+    modal can show more than one at once (e.g. Turnstile + a plain checkbox
+    stacked below it), so this returns a set."""
     kinds = set()
     try:
         for fr in page.frames:
@@ -715,11 +820,16 @@ def _present_challenge_kinds(page) -> set:
                     kinds.add(kind)
     except Exception:
         pass
+    if _human_checkbox_state(page) is not None:
+        kinds.add("checkbox")
     return kinds
 
 
 def _is_challenge_token_ready(page, kind: str) -> bool:
-    """Like _is_turnstile_token_ready(), generalised to reCAPTCHA/hCaptcha."""
+    """Like _is_turnstile_token_ready(), generalised to reCAPTCHA/hCaptcha and
+    to the plain 'checkbox' kind (ready == the box is ticked)."""
+    if kind == "checkbox":
+        return _human_checkbox_state(page) == "checked"
     js = _TOKEN_READY_JS.get(kind)
     if not js:
         return False
@@ -741,8 +851,13 @@ def _click_challenge_checkbox(page, kind: str, logger=None) -> bool:
     """Locate a checkbox-captcha iframe of *kind* and click it.
 
     Same human-like-mouse-move approach as _click_turnstile(), generalised so
-    it also works for reCAPTCHA's / hCaptcha's checkbox iframe.
+    it also works for reCAPTCHA's / hCaptcha's checkbox iframe. The plain
+    'checkbox' kind (no iframe involved) is delegated to
+    _click_human_checkbox().
     """
+    if kind == "checkbox":
+        return _click_human_checkbox(page, logger)
+
     if _env_flag("MEDIAFORGE_CAPTCHA_MANUAL"):
         if logger:
             logger.debug(f"Captcha manual mode — auto-click skipped ({kind})")
