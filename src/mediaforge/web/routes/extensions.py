@@ -230,6 +230,39 @@ def register_extensions_routes(app):
             "enabled": module_store.store_enabled(),
         })
 
+    @app.route("/api/store/requirements", methods=["POST"])
+    def api_store_requirements():
+        """Install the pip dependencies of a module that is still in the store.
+
+        The other half of the button that already exists for installed modules
+        (/api/extensions/requirements). Without this one, the store showed a module as
+        "Incompatible — missing dependency: discord.py>=2.0" and left the admin to work out
+        how to fix that from outside the app. In Docker that is a genuinely awkward errand,
+        and the answer people reach for — pip install into the container — is undone by the
+        next image pull.
+
+        The request names a *module*, never a package. The requirement strings come from that
+        module's own declared MODULE_REQUIREMENTS as published in the store index, so this
+        cannot be turned into "pip install anything you like on my server" by an admin with a
+        curl command, let alone by anyone else. They land in ~/.mediaforge/thirdparty-deps/,
+        which is appended (never prepended) to sys.path — MediaForge's own copy of a library
+        always wins an import.
+        """
+        if not module_store.store_enabled():
+            return jsonify({"ok": False, "error": "no store configured"}), 400
+
+        installable, reason = module_deps.pip_available()
+        if not installable:
+            return jsonify({"ok": False, "error": reason}), 400
+
+        data = request.get_json(silent=True) or {}
+        module_id = str(data.get("id") or "").strip()
+        if not module_id:
+            return jsonify({"ok": False, "error": "missing module id"}), 400
+
+        result = module_store.install_requirements(module_id)
+        return jsonify(result), (200 if result.get("ok") else 400)
+
     @app.route("/api/store/catalog")
     def api_store_catalog():
         """The store index merged with what's installed here. ?refresh=1

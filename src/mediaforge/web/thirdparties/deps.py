@@ -39,6 +39,7 @@ So the core owns it, exactly like it already owns binary dependencies
   from PyPI is not something a module gets to do to an admin by being enabled.
 """
 
+import shutil
 import subprocess
 import sys
 import threading
@@ -49,10 +50,19 @@ from ...logger import get_logger
 
 logger = get_logger(__name__)
 
-# Where module dependencies are installed. Deliberately next to the database and
-# the modules themselves, not inside any module folder -- see this file's
+# Where module dependencies are installed: ~/.mediaforge/thirdparty-deps/ — beside the
+# database and the thirdparties/ folder, never inside a module folder. See this file's
 # docstring for why that distinction is the whole point.
-MODULE_DEPS_DIR = Path(MEDIAFORGE_CONFIG_DIR) / "module_deps"
+#
+# The name says who they belong to. These are the dependencies of *third-party* modules, and
+# keeping them in a directory whose name says so means nobody ever has to guess whether it is
+# safe to delete (it is: worst case, the Install button gets clicked again).
+MODULE_DEPS_DIR = Path(MEDIAFORGE_CONFIG_DIR) / "thirdparty-deps"
+
+# The directory this used to be. Left here purely to move anything already installed under
+# the old name across on first start — an admin who clicked Install last week should not have
+# to click it again because we renamed a folder.
+_LEGACY_DEPS_DIR = Path(MEDIAFORGE_CONFIG_DIR) / "module_deps"
 
 # One install at a time. pip is not safe to run concurrently against the same
 # --target directory (two installs can interleave their file writes), and two
@@ -66,9 +76,36 @@ _PIP_TIMEOUT = 600
 
 
 def deps_dir() -> Path:
-    """The module dependency directory, created if missing."""
+    """The module dependency directory, created if missing.
+
+    Also performs the one-time move from the old ``module_deps/`` name. Renaming a directory
+    an admin has already populated and saying nothing would silently un-install every
+    dependency they installed — which looks, from the Modulmanager, exactly like the feature
+    breaking.
+    """
     try:
         MODULE_DEPS_DIR.mkdir(parents=True, exist_ok=True)
+
+        if _LEGACY_DEPS_DIR.is_dir() and _LEGACY_DEPS_DIR != MODULE_DEPS_DIR:
+            moved = 0
+            for entry in _LEGACY_DEPS_DIR.iterdir():
+                target = MODULE_DEPS_DIR / entry.name
+                if target.exists():
+                    continue          # the new location already has it; leave both alone
+                try:
+                    shutil.move(str(entry), str(target))
+                    moved += 1
+                except Exception:
+                    logger.exception("[ModuleDeps] Could not move %s to the new deps dir", entry)
+            if moved:
+                logger.info("[ModuleDeps] Moved %d entr%s from %s to %s",
+                            moved, "y" if moved == 1 else "ies",
+                            _LEGACY_DEPS_DIR, MODULE_DEPS_DIR)
+            try:
+                if not any(_LEGACY_DEPS_DIR.iterdir()):
+                    _LEGACY_DEPS_DIR.rmdir()
+            except Exception:
+                pass
     except Exception:
         logger.exception("[ModuleDeps] Could not create %s", MODULE_DEPS_DIR)
     return MODULE_DEPS_DIR
@@ -148,6 +185,41 @@ def pip_available() -> tuple:
     return True, ""
 
 
+def _reject_unsafe(requirements) -> list:
+    """Requirement strings that must never reach pip's argv, with the reason for each.
+
+    A dependency is a *name* and a *version range*. Everything else a PEP 508 string can
+    express — a URL to fetch the package from, a local path, or (through argv) a pip option —
+    is an instruction about where code comes from, and module metadata does not get to give
+    those instructions. The admin clicking Install is consenting to "get discord.py from
+    PyPI", not to "run whatever this module's author wants run".
+    """
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    problems = []
+    for raw in requirements:
+        text = str(raw).strip()
+
+        # pip reads argv. A string starting with a dash is not a dependency, it is a flag —
+        # --index-url, --extra-index-url, --find-links, --pre, take your pick.
+        if text.startswith("-"):
+            problems.append(f"{text!r} looks like a pip option, not a package")
+            continue
+
+        try:
+            req = Requirement(text)
+        except InvalidRequirement as exc:
+            problems.append(f"{text!r} is not a valid requirement ({exc})")
+            continue
+
+        # `pkg @ https://…` / `pkg @ file:///…`: pip fetches and builds from there, which
+        # means running arbitrary code from an arbitrary host at install time.
+        if req.url:
+            problems.append(f"{text!r} points at {req.url} — only PyPI packages are installed")
+
+    return problems
+
+
 def install(requirements) -> dict:
     """pip-install `requirements` into the shared module dependency directory.
 
@@ -164,6 +236,25 @@ def install(requirements) -> dict:
     requirements = [str(r) for r in (requirements or ()) if str(r).strip()]
     if not requirements:
         return {"ok": True, "installed": [], "still_missing": [], "error": "", "output": ""}
+
+    # Every string is checked before it becomes an argv entry, and a rejected one stops the
+    # whole install.
+    #
+    # Passing them straight through was safe from *shell* injection (no shell is involved) and
+    # wide open to something better: pip reads argv, and argv is where pip's options live. A
+    # module declaring MODULE_REQUIREMENTS = ("--index-url=http://mine/", "innocent-looking")
+    # would have MediaForge fetch its dependencies from the author's own package index — with
+    # an admin clicking a button labelled "Install dependencies", which is exactly the amount
+    # of consent an attacker needs and no more.
+    #
+    # So: it must parse as PEP 508, it must not carry a direct reference (`pkg @ https://…`,
+    # which pip would happily download and run setup.py from), and it must not start with a
+    # dash. A dependency is a name and a version range. Anything else is an instruction, and
+    # module metadata does not get to issue instructions.
+    rejected = _reject_unsafe(requirements)
+    if rejected:
+        return {"ok": False, "installed": [], "still_missing": requirements, "output": "",
+                "error": "refused to install: " + "; ".join(rejected)}
 
     ok, reason = pip_available()
     if not ok:

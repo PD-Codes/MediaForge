@@ -428,6 +428,65 @@ def _compat_reason(entry: dict) -> str:
     return ("missing dependency: " + ", ".join(missing)) if missing else ""
 
 
+def missing_requirements(entry: dict) -> list:
+    """The requirement strings of a *store entry* that this MediaForge cannot satisfy.
+
+    The same check _compat_reason() does, but returning the raw PEP 508 strings instead of a
+    sentence — because a sentence is something to show a person, and these are something to
+    hand to pip. Keeping the two apart is what lets the Modulmanager put an "Install
+    dependencies" button next to the red text instead of only the red text.
+    """
+    from importlib.metadata import PackageNotFoundError, version as dist_version
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    out = []
+    for raw in entry.get("requirements") or []:
+        try:
+            req = Requirement(str(raw))
+            have = dist_version(req.name)
+        except InvalidRequirement:
+            continue                      # unparseable: not something we can hand to pip
+        except PackageNotFoundError:
+            out.append(str(raw))
+            continue
+        if req.specifier and not req.specifier.contains(have, prereleases=True):
+            out.append(str(raw))
+    return out
+
+
+def install_requirements(module_id: str) -> dict:
+    """Install the pip dependencies of a store entry — before the module itself is installed.
+
+    The route the Modulmanager's store section calls. It exists separately from the one for
+    an already-installed module (routes/extensions.py's /api/extensions/requirements, which
+    reads MODULE_REQUIREMENTS off the folder on disk) for the obvious reason: here there is no
+    folder on disk yet. The requirement strings come from the catalog entry.
+
+    The important property is the same in both cases: **the caller names a module, never a
+    package.** The strings handed to pip are the ones the module declared, not anything a
+    request can put in them — so this endpoint cannot be turned into "pip install whatever I
+    like on your server", which is what it would be if it took a package name.
+    """
+    from . import deps as module_deps
+
+    entry = None
+    for candidate in catalog().get("modules", []):
+        if candidate["id"] == module_id:
+            entry = candidate
+            break
+    if entry is None:
+        return {"ok": False, "error": f"unknown module '{module_id}'"}
+
+    missing = missing_requirements(entry)
+    if not missing:
+        return {"ok": True, "installed": [], "log": "",
+                "message": "nothing to install — every dependency is already satisfied"}
+
+    result = module_deps.install(missing)
+    result.setdefault("installed", missing if result.get("ok") else [])
+    return result
+
+
 def catalog(force: bool = False) -> dict:
     """Every configured repository's index, merged with what's installed here —
     one list, ready for the Modulmanager's Store section:
@@ -554,6 +613,14 @@ def catalog(force: bool = False) -> dict:
         # the one decision worth being paranoid about).
         unreviewed = bool(entry.get("review_status")) and entry["review_status"] != "approved"
 
+        # Which of the two kinds of "incompatible" this is. They look the same in the UI today
+        # — a red word — and they are not the same thing at all: a missing pip package is a
+        # button away, an unsupported MediaForge version is a wait. Telling them apart is the
+        # whole point of the Install-dependencies button, and it has to be decided here,
+        # because only here do we know what the module asked for.
+        missing_deps = missing_requirements(entry)
+        deps_only = bool(missing_deps) and compat.startswith("missing dependency")
+
         modules.append({
             **entry,
             "installed": bool(local),
@@ -562,6 +629,8 @@ def catalog(force: bool = False) -> dict:
             "compat_reason": compat,
             "blocked_by_trust": blocked_by_trust,
             "unreviewed": unreviewed,
+            # Fixable from here: pip can get these, and then the module installs normally.
+            "missing_requirements": missing_deps if deps_only else [],
             "installable": (not compat and not blocked_by_trust
                             and not (unreviewed and not unverified_ok)
                             and bool(entry["download_url"])),

@@ -289,6 +289,11 @@ def modules_dir() -> Path:
     return MODULES_DIR
 
 
+# Module pip dependencies live in ~/.mediaforge/thirdparty-deps/ — next to the modules and
+# the database, for exactly the same reason the modules moved there. That machinery is
+# thirdparties/deps.py; it is imported above and puts the directory on sys.path itself.
+
+
 # Make it part of this package's search path. Import time, before any submodule is
 # imported, or an already-imported package would keep the old path.
 if str(MODULES_DIR) not in __path__:

@@ -801,6 +801,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # catalog also reveals the configured store URL.
             "api_store_config",
             "api_store_catalog",
+            # Installs pip packages into this process's import path. As privileged as an
+            # action gets — and it is why the endpoint takes a module id, never a package name.
+            "api_store_requirements",
             "api_store_install",
             "api_store_uninstall",
             "api_store_pending",

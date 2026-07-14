@@ -84,7 +84,18 @@
     // incompatible (can't run here at all) > blocked by trust (admin hasn't
     // opted in) > update available > installed/installable.
     let action = "";
-    if (m.compat_reason) {
+    if (m.missing_requirements && m.missing_requirements.length) {
+      // "Incompatible" was true and unhelpful. A missing pip package and an unsupported
+      // MediaForge version are both "won't install", but one of them is a button away and the
+      // other is a wait — and in Docker, "go and pip install it yourself" is an errand whose
+      // obvious answer (install into the container) is undone by the next image pull.
+      action =
+        `<button class="btn btn-primary store-deps-btn" data-id="${esc(m.id)}"
+                 title="${esc(t("Installiert " + m.missing_requirements.join(", ") + " nach ~/.mediaforge/thirdparty-deps",
+                                "Installs " + m.missing_requirements.join(", ") + " into ~/.mediaforge/thirdparty-deps"))}">
+           ${esc(t("Abhängigkeiten installieren", "Install dependencies"))}
+         </button>`;
+    } else if (m.compat_reason) {
       action = `<span class="integ-subsection-badge badge-incompatible">${esc(t("Inkompatibel", "Incompatible"))}</span>`;
     } else if (m.blocked_by_trust) {
       action = `<span class="settings-row-desc">${esc(t("Unverifizierte Module sind deaktiviert", "Unverified modules are disabled"))}</span>`;
@@ -243,6 +254,33 @@
   }
 
   document.addEventListener("click", async (ev) => {
+    const depsBtn = ev.target.closest(".store-deps-btn");
+    if (depsBtn) {
+      // pip is slow and this is a fetch with no timeout on purpose: a cold install of
+      // something like discord.py pulls half a dozen wheels over whatever line the NAS has.
+      // The button says what is happening rather than pretending it is instant.
+      depsBtn.disabled = true;
+      const original = depsBtn.textContent;
+      depsBtn.textContent = t("Installiere… (kann dauern)", "Installing… (can take a while)");
+
+      const data = await post("/api/store/requirements", { id: depsBtn.dataset.id });
+      if (data.ok) {
+        toast(t("Abhängigkeiten installiert. Das Modul kann jetzt installiert werden.",
+                "Dependencies installed. The module can be installed now."));
+        loadCatalog(true);      // the module is no longer "incompatible" — re-render it
+      } else {
+        // pip's own output, not a summary of it. "Could not install" tells an admin nothing;
+        // "No matching distribution found for discord.py>=2.0" tells them everything.
+        toast(t("Fehlgeschlagen: ", "Failed: ") + (data.error || ""));
+        if (data.output) {
+          console.error("[ModuleStore] pip output:\n" + data.output);
+        }
+        depsBtn.disabled = false;
+        depsBtn.textContent = original;
+      }
+      return;
+    }
+
     const installBtn = ev.target.closest(".store-install-btn");
     if (installBtn) {
       installBtn.disabled = true;
