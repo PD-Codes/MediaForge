@@ -49,6 +49,10 @@ itself for the admin Modulmanager page (``/extensions``):
     MODULE_HOMEPAGE = "https://example.com/my-integration"
     MODULE_LICENSE = "MIT"
 
+    MODULE_SENSITIVE_SETTINGS = (         # settings stored encrypted at rest
+        registry.module_setting_key("my_integration", "refresh_token"),
+    )
+
 All are optional and read with ``getattr(module, ..., <fallback>)`` --
 ``MODULE_NAME`` falls back to the folder name, ``MODULE_DESCRIPTION``/
 ``MODULE_DESCRIPTION_DE``/``MODULE_DESCRIPTION_EN``/``MODULE_AUTHOR`` to
@@ -95,15 +99,60 @@ module owns should live under (:func:`registry.module_setting_key`), which
 is what makes a clean uninstall possible -- an un-namespaced key can't be
 told apart from a core one and is deliberately left behind.
 
+``MODULE_SENSITIVE_SETTINGS`` names app_settings keys whose values must be
+stored encrypted rather than as plaintext -- a bot token, an API key, an OAuth
+refresh token. MediaForge registers them with the settings layer before
+``register(app)`` runs (:func:`_register_sensitive_settings` →
+:func:`db.register_sensitive_keys`), which encrypts whatever is already stored
+in plaintext and makes every later ``set_setting()`` write ciphertext, using
+the same encryption as the core's own secrets (``db.SENSITIVE_KEYS``). The
+module keeps calling plain ``get_setting()``/``set_setting()`` -- decryption is
+transparent.
+
+Only needed for a secret the module manages *itself*. A secret the user types
+into the module's settings card should simply be declared as an
+``extra_settings`` field of type ``"secret"``: ``register_thirdparty()``
+registers those as sensitive automatically, and the generic settings API never
+sends their value back to the browser (see ``registry.SECRET_MASK``).
+
+Where a module may write
+------------------------
+Nowhere in its own folder. That folder is what the module's signature is
+computed over (``signing.content_hash``) and what the store deletes on every
+upgrade -- a cache, a log or a vendored package written into it means the module
+invalidates its own signature by running and loses the data on the next update.
+
+The one writable place is :func:`registry.module_data_dir`::
+
+    from ..registry import module_data_dir
+
+    path = module_data_dir(MODULE_ID) / "cache.json"   # ~/.mediaforge/module_data/<id>/
+
+It survives upgrades (it is the module's data, not its code) and is removed
+only on uninstall. ``_vendor``/``_data`` are additionally excluded from the
+signature hash as a safety net, but that is a net -- not a place to put things.
+
+Python dependencies
+-------------------
+Declare them in ``MODULE_REQUIREMENTS`` and stop there. A module needing a
+package MediaForge doesn't ship is no longer a dead end: the Modulmanager shows
+it as "needs a dependency" with an Install button, which installs into
+``~/.mediaforge/module_deps/`` and registers the module live (see ``deps.py``).
+Never pip-install from inside a module, and never put a directory of your own on
+``sys.path`` -- the core appends that directory, so its own versions of aiohttp,
+niquests, packaging and friends always win an import, and a module that jumps
+the queue breaks the app it lives in.
+
 Lifecycle hooks
 ---------------
 Besides ``register(app)`` (the only required one), a module may define any of
-four optional module-level functions -- see :func:`fire_module_hook`:
+five optional module-level functions -- see :func:`fire_module_hook`:
 
     def on_install(app): ...                            # first ever start
     def on_upgrade(app, from_version, to_version): ...  # MODULE_VERSION changed
     def on_enable(app): ...                             # master toggle switched on
     def on_disable(app): ...                            # master toggle switched off
+    def on_settings_changed(app, keys): ...             # a module:<id>:* setting was saved
 
 ``on_install``/``on_upgrade`` are driven by comparing ``MODULE_VERSION``
 against the version last recorded for this install
@@ -112,6 +161,27 @@ without hand-rolling its own schema-version tracking -- see
 :func:`_run_lifecycle_hooks`. ``on_enable``/``on_disable`` fire on the *edge*
 only (registry.py's generic settings route), so they can be treated as
 start/stop rather than "re-check on every save".
+
+``on_settings_changed(app, keys)`` fires whenever a setting the module owns
+(``module:<MODULE_ID>:*``) is written -- from the module's settings card, from
+its own routes, from anywhere. It replaces the config-polling loop every module
+with a worker used to grow ("re-read the settings every 20 seconds and restart
+myself if they changed"), which is where their deadlocks lived. It runs on a
+thread of its own, never on the request that saved the setting.
+
+Background workers
+------------------
+A module with a bot, a poller or a sync loop hands MediaForge its start/stop
+instead of building a thread, a lock and a restart path by hand::
+
+    def register(app):
+        register_thirdparty(item_id="my_bot", ...)
+        register_background_worker("my_bot", start=_start, stop=_stop)
+
+MediaForge starts it when the module is enabled, stops it when it is disabled or
+uninstalled, restarts it when a setting the module owns changes, and stops it on
+shutdown -- one lock per worker, held only around that worker's own start/stop.
+See :func:`registry.register_background_worker`.
 
 Installing, updating, uninstalling
 ----------------------------------
@@ -138,16 +208,21 @@ first time each of the module's registered items is seen -- see
 """
 
 import ast
+import atexit
 import importlib
 import pkgutil
 import shutil
+import threading
 from pathlib import Path
 
+from . import deps as module_deps
 from .registry import (
     register_generic_settings_routes, record_module_status, item_ids, seed_default_enabled,
     known_module_names, registered_module_names, check_app_compatibility,
     check_api_compatibility, installed_version, record_installed_version,
-    purge_module_settings, get_thirdparty, module_entry, unregister_module,
+    purge_module_settings, purge_module_data, get_thirdparty, module_entry,
+    unregister_module, module_entries as registry_module_entries,
+    start_workers, stop_workers, sync_workers,
 )
 from .signing import verify_module
 from ...config import MEDIAFORGE_CONFIG_DIR
@@ -190,7 +265,15 @@ MODULES_DIR = Path(MEDIAFORGE_CONFIG_DIR) / "thirdparties"
 # a module allowed to take one would either shadow core code or be shadowed by it.
 # Both outcomes are silent and awful, so an install under one of these names is
 # refused (see store.py) and a folder already sitting there is skipped, loudly.
-RESERVED_NAMES = frozenset({"registry", "store", "signing", "trusted_keys"})
+RESERVED_NAMES = frozenset({"registry", "store", "signing", "trusted_keys", "deps"})
+
+# Dependencies modules declare in MODULE_REQUIREMENTS are installed into
+# ~/.mediaforge/module_deps/ and made importable from there -- appended to
+# sys.path, never prepended, so the core's own versions always win. Done at
+# import of this package, before any module is imported, so a dependency
+# installed in an earlier run simply exists as far as the module is concerned.
+# See deps.py.
+module_deps.ensure_on_sys_path()
 
 
 def modules_dir() -> Path:
@@ -430,43 +513,31 @@ def pending_changes() -> dict:
 
 def _check_requirements(module) -> str:
     """Return "" if every distribution in the module's ``MODULE_REQUIREMENTS``
-    (a tuple of PEP 508 requirement strings, e.g. ``("icalendar>=6.0",)``) is
+    (a tuple of PEP 508 requirement strings, e.g. ``("discord.py>=2.3",)``) is
     installed and satisfies its version specifier, or a human-readable reason
     if not.
 
-    MediaForge deliberately *checks* rather than installs: pip-installing into
-    a running app's environment at import time is how you get a half-upgraded
-    dependency shared with the core (Flask, niquests, packaging are all in
-    here), and in a Docker install the change wouldn't survive the container
-    anyway. A module store package that needs a dependency the app doesn't
-    ship is therefore something the admin has to install deliberately -- what
-    this function buys is that they find out from a one-line "skipped: missing
-    dependency icalendar>=6.0" on the Modulmanager page instead of an
-    ImportError traceback in the log.
+    MediaForge doesn't install anything *implicitly* -- a module must not be
+    able to pull code from PyPI onto an admin's machine merely by being
+    discovered. But an admin can now say yes: a module blocked here is recorded
+    with its missing requirements (see record_module_status(...,
+    missing_requirements=...)), the Modulmanager shows it as "needs a
+    dependency" with an Install button, and that button runs
+    deps.install() -> install_module_requirements(), which registers the module
+    live once the install succeeds. See deps.py for where the packages go and
+    why they are appended to sys.path rather than prepended.
+
+    The reason string still names exactly what is missing and why
+    ("discord.py>=2.3 (not installed)"), so the Modulmanager card is readable
+    even in the builds where installing isn't possible (PyInstaller).
     """
     requirements = tuple(getattr(module, "MODULE_REQUIREMENTS", None) or ())
     if not requirements:
         return ""
-    from importlib.metadata import PackageNotFoundError, version as dist_version
-    from packaging.requirements import InvalidRequirement, Requirement
-
-    missing = []
-    for raw in requirements:
-        try:
-            req = Requirement(str(raw))
-        except InvalidRequirement:
-            missing.append(f"{raw} (unparseable)")
-            continue
-        try:
-            have = dist_version(req.name)
-        except PackageNotFoundError:
-            missing.append(f"{raw} (not installed)")
-            continue
-        if req.specifier and not req.specifier.contains(have, prereleases=True):
-            missing.append(f"{raw} (have {have})")
+    missing = module_deps.missing_requirements(requirements)
     if not missing:
         return ""
-    return "missing dependency: " + ", ".join(missing)
+    return module_deps.format_missing(missing)
 
 
 def fire_module_hook(name, hook, *args):
@@ -484,6 +555,11 @@ def fire_module_hook(name, hook, *args):
     - ``on_enable(app)`` / ``on_disable(app)`` -- the admin flipped the
       module's master toggle (fired on the *edge* only, see registry.py's
       generic PUT route). Start/stop workers, clear caches.
+    - ``on_settings_changed(app, keys)`` -- a setting the module owns
+      (``module:<MODULE_ID>:*``) was written. Reconnect a client, reload a
+      config. Fired on a thread of its own, never on the request that saved it
+      (see _on_setting_changed()). A module that registered a background worker
+      gets it restarted automatically as well and usually needs no hook at all.
 
     A hook raising must never take the app down with it -- a broken on_disable
     would otherwise make a module impossible to switch off, which is precisely
@@ -661,6 +737,46 @@ def _import_folders(names: list) -> dict:
     return modules
 
 
+def _register_sensitive_settings(name, module) -> None:
+    """Mark the app_settings keys a module declares in MODULE_SENSITIVE_SETTINGS
+    as sensitive, so their values are stored encrypted (see
+    db.register_sensitive_keys()).
+
+    This is the escape hatch for a secret with no settings-card field of its
+    own -- a token the module obtains itself (OAuth refresh token, session
+    cookie, ...) and only ever writes from its own code. Secrets that *are*
+    settings-card fields need nothing here: registry.register_thirdparty()
+    registers every extra_settings entry of type "secret" automatically.
+
+    The declared keys are full app_settings keys, so a module namespaces them
+    the same way it does everywhere else:
+
+        MODULE_SENSITIVE_SETTINGS = (
+            registry.module_setting_key(MODULE_ID, "refresh_token"),
+        )
+
+    Failures are logged, never raised: an unencryptable value must not keep the
+    module from loading -- that would be a strictly worse outcome than the
+    plaintext storage every module had before this existed.
+    """
+    keys = tuple(getattr(module, "MODULE_SENSITIVE_SETTINGS", None) or ())
+    if not keys:
+        return
+    try:
+        from ..db import register_sensitive_keys
+
+        migrated = register_sensitive_keys(keys)
+        logger.info(
+            "[Thirdparties] '%s' declared %d sensitive setting(s)%s",
+            name, len(keys),
+            f", encrypted {migrated} previously plaintext value(s)" if migrated else "",
+        )
+    except Exception:
+        logger.warning(
+            "[Thirdparties] Could not register sensitive settings of '%s'", name,
+            exc_info=True)
+
+
 def _register_modules(app, modules: dict, registered: set) -> list:
     """Call register(app) for each of `modules`, in an order that respects
     DEPENDS_ON (see _resolve_load_order) -- shared by
@@ -691,13 +807,23 @@ def _register_modules(app, modules: dict, registered: set) -> list:
         # card, everything else keeps loading -- and the module stays out of
         # `registered`, so anything DEPENDS_ON-ing it is skipped too rather
         # than being handed a half-loaded dependency.
+        # Recorded separately from the reason string, so the Modulmanager can
+        # offer an Install button for exactly these requirements instead of the
+        # admin having to parse the message. Cleared (to ()) when nothing is
+        # missing, so a module that gets its dependency installed stops
+        # advertising one on the next pass.
+        missing = module_deps.missing_requirements(
+            getattr(module, "MODULE_REQUIREMENTS", None) or ())
+        record_module_status(name, missing_requirements=tuple(
+            m["requirement"] for m in missing))
+
         blocked = (
             check_api_compatibility(getattr(module, "MODULE_API_VERSION", None))
             or check_app_compatibility(
                 getattr(module, "MODULE_MIN_APP_VERSION", None),
                 getattr(module, "MODULE_MAX_APP_VERSION", None),
             )
-            or _check_requirements(module)
+            or (module_deps.format_missing(missing) if missing else "")
         )
         if blocked:
             logger.warning("[Thirdparties] '%s' skipped — %s", name, blocked)
@@ -710,6 +836,12 @@ def _register_modules(app, modules: dict, registered: set) -> list:
             logger.warning("[Thirdparties] '%s' skipped — %s", name, msg)
             record_module_status(name, registered=False, error=msg)
             continue
+
+        # Secrets the module owns but doesn't expose as a "secret"
+        # extra_settings field (register_thirdparty() registers those itself).
+        # Done before register(app) so the module's own startup code already
+        # reads and writes them through the encrypting path.
+        _register_sensitive_settings(name, module)
 
         register_fn = getattr(module, "register", None)
         if not callable(register_fn):
@@ -760,7 +892,38 @@ def _register_modules(app, modules: dict, registered: set) -> list:
         except Exception as exc:
             logger.exception("[Thirdparties] register(app) failed for '%s'", name)
             record_module_status(name, registered=False, error=str(exc))
+
+    if newly_registered:
+        _secure_new_endpoints(app)
+        # A module registered *live* (store install, dependency install,
+        # Modulmanager Refresh) gets its background worker started here rather
+        # than having to wait for a restart. At original startup this is the
+        # same call discover_and_register() makes a moment later -- sync_workers()
+        # is idempotent, a running worker is not started twice.
+        for name in newly_registered:
+            start_workers(app, module_name=name)
     return newly_registered
+
+
+def _secure_new_endpoints(app) -> None:
+    """Put the routes a module just added through app.py's auth pass.
+
+    That pass (login_required / admin_required / CSRF exemption) runs once, at
+    the end of create_app(). A module registered *live* -- a store install, a
+    dependency install, the Modulmanager's Refresh -- adds its blueprint after
+    that, so without this its routes would be reachable with no login check at
+    all. At original startup this is a no-op: create_app() hasn't installed the
+    hook yet, and its own pass a few lines later covers everything.
+
+    In no-auth mode there is nothing to install and nothing to secure, so the
+    hook simply isn't there.
+    """
+    try:
+        fn = (getattr(app, "extensions", None) or {}).get("mediaforge_secure_endpoints")
+        if fn:
+            fn()
+    except Exception:
+        logger.exception("[Thirdparties] Could not secure newly registered endpoints")
 
 
 def discover_and_register(app) -> None:
@@ -794,6 +957,7 @@ def discover_and_register(app) -> None:
         module_id = _PENDING_SETTING_PURGES.pop()
         try:
             removed = purge_module_settings(module_id)
+            purge_module_data(module_id)
             logger.info("[Thirdparties] Purged %d setting(s) of uninstalled module '%s'",
                         removed, module_id)
         except Exception:
@@ -803,6 +967,167 @@ def discover_and_register(app) -> None:
     # every registered thirdparty gets automatically — see registry.py.
     # Only ever called here, once -- see this function's own docstring.
     register_generic_settings_routes(app)
+
+    # Settings changes reach modules as an event instead of each of them
+    # polling get_setting() on a timer (which is what every module with a bot
+    # or a worker ended up doing, badly). See _on_setting_changed().
+    _install_settings_listener(app)
+
+    # Start the background workers of every module that registered one and is
+    # currently enabled -- and make sure they are stopped on the way out. See
+    # registry.register_background_worker().
+    start_workers(app)
+    atexit.register(stop_workers)
+
+
+# ---------------------------------------------------------------------------
+# Settings change events
+# ---------------------------------------------------------------------------
+
+_APP = None
+_LISTENER_INSTALLED = False
+
+
+def _install_settings_listener(app) -> None:
+    """Subscribe to db.set_setting() once, so a write to ``module:<id>:<key>``
+    reaches the module that owns it.
+
+    Registered here rather than in db.py because only this package knows which
+    folder owns which module_id -- db.py just knows keys.
+    """
+    global _APP, _LISTENER_INSTALLED
+
+    _APP = app
+    if _LISTENER_INSTALLED:
+        return
+    from ..db import add_setting_listener
+
+    add_setting_listener(_on_setting_changed)
+    _LISTENER_INSTALLED = True
+
+
+def _module_name_for_setting_key(key):
+    """The thirdparties/<folder>/ whose MODULE_ID owns the namespaced setting
+    key ``module:<module_id>:<name>``, or None for a core (or un-namespaced)
+    key. Matches on MODULE_ID rather than folder name, because that is what
+    registry.module_setting_key() namespaces with -- the two are the same for
+    most modules, but not for one whose folder was renamed."""
+    if not key or not key.startswith("module:"):
+        return None
+    parts = key.split(":", 2)
+    if len(parts) < 3:
+        return None
+    module_id = parts[1]
+    for name, mod in registry_module_entries().items():
+        if (mod.get("module_id") or name) == module_id:
+            return name
+    return None
+
+
+def _on_setting_changed(key, value) -> None:
+    """db.set_setting() callback: fire ``on_settings_changed(app, keys)`` on the
+    owning module and restart its background worker (if it registered one).
+
+    Runs on a short-lived daemon thread, never on the thread that saved the
+    setting: a module's handler restarts a bot, reconnects a client, rebuilds a
+    cache -- seconds of work that have no business hanging the HTTP request the
+    admin just made from the settings page. registry.sync_workers() serializes
+    per module, so two saves in quick succession can't have a module's worker
+    starting and stopping at the same time.
+
+    Never raises into set_setting(): a module with a broken handler must not be
+    able to make saving a setting fail.
+    """
+    try:
+        name = _module_name_for_setting_key(key)
+        if not name or _APP is None:
+            return
+        app = _APP
+
+        def _run():
+            try:
+                fire_module_hook(name, "on_settings_changed", app, (key,))
+            except Exception:
+                logger.exception("[Thirdparties] on_settings_changed failed for '%s'", name)
+            try:
+                # Whatever the module did (or didn't do) in its own hook, the
+                # worker contract is the core's: a setting the module owns
+                # changed, so its worker is restarted against the new value --
+                # and stopped, not restarted, if what changed was the master
+                # toggle going off. See registry.sync_workers().
+                sync_workers(app, module_name=name, restart=True)
+            except Exception:
+                logger.exception("[Thirdparties] worker sync failed for '%s'", name)
+
+        threading.Thread(target=_run, daemon=True,
+                         name=f"settings-change-{name}").start()
+    except Exception:
+        logger.exception("[Thirdparties] settings-change dispatch failed for %r", key)
+
+
+# ---------------------------------------------------------------------------
+# Dependency installation (the Modulmanager's "Install dependency" button)
+# ---------------------------------------------------------------------------
+
+def install_module_requirements(app, name) -> dict:
+    """pip-install the MODULE_REQUIREMENTS of the module in folder `name`, then
+    register it live if that's all that was blocking it.
+
+    The server-side half of the Modulmanager's Install button (see
+    routes/extensions.py's ``POST /api/extensions/install-deps``). Only ever
+    installs what the module *declares* -- the requirement strings come from the
+    imported module object, never from the request -- and only into
+    ~/.mediaforge/module_deps/ (see deps.py).
+
+    Returns ``{"ok", "error", "output", "installed", "registered", "restart_required"}``.
+    ``registered`` says whether the module is now live; a module that still
+    doesn't register after its dependency arrived (bad code, unmet DEPENDS_ON)
+    keeps its reason on its card, and one whose *code was already imported* in a
+    failed state needs a restart -- which is what restart_required reports.
+    """
+    module = _LOADED.get(name)
+    if module is None:
+        return {"ok": False, "error": f"module '{name}' is not loaded", "output": "",
+                "installed": [], "registered": False, "restart_required": True}
+
+    requirements = tuple(getattr(module, "MODULE_REQUIREMENTS", None) or ())
+    if not requirements:
+        return {"ok": False, "error": f"module '{name}' declares no MODULE_REQUIREMENTS",
+                "output": "", "installed": [], "registered": False, "restart_required": False}
+
+    result = module_deps.install(requirements)
+    result.setdefault("installed", [])
+    if not result.get("ok"):
+        result["registered"] = False
+        result["restart_required"] = False
+        return result
+
+    # Dependency is there -- try to bring the module up right now. Already
+    # registered (e.g. the admin clicked twice) is a no-op, not an error.
+    if name in registered_module_names():
+        result["registered"] = True
+        result["restart_required"] = False
+        return result
+
+    try:
+        newly = _register_modules(app, {name: module}, set(registered_module_names()))
+    except Exception as exc:
+        logger.exception("[Thirdparties] register after dependency install failed for '%s'", name)
+        result["registered"] = False
+        result["restart_required"] = True
+        result["error"] = str(exc)
+        return result
+
+    result["registered"] = name in newly
+    # Flask can add a blueprint to a running app but not replace one. A module
+    # that never got as far as register(app) (which is the case for every module
+    # blocked on a dependency) has claimed nothing yet, so it comes up live --
+    # anything else means something other than the dependency was wrong, and the
+    # admin gets the reason on the card rather than a silent no-op.
+    result["restart_required"] = not result["registered"]
+    if result["registered"]:
+        start_workers(app, module_name=name)
+    return result
 
 
 def rescan_new_modules(app) -> list:
@@ -1054,12 +1379,20 @@ def uninstall_module_live(app, name) -> dict:
             blueprints.add(bp_name)
     _UNINSTALLED_BLUEPRINTS.update(blueprints)
 
-    # 3. Settings + the imported module object.
+    # 3. Settings + data dir + the imported module object.
     try:
         removed = purge_module_settings(module_id)
         logger.info("[Thirdparties] Purged %d setting(s) of '%s'", removed, module_id)
     except Exception:
         logger.exception("[Thirdparties] Could not purge settings of '%s'", module_id)
+    # ~/.mediaforge/module_data/<id>/ -- the module's own writable directory
+    # (registry.module_data_dir()). Deliberately survives upgrades and stays put
+    # while a module is merely disabled; uninstall is the one thing that removes
+    # it, exactly like the settings above.
+    try:
+        purge_module_data(module_id)
+    except Exception:
+        logger.exception("[Thirdparties] Could not purge data dir of '%s'", module_id)
     _LOADED.pop(name, None)
     for mod_name in [m for m in sys.modules if m == prefix or m.startswith(prefix + ".")]:
         sys.modules.pop(mod_name, None)

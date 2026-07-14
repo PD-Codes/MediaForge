@@ -217,6 +217,39 @@
       <div class="settings-hint" style="color:var(--error);">{{ ext.error }}</div>
       {% endif %}
 
+      <!-- Needs a Python dependency it doesn't have. Previously this module was
+           simply skipped and the admin was left with a one-line reason and no
+           way to act on it — which is why module authors started vendoring pip
+           packages into their own folders. The dependency is installed into
+           ~/.mediaforge/module_deps/ (never into MediaForge's own environment,
+           never into the module folder) and the module is registered live if
+           that was all that was blocking it. See thirdparties/deps.py. -->
+      {% if ext.missing_requirements %}
+      <div class="settings-hint" style="color:var(--error);">
+        {{ _('This module needs a Python dependency that is not installed:') }}
+        <code>{{ ext.missing_requirements|join(', ') }}</code>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Install dependency') }}</div>
+          <div class="settings-row-desc">
+            {% if ext.deps_installable %}
+            {{ _('Downloads the package from PyPI into the MediaForge module folder and loads the module afterwards.') }}
+            {% else %}
+            {{ _('This build cannot install packages itself. Install the dependency into the environment MediaForge runs in.') }}
+            {% endif %}
+          </div>
+        </div>
+        <div class="settings-row-right">
+          <button class="btn btn-primary"
+                  {% if not ext.deps_installable %}disabled{% endif %}
+                  onclick="installModuleDeps('{{ ext.name }}', this)">
+            {{ _('Install now') }}
+          </button>
+        </div>
+      </div>
+      {% endif %}
+
       {% if ext.registered_items %}
       <!-- Deliberately NOT the full settings card here (that used to be
            render_settings_card(card), showing every extra_settings field —
@@ -510,5 +543,39 @@ document.getElementById("extRescanBtn").addEventListener("click", async function
     btn.textContent = originalText;
   }
 });
+
+// "Install dependency" -- POST /api/extensions/install-deps with the module's
+// FOLDER name. The requirements themselves come from the module's own
+// MODULE_REQUIREMENTS on the server side; nothing about which package gets
+// installed is decided here (see routes/extensions.py). pip can take a while on
+// a cold cache, so the button says so rather than looking hung.
+async function installModuleDeps(folder, btn) {
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t("Installiere…", "Installing…");
+  try {
+    const resp = await fetch("/api/extensions/install-deps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder: folder }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || ("HTTP " + resp.status));
+    }
+    if (data.registered) {
+      extRescanToast(t("Abhängigkeit installiert, Modul geladen.",
+                       "Dependency installed, module loaded."));
+    } else {
+      extRescanToast(t("Abhängigkeit installiert — Neustart nötig.",
+                       "Dependency installed — restart required."));
+    }
+    setTimeout(() => window.location.reload(), 900);
+  } catch (e) {
+    extRescanToast(t("Fehler: ", "Error: ") + e.message);
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
 </script>
 {% endblock %}

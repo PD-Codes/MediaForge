@@ -4731,17 +4731,23 @@ msgid "Module folder"
 msgstr "Modul-Ordner"
 
 msgid "Installed modules live here, outside MediaForge's program files — next to your database and cache, so they survive an update. A module installed by hand is simply a folder dropped in here; it is picked up on the next start."
-msgstr "Installierte Module liegen hier, außerhalb der Programmdateien von MediaForge — neben deiner Datenbank und deinem Cache, sodass sie ein Update überstehen. Ein von Hand installiertes Modul ist einfach ein hier abgelegter Ordner; er wird beim nächsten Start erkannt."
+msgstr "Installierte Module liegen hier, außerhalb der Programmdat
+# Module dependencies (Modulmanager: "needs dependency" + Install button --
+# see web/thirdparties/deps.py and routes/extensions.py).
+msgid "This module needs a Python dependency that is not installed:"
+msgstr "Diesem Modul fehlt eine Python-Abhängigkeit:"
 
-msgid "Trusted signing keys"
-msgstr "Vertrauenswürdige Signaturschlüssel"
+msgid "Install dependency"
+msgstr "Abhängigkeit installieren"
 
-msgid "Built into MediaForge and not configurable. A module is \"Official\" because one of these keys signed it — neither a store nor a setting can decide that."
-msgstr "Fest in MediaForge eingebaut und nicht konfigurierbar. Ein Modul ist „Offiziell\", weil einer dieser Schlüssel es signiert hat — das entscheidet weder ein Store noch eine Einstellung."
+msgid "Downloads the package from PyPI into the MediaForge module folder and loads the module afterwards."
+msgstr "Lädt das Paket von PyPI in den MediaForge-Modulordner und lädt das Modul anschließend."
 
-msgid "This build trusts no signing keys — nothing can be official."
-msgstr "Dieser Build vertraut keinen Signaturschlüsseln — nichts kann offiziell sein."
+msgid "This build cannot install packages itself. Install the dependency into the environment MediaForge runs in."
+msgstr "Dieser Build kann keine Pakete selbst installieren. Installiere die Abhängigkeit in der Umgebung, in der MediaForge läuft."
 
-msgid "Available modules"
+msgid "Install now"
+msgstr "Jetzt installieren"
+id "Available modules"
 msgstr "Verfügbare Module"
 

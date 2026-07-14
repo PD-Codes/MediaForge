@@ -2795,10 +2795,22 @@ function unesc(s) {
   return d.value;
 }
 
+// HTML-escape a value for interpolation into markup — including into an
+// ATTRIBUTE, which is what most callers here do (title="${esc(x)}",
+// data-url="${esc(x)}").
+//
+// It used to escape via div.textContent -> innerHTML, which escapes & and < but
+// NOT quotes: `title="${esc(x)}"` with x = '" onmouseover=alert(1) x="' broke
+// straight out of the attribute. It is now the same escaping as escapeHtml()
+// (which does cover " and '), so the two can't disagree — and a module copying
+// the shorter name out of the core, which is exactly what happened, gets the
+// safe one.
+//
+// unesc() first: values reaching this are often already HTML-entity-encoded by
+// the source site's markup ("Tom &amp; Jerry"), and decoding before re-escaping
+// is what keeps them from rendering as literal entities.
 function esc(s) {
-  const d = document.createElement("div");
-  d.textContent = unesc(s);
-  return d.innerHTML;
+  return escapeHtml(unesc(s));
 }
 
 const downloadAllLangsBtn = document.getElementById("downloadAllLangsBtn");

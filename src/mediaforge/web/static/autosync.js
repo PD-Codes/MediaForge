@@ -854,10 +854,15 @@ function showToast(msg) {
   }, 3000);
 }
 
+// Same contract as app.js's esc(): safe for attribute interpolation, which is
+// what half the callers below do (title="..."). The old textContent/innerHTML
+// trick escaped & and < but left quotes alone, so a title or an error message
+// containing a double quote could break out of the attribute it was rendered
+// into.
 function esc(s) {
-  const d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
+  return (s == null ? "" : String(s)).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c];
+  });
 }
 
 // Init

@@ -58,6 +58,12 @@ Extensions overview page (:func:`resolve_extensions_overview`,
 ``routes/extensions.py``) can show broken/skipped integrations too.
 """
 
+import logging
+import threading
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
 _ITEMS = []
 
 # Per-folder load status, keyed by thirdparties/<name>/ folder name -- see
@@ -93,6 +99,16 @@ _KNOWN_TABS = {
 # still default) boolean checkbox; the rest render as a labelled input of
 # the matching HTML type plus a small inline Save button.
 _FIELD_TYPES = ("toggle", "text", "number", "secret", "select")
+
+# What the generic GET route returns in place of a "secret" field's actual
+# value, and the value the generic PUT route treats as "unchanged, keep what
+# is stored" (see register_generic_settings_routes). The point is that a
+# stored token/API key is never sent back to the browser at all -- the input
+# is a type="password" field, so its plaintext value was previously sitting in
+# the DOM of every admin page that rendered the card, readable by any script
+# on it. An empty string is still a real value (it clears the setting), so the
+# mask has to be a distinct sentinel rather than "".
+SECRET_MASK = "•" * 8
 
 # Access levels register_thirdparty's auth_required accepts -- just "admin"
 # for now (the app only distinguishes logged-in-user vs admin, see
@@ -296,10 +312,68 @@ def record_installed_version(module_id, version):
     set_setting(module_setting_key(module_id, _INSTALLED_VERSION_KEY), str(version or ""))
 
 
+def module_data_dir(module_id, create=True):
+    """The one directory a module may write to:
+    ``~/.mediaforge/module_data/<module_id>/``.
+
+    A module's own folder is NOT a place to write. Two things make that a trap,
+    and both have already bitten:
+
+    * It is what the module's signature is computed over
+      (``signing.content_hash``) -- a cache, a downloaded file, a vendored
+      dependency dropped in there makes the module "modified" and drops it to
+      unverified, by running normally.
+    * The store replaces a module on upgrade by deleting the folder
+      (``store._unpack``'s rmtree) and unpacking the new one. Anything the
+      module put in there is gone on every update.
+
+    This directory has neither problem: outside every module folder, so it can't
+    touch a signature, and untouched by installs and upgrades. It survives an
+    upgrade on purpose -- it's the module's data, not its code. It is removed
+    only when the module is uninstalled (see purge_module_data()).
+
+    Namespaced by MODULE_ID rather than folder name, so a module keeps its data
+    across a folder rename, exactly like its settings (module_setting_key()).
+    """
+    from ...config import MEDIAFORGE_CONFIG_DIR
+
+    path = Path(MEDIAFORGE_CONFIG_DIR) / "module_data" / str(module_id)
+    if create:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            logger.exception("[Registry] Could not create module data dir %s", path)
+    return path
+
+
+def purge_module_data(module_id) -> bool:
+    """Delete a module's data directory -- called on uninstall, alongside
+    purge_module_settings(). Returns True if something was removed.
+
+    Uninstall is the only thing that removes it: an *upgrade* deliberately keeps
+    it (that is the entire difference between this directory and the module
+    folder), and a disabled module keeps its data so re-enabling it doesn't mean
+    starting from scratch.
+    """
+    import shutil
+
+    path = module_data_dir(module_id, create=False)
+    if not path.exists():
+        return False
+    try:
+        shutil.rmtree(path)
+        logger.info("[Registry] Removed module data dir %s", path)
+        return True
+    except Exception:
+        logger.warning("[Registry] Could not remove module data dir %s", path, exc_info=True)
+        return False
+
+
 def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
                          enabled_setting_key, badges=None, description="",
                          enable_label=None, enable_desc="",
                          page_id=None, extra_settings=None,
+                         sensitive_settings=None, admin_endpoints=None,
                          section="discover",
                          settings_host="integrations", settings_tab="thirdparty",
                          settings_tab_label=None,
@@ -343,6 +417,12 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
       checkbox) and can also be:
         * "text" / "secret" -- a single-line input ("secret" renders as
           type="password", for API keys/tokens). "placeholder" optional.
+          A "secret" field is additionally treated as a *sensitive* setting:
+          its value is stored encrypted (db.register_sensitive_keys(), same
+          encryption the core's own API keys/tokens use) and is never sent
+          back to the browser -- the generic GET route returns SECRET_MASK
+          once a value is set, and a PUT carrying that mask back is taken to
+          mean "unchanged" (send "" to clear the value).
         * "number" -- an input[type=number]. "placeholder" optional.
         * "select" -- a dropdown. Requires "options": a list of
           (value, label) tuples (or plain strings, used as both).
@@ -354,6 +434,29 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
       even the "select"/"text" types can't express (a test-connection
       button, dynamic option lists, ...) should still add its own routes
       instead.
+    - sensitive_settings: optional list of *further* setting keys whose values
+      must be stored encrypted, on top of every extra_settings field of type
+      "secret" (which is registered as sensitive automatically). For a secret
+      the module manages itself and never renders as a card field -- an OAuth
+      refresh token, a session cookie. Full app_settings keys, so namespace
+      them like everything else:
+      sensitive_settings=(module_setting_key(MODULE_ID, "refresh_token"),).
+      Equivalent to the module-level MODULE_SENSITIVE_SETTINGS constant (see
+      web/thirdparties/__init__.py); use whichever is closer to hand.
+    - admin_endpoints: optional list of endpoint names that require the admin
+      role, for a Blueprint whose routes are NOT uniformly admin-only.
+      auth_required="admin" (below) is blueprint-wide, all-or-nothing: a module
+      where any logged-in user may read but only an admin may write has to
+      guard the write routes by hand -- and forgets exactly one of them, which
+      is how a non-admin ended up able to write global settings once already.
+      This is the per-route version: name the endpoints, in either
+      "blueprint.view" or plain "view" form (the blueprint is inferred from
+      this item's own), e.g.
+      admin_endpoints=("my_module.api_settings_put", "api_purge").
+      A route can equally well carry the exported @module_admin_required
+      decorator itself (see below) -- both end up in the same place, app.py's
+      wrapping pass, so use whichever reads better. The two compose: an
+      endpoint named here AND decorated is simply admin-only once.
     - section: which sidebar category the link (if any) appears under --
       one of "discover" (default), "management", "syncplay" or "system",
       matching base.html's sidebar categories. A "syncplay" entry only ever
@@ -460,6 +563,42 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
         ]
         normalized_extra.append(normalized)
 
+    # Every "secret" field is a sensitive setting by definition -- register it
+    # so db.set_setting() encrypts it at rest instead of storing an API
+    # key/token in plaintext in app_settings, and so any value already stored
+    # in plaintext (from before this module declared the field, or from before
+    # this mechanism existed) gets encrypted right now. This is what makes a
+    # module's own token as safe as a core one (notif_telegram_bot_token &
+    # co., db.SENSITIVE_KEYS) without a core release per module.
+    #
+    # A module with a secret it does NOT expose as an extra_settings field
+    # (something it stores itself, with no settings-card row) can name those
+    # keys in MODULE_SENSITIVE_SETTINGS instead -- see
+    # web/thirdparties/__init__.py.
+    secret_keys = [s["key"] for s in normalized_extra
+                   if s["type"] == "secret" and s.get("key")]
+    secret_keys += [str(k) for k in (sensitive_settings or ()) if k]
+    if secret_keys:
+        try:
+            from ..db import register_sensitive_keys
+
+            register_sensitive_keys(secret_keys)
+        except Exception:
+            # Never let this fail a registration: the field still works, it
+            # just stays in plaintext -- exactly the pre-existing behaviour.
+            logger.warning(
+                "[Registry] Could not mark secret field(s) of '%s' as sensitive: %s",
+                item_id, ", ".join(secret_keys), exc_info=True)
+
+    # Endpoint names are blueprint-qualified once Flask has them
+    # ("my_module.api_save"), so a module naming a bare view function gets it
+    # qualified with its own blueprint here -- writing the prefix out is
+    # boilerplate, and getting it wrong would silently mean "no admin check".
+    normalized_admin_endpoints = tuple(
+        e if "." in e else (f"{resolved_blueprint}.{e}" if resolved_blueprint else e)
+        for e in (str(x) for x in (admin_endpoints or ()))
+    )
+
     global _ITEMS
     _ITEMS = [i for i in _ITEMS if i["id"] != item_id]
     _ITEMS.append({
@@ -484,6 +623,7 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
         "provider_pill_script": provider_pill_script,
         "requires_enabled": tuple(requires_enabled or ()),
         "auth_required": auth_required,
+        "admin_endpoints": normalized_admin_endpoints,
         "blueprint": resolved_blueprint,
     })
 
@@ -522,6 +662,11 @@ def unregister_module(name):
         for item in _ITEMS
         if item["id"] in ids and item.get("blueprint")
     }
+    # Stop and forget any background worker these items registered, before their
+    # items disappear -- afterwards _worker_should_run() couldn't even find the
+    # item to know it should be off, and the thread would outlive the module.
+    for item_id in ids:
+        unregister_background_worker(item_id)
     _ITEMS = [item for item in _ITEMS if item["id"] not in ids]
     _MODULES.pop(name, None)
     return sorted(blueprints)
@@ -604,6 +749,11 @@ def record_module_status(name, **fields):
         "version": _UNKNOWN_VERSION, "min_app_version": "", "max_app_version": "",
         "module_id": name, "homepage": "", "license": "",
         "api_version": None, "requirements": (),
+        # The subset of `requirements` that isn't satisfied right now (see
+        # deps.missing_requirements()). Non-empty = the Modulmanager shows this
+        # module as "needs a dependency" with an Install button, instead of a
+        # module that mysteriously isn't there.
+        "missing_requirements": (),
         # Result of signing.verify_module() -- see its docstring. The default is
         # what an unsigned module gets, which is most of them: perfectly loadable,
         # just not vouched for by anybody.
@@ -758,6 +908,12 @@ def resolve_extensions_overview():
             "license": mod["license"],
             "api_version": mod["api_version"] or REGISTRY_API_VERSION,
             "requirements": tuple(mod["requirements"] or ()),
+            # Dependencies: what's missing, and whether this build can install it
+            # (a PyInstaller build has no pip -- see deps.pip_available()). The
+            # card turns into "needs a dependency" + an Install button rather
+            # than a module that was silently skipped.
+            "missing_requirements": tuple(mod.get("missing_requirements") or ()),
+            "deps_installable": _deps_installable(),
             # Trust, as *derived from the signature in the module* (signing.py)
             # -- never as claimed by a store's index or by the module's own
             # constants. An unsigned module is "unverified"; a signed one whose
@@ -772,6 +928,26 @@ def resolve_extensions_overview():
             "registered_items": registered_items,
         })
     return out
+
+
+def _deps_installable() -> bool:
+    """Whether the Install button can do anything in this build -- see
+    deps.pip_available(). Cached per process: it shells out to pip, and the
+    overview is rendered on every page load."""
+    global _DEPS_INSTALLABLE
+
+    if _DEPS_INSTALLABLE is None:
+        try:
+            from .deps import pip_available
+
+            _DEPS_INSTALLABLE = bool(pip_available()[0])
+        except Exception:
+            logger.warning("[Registry] Could not determine pip availability", exc_info=True)
+            _DEPS_INSTALLABLE = False
+    return _DEPS_INSTALLABLE
+
+
+_DEPS_INSTALLABLE = None
 
 
 def dependencies_satisfied(item_id):
@@ -817,6 +993,236 @@ def admin_required_blueprints():
     hardcoded set.
     """
     return {item["blueprint"] for item in _ITEMS if item.get("auth_required") == "admin" and item.get("blueprint")}
+
+
+# Endpoints a module marked admin-only *per route*, either declaratively
+# (register_thirdparty's admin_endpoints=) or by decorating the view with
+# @module_admin_required. Blueprint-wide auth_required="admin" is still a
+# separate, coarser thing (admin_required_blueprints() above) -- this is for
+# the common case it can't express: a Blueprint where reading is fine for any
+# logged-in user and only the writes are admin's business.
+_ADMIN_ENDPOINTS = set()
+
+# What the decorator marks a view function with. app.py's wrapping pass reads
+# the attribute off the view function rather than the name, because a decorated
+# view can be registered under an endpoint name the module never told us about.
+_ADMIN_ATTR = "_mediaforge_admin_required"
+
+
+def module_admin_required(view):
+    """Mark one route as admin-only. The per-route counterpart of
+    register_thirdparty(auth_required="admin"), for a module whose Blueprint
+    isn't uniformly admin-only::
+
+        from ..registry import module_admin_required
+
+        @bp.route("/api/my_module/settings", methods=["PUT"])
+        @module_admin_required
+        def api_settings_put():
+            ...
+
+    This does *not* wrap the view itself -- it flags it, and app.py's single
+    endpoint-wrapping pass applies the real admin_required check to it along
+    with everything else. Which means the check can't be bypassed by the order
+    decorators happen to be stacked in, and a module can't accidentally end up
+    with admin_required *inside* login_required (i.e. never reached).
+
+    Being a marker also makes it honest about what it can't do: a decorator
+    that ran at import time couldn't see Flask's session at all.
+    """
+    setattr(view, _ADMIN_ATTR, True)
+    return view
+
+
+def is_admin_view(view) -> bool:
+    """True if `view` carries @module_admin_required. Used by app.py's wrapping
+    pass, which is the only thing that enforces it."""
+    return bool(getattr(view, _ADMIN_ATTR, False))
+
+
+def admin_required_endpoints():
+    """Every endpoint name declared admin-only via register_thirdparty's
+    admin_endpoints= (blueprint-qualified). app.py adds the ones marked with
+    @module_admin_required to this on its own, by inspecting the view
+    functions -- see is_admin_view()."""
+    out = set(_ADMIN_ENDPOINTS)
+    for item in _ITEMS:
+        out.update(item.get("admin_endpoints") or ())
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Background workers
+# ---------------------------------------------------------------------------
+#
+# Every module with a bot, a poller or a sync loop used to rebuild the same
+# machinery: a thread, a lock, a "has the config changed?" poll every N seconds,
+# and a restart path -- which is where the bugs live (discord_request_bot held
+# its own lock across a thread join and deadlocked itself on every restart).
+#
+# So the core owns the lifecycle instead. A module says "here is how you start
+# me and how you stop me"; MediaForge decides *when*:
+#
+#   * enabled at startup            -> start
+#   * master toggle switched on/off -> start / stop
+#   * a setting the module owns changed -> stop, then start (against the new
+#     value -- which is what the polling was for)
+#   * module uninstalled, or MediaForge shutting down -> stop
+#
+# One lock per worker, held only around that worker's own start/stop, so two
+# saves in a row can't overlap and nothing else in the app can be blocked by a
+# module's slow shutdown.
+_WORKERS = {}
+_WORKERS_LOCK = threading.Lock()
+_WORKER_APP = None
+
+
+def register_background_worker(item_id, start, stop, restart_on_settings=True):
+    """Hand MediaForge a background worker's start/stop, and stop hand-rolling
+    its lifecycle::
+
+        def register(app):
+            register_thirdparty(item_id="my_bot", ...)
+            register_background_worker("my_bot", start=_start_bot, stop=_stop_bot)
+
+    ``start(app)`` and ``stop(app)`` are called with the Flask app, never
+    concurrently for the same worker, and never from a request thread (a
+    settings change dispatches them onto a short-lived thread of their own --
+    see web/thirdparties/__init__.py's _on_setting_changed()). Both must be
+    idempotent-ish and must not raise into the caller; whatever they do raise is
+    logged and swallowed, exactly like a lifecycle hook.
+
+    ``stop(app)`` MUST NOT be a "stop and wait forever": it is what runs on
+    shutdown and on uninstall. Join with a timeout; do not take a lock the
+    worker thread itself needs to exit.
+
+    - item_id: the registered item this worker belongs to. Its enable toggle is
+      what gates the worker -- an item that is off, or whose requires_enabled
+      isn't satisfied, has no running worker, and nothing needs to check that in
+      the module.
+    - restart_on_settings: restart the worker when any setting the module owns
+      (``module:<module_id>:*``) changes. True is what a bot wants (the token or
+      the channel changed -- reconnect). Set False for a worker that reads its
+      settings on every tick anyway and would rather not be bounced.
+    """
+    if not callable(start) or not callable(stop):
+        raise ValueError("register_background_worker: start and stop must be callables")
+    with _WORKERS_LOCK:
+        _WORKERS[item_id] = {
+            "start": start,
+            "stop": stop,
+            "restart_on_settings": bool(restart_on_settings),
+            "running": False,
+            "lock": threading.Lock(),
+        }
+    logger.debug("[Registry] Registered background worker for '%s'", item_id)
+
+
+def unregister_background_worker(item_id):
+    """Drop a worker from the registry, stopping it first if it's running --
+    called when a module is unregistered/uninstalled (see unregister_module())."""
+    with _WORKERS_LOCK:
+        worker = _WORKERS.pop(item_id, None)
+    if worker:
+        _stop_worker(item_id, worker)
+
+
+def _worker_should_run(item_id) -> bool:
+    """A worker runs exactly when its item is enabled and its requires_enabled
+    dependencies are actually on -- the same condition that decides whether the
+    item's sidebar link is shown, so "visible" and "running" can't disagree."""
+    from ..db import get_setting
+
+    item = get_thirdparty(item_id)
+    if not item:
+        return False
+    if get_setting(item["enabled_setting_key"], "0") != "1":
+        return False
+    return dependencies_satisfied(item_id)
+
+
+def _start_worker(item_id, worker, app):
+    with worker["lock"]:
+        if worker["running"]:
+            return
+        try:
+            worker["start"](app)
+            worker["running"] = True
+            logger.info("[Registry] Started background worker '%s'", item_id)
+        except Exception:
+            logger.exception("[Registry] Background worker '%s' failed to start", item_id)
+
+
+def _stop_worker(item_id, worker, app=None):
+    with worker["lock"]:
+        if not worker["running"]:
+            return
+        try:
+            worker["stop"](app if app is not None else _WORKER_APP)
+            logger.info("[Registry] Stopped background worker '%s'", item_id)
+        except Exception:
+            logger.exception("[Registry] Background worker '%s' failed to stop", item_id)
+        finally:
+            # Marked stopped even if stop() raised: a worker whose stop is broken
+            # must not be un-stoppable forever -- the next start() gets a clean
+            # slate, and the exception is in the log.
+            worker["running"] = False
+
+
+def _selected_workers(module_name=None, item_id=None):
+    with _WORKERS_LOCK:
+        items = list(_WORKERS.items())
+    out = []
+    for wid, worker in items:
+        if item_id and wid != item_id:
+            continue
+        if module_name and module_name_for_item(wid) != module_name:
+            continue
+        out.append((wid, worker))
+    return out
+
+
+def sync_workers(app, module_name=None, item_id=None, restart=False):
+    """Bring every (selected) worker's running state in line with its item's
+    enable toggle. The single entry point for all four lifecycle triggers --
+    startup, the master toggle, a settings change, shutdown.
+
+    restart=True additionally bounces workers that are running *and* should
+    still be running (restart_on_settings), which is what a settings change
+    means: the worker is holding the old value.
+    """
+    global _WORKER_APP
+
+    _WORKER_APP = app
+    for wid, worker in _selected_workers(module_name, item_id):
+        should_run = _worker_should_run(wid)
+        if not should_run:
+            _stop_worker(wid, worker, app)
+            continue
+        if worker["running"]:
+            if restart and worker["restart_on_settings"]:
+                _stop_worker(wid, worker, app)
+                _start_worker(wid, worker, app)
+            continue
+        _start_worker(wid, worker, app)
+
+
+def start_workers(app, module_name=None):
+    """Start the workers of every enabled module -- called once at the end of
+    discover_and_register(), and again for a single module that came up live
+    (a store install, a dependency install)."""
+    sync_workers(app, module_name=module_name, restart=False)
+
+
+def stop_workers(module_name=None):
+    """Stop workers -- one module's, or (no argument) all of them, which is what
+    runs at shutdown via atexit. Never raises: this is the last thing that
+    happens on the way out."""
+    for wid, worker in _selected_workers(module_name):
+        try:
+            _stop_worker(wid, worker)
+        except Exception:
+            logger.exception("[Registry] Error stopping worker '%s'", wid)
 
 
 def resolve_menu_items(section):
@@ -1019,10 +1425,17 @@ def register_generic_settings_routes(app):
         item = get_thirdparty(item_id)
         if not item:
             return jsonify({"error": "unknown"}), 404
-        extra = {
-            s["key"]: get_setting(s["key"], s.get("default", "0"))
-            for s in item.get("extra_settings", [])
-        }
+        extra = {}
+        for s in item.get("extra_settings", []):
+            value = get_setting(s["key"], s.get("default", "0"))
+            # A "secret" is write-only over this API: the browser only learns
+            # *whether* one is set, never what it is. Anything else would put
+            # the plaintext token straight into the DOM of the settings page
+            # (the field is type="password", which hides it from the user's
+            # eyes but not from any script on the page).
+            if s["type"] == "secret":
+                value = SECRET_MASK if value else ""
+            extra[s["key"]] = value
         return jsonify({"enabled": get_setting(item["enabled_setting_key"], "0"), "extra": extra})
 
     @app.route("/api/settings/thirdparty/<item_id>", methods=["PUT"])
@@ -1046,6 +1459,11 @@ def register_generic_settings_routes(app):
 
                 fire_module_hook(module_name_for_item(item_id),
                                  "on_enable" if now_enabled else "on_disable", app)
+                # ...and the core half of the same edge: a registered background
+                # worker is started/stopped to match, so a module doesn't have to
+                # do it from its own on_enable/on_disable (and doesn't have to get
+                # the locking right). No-op for a module without one.
+                sync_workers(app, item_id=item_id)
 
         # Only ever writes keys this item itself registered via
         # extra_settings -- an unrecognized key in the "extra" payload is
@@ -1069,6 +1487,14 @@ def register_generic_settings_routes(app):
                 valid_values = {v for v, _label in field["options"]}
                 if value in valid_values:
                     set_setting(key, str(value))
-            else:  # "text" / "secret"
-                set_setting(key, str(value).strip() if field_type == "text" else str(value))
+            elif field_type == "secret":
+                # The GET route hands the browser SECRET_MASK instead of the
+                # stored value, so a save of a card the user never touched
+                # sends the mask straight back -- that means "leave it as it
+                # is", not "overwrite my token with eight bullets". An empty
+                # string is still honoured and clears the setting.
+                if str(value) != SECRET_MASK:
+                    set_setting(key, str(value))
+            else:  # "text"
+                set_setting(key, str(value).strip())
         return jsonify({"ok": True})

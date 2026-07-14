@@ -85,8 +85,11 @@
     return ev.source === "seerr" ? '<span class="cal-seerr-tag">Seerr</span>' : "";
   }
   function esc(s) {
-    return (s == null ? "" : String(s)).replace(/[&<>"]/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    // Single quotes included: attributes elsewhere in the codebase are written
+    // with either quote character, and an escaper that only covers one of them
+    // is a trap for whoever copies it next.
+    return (s == null ? "" : String(s)).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c];
     });
   }
 

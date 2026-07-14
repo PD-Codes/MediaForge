@@ -97,9 +97,18 @@ SIGNABLE_TIERS = ("official", "verified")
 # imported, so hashing them would mark every module as tampered with right after
 # its first start) and *.db/*.log (a module that writes a cache or a log into its
 # own folder would otherwise invalidate its own signature by running).
+# _vendor/_data are the safety net for the two things a module should not be
+# doing in its own folder at all: vendoring pip packages into it (that is what
+# MODULE_REQUIREMENTS + deps.py are for, installing to ~/.mediaforge/module_deps/)
+# and writing runtime data into it (registry.module_data_dir(), i.e.
+# ~/.mediaforge/module_data/<id>/). Both would otherwise invalidate the module's
+# own signature the first time it ran -- and both are still wiped by the store's
+# rmtree on every upgrade, so excluding them here buys a module a working
+# signature, not a working vendoring strategy.
 HASH_EXCLUDE = (
     "__pycache__", ".git", ".gitignore", ".DS_Store", ".env",
     "*.pyc", "*.pyo", "*.db", "*.sqlite", "*.sqlite3", "*.log",
+    "_vendor", "_data",
 )
 
 

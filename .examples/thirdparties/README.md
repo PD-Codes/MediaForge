@@ -495,6 +495,136 @@ pair the toggle uses — no per-integration route needed unless you need
 something these four types can't express (a test-connection button,
 dynamically-fetched options, ...).
 
+## Secrets (`"secret"` fields and `MODULE_SENSITIVE_SETTINGS`)
+
+A `"secret"` field is more than a `type="password"` input. MediaForge treats
+it as a sensitive setting, exactly like its own API keys and tokens:
+
+- **Encrypted at rest.** The value is stored encrypted in `app_settings`
+  (`db.register_sensitive_keys()`, registered for you by
+  `register_thirdparty()`). A value already stored in plaintext — from an
+  older version of your module, say — is encrypted the next time the module
+  registers. Nothing changes for your code: keep calling `get_setting()` /
+  `set_setting()`, decryption is transparent.
+- **Never sent back to the browser.** `GET /api/settings/thirdparty/<id>`
+  returns a mask (`registry.SECRET_MASK`) once a value is set, so the token
+  isn't sitting in the DOM of the settings page. A `PUT` that carries the
+  mask back means "unchanged" — send `""` to clear the value. If you render
+  the field on a page of your own, do the same: never put the stored secret
+  into the HTML.
+
+For a secret with **no settings-card field** — an OAuth refresh token, a
+session cookie, anything your module obtains itself — declare the key in
+`MODULE_SENSITIVE_SETTINGS` and it gets the same encryption:
+
+```python
+MODULE_SENSITIVE_SETTINGS = (
+    module_setting_key(MODULE_ID, "refresh_token"),
+)
+```
+
+## Python dependencies (`MODULE_REQUIREMENTS`)
+
+Declare what you need and stop there:
+
+```python
+MODULE_REQUIREMENTS = ("discord.py>=2.3",)
+```
+
+If it isn't installed, MediaForge doesn't silently skip your module any more:
+the Modulmanager shows it as **"needs a dependency"** with an **Install** button.
+That button installs the package into `~/.mediaforge/module_deps/` and registers
+your module live — no restart.
+
+What you must **not** do (and what the core now makes unnecessary):
+
+- **Don't run pip yourself.** Especially not `pip install --target <your own
+  module folder>`: that folder is what your signature is computed over, and the
+  store deletes it on every upgrade. You'd break your own signature and lose the
+  packages on each update.
+- **Don't put anything at the front of `sys.path`.** The core appends its
+  dependency directory, so MediaForge's own aiohttp/niquests/packaging always
+  win an import. A module that prepends its own copies shadows them
+  process-wide, for every other module too, from the moment it's first enabled.
+
+## A place to write (`module_data_dir`)
+
+Your module folder is read-only in spirit: it's hashed for the signature and
+replaced wholesale on upgrade. Write here instead:
+
+```python
+from ..registry import module_data_dir
+
+path = module_data_dir(MODULE_ID) / "cache.json"   # ~/.mediaforge/module_data/<id>/
+```
+
+It survives upgrades and is deleted only when the module is uninstalled.
+
+## Background workers (`register_background_worker`)
+
+Don't build a thread + lock + config-poll + restart path by hand. Hand the core
+your start and stop:
+
+```python
+from ..registry import register_thirdparty, register_background_worker
+
+def register(app):
+    register_thirdparty(item_id="my_bot", ...)
+    register_background_worker("my_bot", start=_start_bot, stop=_stop_bot)
+```
+
+MediaForge starts it when the module is enabled, stops it when it's disabled or
+uninstalled, restarts it when a setting your module owns changes, and stops it
+on shutdown. `start(app)` / `stop(app)` are never called concurrently for the
+same worker and never on a request thread.
+
+`stop(app)` must actually be able to finish: join with a timeout, and never take
+a lock your own worker thread needs in order to exit.
+
+For anything beyond "restart me", implement the hook:
+
+```python
+def on_settings_changed(app, keys):
+    """A module:<MODULE_ID>:* setting was saved."""
+```
+
+## Admin-only routes
+
+`auth_required="admin"` is blueprint-wide. When only *some* routes are admin's
+business, mark those:
+
+```python
+from ..registry import module_admin_required
+
+@bp.route("/api/my_module/settings", methods=["PUT"])
+@module_admin_required
+def api_settings_put():
+    ...
+```
+
+...or declare them on the registration:
+
+```python
+register_thirdparty(..., admin_endpoints=("api_settings_put",))
+```
+
+Both end up in the same enforcement pass in `app.py`. Do not hand-check
+`is_admin` in the view body — that is the check everybody forgets on exactly one
+route.
+
+## API routes and CSRF
+
+Routes whose view function is named `api_*` **and** whose URL lives under
+`/api/` are exempt from CSRF token checks — that's what lets a module's own
+`fetch()` calls work without a token. What protects them instead is the
+JSON-only rule: MediaForge rejects any `POST`/`PUT`/`DELETE` to those routes
+that doesn't declare `Content-Type: application/json`.
+
+So mount your write routes under `/api/<your_module>/...` and always send
+`Content-Type: application/json`. A route named `api_*` but mounted somewhere
+else keeps full CSRF protection (and logs a warning at startup saying so) —
+it would otherwise be a route with neither of the two defenses.
+
 ## Building a fully custom page (`_field_macros.html`)
 
 `extra_settings` (above) covers "a few more fields on the generic card".

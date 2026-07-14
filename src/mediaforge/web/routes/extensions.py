@@ -34,11 +34,13 @@ from flask import jsonify, render_template, request
 
 from ..thirdparties import (
     MODULES_DIR,
+    install_module_requirements,
     install_staged_live,
     pending_changes,
     rescan_new_modules,
     uninstall_module_live,
 )
+from ..thirdparties import deps as module_deps
 from .. import restart as web_restart
 from ..thirdparties import store as module_store
 from ..thirdparties.registry import REGISTRY_API_VERSION, resolve_extensions_overview
@@ -119,6 +121,45 @@ def register_extensions_routes(app):
         already-registered one: no, both still need a restart)."""
         new_names = rescan_new_modules(app)
         return jsonify({"new_modules": new_names, "extensions": resolve_extensions_overview()})
+
+    @app.route("/api/extensions/install-deps", methods=["POST"])
+    def api_extensions_install_deps():
+        """Install the Python dependencies a module declares in
+        MODULE_REQUIREMENTS, then bring the module up -- the Modulmanager's
+        "Install dependency" button.
+
+        Admin-only (see app.py's _admin_only): this downloads code from PyPI and
+        makes it importable in the MediaForge process. That is a decision an
+        admin makes deliberately, which is the whole reason it is a button and
+        not something a module can trigger by being installed.
+
+        The request names a *module folder*, never a package: the requirement
+        strings come from the module's own MODULE_REQUIREMENTS, so this endpoint
+        cannot be used to pip-install an arbitrary package. The packages land in
+        ~/.mediaforge/module_deps/, which is appended to sys.path -- MediaForge's
+        own dependencies always win an import (see thirdparties/deps.py).
+        """
+        data = request.get_json(silent=True) or {}
+        name = str(data.get("folder") or data.get("name") or "").strip()
+        if not name:
+            return jsonify({"ok": False, "error": "missing module folder"}), 400
+
+        result = install_module_requirements(app, name)
+        result["extensions"] = resolve_extensions_overview()
+        return jsonify(result), (200 if result.get("ok") else 400)
+
+    @app.route("/api/extensions/deps")
+    def api_extensions_deps():
+        """Where module dependencies live and whether this build can install any
+        -- so the Modulmanager can say "no pip in this build" instead of showing
+        a button that does nothing."""
+        installable, reason = module_deps.pip_available()
+        return jsonify({
+            "ok": True,
+            "installable": installable,
+            "reason": reason,
+            "dir": str(module_deps.MODULE_DEPS_DIR),
+        })
 
     # ---- Module store ------------------------------------------------------
     # All admin-only (see app.py's _admin_only, which also gates the page these

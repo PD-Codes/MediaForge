@@ -112,8 +112,90 @@ SENSITIVE_KEYS: frozenset = frozenset({
     "crunchyroll_session_key",
 })
 
+# Sensitive keys registered at runtime on top of the frozen core set above --
+# populated by register_sensitive_keys(), which is how a third-party module
+# marks a setting of its own (e.g. "module:discord_request_bot:token") as
+# secret without needing a core release to add it to SENSITIVE_KEYS. Kept as a
+# separate mutable set so the core list stays a frozenset (i.e. still can't be
+# mutated by accident from anywhere else).
+_RUNTIME_SENSITIVE_KEYS: set = set()
+
 _ENC_PREFIX = "enc:"
 _fernet_instance = None
+
+
+def is_sensitive_key(key: str) -> bool:
+    """True if `key`'s value is stored encrypted (core set or runtime-registered).
+    """
+    return key in SENSITIVE_KEYS or key in _RUNTIME_SENSITIVE_KEYS
+
+
+def register_sensitive_keys(keys) -> int:
+    """Mark app_settings `keys` as sensitive from here on: set_setting() will
+    encrypt their values, get_setting() decrypts them, and any value already
+    stored in plaintext is encrypted right now (same one-shot migration
+    _migrate_sensitive_settings() does for the core keys at startup).
+
+    This is the registry mechanism modules use -- see
+    thirdparties/registry.py: every extra_settings field declared with
+    type="secret" is registered here automatically, and a module can name
+    further keys (ones with no settings-card field of their own) via the
+    MODULE_SENSITIVE_SETTINGS constant.
+
+    Registering is deliberately one-way and cumulative: a key never becomes
+    "not sensitive" again, because a disabled/uninstalled module leaving an
+    already-encrypted value behind must still be readable. get_setting()
+    decrypts anything carrying the _ENC_PREFIX regardless of registration for
+    the same reason.
+
+    Returns how many previously-plaintext values were encrypted by this call.
+    """
+    new_keys = {k for k in (keys or ()) if k and not is_sensitive_key(k)}
+    if not new_keys:
+        return 0
+    _RUNTIME_SENSITIVE_KEYS.update(new_keys)
+    return _encrypt_existing_plaintext(new_keys)
+
+
+def _encrypt_existing_plaintext(keys) -> int:
+    """Encrypt any of `keys` still stored as plaintext. Best-effort: a missing
+    app_settings table (registration before the DB is initialized) or any DB
+    error is logged, never raised -- a module must not fail to load because a
+    value couldn't be re-encrypted, and the next set_setting() writes it
+    encrypted anyway."""
+    conn = get_db()
+    migrated = 0
+    try:
+        tbl = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'"
+        ).fetchone()
+        if not tbl:
+            return 0
+        keys = tuple(keys)
+        rows = conn.execute(
+            "SELECT key, value FROM app_settings WHERE key IN ({})".format(
+                ",".join("?" * len(keys))
+            ),
+            keys,
+        ).fetchall()
+        for row in rows:
+            key, val = row["key"], row["value"]
+            if val and not val.startswith(_ENC_PREFIX):
+                encrypted = _encrypt_value(val)
+                if encrypted != val:  # encryption succeeded
+                    conn.execute(
+                        "UPDATE app_settings SET value = ? WHERE key = ?",
+                        (encrypted, key),
+                    )
+                    migrated += 1
+        if migrated:
+            conn.commit()
+            logger.info("Encrypted %d previously plaintext sensitive setting(s)", migrated)
+    except Exception:
+        logger.warning("Error encrypting sensitive settings", exc_info=True)
+    finally:
+        conn.close()
+    return migrated
 
 
 def _get_fernet():
@@ -2268,41 +2350,13 @@ def init_app_settings_db():
 
 
 def _migrate_sensitive_settings():
-    """Re-encrypt any sensitive settings that are still stored as plaintext."""
-    conn = get_db()
-    try:
-        tbl = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'"
-        ).fetchone()
-        if not tbl:
-            return
+    """Re-encrypt any core sensitive settings that are still stored as plaintext.
 
-        rows = conn.execute(
-            "SELECT key, value FROM app_settings WHERE key IN ({})".format(
-                ",".join("?" * len(SENSITIVE_KEYS))
-            ),
-            tuple(SENSITIVE_KEYS),
-        ).fetchall()
-
-        migrated = 0
-        for row in rows:
-            key, val = row["key"], row["value"]
-            if val and not val.startswith(_ENC_PREFIX):
-                encrypted = _encrypt_value(val)
-                if encrypted != val:  # encryption succeeded
-                    conn.execute(
-                        "UPDATE app_settings SET value = ? WHERE key = ?",
-                        (encrypted, key),
-                    )
-                    migrated += 1
-
-        if migrated:
-            conn.commit()
-            logger.info("Encrypted %d previously plaintext sensitive setting(s)", migrated)
-    except Exception:
-        logger.warning("Error during sensitive settings migration", exc_info=True)
-    finally:
-        conn.close()
+    Only covers SENSITIVE_KEYS: runtime-registered module keys aren't known yet
+    at DB-init time and are migrated by register_sensitive_keys() instead, when
+    the module that owns them registers.
+    """
+    _encrypt_existing_plaintext(SENSITIVE_KEYS)
 
 
 def _migrate_plaintext_admin_password():
@@ -2368,7 +2422,12 @@ def get_setting(key: str, default: str | None = None) -> str | None:
         if not row:
             return default
         val = row["value"]
-        if key in SENSITIVE_KEYS:
+        # Decrypt when the key is registered as sensitive *or* when the stored
+        # value carries the encryption prefix: a module that registered a key
+        # via register_sensitive_keys() and was later disabled/uninstalled
+        # leaves an encrypted value behind, and reading it back must not hand
+        # out the ciphertext just because nothing registered the key this run.
+        if is_sensitive_key(key) or (val or "").startswith(_ENC_PREFIX):
             val = _decrypt_value(val)
         return val
     finally:
@@ -2378,7 +2437,7 @@ def get_setting(key: str, default: str | None = None) -> str | None:
 def set_setting(key: str, value: str) -> None:
     conn = get_db()
     try:
-        stored = _encrypt_value(value) if key in SENSITIVE_KEYS else value
+        stored = _encrypt_value(value) if is_sensitive_key(key) else value
         conn.execute(
             "INSERT INTO app_settings (key, value) VALUES (?, ?)"
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -2387,6 +2446,51 @@ def set_setting(key: str, value: str) -> None:
         conn.commit()
     finally:
         conn.close()
+    _notify_setting_listeners(key, value)
+
+
+# ---------------------------------------------------------------------------
+# Setting-change listeners
+# ---------------------------------------------------------------------------
+#
+# So that "a setting changed" can be an event instead of something every
+# interested party polls for. web/thirdparties/ subscribes exactly once and
+# turns a write to "module:<id>:<key>" into that module's on_settings_changed()
+# hook plus a restart of its background worker -- which is what every module
+# with a bot was hand-rolling as a config poll on a 20-second timer.
+#
+# Listeners are called AFTER the value is committed (so a listener that reads
+# the setting back sees the new one) and never inside the DB transaction.
+
+_SETTING_LISTENERS = []
+
+
+def add_setting_listener(fn) -> None:
+    """Call ``fn(key, value)`` after every successful set_setting().
+
+    `value` is the plaintext that was passed in, not what is stored (a sensitive
+    key is encrypted at rest, and a listener has no business decrypting it just
+    to be told what it already got).
+
+    A listener must not raise and must be quick -- it runs on the thread that
+    saved the setting, i.e. usually inside an HTTP request. Anything slow
+    (restarting a bot) belongs on a thread of the listener's own; see
+    web/thirdparties/__init__.py's _on_setting_changed(), which does exactly
+    that.
+    """
+    if callable(fn) and fn not in _SETTING_LISTENERS:
+        _SETTING_LISTENERS.append(fn)
+
+
+def _notify_setting_listeners(key: str, value: str) -> None:
+    """Fire every listener, swallowing (but logging) whatever they raise: a
+    module with a broken handler must not be able to make saving a setting
+    fail."""
+    for fn in list(_SETTING_LISTENERS):
+        try:
+            fn(key, value)
+        except Exception:
+            logger.warning("Setting listener %r failed for key %r", fn, key, exc_info=True)
 
 
 

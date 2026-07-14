@@ -570,8 +570,19 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
 
     @app.before_request
     def _enforce_json_content_type():
-        """Reject non-JSON POST/PUT/DELETE on API routes to prevent form-based CSRF bypass."""
-        if request.method in ("POST", "PUT", "DELETE") and request.path.startswith("/api/"):
+        """Reject non-JSON POST/PUT/DELETE on API routes to prevent form-based CSRF bypass.
+
+        This is what stands in for the CSRF token on every endpoint the
+        exemption pass below strips it from, so it must cover *exactly* that
+        set: everything under /api/ (which is what the exemption is keyed on)
+        plus the handful of endpoints exempted by name (auth.admin_*), which
+        live under /auth/admin/api/ and were previously exempt from both the
+        token and this guard.
+        """
+        if request.method not in ("POST", "PUT", "DELETE"):
+            return
+        exempt = app.config.get("CSRF_EXEMPT_ENDPOINTS") or frozenset()
+        if request.path.startswith("/api/") or request.endpoint in exempt:
             ct = (request.content_type or "").split(";")[0].strip()
             # If a Content-Type header is present at all it must be JSON.
             # Browser form submissions always declare application/x-www-form-urlencoded
@@ -725,14 +736,22 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
 
     if auth_enabled:
         from .auth import admin_required
-        from .thirdparties.registry import admin_required_blueprints
+        from .thirdparties.registry import (
+            admin_required_blueprints, admin_required_endpoints, is_admin_view,
+        )
 
         # Blueprint names any thirdparty registered with auth_required="admin"
         # (see register_thirdparty) -- every route under one of these
         # blueprints is wrapped with admin_required below, exactly like the
         # hand-maintained _admin_only set, without needing an entry added
         # here by hand for each one.
-        _admin_blueprints = admin_required_blueprints()
+        # ...plus the per-route version of the same thing, for a module whose
+        # blueprint is NOT uniformly admin-only (any logged-in user may read,
+        # only an admin may write). Two ways in, one enforcement point: the
+        # endpoints a module named in register_thirdparty(admin_endpoints=...),
+        # and the views it decorated with @module_admin_required. Both are
+        # resolved inside secure_endpoints() below, because a module registered
+        # live adds to both sets after this point.
 
         # Endpoints that require admin instead of just login
         _admin_only = {
@@ -768,6 +787,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # Imports and executes arbitrary code found on disk (any new
             # web/thirdparties/<name>/ folder).
             "api_extensions_rescan",
+            # Downloads packages from PyPI and makes them importable in this
+            # process (into ~/.mediaforge/module_deps/, see thirdparties/deps.py).
+            # As privileged as installing a module -- which is exactly the point:
+            # a module can't pull code onto the host by being enabled, an admin
+            # has to say yes.
+            "api_extensions_install_deps",
+            "api_extensions_deps",
             # Module store (web/thirdparties/store.py): these decide which
             # remote MediaForge trusts, download code from it, and stage it to
             # be imported into this very process on the next start. Strictly
@@ -851,28 +877,115 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_v1_library_movies",
             "api_v1_stats",
         }
-        for endpoint, view_func in list(app.view_functions.items()):
-            if endpoint not in _exempt:
+        # Endpoints that have already been through the pass below. A module
+        # installed live (store install, dependency install, Modulmanager
+        # "Refresh") adds its blueprint to a *running* app, i.e. after this pass
+        # has already run once -- and an endpoint that never went through it is
+        # an endpoint with no login check at all. So the pass is a function, it
+        # remembers what it has done, and web/thirdparties/ calls it again after
+        # every live registration (see _secure_new_endpoints there).
+        _secured = set()
+
+        def secure_endpoints():
+            """Wrap every not-yet-wrapped view with login_required /
+            admin_required, and apply the CSRF exemption to it. Idempotent:
+            re-running it only touches endpoints added since the last run, so a
+            view is never double-wrapped."""
+            admin_module_endpoints = set(admin_required_endpoints())
+            admin_blueprints = admin_required_blueprints()
+            for endpoint, view in list(app.view_functions.items()):
+                if is_admin_view(view):
+                    admin_module_endpoints.add(endpoint)
+
+            for endpoint, view_func in list(app.view_functions.items()):
+                if endpoint in _secured or endpoint in _exempt:
+                    _secured.add(endpoint)
+                    continue
                 endpoint_blueprint = endpoint.rsplit(".", 1)[0] if "." in endpoint else None
-                if endpoint in _admin_only or (endpoint_blueprint and endpoint_blueprint in _admin_blueprints):
+                if (endpoint in _admin_only
+                        or endpoint in admin_module_endpoints
+                        or (endpoint_blueprint and endpoint_blueprint in admin_blueprints)):
                     app.view_functions[endpoint] = admin_required(view_func)
                 else:
                     app.view_functions[endpoint] = login_required(view_func)
+                _secured.add(endpoint)
 
-        # Exempt JSON API routes from CSRF (they use Content-Type: application/json
-        # which provides implicit cross-origin protection via CORS preflight).
-        # Endpoint names are "viewfunc" for routes added directly on the app
-        # object, but "blueprintname.viewfunc" for anything registered via a
-        # Blueprint (every thirdparties/<name>/routes.py, e.g. mediacalendar's
+            _apply_csrf_exemptions()
+
+        # Called by web/thirdparties/ after it registers a module on the running
+        # app. Stored on the app rather than imported, because the thirdparties
+        # package has no business importing create_app's internals -- and an app
+        # created without auth simply doesn't have it, which is exactly right:
+        # there is nothing to secure.
+        app.extensions["mediaforge_secure_endpoints"] = secure_endpoints
+
+        # Exempt JSON API routes from CSRF. What replaces the CSRF token for
+        # these is _enforce_json_content_type() below: a route that only ever
+        # accepts Content-Type: application/json cannot be driven by a
+        # cross-origin HTML form (forms can only send urlencoded/multipart/
+        # text-plain), and a cross-origin fetch() with a JSON content type is
+        # a preflighted request the browser won't send without CORS approval
+        # this app never gives. So the exemption is only sound for endpoints
+        # that guard actually applies to -- which is why it is keyed on the
+        # *path* being under /api/, not merely on the view function being
+        # named api_*.
+        #
+        # The naming convention stays: an endpoint is exempt when it is named
+        # api_* AND every URL rule it owns lives under /api/. Endpoint names
+        # are "viewfunc" for routes added directly on the app object, but
+        # "blueprintname.viewfunc" for anything registered via a Blueprint
+        # (every thirdparties/<name>/routes.py, e.g. mediacalendar's
         # "mediacalendar.api_calendars_create") -- so the api_ prefix check
-        # has to look at the part after the last dot, not the raw endpoint
-        # string, or every Blueprint-based integration's write routes silently
-        # 400 with a CSRF error on every POST/PUT/DELETE (its own fetch()
-        # calls, like mediacalendar.js's mcApi(), send no CSRF token at all).
-        for endpoint in list(app.view_functions):
-            view_name = endpoint.rsplit(".", 1)[-1] if "." in endpoint else endpoint
-            if view_name.startswith("api_") or endpoint.startswith("auth.admin_"):
+        # looks at the part after the last dot, or every Blueprint-based
+        # integration's write routes would silently 400 with a CSRF error on
+        # every POST/PUT/DELETE (its own fetch() calls, like mediacalendar.js's
+        # mcApi(), send no CSRF token at all).
+        #
+        # A module route named api_* but mounted somewhere else (e.g.
+        # /mymodule/save) used to be exempted *and* left uncovered by the JSON
+        # guard -- i.e. accepting a cross-site form POST with no token at all.
+        # It now keeps CSRF protection and says so in the log, so the author
+        # sees why their fetch() suddenly needs a token: mount it under /api/,
+        # or send the X-CSRFToken header.
+        _csrf_exempt_endpoints = set()
+
+        def _apply_csrf_exemptions():
+            rules_by_endpoint = {}
+            for rule in app.url_map.iter_rules():
+                rules_by_endpoint.setdefault(rule.endpoint, []).append(str(rule.rule))
+
+            for endpoint in list(app.view_functions):
+                if endpoint in _csrf_exempt_endpoints:
+                    continue
+                view_name = endpoint.rsplit(".", 1)[-1] if "." in endpoint else endpoint
+                rules = rules_by_endpoint.get(endpoint, [])
+                under_api = bool(rules) and all(r.startswith("/api/") for r in rules)
+                # auth.admin_* are the user-management endpoints under
+                # /auth/admin/api/... -- JSON-only in practice, and exempt since
+                # before this convention existed. They are added to the exempt
+                # set explicitly (not by path), and _enforce_json_content_type()
+                # now covers them too, which it previously did not.
+                if endpoint.startswith("auth.admin_"):
+                    _csrf_exempt_endpoints.add(endpoint)
+                elif view_name.startswith("api_"):
+                    if under_api:
+                        _csrf_exempt_endpoints.add(endpoint)
+                    else:
+                        logger.warning(
+                            "[CSRF] '%s' is named api_* but is mounted outside /api/ (%s) — "
+                            "keeping CSRF protection. Mount it under /api/ or send an "
+                            "X-CSRFToken header.",
+                            endpoint, ", ".join(rules) or "no rule")
+
+            for endpoint in _csrf_exempt_endpoints:
                 csrf.exempt(app.view_functions[endpoint])
+
+            # Read back by _enforce_json_content_type() -- the guard has to know
+            # which endpoints lost their CSRF token check, since it is the only
+            # thing protecting them.
+            app.config["CSRF_EXEMPT_ENDPOINTS"] = frozenset(_csrf_exempt_endpoints)
+
+        secure_endpoints()
 
     # Resolve any update state left behind by the self-update helper.
     try:
