@@ -71,6 +71,16 @@ function closeIncompleteModal() {
   if (modal) modal.style.display = "none";
 }
 
+function openDuplicatesModal() {
+  const modal = document.getElementById("duplicatesModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeDuplicatesModal() {
+  const modal = document.getElementById("duplicatesModal");
+  if (modal) modal.style.display = "none";
+}
+
 function escHtml(s) {
   const d = document.createElement("div");
   d.textContent = s == null ? "" : String(s);
@@ -160,6 +170,50 @@ function switchIncompleteView(view) {
   _renderIncompleteModal();
 }
 
+function _dupSlotLabel(item) {
+  // Series episodes carry an "SxEy" slot; movies use the sentinel "movie".
+  if (item.kind === "movie" || item.slot === "movie") return t("Film", "Movie");
+  return item.slot;
+}
+
+function _duplicatesTableHtml(duplicates) {
+  if (!duplicates || !duplicates.length) {
+    return '<p class="stat-sub">' +
+      t('Keine Duplikate gefunden. 🎉', 'No duplicates found. 🎉') + '</p>';
+  }
+  let mh = '<div class="user-table-wrapper"><table class="user-table"><thead><tr>' +
+    '<th style="width:34%">' + t('Serie / Film', 'Series / Movie') + '</th>' +
+    '<th style="width:12%">' + t('Episode', 'Episode') + '</th>' +
+    '<th style="width:14%">' + t('Speicherort', 'Location') + '</th>' +
+    '<th style="width:auto">' + t('Vorhandene Versionen', 'Existing versions') + '</th>' +
+    '</tr></thead><tbody>';
+  duplicates.forEach((item) => {
+    const files = item.files || [];
+    const langBadge = item.language
+      ? ` <span class="ignore-slot-chip">${escHtml(item.language)}</span>` : "";
+    const versionChips = files.map((f) => {
+      const res = f.resolution || t('unbekannt', 'unknown');
+      const codec = f.video_codec ? ` · ${escHtml(f.video_codec)}` : "";
+      return `<span class="ignore-slot-chip" title="${escHtml(f.path || f.file || "")}">${escHtml(res)}${codec}</span>`;
+    }).join(" ");
+    mh += `<tr>
+      <td class="speed-modal-title" title="${escHtml(item.title)}">${escHtml(item.title)}${langBadge}</td>
+      <td>${escHtml(_dupSlotLabel(item))}</td>
+      <td>${escHtml(item.location)}</td>
+      <td style="color:var(--warning,#f59e0b)"><div class="ignore-slot-wrap">${versionChips}</div></td>
+    </tr>`;
+  });
+  mh += '</tbody></table></div>';
+  return mh;
+}
+
+function _renderDuplicatesModal() {
+  const m = window._mediaStats || {};
+  const modalContent = document.getElementById("duplicatesModalContent");
+  if (!modalContent) return;
+  modalContent.innerHTML = _duplicatesTableHtml(m.duplicates);
+}
+
 function mediaIgnoreSelected() {
   const data = window._mediaStats && window._mediaStats.incomplete || [];
   const items = {};
@@ -204,6 +258,7 @@ function renderMediaSection(m) {
   // Stash for the ignore/restore handlers and (re)build the modal content.
   window._mediaStats = m;
   _renderIncompleteModal();
+  _renderDuplicatesModal();
 
   let html = '<div class="stats-section"><h2 class="stats-section-title">' + t('Media', 'Media') + '</h2>';
   if (m.scanning) {
@@ -222,6 +277,13 @@ function renderMediaSection(m) {
     "openIncompleteModal()"
   );
   html += statCard(t("Episodenzahl", "Episode count"), m.episodes_total ?? 0, "", "#6ea8fe");
+  html += statCard(
+    t("Duplikate", "Duplicates"),
+    (m.duplicates || []).length,
+    t("Klicken für Details", "Click for details"),
+    "#f472b6",
+    "openDuplicatesModal()"
+  );
   html += '</div></div>';
   return html;
 }

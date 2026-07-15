@@ -19,6 +19,106 @@ from flask import jsonify
 from flask import render_template
 from flask import request
 import os
+import re
+
+
+# Quality / resolution / codec / source tokens that describe *how* a file was
+# encoded rather than *which* movie it is. Stripped when deriving a movie's
+# identity key so the same film in different resolutions collapses to one group.
+_DUP_QUALITY_RE = re.compile(
+    r"\b(4k|2k|2160p|1440p|1080p|720p|480p|360p|uhd|hdr10?|hdr|sdr|"
+    r"hevc|h ?264|h ?265|x264|x265|av1|10 ?bit|8 ?bit|"
+    r"bluray|blu ray|brrip|bdrip|remux|web ?dl|web ?rip|webhd|hdtv|dvdrip|hdrip|cam|ts|"
+    r"aac|ac3|eac3|dts(?: ?hd)?|truehd|ddp? ?5 ?1|5 ?1|atmos)\b",
+    re.IGNORECASE,
+)
+
+
+def _dup_norm_movie_key(filename: str) -> str:
+    """Normalize a movie filename into an identity key.
+
+    Strips the extension and common quality/resolution/codec/source tokens so
+    the same film stored in different resolutions (e.g. "Movie.720p.mkv" and
+    "Movie.480p.mkv") maps to the same key. Falls back to the lower-cased
+    filename if normalization would leave the key empty."""
+    name = filename.rsplit(".", 1)[0] if "." in filename else filename
+    name = re.sub(r"[._\-\[\]()]+", " ", name)
+    name = _DUP_QUALITY_RE.sub(" ", name)
+    name = re.sub(r"\s+", " ", name).strip().lower()
+    return name or filename.strip().lower()
+
+
+def _compute_media_duplicates():
+    """Find media present more than once under the same identity.
+
+    Two files are duplicates when their series/film title, season and episode
+    match (and, in language-separation mode, their language) but the actual
+    files differ — most commonly the same episode kept in two resolutions
+    (e.g. 480p and 720p). Resolution/codec are deliberately NOT part of the
+    identity key, so differing quality is exactly what surfaces here.
+
+    Series episodes are keyed by (folder, season, episode); movies — which all
+    share episode 1 in the "movies" bucket — are keyed by a normalized filename
+    so distinct films in one folder are not falsely grouped. Returns a list of
+    duplicate groups (each with its individual files) sorted by title."""
+    cache = get_all_library_cache()
+    groups = {}  # identity key tuple -> group dict
+
+    for path_key, entry in cache.items():
+        data = entry.get("data") or {}
+        location = data.get("label", path_key)
+        lang_folders = data.get("lang_folders") or []
+        if lang_folders:
+            labelled = [(lf.get("name"), lf.get("titles") or []) for lf in lang_folders]
+        else:
+            labelled = [(None, data.get("titles") or [])]
+        for language, titles in labelled:
+            for t in titles:
+                folder = t.get("folder")
+                if not folder:
+                    continue
+                is_movie = bool(t.get("is_movie"))
+                for skey, eps in (t.get("seasons") or {}).items():
+                    for e in eps:
+                        if not e.get("is_video", True):
+                            continue
+                        if is_movie or skey == "movies":
+                            norm = _dup_norm_movie_key(e.get("file") or "")
+                            key = (folder.lower(), "movie", norm, language or "")
+                            kind = "movie"
+                            display_slot = "movie"  # frontend localizes the label
+                        else:
+                            ep = e.get("episode")
+                            if ep is None:
+                                continue
+                            key = (folder.lower(), skey, ep, language or "")
+                            kind = "series"
+                            display_slot = f"S{skey}E{ep}"
+                        g = groups.setdefault(key, {
+                            "title": folder,
+                            "location": location,
+                            "kind": kind,
+                            "slot": display_slot,
+                            "language": language,
+                            "files": [],
+                        })
+                        g["files"].append({
+                            "resolution": e.get("resolution"),
+                            "video_codec": e.get("video_codec"),
+                            "file": e.get("file"),
+                            "path": e.get("path"),
+                            "size": e.get("size"),
+                        })
+
+    dups = []
+    for g in groups.values():
+        if len(g["files"]) < 2:
+            continue
+        g["files"].sort(key=lambda f: (str(f.get("resolution") or ""), f.get("file") or ""))
+        g["count"] = len(g["files"])
+        dups.append(g)
+    dups.sort(key=lambda x: (x["title"].lower(), str(x["slot"])))
+    return dups
 
 
 def _media_missing_episodes(seasons: dict) -> list:
@@ -186,6 +286,7 @@ def register_stats_routes(app):
                 lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
                 _lib_trigger_scan_async(_lib_build_scan_targets(), lang_sep)
             payload["media"] = _compute_media_stats()
+            payload["media"]["duplicates"] = _compute_media_duplicates()
         return jsonify(payload)
     @app.route("/api/media/ignore", methods=["POST"])
     def api_media_ignore():

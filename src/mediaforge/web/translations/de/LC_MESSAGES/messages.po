@@ -267,6 +267,12 @@ msgstr "Unvollständige Serien"
 msgid "Series with missing episodes will be listed here."
 msgstr "Serien mit fehlenden Episoden werden hier aufgelistet."
 
+msgid "Duplicate media"
+msgstr "Doppelte Medien"
+
+msgid "Media that exists more than once will be listed here."
+msgstr "Medien, die mehrfach vorhanden sind, werden hier aufgelistet."
+
 msgid "Debug Mode"
 msgstr "Debug-Modus"
 
