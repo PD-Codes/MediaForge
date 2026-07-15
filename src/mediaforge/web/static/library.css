@@ -668,7 +668,9 @@
   fill: none;
 }
 
-.confirm-modal, .lib-move-modal{
+/* .confirm-modal now lives in modals.css (globally loaded) so the generic
+   confirmation dialog is styled on every page, not just library ones. */
+.lib-move-modal{
   position: relative;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -681,7 +683,7 @@
   animation: modal-in 0.2s ease;
 }
 
-.confirm-modal-actions, .lib-move-actions{
+.lib-move-actions{
   display: flex;
   gap: 10px;
   flex-wrap: wrap;

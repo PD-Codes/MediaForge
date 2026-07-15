@@ -52,7 +52,7 @@ button {
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: var(--accent-hover);
 }
 
 .btn-ghost {

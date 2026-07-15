@@ -178,18 +178,13 @@ class AniworldEpisode:
 
     @property
     def stream_url(self):
-        """Resolve the direct (playable) stream URL via the matching extractor
-        function in mediaforge.extractors for the selected provider."""
-        try:
-            stream_url = provider_functions[
-                f"get_direct_link_from_{self.selected_provider.lower()}"
-            ](self.provider_url)
-        except KeyError:
-            raise ValueError(
-                f"The provider '{self.selected_provider}' is not yet implemented."
-            )
-
-        return stream_url
+        """Resolve the direct (playable) stream URL. The extractor is chosen by
+        the actually-resolved provider_url host (see extractors.get_direct_link_for),
+        not the AniWorld hoster label: mirrored labels such as Vidara/Vidavaca
+        frequently point at another hoster's embed (e.g. voe.sx), which would
+        otherwise run the wrong extractor."""
+        from ...extractors import get_direct_link_for
+        return get_direct_link_for(self.provider_url, self.selected_provider)
 
     # TODO: add this into a common base class
     @property

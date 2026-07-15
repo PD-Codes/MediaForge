@@ -160,6 +160,10 @@ let _seerrCurrentStatus = null;  // 1=pending, 2=approved
 let _seerrSeriesUrl = null;
 let _seerrSeriesTitle = "";
 let _seerrCustomPaths = [];
+// { "German Dub": ["VOE", "Vidoza", ...], ... } — the real hoster list per
+// language for the open title, from /api/providers. null until fetched via
+// seerrFetchSeriesProviders() (used for both series and movies).
+let _seerrAvailableProviders = null;
 
 // ---------------------------------------------------------------
 // Card list + lazy loading
@@ -579,6 +583,7 @@ async function openSeerrSeries(url) {
   }
 
   document.getElementById("seerrSelectAll").checked = false;
+  _seerrAvailableProviders = null;  // fresh series → don't reuse the last one's hosters
   // Reset TMDB elements
   const _rp = document.getElementById("seerrTmdbProviders");
   if (_rp) { _rp.innerHTML = ""; _rp.style.display = "none"; }
@@ -638,7 +643,10 @@ async function openSeerrSeries(url) {
         const voeOpt = [...provSel.options].find(o => o.value === "VOE");
         if (voeOpt) provSel.value = "VOE";
       }
-      seerrFetchProviders(url);
+      // The static available_providers list above is only an initial
+      // placeholder. The real live-availability check runs in
+      // seerrBuildAccordion() via seerrFetchSeriesProviders() on the actual
+      // episode URL — same unified path the main modal uses for movies.
     }
   } catch (e) {
     modal.classList.remove("skeleton");
@@ -700,26 +708,51 @@ async function seerrLoadCustomPaths() {
   } catch (e) { /* ignore */ }
 }
 
-async function seerrFetchProviders(episodeUrl) {
+async function seerrFetchSeriesProviders(episodeUrl) {
+  // Fetch the real hoster list for a representative episode and filter the
+  // provider dropdown by live availability + the selected language, mirroring
+  // the main modal's fetchProviders(). Used for every site (series and movies
+  // alike); without this the Seerr modal offered the full static provider list
+  // with no availability check at all.
   try {
     const resp = await fetch("/api/providers?url=" + encodeURIComponent(episodeUrl));
     const data = await resp.json();
-    if (data.providers && data.providers["German Dub"]) {
-      const working = data.providers["German Dub"];
-      const provSel = document.getElementById("seerrProvSelect");
-      if (provSel) {
-        provSel.innerHTML = "";
-        working.forEach(p => {
-          const opt = document.createElement("option");
-          opt.value = opt.textContent = p;
-          provSel.appendChild(opt);
-        });
-        const voeOpt = [...provSel.options].find(o => o.value === "VOE");
-        if (voeOpt) provSel.value = "VOE";
-      }
+    if (data.providers) {
+      _seerrAvailableProviders = data.providers;
+      seerrUpdateProviderDropdown();
     }
   } catch (e) {
-    console.warn("Failed to check provider availability:", e);
+    console.warn("Failed to check series provider availability:", e);
+  }
+}
+
+function seerrUpdateProviderDropdown() {
+  // Rebuild seerrProvSelect from the fetched availability for the currently
+  // selected language. No-op until _seerrAvailableProviders is populated, so
+  // the static list stays until real data arrives (series and movies alike).
+  if (!_seerrAvailableProviders) return;
+  const provSel = document.getElementById("seerrProvSelect");
+  const langSel = document.getElementById("seerrLangSelect");
+  if (!provSel) return;
+  const lang = langSel ? langSel.value : "";
+  const providers = _seerrAvailableProviders[lang];
+  provSel.innerHTML = "";
+  if (providers && providers.length) {
+    providers.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = opt.textContent = p;
+      provSel.appendChild(opt);
+    });
+    const voeOpt = [...provSel.options].find(o => o.value === "VOE");
+    if (voeOpt) provSel.value = "VOE";
+  } else {
+    // Backend checked and found no working hoster for this language — don't
+    // fall back to the static list (that would offer dead sources).
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = t("Keine Quelle verfügbar", "No source available");
+    opt.disabled = true;
+    provSel.appendChild(opt);
   }
 }
 
@@ -794,6 +827,23 @@ function seerrBuildAccordion(seasons) {
       seerrUpdateLangDropdown(isSto, isFp || isMk, foundLangs, isHan);
       if (sel && Array.from(sel.options).some(o => o.value === prevVal)) {
         sel.value = prevVal;
+      }
+    }
+
+    // Provider availability: fetch the real hoster list for a representative
+    // episode and filter the provider dropdown by live availability + language,
+    // mirroring the main modal's fetchProviders(). Runs for EVERY site,
+    // including FilmPalast & MegaKino movies. Previously movies were excluded
+    // here and relied on a separate helper that kept the unchecked static list,
+    // so the Seerr movie modal never dropped dead hosters like the rest of the
+    // system does. Hanime is skipped: it has a single fixed source, no check.
+    {
+      const _u = _seerrSeriesUrl || "";
+      const _providerSite = !_u.includes("hanime.tv");
+      if (_providerSite) {
+        let _repUrl = "";
+        for (const _r of results) { if (_r.episodes.length) { _repUrl = _r.episodes[0].url; break; } }
+        if (_repUrl) seerrFetchSeriesProviders(_repUrl);
       }
     }
 
@@ -1192,5 +1242,11 @@ document.getElementById("seerrSearchResults").addEventListener("click", function
   if (!row) return;
   openSeerrSeries(row.dataset.url);
 });
+
+// Re-filter the provider dropdown by availability whenever the language
+// changes (series and movies alike).
+// seerrUpdateProviderDropdown no-ops until availability has been fetched.
+const _seerrLangSel = document.getElementById("seerrLangSelect");
+if (_seerrLangSel) _seerrLangSel.addEventListener("change", seerrUpdateProviderDropdown);
 
 seerrLoad();

@@ -534,6 +534,12 @@ def _queue_worker():
                 # used to enrich the failure telemetry so a debug report shows
                 # WHY each provider failed, not just the surfaced one.
                 _provider_errors = {}
+                # {resolved provider_url: first hoster that tried it}. Lets the
+                # fallback skip a different hoster that resolves to the SAME
+                # embed we already tried (mirrored VOE/Vidara/Vidavaca labels
+                # all pointing at one voe.sx URL) instead of re-downloading the
+                # identical stream. Same-hoster retries are unaffected.
+                _seen_stream_urls = {}
 
                 for _plan_idx, (_hoster, attempt, _attempts_for_hoster) in enumerate(_attempt_plan):
                     _last_attempt = _plan_idx == len(_attempt_plan) - 1
@@ -570,6 +576,33 @@ def _queue_worker():
                             if selected_path:
                                 ep_kwargs["selected_path"] = selected_path
                             episode = prov.episode_cls(**ep_kwargs)
+                            # Deduplicate mirrored labels: if this hoster
+                            # resolves to an embed a *different* hoster already
+                            # tried, skip straight to the next genuinely
+                            # different stream instead of re-downloading the same
+                            # URL. provider_url is cached, so the download below
+                            # reuses this result (no second resolve). queue_id is
+                            # set so an interactive resolve (e.g. the s.to modal)
+                            # still streams to the web UI as during a download.
+                            from ..playwright import captcha as _dedup_captcha
+                            _dedup_captcha._local.queue_id = item["id"]
+                            try:
+                                _resolved_url = episode.provider_url
+                            except Exception:
+                                _resolved_url = None  # let the download surface the real error
+                            finally:
+                                _dedup_captcha._local.queue_id = None
+                            if _resolved_url:
+                                _owner = _seen_stream_urls.get(_resolved_url)
+                                if _owner is not None and _owner != _hoster:
+                                    logger.info(
+                                        f"Episode {ep_url}: provider '{_hoster}' resolves to an "
+                                        f"already-tried stream ({_resolved_url}) — skipping to the "
+                                        f"next hoster."
+                                    )
+                                    _dead_providers.add(_hoster)
+                                    continue
+                                _seen_stream_urls.setdefault(_resolved_url, _hoster)
                         from ..playwright import captcha as _captcha_mod
                         from ..models.common.common import get_ffmpeg_progress
                         _queue_id = item["id"]
