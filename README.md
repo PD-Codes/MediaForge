@@ -18,7 +18,7 @@
 
 WebUI (Landing Page) | WebUI (Auto-Sync)
 :-------------------------:|:-------------------------:
-![MediaForge - Demo](https://cdn.domekologe.eu/d6c3daa9-2e80-4cdb-8191-5c700b811e2e/6f0d3c9b-cc70-415d-a069-875585ff0886/8ca6cce9-911d-445e-a907-aebfdb7c95a8.png) | ![MediaForge - Demo](https://cdn.domekologe.eu/d6c3daa9-2e80-4cdb-8191-5c700b811e2e/6f0d3c9b-cc70-415d-a069-875585ff0886/8ca6cce9-911d-445e-a907-aebfdb7c95a8.png)
+![MediaForge - Demo](https://cdn.domekologe.eu/d6c3daa9-2e80-4cdb-8191-5c700b811e2e/6f0d3c9b-cc70-415d-a069-875585ff0886/8ca6cce9-911d-445e-a907-aebfdb7c95a8.png) | ![MediaForge - Demo](https://cdn.domekologe.eu/d6c3daa9-2e80-4cdb-8191-5c700b811e2e/6f0d3c9b-cc70-415d-a069-875585ff0886/b0741266-1687-4dd1-a8f5-0ea0150a4220.png)
 
 
 > [!NOTE]  
