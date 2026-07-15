@@ -147,11 +147,19 @@ def build_feature_detail_event(feature_key: str, *, action=None, status=None,
 # ---------------------------------------------------------------------------
 
 def build_download_event(*, provider, media_type, title, season=None, episode=None,
-                          status="completed", error_message=None):
+                          status="completed", error_message=None, provider_errors=None):
     """Build up to two events (downloads.titles / downloads.errors -- each
     individually toggled by the user) for one finished/failed download.
     Returns a list (possibly empty), never None, so callers can always do
     ``client.submit_all(events.build_download_event(...))``.
+
+    ``provider_errors`` is an optional {hoster: error_message} map covering
+    every provider tried in the fallback chain. It rides along in the
+    downloads.errors payload so a debug report shows WHY each provider failed
+    -- not just the single error that happened to be surfaced to the user (see
+    queue_worker.py: a later hoster's "not available" skip can otherwise mask
+    the real failure of the picked provider). Each entry is sanitized exactly
+    like error_message.
 
     Guarded by is_adult_provider() first -- no download event of any kind is
     ever built for hanime_tv."""
@@ -164,11 +172,17 @@ def build_download_event(*, provider, media_type, title, season=None, episode=No
             "season": season, "episode": episode, "status": status,
         }))
     if error_message and settings.is_key_enabled("downloads.errors"):
-        out.append(_event("downloads.errors", {
+        payload = {
             "provider": provider, "media_type": media_type, "title": title,
             "season": season, "episode": episode, "status": status,
             "error_message": redact_secrets(str(error_message))[:2000],
-        }))
+        }
+        if provider_errors:
+            payload["provider_errors"] = {
+                str(hoster): redact_secrets(redact_urls_in_text(str(msg)))[:500]
+                for hoster, msg in provider_errors.items()
+            }
+        out.append(_event("downloads.errors", payload))
     return out
 
 

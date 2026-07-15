@@ -530,6 +530,10 @@ def _queue_worker():
                 _attempt_plan = _build_attempt_plan(item.get("provider"), MAX_EP_RETRIES)
                 _current_provider = None
                 _dead_providers = set()
+                # {hoster: last error string} across the whole fallback chain,
+                # used to enrich the failure telemetry so a debug report shows
+                # WHY each provider failed, not just the surfaced one.
+                _provider_errors = {}
 
                 for _plan_idx, (_hoster, attempt, _attempts_for_hoster) in enumerate(_attempt_plan):
                     _last_attempt = _plan_idx == len(_attempt_plan) - 1
@@ -679,8 +683,26 @@ def _queue_worker():
                             last_error = Exception(friendly)
                             logger.warning(f"Language unavailable for {ep_url}: {e}")
                             break
-                        last_error = e
-                        if _is_provider_unavailable_error(e):
+                        # Record this hoster's error so the per-provider failure
+                        # reasons survive for telemetry / debugging, even when the
+                        # episode error ultimately surfaced is a later hoster's.
+                        _provider_errors[_hoster] = str(e)
+
+                        # Pick the most useful error to surface: a real failure
+                        # from an earlier provider (typically the hoster the user
+                        # picked, which is tried first) must not be overwritten by
+                        # a later hoster that simply doesn't offer this episode at
+                        # all ("not available" skip). A real error always wins over
+                        # such a skip; otherwise keep the newest error.
+                        _this_unavailable = _is_provider_unavailable_error(e)
+                        _have_real_error = (
+                            last_error is not None
+                            and not _is_provider_unavailable_error(last_error)
+                        )
+                        if not (_this_unavailable and _have_real_error):
+                            last_error = e
+
+                        if _this_unavailable:
                             # This hoster isn't offered for this episode at all —
                             # retrying it is pointless, so drop it and let the
                             # chain move straight on to the next hoster. Debug:
@@ -700,15 +722,25 @@ def _queue_worker():
                             )
                             time.sleep(delay)
                         elif not _last_attempt:
-                            logger.debug(
+                            # Real failure on this hoster with more hosters left.
+                            # Logged at INFO (not debug) on purpose: THIS is the
+                            # actual reason a download fell through to a fallback
+                            # hoster. The episode error surfaced later may read as
+                            # a trivial "not available" from the last hoster in the
+                            # chain, so this line is where the real cause stays
+                            # visible in the log.
+                            logger.info(
                                 f"Episode {ep_url} failed with provider '{_hoster}' after "
                                 f"{_attempts_for_hoster} attempt(s), trying the next provider: {e}"
                             )
                         else:
+                            _breakdown = "; ".join(
+                                f"{p}: {msg}" for p, msg in _provider_errors.items()
+                            )
                             logger.error(
                                 f"Episode {ep_url} failed with every provider "
                                 f"({', '.join(dict.fromkeys(p for p, _a, _b in _attempt_plan))}) "
-                                f"— last error from '{_hoster}': {e}"
+                                f"— per-provider errors: {_breakdown}"
                             )
                     # Check skip flag after each attempt (success or fail)
                     if consume_episode_skip(item["id"]):
@@ -738,7 +770,7 @@ def _queue_worker():
                     telemetry_client.submit_all(telemetry_events.build_download_event(
                         provider=item.get("provider"), media_type=_tel_media_type, title=item.get("title"),
                         season=_tel_season, episode=_tel_episode, status="failed",
-                        error_message=str(last_error),
+                        error_message=str(last_error), provider_errors=_provider_errors,
                     ))
                 elif _episode_cancelled:
                     print_episode_summary(item["title"], ep_url, success="Abgebrochen")
