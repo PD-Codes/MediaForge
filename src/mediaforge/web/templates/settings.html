@@ -1100,6 +1100,7 @@ function setUiLanguage(lang) {
           <label class="settings-field-label">{{ _('Installation ID') }}</label>
           <input type="text" id="telemetryInstallId" readonly style="font-family:monospace;font-size:0.82rem;" />
         </div>
+        <button class="btn btn-secondary" onclick="telemetryCopyInstallId()">{{ _('Copy') }}</button>
         <button class="btn btn-secondary" onclick="telemetryRegenerateInstallId()">{{ _('Reset identity') }}</button>
       </div>
       <div class="settings-hint" id="telemetryConsentSummary"></div>
@@ -1263,7 +1264,11 @@ function setUiLanguage(lang) {
       <div class="backup-cat-grid" id="backupExportCats">
         <div class="settings-hint">{{ _('Loading…') }}</div>
       </div>
-      <div class="settings-row" style="gap:16px;flex-wrap:wrap;margin-top:12px;">
+      <label class="settings-checkbox-row" for="backupNoPassword" style="margin-top:12px;">
+        <input type="checkbox" class="chb-main" id="backupNoPassword" onchange="backupToggleNoPassword()">
+        <span>{{ _('Save backup without a password (insecure)') }}</span>
+      </label>
+      <div class="settings-row" id="backupPwRow" style="gap:16px;flex-wrap:wrap;margin-top:12px;">
         <div class="settings-field">
           <label class="settings-field-label" for="backupExportPw">{{ _('Backup password') }}</label>
           <input type="password" id="backupExportPw" autocomplete="new-password">

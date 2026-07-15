@@ -2583,21 +2583,47 @@ async function backupLoadCats() {
   }
 }
 
+function backupToggleNoPassword() {
+  // Disable/clear the password fields when "save without password" is on.
+  const on = (document.getElementById("backupNoPassword") || {}).checked;
+  const row = document.getElementById("backupPwRow");
+  if (row) row.style.display = on ? "none" : "";
+  ["backupExportPw", "backupExportPw2"].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = !!on; if (on) el.value = ""; }
+  });
+}
+
 async function backupExport() {
+  const noPw = (document.getElementById("backupNoPassword") || {}).checked;
   const pw = (document.getElementById("backupExportPw") || {}).value || "";
   const pw2 = (document.getElementById("backupExportPw2") || {}).value || "";
   const msg = document.getElementById("backupExportMsg");
-  if (!pw) { showToast(t("Bitte ein Backup-Passwort setzen", "Please set a backup password")); return; }
-  if (pw !== pw2) { showToast(t("Passwörter stimmen nicht überein", "Passwords do not match")); return; }
   const cats = _backupSelectedCats(document.getElementById("backupExportCats"));
   if (!cats.length) { showToast(t("Keine Kategorie ausgewählt", "No category selected")); return; }
+
+  if (!noPw) {
+    if (!pw) { showToast(t("Bitte ein Backup-Passwort setzen", "Please set a backup password")); return; }
+    if (pw !== pw2) { showToast(t("Passwörter stimmen nicht überein", "Passwords do not match")); return; }
+  } else {
+    // Danger confirmation: an unencrypted backup exposes all secrets.
+    const warn = t(
+      "Ohne Passwort wird das Backup UNVERSCHLÜSSELT gespeichert. Alle sensiblen Daten — API-Schlüssel, Zugangsdaten, Tokens und Passwörter — liegen dann im Klartext in der Datei. Jeder mit Zugriff auf die Datei kann sie lesen. Bewahre sie niemals ungeschützt (Cloud, E-Mail, geteilte Ordner) auf. Wirklich ohne Passwort fortfahren?",
+      "Without a password the backup is stored UNENCRYPTED. All sensitive data — API keys, credentials, tokens and passwords — will be in plain text in the file. Anyone with access to the file can read it. Never store it unprotected (cloud, email, shared folders). Really continue without a password?"
+    );
+    const ok = (typeof showConfirm === "function")
+      ? await showConfirm(warn, t("Ohne Passwort sichern", "Save without password"), t("Achtung", "Warning"), "btn-danger")
+      : confirm(warn);
+    if (!ok) return;
+  }
+
   const btn = document.getElementById("backupExportBtn");
   if (btn) btn.disabled = true;
   try {
     const res = await fetch("/api/backup/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categories: cats, password: pw }),
+      body: JSON.stringify({ categories: cats, password: noPw ? "" : pw, no_password: !!noPw }),
     });
     if (!res.ok) {
       let err = t("Export fehlgeschlagen", "Export failed");
@@ -2660,7 +2686,8 @@ async function backupPreview() {
     const created = data.created_utc || "?";
     const ver = data.app_version || "?";
     let pwNote = "";
-    if (data.password_ok === false) pwNote = " — " + t("⚠ Passwort falsch oder fehlt", "⚠ wrong or missing password");
+    if (data.encrypted === false) pwNote = " — " + t("⚠ Unverschlüsseltes Backup (kein Passwort nötig)", "⚠ unencrypted backup (no password needed)");
+    else if (data.password_ok === false) pwNote = " — " + t("⚠ Passwort falsch oder fehlt", "⚠ wrong or missing password");
     else if (data.password_ok === true) pwNote = " — " + t("✓ Passwort ok", "✓ password ok");
     info.textContent = t("Erstellt: ", "Created: ") + created + " · " + t("Version: ", "Version: ") + ver + pwNote;
     const cats = (data.categories || []).map(function (id) {

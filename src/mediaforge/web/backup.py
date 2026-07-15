@@ -245,15 +245,20 @@ def list_categories() -> list:
         conn.close()
 
 
-def export_backup(categories, password: str) -> bytes:
+def export_backup(categories, password: str, allow_no_password: bool = False) -> bytes:
     """Serialise *categories* into a ``.mfbackup`` byte string.
 
-    A non-empty *password* is mandatory. Sensitive settings are encrypted under
-    a key derived from it.
+    Normally a non-empty *password* is required and sensitive settings are
+    encrypted under a key derived from it. If *allow_no_password* is True and no
+    password is given, the backup is written **unencrypted**: sensitive values
+    (API keys, passwords, tokens) are stored as readable plaintext alongside the
+    rest. This is a deliberate, dangerous escape hatch — the caller must have
+    confirmed the risk with the user first.
     """
     import os
 
-    if not password:
+    no_password = not password
+    if no_password and not allow_no_password:
         raise BackupError("a backup password is required")
 
     catalog = _all_categories()
@@ -270,30 +275,35 @@ def export_backup(categories, password: str) -> bytes:
             meta = catalog[cid]
             if meta["kind"] == "settings":
                 plain, secret = _collect_settings()
-                data["settings"] = plain
-                secrets.update(secret)
+                # In no-password mode secrets have nowhere safe to go, so they
+                # are inlined into the plaintext settings section.
+                data["settings"] = plain if not no_password else {**plain, **secret}
+                if not no_password:
+                    secrets.update(secret)
             else:
                 for tbl in meta["tables"]:
                     data[tbl] = _collect_table(conn, tbl)
     finally:
         conn.close()
 
-    salt = os.urandom(16)
     envelope: dict = {
         "format": FORMAT_NAME,
         "format_version": FORMAT_VERSION,
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "app_version": _app_version(),
         "categories": selected,
-        "kdf": {
+        "encrypted": not no_password,
+        "data": data,
+    }
+    if not no_password:
+        salt = os.urandom(16)
+        envelope["kdf"] = {
             "scheme": "pbkdf2-sha256",
             "salt": base64.b64encode(salt).decode("ascii"),
             "iterations": _PBKDF2_ITERATIONS,
-        },
-        "data": data,
-        # Always present so a wrong password is detectable even without secrets.
-        "secrets": _encrypt_blob(secrets, password, salt),
-    }
+        }
+        # Present even with no secrets so a wrong password is still detectable.
+        envelope["secrets"] = _encrypt_blob(secrets, password, salt)
     return json.dumps(envelope, ensure_ascii=False, indent=2).encode("utf-8")
 
 
@@ -328,8 +338,9 @@ def preview_backup(file_bytes: bytes, password: str) -> dict:
         else:
             counts[cid] = sum(len(data.get(t, [])) for t in meta["tables"])
 
+    encrypted = env.get("encrypted", True)
     password_ok = None
-    if password:
+    if encrypted and password:
         salt = base64.b64decode(env["kdf"]["salt"])
         try:
             _decrypt_blob(env.get("secrets", ""), password, salt)
@@ -343,6 +354,7 @@ def preview_backup(file_bytes: bytes, password: str) -> dict:
         "created_utc": env.get("created_utc"),
         "categories": env.get("categories", []),
         "counts": counts,
+        "encrypted": encrypted,
         "password_ok": password_ok,
     }
 
@@ -355,15 +367,21 @@ def import_backup(file_bytes: bytes, password: str, categories, mode: str = "mer
     writes happen in a single transaction; any error rolls the whole import
     back.
     """
-    if not password:
-        raise BackupError("a backup password is required")
     if mode not in ("merge", "replace"):
         raise BackupError("invalid import mode")
 
     env = _parse_envelope(file_bytes)
     data = env.get("data", {})
-    salt = base64.b64decode(env["kdf"]["salt"])
-    secrets = _decrypt_blob(env.get("secrets", ""), password, salt)
+
+    # Unencrypted backups carry their (former) secrets inline in data.settings,
+    # so no password/decryption is needed.
+    if env.get("encrypted", True):
+        if not password:
+            raise BackupError("a backup password is required")
+        salt = base64.b64decode(env["kdf"]["salt"])
+        secrets = _decrypt_blob(env.get("secrets", ""), password, salt)
+    else:
+        secrets = {}
 
     catalog = _all_categories()
     available = set(env.get("categories", []))

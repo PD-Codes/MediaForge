@@ -256,6 +256,30 @@ async function telemetryMasterConsentToggle(el) {
   }
 }
 
+async function telemetryCopyInstallId() {
+  const idEl = document.getElementById("telemetryInstallId");
+  const value = idEl && idEl.value ? idEl.value.trim() : "";
+  if (!value) {
+    showToast(t("Keine Installations-ID vorhanden", "No installation ID available"), "info");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast(t("ID kopiert", "ID copied"), "success");
+  } catch (e) {
+    // Fallback for browsers/contexts without the async clipboard API.
+    try {
+      idEl.removeAttribute("readonly");
+      idEl.select();
+      document.execCommand("copy");
+      idEl.setAttribute("readonly", "");
+      showToast(t("ID kopiert", "ID copied"), "success");
+    } catch (e2) {
+      showToast(t("Kopieren fehlgeschlagen", "Copy failed"), "error");
+    }
+  }
+}
+
 async function telemetryRegenerateInstallId() {
   const ok = await showConfirm(
     t("Neue Installations-ID erzeugen? Die alte ID wird nicht mehr mit dieser Installation verknüpft (kein Umzug alter Daten auf die neue ID).",

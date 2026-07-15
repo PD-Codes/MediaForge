@@ -127,45 +127,66 @@ def _fetch_redirect_page(url: str, timeout: int, referer: str | None = None):
         return resp.text, resp.status_code
 
 
-def check_redirect_available(redirect_url: str, provider_name: str = "", timeout: int = 5) -> bool:
-    """Follow a provider redirect and check if the hoster actually has the content.
+def _fetch_redirect_page_url(url: str, timeout: int, referer: str | None = None):
+    """Like ``_fetch_redirect_page`` but also returns the final resolved URL
+    (after following redirects), so callers can identify the real hoster host."""
+    headers = {"Referer": referer} if referer else None
+    try:
+        from curl_cffi import requests as curl_requests
+        resp = curl_requests.get(
+            url, impersonate="chrome120", timeout=timeout,
+            allow_redirects=True, headers=headers,
+        )
+        return resp.text, resp.status_code, resp.url
+    except ImportError:
+        resp = GLOBAL_SESSION.get(url, allow_redirects=True, timeout=timeout, headers=headers)
+        return resp.text, resp.status_code, resp.url
 
-    Used by: ``web/routes/search.py`` to filter out dead hoster links before
-    they're shown to the user (movies only -- see the WORKING_PROVIDERS
-    filter there).
 
-    Does a real GET because many hosters (e.g. VOE) return HTTP 200 even for
-    removed videos... they only show the error in the HTML body/title.
-    On any network error returns True so the download path can fail with a proper
-    message instead of silently hiding the provider.
+def probe_redirect(redirect_url: str, provider_name: str = "", timeout: int = 5):
+    """Follow a provider redirect once and report both liveness and real host.
 
-    VOE embed links first serve a tiny anti-scraper page that does a
-    client-side (JS) redirect to the real CDN page — a plain GET never
-    executes that JS, so it only ever sees the harmless shell and never the
-    actual "video removed" notice on the real page. For VOE we therefore
-    follow that second hop (same regex the VOE extractor itself uses) before
-    deciding, otherwise a removed VOE video always looks "available".
+    Returns ``(available, host_provider)``:
+      * available      -- whether the hoster actually still has the content
+                          (same verdict as check_redirect_available, incl. the
+                          VOE JS-redirect second hop for removed VOE videos).
+      * host_provider  -- provider key (extractor suffix, e.g. "voe") derived
+                          from the *resolved* embed host, or None if unknown.
+                          Lets callers collapse mirror labels (a "Vidara" entry
+                          that really lands on voe.sx) onto the real hoster.
+
+    On any network error returns ``(True, None)`` so a flaky check never hides a
+    provider the download path could still try. Does a real GET because many
+    hosters (e.g. VOE) return HTTP 200 even for removed videos and only show the
+    error in the HTML body/title.
     """
     try:
-        html, status_code = _fetch_redirect_page(redirect_url, timeout)
+        html, status_code, final_url = _fetch_redirect_page_url(redirect_url, timeout)
     except Exception as e:
-        logger.debug(f"Failed to check redirect availability for {redirect_url}: {e}")
-        return True
+        logger.debug(f"Failed to probe redirect for {redirect_url}: {e}")
+        return True, None
+
+    try:
+        from .extractors import provider_for_url
+        host_provider = provider_for_url(final_url)
+    except Exception:
+        host_provider = None
 
     if is_source_unavailable(html, status_code):
-        return False
+        return False, host_provider
 
-    if provider_name.strip().upper() == "VOE":
+    # VOE (by resolved host or label): the first page is a tiny anti-scraper
+    # shell that JS-redirects to the real CDN page; a plain GET never runs that
+    # JS, so follow the same hop the VOE extractor uses before deciding.
+    if host_provider == "voe" or provider_name.strip().upper() == "VOE":
         try:
             from .extractors.provider.voe import (
                 REDIRECT_PATTERN,
                 extract_voe_source_from_html,
                 is_maintenance_page,
             )
-            # Shell page already has the real source embedded (no JS-redirect
-            # needed) — nothing more to check, it's available.
             if extract_voe_source_from_html(html):
-                return True
+                return True, host_provider or "voe"
             match = REDIRECT_PATTERN.search(html)
             if match:
                 try:
@@ -174,15 +195,27 @@ def check_redirect_available(redirect_url: str, provider_name: str = "", timeout
                     )
                 except Exception as e:
                     logger.debug(f"VOE second-hop check failed for {redirect_url}: {e}")
-                    return True
+                    return True, host_provider or "voe"
                 if is_source_unavailable(cdn_html, cdn_status) or is_maintenance_page(cdn_html):
-                    return False
-                return bool(extract_voe_source_from_html(cdn_html))
+                    return False, host_provider or "voe"
+                return bool(extract_voe_source_from_html(cdn_html)), host_provider or "voe"
         except Exception as e:
             logger.debug(f"VOE-specific availability check failed for {redirect_url}: {e}")
-            return True
+            return True, host_provider or "voe"
 
-    return True
+    return True, host_provider
+
+
+def check_redirect_available(redirect_url: str, provider_name: str = "", timeout: int = 5) -> bool:
+    """Follow a provider redirect and check if the hoster actually has the
+    content. Thin wrapper over probe_redirect() kept for existing callers that
+    only need the liveness verdict.
+
+    On any network error returns True so the download path can fail with a
+    proper message instead of silently hiding the provider.
+    """
+    available, _host_provider = probe_redirect(redirect_url, provider_name, timeout)
+    return available
 
 
 def resolve_redirect_url(redirect_url: str, timeout: int = 10) -> str:

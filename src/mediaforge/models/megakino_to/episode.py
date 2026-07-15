@@ -155,11 +155,12 @@ class MegakinoEpisode:
 
     @property
     def stream_url(self):
-        try:
-            fn = provider_functions[f"get_direct_link_from_{self.selected_provider.lower()}"]
-        except KeyError:
-            raise ValueError(f"The provider '{self.selected_provider}' is not yet implemented.")
-        return fn(self.provider_url)
+        # Dispatch the extractor by the resolved provider_url host, not the
+        # site's hoster label (mirrored labels / the "next available" fallback
+        # in provider_url can yield another hoster's domain). See
+        # extractors.get_direct_link_for.
+        from ...extractors import get_direct_link_for
+        return get_direct_link_for(self.provider_url, self.selected_provider)
 
     def _fmt(self, template_part):
         return template_part.format(

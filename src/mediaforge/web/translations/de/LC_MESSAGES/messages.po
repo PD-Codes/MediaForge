@@ -4804,3 +4804,6 @@ msgstr "Backup-Datei wählen"
 
 msgid "Choose file…"
 msgstr "Datei wählen…"
+
+msgid "Save backup without a password (insecure)"
+msgstr "Backup ohne Passwort sichern (unsicher)"

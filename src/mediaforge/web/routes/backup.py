@@ -75,10 +75,11 @@ def register_backup_routes(app):
         payload = request.get_json(silent=True) or {}
         categories = payload.get("categories") or []
         password = payload.get("password") or ""
-        if not password:
+        no_password = bool(payload.get("no_password"))
+        if not password and not no_password:
             return jsonify({"error": "password required"}), 400
         try:
-            blob = _backup.export_backup(categories, password)
+            blob = _backup.export_backup(categories, password, allow_no_password=no_password)
         except BackupError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception:
@@ -122,9 +123,9 @@ def register_backup_routes(app):
         file_text = _read_upload(payload)
         if not isinstance(file_text, str):
             return file_text  # error response tuple
+        # Password may be empty for an unencrypted backup; import_backup()
+        # raises BackupError if the backup actually needs one.
         password = payload.get("password") or ""
-        if not password:
-            return jsonify({"error": "password required"}), 400
         mode = payload.get("mode", "merge")
         categories = payload.get("categories") or []
         try:

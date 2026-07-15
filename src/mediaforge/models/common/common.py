@@ -65,6 +65,26 @@ except ImportError:
 FORBIDDEN_CHARS = re.compile(r'[<>:"/\\|?*]')
 
 
+def _effective_provider(episode):
+    """Provider whose HTTP headers actually apply to *episode*'s stream.
+
+    Derived from the resolved provider_url host when it maps to a known hoster
+    (a site's hoster label can be wrong — mirrored labels point at another
+    hoster's domain, see extractors.provider_for_url), otherwise the episode's
+    selected_provider. Resolving provider_url is safe here: it is cached and
+    the download reads it moments later anyway. Falls back defensively so
+    episodes without a provider_url (e.g. Direct/Hanime) keep their label."""
+    try:
+        from ...extractors import provider_for_url
+    except Exception:
+        return getattr(episode, "selected_provider", None)
+    try:
+        pu = getattr(episode, "provider_url", None)
+    except Exception:
+        pu = None
+    return provider_for_url(pu) or getattr(episode, "selected_provider", None)
+
+
 def _read_encoding_settings():
     """Read encoding settings directly from the AniWorld SQLite DB.
     Avoids importing mediaforge.web (which triggers __init__ → app.py → circular import).
@@ -1001,7 +1021,7 @@ def download(self, cancel_event=None):
     try:
         check = check_downloaded(self._episode_path)
 
-        headers = PROVIDER_HEADERS_D.get(self.selected_provider, {})
+        headers = PROVIDER_HEADERS_D.get(_effective_provider(self), {})
         input_kwargs = {
             "reconnect": 1,
             "reconnect_streamed": 1,
@@ -1409,7 +1429,7 @@ def watch(self):
 
     print(f"[WATCHING] {self._file_name}")
 
-    headers = PROVIDER_HEADERS_W.get(self.selected_provider, {})
+    headers = PROVIDER_HEADERS_W.get(_effective_provider(self), {})
     cmd = [str(get_player_path()), self.stream_url]
 
     # AniSkip: AniWorld only; ignore for s.to
@@ -1521,7 +1541,7 @@ def syncplay(self):
         ["--no-ytdl", "--fs", "--quiet", f"--force-media-title={self._file_name}"]
     )
 
-    headers = PROVIDER_HEADERS_W.get(self.selected_provider, {})
+    headers = PROVIDER_HEADERS_W.get(_effective_provider(self), {})
 
     if headers:
         header_args = [f"{k}: {v}" for k, v in headers.items()]

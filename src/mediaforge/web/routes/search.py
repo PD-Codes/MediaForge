@@ -8,6 +8,7 @@ from ...config import LANG_KEY_MAP
 from ...config import LANG_LABELS
 from ...config import MEDIAFORGE_CONFIG_DIR
 from ...config import check_redirect_available
+from ...config import probe_redirect
 from ...providers import resolve_provider
 from ...search import hanime_search
 from ...search import megakino_search
@@ -43,6 +44,41 @@ from ...logger import get_logger
 
 
 logger = get_logger(__name__)
+
+
+def _filter_and_dedup_providers(providers_map):
+    """Turn a {provider_label: redirect_url} map into an ordered list of live,
+    de-duplicated provider names for the provider dropdown.
+
+    For every listed hoster with a working extractor it does one live probe
+    (probe_redirect): dead/removed embeds are dropped, and entries whose
+    redirect resolves to the *same* real host are collapsed to a single provider
+    (labelled by the resolved host when known). This is what makes the dropdown
+    reflect what is actually playable rather than every label the site lists.
+    Runs for series as well as movies (previously movies-only), which is the
+    whole point of the check — a few extra GETs per modal open in exchange for
+    an accurate list.
+    """
+    wp_by_lower = {w.lower(): w for w in WORKING_PROVIDERS}
+    seen = set()
+    out = []
+    for name, redirect in providers_map.items():
+        if name not in WORKING_PROVIDERS:
+            continue
+        available, host_provider = probe_redirect(redirect, name)
+        if not available:
+            continue
+        # Collapse mirror labels that resolve to the same host; key by the
+        # resolved host when known, otherwise by the label itself.
+        key = host_provider or name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        # Prefer the canonical name of the resolved host (so a label that really
+        # lands on a known hoster shows that hoster); fall back to the original
+        # label when the host is unknown or has no working extractor.
+        out.append(wp_by_lower.get(host_provider) or name)
+    return out
 
 
 def _filmpalast_search(keyword):
@@ -1016,18 +1052,12 @@ def register_search_routes(app):
                 prov = resolve_provider(url)
                 ep = prov.episode_cls(url=url)
                 pd = ep.provider_data  # {"German Dub": {hoster: embed_url}}
-                # Live-availability check only applies to movies: MegaKino movie
-                # posts are user-edited and often keep dead/removed hoster embeds
-                # listed, so a known-provider-name match alone isn't enough there.
-                # Series episodes (MegakinoEpisode, resolved from ?episode=N URLs)
-                # skip the live check, same as AniWorld/s.to below.
-                is_movie = isinstance(ep, MegakinoMovie)
+                # Live-availability check + mirror de-dup for every label, movies
+                # and series alike (MegaKino posts are user-edited and often keep
+                # dead/removed hoster embeds listed).
                 provider_info = {}
                 for label, hosters in pd.items():
-                    working = [
-                        h for h, embed_url in hosters.items()
-                        if h in WORKING_PROVIDERS and (not is_movie or check_redirect_available(embed_url, h))
-                    ]
+                    working = _filter_and_dedup_providers(hosters)
                     if working:
                         provider_info[label] = working
                 return jsonify({"providers": provider_info})
@@ -1083,16 +1113,12 @@ def register_search_routes(app):
                     if label:
                         raw_by_label[label] = dict(providers)
 
-            # Single unified availability check for every label / site — but
-            # only for movies. FilmPalast is movies-only; AniWorld exposes a
-            # per-episode `is_movie` flag for its /filme/film-N pages; s.to has
-            # no movie concept at all (getattr defaults to False for it).
-            is_movie = (prov.name == "FilmPalast") or getattr(episode, "is_movie", False)
+            # Single unified live-availability check + mirror de-dup for every
+            # label / site, movies and series alike (previously movies-only).
+            # This is what keeps dead hosters and duplicate mirror labels out of
+            # the provider dropdown for AniWorld/s.to series too.
             for label, providers in raw_by_label.items():
-                working = [
-                    p for p, redirect in providers.items()
-                    if p in WORKING_PROVIDERS and (not is_movie or check_redirect_available(redirect, p))
-                ]
+                working = _filter_and_dedup_providers(providers)
                 if working:
                     provider_info[label] = working
 
