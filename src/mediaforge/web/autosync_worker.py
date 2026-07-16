@@ -211,82 +211,90 @@ def _run_autosync_for_job(job, force_notify=False):
         # path_unavailable_action setting we either skip or hold.              #
         # ------------------------------------------------------------------ #
         from pathlib import Path as _Path
-        _cp_id = job.get("custom_path_id")
-        if _cp_id:
-            _cp_record = get_custom_path_by_id(_cp_id)
-            _cp_available = False
-            if _cp_record:
-                try:
-                    _cp_available = _Path(_cp_record["path"]).expanduser().is_dir()
-                except Exception:
+        _cp_ids = [cid for cid in (job.get("custom_path_id"), job.get("movie_custom_path_id")) if cid]
+        _cp_record = None
+        _cp_available = True
+        for _cp_id in _cp_ids:
+            _rec = get_custom_path_by_id(_cp_id)
+            if not _rec:
+                _cp_available = False
+                _cp_record = {"path": f"ID #{_cp_id} (gelöscht/nicht gefunden)"}
+                break
+            try:
+                if not _Path(_rec["path"]).expanduser().is_dir():
                     _cp_available = False
+                    _cp_record = _rec
+                    break
+            except Exception:
+                _cp_available = False
+                _cp_record = _rec
+                break
 
-            if not _cp_available:
-                _global_action = os.environ.get("MEDIAFORGE_SYNC_PATH_UNAVAILABLE_ACTION", "skip").lower()
-                _action = (job.get("path_unavailable_action") or _global_action or "skip").lower()
-                _was_on_hold = bool(job.get("on_hold"))
+        if _cp_ids and not _cp_available:
+            _global_action = os.environ.get("MEDIAFORGE_SYNC_PATH_UNAVAILABLE_ACTION", "skip").lower()
+            _action = (job.get("path_unavailable_action") or _global_action or "skip").lower()
+            _was_on_hold = bool(job.get("on_hold"))
 
-                if _action == "hold":
-                    if not _was_on_hold:
-                        # First time going on hold — persist state + notify
-                        update_autosync_job(
-                            job["id"],
-                            on_hold=1,
-                            last_error="Custom Path nicht erreichbar — Sync pausiert (Hold)",
-                        )
-                        logger.warning(
-                            "Auto-sync HOLD for '%s' — custom path '%s' not accessible",
-                            job.get("title", "?"),
-                            _cp_record["path"] if _cp_record else _cp_id,
-                        )
-                        try:
-                            from .notifications import notify_all
-                            notify_all(
-                                title=job.get("title", "Auto-Sync"),
-                                body="⏸ Sync pausiert: Custom Path nicht erreichbar — "
-                                     + str(_cp_record['path'] if _cp_record else 'Unbekannt'),
-                                event="on_sync_hold",
-                                username=job.get("added_by"),
-                            )
-                        except Exception as e:
-                            logger.warning("[AutoSync] Hold notification failed: %s", e)
-                    else:
-                        logger.info(
-                            "Auto-sync still on HOLD for '%s' — custom path still unavailable",
-                            job.get("title", "?"),
-                        )
-                    return  # wait for next cycle
-                else:
-                    # action == "skip" (default)
-                    logger.info(
-                        "Auto-sync SKIP for '%s' — custom path not accessible (action=skip)",
-                        job.get("title", "?"),
-                    )
+            if _action == "hold":
+                if not _was_on_hold:
+                    # First time going on hold — persist state + notify
                     update_autosync_job(
                         job["id"],
-                        last_check=__import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-                        last_error="Custom Path nicht erreichbar — Sync übersprungen",
+                        on_hold=1,
+                        last_error="Custom Path nicht erreichbar — Sync pausiert (Hold)",
                     )
-                    return
-            else:
-                # Path is accessible — if we were on hold, clear it and notify resume
-                if job.get("on_hold"):
-                    update_autosync_job(job["id"], on_hold=0, last_error=None)
-                    logger.info(
-                        "Auto-sync RESUME for '%s' — custom path is accessible again",
+                    logger.warning(
+                        "Auto-sync HOLD for '%s' — custom path '%s' not accessible",
                         job.get("title", "?"),
+                        _cp_record["path"] if _cp_record else _cp_ids,
                     )
                     try:
                         from .notifications import notify_all
                         notify_all(
                             title=job.get("title", "Auto-Sync"),
-                            body="▶️ Sync wird fortgesetzt: Custom Path ist wieder erreichbar — "
-                                 + str(_cp_record['path'] if _cp_record else ''),
-                            event="on_sync_resume",
+                            body="⚠️ Sync pausiert: Custom Path nicht erreichbar — "
+                                 + str(_cp_record['path'] if _cp_record else 'Unbekannt'),
+                            event="on_sync_hold",
                             username=job.get("added_by"),
                         )
                     except Exception as e:
-                        logger.warning("[AutoSync] Resume notification failed: %s", e)
+                        logger.warning("[AutoSync] Hold notification failed: %s", e)
+                else:
+                    logger.info(
+                        "Auto-sync still on HOLD for '%s' — custom path still unavailable",
+                        job.get("title", "?"),
+                    )
+                return  # wait for next cycle
+            else:
+                # action == "skip" (default)
+                logger.info(
+                    "Auto-sync SKIP for '%s' — custom path not accessible (action=skip)",
+                    job.get("title", "?"),
+                )
+                update_autosync_job(
+                    job["id"],
+                    last_check=__import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                    last_error="Custom Path nicht erreichbar — Sync übersprungen",
+                )
+                return
+        elif job.get("on_hold"):
+            # Path is accessible — if we were on hold, clear it and notify resume
+            update_autosync_job(job["id"], on_hold=0, last_error=None)
+            logger.info(
+                "Auto-sync RESUME for '%s' — custom path is accessible again",
+                job.get("title", "?"),
+            )
+            try:
+                from .notifications import notify_all
+                notify_all(
+                    title=job.get("title", "Auto-Sync"),
+                    body="▶️ Sync wird fortgesetzt: Custom Path ist wieder erreichbar — "
+                         + str(_cp_record['path'] if _cp_record else ''),
+                    event="on_sync_resume",
+                    username=job.get("added_by"),
+                )
+            except Exception as e:
+                logger.warning("[AutoSync] Resume notification failed: %s", e)
 
         prov = resolve_provider(job["series_url"])
         series = prov.series_cls(url=job["series_url"])

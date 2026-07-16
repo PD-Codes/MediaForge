@@ -1290,24 +1290,40 @@ def update_custom_path(path_id, name=None, path=None, default_sites=None):
 
 
 def is_custom_path_in_use(path_id):
-    """Return True if any autosync job currently references this custom path."""
+    """Return True if any autosync job or active queue item currently references this custom path."""
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM autosync_jobs WHERE custom_path_id = ?",
+            "SELECT COUNT(*) AS cnt FROM autosync_jobs WHERE custom_path_id = ? OR movie_custom_path_id = ?",
+            (path_id, path_id),
+        ).fetchone()
+        if row and row["cnt"] > 0:
+            return True
+        row_queue = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM download_queue WHERE custom_path_id = ? AND status IN ('queued', 'running')",
             (path_id,),
         ).fetchone()
-        return row["cnt"] > 0
+        return bool(row_queue and row_queue["cnt"] > 0)
     finally:
         conn.close()
 
 
 def remove_custom_path(path_id):
     """Delete a custom path. Returns (True, None) on success or (False, reason) if blocked."""
-    if is_custom_path_in_use(path_id):
-        return False, "Dieser Pfad wird von mindestens einem Auto-Sync-Job verwendet und kann nicht gelöscht werden."
     conn = get_db()
     try:
+        row_sync = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM autosync_jobs WHERE custom_path_id = ? OR movie_custom_path_id = ?",
+            (path_id, path_id),
+        ).fetchone()
+        if row_sync and row_sync["cnt"] > 0:
+            return False, "Dieser Pfad wird von mindestens einem Auto-Sync-Job verwendet und kann nicht gelöscht werden."
+        row_queue = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM download_queue WHERE custom_path_id = ? AND status IN ('queued', 'running')",
+            (path_id,),
+        ).fetchone()
+        if row_queue and row_queue["cnt"] > 0:
+            return False, "Dieser Pfad wird noch von aktiven oder wartenden Downloads in der Warteschlange verwendet."
         conn.execute("DELETE FROM custom_paths WHERE id = ?", (path_id,))
         conn.commit()
         return True, None

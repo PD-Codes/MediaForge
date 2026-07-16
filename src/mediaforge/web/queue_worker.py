@@ -423,8 +423,13 @@ def _queue_worker():
                 _cp_id = item.get("custom_path_id")
                 if _cp_id:
                     _cp = get_custom_path_by_id(_cp_id)
-                    if _cp:
-                        _disk_check_path = str(Path(_cp["path"]).expanduser())
+                    if not _cp:
+                        raise RuntimeError(
+                            f"Der ausgewählte Custom Path (ID #{_cp_id}) existiert nicht mehr in der Datenbank oder wurde gelöscht."
+                        )
+                    _disk_check_path = str(Path(_cp["path"]).expanduser())
+            except RuntimeError:
+                raise
             except Exception as e:
                 logger.debug("[Queue] Could not resolve custom path for disk check: %s", e)
             _check_disk_space_and_notify(username=item.get("username"), check_path=_disk_check_path)
@@ -449,12 +454,17 @@ def _queue_worker():
             custom_path_id = item.get("custom_path_id")
             if custom_path_id:
                 cp = get_custom_path_by_id(custom_path_id)
-                if cp:
-                    base = Path(cp["path"]).expanduser()
-                    if not base.is_absolute():
-                        base = Path.home() / base
-                else:
-                    base = None
+                if not cp:
+                    raise RuntimeError(
+                        f"Der ausgewählte Custom Path (ID #{custom_path_id}) existiert nicht mehr in der Datenbank oder wurde gelöscht."
+                    )
+                base = Path(cp["path"]).expanduser()
+                if not base.is_absolute():
+                    base = Path.home() / base
+                if not base.is_dir():
+                    raise RuntimeError(
+                        f"Der ausgewählte Custom Path '{base}' ist nicht erreichbar oder kein Verzeichnis."
+                    )
             else:
                 base = None
 
