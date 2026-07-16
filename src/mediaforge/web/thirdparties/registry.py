@@ -91,7 +91,7 @@ _SECTIONS = ("discover", "management", "syncplay", "system")
 _KNOWN_TABS = {
     "integrations": ("seerr", "mediaplayer", "cineinfo", "thirdparty", "syncplay", "uptime"),
     "notifications": ("webpush", "telegram", "pushover", "ntfy", "discord", "whatsapp", "storage"),
-    "settings": ("general", "design", "sources", "downloads", "autosync", "network", "auth", "api", "updates"),
+    "settings": ("overview", "general", "design", "sources", "downloads", "autosync", "network", "auth", "api", "privacy", "backup", "updates"),
 }
 
 # Field types _build_card()/the settings-card macro/the generic PUT route

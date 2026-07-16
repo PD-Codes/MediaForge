@@ -4807,3 +4807,65 @@ msgstr "Datei wählen…"
 
 msgid "Save backup without a password (insecure)"
 msgstr "Backup ohne Passwort sichern (unsicher)"
+
+# ── Einstellungs-Übersicht (Overview Dashboard) ──────────────────────────
+msgid "Overview"
+msgstr "Übersicht"
+
+msgid "Configure"
+msgstr "Konfigurieren"
+
+msgid "General settings, language, system options and debug mode"
+msgstr "Allgemeine Einstellungen, Sprache, Systemoptionen und Debug-Modus"
+
+msgid "Appearance themes, accent color, visual effects and layout options"
+msgstr "Erscheinungsbild, Akzentfarbe, visuelle Effekte und Layoutoptionen"
+
+msgid "Configure streaming providers, mirrors and search order"
+msgstr "Streaming-Anbieter, Mirrors und Suchreihenfolge konfigurieren"
+
+msgid "Download paths, naming template, language preferences and bandwidth limits"
+msgstr "Download-Pfade, Namensschema, Standardsprache und Bandbreitenlimit"
+
+msgid "Automatic synchronization, schedules, weekly blocks and adaptive intervals"
+msgstr "Automatische Synchronisation, Zeitpläne, Wochentagssteuerung und adaptive Intervalle"
+
+msgid "DNS server configuration, Captcha solver behavior and reverse proxy base URL"
+msgstr "DNS-Serverkonfiguration, Captcha-Verhalten und Reverse-Proxy-Basis-URL"
+
+msgid "User management, roles, passwords and Single Sign-On (SSO/OIDC)"
+msgstr "Benutzerverwaltung, Rollen, Passwörter und Single Sign-On (SSO/OIDC)"
+
+msgid "External REST API key, endpoint reference and integration documentation"
+msgstr "Externer REST-API-Schlüssel, Endpunkt-Übersicht und Dokumentation"
+
+msgid "Crash reports, diagnostic telemetry and data privacy controls"
+msgstr "Absturzberichte, Telemetrie-Diagnosen und Datenschutzoptionen"
+
+msgid "Check for updates, switch release channels and configure automatic updates"
+msgstr "Nach Updates suchen, Release-Kanal wechseln und automatische Updates konfigurieren"
+
+msgid "Create, download and restore full system backups"
+msgstr "Vollständige System-Backups erstellen, herunterladen und wiederherstellen"
+
+msgid "Connect MediaForge with your Jellyseerr or Overseerr instance."
+msgstr "Verbinde MediaForge mit deiner Jellyseerr- oder Overseerr-Instanz."
+
+msgid "Automatic library refresh for Jellyfin & Plex after every download."
+msgstr "Automatisches Aktualisieren der Bibliothek für Jellyfin & Plex nach jedem Download."
+
+msgid "Shows streaming providers, genres and age rating via TMDB API."
+msgstr "Zeigt Streaming-Anbieter, Genres und Altersfreigaben über die TMDB-API."
+
+msgid "Connect external services like Crunchyroll & Fernsehserien.de."
+msgstr "Verbinde externe Dienste wie Crunchyroll & Fernsehserien.de."
+
+msgid "Synchronized playback and party rooms with external instances."
+msgstr "Synchronisierte Wiedergabe und Party-Räume mit externen Instanzen."
+
+msgid "Monitor site availability, response times and scrapable sources."
+msgstr "Überwache die Erreichbarkeit, Antwortzeiten und Quellenstatus von Seiten."
+
+msgid "External integration module"
+msgstr "Externes Integrationsmodul"
+

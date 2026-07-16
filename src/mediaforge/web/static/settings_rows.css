@@ -319,3 +319,95 @@
       min-width:175px !important;
     }
   }
+
+/* Shared Overview Grid & Cards */
+.settings-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.settings-overview-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+}
+
+.settings-overview-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent, #6366f1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2), 0 0 12px rgba(99, 102, 241, 0.15);
+}
+
+.settings-overview-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-overview-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--accent-bg, rgba(99, 102, 241, 0.1));
+  color: var(--accent, #6366f1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease;
+}
+
+.settings-overview-card:hover .settings-overview-icon {
+  transform: scale(1.08) rotate(4deg);
+  background: var(--accent, #6366f1);
+  color: #fff;
+}
+
+.settings-overview-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 2;
+}
+
+.settings-overview-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.settings-overview-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  flex: 1;
+}
+
+.settings-overview-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--accent, #6366f1);
+  font-size: 0.8rem;
+  font-weight: 600;
+  gap: 4px;
+  opacity: 0.85;
+  transition: opacity 0.15s, transform 0.2s ease;
+}
+
+.settings-overview-card:hover .settings-overview-arrow {
+  opacity: 1;
+  transform: translateX(3px);
+}

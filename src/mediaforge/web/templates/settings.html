@@ -51,10 +51,11 @@ function setUiLanguage(lang) {
   </div>
   {% endif %}
 
-  <!-- Tab Navigation -->
-  <div class="settings-tabs" id="settingsTabs">
+  <!-- Tab Navigation (hidden visually; navigation occurs via sidebar & overview dashboard) -->
+  <div class="settings-tabs" id="settingsTabs" style="display: none !important;">
+    <button class="settings-tab active" data-tab="overview" onclick="switchTab('overview')">{{ _('Overview') }}</button>
     <button class="settings-tab" data-tab="general" onclick="switchTab('general')">{{ _('General') }}</button>
-    <button class="settings-tab active" data-tab="design" onclick="switchTab('design')">{{ _('Design') }}</button>
+    <button class="settings-tab" data-tab="design" onclick="switchTab('design')">{{ _('Design') }}</button>
     {% if is_admin %}
     <button class="settings-tab" data-tab="sources" onclick="switchTab('sources')">{{ _('Sources') }}</button>
     {% endif %}
@@ -75,6 +76,151 @@ function setUiLanguage(lang) {
     {% for t in get_dynamic_tabs('settings') %}
     <button class="settings-tab" data-tab="{{ t.id }}" onclick="switchTab('{{ t.id }}')">{{ t.label }}</button>
     {% endfor %}
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       Tab: Übersicht (Overview Dashboard)
+  ══════════════════════════════════════════════════════ -->
+  <div class="settings-tab-panel active" id="tab-overview">
+    <div class="settings-overview-grid">
+      <div class="settings-overview-card" onclick="switchTab('general')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 14a1 1 0 1 1 1-1 1 1 0 0 1-1 1zm1-4a1 1 0 0 0-.99 1V13h2v-1a1 1 0 0 0-1-1zm0-3a1 1 0 0 0-1 1v1h2V10a1 1 0 0 0-1-1z"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('General') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('General settings, language, system options and debug mode') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchTab('design')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Design') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Appearance themes, accent color, visual effects and layout options') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      {% if is_admin %}
+      <div class="settings-overview-card" onclick="switchTab('sources')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Sources') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Configure streaming providers, mirrors and search order') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+      {% endif %}
+
+      <div class="settings-overview-card" onclick="switchTab('downloads')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Downloads') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Download paths, naming template, language preferences and bandwidth limits') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchTab('autosync')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </div>
+          <div class="settings-overview-title">Auto-Sync</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Automatic synchronization, schedules, weekly blocks and adaptive intervals') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchTab('network')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Network') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('DNS server configuration, Captcha solver behavior and reverse proxy base URL') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      {% if is_admin %}
+      <div class="settings-overview-card" onclick="switchTab('auth')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Authentication') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('User management, roles, passwords and Single Sign-On (SSO/OIDC)') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchTab('api')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </div>
+          <div class="settings-overview-title">API</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('External REST API key, endpoint reference and integration documentation') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchTab('privacy')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Privacy & Telemetry') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Crash reports, diagnostic telemetry and data privacy controls') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchTab('backup')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Backup') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Create, download and restore full system backups') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+      {% endif %}
+
+      <div class="settings-overview-card" onclick="switchTab('updates')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="16 12 12 8 8 12"/><line x1="12" y1="16" x2="12" y2="8"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Updates') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Check for updates, switch release channels and configure automatic updates') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      {% for t in get_dynamic_tabs('settings') %}
+      <div class="settings-overview-card" onclick="switchTab('{{ t.id }}')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ t.label }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Configure') }} {{ t.label }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
 
   <!-- ══════════════════════════════════════════════════════

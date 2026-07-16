@@ -9,50 +9,8 @@
    Used by: templates/settings.html + static/settings.js
    =================================================================== */
 
-/* Settings-page sidebar submenu (active-state highlighting is driven by
-   settings.js via .sidebar-sub-link[data-settings-tab]); no template
-   currently renders this markup, so these rules are presently dormant. */
-.sidebar-sub {
-  padding-left: 12px;
-  margin-top: 2px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}.sidebar-sub-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px 6px 24px;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  text-decoration: none;
-  border-radius: var(--radius-sm, 6px);
-  transition: background 0.15s, color 0.15s;
-  position: relative;
-}.sidebar-sub-link::before {
-  content: '';
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  opacity: 0.4;
-  transition: opacity 0.15s, background 0.15s;
-}.sidebar-sub-link:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
-}.sidebar-sub-link:hover::before {
-  opacity: 0.8;
-}.sidebar-sub-link.active {
-  color: var(--accent, #6366f1);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
-}.sidebar-sub-link.active::before {
-  background: var(--accent, #6366f1);
-  opacity: 1;
-}.web-console-wrap {
+/* Note: Settings Overview Grid & Cards moved to settings_rows.css so Integrations overview cards can reuse them. */
+.web-console-wrap {
   margin: 0 22px 18px;
   border: 1px solid #2b2b2b;
   border-radius: 10px;

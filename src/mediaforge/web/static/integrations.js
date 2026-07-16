@@ -7,6 +7,13 @@ function switchIntegTab(name) {
   document.querySelectorAll(".settings-tab-panel").forEach(function (panel) {
     panel.classList.toggle("active", panel.id === "tab-" + name);
   });
+  var subContainer = document.getElementById("integrationsSidebarSub");
+  if (subContainer) subContainer.classList.add("open");
+  var toggleBtn = document.getElementById("integrationsSidebarToggle");
+  if (toggleBtn) toggleBtn.classList.remove("collapsed");
+  document.querySelectorAll(".sidebar-sub-link[data-integ-tab]").forEach(function (a) {
+    a.classList.toggle("active", a.dataset.integTab === name);
+  });
   try {
     history.replaceState(null, "", "#" + name);
     localStorage.setItem("integActiveTab", name);
@@ -26,9 +33,9 @@ function switchIntegTab(name) {
   );
   var tab = (hash && valid.indexOf(hash) !== -1) ? hash : "";
   if (!tab) {
-    try { tab = localStorage.getItem("integActiveTab") || "seerr"; } catch (e) { tab = "seerr"; }
+    try { tab = localStorage.getItem("integActiveTab") || "overview"; } catch (e) { tab = "overview"; }
   }
-  if (valid.indexOf(tab) === -1) tab = "seerr";
+  if (valid.indexOf(tab) === -1) tab = "overview";
   switchIntegTab(tab);
 })();
 

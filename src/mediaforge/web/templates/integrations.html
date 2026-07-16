@@ -13,9 +13,10 @@
     <p class="page-subtitle">{{ _('Connect external services') }}</p>
   </div>
 
-  <!-- Tab Navigation -->
-  <div class="settings-tabs" id="integTabs">
-    <button class="settings-tab active" data-tab="seerr" onclick="switchIntegTab('seerr')">Seerr</button>
+  <!-- Tab Navigation (hidden visually; navigation occurs via sidebar) -->
+  <div class="settings-tabs" id="integTabs" style="display: none !important;">
+    <button class="settings-tab active" data-tab="overview" onclick="switchIntegTab('overview')">{{ _('Overview') }}</button>
+    <button class="settings-tab" data-tab="seerr" onclick="switchIntegTab('seerr')">Seerr</button>
     <button class="settings-tab" data-tab="mediaplayer" onclick="switchIntegTab('mediaplayer')">Mediaplayer</button>
     <button class="settings-tab" data-tab="cineinfo" onclick="switchIntegTab('cineinfo')">CineInfo</button>
     <button class="settings-tab" data-tab="thirdparty" onclick="switchIntegTab('thirdparty')">{{ _('Third Party') }}</button>
@@ -31,9 +32,95 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════
+       Tab: Übersicht (Overview Dashboard)
+  ══════════════════════════════════════════════════════ -->
+  <div class="settings-tab-panel active" id="tab-overview">
+    <div class="settings-overview-grid">
+      <div class="settings-overview-card" onclick="switchIntegTab('seerr')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </div>
+          <div class="settings-overview-title">Seerr</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Connect MediaForge with your Jellyseerr or Overseerr instance.') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchIntegTab('mediaplayer')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <div class="settings-overview-title">Mediaplayer</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Automatic library refresh for Jellyfin & Plex after every download.') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchIntegTab('cineinfo')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+          </div>
+          <div class="settings-overview-title">CineInfo</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Shows streaming providers, genres and age rating via TMDB API.') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchIntegTab('thirdparty')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Third Party') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Connect external services like Crunchyroll & Fernsehserien.de.') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchIntegTab('syncplay')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H4.2"/></svg>
+          </div>
+          <div class="settings-overview-title">SyncPlay</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Synchronized playback and party rooms with external instances.') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchIntegTab('uptime')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <div class="settings-overview-title">UpTime</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Monitor site availability, response times and scrapable sources.') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      {% for t in get_dynamic_tabs('integrations') %}
+      <div class="settings-overview-card" onclick="switchIntegTab('{{ t.id }}')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ t.label }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('External integration module') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div><!-- /tab-overview -->
+
+  <!-- ══════════════════════════════════════════════════════
        Tab: Seerr
   ══════════════════════════════════════════════════════ -->
-  <div class="settings-tab-panel active" id="tab-seerr">
+  <div class="settings-tab-panel" id="tab-seerr">
     <div class="settings-section">
       <h2>{{ _('Seerr Integration') }}</h2>
       <div class="settings-hint integ-hint-border">

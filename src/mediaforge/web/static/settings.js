@@ -7,7 +7,11 @@ function switchTab(name) {
   document.querySelectorAll(".settings-tab-panel").forEach(function (panel) {
     panel.classList.toggle("active", panel.id === "tab-" + name);
   });
-  // Sync sidebar sub-links
+  // Sync sidebar sub-links and keep container open
+  var subContainer = document.getElementById("settingsSidebarSub");
+  if (subContainer) subContainer.classList.add("open");
+  var toggleBtn = document.getElementById("settingsSidebarToggle");
+  if (toggleBtn) toggleBtn.classList.remove("collapsed");
   document.querySelectorAll(".sidebar-sub-link[data-settings-tab]").forEach(function (a) {
     a.classList.toggle("active", a.dataset.settingsTab === name);
   });
@@ -30,11 +34,8 @@ function switchTab(name) {
     document.querySelectorAll("#settingsTabs .settings-tab"),
     function (btn) { return btn.dataset.tab; }
   );
-  var tab = (hash && validTabs.indexOf(hash) !== -1) ? hash : "";
-  if (!tab) {
-    try { tab = localStorage.getItem("settingsActiveTab") || "downloads"; } catch (e) { tab = "downloads"; }
-  }
-  if (validTabs.indexOf(tab) === -1) tab = "downloads";
+  var tab = (hash && validTabs.indexOf(hash) !== -1) ? hash : "overview";
+  if (validTabs.indexOf(tab) === -1) tab = "overview";
   switchTab(tab);
 })();
 
