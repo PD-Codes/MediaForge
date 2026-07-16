@@ -32,11 +32,18 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='selfupdate.css') }}" />
   {% block styles %}{% endblock %}
   <script>
-    // Prevent flash: apply saved theme before paint
+    // Prevent flash: apply saved theme (and collapsed-sidebar state) before paint
     (function () {
       try {
         var t = localStorage.getItem('aw-theme') || 'dark';
         document.documentElement.setAttribute('data-theme', t);
+      } catch (e) { }
+      try {
+        // Restore the mini/collapsed sidebar. CSS gates the effect to
+        // min-width:769px, so setting it here is a no-op on mobile.
+        if (localStorage.getItem('sidebar-mini') === 'true') {
+          document.documentElement.classList.add('sidebar-mini');
+        }
       } catch (e) { }
     })();
   </script>
@@ -109,6 +116,17 @@
 
   <!-- ===== Sidebar ===== -->
   <aside class="sidebar" id="sidebar">
+    <!-- Floating collapse/expand toggle, pinned to the right edge and always
+         visible. Left arrow = collapse (expanded state), right arrow = expand
+         (mini state); the swap is handled in CSS via html.sidebar-mini. -->
+    <button class="sidebar-toggle-btn" type="button" onclick="toggleSidebarMini()"
+      title="{{ _('Collapse / expand menu') }}" aria-label="{{ _('Collapse / expand menu') }}">
+      <svg viewBox="0 0 24 24">
+        <polyline points="15 18 9 12 15 6" class="arrow-left-icon" />
+        <polyline points="9 18 15 12 9 6" class="arrow-right-icon" />
+      </svg>
+    </button>
+
     <div class="sidebar-header">
       <a href="{{ url_for('index') }}" class="sidebar-brand">
         <svg class="sidebar-brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -378,7 +396,7 @@
             <a href="{{ url_for('integrations_page') }}#syncplay" class="sidebar-sub-link" data-integ-tab="syncplay" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('syncplay');return false;}">SyncPlay</a>
             <a href="{{ url_for('integrations_page') }}#uptime" class="sidebar-sub-link" data-integ-tab="uptime" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('uptime');return false;}">UpTime</a>
             {% for t in get_dynamic_tabs('integrations') %}
-            <a href="{{ url_for('integrations_page') }}#{{ t.id }}" class="sidebar-sub-link" data-integ-tab="{{ t.id }}" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('{{ t.id }}');return false;}">{{ t.label }}</a>
+            <a href="{{ url_for('integrations_page') }}#{{ t.id }}" class="sidebar-sub-link" data-integ-tab="{{ t.id }}" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('{{ t.id }}');return false;}">{{ t.label }}{% if t.is_module %}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span>{% endif %}</a>
             {% endfor %}
           </div>
           {% endif %}
@@ -412,7 +430,7 @@
             {% endif %}
             <a href="{{ url_for('settings_page') }}#updates" class="sidebar-sub-link" data-settings-tab="updates" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('updates');return false;}">{{ _('Updates') }}</a>
             {% for t in get_dynamic_tabs('settings') %}
-            <a href="{{ url_for('settings_page') }}#{{ t.id }}" class="sidebar-sub-link" data-settings-tab="{{ t.id }}" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('{{ t.id }}');return false;}">{{ t.label }}</a>
+            <a href="{{ url_for('settings_page') }}#{{ t.id }}" class="sidebar-sub-link" data-settings-tab="{{ t.id }}" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('{{ t.id }}');return false;}">{{ t.label }}{% if t.is_module %}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span>{% endif %}</a>
             {% endfor %}
           </div>
         </div>
@@ -423,11 +441,7 @@
     <div class="sidebar-footer">
       {% if auth_enabled and current_user %}
       <div class="sidebar-user">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
+        <div class="sidebar-user-avatar">{{ current_user.username[0]|upper }}</div>
         <span class="sidebar-username">{{ current_user.username }}</span>
         <a href="{{ url_for('auth.logout') }}" class="sidebar-logout" title="{{ _('Log out') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -439,50 +453,49 @@
         </a>
       </div>
       {% endif %}
-      <a href="{{ url_for('devinfos_page') }}" class="sidebar-action-btn" title="{{ _('Dev Infos') }}" style="text-decoration:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round" style="width:16px;height:16px">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="16" x2="12" y2="11" />
-          <line x1="12" y1="8" x2="12.01" y2="8" />
-        </svg>
-        <span style="font-size:0.85rem;font-weight:500">{{ _('Dev Infos') }}</span>
-        <span class="devinfo-badge" id="devinfoBadge" style="display:none">0</span>
-      </a>
-      <a href="https://github.com/PD-Codes/MediaForge" target="_blank" rel="noopener noreferrer"
-        class="sidebar-action-btn" title="GitHub Repository" style="text-decoration:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round" style="width:16px;height:16px">
-          <path
-            d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22">
-          </path>
-        </svg>
-        <span style="font-size:0.85rem;font-weight:500">GitHub</span>
-      </a>
-      <button class="theme-toggle" id="themeToggle" onclick="toggleAppearancePopup()" title="{{ _('Customize appearance') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round" style="width:16px;height:16px">
-          <circle cx="13.5" cy="6.5" r="1.5" />
-          <circle cx="17.5" cy="10.5" r="1.5" />
-          <circle cx="8.5" cy="7.5" r="1.5" />
-          <circle cx="6.5" cy="12.5" r="1.5" />
-          <path
-            d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
-        </svg>
-        <span id="themeLabel" style="font-size:0.85rem;font-weight:500">{{ _('Appearance') }}</span>
-      </button>
 
-      <div class="sidebar-lang-dropdown" id="langDropdown">
-        <button class="sidebar-lang-trigger" onclick="toggleLangDropdown(event)" type="button">
-          <img src="{{ url_for('static', filename='flags/' + ('german' if ui_language == 'de' else 'english') + '.svg') }}"
-               class="sidebar-lang-flag" alt="" />
-          <span class="sidebar-lang-label">{{ 'Deutsch' if ui_language == 'de' else 'English' }}</span>
-          <svg class="sidebar-lang-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 15 12 9 18 15"/>
+      <!-- Compact 4-icon action grid: Dev Infos, GitHub, Appearance, Language -->
+      <div class="footer-actions-grid">
+        <a href="{{ url_for('devinfos_page') }}" class="footer-action-icon" title="{{ _('Dev Infos') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="11" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span class="icon-badge" id="devinfoBadge" style="display:none">0</span>
+        </a>
+
+        <a href="https://github.com/PD-Codes/MediaForge" target="_blank" rel="noopener noreferrer"
+          class="footer-action-icon" title="GitHub Repository">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path
+              d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22">
+            </path>
+          </svg>
+        </a>
+
+        <button type="button" class="footer-action-icon" id="themeToggle" onclick="toggleAppearancePopup()"
+          title="{{ _('Customize appearance') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <circle cx="13.5" cy="6.5" r="1.5" />
+            <circle cx="17.5" cy="10.5" r="1.5" />
+            <circle cx="8.5" cy="7.5" r="1.5" />
+            <circle cx="6.5" cy="12.5" r="1.5" />
+            <path
+              d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
           </svg>
         </button>
-        <div class="sidebar-lang-menu" id="langMenu">
+
+        <div class="sidebar-lang-dropdown" id="langDropdown">
+          <button class="footer-action-icon" onclick="toggleLangDropdown(event)" type="button"
+            title="{{ _('Change language') }}">
+            <img src="{{ url_for('static', filename='flags/' + ('german' if ui_language == 'de' else 'english') + '.svg') }}"
+                 class="sidebar-lang-flag" alt="" />
+          </button>
+          <div class="sidebar-lang-menu" id="langMenu">
           <button class="sidebar-lang-option{% if ui_language == 'de' %} active{% endif %}"
                   onclick="setUiLanguage('de')" type="button">
             <img src="{{ url_for('static', filename='flags/german.svg') }}" class="sidebar-lang-flag" alt="" />
@@ -498,6 +511,7 @@
         </div>
       </div>
     </div>
+  </div>
   </aside>
 
   <!-- ===== Mobile Top Bar ===== -->
@@ -854,6 +868,24 @@
       document.getElementById('hamburgerBtn').classList.remove('open');
       var popup = document.getElementById('appearancePopup');
       if (popup) popup.classList.remove('open');
+    }
+
+    // Collapse/expand the desktop sidebar (mini rail). State is stored on
+    // <html> as .sidebar-mini and persisted so it survives navigation; it is
+    // applied before paint by the early script in <head>. The CSS gates all
+    // mini styling to min-width:769px, so this has no effect on mobile.
+    function toggleSidebarMini() {
+      var isMini = document.documentElement.classList.toggle('sidebar-mini');
+      try { localStorage.setItem('sidebar-mini', isMini ? 'true' : 'false'); } catch (e) { }
+      // Close the language dropdown if it was left open while collapsing
+      var lang = document.getElementById('langDropdown');
+      if (lang) lang.classList.remove('open');
+      // Clear any open mini flyout + its inline positioning when switching mode
+      document.querySelectorAll('.sidebar-sub.flyout-open').forEach(function (s) {
+        s.classList.remove('flyout-open');
+        s.style.top = '';
+        s.style.maxHeight = '';
+      });
     }
 
     // ===== Appearance (theme + accent colour) =====
@@ -1434,6 +1466,43 @@
         if (nav) {
           nav.style.opacity = '1';
         }
+      })();
+
+      // Mini-mode flyout submenus. In the collapsed rail the submenu panels are
+      // position:fixed (so the scrolling rail can't clip them) and shown via the
+      // .flyout-open class. We drive open/close in JS with a short close delay
+      // (hover-intent): leaving the icon starts a timer, entering the panel
+      // cancels it — so the cursor can travel diagonally from the icon into the
+      // panel without it snapping shut. Top/max-height are set from the icon's
+      // current viewport position so the panel stays aligned after scrolling.
+      (function () {
+        var closeTimer = null;
+        function isMini() { return document.documentElement.classList.contains('sidebar-mini'); }
+        document.querySelectorAll('.sidebar-nav .sidebar-link').forEach(function (link) {
+          var sub = link.nextElementSibling;
+          if (!sub || !sub.classList.contains('sidebar-sub')) return;
+
+          function openFlyout() {
+            if (!isMini()) return;
+            clearTimeout(closeTimer);
+            document.querySelectorAll('.sidebar-sub.flyout-open').forEach(function (s) {
+              if (s !== sub) s.classList.remove('flyout-open');
+            });
+            var r = link.getBoundingClientRect();
+            sub.style.top = r.top + 'px';
+            sub.style.maxHeight = (window.innerHeight - r.top - 12) + 'px';
+            sub.classList.add('flyout-open');
+          }
+          function scheduleClose() {
+            clearTimeout(closeTimer);
+            closeTimer = setTimeout(function () { sub.classList.remove('flyout-open'); }, 250);
+          }
+
+          link.addEventListener('mouseenter', openFlyout);
+          link.addEventListener('mouseleave', scheduleClose);
+          sub.addEventListener('mouseenter', function () { if (isMini()) clearTimeout(closeTimer); });
+          sub.addEventListener('mouseleave', scheduleClose);
+        });
       })();
     })();
   </script>

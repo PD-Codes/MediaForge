@@ -41,7 +41,8 @@ logger = get_logger(__name__)
 # the provider for this episode/language at all, or MediaForge has no extractor
 # for it. Both are answered by moving on to the next provider in the chain.
 _PROVIDER_UNAVAILABLE_MARKERS = (
-    "is not available for",          # AniworldEpisode.redirect_url / s.to
+    "is not available for",          # AniworldEpisode.redirect_url
+    "not found for language",        # SerienstreamEpisode.provider_link (s.to)
     "is not yet implemented",        # extractor missing for this provider
     "no extractor available",
     "provider source not found",     # HTTP 404 on the /redirect/<id> link

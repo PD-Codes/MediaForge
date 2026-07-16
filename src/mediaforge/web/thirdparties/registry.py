@@ -378,6 +378,8 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
                          settings_host="integrations", settings_tab="thirdparty",
                          settings_tab_label=None,
                          settings_tab_icon_svg=None,
+                         overview_description=None,
+                         overview_icon_svg=None,
                          priority=0,
                          dashboard_widget_template=None,
                          provider_pill_script=None,
@@ -482,6 +484,14 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
       *new* tab/pill. Both ignored when attaching to an existing one.
       settings_tab_label defaults to label; settings_tab_icon_svg defaults
       to a generic placeholder icon.
+    - overview_description / overview_icon_svg: description text and icon
+      shown on the module's tile in the Integrations/Settings *overview*
+      grid, and the icon used for its sub-menu/overview entry (the new
+      sub-menu + overview surface replaced the old tab bar). Both only
+      apply when settings_tab creates a *new* tab (a dynamic module tab,
+      see resolve_dynamic_tabs()). overview_description defaults to
+      description; overview_icon_svg defaults to settings_tab_icon_svg (and
+      then to the generic placeholder icon).
     - priority: sort key (lower = earlier/higher up) used to order this
       item relative to *other registered items* within the same sidebar
       section, settings tab, or set of brand-new tabs/dashboard widgets.
@@ -618,6 +628,9 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
         "settings_tab": settings_tab,
         "settings_tab_label": settings_tab_label or label,
         "settings_tab_icon_svg": settings_tab_icon_svg or _DEFAULT_TAB_ICON_SVG,
+        # Info fields for the sub-menu + overview surface (see resolve_dynamic_tabs()).
+        "overview_description": overview_description or description or "",
+        "overview_icon_svg": overview_icon_svg or settings_tab_icon_svg or _DEFAULT_TAB_ICON_SVG,
         "priority": priority,
         "dashboard_widget_template": dashboard_widget_template,
         "provider_pill_script": provider_pill_script,
@@ -1339,14 +1352,22 @@ def resolve_settings_cards(host="integrations", tab="thirdparty"):
 
 
 def resolve_dynamic_tabs(host):
-    """Return the extra tab/pill buttons a settings page needs to render on
-    top of its own hand-written ones, for items whose settings_tab isn't
-    one of that host's _KNOWN_TABS. One entry per distinct new tab id,
-    sorted by the lowest priority among the items targeting it (ties break
-    by first-registered order): [{id, label, icon_svg}, ...]. The template
-    renders a button (integrations.html) or pill (notifications.html) plus
-    a panel for each, then populates the panel via
+    """Return the extra sub-menu/overview entries a settings page needs to
+    render on top of its own hand-written ones, for items whose settings_tab
+    isn't one of that host's _KNOWN_TABS. One entry per distinct new tab id,
+    sorted by the lowest priority among the items targeting it (ties break by
+    first-registered order):
+
+        [{id, label, icon_svg, description, module_name, is_module}, ...]
+
+    The template renders, for each entry: a sidebar sub-menu link (with the
+    module "M" pill, since is_module is always True here), an overview tile
+    (using description/icon_svg) and a content panel, which it populates via
     resolve_settings_cards(host, entry.id).
+
+    icon_svg/description come from the item's overview_icon_svg/
+    overview_description (see register_thirdparty); module_name is the folder
+    that registered the representative item, for the pill's tooltip.
     """
     known = _KNOWN_TABS.get(host, ())
     tabs = {}
@@ -1361,11 +1382,17 @@ def resolve_dynamic_tabs(host):
             tabs[tab] = {
                 "id": tab,
                 "label": item["settings_tab_label"],
-                "icon_svg": item["settings_tab_icon_svg"],
+                "icon_svg": item["overview_icon_svg"],
+                "description": item["overview_description"],
+                # Folder that registered this item -> the pill's tooltip.
+                "module_name": module_name_for_item(item["id"]) or item["label"],
                 "priority": item["priority"],
             }
     ordered = sorted(tabs.values(), key=lambda t: t["priority"])
-    return [{"id": t["id"], "label": t["label"], "icon_svg": t["icon_svg"]} for t in ordered]
+    return [{"id": t["id"], "label": t["label"], "icon_svg": t["icon_svg"],
+             "description": t["description"], "module_name": t["module_name"],
+             # Dynamic tabs always come from a registered module/integration.
+             "is_module": True} for t in ordered]
 
 
 def resolve_dashboard_widgets():

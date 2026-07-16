@@ -19,9 +19,53 @@
   display: flex;
   flex-direction: column;
   z-index: 200;                /* above .mobile-topbar/.sidebar-backdrop (190) so the open sidebar always sits on top */
-  transition: transform var(--transition-slow);
-  overflow: hidden;            /* header + footer stay put; only .sidebar-nav scrolls */
+  transition: transform var(--transition-slow), width var(--transition-slow);
+  overflow: visible;           /* header + footer stay put via flex-shrink:0; only .sidebar-nav scrolls. visible (not hidden) so the floating collapse toggle and mini-mode flyout submenus can escape the sidebar edge */
 }
+
+/* Floating collapse/expand toggle — a round button pinned to the sidebar's
+   right edge. Permanently visible (opacity:1) per requirement, not just on
+   hover. Toggles the html.sidebar-mini state via toggleSidebarMini(). */
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 20px;                   /* vertically aligned with the brand/logo in the header */
+  right: -12px;                /* centered on the sidebar's right border */
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1px solid var(--sidebar-border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+  z-index: 1010;
+  opacity: 1;                  /* always visible */
+  pointer-events: auto;
+  transition: background var(--transition), color var(--transition), transform var(--transition);
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--brand-color);
+  color: #fff;
+  border-color: var(--brand-color);
+  transform: scale(1.1);
+}
+
+.sidebar-toggle-btn svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  stroke-width: 3;
+  fill: none;
+}
+
+/* Arrow direction: point left (collapse) when expanded, right (expand) when mini */
+.sidebar-toggle-btn .arrow-right-icon { display: none; }
+html.sidebar-mini .sidebar-toggle-btn .arrow-left-icon { display: none; }
+html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
 
 /* Sidebar Header */
 .sidebar-header {
@@ -101,13 +145,15 @@
 }
 
 .sidebar-category::after {
-  content: "▾";
-  font-size: 2.00rem;
-  transition: transform var(--transition, 0.2s ease);
+  content: '';
+  width: 10px;
+  height: 10px;
   display: inline-block;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2355556a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  transition: transform var(--transition, 0.2s ease);
   opacity: 0.7;
-  margin-top: -25px;
-  margin-bottom: -25px;
 }
 
 .sidebar-category.collapsed::after {
@@ -150,10 +196,7 @@
   color: var(--text-secondary);
   font-size: 0.9rem;
   font-weight: 500;
-  /* transform intentionally eases in over 2s (much slower than the
-     background/color transitions) so the hover slide-out feels gradual
-     rather than snapping in with the color change */
-  transition: background var(--transition), color var(--transition), transform 2s ease;
+  transition: background var(--transition), color var(--transition), transform var(--transition);
   position: relative;
   text-decoration: none;
   width: 100%;
@@ -173,27 +216,30 @@
   background: var(--bg-hover);
   color: var(--text-primary);
   border-radius: var(--radius-md);
-  transform: translateX(3px);
+  transform: translateX(4px);
 }
 
 .sidebar-link.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: linear-gradient(90deg, var(--accent-soft) 0%, rgba(124, 58, 237, 0.03) 100%);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .sidebar-link.active svg {
   color: var(--accent);
+  filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
 .sidebar-link.active::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 5px;
-  bottom: 5px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
+  top: 4px;
+  bottom: 4px;
+  width: 4px;
+  border-radius: 99px;
   background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
 }
 
 /* Sidebar Submenu (nested under Settings) */
@@ -287,13 +333,14 @@
   transform: translateY(-50%) scale(1.4);
 }
 
-/* Sidebar Footer */
+/* Sidebar Footer — compact: profile row (avatar + name + logout) plus a
+   4-column icon grid (Dev Infos, GitHub, Appearance, Language). */
 .sidebar-footer {
-  padding: 12px 10px 16px;
+  padding: 12px 12px 14px;
   border-top: 1px solid var(--sidebar-border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
 
@@ -301,22 +348,32 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  padding: 4px 6px;
   font-size: 0.85rem;
 }
 
-.sidebar-user svg {
-  width: 16px;
-  height: 16px;
-  color: var(--text-muted);
+/* Circular avatar showing the first letter of the username */
+.sidebar-user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  border: 1px solid rgba(124, 58, 237, 0.2);
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.15);
+  text-transform: uppercase;
 }
 
 .sidebar-username {
   flex: 1;
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -340,9 +397,72 @@
   color: var(--error);
 }
 
+/* Footer icon grid */
+.footer-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: 100%;
+}
+
+.footer-action-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+  text-decoration: none;
+  transition: background var(--transition), color var(--transition), border-color var(--transition), transform var(--transition);
+}
+
+.footer-action-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.footer-action-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+  fill: none;
+  stroke: currentColor;
+}
+
+/* Small count badge overlaid on a footer icon (e.g. Dev Infos count) */
+.icon-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  font-size: 0.6rem;
+  font-weight: 700;
+  min-width: 14px;
+  height: 14px;
+  line-height: 12px;
+  border-radius: 50%;
+  text-align: center;
+  border: 1.5px solid var(--sidebar-bg);
+  padding: 0 2px;
+}
+
 /* Sidebar language dropdown */
 .sidebar-lang-dropdown {
   position: relative;
+  width: 100%;
+}
+
+/* The language trigger is nested inside .sidebar-lang-dropdown, so it is not a
+   direct grid item and would size to its content (narrower than the other
+   footer icons). Force it to fill the cell so all four icons match. */
+.sidebar-lang-dropdown .footer-action-icon {
   width: 100%;
 }
 
@@ -390,14 +510,15 @@
   display: none;
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
-  right: 0;
+  left: auto;
+  right: 0;                    /* anchored to the language icon (rightmost footer cell); menu extends leftward, staying inside the sidebar */
+  min-width: 170px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: 0 -4px 16px rgba(0,0,0,0.25);
   overflow: hidden;
-  z-index: 200;                /* matches .sidebar's own layer; just needs to sit above its dropdown siblings */
+  z-index: 210;                /* above the sidebar's own layer (200) so the menu sits over adjacent footer icons */
 }
 .sidebar-lang-dropdown.open .sidebar-lang-menu {
   display: block;
@@ -631,23 +752,39 @@
    against .sidebar-link.active's own accent-tinted background (see
    .sidebar-link.active above) instead of blending into it. */
 .sidebar-module-pill {
-  background: var(--accent, #7c3aed);
-  color: #fff;
-  font-size: 0.62rem;
-  font-weight: 700;
-  width: 15px;
-  height: 15px;
-  line-height: 15px;
-  text-align: center;
-  border-radius: 99px;
+  background: transparent;
+  border: 1px solid rgba(124, 58, 237, 0.4);
+  color: var(--accent, #7c3aed);
+  font-size: 0.6rem;
+  font-weight: 600;
+  width: auto;
+  height: 16px;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
   flex-shrink: 0;
   cursor: default;
 }
 
+/* Small ringed dot before the "M", drawn in the accent colour */
+.sidebar-module-pill::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237c3aed' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+/* On an active link keep the outlined look but with a full-opacity border so
+   it stays legible against the accent-tinted active background. */
 .sidebar-link.active .sidebar-module-pill {
-  background: #fff;
-  color: var(--accent, #7c3aed);
+  border-color: var(--accent, #7c3aed);
 }
 
 /* Dev Infos sidebar badge — sits inside .sidebar-action-btn (a flex row in
@@ -668,11 +805,135 @@
 
 
 /* ===================================================================
+   MINI / COLLAPSED SIDEBAR  (desktop only)
+   Toggled by the floating .sidebar-toggle-btn -> toggleSidebarMini(), which
+   sets html.sidebar-mini (persisted in localStorage, applied before paint to
+   avoid a flash). Collapses the sidebar to a 64px icon rail; submenus become
+   hover flyouts with an invisible hover bridge so the cursor can travel from
+   an icon into its flyout without losing hover. Wrapped in min-width:769px so
+   none of it applies on mobile — there the sidebar stays a full-width
+   slide-in drawer, exactly as before.
+   =================================================================== */
+@media (min-width: 769px) {
+  html.sidebar-mini .sidebar { width: 64px; }
+  html.sidebar-mini .main-content { margin-left: 64px; }
+  html.sidebar-mini #page-loader { left: 64px; }
+
+  /* The rail scrolls vertically when there are more icons than fit the
+     height; flyout submenus use position:fixed (below), so they escape this
+     clip instead of being cut off. */
+  html.sidebar-mini .sidebar-nav { overflow-y: auto; overflow-x: hidden; }
+  html.sidebar-mini .sidebar-category-inner,
+  html.sidebar-mini .sidebar-category-group { overflow: visible; }
+
+  /* In mini mode every category is forced open, regardless of the
+     collapse state persisted from the expanded sidebar, so all icons stay
+     reachable (collapsed groups otherwise get pointer-events:none). */
+  html.sidebar-mini .sidebar-category-group {
+    grid-template-rows: 1fr !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  /* Header -> just the logo, centered. The base .sidebar-header is a block,
+     so force flex here to actually center the brand icon on the rail. */
+  html.sidebar-mini .sidebar-header {
+    padding: 12px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  html.sidebar-mini .sidebar-brand { justify-content: center; gap: 0; }
+  html.sidebar-mini .sidebar-brand-text { display: none; }
+
+  /* Category headings removed entirely in mini mode — no label and no gap. */
+  html.sidebar-mini .sidebar-category { display: none; }
+
+  /* Links -> icon only, centered, no hover slide */
+  html.sidebar-mini .sidebar-link {
+    position: relative;
+    justify-content: center;
+    padding: 5px 0;
+    gap: 0;
+    transform: none !important;
+  }
+  html.sidebar-mini .sidebar-link > span:not([class]) { display: none; }
+  html.sidebar-mini .sidebar-link svg { width: 20px; height: 20px; }
+  html.sidebar-mini .sidebar-module-pill,
+  html.sidebar-mini .sidebar-toggle-chevron { display: none; }
+
+  /* Count badges re-anchored onto the icon */
+  html.sidebar-mini .sidebar-link .queue-badge,
+  html.sidebar-mini .sidebar-link .seerr-badge,
+  html.sidebar-mini .sidebar-link .update-badge {
+    position: absolute;
+    top: 0;
+    right: 8px;
+    margin-left: 0;
+    padding: 1px 5px;
+    font-size: 0.6rem;
+  }
+
+  /* Submenus become right-hand flyouts on hover (overrides .open). They use
+     position:fixed so the scrolling rail can't clip them; their vertical
+     position (top) and max-height are set per-hover in JS from the icon's
+     current viewport position, so they stay aligned even when the rail is
+     scrolled and scroll internally if taller than the viewport. */
+  /* Opening/closing is driven by JS (see the flyout script in base.html) via
+     the .flyout-open class, with a short close delay (hover-intent) so the
+     cursor can travel diagonally from the icon into the panel without it
+     snapping shut. left:64px sits it flush against the rail; top/max-height
+     are set per-hover from the icon's viewport position. */
+  html.sidebar-mini .sidebar-sub { display: none !important; }
+  html.sidebar-mini .sidebar-sub.flyout-open {
+    display: flex !important;
+    position: fixed;
+    left: 64px;
+    top: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: 8px;
+    min-width: 190px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    flex-direction: column;
+    z-index: 1000;
+  }
+
+  /* Footer -> stacked icon column */
+  html.sidebar-mini .sidebar-footer { padding: 12px 8px; align-items: center; }
+  html.sidebar-mini .sidebar-user { padding: 0; justify-content: center; }
+  html.sidebar-mini .sidebar-username,
+  html.sidebar-mini .sidebar-logout { display: none; }
+  html.sidebar-mini .footer-actions-grid { grid-template-columns: 1fr; gap: 8px; }
+
+  /* In the mini rail there is no room to the left, so the language menu (which
+     normally opens above-right of a wide footer button) would slide off-screen.
+     Anchor it as a fixed panel just right of the rail, near the bottom where the
+     language icon sits, so it stays fully visible. */
+  html.sidebar-mini .sidebar-lang-menu {
+    position: fixed;
+    left: 70px;
+    right: auto;
+    bottom: 14px;
+    min-width: 160px;
+  }
+}
+
+
+/* ===================================================================
    RESPONSIVE — Mobile
    =================================================================== */
 @media (max-width: 768px) {
   .sidebar {
     transform: translateX(-100%);
+  }
+
+  /* The floating collapse toggle is desktop-only; mobile uses the hamburger */
+  .sidebar-toggle-btn {
+    display: none;
   }
 
   .sidebar.open {

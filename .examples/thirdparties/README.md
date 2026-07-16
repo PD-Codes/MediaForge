@@ -171,6 +171,21 @@ sidebar and a settings page. Its parameters:
   either way — both cases are handled generically by
   `web/thirdparties/registry.py`'s `resolve_dynamic_tabs()`.
 
+A brand-new tab no longer lives in a tab bar: it renders as a **sidebar
+sub-menu entry** (carrying the module **"M" pill**), a tile in the page's
+**overview grid**, and its own content panel — the sub-menu + overview surface
+that replaced the old tab bar. Feed that tile with two optional info fields:
+
+- `overview_description` — text shown on the overview tile (defaults to
+  `description`).
+- `overview_icon_svg` — icon for the tile and the sub-menu entry (defaults to
+  `settings_tab_icon_svg`, then a generic placeholder).
+
+`resolve_dynamic_tabs()` surfaces `id`, `label`, `icon_svg`, `description`,
+`module_name` and `is_module` so the template can render all three places
+(sub-menu link, overview tile, panel). See `example_cineinfo_source/` for a
+module that registers its own dynamic tab this way.
+
 This is entirely independent of `section`/the sidebar: an integration can
 have a sidebar link *and* a settings card, just a settings card (no
 `endpoint`/`icon_svg` — e.g. a pure extra notification channel with

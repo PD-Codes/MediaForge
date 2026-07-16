@@ -26,15 +26,17 @@ function switchIntegTab(name) {
   // Read from the DOM instead of a hardcoded list, so tabs an extension
   // registers dynamically (see registry.py's resolve_dynamic_tabs(), which
   // adds extra buttons to #integTabs at render time) are restorable via
-  // #hash / localStorage exactly like the built-in ones.
+  // #hash exactly like the built-in ones.
   var valid = Array.prototype.map.call(
     document.querySelectorAll("#integTabs .settings-tab"),
     function (btn) { return btn.dataset.tab; }
   );
-  var tab = (hash && valid.indexOf(hash) !== -1) ? hash : "";
-  if (!tab) {
-    try { tab = localStorage.getItem("integActiveTab") || "overview"; } catch (e) { tab = "overview"; }
-  }
+  // Honor a valid #hash deep-link (e.g. from a sidebar sub-link), otherwise
+  // always start on the overview — matching settings.js's restoreTab(). We
+  // deliberately do NOT restore the last tab from localStorage here, so that
+  // opening the main "Integrations" entry shows the overview rather than the
+  // previously viewed sub-tab.
+  var tab = (hash && valid.indexOf(hash) !== -1) ? hash : "overview";
   if (valid.indexOf(tab) === -1) tab = "overview";
   switchIntegTab(tab);
 })();

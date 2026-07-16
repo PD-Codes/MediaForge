@@ -38,8 +38,12 @@ MODULE_LICENSE = "MIT"
 
 def register(app) -> None:
     """Called once by web/thirdparties/discover_and_register(app)."""
-    # A settings-only card in the existing CineInfo tab: endpoint/icon_svg are
-    # deliberately omitted (this module has no page of its own).
+    # A settings-only card (endpoint/icon_svg omitted: this module has no page
+    # of its own). It registers its OWN dynamic tab ("example_cineinfo", not one
+    # of the built-in _KNOWN_TABS), so it shows up as a sidebar sub-menu entry
+    # (with the "M" module pill), an overview tile and a content panel -- the new
+    # sub-menu + overview surface that replaced the old tab bar. overview_* feed
+    # that tile; they are ignored when attaching to a built-in tab instead.
     register_thirdparty(
         item_id="example_cineinfo_source",
         label="Example CineInfo Source",
@@ -54,7 +58,15 @@ def register(app) -> None:
         enable_label="Enable Example CineInfo Source",
         enable_desc="Adds two demo CineInfo sources (per-item + bulk).",
         settings_host="integrations",
-        settings_tab="cineinfo",
+        settings_tab="example_cineinfo",
+        settings_tab_label="Example CineInfo",
+        overview_description="Reference module: two CineInfo sources (per-item + bulk), local demo data only.",
+        overview_icon_svg=(
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">'
+            '<rect x="2" y="3" width="20" height="14" rx="2"></rect>'
+            '<path d="M8 21h8M12 17v4"></path></svg>'
+        ),
     )
 
     # One source per batch form. Both follow the module's master toggle via

@@ -443,6 +443,44 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "0") == "1"
 
 
+def _classify_browser_error(exc) -> str:
+    """Map a browser launch/solve exception to a short, PII-free reason code for
+    telemetry.
+
+    The raw patchright error message embeds the full Chromium launch command,
+    which includes the --host-resolver-rules MAP list (i.e. the provider domains,
+    some adult) and absolute file paths.  None of that may be sent, so this
+    extracts only a coarse, non-identifying reason.  It lets a wild
+    TargetClosedError -- otherwise indistinguishable -- be diagnosed from the
+    telemetry alone: a missing system library, no X display, a read-only
+    filesystem, an unsupported CPU, etc.
+    """
+    import re
+    msg = str(exc or "")
+    low = msg.lower()
+    m = re.search(r"error while loading shared libraries:\s*([\w.+-]+\.so[\w.]*)", msg)
+    if m:
+        return "missing_lib:" + m.group(1)
+    if ("cannot open display" in low or "missing x server" in low
+            or "no protocol specified" in low or "unable to open x display" in low):
+        return "no_display"
+    if "read-only file system" in low or "readonly file system" in low:
+        return "readonly_fs"
+    if "no space left" in low:
+        return "no_space"
+    if "illegal instruction" in low or "sigill" in low:
+        return "illegal_instruction"
+    if "out of memory" in low or "cannot allocate memory" in low:
+        return "out_of_memory"
+    if "executable doesn" in low or "playwright install" in low:
+        return "browser_not_installed"
+    if "has been closed" in low or "targetclosed" in low:
+        return "target_closed"
+    if "timeout" in low:
+        return "timeout"
+    return "launch_failed"
+
+
 def _focus_page(page) -> None:
     """Bring the solving page/window to the front before interacting with it
     — but ONLY in visible/manual mode.
@@ -1403,7 +1441,8 @@ def _solve_captcha_cli(url: str) -> bool:
             logger.error(f"Error while solving CAPTCHA: {e}", exc_info=True)
             telemetry_client.submit(telemetry_events.build_feature_detail_event(
                 "detail.captcha", action="solve", status="error",
-                metadata={"mode": "cli", "error_type": type(e).__name__},
+                metadata={"mode": "cli", "error_type": type(e).__name__,
+                          "reason": _classify_browser_error(e)},
             ))
             return None
 
@@ -1961,7 +2000,8 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
         get_logger(__name__).error(f"Fehler in solve_sto_modal: {e}", exc_info=True)
         telemetry_client.submit(telemetry_events.build_feature_detail_event(
             "detail.captcha", action="solve", status="error",
-            metadata={"mode": "sto_modal", "error_type": type(e).__name__},
+            metadata={"mode": "sto_modal", "error_type": type(e).__name__,
+                      "reason": _classify_browser_error(e)},
         ))
         return None
 

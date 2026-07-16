@@ -105,12 +105,10 @@
       {% for t in get_dynamic_tabs('integrations') %}
       <div class="settings-overview-card" onclick="switchIntegTab('{{ t.id }}')">
         <div class="settings-overview-card-header">
-          <div class="settings-overview-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-          </div>
-          <div class="settings-overview-title">{{ t.label }}</div>
+          <div class="settings-overview-icon">{{ t.icon_svg | safe }}</div>
+          <div class="settings-overview-title">{{ t.label }}{% if t.is_module %}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span>{% endif %}</div>
         </div>
-        <div class="settings-overview-desc">{{ _('External integration module') }}</div>
+        <div class="settings-overview-desc">{{ t.description or _('External integration module') }}</div>
         <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
       </div>
       {% endfor %}

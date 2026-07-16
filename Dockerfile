@@ -52,6 +52,8 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     libgl1-mesa-dri \
     libglx-mesa0 \
+    libxkbcommon0 \
+    libatspi2.0-0 \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/* && \
     sed -i 's/^# *\(de_DE.UTF-8\)/\1/' /etc/locale.gen && locale-gen && \

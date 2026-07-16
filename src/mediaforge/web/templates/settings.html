@@ -211,12 +211,10 @@ function setUiLanguage(lang) {
       {% for t in get_dynamic_tabs('settings') %}
       <div class="settings-overview-card" onclick="switchTab('{{ t.id }}')">
         <div class="settings-overview-card-header">
-          <div class="settings-overview-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          </div>
-          <div class="settings-overview-title">{{ t.label }}</div>
+          <div class="settings-overview-icon">{{ t.icon_svg | safe }}</div>
+          <div class="settings-overview-title">{{ t.label }}{% if t.is_module %}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span>{% endif %}</div>
         </div>
-        <div class="settings-overview-desc">{{ _('Configure') }} {{ t.label }}</div>
+        <div class="settings-overview-desc">{{ t.description or (_('Configure') ~ ' ' ~ t.label) }}</div>
         <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
       </div>
       {% endfor %}
