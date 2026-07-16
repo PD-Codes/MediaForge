@@ -941,3 +941,73 @@ independently of whether you also have a sidebar item.
   *when* `register(app)` runs but arbitrary for *where a link/card/widget
   ends up on screen* — `priority` decouples the two instead of forcing
   authors to rename folders to reorder UI.
+
+## CineInfo sources (`register_cineinfo_source`)
+
+A **provider pill** (above) adds a small availability badge. A **CineInfo
+source** goes further: it feeds real data fields (rating, providers, custom
+fields, ...) into the CineInfo lookups themselves, layered on top of the
+built-in TMDB result. It's the extension point to use when you want a module to
+*deliver* CineInfo data, not just flag availability — without touching the core
+TMDB code.
+
+Register one instance per source from your `register(app)`:
+
+```python
+from ...cineinfo.registry import register_cineinfo_source
+from .sources import MySource
+
+register_cineinfo_source(MySource())
+```
+
+A source subclasses `web/cineinfo/source.py`'s `CineInfoSource` and declares
+**one** capability flag that decides how the orchestrator fetches — this is the
+whole "two forms" mechanism, chosen automatically, no user setting:
+
+- `supports_bulk = False` → the orchestrator loops `fetch_one(item, ctx)` per
+  item ("einzeln nach und nach"), bounded by a worker pool and a per-source rate
+  limiter. Use this for upstreams that only answer one lookup per request (like
+  TMDB itself).
+- `supports_bulk = True` → the orchestrator calls `fetch_many(items, ctx)` once
+  per chunk of up to `max_bulk` items ("alles in einer Anfrage"). Use this for
+  upstreams with a real batch endpoint.
+
+```python
+from ...cineinfo.source import CineInfoSource, QueryContext
+from ...db import get_setting
+
+class MySource(CineInfoSource):
+    id = "myprovider"                 # stable; also the cache namespace + limiter bucket
+    label = "My Provider"
+    supports_bulk = False             # ← the entire batch-form decision
+    rate = 5.0                        # max upstream requests/second
+    cache_ttl = 86400.0              # provider-cache TTL (0 disables caching)
+
+    def is_enabled(self) -> bool:
+        # Follow your own toggle so a disabled/uninstalled module stops
+        # contributing immediately — no registry cleanup needed.
+        return get_setting("myprovider_enabled", "0") == "1"
+
+    def fetch_one(self, item: dict, ctx: QueryContext) -> dict:
+        # item carries a stable "key" plus lookup fields (title/imdb_id/tmdb_id).
+        # Return only the fields you know; ctx.country / ctx.ui_lang are resolved.
+        r = requests.get(..., timeout=8)
+        return {"vote_average": r.json()["score"], "myprovider_url": r.json()["url"]}
+```
+
+What the orchestrator handles for you (identical for both forms): **cache-first**
+(only cache-misses ever hit the network, via the shared `provider_cache` table),
+a **per-source token-bucket rate limiter**, **in-flight de-duplication** of
+concurrent identical lookups, bounded concurrency, per-query timeouts and error
+isolation (a failing item or source never takes CineInfo down).
+
+How the data lands: the core CineInfo endpoints (`/api/tmdb/info`,
+`/api/tmdb/batch`) call `cineinfo.enrich(...)`, which runs each enabled source
+and **field-merges** its payload onto the TMDB base. **The built-in TMDB data
+wins**; a source only fills fields TMDB is missing or left empty (plus any custom
+fields of its own). With no source registered, `enrich()` is a zero-cost
+pass-through, so default behaviour is unchanged.
+
+See **`example_cineinfo_source/`** for a complete, offline-safe reference that
+registers one source of *each* batch form (per-item and bulk) under the CineInfo
+settings tab.

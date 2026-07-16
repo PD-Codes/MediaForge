@@ -1,0 +1,29 @@
+# German (de-DE) catalog for the Example CineInfo Source module.
+# msgids are the exact English source strings passed to register_thirdparty();
+# flask_babel.gettext looks them up at render time.
+msgid ""
+msgstr ""
+"Project-Id-Version: example_cineinfo_source 1.0.0\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: de\n"
+
+msgid "Example CineInfo Source"
+msgstr "Beispiel-CineInfo-Quelle"
+
+msgid "Enable Example CineInfo Source"
+msgstr "Beispiel-CineInfo-Quelle aktivieren"
+
+msgid "Adds two demo CineInfo sources (per-item + bulk)."
+msgstr "Fügt zwei Demo-CineInfo-Quellen hinzu (einzeln + Bulk)."
+
+msgid ""
+"Reference module demonstrating the CineInfo source extension point: two demo "
+"sources, one per batch form (per-item vs. single request). Enabling it adds "
+"local placeholder fields to CineInfo lookups -- no external network calls."
+msgstr ""
+"Referenzmodul, das den CineInfo-Quellen-Erweiterungspunkt demonstriert: zwei "
+"Demo-Quellen, eine je Batch-Form (einzeln vs. eine Anfrage). Beim Aktivieren "
+"werden lokale Platzhalter-Felder zu CineInfo-Abfragen hinzugefügt -- keine "
+"externen Netzwerkaufrufe."

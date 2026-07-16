@@ -40,6 +40,8 @@ import re
 import threading
 from ..tmdb_cache import _tmdb_lookup_cached
 from .image_proxy import _poster_proxy
+from ..cineinfo import enrich as _cineinfo_enrich
+from ..cineinfo import QueryContext as _CineInfoCtx
 from ...logger import get_logger
 
 
@@ -1203,7 +1205,15 @@ def register_search_routes(app):
             return jsonify({"found": False, "reason": "no_key"})
         country  = get_setting("cineinfo_country", "DE")
         ui_lang  = session.get("ui_language", "de")
-        return jsonify(_tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang))
+        base = _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang)
+        # Layer any registered CineInfo module sources on top of the TMDB result.
+        # Zero-overhead pass-through when no source is registered (the common case).
+        merged = _cineinfo_enrich(
+            [{"key": "q", "title": title, "imdb_id": imdb_id}],
+            {"q": base},
+            _CineInfoCtx(country=country, ui_lang=ui_lang),
+        )
+        return jsonify(merged.get("q", base))
     @app.route("/api/tmdb/batch", methods=["POST"])
     def api_tmdb_batch():
         """Fetch TMDB data for multiple titles in one request.
@@ -1243,6 +1253,14 @@ def register_search_routes(app):
                 except Exception as exc:
                     logger.debug("[CineInfo] batch lookup failed for %r: %s", t, exc)
                     results[t] = {"found": False}
+        # Layer any registered CineInfo module sources on top of the TMDB results.
+        # A bulk-capable source resolves all titles in ONE request; a per-item
+        # source is looped. Zero-overhead pass-through when nothing is registered.
+        results = _cineinfo_enrich(
+            [{"key": t, "title": t, "imdb_id": None} for t in titles],
+            results,
+            _CineInfoCtx(country=country, ui_lang=ui_lang),
+        )
         return jsonify(results)
     @app.route("/api/tmdb/cache/clear", methods=["POST"])
     def api_tmdb_cache_clear():
