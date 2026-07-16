@@ -775,6 +775,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_library_move",
             "api_library_refresh",
             "api_custom_paths_add",
+            "api_custom_paths_update",
             "api_custom_paths_delete",
             "api_autosync_create",
             "api_autosync_update",

@@ -16,6 +16,7 @@ from ..db import get_custom_paths
 from ..db import get_setting
 from ..db import remove_custom_path
 from ..db import set_setting
+from ..db import update_custom_path
 from ..dns_patch import _DNS_PRESETS
 from ..dns_patch import _apply_dns_patch
 from .. import dns_patch
@@ -39,6 +40,17 @@ from ...logger import get_logger
 
 
 logger = get_logger(__name__)
+
+
+def _normalize_default_sites(value):
+    """Return a validated, de-duplicated CSV of supported site keys."""
+    raw = value if isinstance(value, (list, tuple)) else str(value or "").split(",")
+    sites = []
+    for item in raw:
+        site = str(item).strip().lower()
+        if site in _mirrors.SITE_LABELS and site not in sites:
+            sites.append(site)
+    return ",".join(sites)
 
 
 def register_settings_routes(app):
@@ -1000,7 +1012,16 @@ def register_settings_routes(app):
         `loadCustomPaths()`, static/app.js, static/autosync.js,
         static/queue.js, static/library.js, and static/seerr.js."""
         paths = get_custom_paths()
-        return jsonify({"paths": paths})
+        return jsonify(
+            {
+                "paths": paths,
+                "site_options": [
+                    {"key": key, "label": label}
+                    for key, label in _mirrors.SITE_LABELS.items()
+                ],
+                "current_site": _mirrors.site_for_url(request.args.get("url", "")),
+            }
+        )
     @app.route("/api/custom-paths", methods=["POST"])
     def api_custom_paths_add():
         """Serve POST /api/custom-paths: add a named custom download path.
@@ -1010,8 +1031,35 @@ def register_settings_routes(app):
         path = (data.get("path") or "").strip()
         if not name or not path:
             return jsonify({"error": "name and path are required"}), 400
-        path_id = add_custom_path(name, path)
+        default_sites = _normalize_default_sites(data.get("default_sites"))
+        path_id = add_custom_path(name, path, default_sites)
         return jsonify({"ok": True, "id": path_id})
+    @app.route("/api/custom-paths/<int:path_id>", methods=["PUT"])
+    def api_custom_paths_update(path_id):
+        """Update a custom path's optional site-default assignment.
+
+        The app-wide endpoint wrapper also marks this endpoint admin-only.
+        Keeping this guard here prevents a direct registration or future
+        routing change from exposing custom-path updates to regular users.
+        """
+        _username, is_admin = _get_current_user_info()
+        if not is_admin:
+            return jsonify({"error": "admin access required"}), 403
+        data = request.get_json(silent=True) or {}
+        name = data.get("name")
+        path = data.get("path")
+        default_sites = (
+            _normalize_default_sites(data.get("default_sites"))
+            if "default_sites" in data
+            else None
+        )
+        update_custom_path(
+            path_id,
+            name=name.strip() if isinstance(name, str) else None,
+            path=path.strip() if isinstance(path, str) else None,
+            default_sites=default_sites,
+        )
+        return jsonify({"ok": True})
     @app.route("/api/custom-paths/<int:path_id>", methods=["DELETE"])
     def api_custom_paths_delete(path_id):
         """Serve DELETE /api/custom-paths/<path_id>: remove a custom download

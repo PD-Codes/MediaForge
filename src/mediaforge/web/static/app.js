@@ -327,19 +327,25 @@ const customPathSelect = document.getElementById("customPathSelect");
 async function loadCustomPaths() {
   if (!customPathSelect) return;
   try {
-    const resp = await fetch("/api/custom-paths");
+    const url = currentSeriesUrl ? "?url=" + encodeURIComponent(currentSeriesUrl) : "";
+    const resp = await fetch("/api/custom-paths" + url);
     const data = await resp.json();
     const paths = data.paths || [];
     _customPathsCache = paths;
     // Remove old custom options (keep "Default")
     while (customPathSelect.options.length > 1) customPathSelect.remove(1);
     if (paths.length) {
+      const siteKey = data.current_site || "";
+      let defaultForSite = "";
       paths.forEach(function (p) {
         const opt = document.createElement("option");
         opt.value = p.id;
         opt.textContent = p.name;
         customPathSelect.appendChild(opt);
+        const sites = (p.default_sites || "").split(",").map((site) => site.trim()).filter(Boolean);
+        if (!defaultForSite && sites.includes(siteKey)) defaultForSite = String(p.id);
       });
+      customPathSelect.value = defaultForSite;
       customPathSelect.style.display = "";
     } else {
       customPathSelect.style.display = "none";
@@ -4541,4 +4547,3 @@ function escapeHtml(unsafe) {
     }
   });
 }
-

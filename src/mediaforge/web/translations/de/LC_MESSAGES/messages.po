@@ -454,6 +454,12 @@ msgstr "Name"
 msgid "Path"
 msgstr "Pfad"
 
+msgid "Default for sites"
+msgstr "Standard fÃ¼r Seiten"
+
+msgid "Select the sites for which this path should be preselected as the download folder."
+msgstr "WÃ¤hle die Seiten aus, fÃ¼r die dieser Pfad als Download-Ordner vorausgewÃ¤hlt werden soll."
+
 msgid "Actions"
 msgstr "Aktionen"
 

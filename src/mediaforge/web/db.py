@@ -1213,7 +1213,8 @@ _CREATE_CUSTOM_PATHS_TABLE = """\
 CREATE TABLE IF NOT EXISTS custom_paths (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    path TEXT NOT NULL
+    path TEXT NOT NULL,
+    default_sites TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -1223,6 +1224,15 @@ def init_custom_paths_db():
     conn = get_db()
     try:
         conn.execute(_CREATE_CUSTOM_PATHS_TABLE)
+        # Migration for existing installations. An empty value preserves the
+        # old behaviour: the global download path remains selected.
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(custom_paths)").fetchall()
+        }
+        if "default_sites" not in columns:
+            conn.execute(
+                "ALTER TABLE custom_paths ADD COLUMN default_sites TEXT NOT NULL DEFAULT ''"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -1232,22 +1242,49 @@ def get_custom_paths():
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, name, path FROM custom_paths ORDER BY id"
+            "SELECT id, name, path, default_sites FROM custom_paths ORDER BY id"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 
-def add_custom_path(name, path):
+def add_custom_path(name, path, default_sites=""):
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO custom_paths (name, path) VALUES (?, ?)",
-            (name, path),
+            "INSERT INTO custom_paths (name, path, default_sites) VALUES (?, ?, ?)",
+            (name, path, default_sites),
         )
         conn.commit()
         return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def update_custom_path(path_id, name=None, path=None, default_sites=None):
+    """Update the supplied fields of a custom download path."""
+    fields = []
+    values = []
+    if name is not None:
+        fields.append("name = ?")
+        values.append(name)
+    if path is not None:
+        fields.append("path = ?")
+        values.append(path)
+    if default_sites is not None:
+        fields.append("default_sites = ?")
+        values.append(default_sites)
+    if not fields:
+        return
+
+    values.append(path_id)
+    conn = get_db()
+    try:
+        conn.execute(
+            f"UPDATE custom_paths SET {', '.join(fields)} WHERE id = ?", values
+        )
+        conn.commit()
     finally:
         conn.close()
 
@@ -1282,7 +1319,7 @@ def get_custom_path_by_id(path_id):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT id, name, path FROM custom_paths WHERE id = ?", (path_id,)
+            "SELECT id, name, path, default_sites FROM custom_paths WHERE id = ?", (path_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:

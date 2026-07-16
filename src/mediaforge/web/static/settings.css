@@ -274,7 +274,35 @@
   padding: 10px 14px;
 }.user-table td {
   padding: 10px 14px;
-}@media (max-width: 640px) {.user-table {
+}
+
+.path-site-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 220px;
+}
+
+.path-site-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary, #c8cad0);
+  cursor: pointer;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.path-site-chip input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.path-site-chip input:disabled {
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {.user-table {
     min-width: 560px;
   }
 

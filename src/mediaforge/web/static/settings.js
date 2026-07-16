@@ -1210,6 +1210,8 @@ async function saveSsoSettings() {
 
 const customPathsBody = document.getElementById("customPathsBody");
 const customPathsTable = document.getElementById("customPathsTable");
+let customPathsCache = [];
+let customPathSiteOptions = [];
 
 if (customPathsBody) loadCustomPaths();
 
@@ -1218,7 +1220,9 @@ async function loadCustomPaths() {
   try {
     const resp = await fetch("/api/custom-paths");
     const data = await resp.json();
-    renderCustomPaths(data.paths || []);
+    customPathsCache = data.paths || [];
+    customPathSiteOptions = data.site_options || [];
+    renderCustomPaths(customPathsCache);
   } catch (e) {
     showToast(t("Benutzerdefinierte Pfade konnten nicht geladen werden: " + e.message, "Custom paths could not be loaded: " + e.message));
   }
@@ -1228,11 +1232,18 @@ function renderCustomPaths(paths) {
   customPathsBody.innerHTML = "";
   if (!paths.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = t('<td colspan="3" style="color:#6b7280;text-align:center">Keine benutzerdefinierten Pfade</td>','<td colspan="3" style="color:#6b7280;text-align:center">No custom paths</td>');
+    tr.innerHTML = t('<td colspan="4" style="color:#6b7280;text-align:center">Keine benutzerdefinierten Pfade</td>','<td colspan="4" style="color:#6b7280;text-align:center">No custom paths</td>');
     customPathsBody.appendChild(tr);
     return;
   }
   paths.forEach(function (p) {
+    const active = (p.default_sites || "").split(",").map((site) => site.trim()).filter(Boolean);
+    const siteChips = customPathSiteOptions.map(function ({ key, label }) {
+      const checked = active.includes(key) ? "checked" : "";
+      const disabled = (typeof settingsCanEdit !== "undefined" && !settingsCanEdit) ? "disabled" : "";
+      return '<label class="path-site-chip"><input data-custom-path-id="' + p.id + '" type="checkbox" ' + checked + " " + disabled +
+        " onchange=\"togglePathSite(" + p.id + ",'" + key + "',this.checked)\"> " + esc(label) + "</label>";
+    }).join("");
     const tr = document.createElement("tr");
     const delCell = (typeof settingsCanEdit !== "undefined" && settingsCanEdit)
       ? '<td><button class="btn-del" onclick="deleteCustomPath(' + p.id + ')">'+t("Löschen","Delete")+'</button></td>'
@@ -1240,8 +1251,49 @@ function renderCustomPaths(paths) {
     tr.innerHTML =
       "<td>" + esc(p.name) + "</td>" +
       "<td style=\"font-family:'SF Mono','Fira Code',monospace;font-size:.82rem\">" + esc(p.path) + "</td>" +
+      '<td><div class="path-site-chips">' + siteChips + "</div></td>" +
       delCell;
     customPathsBody.appendChild(tr);
+  });
+}
+
+async function togglePathSite(pathId, siteKey, enabled) {
+  const path = customPathsCache.find((item) => item.id === pathId);
+  if (!path) return;
+
+  const previousDefaultSites = path.default_sites || "";
+  const active = new Set(previousDefaultSites.split(",")
+    .map((site) => site.trim()).filter(Boolean));
+  if (enabled) active.add(siteKey);
+  else active.delete(siteKey);
+  path.default_sites = Array.from(active).join(",");
+  setPathSiteInputsDisabled(pathId, true);
+
+  try {
+    const save = await fetch("/api/custom-paths/" + pathId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ default_sites: Array.from(active) }),
+    });
+    const result = await save.json();
+    if (result.error) {
+      path.default_sites = previousDefaultSites;
+      renderCustomPaths(customPathsCache);
+      showToast(result.error);
+      return;
+    }
+    setPathSiteInputsDisabled(pathId, false);
+  } catch (e) {
+    path.default_sites = previousDefaultSites;
+    renderCustomPaths(customPathsCache);
+    showToast(t("Standardseiten konnten nicht aktualisiert werden: " + e.message, "Default sites could not be updated: " + e.message));
+  }
+}
+
+function setPathSiteInputsDisabled(pathId, disabled) {
+  const canEdit = typeof settingsCanEdit === "undefined" || settingsCanEdit;
+  document.querySelectorAll('[data-custom-path-id="' + pathId + '"]').forEach((input) => {
+    input.disabled = disabled || !canEdit;
   });
 }
 
