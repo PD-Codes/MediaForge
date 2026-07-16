@@ -455,10 +455,10 @@ msgid "Path"
 msgstr "Pfad"
 
 msgid "Default for sites"
-msgstr "Standard fÃ¼r Seiten"
+msgstr "Standard für Seiten"
 
 msgid "Select the sites for which this path should be preselected as the download folder."
-msgstr "WÃ¤hle die Seiten aus, fÃ¼r die dieser Pfad als Download-Ordner vorausgewÃ¤hlt werden soll."
+msgstr "Wähle die Seiten aus, für die dieser Pfad als Download-Ordner vorausgewählt werden soll."
 
 msgid "Actions"
 msgstr "Aktionen"
@@ -4756,7 +4756,7 @@ msgid "Downloads the package from PyPI into the MediaForge module folder and loa
 msgstr "Lädt das Paket von PyPI in den MediaForge-Modulordner und lädt das Modul anschließend."
 
 msgid "This build cannot install packages itself. Install the dependency into the environment MediaForge runs in."
-msgstr "Dieser Build kann keine Pak
+msgstr "Dieser Build kann keine Pakete selbst installieren. Installiere die Abhängigkeit in der Umgebung, in der MediaForge läuft."
 
 
 # ── Backup (Full & Selective) ───────────────────────────────────────────────
