@@ -981,7 +981,7 @@ async function runDnsTest() {
         statusEl.innerHTML = t('<span class="dns-test-warn">⚠ Gespeicherter Modus: ' + modeLabel + ' — aber kein Server aktiv. Einstellungen erneut speichern?</span>','<span class="dns-test-warn">⚠ Saved mode: ' + modeLabel + ' — but no server active. Save settings again?</span>');
       }
     }
-    const siteMap = { AniWorld: "dnsTestRowAniWorld", SerienStream: "dnsTestRowSTO", FilmPalast: "dnsTestRowFilmpalast", MegaKino: "dnsTestRowMegaKino", hanime: "dnsTestRowHanime" };
+    const siteMap = { AniWorld: "dnsTestRowAniWorld", SerienStream: "dnsTestRowSTO", FilmPalast: "dnsTestRowFilmpalast", MegaKino: "dnsTestRowMegaKino", hanime: "dnsTestRowHanime", BurningSeries: "dnsTestRowBurningseries", Kinox: "dnsTestRowKinox", Cineby: "dnsTestRowCineby", MangaFire: "dnsTestRowMangafire" };
     for (const [label, rowId] of Object.entries(siteMap)) {
       const row = document.getElementById(rowId);
       if (!row) continue;
@@ -2036,14 +2036,25 @@ const SOURCE_META = {
                   // Trending lists above (not separate sections themselves).
                   { key: "censored",   de: "Zensiert",    en: "Censored" },
                   { key: "uncensored", de: "Unzensiert",  en: "Uncensored" },
+              ] },
+  burningseries: { label: "BurningSeries", cls: "browse-provider-burningseries", hasSections: true },
+  kinox:         { label: "Kinox", cls: "browse-provider-kinox", hasSections: true },
+  cineby:        { label: "Cineby", cls: "browse-provider-cineby", hasSections: false, multiSections: [
+                  { key: "new_movies",     de: "Neue Filme",     en: "New Movies" },
+                  { key: "popular_movies", de: "Beliebte Filme", en: "Popular Movies" },
+                  { key: "trending_series", de: "Beliebte Serien", en: "Popular Series" },
+              ] },
+  mangafire:     { label: "MangaFire 18+", cls: "browse-provider-mangafire", hasSections: false, multiSections: [
+                  { key: "new",        de: "Neu",         en: "New" },
+                  { key: "trending",   de: "Trending",    en: "Trending" },
               ] }
 };
 
 let _sourceState = {
-  order: ["aniworld", "sto", "filmpalast", "megakino", "hanime"],
-  section_order: { aniworld: ["new", "popular"], sto: ["new", "popular"], megakino: ["new_movies", "popular_movies", "new_series", "popular_series"], hanime: ["new", "trending"] },
-  sections_visible: { aniworld: { new: true, popular: true }, sto: { new: true, popular: true }, megakino: { new_movies: true, popular_movies: true, new_series: true, popular_series: true }, hanime: { new: true, trending: true, censored: true, uncensored: true } },
-  enabled: { aniworld: true, sto: true, filmpalast: true, megakino: true, hanime: false },
+  order: ["aniworld", "sto", "filmpalast", "megakino", "hanime", "burningseries", "kinox", "cineby", "mangafire"],
+  section_order: { aniworld: ["new", "popular"], sto: ["new", "popular"], megakino: ["new_movies", "popular_movies", "new_series", "popular_series"], hanime: ["new", "trending"], burningseries: ["new", "popular"], kinox: ["new", "popular"], cineby: ["new_movies", "popular_movies", "trending_series"], mangafire: ["new", "trending"] },
+  sections_visible: { aniworld: { new: true, popular: true }, sto: { new: true, popular: true }, megakino: { new_movies: true, popular_movies: true, new_series: true, popular_series: true }, hanime: { new: true, trending: true, censored: true, uncensored: true }, burningseries: { new: true, popular: true }, kinox: { new: true, popular: true }, cineby: { new_movies: true, popular_movies: true, trending_series: true }, mangafire: { new: true, trending: true } },
+  enabled: { aniworld: true, sto: true, filmpalast: true, megakino: true, hanime: false, burningseries: true, kinox: true, cineby: true, mangafire: false },
   hide_in_search: false
 };
 
@@ -2054,8 +2065,8 @@ function _splitOrder(str, fallback) {
 
 function _loadSourceSettings(sources) {
   sources = sources || {};
-  const validProv = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
-  let order = _splitOrder(sources.order, ["aniworld", "sto", "filmpalast", "megakino", "hanime"]).filter(p => validProv.indexOf(p) !== -1);
+  const validProv = ["aniworld", "sto", "filmpalast", "megakino", "hanime", "burningseries", "kinox", "cineby", "mangafire"];
+  let order = _splitOrder(sources.order, ["aniworld", "sto", "filmpalast", "megakino", "hanime", "burningseries", "kinox", "cineby", "mangafire"]).filter(p => validProv.indexOf(p) !== -1);
   // ensure every provider is present exactly once
   validProv.forEach(p => { if (order.indexOf(p) === -1) order.push(p); });
   _sourceState.order = order;
@@ -2063,9 +2074,11 @@ function _loadSourceSettings(sources) {
   const so = sources.section_order || {};
   _sourceState.section_order.aniworld = _splitOrder(so.aniworld, ["new", "popular"]);
   _sourceState.section_order.sto      = _splitOrder(so.sto,      ["new", "popular"]);
+  _sourceState.section_order.burningseries = _splitOrder(so.burningseries, ["new", "popular"]);
+  _sourceState.section_order.kinox         = _splitOrder(so.kinox,         ["new", "popular"]);
 
   const secVis = sources.sections || {};
-  ["aniworld", "sto"].forEach(p => {
+  ["aniworld", "sto", "burningseries", "kinox"].forEach(p => {
     const sp = secVis[p] || {};
     _sourceState.sections_visible[p] = { new: sp.new !== "0", popular: sp.popular !== "0" };
   });
@@ -2089,6 +2102,23 @@ function _loadSourceSettings(sources) {
       uncensored: hn.uncensored !== "0",
     };
   }
+  // Cineby: new_movies, popular_movies, trending_series
+  {
+    const cp = secVis.cineby || {};
+    _sourceState.sections_visible.cineby = {
+      new_movies:     cp.new_movies     !== "0",
+      popular_movies: cp.popular_movies !== "0",
+      trending_series: cp.trending_series !== "0",
+    };
+  }
+  // MangaFire: new + trending
+  {
+    const mf = secVis.mangafire || {};
+    _sourceState.sections_visible.mangafire = {
+      new:      mf.new      !== "0",
+      trending: mf.trending !== "0",
+    };
+  }
 
   const en = sources.enabled || {};
   _sourceState.enabled.aniworld   = en.aniworld   !== "0";
@@ -2096,6 +2126,10 @@ function _loadSourceSettings(sources) {
   _sourceState.enabled.filmpalast = en.filmpalast !== "0";
   _sourceState.enabled.megakino   = en.megakino   !== "0";
   _sourceState.enabled.hanime     = en.hanime     === "1";  // adult source: default OFF
+  _sourceState.enabled.burningseries = en.burningseries !== "0";
+  _sourceState.enabled.kinox         = en.kinox         !== "0";
+  _sourceState.enabled.cineby        = en.cineby        !== "0";
+  _sourceState.enabled.mangafire     = en.mangafire     === "1"; // adult source: default OFF
   _sourceState.hide_in_search = sources.hide_disabled_in_search === "1";
 
   // Reflect enabled toggles (Quellen tab)
@@ -2104,11 +2138,19 @@ function _loadSourceSettings(sources) {
   const cbFp  = document.getElementById("sourceEnabledFilmpalast");
   const cbMk  = document.getElementById("sourceEnabledMegakino");
   const cbHan = document.getElementById("sourceEnabledHanime");
+  const cbBs  = document.getElementById("sourceEnabledBurningseries");
+  const cbKx  = document.getElementById("sourceEnabledKinox");
+  const cbCb  = document.getElementById("sourceEnabledCineby");
+  const cbMf  = document.getElementById("sourceEnabledMangafire");
   if (cbSto) cbSto.checked = _sourceState.enabled.sto;
   if (cbAni) cbAni.checked = _sourceState.enabled.aniworld;
   if (cbFp)  cbFp.checked  = _sourceState.enabled.filmpalast;
   if (cbMk)  cbMk.checked  = _sourceState.enabled.megakino;
   if (cbHan) cbHan.checked = _sourceState.enabled.hanime;
+  if (cbBs)  cbBs.checked  = _sourceState.enabled.burningseries;
+  if (cbKx)  cbKx.checked  = _sourceState.enabled.kinox;
+  if (cbCb)  cbCb.checked  = _sourceState.enabled.cineby;
+  if (cbMf)  cbMf.checked  = _sourceState.enabled.mangafire;
   const cbHide = document.getElementById("sourcesHideInSearch");
   if (cbHide) cbHide.checked = _sourceState.hide_in_search;
 
@@ -2278,13 +2320,18 @@ function _commitSourceEnabled(prov, enabled) {
 }
 
 function saveSourceEnabled(prov) {
-  const map = { sto: "sourceEnabledSto", aniworld: "sourceEnabledAniworld", filmpalast: "sourceEnabledFilmpalast", megakino: "sourceEnabledMegakino", hanime: "sourceEnabledHanime" };
+  const map = { sto: "sourceEnabledSto", aniworld: "sourceEnabledAniworld", filmpalast: "sourceEnabledFilmpalast", megakino: "sourceEnabledMegakino", hanime: "sourceEnabledHanime", burningseries: "sourceEnabledBurningseries", kinox: "sourceEnabledKinox", cineby: "sourceEnabledCineby", mangafire: "sourceEnabledMangafire" };
   const el = document.getElementById(map[prov]);
   if (!el) return;
-  // hanime is an adult source: turning it ON requires an explicit 18+ confirmation.
+  // hanime & mangafire are adult sources: turning them ON requires an explicit 18+ confirmation.
   if (prov === "hanime" && el.checked) {
     el.checked = false;              // stays off until the user confirms
     _openHanimeAgeModal();
+    return;
+  }
+  if (prov === "mangafire" && el.checked) {
+    el.checked = false;
+    _openMangafireAgeModal();
     return;
   }
   _commitSourceEnabled(prov, el.checked);
@@ -2330,6 +2377,38 @@ function hanimeAgeConfirm() {
   const el = document.getElementById("sourceEnabledHanime");
   if (el) el.checked = true;
   _commitSourceEnabled("hanime", true);
+}
+
+// --- mangafire 18+ age gate -----------------------------------------------
+let _mangafireBailedOnce = false;
+
+function _openMangafireAgeModal() {
+  const s1 = document.getElementById("mangafireAgeStep1");
+  const s2 = document.getElementById("mangafireAgeStep2");
+  if (s1) s1.style.display = _mangafireBailedOnce ? "none" : "";
+  if (s2) s2.style.display = _mangafireBailedOnce ? "" : "none";
+  const ov = document.getElementById("mangafireAgeOverlay");
+  if (ov) ov.classList.add("open");
+}
+function _closeMangafireAgeModal() {
+  const ov = document.getElementById("mangafireAgeOverlay");
+  if (ov) ov.classList.remove("open");
+}
+function _mangafireAgeClose() {
+  _closeMangafireAgeModal();
+  const el = document.getElementById("sourceEnabledMangafire");
+  if (el) el.checked = false;
+}
+function mangafireAgeUnder18() {
+  _mangafireBailedOnce = true;
+  _mangafireAgeClose();
+}
+function mangafireAgeDecline() { _mangafireAgeClose(); }
+function mangafireAgeConfirm() {
+  _closeMangafireAgeModal();
+  const el = document.getElementById("sourceEnabledMangafire");
+  if (el) el.checked = true;
+  _commitSourceEnabled("mangafire", true);
 }
 
 function saveSourcesHideInSearch() {

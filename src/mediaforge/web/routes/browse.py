@@ -5,12 +5,21 @@ Extracted from create_app as a plain route-registration function
 """
 
 from ...providers import resolve_provider
+from ...search import fetch_burningseries_new_series
+from ...search import fetch_burningseries_popular_series
+from ...search import fetch_cineby_new_movies
+from ...search import fetch_cineby_popular_movies
+from ...search import fetch_cineby_trending_series
 from ...search import fetch_hanime_new
 from ...search import fetch_hanime_trending
+from ...search import fetch_kinox_new_movies
+from ...search import fetch_kinox_popular_movies
 from ...search import fetch_megakino_new_movies
 from ...search import fetch_megakino_new_series
 from ...search import fetch_megakino_popular_movies
 from ...search import fetch_megakino_popular_series
+from ...search import fetch_mangafire_new
+from ...search import fetch_mangafire_trending
 from ...search import fetch_new_animes
 from ...search import fetch_new_series
 from ...search import fetch_popular_animes
@@ -23,6 +32,7 @@ from ..lang_folders import LANG_FOLDERS
 from ..db import get_tmdb_cache
 from ..db import set_browse_cache
 from ..queue_worker import _hanime_enabled
+from ..queue_worker import _mangafire_enabled
 from ..queue_worker import _is_filmpalast_url
 from flask import jsonify
 from flask import request
@@ -196,6 +206,15 @@ def _prefetch_cycle():
         ("megakino_popular_movies", fetch_megakino_popular_movies),
         ("megakino_new_series",    fetch_megakino_new_series),
         ("megakino_popular_series", fetch_megakino_popular_series),
+        ("burningseries_new", fetch_burningseries_new_series),
+        ("burningseries_popular", fetch_burningseries_popular_series),
+        ("kinox_new", fetch_kinox_new_movies),
+        ("kinox_popular", fetch_kinox_popular_movies),
+        ("cineby_new", fetch_cineby_new_movies),
+        ("cineby_popular", fetch_cineby_popular_movies),
+        ("cineby_trending", fetch_cineby_trending_series),
+        ("mangafire_new", fetch_mangafire_new),
+        ("mangafire_trending", fetch_mangafire_trending),
     ]
     all_entries = []
     for bkey, fn in browse_sources:
@@ -407,6 +426,68 @@ def register_browse_routes(app):
         )
         if results is None:
             return jsonify({"error": "Failed to fetch hanime trending"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/burningseries/new")
+    @app.route("/api/burningseries/new-series")
+    def api_burningseries_new():
+        results = _cached_browse("burningseries_new", fetch_burningseries_new_series)
+        if results is None:
+            return jsonify({"error": "Failed to fetch burningseries new"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/burningseries/popular")
+    @app.route("/api/burningseries/popular-series")
+    def api_burningseries_popular():
+        results = _cached_browse("burningseries_popular", fetch_burningseries_popular_series)
+        if results is None:
+            return jsonify({"error": "Failed to fetch burningseries popular"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/kinox/new")
+    @app.route("/api/kinox/new-movies")
+    def api_kinox_new():
+        results = _cached_browse("kinox_new", fetch_kinox_new_movies)
+        if results is None:
+            return jsonify({"error": "Failed to fetch kinox new"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/kinox/popular")
+    @app.route("/api/kinox/popular-movies")
+    def api_kinox_popular():
+        results = _cached_browse("kinox_popular", fetch_kinox_popular_movies)
+        if results is None:
+            return jsonify({"error": "Failed to fetch kinox popular"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/cineby/new-movies")
+    def api_cineby_new_movies():
+        results = _cached_browse("cineby_new", fetch_cineby_new_movies)
+        if results is None:
+            return jsonify({"error": "Failed to fetch cineby new movies"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/cineby/popular-movies")
+    def api_cineby_popular_movies():
+        results = _cached_browse("cineby_popular", fetch_cineby_popular_movies)
+        if results is None:
+            return jsonify({"error": "Failed to fetch cineby popular movies"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/cineby/trending-series")
+    def api_cineby_trending_series():
+        results = _cached_browse("cineby_trending", fetch_cineby_trending_series)
+        if results is None:
+            return jsonify({"error": "Failed to fetch cineby trending series"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/mangafire/new")
+    def api_mangafire_new():
+        if not _mangafire_enabled():
+            return jsonify({"results": []})
+        results = _cached_browse("mangafire_new", fetch_mangafire_new)
+        if results is None:
+            return jsonify({"error": "Failed to fetch mangafire new"}), 500
+        return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/mangafire/trending")
+    def api_mangafire_trending():
+        if not _mangafire_enabled():
+            return jsonify({"results": []})
+        results = _cached_browse("mangafire_trending", fetch_mangafire_trending)
+        if results is None:
+            return jsonify({"error": "Failed to fetch mangafire trending"}), 500
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/downloaded-folders")
     def api_downloaded_folders():

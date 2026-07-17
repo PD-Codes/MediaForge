@@ -15,12 +15,32 @@ from .aniworld_to import (
     AniworldSeason,
     AniworldSeries,
 )
+from .burningseries import (
+    BurningSeriesEpisode,
+    BurningSeriesSeason,
+    BurningSeriesSeries,
+)
+from .cineby import CinebyEpisode, CinebySeason, CinebySeries
+from .kinox import KinoxEpisode, KinoxSeason, KinoxSeries
+from .mangafire_to import MangaFireToChapter, MangaFireToPage, MangaFireToSeries
 from .s_to import SerienstreamEpisode, SerienstreamSeason, SerienstreamSeries
 
 __all__ = [
     "AniworldSeries",
     "AniworldSeason",
     "AniworldEpisode",
+    "BurningSeriesSeries",
+    "BurningSeriesSeason",
+    "BurningSeriesEpisode",
+    "CinebySeries",
+    "CinebySeason",
+    "CinebyEpisode",
+    "KinoxSeries",
+    "KinoxSeason",
+    "KinoxEpisode",
+    "MangaFireToSeries",
+    "MangaFireToChapter",
+    "MangaFireToPage",
     "SerienstreamSeries",
     "SerienstreamSeason",
     "SerienstreamEpisode",

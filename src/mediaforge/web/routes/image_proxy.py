@@ -22,9 +22,13 @@ _ALLOWED_IMAGE_HOSTS = {
     "filmpalast.to", "www.filmpalast.to",
     "image.tmdb.org", "cdn.myanimelist.net",
     "cdn.aniworld.to",
-    # Crunchyroll image CDNs (calendar thumbnails / series art)
     "imgsrv.crunchyroll.com", "static.crunchyroll.com",
     "img1.ak.crunchyroll.com", "www.crunchyroll.com",
+    # BurningSeries image domains
+    "bs.to", "www.bs.to", "bs.cine.to", "burning-series.io", "burning-series.net",
+    "burningseries.ac", "burningseries.cx",
+    # KinoX image domains
+    "kinox.to", "www.kinox.to", "kinox.am", "kinox.me", "kinox.si", "kinox.gr", "kinox.fun",
 }
 
 import hashlib as _hashlib
@@ -65,6 +69,13 @@ def _img_upstream_headers(raw_url: str) -> dict:
         "cdn.aniworld.to": "https://aniworld.to/",
     }
     ref = referer_by_host.get(host)
+    if not ref:
+        if "kinox" in host:
+            ref = f"https://{host}/"
+        elif any(k in host for k in ("bs.to", "bs.cine.to", "burningseries", "burning-series")):
+            ref = f"https://{host}/"
+        elif "megakino" in host:
+            ref = f"https://{host}/"
     if not ref:
         return {}
     return {
@@ -270,7 +281,12 @@ def register_image_proxy_routes(app):
                 and host_stripped not in _ALLOWED_IMAGE_HOSTS
                 and "megakino" not in host_stripped
                 and "hanime" not in host_stripped
-                and "htv-services" not in host_stripped):
+                and "htv-services" not in host_stripped
+                and "kinox" not in host_stripped
+                and "bs.to" not in host_stripped
+                and "bs.cine.to" not in host_stripped
+                and "burningseries" not in host_stripped
+                and "burning-series" not in host_stripped):
             return ("Forbidden host", 403)
 
         # --- Serve from disk cache if available ---

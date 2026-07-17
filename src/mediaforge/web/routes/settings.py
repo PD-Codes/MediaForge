@@ -228,12 +228,16 @@ def register_settings_routes(app):
                     "delay":          get_setting("fernsehserien_delay",          "1.5"),
                 },
                 "sources": {
-                    "order": get_setting("home_source_order", "aniworld,sto,filmpalast,megakino,hanime"),
+                    "order": get_setting("home_source_order", "aniworld,sto,filmpalast,megakino,hanime,burningseries,kinox,cineby,mangafire"),
                     "section_order": {
                         "aniworld": get_setting("home_section_order_aniworld", "new,popular"),
                         "sto":      get_setting("home_section_order_sto",      "new,popular"),
                         "megakino": get_setting("home_section_order_megakino", "new_movies,popular_movies,new_series,popular_series"),
                         "hanime":   get_setting("home_section_order_hanime",   "new,trending"),
+                        "burningseries": get_setting("home_section_order_burningseries", "new,popular"),
+                        "kinox":         get_setting("home_section_order_kinox", "new,popular"),
+                        "cineby":        get_setting("home_section_order_cineby", "new_movies,popular_movies,trending_series"),
+                        "mangafire":     get_setting("home_section_order_mangafire", "new,trending"),
                     },
                     "sections": {
                         "aniworld": {
@@ -253,18 +257,37 @@ def register_settings_routes(app):
                         "hanime": {
                             "new":        get_setting("source_show_new_hanime",        "1"),
                             "trending":   get_setting("source_show_trending_hanime",   "1"),
-                            # Content-type filters (applied per item within the New/
-                            # Trending lists, not separate sections like the two above).
                             "censored":   get_setting("source_show_censored_hanime",   "1"),
                             "uncensored": get_setting("source_show_uncensored_hanime", "1"),
                         },
+                        "burningseries": {
+                            "new":     get_setting("source_show_new_burningseries",     "1"),
+                            "popular": get_setting("source_show_popular_burningseries", "1"),
+                        },
+                        "kinox": {
+                            "new":     get_setting("source_show_new_kinox",     "1"),
+                            "popular": get_setting("source_show_popular_kinox", "1"),
+                        },
+                        "cineby": {
+                            "new_movies":      get_setting("source_show_new_movies_cineby", "1"),
+                            "popular_movies":  get_setting("source_show_popular_movies_cineby", "1"),
+                            "trending_series": get_setting("source_show_trending_series_cineby", "1"),
+                        },
+                        "mangafire": {
+                            "new":      get_setting("source_show_new_mangafire",      "1"),
+                            "trending": get_setting("source_show_trending_mangafire", "1"),
+                        },
                     },
                     "enabled": {
-                        "aniworld":   get_setting("source_enabled_aniworld",   "1"),
-                        "sto":        get_setting("source_enabled_sto",        "1"),
-                        "filmpalast": get_setting("source_enabled_filmpalast", "1"),
-                        "megakino":   get_setting("source_enabled_megakino",   "1"),
-                        "hanime":     get_setting("source_enabled_hanime",     "0"),
+                        "aniworld":      get_setting("source_enabled_aniworld",      "1"),
+                        "sto":           get_setting("source_enabled_sto",           "1"),
+                        "filmpalast":    get_setting("source_enabled_filmpalast",    "1"),
+                        "megakino":      get_setting("source_enabled_megakino",      "1"),
+                        "hanime":        get_setting("source_enabled_hanime",        "0"),
+                        "burningseries": get_setting("source_enabled_burningseries", "1"),
+                        "kinox":         get_setting("source_enabled_kinox",         "1"),
+                        "cineby":        get_setting("source_enabled_cineby",        "1"),
+                        "mangafire":     get_setting("source_enabled_mangafire",     "0"),
                     },
                     "hide_disabled_in_search": get_setting("sources_hide_in_search", "0"),
                 },
@@ -896,15 +919,21 @@ def register_settings_routes(app):
         _source_keys = (
             "home_source_order",
             "home_section_order_aniworld", "home_section_order_sto", "home_section_order_hanime",
-            "home_section_order_megakino",
+            "home_section_order_megakino", "home_section_order_burningseries", "home_section_order_kinox",
+            "home_section_order_cineby", "home_section_order_mangafire",
             "source_enabled_aniworld", "source_enabled_sto", "source_enabled_filmpalast",
             "source_enabled_megakino", "source_enabled_hanime",
+            "source_enabled_burningseries", "source_enabled_kinox", "source_enabled_cineby", "source_enabled_mangafire",
             "source_show_new_aniworld", "source_show_popular_aniworld",
             "source_show_new_sto", "source_show_popular_sto",
             "source_show_new_hanime", "source_show_trending_hanime",
             "source_show_censored_hanime", "source_show_uncensored_hanime",
             "source_show_new_movies_megakino", "source_show_popular_movies_megakino",
             "source_show_new_series_megakino", "source_show_popular_series_megakino",
+            "source_show_new_burningseries", "source_show_popular_burningseries",
+            "source_show_new_kinox", "source_show_popular_kinox",
+            "source_show_new_movies_cineby", "source_show_popular_movies_cineby", "source_show_trending_series_cineby",
+            "source_show_new_mangafire", "source_show_trending_mangafire",
             "sources_hide_in_search",
         )
         if any(_sk in data for _sk in _source_keys):
@@ -912,7 +941,7 @@ def register_settings_routes(app):
             if not _sadmin:
                 return jsonify({"error": "forbidden"}), 403
         if "home_source_order" in data:
-            _valid_provs = {"aniworld", "sto", "filmpalast", "megakino", "hanime"}
+            _valid_provs = {"aniworld", "sto", "filmpalast", "megakino", "hanime", "burningseries", "kinox", "cineby", "mangafire"}
             _parts = [p.strip().lower() for p in str(data["home_source_order"]).split(",") if p.strip()]
             if not _parts or any(p not in _valid_provs for p in _parts) or len(set(_parts)) != len(_parts):
                 return jsonify({"error": "Invalid home_source_order"}), 400
@@ -922,24 +951,33 @@ def register_settings_routes(app):
             if sorted(_parts) != ["new", "trending"]:
                 return jsonify({"error": "Invalid home_section_order_hanime: must be a permutation of new,trending"}), 400
             set_setting("home_section_order_hanime", ",".join(_parts))
-        for _prov in ("aniworld", "sto"):
+        if "home_section_order_mangafire" in data:
+            _parts = [p.strip().lower() for p in str(data["home_section_order_mangafire"]).split(",") if p.strip()]
+            if sorted(_parts) != ["new", "trending"]:
+                return jsonify({"error": "Invalid home_section_order_mangafire"}), 400
+            set_setting("home_section_order_mangafire", ",".join(_parts))
+        for _prov in ("aniworld", "sto", "burningseries", "kinox"):
             _k = "home_section_order_" + _prov
             if _k in data:
                 _parts = [p.strip().lower() for p in str(data[_k]).split(",") if p.strip()]
                 if sorted(_parts) != ["new", "popular"]:
                     return jsonify({"error": "Invalid %s: must be a permutation of new,popular" % _k}), 400
                 set_setting(_k, ",".join(_parts))
-        for _prov in ("aniworld", "sto", "filmpalast", "megakino", "hanime"):
+        for _prov in ("aniworld", "sto", "filmpalast", "megakino", "hanime", "burningseries", "kinox", "cineby", "mangafire"):
             _k = "source_enabled_" + _prov
             if _k in data:
                 set_setting(_k, "1" if str(data[_k]).lower() in ("true", "1") else "0")
-        for _prov in ("aniworld", "sto"):
+        for _prov in ("aniworld", "sto", "burningseries", "kinox"):
             for _sec in ("new", "popular"):
                 _k = "source_show_" + _sec + "_" + _prov
                 if _k in data:
                     set_setting(_k, "1" if str(data[_k]).lower() in ("true", "1") else "0")
         for _sec in ("new", "trending", "censored", "uncensored"):
             _k = "source_show_" + _sec + "_hanime"
+            if _k in data:
+                set_setting(_k, "1" if str(data[_k]).lower() in ("true", "1") else "0")
+        for _sec in ("new", "trending"):
+            _k = "source_show_" + _sec + "_mangafire"
             if _k in data:
                 set_setting(_k, "1" if str(data[_k]).lower() in ("true", "1") else "0")
         if "home_section_order_megakino" in data:
@@ -949,6 +987,15 @@ def register_settings_routes(app):
             set_setting("home_section_order_megakino", ",".join(_parts))
         for _sec in ("new_movies", "popular_movies", "new_series", "popular_series"):
             _k = "source_show_" + _sec + "_megakino"
+            if _k in data:
+                set_setting(_k, "1" if str(data[_k]).lower() in ("true", "1") else "0")
+        if "home_section_order_cineby" in data:
+            _parts = [p.strip().lower() for p in str(data["home_section_order_cineby"]).split(",") if p.strip()]
+            if sorted(_parts) != ["new_movies", "popular_movies", "trending_series"]:
+                return jsonify({"error": "Invalid home_section_order_cineby"}), 400
+            set_setting("home_section_order_cineby", ",".join(_parts))
+        for _sec in ("new_movies", "popular_movies", "trending_series"):
+            _k = "source_show_" + _sec + "_cineby"
             if _k in data:
                 set_setting(_k, "1" if str(data[_k]).lower() in ("true", "1") else "0")
         if "sources_hide_in_search" in data:

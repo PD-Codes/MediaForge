@@ -175,3 +175,31 @@
 .browse-provider-megakino::before {
   background: var(--success);
 }
+
+.browse-provider-burningseries {
+  color: #ff6b00;
+}
+.browse-provider-burningseries::before {
+  background: #ff6b00;
+}
+
+.browse-provider-kinox {
+  color: #a3e635;
+}
+.browse-provider-kinox::before {
+  background: #a3e635;
+}
+
+.browse-provider-cineby {
+  color: #38bdf8;
+}
+.browse-provider-cineby::before {
+  background: #38bdf8;
+}
+
+.browse-provider-mangafire {
+  color: #f43f5e;
+}
+.browse-provider-mangafire::before {
+  background: #f43f5e;
+}

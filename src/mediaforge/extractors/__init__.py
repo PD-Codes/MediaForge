@@ -65,6 +65,7 @@ HOST_PROVIDER_MAP = {
     "vidara.to": "vidara", "vidara.so": "vidara",
     "vidavaca.net": "vidavaca",
     "veev.to": "veev",
+    "watch.gxplayer.xyz": "megakino",
 }
 
 

@@ -1644,6 +1644,251 @@ def _extract_iframe_url(page, current_url: str) -> str:
     return current_url
 
 
+def playwright_get_iframe_url(url: str, timeout: int = 20) -> str:
+    """Open `url` in a headless browser and return the first external iframe URL.
+
+    Some sites (e.g. burning-series.io) render the hoster embed client-side, so
+    the embed URL only exists after JavaScript runs. This loads the page, waits
+    for a cross-origin iframe to appear, and returns it. Raises when patchright
+    isn't available so callers can surface a clear message.
+    """
+    try:
+        from patchright.sync_api import sync_playwright
+    except ImportError:
+        raise RuntimeError(
+            "patchright is not installed. Install it with: "
+            "pip install patchright && patchright install chromium"
+        )
+
+    from ..logger import get_logger
+
+    logger = get_logger(__name__)
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--disable-gpu"])
+            context = browser.new_context(viewport={"width": 1280, "height": 720})
+            _inject_session_cookies(context, url)
+            page = context.new_page()
+            logger.debug(f"Opening page for iframe capture: {url}")
+            page.goto(url, wait_until="domcontentloaded")
+
+            deadline = _time.time() + timeout
+            found = url
+            while _time.time() < deadline:
+                candidate = _extract_iframe_url(page, url)
+                if candidate and candidate != url:
+                    found = candidate
+                    break
+                page.wait_for_timeout(500)
+
+            browser.close()
+        return found
+    except Exception as e:
+        logger.error(f"Failed to capture iframe URL for {url}: {e}")
+        raise
+
+
+def playwright_get_hanime_manifest_token(url: str, timeout: int = 15) -> str:
+    """Capture Hanime's official player-handshake token.
+
+    Only first-party Hanime hosts are allowed during this short browser run.
+    Images, fonts, media and unrelated APIs are blocked because the handshake
+    only needs Hanime's page scripts and ``auth.hanime.tv``.
+    """
+    try:
+        from patchright.sync_api import sync_playwright
+    except ImportError:
+        raise RuntimeError(
+            "patchright is not installed. Install it with: "
+            "pip install patchright && patchright install chromium"
+        )
+
+    from ..logger import get_logger
+
+    logger = get_logger(__name__)
+    token = None
+    timeout = max(1, int(timeout))
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-gpu"],
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 720},
+                service_workers="block",
+            )
+            _inject_session_cookies(context, url)
+
+            def _first_party_only(route):
+                from urllib.parse import urlparse
+
+                request = route.request
+                host = (urlparse(request.url).hostname or "").lower()
+                is_hanime = (
+                    host == "hanime.tv"
+                    or host.endswith(".hanime.tv")
+                    or host == "hanime-cdn.com"
+                    or host.endswith(".hanime-cdn.com")
+                )
+                if not is_hanime or request.resource_type in (
+                    "image",
+                    "font",
+                    "media",
+                ):
+                    route.abort()
+                else:
+                    route.continue_()
+
+            context.route("**/*", _first_party_only)
+            page = context.new_page()
+
+            def _capture_handshake(response):
+                nonlocal token
+                if token or "/api/v11/handshake" not in response.url:
+                    return
+                if response.status != 200:
+                    return
+                try:
+                    token = response.header_value("x-token")
+                except Exception:
+                    token = None
+
+            page.on("response", _capture_handshake)
+            logger.debug(f"Opening Hanime page for player handshake: {url}")
+            try:
+                page.goto(
+                    url,
+                    wait_until="domcontentloaded",
+                    timeout=timeout * 1000,
+                )
+            except Exception:
+                # A slow secondary resource must not discard a handshake that
+                # was already captured while the document was loading.
+                if not token:
+                    raise
+
+            deadline = _time.monotonic() + timeout
+            while _time.monotonic() < deadline and not token:
+                page.wait_for_timeout(100)
+
+            context.close()
+            browser.close()
+
+    except Exception as e:
+        logger.error(f"Failed to capture Hanime handshake: {e}", exc_info=True)
+        raise RuntimeError(f"Failed to capture Hanime handshake: {e}") from e
+
+    if not token:
+        raise TimeoutError(f"Hanime player handshake timed out after {timeout}s")
+    return token
+
+
+def playwright_get_hanime_stream_url(url: str) -> str:
+    """Compatibility wrapper returning the best URL from the new handshake."""
+    try:
+        from ..extractors.provider.hanime import get_direct_link_from_hanime
+        res = get_direct_link_from_hanime(url)
+        if res:
+            return res
+    except Exception:
+        pass
+
+    try:
+        from ..extractors.provider.hanime_tv import (
+            _parse_hanime_manifest_token,
+            get_direct_link_from_hanime_tv,
+        )
+        token = playwright_get_hanime_manifest_token(url)
+        slug = url.rstrip("/").split("/")[-1]
+        api_data = {
+            "hentai_video": {"slug": slug},
+            "videos_manifest": _parse_hanime_manifest_token(token),
+        }
+        return get_direct_link_from_hanime_tv(api_data)
+    except Exception as err:
+        raise ValueError(f"Failed to resolve hanime stream via Playwright: {err}") from err
+
+
+def playwright_get_cineby_stream_url(url: str, timeout: int = 40) -> str:
+    """Open the vidking player embed and capture the playable HLS (m3u8) URL.
+
+    cineby embeds the vidking player (`vidking.net/embed/...`), which resolves
+    the stream client-side from an encrypted source API. `url` is the vidking
+    embed URL — a bare player page that autoplays, so a single click plus
+    `video.play()` reliably makes it request the `index.m3u8` we capture. This
+    is far more dependable than driving cineby's full SPA (Cloudflare + a finicky
+    play button).
+    """
+    try:
+        from patchright.sync_api import sync_playwright
+    except ImportError:
+        raise RuntimeError(
+            "patchright is not installed. Install it with: "
+            "pip install patchright && patchright install chromium"
+        )
+
+    from ..logger import get_logger
+
+    logger = get_logger(__name__)
+    final_url = None
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--disable-gpu"])
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 720}, locale="en-US"
+            )
+            page = context.new_page()
+
+            def _capture(response):
+                nonlocal final_url
+                u = response.url
+                if not final_url and ".m3u8" in u.split("?", 1)[0].lower():
+                    final_url = u
+
+            page.on("response", _capture)
+            logger.debug(f"Opening vidking embed for stream capture: {url}")
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=40000)
+            except Exception:
+                pass
+            try:
+                page.wait_for_selector("video, button", timeout=15000)
+            except Exception:
+                pass
+            page.wait_for_timeout(1500)
+
+            # One click in the middle to start playback (a user gesture), then
+            # only ever call play() when paused so we never toggle it back off.
+            try:
+                page.mouse.click(640, 360)
+            except Exception:
+                pass
+            deadline = _time.time() + timeout
+            while _time.time() < deadline and not final_url:
+                try:
+                    page.evaluate(
+                        "() => { const v = document.querySelector('video');"
+                        " if (v) { v.muted = true; if (v.paused) v.play().catch(()=>{}); } }"
+                    )
+                except Exception:
+                    pass
+                page.wait_for_timeout(1200)
+
+            browser.close()
+
+        if final_url:
+            logger.info("Captured cineby/vidking manifest URL")
+        return final_url
+    except Exception as e:
+        logger.error(f"Failed to capture cineby stream URL: {e}")
+        return None
+
+
+
 def playwright_get_page_url(url: str) -> str:
     """Solve any CAPTCHA on *url*, then return the final resolved URL for it
     (following redirects) using the shared GLOBAL_SESSION.

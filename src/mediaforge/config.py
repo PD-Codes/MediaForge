@@ -737,6 +737,7 @@ PROVIDER_HEADERS_D = {
     "Vidara": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://vidara.so/"},
     "Vidavaca": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://vidavaca.net/"},
     "Doodstream": {"Referer": "https://dood.li/"},
+    "Cineby": {"Referer": "https://www.cineby.at/"},
     "VOE": {
         "User-Agent": DEFAULT_USER_AGENT,
         "Accept": "*/*",
@@ -769,10 +770,11 @@ PROVIDER_HEADERS_W = {
     "Vidara": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://vidara.so/"},
     "Vidavaca": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://vidavaca.net/"},
     "Doodstream": {"Referer": "https://dood.li/"},
+    "Cineby": {"Referer": "https://www.cineby.at/"},
     "VOE": {"User-Agent": DEFAULT_USER_AGENT},
     "Luluvdo": {"User-Agent": LULUVDO_USER_AGENT},
     "Filemoon": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://filemoon.to"},
-    "VeeV": {"User-Agent": DEFAULT_USER_AGENT,"Referer": "https://veev.to/"},
+    "VeeV": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://veev.to/"},
 }
 
 
@@ -939,6 +941,62 @@ HANIME_SERIES_PATTERN = re.compile(
 # the franchise's ordered video list).
 HANIME_EPISODE_PATTERN = re.compile(
     r"^https?://hanime\.tv/videos/hentai/[a-zA-Z0-9._\-]+\?ep=\d+$",
+    re.IGNORECASE,
+)
+
+# -----------------------------
+# MangaFire
+# -----------------------------
+MANGA_FIRE_SERIES_PATTERN = re.compile(
+    r"^https?://(?:www\.)?mangafire\.to/title/[^/?#]+/?$",
+    re.IGNORECASE,
+)
+
+MANGA_FIRE_CHAPTER_PATTERN = re.compile(
+    r"^https?://(?:www\.)?mangafire\.to/title/[^/?#]+/chapter/[0-9]+(?:\.[0-9]+)?/?$",
+    re.IGNORECASE,
+)
+
+# -----------------------------
+# Kinox
+# -----------------------------
+KINOX_SERIES_PATTERN = re.compile(
+    r"^https?://(?:www\.)?kinox[\w.-]*\.[^/]+/Stream/[^/?#]+?(?:\.html)?(?:\?[^#]*)?/?$",
+    re.IGNORECASE,
+)
+
+# -----------------------------
+# Cineby
+# -----------------------------
+_CINEBY_HOST = r"(?:www\.)?cineby\.(?:at|app|[a-z]{2,4})"
+
+CINEBY_SERIES_PATTERN = re.compile(
+    rf"^https?://{_CINEBY_HOST}/(?:movie|tv)/\d+(?:\?[^#]*)?/?$",
+    re.IGNORECASE,
+)
+
+CINEBY_EPISODE_PATTERN = re.compile(
+    rf"^https?://{_CINEBY_HOST}/(?:movie/\d+|tv/\d+/\d+/\d+)(?:\?[^#]*)?/?$",
+    re.IGNORECASE,
+)
+
+# -----------------------------
+# BurningSeries
+# -----------------------------
+_BS_HOST = r"(?:www\.)?(?:burning-series\.(?:io|net)|burningseries\.(?:ac|cx)|bs\.cine\.to|bs\.to)"
+
+BURNINGSERIES_SERIES_PATTERN = re.compile(
+    rf"^https?://{_BS_HOST}/serie/[^/?#]+(?:\?[^#]*)?/?$",
+    re.IGNORECASE,
+)
+
+BURNINGSERIES_SEASON_PATTERN = re.compile(
+    rf"^https?://{_BS_HOST}/serie/[^/?#]+/\d+(?:/[a-z]{{2}})?/?$",
+    re.IGNORECASE,
+)
+
+BURNINGSERIES_EPISODE_PATTERN = re.compile(
+    rf"^https?://{_BS_HOST}/serie/[^/?#]+/\d+/[^/]+(?:/[a-z]{{2}})?/?$",
     re.IGNORECASE,
 )
 

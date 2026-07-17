@@ -724,6 +724,201 @@ def fetch_hanime_trending(show_censored=True, show_uncensored=True):
     return _hanime_scraper().fetch_trending(show_censored=show_censored, show_uncensored=show_uncensored)
 
 
+def fetch_burningseries_new_series():
+    """Fetch new/other series from BurningSeries."""
+    try:
+        from .models.burningseries.series import bs_current_base, get_html
+        html = get_html(f"{bs_current_base()}/neue-serien")
+        matches = re.findall(r'<a[^>]*href="serie/([^"]+)"[^>]*>([^<]+)</a>', html)
+        results = []
+        seen = set()
+        for slug, title_raw in matches:
+            url = f"{bs_current_base()}/serie/{slug}"
+            if url in seen:
+                continue
+            seen.add(url)
+            results.append({"title": title_raw.strip(), "url": url, "poster_url": "", "genre": ""})
+        return results[:50]
+    except Exception as e:
+        logger.warning("BurningSeries new browse failed: %s", e)
+        return []
+
+
+def fetch_burningseries_popular_series():
+    """Fetch popular series from BurningSeries."""
+    try:
+        from .models.burningseries.series import bs_current_base, get_html
+        html = get_html(f"{bs_current_base()}/beliebte-serien")
+        matches = re.findall(r'<a[^>]*href="serie/([^"]+)"[^>]*>([^<]+)</a>', html)
+        results = []
+        seen = set()
+        for slug, title_raw in matches:
+            url = f"{bs_current_base()}/serie/{slug}"
+            if url in seen:
+                continue
+            seen.add(url)
+            results.append({"title": title_raw.strip(), "url": url, "poster_url": "", "genre": ""})
+        return results[:50]
+    except Exception as e:
+        logger.warning("BurningSeries popular browse failed: %s", e)
+        return []
+
+
+def fetch_kinox_new_movies():
+    """Fetch movies/streams from Kinox homepage."""
+    try:
+        from .models.kinox.series import get_html
+        html = get_html("https://kinox.to/")
+        matches = re.findall(r'<a[^>]*href="(/Stream/[^"]+)"[^>]*>([^<]+)</a>', html)
+        results = []
+        seen = set()
+        for href, title_raw in matches:
+            url = f"https://kinox.to{href}"
+            if url in seen:
+                continue
+            seen.add(url)
+            title = re.sub(r'\s+', ' ', title_raw).strip()
+            if title:
+                results.append({"title": title, "url": url, "poster_url": "", "genre": ""})
+        return results[:50]
+    except Exception as e:
+        logger.warning("Kinox new browse failed: %s", e)
+        return []
+
+
+def fetch_kinox_popular_movies():
+    """Fetch popular movies/streams from Kinox."""
+    return fetch_kinox_new_movies()
+
+
+def fetch_cineby_new_movies():
+    """Fetch trending movies for Cineby via TMDB proxy."""
+    try:
+        from .models.cineby.series import tmdb_get, CINEBY_BASE, TMDB_IMG
+        data = tmdb_get("/trending/movie/week")
+        items = data.get("results") or []
+        results = []
+        for item in items[:50]:
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            title = item.get("title") or item.get("name") or "Unknown"
+            poster_path = item.get("poster_path")
+            poster_url = f"{TMDB_IMG}{poster_path}" if poster_path else ""
+            results.append({
+                "title": title,
+                "url": f"{CINEBY_BASE}/movie/{item_id}",
+                "poster_url": poster_url,
+                "genre": "",
+            })
+        return results
+    except Exception as e:
+        logger.warning("Cineby movies browse failed: %s", e)
+        return []
+
+
+def fetch_cineby_popular_movies():
+    """Fetch popular movies for Cineby via TMDB proxy."""
+    try:
+        from .models.cineby.series import tmdb_get, CINEBY_BASE, TMDB_IMG
+        data = tmdb_get("/movie/popular")
+        items = data.get("results") or []
+        results = []
+        for item in items[:50]:
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            title = item.get("title") or item.get("name") or "Unknown"
+            poster_path = item.get("poster_path")
+            poster_url = f"{TMDB_IMG}{poster_path}" if poster_path else ""
+            results.append({
+                "title": title,
+                "url": f"{CINEBY_BASE}/movie/{item_id}",
+                "poster_url": poster_url,
+                "genre": "",
+            })
+        return results
+    except Exception as e:
+        logger.warning("Cineby popular movies browse failed: %s", e)
+        return []
+
+
+def fetch_cineby_trending_series():
+    """Fetch trending series for Cineby via TMDB proxy."""
+    try:
+        from .models.cineby.series import tmdb_get, CINEBY_BASE, TMDB_IMG
+        data = tmdb_get("/trending/tv/week")
+        items = data.get("results") or []
+        results = []
+        for item in items[:50]:
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            title = item.get("title") or item.get("name") or "Unknown"
+            poster_path = item.get("poster_path")
+            poster_url = f"{TMDB_IMG}{poster_path}" if poster_path else ""
+            results.append({
+                "title": title,
+                "url": f"{CINEBY_BASE}/tv/{item_id}",
+                "poster_url": poster_url,
+                "genre": "",
+            })
+        return results
+    except Exception as e:
+        logger.warning("Cineby trending series browse failed: %s", e)
+        return []
+
+
+def fetch_mangafire_new():
+    """Fetch newest manga from MangaFire."""
+    try:
+        from .models.mangafire_to.series import _get
+        data = _get("https://mangafire.to/api/titles?sort=newest&limit=30").json()
+        items = data.get("items") or []
+        results = []
+        for item in items:
+            title = item.get("title") or "Unknown Manga"
+            url_path = item.get("url") or ""
+            url = f"https://mangafire.to{url_path}" if url_path.startswith("/") else url_path
+            p_map = item.get("poster") or {}
+            poster_url = p_map.get("medium") or p_map.get("large") or p_map.get("small") or ""
+            results.append({
+                "title": title,
+                "url": url,
+                "poster_url": poster_url,
+                "genre": "manga",
+            })
+        return results
+    except Exception as e:
+        logger.warning("MangaFire new browse failed: %s", e)
+        return []
+
+
+def fetch_mangafire_trending():
+    """Fetch trending manga from MangaFire."""
+    try:
+        from .models.mangafire_to.series import _get
+        data = _get("https://mangafire.to/api/titles?sort=trending&limit=30").json()
+        items = data.get("items") or []
+        results = []
+        for item in items:
+            title = item.get("title") or "Unknown Manga"
+            url_path = item.get("url") or ""
+            url = f"https://mangafire.to{url_path}" if url_path.startswith("/") else url_path
+            p_map = item.get("poster") or {}
+            poster_url = p_map.get("medium") or p_map.get("large") or p_map.get("small") or ""
+            results.append({
+                "title": title,
+                "url": url,
+                "poster_url": poster_url,
+                "genre": "manga",
+            })
+        return results
+    except Exception as e:
+        logger.warning("MangaFire trending browse failed: %s", e)
+        return []
+
+
 if __name__ == "__main__":
     print("New series:", fetch_new_series())
     print("Popular series:", fetch_popular_series())

@@ -517,11 +517,32 @@ function setUiLanguage(lang) {
         <input type="checkbox" class="chb-main" id="sourceEnabledMegakino" onchange="saveSourceEnabled('megakino')" />
         <span>MegaKino</span>
       </label>
+      <label class="settings-checkbox-row" for="sourceEnabledBurningseries">
+        <input type="checkbox" class="chb-main" id="sourceEnabledBurningseries" onchange="saveSourceEnabled('burningseries')" />
+        <span>BurningSeries</span>
+      </label>
+      <label class="settings-checkbox-row" for="sourceEnabledKinox">
+        <input type="checkbox" class="chb-main" id="sourceEnabledKinox" onchange="saveSourceEnabled('kinox')" />
+        <span>Kinox</span>
+      </label>
+      <label class="settings-checkbox-row" for="sourceEnabledCineby">
+        <input type="checkbox" class="chb-main" id="sourceEnabledCineby" onchange="saveSourceEnabled('cineby')" />
+        <span>Cineby</span>
+      </label>
+    </div>
+    <div class="settings-section">
+      <h2>{{ _('Adult Sources (18+)') }}</h2>
+      <div class="settings-hint">{{ _('Enable or disable adult sources. These sources are disabled by default; enabling requires an age confirmation.') }}</div>
       <label class="settings-checkbox-row" for="sourceEnabledHanime">
         <input type="checkbox" class="chb-main" id="sourceEnabledHanime" onchange="saveSourceEnabled('hanime')" />
         <span>hanime <span class="browse-provider-18">18+</span></span>
       </label>
-      <div class="settings-hint">{{ _('hanime.tv is an adult source (18+) for sexually explicit animated content (hentai). Disabled by default; enabling requires an age confirmation.') }}</div>
+      <div class="settings-hint">{{ _('hanime.tv is an adult source (18+) for sexually explicit animated content (hentai).') }}</div>
+      <label class="settings-checkbox-row" for="sourceEnabledMangafire">
+        <input type="checkbox" class="chb-main" id="sourceEnabledMangafire" onchange="saveSourceEnabled('mangafire')" />
+        <span>MangaFire <span class="browse-provider-18">18+</span></span>
+      </label>
+      <div class="settings-hint">{{ _('MangaFire is an adult source (18+) for sexually explicit manga/doujinshi content.') }}</div>
     </div>
     <div class="settings-section">
       <h2>{{ _('Search') }}</h2>
@@ -941,6 +962,22 @@ function setUiLanguage(lang) {
           </div>
           <div class="dns-test-site-row" id="dnsTestRowHanime">
             <span class="dns-test-site-name">hanime.tv</span>
+            <span class="dns-test-site-result dns-test-idle">—</span>
+          </div>
+          <div class="dns-test-site-row" id="dnsTestRowBurningseries">
+            <span class="dns-test-site-name">bs.to</span>
+            <span class="dns-test-site-result dns-test-idle">—</span>
+          </div>
+          <div class="dns-test-site-row" id="dnsTestRowKinox">
+            <span class="dns-test-site-name">kinox.to</span>
+            <span class="dns-test-site-result dns-test-idle">—</span>
+          </div>
+          <div class="dns-test-site-row" id="dnsTestRowCineby">
+            <span class="dns-test-site-name">cineby.at</span>
+            <span class="dns-test-site-result dns-test-idle">—</span>
+          </div>
+          <div class="dns-test-site-row" id="dnsTestRowMangafire">
+            <span class="dns-test-site-name">mangafire.to</span>
             <span class="dns-test-site-result dns-test-idle">—</span>
           </div>
         </div>
@@ -1514,6 +1551,38 @@ function setUiLanguage(lang) {
       <div class="hanime-age-actions">
         <button type="button" class="hanime-age-btn hanime-age-no" onclick="hanimeAgeConfirm()">{{ _('Yes') }}</button>
         <button type="button" class="hanime-age-btn hanime-age-yes" onclick="hanimeAgeDecline()">{{ _('No') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- mangafire 18+ age confirmation (two-step; read carefully!) -->
+<div class="hanime-age-overlay" id="mangafireAgeOverlay">
+  <div class="hanime-age-modal">
+    <div class="hanime-age-step" id="mangafireAgeStep1">
+      <span class="hanime-age-badge">18+</span>
+      <h3 class="hanime-age-title">{{ _('Enable MangaFire (18+)') }}</h3>
+      <p class="hanime-age-text">
+        {{ _('MangaFire is a source for adult, sexually explicit manga/doujinshi content and is only permitted for users aged 18 or older.') }}
+        <br><br>
+        <strong>{{ _('Are you UNDER 18 years old?') }}</strong>
+      </p>
+      <div class="hanime-age-actions">
+        <button type="button" class="hanime-age-btn hanime-age-no" onclick="mangafireAgeUnder18()">{{ _('Yes, I am under 18') }}</button>
+        <button type="button" class="hanime-age-btn hanime-age-yes" onclick="mangafireAgeConfirm()">{{ _('No, I am 18 or older') }}</button>
+      </div>
+    </div>
+    <div class="hanime-age-step" id="mangafireAgeStep2" style="display:none">
+      <span class="hanime-age-badge">18+</span>
+      <h3 class="hanime-age-title">{{ _('Enable MangaFire (18+)') }}</h3>
+      <p class="hanime-age-text">
+        {{ _('MangaFire is a source for adult, sexually explicit manga/doujinshi content and is only permitted for users aged 18 or older.') }}
+        <br><br>
+        <strong>{{ _('Should we really believe you are at least 18?') }}</strong>
+      </p>
+      <div class="hanime-age-actions">
+        <button type="button" class="hanime-age-btn hanime-age-no" onclick="mangafireAgeConfirm()">{{ _('Yes') }}</button>
+        <button type="button" class="hanime-age-btn hanime-age-yes" onclick="mangafireAgeDecline()">{{ _('No') }}</button>
       </div>
     </div>
   </div>
