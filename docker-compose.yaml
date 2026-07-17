@@ -70,7 +70,19 @@ services:
       # fallback, transcoder session dirs) — the big scratch dir is the
       # mediaforge-tmp volume above, mounted over /tmp/mediaforge, so it isn't
       # limited by this tmpfs size.
-      - /tmp:size=256m
+      - /tmp:size=512m
+
+    # Chromium's crashpad handler needs a writable config/cache dir. With
+    # read_only: true its default ($HOME/.config) is read-only, so Chromium
+    # starts chrome_crashpad_handler without --database and the captcha browser
+    # dies with SIGTRAP on launch. Point XDG at the writable /tmp tmpfs above.
+    # (Also baked into the image via the Dockerfile, but setting it here means
+    # it applies immediately -- even to the current image before a rebuild, and
+    # to custom images.)
+    environment:
+      - XDG_CONFIG_HOME=/tmp/.config
+      - XDG_CACHE_HOME=/tmp/.cache
+      - XDG_DATA_HOME=/tmp/.local/share
 
     restart: unless-stopped
 

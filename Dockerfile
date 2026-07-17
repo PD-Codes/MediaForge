@@ -61,7 +61,9 @@ RUN apt-get update && apt-get install -y \
     mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && \
     useradd -m -d /home/mediaforge mediaforge && \
     mkdir -p /app/Downloads /home/mediaforge/.mediaforge /home/mediaforge/.aniworld && \
-    chown -R mediaforge:mediaforge /app /home/mediaforge
+    chown -R mediaforge:mediaforge /app /home/mediaforge && \
+    ln -s /tmp/.pki /home/mediaforge/.pki && \
+    chown -h mediaforge:mediaforge /home/mediaforge/.pki
 
 # .aniworld is only the mount point for legacy "AniWorld Downloader" volumes.
 # Pre-creating it with the right ownership means users migrating from the old
@@ -90,6 +92,14 @@ ENV MEDIAFORGE_DOWNLOAD_PATH=/app/Downloads \
 # disable the whole scheme with MEDIAFORGE_NO_LLVMPIPE=1 if it misbehaves.
 ENV LIBGL_ALWAYS_SOFTWARE=1 \
     GALLIUM_DRIVER=llvmpipe
+
+# Crashpad needs a writable database dir. Under a read-only container rootfs
+# (docker-compose read_only: true) Chromium cannot create ~/.config/.../Crashpad,
+# so it spawns chrome_crashpad_handler without --database and dies with SIGTRAP
+# on startup. Point XDG config/cache at the writable /tmp tmpfs to fix it.
+ENV XDG_CONFIG_HOME=/tmp/.config \
+    XDG_CACHE_HOME=/tmp/.cache \
+    XDG_DATA_HOME=/tmp/.local/share
 
 # Realistic locale / timezone so the captcha browser doesn't look like a bare
 # UTC server (Turnstile evaluates these signals).

@@ -37,6 +37,10 @@ echo "[MediaForge] Cleaning up old Xvfb locks..."
 rm -f /tmp/.X99-lock
 rm -rf /tmp/.X11-unix/X99
 
+# Crashpad database dir on the writable tmpfs (see Dockerfile XDG_* env) so
+# Chromium's crash handler starts with a --database and doesn't SIGTRAP.
+mkdir -p "${XDG_CONFIG_HOME:-/tmp/.chromium}" "${XDG_CACHE_HOME:-/tmp/.chromium}"
+
 echo "[MediaForge] Starting virtual display (Xvfb)..."
 Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp &
 

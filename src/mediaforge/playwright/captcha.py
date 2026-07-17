@@ -356,7 +356,7 @@ def _stealth_context_kwargs() -> dict:
     return kw
 
 
-def _stealth_launch_args(offscreen: bool) -> list:
+def _stealth_launch_args(offscreen: bool, experimental_gl: bool = True) -> list:
     # --disable-dev-shm-usage: the default 64 MB /dev/shm in Docker is too small,
     #   so the Chromium renderer crashes on larger pages — which shows up as a
     #   captcha that won't render, a blank popup or random scrolling.  Harmless
@@ -392,7 +392,7 @@ def _stealth_launch_args(offscreen: bool) -> list:
         # capability-stripped container; --no-sandbox is the standard Docker
         # workaround and is NOT observable from the page (no JS fingerprint).
         args.append("--no-sandbox")
-    if _in_docker() and not _env_flag("MEDIAFORGE_NO_LLVMPIPE"):
+    if experimental_gl and _in_docker() and not _env_flag("MEDIAFORGE_NO_LLVMPIPE"):
         # No GPU on a NAS/container: by default Chromium renders WebGL with its
         # bundled SwiftShader, whose "ANGLE (Google, SwiftShader ...)" renderer
         # string is one of Turnstile's strongest bot signals.  Routing ANGLE
@@ -655,6 +655,12 @@ class _BrowserHandle:
                 pass
 
 
+# Set True the first time a launch with the experimental software-GL (llvmpipe)
+# flags fails, so subsequent solves in the same process skip straight to the
+# known-good renderer instead of repeating a doomed launch attempt.
+_experimental_gl_disabled = False
+
+
 def _launch_browser_context(p, offscreen=False, ad_home=None, weiter_event=None) -> "_BrowserHandle":
     """Launch a hardened patchright context.
 
@@ -663,29 +669,55 @@ def _launch_browser_context(p, offscreen=False, ad_home=None, weiter_event=None)
     time; concurrent solves — or any failure to open it — fall back to an
     ephemeral context, so the worst case equals the previous behaviour.
     """
-    args = _stealth_launch_args(offscreen)
-    ctx_kwargs = _stealth_context_kwargs()
-    browser = None
-    context = None
-    got_lock = False
-    if _persistent_profile_enabled() and _PROFILE_LOCK.acquire(blocking=False):
-        got_lock = True
-        try:
-            context = p.chromium.launch_persistent_context(
-                _resolve_profile_dir(), headless=False, args=args, **ctx_kwargs
-            )
-        except Exception:
-            context = None
+    def _once(experimental_gl):
+        args = _stealth_launch_args(offscreen, experimental_gl=experimental_gl)
+        ctx_kwargs = _stealth_context_kwargs()
+        browser = None
+        context = None
+        got_lock = False
+        if _persistent_profile_enabled() and _PROFILE_LOCK.acquire(blocking=False):
+            got_lock = True
             try:
-                _PROFILE_LOCK.release()
+                context = p.chromium.launch_persistent_context(
+                    _resolve_profile_dir(), headless=False, args=args, **ctx_kwargs
+                )
             except Exception:
-                pass
-            got_lock = False
-    if context is None:
-        browser = p.chromium.launch(headless=False, args=args)
-        context = browser.new_context(**ctx_kwargs)
-    _install_stealth(context, ad_home=ad_home, weiter_event=weiter_event)
-    return _BrowserHandle(context, browser, got_lock)
+                context = None
+                try:
+                    _PROFILE_LOCK.release()
+                except Exception:
+                    pass
+                got_lock = False
+        if context is None:
+            browser = p.chromium.launch(headless=False, args=args)
+            context = browser.new_context(**ctx_kwargs)
+        _install_stealth(context, ad_home=ad_home, weiter_event=weiter_event)
+        return _BrowserHandle(context, browser, got_lock)
+
+    # The experimental software-GL (llvmpipe) flags help Turnstile on GPU-less
+    # hosts, but on a host without a working software-GL stack they can stop
+    # Chromium from launching at all.  So they are best-effort: try them first,
+    # and if the launch fails, disable them for the rest of this run and retry
+    # with the plain, known-good renderer (SwiftShader).  This guarantees the
+    # llvmpipe attempt can never make captcha solving worse than before.
+    global _experimental_gl_disabled
+    want_gl = (_in_docker() and not _experimental_gl_disabled
+               and not _env_flag("MEDIAFORGE_NO_LLVMPIPE"))
+    if not want_gl:
+        return _once(experimental_gl=False)
+    try:
+        return _once(experimental_gl=True)
+    except Exception as exc:
+        _experimental_gl_disabled = True
+        try:
+            from ..logger import get_logger
+            get_logger(__name__).warning(
+                "Captcha browser launch failed with experimental software-GL "
+                "flags (%s); disabling them for this run and retrying with the "
+                "default renderer", _classify_browser_error(exc))
+        except Exception:
+            pass
+        return _once(experimental_gl=False)
 
 
 def _click_turnstile(page, logger=None) -> bool:
