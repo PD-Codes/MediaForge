@@ -11,7 +11,7 @@ except ImportError:
         from mediaforge.models.common.http import get_session
     except ImportError:
         try:
-            from mediaforge.models.common.http import get_session
+            from aniworld.models.common.http import get_session
         except ImportError:
             import niquests as _niquests
             _fallback_session = _niquests.Session()

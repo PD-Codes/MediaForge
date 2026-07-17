@@ -243,37 +243,6 @@ const _tmdbObserver = ('IntersectionObserver' in window)
   }, { rootMargin: '50px' })
   : null;
 
-// Lazy poster fetch — same viewport-gated approach as the TMDB observer above.
-// Browse cards without a poster (e.g. every kinox card, whose poster only comes
-// from a Cloudflare-gated /Stream/<slug>.html series page) otherwise fire an
-// eager /api/series request PER CARD the instant the grid renders. With ~100
-// cards (new + popular) that stalls the grid "half loaded" while 100 gated
-// fetches queue. Gating the fetch on visibility means only the handful of cards
-// near the viewport fetch, and the rest fill in (or fall back to TMDB) on scroll.
-const _posterObserver = ('IntersectionObserver' in window)
-  ? new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (!entry.isIntersecting) return;
-      const card = entry.target;
-      _posterObserver.unobserve(card);
-      const url = card.dataset.posterFetchUrl;
-      if (!url) return;
-      delete card.dataset.posterFetchUrl;
-      const img = card.querySelector('img');
-      if (img) loadPoster(url, img);
-    });
-  }, { rootMargin: '50px' })
-  : null;
-
-function lazyLoadPoster(card, url, img) {
-  if (_posterObserver) {
-    card.dataset.posterFetchUrl = url;
-    _posterObserver.observe(card);
-  } else {
-    loadPoster(url, img);  // no IntersectionObserver support: fall back to eager
-  }
-}
-
 function enrichCardWithTmdb(card, title) {
   if (!cineinfoSettings || !cineinfoSettings.tmdb_api_key) {
     // No TMDB: the TMDB pipeline never runs, but the Crunchyroll pill doesn't
@@ -1176,7 +1145,7 @@ function renderBrowseCards(grid, items, opts) {
     addSyncBadge(card, item.url);
     grid.appendChild(card);
     if (!item.poster_url) {
-      lazyLoadPoster(card, item.url, card.querySelector("img"));
+      loadPoster(item.url, card.querySelector("img"));
     }
     // CineInfo (TMDB + Crunchyroll/Fernsehserien fallback pills) doesn't apply
     // here — hanime is adult content that isn't in TMDB's database, so this

@@ -50,21 +50,21 @@ except ImportError:
         from mediaforge.models.common.http import get_html, get_session
         from mediaforge.models.common.provider_map import host_to_provider
     except ImportError:
-        from mediaforge.config import (
+        from aniworld.config import (
             Audio,
             DEFAULT_USER_AGENT,
             Subtitles,
             build_provider_attempt_order,
             logger,
         )
-        from mediaforge.extractors import provider_functions
-        from mediaforge.models.common import check_downloaded
-        from mediaforge.models.common.common import clean_title
-        from mediaforge.models.common.common import download as episode_download
-        from mediaforge.models.common.common import syncplay as episode_syncplay
-        from mediaforge.models.common.common import watch as episode_watch
-        from mediaforge.models.common.http import get_html, get_session
-        from mediaforge.models.common.provider_map import host_to_provider
+        from aniworld.extractors import provider_functions
+        from aniworld.models.common import check_downloaded
+        from aniworld.models.common.common import clean_title
+        from aniworld.models.common.common import download as episode_download
+        from aniworld.models.common.common import syncplay as episode_syncplay
+        from aniworld.models.common.common import watch as episode_watch
+        from aniworld.models.common.http import get_html, get_session
+        from aniworld.models.common.provider_map import host_to_provider
 
 # Official domains for search / browse / episode listings. bs.cine.to answers
 # reliably for these. The first domain that answers is remembered.
@@ -151,11 +151,11 @@ def _bs_curl_get(url, referer=None, timeout=12):
         from curl_cffi import requests as _curl_requests
         try:
             from ...config import ensure_curl_cffi_doh
-            ensure_curl_cffi_doh()
+            ensure_curl_cffi_doh(_curl_requests)
         except Exception:
             try:
                 from mediaforge.config import ensure_curl_cffi_doh
-                ensure_curl_cffi_doh()
+                ensure_curl_cffi_doh(_curl_requests)
             except Exception:
                 pass
 
@@ -244,7 +244,7 @@ def _resolve_hoster_link(hoster_path, referer):
                     try:
                         from mediaforge.playwright.captcha import playwright_get_iframe_url
                     except ImportError:
-                        from mediaforge.playwright.captcha import playwright_get_iframe_url
+                        from aniworld.playwright.captcha import playwright_get_iframe_url
 
                 embed = playwright_get_iframe_url(stream_url)
                 if embed and not _is_bs_host(embed):
@@ -509,7 +509,7 @@ class BurningSeriesEpisode(_BSLanguageMixin):
                 try:
                     from mediaforge.config import NAMING_TEMPLATE
                 except ImportError:
-                    from mediaforge.config import NAMING_TEMPLATE
+                    from aniworld.config import NAMING_TEMPLATE
 
             template = os.getenv(
                 "MEDIAFORGE_NAMING_TEMPLATE",
@@ -574,7 +574,7 @@ class BurningSeriesSeason(_BSLanguageMixin):
             return []
         rows = []
         for m in re.finditer(
-            r'<td><a href="(serie/[^"]+?/(\d+)/([^"/]+)/[a-z]{2,})"', table.group(1)
+            r'<td><a href="(serie/[^"]+?/(\d+)/([^"/]+)/[a-z]{2})"', table.group(1)
         ):
             rows.append((m.group(1), int(m.group(2)), m.group(3)))
         return rows
@@ -743,7 +743,7 @@ class BurningSeriesSeries:
             numbers = set()
             # Season tabs look like <li class="sN"><a href="serie/slug/N/lang">N</a>
             for m in re.finditer(
-                r'href="/?serie/' + re.escape(self.slug) + r'/(\d+)(?:/[a-z]{2,})?"',
+                r'href="/?serie/' + re.escape(self.slug) + r'/(\d+)(?:/[a-z]{2})?"',
                 self._html,
                 re.IGNORECASE,
             ):

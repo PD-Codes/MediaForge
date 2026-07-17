@@ -565,53 +565,8 @@ def _queue_worker():
                 # identical stream. Same-hoster retries are unaffected.
                 _seen_stream_urls = {}
 
-                # ── Availability check (newer providers) ─────────────────────
-                # The fallback plan above is the globally-configured hoster chain
-                # (VOE → … → Vidavaca), independent of what a given title offers.
-                # For the newer providers (BurningSeries/Kinox/Cineby/MangaFire),
-                # a movie/episode often lists only a couple of hosters — trying
-                # the rest just churns and surfaces a confusing "Provider
-                # 'Vidavaca' unavailable" even though the user picked VOE. Resolve
-                # the title ONCE up front, and pre-mark every planned hoster the
-                # title doesn't actually offer as "dead" so it is skipped. Only
-                # done when at least one planned hoster IS available, so a title
-                # whose hosters are all outside the chain still falls through to
-                # the normal attempt (and a real error) rather than being skipped
-                # entirely.
-                if item.get("provider") not in ("Direct", None):
-                    try:
-                        _prov0 = resolve_provider(ep_url)
-                        if _prov0.name in ("BurningSeries", "Kinox", "Cineby", "MangaFire"):
-                            _probe_ep = _prov0.episode_cls(
-                                url=ep_url, selected_language=item["language"]
-                            )
-                            _avail = {
-                                str(p).lower()
-                                for p in (_probe_ep.available_providers() or ())
-                            }
-                            if _avail:
-                                _plan_hosters = {str(h).lower() for h, _a, _n in _attempt_plan}
-                                if _plan_hosters & _avail:
-                                    for _h, _a, _n in _attempt_plan:
-                                        if str(_h).lower() not in _avail:
-                                            _dead_providers.add(_h)
-                                    logger.debug(
-                                        f"[Provider-Availability] {ep_url}: title offers "
-                                        f"{sorted(_avail)} — skipping unavailable hosters "
-                                        f"{sorted(_dead_providers)}"
-                                    )
-                    except Exception as _avail_exc:  # noqa: BLE001 - best effort
-                        logger.debug(f"[Provider-Availability] check skipped for {ep_url}: {_avail_exc}")
-
                 for _plan_idx, (_hoster, attempt, _attempts_for_hoster) in enumerate(_attempt_plan):
-                    # Last *live* attempt: True when no still-attemptable (not
-                    # pre-skipped/dead) hoster remains after this one, so the
-                    # final-failure branch still fires on the real last try even
-                    # when later plan entries were pre-marked unavailable above.
-                    _last_attempt = not any(
-                        _attempt_plan[_j][0] not in _dead_providers
-                        for _j in range(_plan_idx + 1, len(_attempt_plan))
-                    )
+                    _last_attempt = _plan_idx == len(_attempt_plan) - 1
                     if _hoster in _dead_providers:
                         continue
                     if _hoster != _current_provider and _current_provider is not None:

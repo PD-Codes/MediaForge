@@ -732,48 +732,6 @@ SUPPORTED_PROVIDERS = (
     # "Streamtape",
 )
 
-
-def build_provider_attempt_order(selected_provider, available_providers):
-    """Order the hosters to try for one episode/movie.
-
-    The user's ``selected_provider`` is attempted first (when it is actually
-    available for the title), followed by every other available provider in the
-    app's global preference order (:data:`SUPPORTED_PROVIDERS`), and finally any
-    remaining available providers not listed there. Comparison is
-    case-insensitive but the returned names keep the exact form the model
-    offered them in, so downstream ``provider_functions`` lookups still match.
-
-    Used by the burning-series and kinox models' ``provider_attempt_order()``.
-    Kept here (rather than duplicated per model) so every provider shares one
-    ordering policy. Returns a tuple; empty when no providers are available.
-    """
-    available = list(available_providers or [])
-    if not available:
-        return tuple()
-
-    # Normalized (lower-case) name -> the value exactly as the model offered it.
-    by_norm = {}
-    for name in available:
-        by_norm.setdefault(str(name).strip().lower(), name)
-
-    order = []
-    seen = set()
-
-    def _add(norm):
-        if norm in by_norm and norm not in seen:
-            seen.add(norm)
-            order.append(by_norm[norm])
-
-    if selected_provider:
-        _add(str(selected_provider).strip().lower())
-    for preferred in SUPPORTED_PROVIDERS:
-        _add(str(preferred).strip().lower())
-    for name in available:  # anything available but outside SUPPORTED_PROVIDERS
-        _add(str(name).strip().lower())
-
-    return tuple(order)
-
-
 PROVIDER_HEADERS_D = {
     "Vidmoly": {"Referer": "https://vidmoly.biz"},
     "Vidara": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://vidara.so/"},
@@ -1032,16 +990,13 @@ BURNINGSERIES_SERIES_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# The trailing language segment can be 2+ letters (de, en, des, gerdub, …),
-# so match [a-z]{2,} rather than exactly two letters — bs.cine.to serves
-# codes like "des", which the old {2} pattern rejected as "Unsupported URL".
 BURNINGSERIES_SEASON_PATTERN = re.compile(
-    rf"^https?://{_BS_HOST}/serie/[^/?#]+/\d+(?:/[a-z]{{2,}})?/?$",
+    rf"^https?://{_BS_HOST}/serie/[^/?#]+/\d+(?:/[a-z]{{2}})?/?$",
     re.IGNORECASE,
 )
 
 BURNINGSERIES_EPISODE_PATTERN = re.compile(
-    rf"^https?://{_BS_HOST}/serie/[^/?#]+/\d+/[^/]+(?:/[a-z]{{2,}})?/?$",
+    rf"^https?://{_BS_HOST}/serie/[^/?#]+/\d+/[^/]+(?:/[a-z]{{2}})?/?$",
     re.IGNORECASE,
 )
 

@@ -239,13 +239,6 @@ def _burningseries_search(keyword):
         results = []
         seen = set()
         for slug, title_raw in matches:
-            # Search anchors can point at a deep episode path
-            # (serie/<slug>/<season>/<episode>/<lang>); reduce to the series
-            # slug so the click opens the series page and resolve_provider
-            # accepts the URL instead of raising "Unsupported URL".
-            slug = slug.split("/", 1)[0]
-            if not slug:
-                continue
             url = f"{bs_current_base()}/serie/{slug}"
             if url in seen:
                 continue
@@ -1066,27 +1059,8 @@ def register_search_routes(app):
             # Parse language flags per episode from the already-fetched season HTML
             # (no extra network requests — flags are embedded in the season page)
             ep_languages: dict[str, list[str]] = {}
-
-            # The newer providers (BurningSeries/Kinox/Cineby/MangaFire) don't
-            # carry the s.to/AniWorld per-episode flag markup the parser below
-            # expects, so their episodes came back with no languages at all.
-            # Take their available dub languages from the model's season-level
-            # list (BurningSeries/Cineby expose language_labels) or a per-provider
-            # default, and apply it to every episode.
-            _new_provs = ("BurningSeries", "Kinox", "Cineby", "MangaFire")
-            _np_langs = None
-            if prov.name in _new_provs:
-                try:
-                    _np_langs = list(getattr(season, "language_labels", None) or [])
-                except Exception:
-                    _np_langs = None
-                if not _np_langs:
-                    _np_langs = ["English Dub"] if prov.name == "MangaFire" else ["German Dub"]
-
             try:
-                # Skip the flag scrape for the newer providers (handled above);
-                # blanking the HTML also avoids a needless season-page fetch.
-                s_html = "" if prov.name in _new_provs else (getattr(season, "_html", None) or "")
+                s_html = getattr(season, "_html", None) or ""
                 _is_sto = "serienstream" in url or "/serie/" in url
 
                 if _is_sto:
@@ -1172,7 +1146,7 @@ def register_search_routes(app):
                         "title_de": getattr(ep, "title_de", ""),
                         "title_en": getattr(ep, "title_en", ""),
                         "downloaded": downloaded,
-                        "languages": ep_languages.get(ep.url) or _np_langs or [],
+                        "languages": ep_languages.get(ep.url, []),
                     }
                 )
             return jsonify({"episodes": episodes_data})

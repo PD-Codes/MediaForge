@@ -43,19 +43,19 @@ except ImportError:
         from mediaforge.models.common.http import get_html, get_session
         from mediaforge.models.common.provider_map import host_to_provider
     except ImportError:
-        from mediaforge.config import (
+        from aniworld.config import (
             Audio,
             Subtitles,
             build_provider_attempt_order,
         )
-        from mediaforge.extractors import provider_functions
-        from mediaforge.models.common import check_downloaded, movie_folder_enabled
-        from mediaforge.models.common.common import clean_title
-        from mediaforge.models.common.common import download as episode_download
-        from mediaforge.models.common.common import syncplay as episode_syncplay
-        from mediaforge.models.common.common import watch as episode_watch
-        from mediaforge.models.common.http import get_html, get_session
-        from mediaforge.models.common.provider_map import host_to_provider
+        from aniworld.extractors import provider_functions
+        from aniworld.models.common import check_downloaded, movie_folder_enabled
+        from aniworld.models.common.common import clean_title
+        from aniworld.models.common.common import download as episode_download
+        from aniworld.models.common.common import syncplay as episode_syncplay
+        from aniworld.models.common.common import watch as episode_watch
+        from aniworld.models.common.http import get_html, get_session
+        from aniworld.models.common.provider_map import host_to_provider
 
 KINOX_DOMAIN = os.getenv("MEDIAFORGE_KINOX_DOMAIN", os.getenv("ANIWORLD_KINOX_DOMAIN", "kinox.to"))
 
@@ -67,92 +67,6 @@ KINOX_CAPTCHA_MARKER = "[kinox-captcha]"
 
 def _base():
     return f"https://{KINOX_DOMAIN}"
-
-
-def _kinox_get_html(url):
-    """Fetch a kinox page across its mirror domains with a real Chrome TLS
-    fingerprint.
-
-    kinox sits behind Cloudflare, which answers plain clients with a 503
-    bot-check page — that surfaced as "503 Server Error" whenever a browse card
-    or the series modal loaded the /Stream/<slug>.html page. Two robustness
-    layers address it:
-
-    1. Chrome impersonation via curl_cffi (same approach burning-series/cineby
-       already use) to get past the TLS/JA3 gate.
-    2. The site's alternative addresses from mirrors.py
-       (kinox.to -> kinox.cx -> kinox.am -> kinox.me): if the active host is
-       blocked or down, the next mirror is tried and the healthy one is
-       remembered (mark_ok/mark_failed) so later calls start there — this is the
-       same mirror registry the session-level failover uses.
-
-    Falls back to the shared session's get_html (which itself does session-level
-    failover) when curl_cffi isn't installed or every mirror stays blocked.
-    """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept-Encoding": "gzip, deflate",
-        "Accept-Language": "de-DE,de;q=0.9",
-    }
-
-    # Ordered mirror candidates (canonical host + alternatives). If mirrors.py
-    # is unavailable for any reason, fall back to the single URL unchanged.
-    mark_ok = mark_failed = None
-    try:
-        from ...mirrors import iter_candidates, mark_ok, mark_failed
-        candidates = list(iter_candidates(url))
-    except Exception:
-        candidates = [(url, {}, None, None, 0)]
-
-    try:
-        from curl_cffi import requests as _curl_requests
-        try:
-            from ...config import ensure_curl_cffi_doh
-            ensure_curl_cffi_doh()
-        except Exception:
-            try:
-                from mediaforge.config import ensure_curl_cffi_doh
-                ensure_curl_cffi_doh()
-            except Exception:
-                pass
-
-        for cand_url, extra_headers, verify, site, idx in candidates:
-            req_kwargs = dict(
-                headers={**headers, **(extra_headers or {})},
-                impersonate="chrome124",
-                allow_redirects=True,
-                timeout=10,
-            )
-            if verify is not None:
-                req_kwargs["verify"] = verify
-            try:
-                resp = _curl_requests.get(cand_url, **req_kwargs)
-            except Exception:  # noqa: BLE001 - host unreachable/down, try next mirror
-                if mark_failed and site:
-                    mark_failed(site, idx)
-                continue
-            if resp.status_code < 400:
-                if mark_ok and site:
-                    mark_ok(site, idx)
-                return resp.text
-            # A real HTTP response (e.g. 503 Cloudflare bot-check): the host is
-            # UP, it's just gating us. Every kinox mirror sits behind the same
-            # gate, so cycling the other domains only burns another timeout each
-            # (~minutes per title). Stop here and let the fallback surface the
-            # block quickly instead.
-            if mark_failed and site:
-                mark_failed(site, idx)
-            break
-    except ImportError:
-        pass
-    except Exception:  # noqa: BLE001 - fall back to the shared session on any error
-        pass
-    # Fallback: the shared niquests session (raises on non-200 as before, so
-    # a genuine block still bubbles up with a clear status).
-    return get_html(url)
 
 
 def kinox_slug_from_url(url):
@@ -430,7 +344,7 @@ class KinoxEpisode(_KinoxLanguageMixin):
 
     def __extract_provider_data(self):
         slug = kinox_slug_from_url(self.url)
-        html = _kinox_get_html(f"{_base()}/Stream/{slug}.html")
+        html = get_html(f"{_base()}/Stream/{slug}.html")
 
         if self.is_movie:
             mirrors = _parse_mirrors(html)
@@ -554,7 +468,7 @@ class KinoxEpisode(_KinoxLanguageMixin):
                 try:
                     from mediaforge.config import NAMING_TEMPLATE
                 except ImportError:
-                    from mediaforge.config import NAMING_TEMPLATE
+                    from aniworld.config import NAMING_TEMPLATE
 
             template = os.getenv(
                 "MEDIAFORGE_NAMING_TEMPLATE",
@@ -673,7 +587,7 @@ class KinoxSeries:
     @property
     def _html(self):
         if self.__html is None:
-            self.__html = _kinox_get_html(f"{_base()}/Stream/{self.slug}.html")
+            self.__html = get_html(f"{_base()}/Stream/{self.slug}.html")
         return self.__html
 
     @property

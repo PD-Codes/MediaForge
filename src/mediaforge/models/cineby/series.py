@@ -39,17 +39,17 @@ except ImportError:
         from mediaforge.models.common.common import watch as episode_watch
         from mediaforge.models.common.http import get_session
     except ImportError:
-        from mediaforge.config import (
+        from aniworld.config import (
             Audio,
             Subtitles,
             logger,
         )
-        from mediaforge.models.common import check_downloaded, movie_folder_enabled
-        from mediaforge.models.common.common import clean_title
-        from mediaforge.models.common.common import download as episode_download
-        from mediaforge.models.common.common import syncplay as episode_syncplay
-        from mediaforge.models.common.common import watch as episode_watch
-        from mediaforge.models.common.http import get_session
+        from aniworld.models.common import check_downloaded, movie_folder_enabled
+        from aniworld.models.common.common import clean_title
+        from aniworld.models.common.common import download as episode_download
+        from aniworld.models.common.common import syncplay as episode_syncplay
+        from aniworld.models.common.common import watch as episode_watch
+        from aniworld.models.common.http import get_session
 
 CINEBY_BASE = "https://www.cineby.at"
 TMDB_PROXY = "https://db.wingsdatabase.com/3"
@@ -85,11 +85,11 @@ def _fetch(url, params=None, timeout=15):
         from curl_cffi import requests as _curl_requests
         try:
             from ...config import ensure_curl_cffi_doh
-            ensure_curl_cffi_doh()
+            ensure_curl_cffi_doh(_curl_requests)
         except Exception:
             try:
                 from mediaforge.config import ensure_curl_cffi_doh
-                ensure_curl_cffi_doh()
+                ensure_curl_cffi_doh(_curl_requests)
             except Exception:
                 pass
 
@@ -659,7 +659,7 @@ class CinebyEpisode:
                     try:
                         from mediaforge.playwright.captcha import playwright_get_cineby_stream_url
                     except ImportError:
-                        from mediaforge.playwright.captcha import playwright_get_cineby_stream_url
+                        from aniworld.playwright.captcha import playwright_get_cineby_stream_url
 
                 embed = vidking_embed_url(
                     self.is_movie, self.tmdb_id, self.season_number, self.episode_number
@@ -730,7 +730,7 @@ class CinebyEpisode:
                 try:
                     from mediaforge.config import NAMING_TEMPLATE
                 except ImportError:
-                    from mediaforge.config import NAMING_TEMPLATE
+                    from aniworld.config import NAMING_TEMPLATE
 
             template = os.getenv(
                 "MEDIAFORGE_NAMING_TEMPLATE",
