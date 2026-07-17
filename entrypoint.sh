@@ -7,6 +7,25 @@ export TZ="${TZ:-Europe/Berlin}"
 export LANG="${LANG:-de_DE.UTF-8}"
 export LANGUAGE="${LANGUAGE:-de_DE:de}"
 
+# Heuristic VPN detection: when the container shares a VPN container's network
+# namespace (e.g. Gluetun via network_mode: service/container:gluetun), a
+# WireGuard/OpenVPN interface is present in this namespace (wg0/tun0 by default;
+# the WireGuard name is configurable via Gluetun's WIREGUARD_INTERFACE). Match by
+# prefix so custom names like wg1/tun1 are covered too. Purely informational — it
+# fixes nothing, but surfaces the two usual misconfigurations in the log so a
+# "WebUI unreachable" is easy to diagnose. Silent for non-VPN setups.
+vpn_iface=""
+for iface_path in /sys/class/net/wg* /sys/class/net/tun*; do
+    [ -e "$iface_path" ] || continue
+    vpn_iface="${iface_path##*/}"
+    break
+done
+if [ -n "$vpn_iface" ]; then
+    echo "[MediaForge] VPN network namespace detected (interface: ${vpn_iface})."
+    echo "[MediaForge]   -> Publish the WebUI port on the VPN container, not on mediaforge."
+    echo "[MediaForge]   -> Set FIREWALL_OUTBOUND_SUBNETS to your LAN subnet if the WebUI is unreachable."
+fi
+
 # Start a session D-Bus so Chromium finds the services it expects; missing
 # D-Bus is a small "automated container" signal.
 if command -v dbus-launch >/dev/null 2>&1; then
