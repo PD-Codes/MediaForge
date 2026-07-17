@@ -1,6 +1,6 @@
 [project]
 name = "mediaforge"
-version = "1.2.3"
+version = "1.2.4"
 authors = [
   { name = "TheMRX13 (Pascal Keller)", email = "keller.pascal1313@gmail.com" },
   { name = "Domekologe (Domenick Waldvogel)", email = "domenick.waldvogel@domekologe.eu" },
