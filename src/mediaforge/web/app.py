@@ -173,7 +173,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             login_required,
             refresh_session_role,
         )
-        from .db import has_any_admin, init_db
+        from .db import has_any_admin, init_db, init_app_settings_db
 
         app.secret_key = get_or_create_secret_key()
         app.config["SESSION_COOKIE_HTTPONLY"] = True

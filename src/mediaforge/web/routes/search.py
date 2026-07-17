@@ -20,7 +20,7 @@ from .browse import _prefetch_cycle
 from ..db import get_custom_paths
 from ..db import get_setting
 from ..lang_folders import LANG_FOLDERS
-from ..queue_worker import _hanime_enabled, _mangafire_enabled
+from ..queue_worker import _hanime_enabled
 from ..queue_worker import _is_filmpalast_url
 from ..queue_worker import _is_hanime_url
 from ..queue_worker import _is_megakino_url
@@ -229,114 +229,6 @@ def _filmpalast_title_to_slugs(title):
     return list(slugs)
 
 
-def _burningseries_search(keyword):
-    """Search bs.to for a keyword and return list of {title, url} dicts."""
-    try:
-        from ...models.burningseries.series import bs_current_base, get_html
-        import urllib.parse as _up
-        html = get_html(f"{bs_current_base()}/search?q={_up.quote(keyword)}")
-        matches = re.findall(r'<a[^>]*href="serie/([^"]+)"[^>]*>([^<]+)</a>', html)
-        results = []
-        seen = set()
-        for slug, title_raw in matches:
-            url = f"{bs_current_base()}/serie/{slug}"
-            if url in seen:
-                continue
-            seen.add(url)
-            title = _html_unescape(title_raw.strip())
-            results.append({"title": title, "url": url})
-        return results
-    except Exception as e:
-        logger.warning("BurningSeries search failed: %s", e)
-        return []
-
-
-def _kinox_search(keyword):
-    """Search kinox.to for a keyword via aGET/List suggestions."""
-    try:
-        from ...models.kinox.series import get_html
-        import urllib.parse as _up
-        raw = get_html(f"https://kinox.to/aGET/List/?q={_up.quote(keyword)}&limit=30")
-        data = json.loads(raw)
-        rows = data.get("aaData") or []
-        results = []
-        seen = set()
-        for item in rows:
-            if not isinstance(item, list) or len(item) < 3:
-                continue
-            html_str = item[2]
-            m_href = re.search(r'href="([^"]+)"', html_str, re.IGNORECASE)
-            if not m_href:
-                continue
-            href = m_href.group(1).strip()
-            url = f"https://kinox.to{href}" if href.startswith("/") else href
-            if url in seen:
-                continue
-            seen.add(url)
-            clean_t = re.sub(r'<[^>]+>', ' ', html_str)
-            title = re.sub(r'\s+', ' ', _html_unescape(clean_t)).strip()
-            results.append({"title": title, "url": url})
-        return results
-    except Exception as e:
-        logger.warning("Kinox search failed: %s", e)
-        return []
-
-
-def _cineby_search(keyword):
-    """Search cineby (via TMDB proxy) for a keyword."""
-    try:
-        from ...models.cineby.series import tmdb_get, CINEBY_BASE
-        import urllib.parse as _up
-        data = tmdb_get(f"/search/multi?query={_up.quote(keyword)}")
-        items = data.get("results") or []
-        results = []
-        seen = set()
-        for item in items:
-            media_type = item.get("media_type")
-            if media_type not in ("movie", "tv"):
-                continue
-            item_id = item.get("id")
-            if not item_id:
-                continue
-            url = f"{CINEBY_BASE}/{media_type}/{item_id}"
-            if url in seen:
-                continue
-            seen.add(url)
-            title = item.get("title") or item.get("name") or "Unknown Title"
-            year_str = str(item.get("release_date") or item.get("first_air_date") or "")[:4]
-            if year_str:
-                title = f"{title} ({year_str})"
-            results.append({"title": title, "url": url})
-        return results
-    except Exception as e:
-        logger.warning("Cineby search failed: %s", e)
-        return []
-
-
-def _mangafire_search(keyword):
-    """Search MangaFire for a keyword."""
-    try:
-        from ...models.mangafire_to.series import search_series
-        items = search_series(keyword) or []
-        results = []
-        seen = set()
-        for item in items:
-            url = item.get("url") or ""
-            if not url:
-                continue
-            if url.startswith("/"):
-                url = f"https://mangafire.to{url}"
-            if url in seen:
-                continue
-            seen.add(url)
-            title = item.get("title") or item.get("name") or "Unknown Title"
-            results.append({"title": title, "url": url})
-        return results
-    except Exception as e:
-        logger.warning("MangaFire search failed: %s", e)
-        return []
-
-
 def register_search_routes(app):
     """Register search, series/season/episode/provider lookup, and TMDB discovery endpoints."""
     @app.route("/api/search", methods=["POST"])
@@ -382,14 +274,6 @@ def register_search_routes(app):
         elif site == "hanime":
             # Adult source: only search when explicitly enabled.
             results = (hanime_search(keyword) or []) if _hanime_enabled() else []
-        elif site == "burningseries":
-            results = _burningseries_search(keyword)
-        elif site == "kinox":
-            results = _kinox_search(keyword)
-        elif site == "cineby":
-            results = _cineby_search(keyword)
-        elif site == "mangafire":
-            results = (_mangafire_search(keyword) or []) if _mangafire_enabled() else []
         else:
             results = _get_site_results(keyword, site)
             
@@ -984,12 +868,6 @@ def register_search_routes(app):
             # season model (its fallback splits on "-" which fails)
             series_url = re.sub(r"/staffel-\d+/?$", "", url)
             series_url = re.sub(r"/filme/?$", "", series_url)
-            if prov.name == "BurningSeries":
-                series_url = re.sub(r"(/serie/[^/?#]+)/\d+.*", r"\1", url)
-            elif prov.name == "Cineby":
-                series_url = re.sub(r"/(tv/\d+|movie/\d+)/.*", r"/\1", url)
-            elif prov.name == "MangaFire":
-                series_url = re.sub(r"/chapter/.*", "", url)
             try:
                 series = prov.series_cls(url=series_url)
             except Exception:
@@ -1227,35 +1105,24 @@ def register_search_routes(app):
                         continue
                     raw_by_label[label] = dict(providers)
             else:
-                # s.to / BurningSeries / Kinox / Cineby / MangaFire: can be string label keys or enum tuple keys
+                # s.to: plain dict with (Audio, Subtitles) enum tuple keys
                 sto_label_map = {
                     ("German", "None"): "German Dub",
                     ("English", "None"): "English Dub",
-                    ("German", "German"): "German Sub",
-                    ("Japanese", "German"): "German Sub",
-                    ("Japanese", "English"): "English Sub",
                 }
-                for key_or_tuple, providers in pd.items():
-                    if isinstance(key_or_tuple, str):
-                        raw_by_label[key_or_tuple] = dict(providers) if isinstance(providers, dict) else providers
-                    elif isinstance(key_or_tuple, tuple) and len(key_or_tuple) == 2:
-                        audio, subtitles = key_or_tuple
-                        a_val = getattr(audio, "value", str(audio))
-                        s_val = getattr(subtitles, "value", str(subtitles))
-                        label = sto_label_map.get((a_val, s_val))
-                        if not label:
-                            label = f"{a_val} Dub" if s_val == "None" else f"{a_val} ({s_val} Sub)"
-                        raw_by_label[label] = dict(providers) if isinstance(providers, dict) else providers
+                for (audio, subtitles), providers in pd.items():
+                    label = sto_label_map.get((audio.value, subtitles.value))
+                    if label:
+                        raw_by_label[label] = dict(providers)
 
             # Single unified live-availability check + mirror de-dup for every
             # label / site, movies and series alike (previously movies-only).
+            # This is what keeps dead hosters and duplicate mirror labels out of
+            # the provider dropdown for AniWorld/s.to series too.
             for label, providers in raw_by_label.items():
-                if prov.name in ("Cineby", "MangaFire", "Hanime"):
-                    provider_info[label] = providers if isinstance(providers, list) else list(providers.keys())
-                else:
-                    working = _filter_and_dedup_providers(providers) if isinstance(providers, dict) else providers
-                    if working:
-                        provider_info[label] = working
+                working = _filter_and_dedup_providers(providers)
+                if working:
+                    provider_info[label] = working
 
             return jsonify({"providers": provider_info})
         except Exception as e:

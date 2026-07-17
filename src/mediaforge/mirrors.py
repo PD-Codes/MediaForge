@@ -56,10 +56,6 @@ DEFAULT_SITE_MIRRORS = {
     "filmpalast": ["filmpalast.to"],
     "megakino":   ["megakino.to", "megakino.tv", "megakino.org"],
     "hanime":     ["hanime.tv"],
-    "burningseries": ["bs.cine.to", "burningseries.ac", "burningseries.cx", "burning-series.io", "burning-series.net", "bs.to"],
-    "kinox":      ["kinox.to", "kinox.cx", "kinox.am", "kinox.me"],
-    "cineby":     ["www.cineby.at", "www.cineby.app", "cineby.at"],
-    "mangafire":  ["mangafire.to"],
 }
 
 # Human-readable labels for the settings UI.
@@ -69,10 +65,6 @@ SITE_LABELS = {
     "filmpalast": "FilmPalast",
     "megakino":   "MegaKino",
     "hanime":     "hanime",
-    "burningseries": "BurningSeries",
-    "kinox":      "Kinox",
-    "cineby":     "Cineby",
-    "mangafire":  "MangaFire",
 }
 
 # How long a non-primary mirror stays active before the primary host is

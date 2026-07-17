@@ -33,10 +33,6 @@ _MONITOR_SITES = {
     "filmpalast": ("FilmPalast",   "https://filmpalast.to",   "filmpalast.to",   ["filmpalast"],   {"server": "cloudflare"}),
     "megakino":   ("MegaKino",     "https://megakino.to",     "megakino.to",     ["megakino"],     {"server": "cloudflare"}),
     "hanime":     ("hanime",       "https://hanime.tv",       "hanime.tv",       ["hanime"],       {"server": "cloudflare"}),
-    "burningseries": ("BurningSeries", "https://bs.to",       "bs.to",           ["burning series", "burningseries"], {"server": "cloudflare"}),
-    "kinox":      ("Kinox",        "https://kinox.to",        "kinox.to",        ["kinox"],        {"server": "cloudflare"}),
-    "cineby":     ("Cineby",       "https://www.cineby.at",   "cineby.at",       ["cineby"],       {"server": "cloudflare"}),
-    "mangafire":  ("MangaFire",    "https://mangafire.to",    "mangafire.to",    ["mangafire"],    {"server": "cloudflare"}),
 }
 
 # Signatures of ISP / CUII (Clearingstelle Urheberrecht im Internet) block pages
@@ -172,7 +168,7 @@ def _uptime_config():
 
     tracked = {}
     for _sid in _MONITOR_SITES:
-        _def = "0" if _sid in ("hanime", "mangafire") else "1"
+        _def = "0" if _sid == "hanime" else "1"
         tracked[_sid] = get_setting("uptime_track_" + _sid, _def) == "1"
 
     return {

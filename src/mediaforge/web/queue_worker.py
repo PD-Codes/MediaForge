@@ -332,19 +332,6 @@ def _hanime_enabled() -> bool:
     return get_setting("source_enabled_hanime", "0") == "1"
 
 
-def _is_mangafire_url(url: str) -> bool:
-    """True for a mangafire.to URL."""
-    return "mangafire.to/" in (url or "")
-
-
-def _mangafire_enabled() -> bool:
-    """Whether the (opt-in, 18+ age-gated) mangafire.to source is enabled in settings.
-
-    Used by: routes/search.py, routes/browse.py, etc.
-    """
-    return get_setting("source_enabled_mangafire", "0") == "1"
-
-
 def _parse_season_episode(url):
     """Extract (season, episode) ints from an aniworld/s.to episode URL, else (None, None).
 

@@ -34,15 +34,6 @@ const megakinoNewSeriesGrid = document.getElementById("megakinoNewSeriesGrid");
 const megakinoPopularSeriesGrid = document.getElementById("megakinoPopularSeriesGrid");
 const hanimeNewGrid = document.getElementById("hanimeNewGrid");
 const hanimeTrendingGrid = document.getElementById("hanimeTrendingGrid");
-const burningseriesNewGrid = document.getElementById("burningseriesNewGrid");
-const burningseriesPopularGrid = document.getElementById("burningseriesPopularGrid");
-const kinoxNewGrid = document.getElementById("kinoxNewGrid");
-const kinoxPopularGrid = document.getElementById("kinoxPopularGrid");
-const cinebyNewMoviesGrid = document.getElementById("cinebyNewMoviesGrid");
-const cinebyPopularMoviesGrid = document.getElementById("cinebyPopularMoviesGrid");
-const cinebyTrendingSeriesGrid = document.getElementById("cinebyTrendingSeriesGrid");
-const mangafireNewGrid = document.getElementById("mangafireNewGrid");
-const mangafireTrendingGrid = document.getElementById("mangafireTrendingGrid");
 
 let currentSeasons = [];
 let currentSeriesTitle = "";
@@ -559,111 +550,6 @@ async function loadHanimeBrowse() {
   }
 }
 
-let burningseriesLoadedAt = 0;
-async function loadBurningSeriesBrowse() {
-  if (burningseriesLoadedAt && Date.now() - burningseriesLoadedAt < 3600000) return;
-  burningseriesLoadedAt = Date.now();
-  if (burningseriesNewGrid) renderSkeletons(burningseriesNewGrid);
-  if (burningseriesPopularGrid) renderSkeletons(burningseriesPopularGrid);
-  try {
-    const [newResp, popResp] = await Promise.all([
-      fetch("/api/burningseries/new"),
-      fetch("/api/burningseries/popular"),
-    ]);
-    await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
-    const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
-    const newData = await newResp.json();
-    const popData = await popResp.json();
-    if (burningseriesNewGrid) (newData.results ? renderBrowseCards(burningseriesNewGrid, newData.results) : (burningseriesNewGrid.innerHTML = errHtml));
-    if (burningseriesPopularGrid) (popData.results ? renderBrowseCards(burningseriesPopularGrid, popData.results) : (burningseriesPopularGrid.innerHTML = errHtml));
-  } catch (e) {
-    burningseriesLoadedAt = 0;
-    const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
-    if (burningseriesNewGrid) burningseriesNewGrid.innerHTML = errHtml;
-    if (burningseriesPopularGrid) burningseriesPopularGrid.innerHTML = errHtml;
-  }
-}
-
-let kinoxLoadedAt = 0;
-async function loadKinoxBrowse() {
-  if (kinoxLoadedAt && Date.now() - kinoxLoadedAt < 3600000) return;
-  kinoxLoadedAt = Date.now();
-  if (kinoxNewGrid) renderSkeletons(kinoxNewGrid);
-  if (kinoxPopularGrid) renderSkeletons(kinoxPopularGrid);
-  try {
-    const [newResp, popResp] = await Promise.all([
-      fetch("/api/kinox/new"),
-      fetch("/api/kinox/popular"),
-    ]);
-    await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
-    const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
-    const newData = await newResp.json();
-    const popData = await popResp.json();
-    if (kinoxNewGrid) (newData.results ? renderBrowseCards(kinoxNewGrid, newData.results) : (kinoxNewGrid.innerHTML = errHtml));
-    if (kinoxPopularGrid) (popData.results ? renderBrowseCards(kinoxPopularGrid, popData.results) : (kinoxPopularGrid.innerHTML = errHtml));
-  } catch (e) {
-    kinoxLoadedAt = 0;
-    const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
-    if (kinoxNewGrid) kinoxNewGrid.innerHTML = errHtml;
-    if (kinoxPopularGrid) kinoxPopularGrid.innerHTML = errHtml;
-  }
-}
-
-let cinebyLoadedAt = 0;
-async function loadCinebyBrowse() {
-  if (cinebyLoadedAt && Date.now() - cinebyLoadedAt < 3600000) return;
-  cinebyLoadedAt = Date.now();
-  if (cinebyNewMoviesGrid) renderSkeletons(cinebyNewMoviesGrid);
-  if (cinebyPopularMoviesGrid) renderSkeletons(cinebyPopularMoviesGrid);
-  if (cinebyTrendingSeriesGrid) renderSkeletons(cinebyTrendingSeriesGrid);
-  try {
-    const [nmResp, pmResp, tsResp] = await Promise.all([
-      fetch("/api/cineby/new-movies"),
-      fetch("/api/cineby/popular-movies"),
-      fetch("/api/cineby/trending-series"),
-    ]);
-    await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
-    const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
-    const nmData = await nmResp.json();
-    const pmData = await pmResp.json();
-    const tsData = await tsResp.json();
-    if (cinebyNewMoviesGrid) (nmData.results ? renderBrowseCards(cinebyNewMoviesGrid, nmData.results) : (cinebyNewMoviesGrid.innerHTML = errHtml));
-    if (cinebyPopularMoviesGrid) (pmData.results ? renderBrowseCards(cinebyPopularMoviesGrid, pmData.results) : (cinebyPopularMoviesGrid.innerHTML = errHtml));
-    if (cinebyTrendingSeriesGrid) (tsData.results ? renderBrowseCards(cinebyTrendingSeriesGrid, tsData.results) : (cinebyTrendingSeriesGrid.innerHTML = errHtml));
-  } catch (e) {
-    cinebyLoadedAt = 0;
-    const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
-    if (cinebyNewMoviesGrid) cinebyNewMoviesGrid.innerHTML = errHtml;
-    if (cinebyPopularMoviesGrid) cinebyPopularMoviesGrid.innerHTML = errHtml;
-    if (cinebyTrendingSeriesGrid) cinebyTrendingSeriesGrid.innerHTML = errHtml;
-  }
-}
-
-let mangafireLoadedAt = 0;
-async function loadMangaFireBrowse() {
-  if (mangafireLoadedAt && Date.now() - mangafireLoadedAt < 3600000) return;
-  mangafireLoadedAt = Date.now();
-  if (mangafireNewGrid) renderSkeletons(mangafireNewGrid);
-  if (mangafireTrendingGrid) renderSkeletons(mangafireTrendingGrid);
-  try {
-    const [newResp, trendResp] = await Promise.all([
-      fetch("/api/mangafire/new"),
-      fetch("/api/mangafire/trending"),
-    ]);
-    await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
-    const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
-    const newData = await newResp.json();
-    const trendData = await trendResp.json();
-    if (mangafireNewGrid) (newData.results ? renderBrowseCards(mangafireNewGrid, newData.results, { skipTmdb: true }) : (mangafireNewGrid.innerHTML = errHtml));
-    if (mangafireTrendingGrid) (trendData.results ? renderBrowseCards(mangafireTrendingGrid, trendData.results, { skipTmdb: true }) : (mangafireTrendingGrid.innerHTML = errHtml));
-  } catch (e) {
-    mangafireLoadedAt = 0;
-    const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
-    if (mangafireNewGrid) mangafireNewGrid.innerHTML = errHtml;
-    if (mangafireTrendingGrid) mangafireTrendingGrid.innerHTML = errHtml;
-  }
-}
-
 async function showBrowseSections() {
   browseDiv.style.display = "";
   let settings = {};
@@ -677,10 +563,6 @@ async function showBrowseSections() {
   if (enabled.filmpalast !== "0") loadFilmPalastBrowse();
   if (enabled.megakino !== "0") loadMegakinoBrowse();
   if (enabled.hanime === "1") loadHanimeBrowse();
-  if (enabled.burningseries !== "0") loadBurningSeriesBrowse();
-  if (enabled.kinox !== "0") loadKinoxBrowse();
-  if (enabled.cineby !== "0") loadCinebyBrowse();
-  if (enabled.mangafire === "1") loadMangaFireBrowse();
 
   applyUptimeStatus();
 }
@@ -748,7 +630,7 @@ function dismissUptimeBanner() {
 // hide disabled sources, based on the DB-backed source settings.
 function _applySourceLayout(sources) {
   if (!browseDiv) return;
-  const validProv = ["aniworld", "sto", "filmpalast", "megakino", "hanime", "burningseries", "kinox", "cineby", "mangafire"];
+  const validProv = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
   let order = String((sources && sources.order) || "")
     .split(",").map(p => p.trim().toLowerCase()).filter(p => validProv.indexOf(p) !== -1);
   validProv.forEach(p => { if (order.indexOf(p) === -1) order.push(p); });
@@ -993,17 +875,6 @@ function _applyTmdbToCard(card, d) {
     }
   }
 
-  // Update poster image if card has no image yet or image failed/hidden
-  if (d.poster_url || d.poster_path) {
-    const tmdbPoster = d.poster_url || (d.poster_path ? 'https://image.tmdb.org/t/p/w342' + d.poster_path : '');
-    const imgEl = card.querySelector('img');
-    if (imgEl && (!imgEl.getAttribute('src') || imgEl.getAttribute('src') === '' || imgEl.src.endsWith('url=') || imgEl.style.display === 'none')) {
-      imgEl.src = proxyImg(tmdbPoster);
-      imgEl.style.display = 'block';
-      card.classList.add('loaded');
-    }
-  }
-
   // Update genres if available
   if (d.genres && d.genres.length) {
     const genreEl = info.querySelector(".browse-genre");
@@ -1144,9 +1015,6 @@ function renderBrowseCards(grid, items, opts) {
     addDownloadedBadgeMulti(card, [item.series_title, item.title]);
     addSyncBadge(card, item.url);
     grid.appendChild(card);
-    if (!item.poster_url) {
-      loadPoster(item.url, card.querySelector("img"));
-    }
     // CineInfo (TMDB + Crunchyroll/Fernsehserien fallback pills) doesn't apply
     // here — hanime is adult content that isn't in TMDB's database, so this
     // would just be a wasted lookup (or, worse, a wrong match) on every card.
@@ -1325,19 +1193,14 @@ async function doSearch() {
     const _hide = _srcSettings.hide_disabled_in_search === "1";
     const _active = (prov) => !(_hide && _en[prov] === "0");
     const _hanActive = _en.hanime === "1";
-    const _mfActive = _en.mangafire === "1";
-    const [aniResults, stoResults, fpResults, mkResults, hanResults, bsResults, kxResults, cbResults, mfResults] = await Promise.all([
+    const [aniResults, stoResults, fpResults, mkResults, hanResults] = await Promise.all([
       _active("aniworld") ? searchSite("aniworld").catch(() => []) : Promise.resolve([]),
       _active("sto") ? searchSite("sto").catch(() => []) : Promise.resolve([]),
       _active("filmpalast") ? searchSite("filmpalast").catch(() => []) : Promise.resolve([]),
       _active("megakino") ? searchSite("megakino").catch(() => []) : Promise.resolve([]),
       _hanActive ? searchSite("hanime").catch(() => []) : Promise.resolve([]),
-      _active("burningseries") ? searchSite("burningseries").catch(() => []) : Promise.resolve([]),
-      _active("kinox") ? searchSite("kinox").catch(() => []) : Promise.resolve([]),
-      _active("cineby") ? searchSite("cineby").catch(() => []) : Promise.resolve([]),
-      _mfActive ? searchSite("mangafire").catch(() => []) : Promise.resolve([]),
     ]);
-    renderResultsBoth(aniResults, stoResults, fpResults, mkResults, _filterHanimeCensorship(hanResults), bsResults, kxResults, cbResults, mfResults);
+    renderResultsBoth(aniResults, stoResults, fpResults, mkResults, _filterHanimeCensorship(hanResults));
   } catch (e) {
     showToast(t("Suche fehlgeschlagen: ", "Search failed: " + e.message));
   } finally {
@@ -1366,16 +1229,12 @@ function renderResults(results) {
   });
 }
 
-function renderResultsBoth(aniResults, stoResults, fpResults, mkResults, hanResults, bsResults, kxResults, cbResults, mfResults) {
+function renderResultsBoth(aniResults, stoResults, fpResults, mkResults, hanResults) {
   fpResults = fpResults || [];
   mkResults = mkResults || [];
   hanResults = hanResults || [];
-  bsResults = bsResults || [];
-  kxResults = kxResults || [];
-  cbResults = cbResults || [];
-  mfResults = mfResults || [];
   resultsDiv.innerHTML = "";
-  if (!aniResults.length && !stoResults.length && !fpResults.length && !mkResults.length && !hanResults.length && !bsResults.length && !kxResults.length && !cbResults.length && !mfResults.length) {
+  if (!aniResults.length && !stoResults.length && !fpResults.length && !mkResults.length && !hanResults.length) {
     resultsDiv.innerHTML =
       '<div style="width:100%;text-align:center;color:#888;padding:40px">Keine Ergebnisse gefunden.</div>';
     return;
@@ -1387,10 +1246,6 @@ function renderResultsBoth(aniResults, stoResults, fpResults, mkResults, hanResu
     { key: "filmpalast", label: "FilmPalast", cls: "browse-provider-filmpalast", results: fpResults },
     { key: "megakino", label: "MegaKino", cls: "browse-provider-megakino", results: mkResults },
     { key: "hanime", label: "hanime 18+", cls: "browse-provider-hanime", results: hanResults },
-    { key: "burningseries", label: "BurningSeries", cls: "browse-provider-burningseries", results: bsResults },
-    { key: "kinox", label: "Kinox", cls: "browse-provider-kinox", results: kxResults },
-    { key: "cineby", label: "Cineby", cls: "browse-provider-cineby", results: cbResults },
-    { key: "mangafire", label: "MangaFire 18+", cls: "browse-provider-mangafire", results: mfResults },
   ];
   try {
     const _ord = String(((generalSettings || {}).sources || {}).order || "")
@@ -1472,7 +1327,6 @@ async function loadPoster(url, imgEl) {
     const resp = await fetch("/api/series?url=" + encodeURIComponent(url));
     const data = await resp.json();
     if (data.poster_url) {
-      imgEl.style.display = 'block';
       imgEl.src = proxyImg(data.poster_url);
       imgEl.onload = () => {
         const card = imgEl.closest('.browse-card, .card');
@@ -4554,10 +4408,6 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
       allPromises.push(searchSite("sto", kw));
       allPromises.push(searchSite("filmpalast", kw));
       allPromises.push(searchSite("megakino", kw));
-      allPromises.push(searchSite("burningseries", kw));
-      allPromises.push(searchSite("kinox", kw));
-      allPromises.push(searchSite("cineby", kw));
-      allPromises.push(searchSite("mangafire", kw));
     });
 
     const resultsArrays = await Promise.all(allPromises.map(p => p.catch(() => [])));
@@ -4630,18 +4480,12 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
       if (r.url.includes('s.to') || r.url.includes('serienstream.to')) provClass = 'prov-sto';
       if (r.url.includes('filmpalast.to')) provClass = 'prov-fp';
       if (r.url.includes('megakino')) provClass = 'prov-mk';
-      if (r.url.includes('bs.to') || r.url.includes('burningseries')) provClass = 'prov-bs';
-      if (r.url.includes('kinox')) provClass = 'prov-kx';
-      if (r.url.includes('cineby')) provClass = 'prov-cb';
-      if (r.url.includes('mangafire')) provClass = 'prov-mf';
-
-      const provLabel = provClass === 'prov-ani' ? 'AniWorld' : provClass === 'prov-sto' ? 'S.to' : provClass === 'prov-mk' ? 'MegaKino' : provClass === 'prov-bs' ? 'BurningSeries' : provClass === 'prov-kx' ? 'Kinox' : provClass === 'prov-cb' ? 'Cineby' : provClass === 'prov-mf' ? 'MangaFire' : 'FilmPalast';
 
       card.innerHTML = `
         <img src="" loading="lazy" alt="Cover" style="width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--bg-elevated);display:block" />
         <div class="browse-info">
           <div class="browse-title" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</div>
-          <div class="browse-provider ${provClass}">${provLabel}</div>
+          <div class="browse-provider ${provClass}">${provClass === 'prov-ani' ? 'AniWorld' : provClass === 'prov-sto' ? 'S.to' : provClass === 'prov-mk' ? 'MegaKino' : 'FilmPalast'}</div>
         </div>
       `;
 
@@ -4670,7 +4514,6 @@ async function advLoadPoster(url, imgEl) {
     const resp = await fetch("/api/series?url=" + encodeURIComponent(url));
     const data = await resp.json();
     if (data.poster_url) {
-      imgEl.style.display = 'block';
       imgEl.src = (typeof proxyImg === 'function' ? proxyImg(data.poster_url) : data.poster_url);
       imgEl.onload = () => {
         const card = imgEl.closest('.browse-card');
