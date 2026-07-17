@@ -4869,3 +4869,32 @@ msgstr "Überwache die Erreichbarkeit, Antwortzeiten und Quellenstatus von Seite
 msgid "External integration module"
 msgstr "Externes Integrationsmodul"
 
+
+# --- Menu rework (2026-07): new sidebar/menu strings ---
+msgid "Modules"
+msgstr "Module"
+
+msgid "Module"
+msgstr "Modul"
+
+msgid "Module Settings"
+msgstr "Moduleinstellungen"
+
+msgid "Toggle Submenu"
+msgstr "Untermenü umschalten"
+
+msgid "Settings contributed by installed modules"
+msgstr "Einstellungen, die von installierten Modulen bereitgestellt werden"
+
+msgid "No module has contributed settings yet. Enable a module in the Module Manager to see its settings here."
+msgstr "Bisher hat kein Modul Einstellungen bereitgestellt. Aktiviere ein Modul im Modulmanager, um dessen Einstellungen hier zu sehen."
+
+msgid "Open Module Manager"
+msgstr "Modulmanager öffnen"
+
+# --- Menu rework follow-up (Monitoring overview, mobile drawer) ---
+msgid "Menu"
+msgstr "Menü"
+
+msgid "Statistics, download history and uptime at a glance"
+msgstr "Statistiken, Download-Verlauf und Uptime auf einen Blick"

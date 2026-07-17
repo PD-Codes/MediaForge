@@ -1,3 +1,5 @@
+# Routing everything through a VPN? Use docker-compose.gluetun.yaml instead —
+# with network_mode: service:gluetun the port must move to the gluetun container.
 services:
   mediaforge:
     container_name: mediaforge

@@ -1,0 +1,12 @@
+{# Monitoring floating side menu — client-side tab switching (switchMonTab in
+   monitoring.html), same markup/behaviour as the Settings/Integrations menu.
+   Only used by monitoring.html; the panels live in the same page so there is
+   no reload. Uptime entry only when enabled. #}
+<div class="settings-tabs floating-side-menu" id="monitoringMenu">
+  <button class="settings-tab active" data-montab="overview" onclick="switchMonTab('overview')">{{ _('Overview') }}</button>
+  <button class="settings-tab" data-montab="stats" onclick="switchMonTab('stats')">{{ _('Statistics') }}</button>
+  <button class="settings-tab" data-montab="history" onclick="switchMonTab('history')">{{ _('Download History') }}</button>
+  {% if uptime_enabled %}
+  <button class="settings-tab" data-montab="uptime" onclick="switchMonTab('uptime')">UpTime</button>
+  {% endif %}
+</div>

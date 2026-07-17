@@ -1,0 +1,126 @@
+# =============================================================================
+# MediaForge attached to an existing Gluetun VPN container
+# =============================================================================
+# This is the default setup for users who ALREADY run Gluetun (in another stack
+# or standalone) and just want to route MediaForge through it. MediaForge joins
+# Gluetun's network namespace by container name ("network_mode: container:gluetun")
+# and inherits its kill switch: if the tunnel drops, MediaForge loses internet too.
+#
+# PREREQUISITE: a running container literally named "gluetun" (adjust the name
+# below if yours differs). On that EXISTING gluetun container you must:
+#   - publish MediaForge's port there:     ports: ["8080:8080"]
+#   - allow your LAN to reach it:          FIREWALL_OUTBOUND_SUBNETS: "192.168.1.0/24"
+# ...then recreate gluetun so both take effect.
+#
+# Why these two? They are the usual stumbling blocks:
+#   1. A container using "network_mode: container:..." may not declare its own
+#      "ports:" (Compose aborts with "conflicting options: port publishing and
+#      the container type network mode") — so the port lives on gluetun.
+#   2. Without your LAN subnet in FIREWALL_OUTBOUND_SUBNETS, Gluetun's firewall
+#      drops the reply packets and the WebUI stays unreachable even when running.
+#   3. "container:<name>" has NO depends_on ordering: if gluetun is recreated,
+#      restart MediaForge afterwards so it re-joins the new namespace.
+#
+# Want Compose to manage Gluetun AND MediaForge together in one file? See
+# OPTION B at the bottom (a self-contained stack with its own gluetun service).
+# =============================================================================
+
+services:
+  mediaforge:
+    container_name: mediaforge
+    image: ghcr.io/pd-codes/mediaforge:latest
+    # Join the EXISTING gluetun container's namespace by name. No "ports:" here —
+    # publish 8080 on the gluetun container instead (see header). Change "gluetun"
+    # to your container's actual name if it differs.
+    network_mode: "container:gluetun"
+    volumes:
+      # Persist downloads on the host so they survive container recreation.
+      - ./Downloads:/app/Downloads
+      # Persist application config and database across restarts.
+      - mediaforge-data:/home/mediaforge/.mediaforge
+      # Disk-backed scratch space for full episode downloads/transcodes
+      # (yt-dlp + ffmpeg intermediates) — too big for the /tmp tmpfs below.
+      - mediaforge-tmp:/tmp/mediaforge
+
+    # NOTE: Create ./Downloads before running: mkdir -p Downloads
+    # Docker creates missing bind-mount directories as root, causing permission errors.
+
+    # All settings are configurable via the WebUI (Settings page).
+    # Environment variables below are optional — useful for initial setup.
+    # environment:
+    #   MEDIAFORGE_WEB_ADMIN_USER: "admin"
+    #   MEDIAFORGE_WEB_ADMIN_PASS: "changeme"
+
+    # Security hardening
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      # Writable scratch space for Xvfb, Chromium/patchright temp files, sockets.
+      - /run:size=128m
+      # read_only:true would otherwise make /tmp read-only too. Only small stuff
+      # lands here — the big scratch dir is the mediaforge-tmp volume above.
+      - /tmp:size=256m
+
+    restart: unless-stopped
+
+volumes:
+  mediaforge-data:
+  mediaforge-tmp:
+
+# =============================================================================
+# OPTION B — self-contained stack (Gluetun + MediaForge in this one file)
+# =============================================================================
+# Use this INSTEAD of the service above if you do NOT already run Gluetun and
+# want Compose to manage both. Here MediaForge references the gluetun SERVICE in
+# the same file ("service:gluetun") and can wait for it via depends_on. The port
+# is published on the gluetun service, and FIREWALL_OUTBOUND_SUBNETS lets your LAN
+# reach the WebUI. Fill in the VPN_* / WIREGUARD_* values for your provider
+# (https://github.com/qdm12/gluetun-wiki).
+#
+# services:
+#   gluetun:
+#     image: qmcgaw/gluetun:latest
+#     container_name: gluetun
+#     cap_add:
+#       - NET_ADMIN
+#     devices:
+#       - /dev/net/tun:/dev/net/tun
+#     ports:
+#       - "8080:8080"                          # MediaForge WebUI — published HERE
+#     environment:
+#       VPN_SERVICE_PROVIDER: "custom"
+#       VPN_TYPE: "wireguard"
+#       WIREGUARD_PRIVATE_KEY: "<your-private-key>"
+#       WIREGUARD_ADDRESSES: "10.0.0.2/32"
+#       FIREWALL_OUTBOUND_SUBNETS: "192.168.1.0/24"   # your LAN subnet — REQUIRED
+#       TZ: "Europe/Berlin"
+#     restart: unless-stopped
+#
+#   mediaforge:
+#     container_name: mediaforge
+#     image: ghcr.io/pd-codes/mediaforge:latest
+#     network_mode: "service:gluetun"          # no "ports:" here!
+#     depends_on:
+#       gluetun:
+#         condition: service_healthy
+#     volumes:
+#       - ./Downloads:/app/Downloads
+#       - mediaforge-data:/home/mediaforge/.mediaforge
+#       - mediaforge-tmp:/tmp/mediaforge
+#     cap_drop:
+#       - ALL
+#     security_opt:
+#       - no-new-privileges:true
+#     read_only: true
+#     tmpfs:
+#       - /run:size=128m
+#       - /tmp:size=256m
+#     restart: unless-stopped
+#
+# volumes:
+#   mediaforge-data:
+#   mediaforge-tmp:
+# =============================================================================

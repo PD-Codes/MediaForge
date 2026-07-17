@@ -262,6 +262,18 @@ def register_stats_routes(app):
     """Register the Statistics page and its supporting API routes
     (general/queue/sync/media stats, ignore-list management) on the
     Flask app."""
+    @app.route("/monitoring")
+    def monitoring_page():
+        """Render the Monitoring overview. GET /monitoring.
+
+        Menu rework: Monitoring is the Management-category landing that bundles
+        Statistics, Download History and Uptime -- built like the Settings /
+        Integrations pages (an overview grid of cards plus the shared in-page
+        floating side menu). The three sub-pages keep their own routes (they
+        each load their own JS/data); this overview links to them.
+        """
+        return render_template("monitoring.html")
+
     @app.route("/stats")
     def stats_page():
         """Render the Statistics page. GET /stats."""

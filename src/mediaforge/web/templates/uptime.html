@@ -5,43 +5,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="uptime-page">
-  <div class="page-header uptime-header">
-    <div>
-      <h1 class="page-title">UpTime</h1>
-      <p class="page-subtitle">{{ _('Live monitoring of your source sites — reachability and real-site verification') }}</p>
-    </div>
-    <div class="uptime-header-actions">
-      <span class="uptime-updated" id="uptimeUpdated"></span>
-      <button class="uptime-btn" id="uptimeCheckNow" onclick="uptimeCheckNow()">{{ _('Check now') }}</button>
-    </div>
-  </div>
-
-  <div class="uptime-legend">
-    <span><i class="lg-up"></i>{{ _('Online') }}</span>
-    <span><i class="lg-degraded"></i>{{ _('Degraded') }}</span>
-    <span><i class="lg-down"></i>{{ _('Offline') }}</span>
-  </div>
-
-  <div class="uptime-rangebar">
-    <span class="uptime-range-label">{{ _('Range') }}:</span>
-    <div class="uptime-range-presets" id="uptimeRangePresets"></div>
-    <button type="button" class="uptime-range-btn uptime-range-custom-toggle" id="uptimeCustomToggle" onclick="uptimeToggleCustom()">{{ _('Custom') }}</button>
-    <div class="uptime-range-custom" id="uptimeCustomRange" hidden>
-      <label>{{ _('From') }} <input type="datetime-local" id="uptimeCustomFrom"></label>
-      <label>{{ _('To') }} <input type="datetime-local" id="uptimeCustomTo"></label>
-      <button type="button" class="uptime-range-apply" onclick="uptimeApplyCustom()">{{ _('Apply') }}</button>
-      <span class="uptime-range-err" id="uptimeCustomErr"></span>
-    </div>
-  </div>
-
-  <div class="uptime-summary" id="uptimeSummary"></div>
-
-  <div class="uptime-grid" id="uptimeGrid">
-    <div class="uptime-empty" id="uptimeLoading">{{ _('Loading…') }}</div>
-  </div>
-</div>
-
+{% include "_uptime_body.html" %}
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='uptime.js') }}"></script>

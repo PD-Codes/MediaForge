@@ -85,6 +85,8 @@ docker run -it --rm -p 8080:8080 \
 
 Mount your `Downloads` folder for the files and the `mediaforge-data` volume for config/database. For **Docker Compose**, **reverse proxy (nginx)**, **LAN access** and **env-based admin setup**, see the **[Docker](https://github.com/PD-Codes/MediaForge/wiki/Docker)** wiki page.
 
+Running behind a VPN? A ready-to-use **Gluetun** setup is in [`docker-compose.gluetun.yaml`](docker-compose.gluetun.yaml) — see the [Docker wiki](https://github.com/PD-Codes/MediaForge/wiki/Docker#routing-through-a-vpn-gluetun) for the details.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Compatibility

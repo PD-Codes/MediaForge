@@ -130,7 +130,7 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 14px 12px 4px;
+  padding: 2PX §PX "PX";
   user-select: none;
   cursor: pointer;
   pointer-events: auto !important;
@@ -146,8 +146,8 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
 
 .sidebar-category::after {
   content: '';
-  width: 10px;
-  height: 10px;
+  width: 15px;
+  height: 15px;
   display: inline-block;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2355556a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-size: contain;
@@ -176,7 +176,7 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0px;
   padding-bottom: 6px;
   padding-right: 5px;
 }
@@ -191,10 +191,10 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 5px 12px;
+  padding: 12px 0px 12px 10px;
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
   transition: background var(--transition), color var(--transition), transform var(--transition);
   position: relative;
@@ -273,7 +273,7 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
 
 .sidebar-toggle-chevron:hover {
   opacity: 1;
-  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  
 }
 
 .sidebar-toggle-chevron.collapsed {
@@ -887,6 +887,7 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   html.sidebar-mini .sidebar-sub { display: none !important; }
   html.sidebar-mini .sidebar-sub.flyout-open {
     display: flex !important;
+    opacity: 1;
     position: fixed;
     left: 64px;
     top: 0;
@@ -986,3 +987,217 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
 .sidebar-nav::-webkit-scrollbar-thumb {
   background: var(--bg-hover);
 }
+
+/* ============================================================
+   Menu rework (2026-07) — sidebar group buttons + in-page
+   floating side menu (Settings / Integrations / Monitoring).
+   ============================================================ */
+
+/* Container-only sidebar rows (Queues) and the per-category "Modules" groups
+   are <button>s styled like a .sidebar-link; reset native button chrome. */
+.sidebar-group-btn {
+  background: none;
+  border: none;
+  /* font-family only -- NOT the `font` shorthand, which would reset font-size
+     back to the inherited (larger) value and make these rows taller than the
+     other .sidebar-links. */
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Queue entries render as sub-links (buttons) inside the Queues sub-menu.
+   Same font-size note as above: keep .sidebar-sub-link's own font-size. */
+.sidebar-sub-link.sidebar-queue-btn {
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Sub-menu entries that carry an icon (Queues, per-category Modules, Home's
+   Advanced Search/Favorites, Module Settings). Give them the same left icon
+   slot as a top-level .sidebar-link and drop the little bullet dot so Queues
+   and Modules render identically. */
+/* Same font-size as top-level .sidebar-links so the whole menu is uniform. */
+.sidebar-sub-link { width: 100%; box-sizing: border-box; font-size: 0.8rem; }
+.sidebar-sub-link.has-icon {
+  padding-left: 12px;
+  gap: 10px;
+}
+.sidebar-sub-link.has-icon::before { display: none; }
+.sidebar-sub-link svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  stroke: currentColor;
+}
+.sidebar-sub-link .sidebar-module-pill { margin-left: auto; }
+.sidebar-sub-link .queue-badge { margin-left: auto; }
+
+/* ---- In-page floating side menu ---- */
+/* The host container (Settings / Integrations settings-container, or the
+   Monitoring shell) becomes a two-column flex: menu + content. Inactive
+   .settings-tab-panels are display:none and drop out of the flow. */
+.has-floating-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: 32px;
+}
+/* Give the two-column layout more room so the content panel doesn't look
+   cramped next to the menu (default .settings-container is 1060px). */
+.settings-container.has-floating-menu {
+  max-width: 1340px;
+}
+.has-floating-menu > .page-header,
+.has-floating-menu > #envFileBanner {
+  flex: 1 1 100%;
+}
+.has-floating-menu > .floating-side-menu {
+  flex: 0 0 208px;
+  /* Pinned near the top and sticky, so it stays put and visible while the page
+     scrolls — consistent across all pages, and never floats detached over the
+     content (the viewport-centered variant did on tall pages). */
+  align-self: flex-start;
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+.has-floating-menu > .settings-tab-panel,
+.has-floating-menu > .monitoring-body {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* Turn the (previously horizontal) tab bar into a vertical menu card. */
+.floating-side-menu {
+  flex-direction: column !important;
+  gap: 2px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-card);
+  padding: 8px !important;
+  margin-bottom: 0 !important;
+  overflow: visible !important;
+  cursor: default !important;
+}
+.floating-side-menu .settings-tab {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: none !important;
+  border-radius: var(--radius-md, 8px);
+  margin-bottom: 0 !important;
+  padding: 8px 12px;
+}
+.floating-side-menu .settings-tab:hover {
+  transform: none;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+}
+.floating-side-menu .settings-tab::before { display: none !important; }
+.floating-side-menu .settings-tab.active {
+  background: var(--accent-soft, rgba(124, 58, 237, 0.15));
+  color: var(--accent, #6366f1);
+  border-bottom: none !important;
+  box-shadow: inset 3px 0 0 var(--accent, #6366f1);
+}
+.floating-side-menu .settings-tab .sidebar-module-pill { margin-left: auto; }
+
+/* "Modules" sub-heading inside the Integrations floating menu. */
+.settings-tab-group-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 10px 12px 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* Monitoring shell (Statistics / Download History / Uptime share the look). */
+.monitoring-shell { padding: 32px; max-width: 1340px; margin: 0 auto; }
+.monitoring-body { display: block; }
+
+/* ---- Mobile: the floating menu becomes an off-canvas drawer opened by a
+   fixed side button (injected in base.html when a floating menu exists). ---- */
+.floating-menu-fab {
+  display: none;
+  position: fixed;
+  right: 14px;
+  /* Top-right, just below the mobile top bar. */
+  top: calc(var(--topbar-height, 56px) + 12px);
+  z-index: 1160;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--accent, #6366f1);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.floating-menu-fab svg { width: 22px; height: 22px; }
+.floating-menu-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1155;
+}
+.floating-menu-backdrop.show { display: block; }
+
+@media (max-width: 860px) {
+  /* Content spans full width; the menu slides in from the right on demand. */
+  .has-floating-menu > .settings-tab-panel,
+  .has-floating-menu > .monitoring-body {
+    flex: 1 1 100%;
+  }
+  .has-floating-menu > .floating-side-menu {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100dvh;
+    max-height: none;
+    width: 264px;
+    max-width: 82vw;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    z-index: 1200;
+    overflow-y: auto;
+    align-self: stretch;
+  }
+  .has-floating-menu > .floating-side-menu.mobile-open { transform: translateX(0); }
+  .floating-menu-fab { display: flex; }
+}
+
+/* ---- Animated open/close of the left sidebar sub-menus (Home, Queues, the
+   per-category Modules groups, Module Manager). Replaces the instant
+   display:none/flex toggle with a height + fade transition. Mini-rail flyouts
+   are shown via JS (fixed, inline max-height) and handled separately below. ---- */
+.sidebar-sub {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  transition: max-height 0.28s ease, opacity 0.2s ease, margin 0.2s ease;
+}
+.sidebar-sub.open {
+  max-height: 700px;
+  opacity: 1;
+  margin-top: 3px;
+  margin-bottom: 3px;
+}
+/* Keep the mini-rail hover flyout fully visible despite the animation base. */
+.sidebar-sub.flyout-open { opacity: 1; }

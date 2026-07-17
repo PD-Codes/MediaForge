@@ -502,6 +502,7 @@ body.click-effect .browse-card:active {
    2. BASE SETUP FOR ALL ICONS
 =================================== */
 body.icon-move .sidebar-link svg,
+body.icon-move .sidebar-sub-link svg,
 body.icon-move .sidebar-queue-btn svg {
   transition: transform 0.3s ease, fill 0.3s ease, filter 0.3s ease;
   transform-origin: center;
@@ -517,15 +518,16 @@ body.icon-move .sidebar-queue-btn svg {
    3. DISCOVER (HOVER EFFECTS)
    Matches the "Discover" sidebar category (see base.html)
 =================================== */
-body.icon-move .sidebar-link[data-page="index"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="index"]:hover svg {
   animation: house-pulse 1.5s ease-in-out infinite;
 }
 
-body.icon-move .sidebar-link[data-page="favourites"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="favourites"]:hover svg,
+body.icon-move .sidebar-sub-link[data-page="favourites"]:hover svg {
   animation: star-pulse 1.2s ease-in-out infinite;
 }
 
-body.icon-move .sidebar-link[data-page="library"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="library"]:hover svg {
   animation: folder-pulse 1.5s ease-in-out infinite;
 }
 
@@ -555,16 +557,17 @@ body.icon-move .sidebar-queue-btn:hover .moving-arrow {
 
 
 /* Advanced Search */
-body.icon-move .sidebar-link[data-page="advanced_search"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="advanced_search"]:hover svg,
+body.icon-move .sidebar-sub-link[data-page="advanced_search"]:hover svg {
   animation: float-adv-search 1.5s ease-in-out infinite;
 }
 
 /* Calendar */
-body.icon-move .sidebar-link[data-page="calendar"] svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="calendar"] svg {
   transform-origin: top center; 
 }
 
-body.icon-move .sidebar-link[data-page="calendar"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="calendar"]:hover svg {
   animation: calendar-wiggle 0.6s ease-in-out infinite;
 }
 
@@ -572,18 +575,26 @@ body.icon-move .sidebar-link[data-page="calendar"]:hover svg {
    4. MANAGEMENT (HOVER EFFECTS)
    Matches the "Management" sidebar category (see base.html)
 =================================== */
-body.icon-move .sidebar-link[data-page="autosync"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="autosync"]:hover svg {
   animation: spin-infinite 1.5s linear infinite;
 }
 
-body.icon-move .sidebar-link[data-page="stats"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="stats"]:hover svg {
   transform-origin: bottom;
   /* Important: must grow upward from the bottom edge, not from the center */
   animation: stats-pulse 1.5s ease-in-out infinite;
 }
 
+/* Monitoring bundles Statistics/History/Uptime under one sidebar link. Its
+   icon is the heartbeat pulse line (same as UpTime), so reuse the trace
+   animation. The path carries pathLength="100" in base.html for clean dashes. */
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="monitoring"]:hover svg path {
+  stroke-dasharray: 22 78;
+  animation: uptime-pulse-trace 1.1s linear infinite;
+}
 
-body.icon-move .sidebar-link[data-page="history"]:hover svg path {
+
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="history"]:hover svg path {
   transform-origin: 12px 12px;
   animation: spin-history 1.5s linear infinite;
 }
@@ -593,66 +604,66 @@ body.icon-move .sidebar-link[data-page="history"]:hover svg path {
    monitor. Needs pathLength="100" on the SVG path (see base.html) so the
    dash math is a clean 0–100 scale regardless of the path's real, irregular
    geometry. */
-body.icon-move .sidebar-link[data-page="uptime"]:hover svg path {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="uptime"]:hover svg path {
   stroke-dasharray: 22 78;
   animation: uptime-pulse-trace 1.1s linear infinite;
 }
 
-body.icon-move .sidebar-link[data-page="syncplay"] svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="syncplay"] svg {
   overflow: hidden;
 }
 
-body.icon-move .sidebar-link[data-page="syncplay"] svg path {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="syncplay"] svg path {
   transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
-body.icon-move .sidebar-link[data-page="syncplay"]:hover svg path:nth-child(1),
-body.icon-move .sidebar-link[data-page="syncplay"]:hover svg path:nth-child(2) {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="syncplay"]:hover svg path:nth-child(1),
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="syncplay"]:hover svg path:nth-child(2) {
   animation: syncplay-top-arrow 1.2s ease-in-out infinite;
 }
 
-body.icon-move .sidebar-link[data-page="syncplay"]:hover svg path:nth-child(3),
-body.icon-move .sidebar-link[data-page="syncplay"]:hover svg path:nth-child(4) {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="syncplay"]:hover svg path:nth-child(3),
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="syncplay"]:hover svg path:nth-child(4) {
   animation: syncplay-bottom-arrow 1.2s ease-in-out infinite;
 }
 
 /* ==================================
    5. SYSTEM (HOVER EFFECTS)
 =================================== */
-body.icon-move .sidebar-link[data-page="notifications"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="notifications"]:hover svg {
   transform-origin: top center;
   /* Important: swings from the top hanger point, not the center */
   animation: bell-ring 0.6s ease-in-out infinite;
 }
 
 /* Integrations icon: rotate in place only */
-body.icon-move .sidebar-link[data-page="integrations"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="integrations"]:hover svg {
   animation: small-forward-backward-samePosition 1s ease-in-out infinite;
 }
 
-body.icon-move .sidebar-link[data-page="seerr"]:hover svg,
-body.icon-move .sidebar-link[data-page="encoding"]:hover svg,
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="seerr"]:hover svg,
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="encoding"]:hover svg,
 body.icon-move #sidebarEncodingBtn:hover svg {
   animation: screen-breathe 2s ease-in-out infinite;
 }
 
-body.icon-move .sidebar-link[data-page="settings"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="settings"]:hover svg {
   animation: spin-infinite 3s linear infinite;
 }
 
 /* Third-party integrations animations */
-body.icon-move .sidebar-link[data-page="anime_seasons"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="anime_seasons"]:hover svg {
   animation: grid-pulse 1.5s ease-in-out infinite;
 }
 
-body.icon-move .sidebar-link[data-page="mediacalendar"] svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="mediacalendar"] svg {
   transform-origin: top center;
 }
-body.icon-move .sidebar-link[data-page="mediacalendar"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="mediacalendar"]:hover svg {
   animation: calendar-wiggle 0.6s ease-in-out infinite;
 }
 
-body.icon-move .sidebar-link[data-page="extensions"]:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hover svg {
   animation: chip-breathe 1.5s ease-in-out infinite;
 }
 
@@ -826,3 +837,44 @@ body.icon-move .sidebar-link[data-page="extensions"]:hover svg {
 
 /* Empty rule with no matching element in templates/JS — appears to be leftover, kept as-is */
 .appearance-popup-wrap {}
+
+/* ==================================
+   6. MENU REWORK — group buttons, module sub-links, Module Settings
+   Baseline: any nav icon grows slightly on hover so modules (their own icons)
+   and the new "Modules"/"Queues" group buttons animate too. Bespoke keyframes
+   above (per data-page) still win via higher specificity / the animation
+   property. Queue sub-items keep their own moving-line/arrow effect, so they
+   are excluded from the plain scale.
+=================================== */
+body.icon-move .sidebar-link:hover svg,
+body.icon-move .sidebar-sub-link:not(.sidebar-queue-btn):hover svg {
+  transform: scale(1.12);
+}
+
+/* "Modules" group buttons (Discover / Management / System). */
+body.icon-move #discoverModulesToggle:hover svg,
+body.icon-move #managementModulesToggle:hover svg,
+body.icon-move #systemModulesToggle:hover svg {
+  animation: mf-modules-pop 0.9s ease-in-out infinite;
+}
+/* "Queues" group button — icon drifts like a moving queue. */
+body.icon-move #queuesToggle:hover svg {
+  animation: mf-queue-drift 1s ease-in-out infinite;
+}
+/* Module Settings sliders. */
+body.icon-move .sidebar-sub-link[data-page="module_settings"]:hover svg {
+  animation: mf-nudge 0.8s ease-in-out infinite;
+}
+
+@keyframes mf-modules-pop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); filter: drop-shadow(0 0 2px var(--accent-glow, rgba(124,58,237,0.5))); }
+}
+@keyframes mf-queue-drift {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(2.5px); }
+}
+@keyframes mf-nudge {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}

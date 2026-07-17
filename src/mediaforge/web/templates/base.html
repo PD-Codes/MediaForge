@@ -140,25 +140,37 @@
     <nav class="sidebar-nav">
       {# App navigation is hidden for SyncPlay guests (auth on, not logged in) — they only watch. #}
       {% if not auth_enabled or current_user %}
+      <!-- ===== Discover ===== -->
       <span class="sidebar-category">{{ _('Discover') }}</span>
       <div class="sidebar-category-group">
         <div class="sidebar-category-inner">
-          <a href="{{ url_for('index') }}" class="sidebar-link" data-page="index">
+
+          {# Home + its collapsible sub-menu (Advanced Search, Favorites). The
+             chevron toggles the sub; the label still navigates to the start page. #}
+          <a href="{{ url_for('index') }}" class="sidebar-link" data-page="index" id="homeSidebarLink">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
             <span>{{ _('Home') }}</span>
+            <span class="sidebar-toggle-chevron collapsed" id="homeSidebarToggle" title="{{ _('Toggle Submenu') }}"
+              onclick="return toggleSidebarSub(event, 'homeSidebarSub', this);">▾</span>
           </a>
-          <a href="{{ url_for('favourites_page') }}" class="sidebar-link" data-page="favourites">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <polygon
-                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
-            <span>{{ _('Favorites') }}</span>
-          </a>
+          <div class="sidebar-sub" id="homeSidebarSub">
+            <a href="{{ url_for('advanced_search_page') }}" class="sidebar-sub-link has-icon" data-page="advanced_search" id="sidebarAdvancedSearch" style="display: {% if cineinfo_advanced_search %}flex{% else %}none{% endif %};">
+              <svg viewBox="0 0 24 24" fill="none" class="advancedSearchIcon" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                <line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line>
+              </svg>
+              <span>{{ _('Advanced Search') }}</span></a>
+            <a href="{{ url_for('favourites_page') }}" class="sidebar-sub-link has-icon" data-page="favourites">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <span>{{ _('Favorites') }}</span></a>
+          </div>
+
           <a href="{{ url_for('library_page') }}" class="sidebar-link" data-page="library">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round">
@@ -166,15 +178,6 @@
             </svg>
             <span>{{ _('Library') }}</span>
             <span class="queue-badge" id="streamBadge" style="display:none">0</span>
-          </a>
-          <a href="{{ url_for('advanced_search_page') }}" class="sidebar-link" data-page="advanced_search" id="sidebarAdvancedSearch" style="display: {% if cineinfo_advanced_search %}flex{% else %}none{% endif %};">
-            <svg viewBox="0 0 24 24" fill="none" class="advancedSearchIcon" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              <line x1="11" y1="8" x2="11" y2="14"></line>
-              <line x1="8" y1="11" x2="14" y2="11"></line>
-            </svg>
-            <span>{{ _('Advanced Search') }}</span>
           </a>
 
           <a href="{{ url_for('calendar_page') }}" class="sidebar-link" data-page="calendar" id="sidebarCalendar" style="display: {% if cineinfo_calendar %}flex{% else %}none{% endif %};">
@@ -187,58 +190,74 @@
             <span>{{ _('Calendar') }}</span>
           </a>
 
-          {# Third-party Discover entries (e.g. Anime Seasons) register themselves
-             via register_thirdparty(section="discover", ...) in
-             web/thirdparties/registry.py instead of adding another hardcoded
-             block here — see the Management/System loops further down for the
-             same mechanism with a different section=. #}
-          {% for item in discover_menu_items %}
-          <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
-            {{ item.icon|safe }}
-            <span>{{ item.label }}</span>
-            <span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span>
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-      <span class="sidebar-category">{{ _('Queues') }}</span>
-      <div class="sidebar-category-group">
-        <div class="sidebar-category-inner">
-          <button class="sidebar-link sidebar-queue-btn" id="sidebarQueueBtn" onclick="openQueueModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <line class="moving-line line-1" x1="8" y1="6" x2="21" y2="6"></line>
-              <line class="moving-line line-2" x1="8" y1="12" x2="21" y2="12"></line>
-              <line class="moving-line line-3" x1="8" y1="18" x2="21" y2="18"></line>
-
-              <line class="moving-line line-1" x1="3" y1="6" x2="3.01" y2="6"></line>
-              <line class="moving-line line-2" x1="3" y1="12" x2="3.01" y2="12"></line>
-              <line class="moving-line line-3" x1="3" y1="18" x2="3.01" y2="18"></line>
-            </svg>
-            <span>{{ _('Downloads') }}</span>
-            <span class="queue-badge" id="queueBadge" style="display:none">0</span>
-          </button>
-          <button class="sidebar-link sidebar-queue-btn" id="sidebarEncodingBtn" onclick="openEncodingQueueModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            <span>{{ _('Encoding') }}</span>
-            <span class="queue-badge" id="encodingBadge" style="display:none">0</span>
-          </button>
-          <button class="sidebar-link sidebar-queue-btn" id="sidebarUpscaleBtn" onclick="openUpscaleModal()">
+          {# Discover modules — register_thirdparty(section="discover"/"syncplay").
+             No longer top-level: grouped into a collapsible "Modules" sub-menu,
+             shown only when at least one such module is enabled. #}
+          {% if discover_module_items %}
+          <button type="button" class="sidebar-link sidebar-group-btn" id="discoverModulesToggle"
+            onclick="return toggleSidebarSub(event, 'discoverModulesSub', this.querySelector('.sidebar-toggle-chevron'));">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8" class="moving-arrow arrow-head"/>
-              <line x1="12" y1="3" x2="12" y2="15" class="moving-arrow arrow-shift"/>
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
             </svg>
-            <span>{{ _('Upscaling') }}</span>
-            <span class="queue-badge" id="upscaleBadge" style="display:none">0</span>
+            <span>{{ _('Modules') }}</span>
+            <span class="sidebar-toggle-chevron collapsed" title="{{ _('Toggle Submenu') }}">▾</span>
           </button>
+          <div class="sidebar-sub" id="discoverModulesSub">
+            {% for item in discover_module_items %}
+            <a href="{{ item.url }}" class="sidebar-sub-link has-icon" data-page="{{ item.page }}">{{ item.icon|safe }}<span>{{ item.label }}</span><span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span></a>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          {# Queues — a container only (no page of its own); each entry opens its
+             modal exactly like before. #}
+          <button type="button" class="sidebar-link sidebar-group-btn" id="queuesToggle"
+            onclick="return toggleSidebarSub(event, 'queuesSidebarSub', this.querySelector('.sidebar-toggle-chevron'));">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+            <span>{{ _('Queues') }}</span>
+            <span class="sidebar-toggle-chevron collapsed" title="{{ _('Toggle Submenu') }}">▾</span>
+          </button>
+          <div class="sidebar-sub" id="queuesSidebarSub">
+            <button class="sidebar-sub-link has-icon sidebar-queue-btn" id="sidebarQueueBtn" onclick="openQueueModal()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line class="moving-line line-1" x1="8" y1="6" x2="21" y2="6"></line>
+                <line class="moving-line line-2" x1="8" y1="12" x2="21" y2="12"></line>
+                <line class="moving-line line-3" x1="8" y1="18" x2="21" y2="18"></line>
+                <line class="moving-line line-1" x1="3" y1="6" x2="3.01" y2="6"></line>
+                <line class="moving-line line-2" x1="3" y1="12" x2="3.01" y2="12"></line>
+                <line class="moving-line line-3" x1="3" y1="18" x2="3.01" y2="18"></line>
+              </svg><span>{{ _('Downloads') }}</span><span class="queue-badge" id="queueBadge" style="display:none">0</span></button>
+            <button class="sidebar-sub-link has-icon sidebar-queue-btn" id="sidebarEncodingBtn" onclick="openEncodingQueueModal()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+              </svg><span>{{ _('Encoding') }}</span><span class="queue-badge" id="encodingBadge" style="display:none">0</span></button>
+            <button class="sidebar-sub-link has-icon sidebar-queue-btn" id="sidebarUpscaleBtn" onclick="openUpscaleModal()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8" class="moving-arrow arrow-head"/><line x1="12" y1="3" x2="12" y2="15" class="moving-arrow arrow-shift"/>
+              </svg><span>{{ _('Upscaling') }}</span><span class="queue-badge" id="upscaleBadge" style="display:none">0</span></button>
+          </div>
+
+          {# SyncPlay — no longer its own category; a single entry here, gated by
+             syncplay_enabled just like before. #}
+          {% if syncplay_enabled %}
+          <a href="{{ url_for('syncplay_page') }}" class="sidebar-link" data-page="syncplay">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 2.1l4 4-4 4"/><path d="M3 12.95v-1a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.05v1a4 4 0 0 1-4 4H3"/>
+            </svg>
+            <span>SyncPlay</span>
+            {# Active-rooms badge — count of open SyncPlay rooms, polled from
+               /api/syncplay/rooms (see the poller in the script below). #}
+            <span class="seerr-badge" id="syncplayBadge" style="display:none">0</span>
+          </a>
+          {% endif %}
         </div>
       </div>
+
+      <!-- ===== Management ===== -->
       <span class="sidebar-category">{{ _('Management') }}</span>
       <div class="sidebar-category-group">
         <div class="sidebar-category-inner">
@@ -261,82 +280,41 @@
             </svg>
             <span>Auto-Sync</span>
           </a>
-          <a href="{{ url_for('stats_page') }}" class="sidebar-link" data-page="stats">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <line x1="18" y1="20" x2="18" y2="10" />
-              <line x1="12" y1="20" x2="12" y2="4" />
-              <line x1="6" y1="20" x2="6" y2="14" />
-            </svg>
-            <span>{{ _('Statistics') }}</span>
-          </a>
-          <a href="{{ url_for('history_page') }}" class="sidebar-link" data-page="history">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <path d="M3 3v5h5" />
-              <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-              <polyline points="12 7 12 12 15 15" />
-            </svg>
-            <span>{{ _('Download History') }}</span>
-          </a>
 
-          {# Third-party Management entries — same registration mechanism as the
-             Discover entries above, just with section="management" passed to
-             register_thirdparty(). See web/thirdparties/registry.py. #}
-          {% for item in management_menu_items %}
-          <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
-            {{ item.icon|safe }}
-            <span>{{ item.label }}</span>
-            <span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span>
-          </a>
-          {% endfor %}
-
-          {% if uptime_enabled %}
-          <a href="{{ url_for('uptime_page') }}" class="sidebar-link" data-page="uptime">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <!-- pathLength="100" normalizes stroke-dash units to a 0–100 scale so the
-                   hover "pulse monitor" animation (see shell.css) doesn't depend on this
-                   path's actual (irregular) geometry. -->
+          {# Monitoring — single sidebar link (opens Statistics); the in-page
+             floating menu switches between Statistics / Download History /
+             Uptime. Highlighted as active on any of those three routes. #}
+          <a href="{{ url_for('monitoring_page') }}" class="sidebar-link" data-page="monitoring" id="monitoringSidebarLink">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2" pathLength="100" />
             </svg>
-            <span>UpTime</span>
+            <span>{{ _('Monitoring') }}</span>
           </a>
+
+          {# Management modules — register_thirdparty(section="management"). #}
+          {% if management_module_items %}
+          <button type="button" class="sidebar-link sidebar-group-btn" id="managementModulesToggle"
+            onclick="return toggleSidebarSub(event, 'managementModulesSub', this.querySelector('.sidebar-toggle-chevron'));">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            <span>{{ _('Modules') }}</span>
+            <span class="sidebar-toggle-chevron collapsed" title="{{ _('Toggle Submenu') }}">▾</span>
+          </button>
+          <div class="sidebar-sub" id="managementModulesSub">
+            {% for item in management_module_items %}
+            <a href="{{ item.url }}" class="sidebar-sub-link has-icon" data-page="{{ item.page }}">{{ item.icon|safe }}<span>{{ item.label }}</span><span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span></a>
+            {% endfor %}
+          </div>
           {% endif %}
         </div>
       </div>
 
       {% endif %}{# /guest-hidden app navigation #}
 
-      {% if syncplay_enabled and (not auth_enabled or current_user) %}
-      <span class="sidebar-category">SyncPlay</span>
-      <div class="sidebar-category-group">
-        <div class="sidebar-category-inner">
-          <a href="{{ url_for('syncplay_page') }}" class="sidebar-link" data-page="syncplay">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17 2.1l4 4-4 4"/><path d="M3 12.95v-1a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.05v1a4 4 0 0 1-4 4H3"/>
-            </svg>
-            <span>SyncPlay</span>
-          </a>
-
-          {# Third-party SyncPlay entries — section="syncplay" passed to
-             register_thirdparty(). Same registration mechanism as the Discover/
-             Management/System loops elsewhere in this file — see
-             web/thirdparties/registry.py. Gated by the same syncplay_enabled
-             check as the built-in link above (each entry is additionally only
-             returned by resolve_menu_items while its own enabled_setting_key
-             is on). #}
-          {% for item in syncplay_menu_items %}
-          <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
-            {{ item.icon|safe }}
-            <span>{{ item.label }}</span>
-            <span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span>
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
       {% if not auth_enabled or current_user %}
+      <!-- ===== System ===== -->
       <span class="sidebar-category">{{ _('System') }}</span>
       <div class="sidebar-category-group">
         <div class="sidebar-category-inner">
@@ -348,60 +326,44 @@
             </svg>
             <span>{{ _('Notifications') }}</span>
           </a>
+
           {% if not auth_enabled or (current_user and current_user.role == 'admin') %}
-          <a href="{{ url_for('extensions_page') }}" class="sidebar-link" data-page="extensions">
+          {# Module Manager + its collapsible sub (Module Settings). The chevron
+             toggles the sub; the label still navigates to the manager page. #}
+          <a href="{{ url_for('extensions_page') }}" class="sidebar-link" data-page="extensions" id="modmgrSidebarLink">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round">
               <rect x="7" y="7" width="10" height="10" rx="2"></rect>
               <path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"></path>
             </svg>
             <span>{{ _('Module Manager') }}</span>
+            <span class="sidebar-toggle-chevron collapsed" id="modmgrSidebarToggle" title="{{ _('Toggle Submenu') }}"
+              onclick="return toggleSidebarSub(event, 'modmgrSidebarSub', this);">▾</span>
           </a>
+          <div class="sidebar-sub" id="modmgrSidebarSub">
+            <a href="{{ url_for('module_settings_page') }}" class="sidebar-sub-link has-icon" data-page="module_settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+              </svg><span>{{ _('Module Settings') }}</span></a>
+          </div>
           {% endif %}
 
-          {# Third-party System entries — section="system" passed to
-             register_thirdparty(). See web/thirdparties/registry.py. #}
-          {% for item in system_menu_items %}
-          <a href="{{ item.url }}" class="sidebar-link" data-page="{{ item.page }}">
-            {{ item.icon|safe }}
-            <span>{{ item.label }}</span>
-            <span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span>
-          </a>
-          {% endfor %}
-
-          <a href="{{ url_for('encoding_page') }}" class="sidebar-link" data-page="encoding">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <polygon points="23 7 16 12 23 17 23 7"></polygon>
-              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-            </svg>
-            <span>{{ _('Encoding') }}</span>
-          </a>
-
           {% if not auth_enabled or (current_user and current_user.role == 'admin') %}
-          <a href="{{ url_for('integrations_page') }}" class="sidebar-link" data-page="integrations" onclick="if(typeof switchIntegTab==='function'&&(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/')){switchIntegTab('overview');return false;}">
+          {# Integrations — single link; sub-navigation now lives in the page as
+             a floating side menu (see integrations.html). #}
+          <a href="{{ url_for('integrations_page') }}" class="sidebar-link" data-page="integrations">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
             </svg>
             <span>{{ _('Integrations') }}</span>
-            <span class="sidebar-toggle-chevron{% if not (request.path == url_for('integrations_page') or request.path == '/integrations' or request.path == '/integrations/') %} collapsed{% endif %}" id="integrationsSidebarToggle" title="{{ _('Toggle Submenu') }}" onclick="event.preventDefault(); event.stopPropagation(); var s=document.getElementById('integrationsSidebarSub'); if(s){var open=s.classList.toggle('open'); this.classList.toggle('collapsed', !open);} return false;">▾</span>
           </a>
-          <div class="sidebar-sub{% if request.path == url_for('integrations_page') or request.path == '/integrations' or request.path == '/integrations/' %} open{% endif %}" id="integrationsSidebarSub">
-            <a href="{{ url_for('integrations_page') }}#seerr" class="sidebar-sub-link" data-integ-tab="seerr" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('seerr');return false;}">Seerr</a>
-            <a href="{{ url_for('integrations_page') }}#mediaplayer" class="sidebar-sub-link" data-integ-tab="mediaplayer" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('mediaplayer');return false;}">{{ _('Mediaplayer') }}</a>
-            <a href="{{ url_for('integrations_page') }}#cineinfo" class="sidebar-sub-link" data-integ-tab="cineinfo" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('cineinfo');return false;}">CineInfo</a>
-            <a href="{{ url_for('integrations_page') }}#thirdparty" class="sidebar-sub-link" data-integ-tab="thirdparty" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('thirdparty');return false;}">{{ _('Third Party') }}</a>
-            <a href="{{ url_for('integrations_page') }}#syncplay" class="sidebar-sub-link" data-integ-tab="syncplay" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('syncplay');return false;}">SyncPlay</a>
-            <a href="{{ url_for('integrations_page') }}#uptime" class="sidebar-sub-link" data-integ-tab="uptime" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('uptime');return false;}">UpTime</a>
-            {% for t in get_dynamic_tabs('integrations') %}
-            <a href="{{ url_for('integrations_page') }}#{{ t.id }}" class="sidebar-sub-link" data-integ-tab="{{ t.id }}" onclick="if(window.location.pathname==='{{ url_for('integrations_page') }}'||window.location.pathname==='/integrations'||window.location.pathname==='/integrations/'){switchIntegTab('{{ t.id }}');return false;}">{{ t.label }}{% if t.is_module %}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span>{% endif %}</a>
-            {% endfor %}
-          </div>
           {% endif %}
 
-          <a href="{{ url_for('settings_page') }}" class="sidebar-link" data-page="settings" onclick="if(typeof switchTab==='function'&&(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/')){switchTab('overview');return false;}">
+          {# Settings — single link; sub-navigation now lives in the page as a
+             floating side menu (see settings.html). #}
+          <a href="{{ url_for('settings_page') }}" class="sidebar-link" data-page="settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round">
               <circle cx="12" cy="12" r="3" />
@@ -410,29 +372,25 @@
             </svg>
             <span>{{ _('Settings') }}</span>
             {% if update_available %}<span class="update-badge" id="updateBadge">&#8593;</span>{% endif %}
-            <span class="sidebar-toggle-chevron{% if not (request.path == url_for('settings_page') or request.path == '/settings' or request.path == '/settings/') %} collapsed{% endif %}" id="settingsSidebarToggle" title="{{ _('Toggle Submenu') }}" onclick="event.preventDefault(); event.stopPropagation(); var s=document.getElementById('settingsSidebarSub'); if(s){var open=s.classList.toggle('open'); this.classList.toggle('collapsed', !open);} return false;">▾</span>
           </a>
-          {% set is_admin = not auth_enabled or (current_user and current_user.role == 'admin') %}
-          <div class="sidebar-sub{% if request.path == url_for('settings_page') or request.path == '/settings' or request.path == '/settings/' %} open{% endif %}" id="settingsSidebarSub">
-            <a href="{{ url_for('settings_page') }}#general" class="sidebar-sub-link" data-settings-tab="general" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('general');return false;}">{{ _('General') }}</a>
-            <a href="{{ url_for('settings_page') }}#design" class="sidebar-sub-link" data-settings-tab="design" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('design');return false;}">{{ _('Design') }}</a>
-            {% if is_admin %}
-            <a href="{{ url_for('settings_page') }}#sources" class="sidebar-sub-link" data-settings-tab="sources" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('sources');return false;}">{{ _('Sources') }}</a>
-            {% endif %}
-            <a href="{{ url_for('settings_page') }}#downloads" class="sidebar-sub-link" data-settings-tab="downloads" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('downloads');return false;}">{{ _('Downloads') }}</a>
-            <a href="{{ url_for('settings_page') }}#autosync" class="sidebar-sub-link" data-settings-tab="autosync" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('autosync');return false;}">Auto-Sync</a>
-            <a href="{{ url_for('settings_page') }}#network" class="sidebar-sub-link" data-settings-tab="network" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('network');return false;}">{{ _('Network') }}</a>
-            {% if is_admin %}
-            <a href="{{ url_for('settings_page') }}#auth" class="sidebar-sub-link" data-settings-tab="auth" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('auth');return false;}">{{ _('Authentication') }}</a>
-            <a href="{{ url_for('settings_page') }}#api" class="sidebar-sub-link" data-settings-tab="api" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('api');return false;}">API</a>
-            <a href="{{ url_for('settings_page') }}#privacy" class="sidebar-sub-link" data-settings-tab="privacy" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('privacy');return false;}">{{ _('Privacy & Telemetry') }}</a>
-            <a href="{{ url_for('settings_page') }}#backup" class="sidebar-sub-link" data-settings-tab="backup" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('backup');return false;}">{{ _('Backup') }}</a>
-            {% endif %}
-            <a href="{{ url_for('settings_page') }}#updates" class="sidebar-sub-link" data-settings-tab="updates" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('updates');return false;}">{{ _('Updates') }}</a>
-            {% for t in get_dynamic_tabs('settings') %}
-            <a href="{{ url_for('settings_page') }}#{{ t.id }}" class="sidebar-sub-link" data-settings-tab="{{ t.id }}" onclick="if(window.location.pathname==='{{ url_for('settings_page') }}'||window.location.pathname==='/settings'||window.location.pathname==='/settings/'){switchTab('{{ t.id }}');return false;}">{{ t.label }}{% if t.is_module %}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span>{% endif %}</a>
+
+          {# System modules — register_thirdparty(section="system"). #}
+          {% if system_module_items %}
+          <button type="button" class="sidebar-link sidebar-group-btn" id="systemModulesToggle"
+            onclick="return toggleSidebarSub(event, 'systemModulesSub', this.querySelector('.sidebar-toggle-chevron'));">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            <span>{{ _('Modules') }}</span>
+            <span class="sidebar-toggle-chevron collapsed" title="{{ _('Toggle Submenu') }}">▾</span>
+          </button>
+          <div class="sidebar-sub" id="systemModulesSub">
+            {% for item in system_module_items %}
+            <a href="{{ item.url }}" class="sidebar-sub-link has-icon" data-page="{{ item.page }}">{{ item.icon|safe }}<span>{{ item.label }}</span><span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span></a>
             {% endfor %}
           </div>
+          {% endif %}
         </div>
       </div>
       {% endif %}
@@ -888,6 +846,18 @@
       });
     }
 
+    // Toggle a collapsible sidebar sub-menu (Home, Queues, per-category
+    // "Modules" groups, Module Manager). Used by the parent row's chevron or,
+    // for container-only rows (Queues / Modules), the whole button.
+    function toggleSidebarSub(ev, subId, chevron) {
+      if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+      var s = document.getElementById(subId);
+      if (!s) return false;
+      var open = s.classList.toggle('open');
+      if (chevron) chevron.classList.toggle('collapsed', !open);
+      return false;
+    }
+
     // ===== Appearance (theme + accent colour) =====
     var _ACCENT_PRESETS = [
       { color: '#7c3aed', name: '{{ _("Purple") }}' },
@@ -1080,10 +1050,12 @@
 
     // ===== Active nav link =====
     (function () {
-      var path = window.location.pathname;
-      document.querySelectorAll('.sidebar-link[data-page]').forEach(function (el) {
+      var path = window.location.pathname.replace(/\/$/, '') || '/';
+      document.querySelectorAll('.sidebar-link[data-page], .sidebar-sub-link[data-page]').forEach(function (el) {
         el.classList.remove('active');
       });
+      // Monitoring bundles three routes under one sidebar link; map them all
+      // to that link's data-page ("monitoring").
       var map = {
         '/': 'index',
         '/library': 'library',
@@ -1091,21 +1063,50 @@
         '/advanced-search': 'advanced_search',
         '/calendar': 'calendar',
         '/autosync': 'autosync',
-        '/stats': 'stats',
-        '/history': 'history',
+        '/monitoring': 'monitoring',
+        '/stats': 'monitoring',
+        '/history': 'monitoring',
+        '/uptime': 'monitoring',
         '/settings': 'settings',
+        '/encoding': 'settings',
         '/integrations': 'integrations',
         '/syncplay': 'syncplay',
         '/notifications': 'notifications',
-        '/encoding': 'encoding',
         '/seerr': 'seerr',
-        '/extensions': 'extensions'
+        '/extensions': 'extensions',
+        '/module-settings': 'module_settings'
       };
-      var page = map[path] || map[path.replace(/\/$/, '')];
-      if (page) {
-        var el = document.querySelector('.sidebar-link[data-page="' + page + '"]');
+      var page = map[path];
+      var el = page
+        ? document.querySelector('.sidebar-link[data-page="' + page + '"], .sidebar-sub-link[data-page="' + page + '"]')
+        : null;
+      // Fallback for any page not in the map (module pages, etc.): match a nav
+      // link whose own href points at the current path. Covers module entries
+      // in the "Modules" sub-menus, which have no fixed data-page mapping.
+      if (!el) {
+        var _links = document.querySelectorAll('.sidebar-nav a.sidebar-link[href], .sidebar-nav a.sidebar-sub-link[href]');
+        for (var _i = 0; _i < _links.length; _i++) {
+          var _lp;
+          try { _lp = new URL(_links[_i].href, window.location.origin).pathname.replace(/\/$/, '') || '/'; }
+          catch (e) { continue; }
+          if (_lp === path) { el = _links[_i]; break; }
+        }
+      }
+      {
         if (el) {
           el.classList.add('active');
+          // If the active item sits inside a collapsible sub-menu, open that
+          // sub-menu and mark its parent row active too.
+          var sub = el.closest('.sidebar-sub');
+          if (sub) {
+            sub.classList.add('open');
+            var parent = sub.previousElementSibling;
+            if (parent) {
+              var chev = parent.querySelector('.sidebar-toggle-chevron');
+              if (chev) chev.classList.remove('collapsed');
+              if (parent.classList && parent.classList.contains('sidebar-link')) parent.classList.add('active');
+            }
+          }
           // Scroll the (scrollable) nav so the active item is visible — only the
           // nav moves, never the page.
           try {
@@ -1119,27 +1120,54 @@
           } catch (e) {}
         }
       }
-      // Highlight active settings sub-link from hash & open submenu if on /settings
-      if (path === '/settings' || path === '/settings/') {
-        var subContainer = document.getElementById('settingsSidebarSub');
-        if (subContainer) subContainer.classList.add('open');
-        var toggleBtn = document.getElementById('settingsSidebarToggle');
-        if (toggleBtn) toggleBtn.classList.remove('collapsed');
-        var hash = (window.location.hash || '').replace('#', '') || 'overview';
-        var subEl = document.querySelector('.sidebar-sub-link[data-settings-tab="' + hash + '"]');
-        if (subEl) subEl.classList.add('active');
-      }
-      // Highlight active integrations sub-link from hash & open submenu if on /integrations
-      if (path === '/integrations' || path === '/integrations/') {
-        var subContainerInteg = document.getElementById('integrationsSidebarSub');
-        if (subContainerInteg) subContainerInteg.classList.add('open');
-        var toggleBtnInteg = document.getElementById('integrationsSidebarToggle');
-        if (toggleBtnInteg) toggleBtnInteg.classList.remove('collapsed');
-        var hashInteg = (window.location.hash || '').replace('#', '') || 'overview';
-        var subElInteg = document.querySelector('.sidebar-sub-link[data-integ-tab="' + hashInteg + '"]');
-        if (subElInteg) subElInteg.classList.add('active');
-      }
     })();
+
+    // ===== Mobile drawer for in-page floating side menus =====
+    // On small screens the in-page floating menu (Settings / Integrations /
+    // Monitoring) is off-canvas; a fixed side button slides it in. Injected
+    // only when such a menu exists on the page.
+    (function () {
+      var menu = document.querySelector('.has-floating-menu > .floating-side-menu');
+      if (!menu) return;
+      var fab = document.createElement('button');
+      fab.type = 'button';
+      fab.className = 'floating-menu-fab';
+      fab.setAttribute('aria-label', '{{ _("Menu") }}');
+      fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
+      var backdrop = document.createElement('div');
+      backdrop.className = 'floating-menu-backdrop';
+      document.body.appendChild(backdrop);
+      document.body.appendChild(fab);
+      function close() { menu.classList.remove('mobile-open'); backdrop.classList.remove('show'); }
+      function open() { menu.classList.add('mobile-open'); backdrop.classList.add('show'); }
+      fab.addEventListener('click', function () { menu.classList.contains('mobile-open') ? close() : open(); });
+      backdrop.addEventListener('click', close);
+      // Close after picking an entry (links navigate; switchTab buttons stay).
+      menu.addEventListener('click', function (e) { if (e.target.closest('a, button')) close(); });
+    })();
+
+    {% if syncplay_enabled %}
+    // ===== SyncPlay active-rooms badge =====
+    // Show the number of open SyncPlay rooms on the sidebar link, polled from
+    // /api/syncplay/rooms (the same endpoint the lobby uses).
+    (function () {
+      var badge = document.getElementById('syncplayBadge');
+      if (!badge) return;
+      function poll() {
+        fetch('{{ url_for("api_syncplay_rooms") }}', { headers: { 'Accept': 'application/json' } })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            if (!d) return;
+            var n = (d.rooms || []).length;
+            if (n > 0) { badge.textContent = n; badge.style.display = ''; }
+            else { badge.style.display = 'none'; }
+          })
+          .catch(function () { });
+      }
+      poll();
+      setInterval(poll, 60000);
+    })();
+    {% endif %}
 
     // ===== Sync mobile queue badge =====
     var _origSetQueueBadge = window.setQueueBadge;
