@@ -733,6 +733,12 @@ def fetch_burningseries_new_series():
         results = []
         seen = set()
         for slug, title_raw in matches:
+            # Reduce a deep episode path (serie/<slug>/<season>/<ep>/<lang>)
+            # to the series slug so browse cards link to a resolvable
+            # /serie/<slug> URL instead of tripping "Unsupported URL".
+            slug = slug.split("/", 1)[0]
+            if not slug:
+                continue
             url = f"{bs_current_base()}/serie/{slug}"
             if url in seen:
                 continue
@@ -753,6 +759,12 @@ def fetch_burningseries_popular_series():
         results = []
         seen = set()
         for slug, title_raw in matches:
+            # Reduce a deep episode path (serie/<slug>/<season>/<ep>/<lang>)
+            # to the series slug so browse cards link to a resolvable
+            # /serie/<slug> URL instead of tripping "Unsupported URL".
+            slug = slug.split("/", 1)[0]
+            if not slug:
+                continue
             url = f"{bs_current_base()}/serie/{slug}"
             if url in seen:
                 continue

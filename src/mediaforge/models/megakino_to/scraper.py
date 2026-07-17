@@ -272,7 +272,14 @@ def fetch_watch(url_or_id):
 
 def parse_meta(data):
     """Shared metadata from a /data/watch payload (movie or season)."""
-    genres = [g.strip() for g in re.split(r"[/,]", data.get("genres") or "") if g.strip()]
+    # The /data/watch payload returns "genres" either as a delimited string
+    # ("Action, Drama") or already as a JSON list; handle both so parse_meta
+    # doesn't crash with "expected string or bytes-like object, got 'list'".
+    raw_genres = data.get("genres") or ""
+    if isinstance(raw_genres, (list, tuple)):
+        genres = [str(g).strip() for g in raw_genres if str(g).strip()]
+    else:
+        genres = [g.strip() for g in re.split(r"[/,]", str(raw_genres)) if g.strip()]
     year = ""
     ym = re.search(r"\b(19|20)\d{2}\b", str(data.get("year") or ""))
     if ym:
