@@ -1036,6 +1036,26 @@
           </div>
         </div>
 
+        <div class="settings-row">
+          <div class="settings-row-left">
+            <div class="settings-row-label">{{ _('Failure threshold') }}</div>
+            <div class="settings-row-desc">{{ _('Consecutive failed checks before a site is reported offline. Higher values ignore brief hiccups.') }}</div>
+          </div>
+          <div class="settings-row-right">
+            <div class="uptime-num-field">
+              <input type="number" id="uptimeFailureThreshold" class="integ-num" min="1" max="10" step="1" onchange="saveUptimeSettings()" />
+              <span class="uptime-num-unit">{{ _('checks') }}</span>
+            </div>
+          </div>
+        </div>
+
+        <label class="settings-checkbox-row" for="uptimeUseGet">
+          <input type="checkbox" class="chb-main" id="uptimeUseGet" onchange="saveUptimeSettings()" />
+          <span>{{ _('Verify with full GET request') }}
+            <small style="opacity:.6; display:block;">{{ _('More reliable for Cloudflare/DDoS-Guard sites than a HEAD request, at the cost of more bandwidth.') }}</small>
+          </span>
+        </label>
+
         <div class="settings-subhead" style="padding-left:18px;">{{ _('Tracked sources') }}</div>
         <div class="settings-row-desc" style="padding:0 0 8px 18px;">{{ _('Choose which of your source sites should be monitored.') }}</div>
 

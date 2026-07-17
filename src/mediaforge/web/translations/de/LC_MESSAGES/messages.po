@@ -4228,6 +4228,21 @@ msgstr "Anfrage-Timeout pro Prüfung (5–120 s)."
 msgid "sec"
 msgstr "Sek"
 
+msgid "Failure threshold"
+msgstr "Fehler-Schwelle"
+
+msgid "Consecutive failed checks before a site is reported offline. Higher values ignore brief hiccups."
+msgstr "Aufeinanderfolgende fehlgeschlagene Prüfungen, bevor eine Seite als offline gemeldet wird. Höhere Werte ignorieren kurze Aussetzer."
+
+msgid "checks"
+msgstr "Prüfungen"
+
+msgid "Verify with full GET request"
+msgstr "Mit vollständigem GET-Request prüfen"
+
+msgid "More reliable for Cloudflare/DDoS-Guard sites than a HEAD request, at the cost of more bandwidth."
+msgstr "Zuverlässiger bei Cloudflare-/DDoS-Guard-Seiten als ein HEAD-Request, benötigt aber mehr Bandbreite."
+
 msgid "Tracked sources"
 msgstr "Überwachte Quellen"
 

@@ -585,6 +585,10 @@ async function loadUptimeSettings() {
     if (rt) rt.value = data.retention_days || 7;
     const to = document.getElementById("uptimeTimeout");
     if (to) to.value = data.timeout || 15;
+    const ft = document.getElementById("uptimeFailureThreshold");
+    if (ft) ft.value = data.failure_threshold || 2;
+    const ug = document.getElementById("uptimeUseGet");
+    if (ug) ug.checked = !!data.use_get;
     const trackedMap = {};
     (data.sources || []).forEach(function (s) { trackedMap[s.id] = !!s.tracked; });
     _UPTIME_SOURCES.forEach(function (sid) {
@@ -606,6 +610,8 @@ async function saveUptimeSettings(reload) {
   const intervalMin = Math.max(1, parseInt(document.getElementById("uptimeInterval")?.value || "5", 10) || 5);
   const retention = Math.min(7, Math.max(1, parseInt(document.getElementById("uptimeRetention")?.value || "7", 10) || 7));
   const timeout = Math.min(120, Math.max(5, parseInt(document.getElementById("uptimeTimeout")?.value || "15", 10) || 15));
+  const failureThreshold = Math.min(10, Math.max(1, parseInt(document.getElementById("uptimeFailureThreshold")?.value || "2", 10) || 2));
+  const useGet = !!document.getElementById("uptimeUseGet")?.checked;
   const tracked = {};
   _UPTIME_SOURCES.forEach(function (sid) {
     const cb = document.getElementById("uptimeTrack_" + sid);
@@ -621,6 +627,8 @@ async function saveUptimeSettings(reload) {
         interval: intervalMin * 60,
         retention_days: retention,
         timeout: timeout,
+        failure_threshold: failureThreshold,
+        use_get: useGet,
         tracked: tracked,
       }),
     });

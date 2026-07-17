@@ -71,6 +71,16 @@ SITE_LABELS = {
 # retried again (seconds).
 _PRIMARY_RETRY_AFTER = 600
 
+# Lower bound for a single mirror attempt when a total probe budget is split
+# across the mirror list (see request_with_failover(budget=...)). Ensures every
+# mirror still gets a usable timeout even when a small budget is shared by many
+# mirrors, instead of shrinking to a fraction of a second.
+_MIN_ATTEMPT_TIMEOUT = 3.0
+
+# Cap for the connect phase of a budget-split attempt; the (usually slower)
+# read phase may use the full per-attempt slice.
+_CONNECT_TIMEOUT_CAP = 8.0
+
 # HTTP statuses that mean "this host is not serving the site right now" and
 # are therefore worth retrying on the next mirror rather than handing back
 # to the caller.
@@ -252,10 +262,15 @@ def map_url(url, host):
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
-def iter_candidates(url):
+def iter_candidates(url, from_primary=False):
     """Yield ``(candidate_url, extra_headers, verify, site, index)`` for *url*,
     starting at the site's currently active mirror and walking the rest of the
     list.
+
+    When *from_primary* is True the walk always starts at the canonical host
+    (index 0) instead of the sticky active mirror -- used by the UpTime monitor
+    so a check measures the real primary host and never stays pinned to a
+    fallback that a transient failure selected earlier.
 
     For a URL that doesn't belong to any known site, yields exactly one
     candidate: the URL unchanged, with site=None.
@@ -270,7 +285,7 @@ def iter_candidates(url):
         yield url, {}, None, None, 0
         return
 
-    start = _active_index(site, len(hosts))
+    start = 0 if from_primary else _active_index(site, len(hosts))
     order = list(range(start, len(hosts))) + list(range(0, start))
     canonical = canonical_host(site)
 
@@ -286,13 +301,28 @@ def iter_candidates(url):
         yield map_url(url, host), headers, verify, site, idx
 
 
-def request_with_failover(session, method, url, **kwargs):
+def request_with_failover(session, method, url, budget=None, probe=False, **kwargs):
     """Perform ``session.request(method, url)`` against the site's mirrors,
     moving on to the next host whenever one is unreachable or answers with a
     "site is not here" status (see ``_FAILOVER_STATUSES``).
 
     Non-site URLs (TMDB, hosters, DoH endpoints, ...) are passed straight
     through, untouched — this is a no-op for them.
+
+    ``budget`` (seconds, optional): a total wall-clock budget for the *whole*
+    failover walk. When set, the budget is divided across the candidate mirrors
+    so each still gets a usable per-attempt ``(connect, read)`` timeout (floored
+    at ``_MIN_ATTEMPT_TIMEOUT``) while the total time stays bounded. This keeps
+    the failover walk fully intact but stops N mirrors from multiplying one
+    timeout into N×timeout — a single hung host can no longer stall the caller
+    for the full timeout per mirror. A hard deadline ends the walk once the
+    budget is spent.
+
+    ``probe`` (optional): when True, always start at the canonical host and do
+    NOT mutate the shared active-mirror state (``mark_ok`` / ``mark_failed``).
+    Used by the UpTime monitor so its checks measure the real primary host,
+    never get pinned to a fallback, and never flip the mirror that real user
+    traffic is using.
     """
     site = site_for_url(url)
     if not site:
@@ -302,9 +332,21 @@ def request_with_failover(session, method, url, **kwargs):
     last_exc = None
     last_resp = None
 
-    candidates = list(iter_candidates(url))
+    candidates = list(iter_candidates(url, from_primary=probe))
+
+    # Split a total budget into a bounded per-mirror timeout instead of giving
+    # every mirror the full timeout. deadline is the hard stop for the walk.
+    per_attempt = None
+    deadline = None
+    if budget:
+        per_attempt = max(_MIN_ATTEMPT_TIMEOUT, float(budget) / max(1, len(candidates)))
+        deadline = time.monotonic() + float(budget)
+
     for pos, (cand_url, extra_headers, verify, cand_site, idx) in enumerate(candidates):
         is_last = pos == len(candidates) - 1
+        # Budget spent — don't start another attempt (the first one always runs).
+        if deadline is not None and pos > 0 and time.monotonic() >= deadline:
+            break
         call_kwargs = dict(kwargs)
         if extra_headers:
             call_kwargs["headers"] = {**base_headers, **extra_headers}
@@ -312,6 +354,8 @@ def request_with_failover(session, method, url, **kwargs):
             call_kwargs["headers"] = dict(base_headers)
         if verify is not None and "verify" not in call_kwargs:
             call_kwargs["verify"] = verify
+        if per_attempt is not None:
+            call_kwargs["timeout"] = (min(_CONNECT_TIMEOUT_CAP, per_attempt), per_attempt)
 
         try:
             resp = session.request(method, cand_url, **call_kwargs)
@@ -323,7 +367,8 @@ def request_with_failover(session, method, url, **kwargs):
                 "[Mirrors] %s: host %s unreachable (%s) — trying next mirror",
                 cand_site, urlsplit(cand_url).hostname, exc,
             )
-            mark_failed(cand_site, idx)
+            if not probe:
+                mark_failed(cand_site, idx)
             continue
 
         if resp.status_code in _FAILOVER_STATUSES and not is_last:
@@ -332,10 +377,12 @@ def request_with_failover(session, method, url, **kwargs):
                 cand_site, urlsplit(cand_url).hostname, resp.status_code,
             )
             last_resp = resp
-            mark_failed(cand_site, idx)
+            if not probe:
+                mark_failed(cand_site, idx)
             continue
 
-        mark_ok(cand_site, idx)
+        if not probe:
+            mark_ok(cand_site, idx)
         return resp
 
     if last_resp is not None:

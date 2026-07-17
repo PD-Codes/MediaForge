@@ -103,11 +103,13 @@ def register_uptime_routes(app):
                 "buckets":          rr["buckets"],
             })
         return jsonify({
-            "enabled":        cfg["enabled"],
-            "interval":       cfg["interval"],
-            "retention_days": cfg["retention_days"],
-            "timeout":        cfg["timeout"],
-            "now":            now,
+            "enabled":           cfg["enabled"],
+            "interval":          cfg["interval"],
+            "retention_days":    cfg["retention_days"],
+            "timeout":           cfg["timeout"],
+            "failure_threshold": cfg["failure_threshold"],
+            "use_get":           cfg["use_get"],
+            "now":               now,
             "range_start":    start,
             "range_end":      end,
             "range_seconds":  end - start,
@@ -159,13 +161,18 @@ def register_uptime_routes(app):
             return None
 
         for _k, _dbk, _lo, _hi in (
-            ("interval",       "uptime_interval",        60, 86400),
-            ("retention_days", "uptime_retention_days",   1,     7),
-            ("timeout",        "uptime_timeout",          5,   120),
+            ("interval",          "uptime_interval",           60, 86400),
+            ("retention_days",    "uptime_retention_days",      1,     7),
+            ("timeout",           "uptime_timeout",             5,   120),
+            ("failure_threshold", "uptime_failure_threshold",   1,    10),
         ):
             err = _save_int(_k, _dbk, _lo, _hi)
             if err:
                 return jsonify({"error": err}), 400
+
+        if "use_get" in data:
+            on = str(data["use_get"]).lower() in ("1", "true", "on", "yes")
+            set_setting("uptime_use_get", "1" if on else "0")
 
         tracked = data.get("tracked")
         if isinstance(tracked, dict):

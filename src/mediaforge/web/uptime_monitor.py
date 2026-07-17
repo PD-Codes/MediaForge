@@ -59,7 +59,43 @@ _BLOCK_MARKERS = [
 ]
 
 
-def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10):
+def _resolve_ip(hostname, timeout):
+    """Resolve *hostname* to an edge IP for display only, bounded by *timeout*.
+
+    ``socket.getaddrinfo`` takes no timeout argument and can block on the OS
+    resolver far longer than the probe's own budget — and this lookup is purely
+    informational (the resolved edge IP shown in the DNS diagnostics UI), it
+    plays no part in reachability verification. Running it in a short-lived
+    daemon thread and giving up after *timeout* seconds means a slow or
+    unresponsive system resolver can never stall a probe (which previously
+    surfaced as the monitor "hanging" and then wrongly reporting a site down).
+
+    Returns ``(ip, provider, error)`` — ip/provider are None on timeout/failure.
+    """
+    import socket as _sock
+
+    result = {}
+
+    def _worker():
+        try:
+            infos = _sock.getaddrinfo(hostname, 443, proto=_sock.IPPROTO_TCP)
+            result["ip"] = infos[0][4][0] if infos else None
+        except Exception as e:  # DNS failure -> reported as socket_error
+            result["err"] = str(e)
+
+    t = threading.Thread(target=_worker, daemon=True, name="uptime-dns")
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        return None, None, "dns_timeout"
+    ip = result.get("ip")
+    if ip:
+        return ip, _ip_provider(ip), None
+    return None, None, result.get("err")
+
+
+def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10,
+                use_get=False, probe=True):
     """Fetch a site and verify we reached the real thing via response headers.
 
     Verification is header-based, not IP-based. Cloudflare and DDoS-Guard (the
@@ -86,7 +122,6 @@ def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10
     Used by: web/routes/settings.py (DNS diagnostics test) and
     _uptime_run_round() below.
     """
-    import socket as _sock
     import time as _time
     from ..config import GLOBAL_SESSION as _GS
 
@@ -97,14 +132,16 @@ def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10
              "blocked": False, "response_ms": None}
 
     # DNS resolve — informational only (shown as the resolved edge IP in the
-    # DNS diagnostics UI). NOT used to decide reachability/verification.
-    try:
-        infos = _sock.getaddrinfo(hostname, 443, proto=_sock.IPPROTO_TCP)
-        entry["ip"] = infos[0][4][0] if infos else None
+    # DNS diagnostics UI). NOT used to decide reachability/verification, and
+    # bounded by a short timeout so a stalled system resolver can never hang the
+    # probe (see _resolve_ip).
+    ip, provider, dns_err = _resolve_ip(hostname, timeout=min(5, timeout))
+    if ip:
+        entry["ip"] = ip
         entry["socket_ok"] = True
-        entry["ip_provider"] = _ip_provider(entry["ip"])
-    except Exception as e:
-        entry["socket_error"] = str(e)
+        entry["ip_provider"] = provider
+    elif dns_err:
+        entry["socket_error"] = dns_err
 
     def _headers_match(headers):
         if not expected_headers:
@@ -115,10 +152,32 @@ def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10
                 return False
         return True
 
-    # Primary check: HEAD request, verified via response headers only.
+    def _check_body(text):
+        # Distinguish a genuine (if differently configured) server from a known
+        # ISP/CUII block interstitial. Sets blocked / site_verified on *entry*.
+        body_lower = (text or "").lower()
+        if any(b in body_lower for b in _BLOCK_MARKERS):
+            entry["blocked"] = True
+            return
+        has_marker = any(m.lower() in body_lower for m in markers)
+        url_on_domain = expected_domain in entry.get("final_url", "")
+        entry["site_verified"] = bool(has_marker or url_on_domain)
+
+    # Primary check, verified via response headers. HEAD is the cheap default;
+    # ``use_get`` switches to a full GET, which is more reliable against the
+    # Cloudflare / DDoS-Guard front ends (they often answer HEAD with a
+    # challenge or hold the connection) at the cost of downloading the body.
+    # ``budget=timeout`` bounds the whole mirror-failover walk to *timeout*
+    # instead of timeout-per-mirror; ``probe=True`` keeps the monitor off the
+    # shared active-mirror state (see mirrors.request_with_failover).
     try:
         _t0 = _time.monotonic()
-        resp = _GS.head(url, allow_redirects=True, timeout=timeout)
+        if use_get:
+            resp = _GS.get(url, allow_redirects=True, timeout=timeout,
+                           budget=timeout, probe=probe)
+        else:
+            resp = _GS.head(url, allow_redirects=True, timeout=timeout,
+                            budget=timeout, probe=probe)
         entry["response_ms"] = int((_time.monotonic() - _t0) * 1000)
         entry["http_status"] = resp.status_code
         entry["http_ok"] = resp.status_code < 500
@@ -127,21 +186,20 @@ def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10
         entry["headers_matched"] = _headers_match(resp.headers)
         entry["site_verified"] = bool(entry["http_ok"] and entry["headers_matched"])
 
-        # Fallback: header signature didn't match — do a full GET so we can
-        # still distinguish a genuine (if differently configured) server from
-        # a known ISP/CUII block interstitial, for diagnostic purposes.
+        # Header signature didn't match — fall back to the body markers.
         if entry["http_ok"] and not entry["headers_matched"]:
-            _t1 = _time.monotonic()
-            full = _GS.get(url, allow_redirects=True, timeout=timeout)
-            entry["response_ms"] += int((_time.monotonic() - _t1) * 1000)
-            entry["final_url"] = str(getattr(full, "url", url) or url)
-            body_lower = (full.text or "").lower()
-            is_block = any(b in body_lower for b in _BLOCK_MARKERS)
-            entry["blocked"] = bool(is_block)
-            if not is_block:
-                has_marker = any(m.lower() in body_lower for m in markers)
-                url_on_domain = expected_domain in entry["final_url"]
-                entry["site_verified"] = bool(has_marker or url_on_domain)
+            if use_get:
+                # Body already in hand from the GET — no extra request needed.
+                _check_body(resp.text)
+            else:
+                # HEAD carries no body: do one GET so the block/marker check can
+                # run (handles CDN challenge pages), still under the budget.
+                _t1 = _time.monotonic()
+                full = _GS.get(url, allow_redirects=True, timeout=timeout,
+                               budget=timeout, probe=probe)
+                entry["response_ms"] += int((_time.monotonic() - _t1) * 1000)
+                entry["final_url"] = str(getattr(full, "url", url) or url)
+                _check_body(full.text)
     except Exception as e:
         entry["http_error"] = str(e)
 
@@ -172,12 +230,25 @@ def _uptime_config():
         tracked[_sid] = get_setting("uptime_track_" + _sid, _def) == "1"
 
     return {
-        "enabled":        get_setting("uptime_enabled", "0") == "1",
-        "interval":       _clamp_int("uptime_interval", 300, 60, 86400),
-        "retention_days": _clamp_int("uptime_retention_days", 7, 1, 7),
-        "timeout":        _clamp_int("uptime_timeout", 15, 5, 120),
-        "tracked":        tracked,
+        "enabled":           get_setting("uptime_enabled", "0") == "1",
+        "interval":          _clamp_int("uptime_interval", 300, 60, 86400),
+        "retention_days":    _clamp_int("uptime_retention_days", 7, 1, 7),
+        "timeout":           _clamp_int("uptime_timeout", 15, 5, 120),
+        # Consecutive failed checks required before a site flips to "down" — a
+        # debounce so a single transient timeout/DNS hiccup can't report an
+        # online site as offline (1 = old immediate behaviour).
+        "failure_threshold": _clamp_int("uptime_failure_threshold", 2, 1, 10),
+        # Verify with a full GET instead of a HEAD (see _probe_site).
+        "use_get":           get_setting("uptime_use_get", "0") == "1",
+        "tracked":           tracked,
     }
+
+
+# Per-source count of consecutive reachability failures, for the failure-
+# threshold debounce in _uptime_run_round(). In-memory only (resets on
+# restart, which at worst grants one extra round of tolerance).
+_consec_fail = {}
+_consec_fail_lock = threading.Lock()
 
 
 def _uptime_run_round(cfg=None):
@@ -191,7 +262,9 @@ def _uptime_run_round(cfg=None):
         if not cfg["tracked"].get(_sid):
             continue
         try:
-            r = _probe_site(_url, _domain, _markers, expected_headers=_headers, timeout=cfg["timeout"])
+            r = _probe_site(_url, _domain, _markers, expected_headers=_headers,
+                            timeout=cfg["timeout"], use_get=cfg.get("use_get", False),
+                            probe=True)
             if r.get("http_ok") and r.get("site_verified"):
                 status, msg = "up", None
             elif r.get("blocked"):
@@ -201,6 +274,25 @@ def _uptime_run_round(cfg=None):
             else:
                 status = "down"
                 msg = r.get("http_error") or r.get("socket_error") or "unreachable"
+
+            # Debounce transient reachability failures: only a *confirmed* block
+            # page flips a site to "down" immediately. A timeout/unreachable
+            # "down" is held as "degraded" until it has failed
+            # `failure_threshold` consecutive rounds — this is what stops a brief
+            # DNS/CDN hiccup from reporting an online site as offline. Any
+            # non-reachability-down result resets the counter.
+            threshold = cfg.get("failure_threshold", 1)
+            is_reach_down = (status == "down" and msg != "blocked_page")
+            with _consec_fail_lock:
+                if is_reach_down:
+                    n = _consec_fail.get(_sid, 0) + 1
+                    _consec_fail[_sid] = n
+                    if n < threshold:
+                        status = "degraded"
+                        msg = "transient failure %d/%d (%s)" % (n, threshold, msg)
+                else:
+                    _consec_fail.pop(_sid, None)
+
             record_uptime_heartbeat(
                 _sid, status,
                 response_ms=r.get("response_ms"),
