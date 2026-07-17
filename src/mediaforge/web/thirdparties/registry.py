@@ -1351,6 +1351,32 @@ def resolve_settings_cards(host="integrations", tab="thirdparty"):
     return [_build_card(item) for item in items]
 
 
+def resolve_module_settings():
+    """Every *enabled* registered item whose settings target the main Settings
+    page (settings_host="settings"), regardless of settings_tab. Returns the
+    same "card" shape as resolve_settings_cards().
+
+    Menu rework: module settings no longer render inside the Settings page's
+    own tabs (the get_dynamic_tabs("settings") sidebar sub-menu is gone).
+    They are collected here and shown on the dedicated "Module Settings"
+    page under the Module Manager (admin-only) instead. Both variants a
+    module can use -- a brand-new settings_tab (previously a dynamic tab) and
+    a card attached to a built-in Settings tab -- end up here, so nothing a
+    module registers for settings_host="settings" is lost. settings_host=
+    "integrations" / "notifications" are unaffected and keep their old place.
+
+    Sorted by priority (registration order among ties); disabled modules are
+    filtered out live, exactly like resolve_settings_cards().
+    """
+    from ..db import get_setting
+    items = sorted(
+        (i for i in _ITEMS if i["settings_host"] == "settings"
+         and get_setting(i["enabled_setting_key"], "0") == "1"),
+        key=lambda i: i["priority"],
+    )
+    return [_build_card(item) for item in items]
+
+
 def resolve_dynamic_tabs(host):
     """Return the extra sub-menu/overview entries a settings page needs to
     render on top of its own hand-written ones, for items whose settings_tab

@@ -7,14 +7,18 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='sources.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">{% endblock %}
 {% block content %}
-<div class="settings-container">
+<div class="settings-container has-floating-menu">
   <div class="page-header integ-page-header">
     <h1 class="page-title">{{ _('Integrations') }}</h1>
     <p class="page-subtitle">{{ _('Connect external services') }}</p>
   </div>
 
-  <!-- Tab Navigation (hidden visually; navigation occurs via sidebar) -->
-  <div class="settings-tabs" id="integTabs" style="display: none !important;">
+  {# In-page floating side menu. Was hidden (navigation used to happen via the
+     sidebar sub-menu); the menu rework moves that sub-navigation into the page
+     as a vertical floating menu. switchIntegTab() (integrations.js) is
+     unchanged. Module-contributed integration tabs are grouped under a
+     "Modules" heading at the bottom (see get_dynamic_tabs). #}
+  <div class="settings-tabs floating-side-menu" id="integTabs">
     <button class="settings-tab active" data-tab="overview" onclick="switchIntegTab('overview')">{{ _('Overview') }}</button>
     <button class="settings-tab" data-tab="seerr" onclick="switchIntegTab('seerr')">Seerr</button>
     <button class="settings-tab" data-tab="mediaplayer" onclick="switchIntegTab('mediaplayer')">Mediaplayer</button>
@@ -24,11 +28,14 @@
     <button class="settings-tab" data-tab="uptime" onclick="switchIntegTab('uptime')">UpTime</button>
     {# Brand-new tabs requested by a registered extension whose settings_tab
        doesn't match one of the ids above (see registry.py's
-       resolve_dynamic_tabs / _KNOWN_TABS). No template edit needed to add
-       one — see the matching panel loop after the UpTime tab below. #}
-    {% for t in get_dynamic_tabs('integrations') %}
-    <button class="settings-tab" data-tab="{{ t.id }}" onclick="switchIntegTab('{{ t.id }}')">{{ t.label }}</button>
+       resolve_dynamic_tabs / _KNOWN_TABS). Grouped under a "Modules" heading. #}
+    {% set integ_module_tabs = get_dynamic_tabs('integrations') %}
+    {% if integ_module_tabs %}
+    <div class="settings-tab-group-label">{{ _('Modules') }}</div>
+    {% for t in integ_module_tabs %}
+    <button class="settings-tab settings-tab-module" data-tab="{{ t.id }}" onclick="switchIntegTab('{{ t.id }}')">{{ t.label }}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span></button>
     {% endfor %}
+    {% endif %}
   </div>
 
   <!-- ══════════════════════════════════════════════════════
@@ -119,6 +126,10 @@
        Tab: Seerr
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-seerr">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Seerr</h1>
+      <p class="page-subtitle">{{ _('Connect MediaForge with your Jellyseerr or Overseerr instance.') }}</p>
+    </div>
     <div class="settings-section">
       <h2>{{ _('Seerr Integration') }}</h2>
       <div class="settings-hint integ-hint-border">
@@ -147,6 +158,10 @@
        Tab: Mediaplayer (Jellyfin / Plex + MediaScan)
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-mediaplayer">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Mediaplayer</h1>
+      <p class="page-subtitle">{{ _('Automatic library refresh for Jellyfin & Plex after every download.') }}</p>
+    </div>
 
     <!-- ===== Jellyfin / Plex ===== -->
     <div class="settings-section">
@@ -437,6 +452,10 @@
        Tab: CineInfo
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-cineinfo">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">CineInfo</h1>
+      <p class="page-subtitle">{{ _('Shows streaming providers, genres and age rating via TMDB API.') }}</p>
+    </div>
     <div class="settings-section">
       <h2>
         CineInfo
@@ -706,6 +725,10 @@
        Tab: Third Party (Crunchyroll, Fernsehserien.de — collapsible cards)
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-thirdparty">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Third Party') }}</h1>
+      <p class="page-subtitle">{{ _('Connect external services like Crunchyroll & Fernsehserien.de.') }}</p>
+    </div>
 
     <!-- ══ Crunchyroll (login, provider pill, calendar sync) ══ -->
     <div class="settings-section integ-card collapsed" id="integCard-crunchyroll">
@@ -908,6 +931,10 @@
        Tab: SyncPlay (native watch-together, own server)
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-syncplay">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">SyncPlay</h1>
+      <p class="page-subtitle">{{ _('Synchronized playback and party rooms with external instances.') }}</p>
+    </div>
     <div class="settings-section">
       <h2>SyncPlay <span class="section-badge" style="background:var(--accent);color:#fff;">{{ _('Watch Together') }}</span></h2>
       <div class="settings-hint integ-hint-border">
@@ -946,6 +973,10 @@
        Tab: UpTime (native provider-site monitoring)
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-uptime">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">UpTime</h1>
+      <p class="page-subtitle">{{ _('Monitor site availability, response times and scrapable sources.') }}</p>
+    </div>
     <div class="settings-section">
       <h2>UpTime <span class="section-badge" style="background:var(--accent);color:#fff;">{{ _('Monitoring') }}</span></h2>
       <div class="settings-hint integ-hint-border">
@@ -1052,6 +1083,10 @@
   ══════════════════════════════════════════════════════ -->
   {% for t in get_dynamic_tabs('integrations') %}
   <div class="settings-tab-panel" id="tab-{{ t.id }}">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ t.label }}</h1>
+      <p class="page-subtitle">{{ t.description or _('External integration module') }}</p>
+    </div>
     {% for card in get_settings_cards('integrations', t.id) %}
     {{ ext.render_settings_card(card) }}
     {% endfor %}

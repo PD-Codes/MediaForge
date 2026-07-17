@@ -1,0 +1,66 @@
+<div class="page-container">
+  <div class="page-header" style="margin-bottom:28px;">
+    <h1 class="page-title">{{ _('Statistics') }}</h1>
+    <p class="page-subtitle">{{ _('Overview of your download activity') }}</p>
+  </div>
+  <div id="statsContent" class="stats-grid">
+    <div class="stats-loading">{{ _('Loading statistics…') }}</div>
+  </div>
+
+  <!-- Speed Details Modal -->
+  <div class="modal-overlay" id="speedModal" style="display:none" onclick="if(event.target===this)closeSpeedModal();">
+    <div class="card speed-modal-card loaded">
+      <div class="card-header">
+        <h2 class="card-title">{{ _('Download speed details') }}</h2>
+        <button class="modal-close" onclick="closeSpeedModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div id="speedModalContent">
+        <p class="stat-sub">{{ _('Download performance details will be shown here.') }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Incomplete Series Modal -->
+  <div class="modal-overlay" id="incompleteModal" style="display:none" onclick="if(event.target===this)closeIncompleteModal();">
+    <div class="card speed-modal-card loaded">
+      <div class="card-header">
+        <h2 class="card-title">{{ _('Incomplete series') }}</h2>
+        <button class="modal-close" onclick="closeIncompleteModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div id="incompleteModalContent">
+        <p class="stat-sub">{{ _('Series with missing episodes will be listed here.') }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Duplicate Media Modal -->
+  <div class="modal-overlay" id="duplicatesModal" style="display:none" onclick="if(event.target===this)closeDuplicatesModal();">
+    <div class="card speed-modal-card loaded">
+      <div class="card-header">
+        <h2 class="card-title">{{ _('Duplicate media') }}</h2>
+        <button class="modal-close" onclick="closeDuplicatesModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div id="duplicatesModalContent">
+        <p class="stat-sub">{{ _('Media that exists more than once will be listed here.') }}</p>
+      </div>
+    </div>
+  </div>
+</div>

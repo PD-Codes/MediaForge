@@ -1,0 +1,40 @@
+{# Single source of truth for the Settings in-page floating side menu.
+   Used by settings.html (mode="tabs" -> client-side switchTab) and by
+   encoding.html (mode="links" -> navigates back to the Settings tabs, with
+   "Encoding" as the active entry). "Encoding" is always a real link to its
+   own /encoding route (E2), inserted right after "General". is_admin gates
+   the admin-only entries, matching settings.html's original gating. #}
+{% macro settings_menu(mode='tabs', active='overview', is_admin=True) %}
+<div class="settings-tabs floating-side-menu" id="settingsTabs">
+  {%- set rows = [
+      ('overview', _('Overview'), false),
+      ('general', _('General'), false),
+      ('design', _('Design'), false),
+      ('sources', _('Sources'), true),
+      ('downloads', _('Downloads'), false),
+      ('autosync', 'Auto-Sync', false),
+      ('network', _('Network'), false),
+      ('auth', _('Authentication'), true),
+      ('api', 'API', true),
+      ('privacy', _('Privacy & Telemetry'), true),
+      ('backup', _('Backup'), true),
+      ('updates', _('Updates'), false)
+  ] -%}
+  {%- for id, label, admin_only in rows %}
+    {%- if not admin_only or is_admin %}
+      {%- if mode == 'tabs' %}
+  <button class="settings-tab{% if active == id %} active{% endif %}" data-tab="{{ id }}" onclick="switchTab('{{ id }}')">{{ label }}</button>
+      {%- else %}
+  <a class="settings-tab{% if active == id %} active{% endif %}" href="{{ url_for('settings_page') }}#{{ id }}">{{ label }}</a>
+      {%- endif %}
+    {%- endif %}
+    {%- if id == 'general' and is_admin %}
+      {%- if mode == 'tabs' %}
+  <button class="settings-tab{% if active == 'encoding' %} active{% endif %}" data-tab="encoding" onclick="switchTab('encoding')">{{ _('Encoding') }}</button>
+      {%- else %}
+  <a class="settings-tab{% if active == 'encoding' %} active{% endif %}" href="{{ url_for('encoding_page') }}">{{ _('Encoding') }}</a>
+      {%- endif %}
+    {%- endif %}
+  {%- endfor %}
+</div>
+{% endmacro %}

@@ -9,6 +9,7 @@ function setUiLanguage(lang) {
 </script>
 {% endblock %}
 {% import "_settings_card_macro.html" as ext %}
+{% import "_settings_menu.html" as menu %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_schedule.css') }}">
@@ -22,7 +23,7 @@ function setUiLanguage(lang) {
 <link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">{% endblock %}
 {% set is_admin = not auth_enabled or (current_user and current_user.role == 'admin') %}
 {% block content %}
-<div class="settings-container">
+<div class="settings-container has-floating-menu">
   <div class="page-header" style="margin-bottom:20px;">
     <h1 class="page-title">{{ _('Settings') }}</h1>
     <p class="page-subtitle">{{ _('Configuration & Management') }}</p>
@@ -51,32 +52,11 @@ function setUiLanguage(lang) {
   </div>
   {% endif %}
 
-  <!-- Tab Navigation (hidden visually; navigation occurs via sidebar & overview dashboard) -->
-  <div class="settings-tabs" id="settingsTabs" style="display: none !important;">
-    <button class="settings-tab active" data-tab="overview" onclick="switchTab('overview')">{{ _('Overview') }}</button>
-    <button class="settings-tab" data-tab="general" onclick="switchTab('general')">{{ _('General') }}</button>
-    <button class="settings-tab" data-tab="design" onclick="switchTab('design')">{{ _('Design') }}</button>
-    {% if is_admin %}
-    <button class="settings-tab" data-tab="sources" onclick="switchTab('sources')">{{ _('Sources') }}</button>
-    {% endif %}
-    <button class="settings-tab" data-tab="downloads" onclick="switchTab('downloads')">{{ _('Downloads') }}</button>
-    <button class="settings-tab" data-tab="autosync" onclick="switchTab('autosync')">Auto-Sync</button>
-    <button class="settings-tab" data-tab="network" onclick="switchTab('network')">{{ _('Network') }}</button>
-    {% if is_admin %}
-    <button class="settings-tab" data-tab="auth" onclick="switchTab('auth')">{{ _('Authentication') }}</button>
-    <button class="settings-tab" data-tab="api" onclick="switchTab('api')">API</button>
-    <button class="settings-tab" data-tab="privacy" onclick="switchTab('privacy')">{{ _('Privacy & Telemetry') }}</button>
-    <button class="settings-tab" data-tab="backup" onclick="switchTab('backup')">{{ _('Backup') }}</button>
-    {% endif %}
-    <button class="settings-tab" data-tab="updates" onclick="switchTab('updates')">{{ _('Updates') }}</button>
-    {# Brand-new tabs a thirdparty registers with settings_host="settings"
-       and a settings_tab that isn't one of the ids above (see
-       registry.py's resolve_dynamic_tabs() / _KNOWN_TABS["settings"]).
-       Mirrors integrations.html's identical loop. #}
-    {% for t in get_dynamic_tabs('settings') %}
-    <button class="settings-tab" data-tab="{{ t.id }}" onclick="switchTab('{{ t.id }}')">{{ t.label }}</button>
-    {% endfor %}
-  </div>
+  {# In-page floating side menu (shared macro — single source of truth, also
+     used by encoding.html). switchTab() (settings.js) is unchanged. "Encoding"
+     links out to its own /encoding route (E2). Module-contributed settings
+     tabs live on the Module Settings page now (see resolve_module_settings). #}
+  {{ menu.settings_menu('tabs', is_admin=is_admin) }}
 
   <!-- ══════════════════════════════════════════════════════
        Tab: Übersicht (Overview Dashboard)
@@ -208,16 +188,8 @@ function setUiLanguage(lang) {
         <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
       </div>
 
-      {% for t in get_dynamic_tabs('settings') %}
-      <div class="settings-overview-card" onclick="switchTab('{{ t.id }}')">
-        <div class="settings-overview-card-header">
-          <div class="settings-overview-icon">{{ t.icon_svg | safe }}</div>
-          <div class="settings-overview-title">{{ t.label }}{% if t.is_module %}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span>{% endif %}</div>
-        </div>
-        <div class="settings-overview-desc">{{ t.description or (_('Configure') ~ ' ' ~ t.label) }}</div>
-        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
-      </div>
-      {% endfor %}
+      {# Module-contributed settings tabs no longer appear on the Settings
+         overview -- they live on the Module Settings page now. #}
     </div>
   </div>
 
@@ -225,7 +197,11 @@ function setUiLanguage(lang) {
        Tab: Allgemein
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-general">
-    {% for card in get_settings_cards('settings', 'general') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('General') }}</h1>
+      <p class="page-subtitle">{{ _('General settings, language, system options and debug mode') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
     <div class="settings-section" id="legacyImportSection" style="display:none;">
       <h2>{{ _('Data from previous installation') }}</h2>
       <div class="settings-hint" style="margin-bottom:14px;">
@@ -389,7 +365,11 @@ function setUiLanguage(lang) {
        Tab: Design
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel active" id="tab-design">
-    {% for card in get_settings_cards('settings', 'design') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Design') }}</h1>
+      <p class="page-subtitle">{{ _('Appearance themes, accent color, visual effects and layout options') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
     <div class="settings-section">
       <h2>{{ _('Design') }}</h2>
       <h3 class="settings-subtitle">{{ _('Appearance') }}</h3>
@@ -497,7 +477,11 @@ function setUiLanguage(lang) {
        Tab: Quellen / Sources
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-sources">
-    {% for card in get_settings_cards('settings', 'sources') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Sources') }}</h1>
+      <p class="page-subtitle">{{ _('Configure streaming providers, mirrors and search order') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
     <div class="settings-section">
       <h2>{{ _('Sources') }}</h2>
       <div class="settings-hint">{{ _('Enable or disable the available sources. Disabled sources are hidden on the start page and are no longer loaded there.') }}</div>
@@ -559,7 +543,11 @@ function setUiLanguage(lang) {
        Tab: Downloads
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel active" id="tab-downloads">
-    {% for card in get_settings_cards('settings', 'downloads') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Downloads') }}</h1>
+      <p class="page-subtitle">{{ _('Download paths, naming template, language preferences and bandwidth limits') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
 
     {% if is_admin %}
     <div class="settings-section">
@@ -724,7 +712,11 @@ function setUiLanguage(lang) {
        Tab: Auto-Sync
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-autosync">
-    {% for card in get_settings_cards('settings', 'autosync') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Auto-Sync</h1>
+      <p class="page-subtitle">{{ _('Automatic synchronization, schedules, weekly blocks and adaptive intervals') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
     {% if is_admin %}
     <div class="settings-section">
       <h2>{{ _('Auto-Sync Defaults') }}</h2>
@@ -882,7 +874,11 @@ function setUiLanguage(lang) {
        Tab: Netzwerk
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-network">
-    {% for card in get_settings_cards('settings', 'network') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Network') }}</h1>
+      <p class="page-subtitle">{{ _('DNS server configuration, Captcha solver behavior and reverse proxy base URL') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
     <div class="settings-section">
       <h2>{{ _('Network / DNS') }}</h2>
       {% if is_admin %}
@@ -1024,7 +1020,11 @@ function setUiLanguage(lang) {
   ══════════════════════════════════════════════════════ -->
   {% if is_admin %}
   <div class="settings-tab-panel" id="tab-auth">
-    {% for card in get_settings_cards('settings', 'auth') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Authentication') }}</h1>
+      <p class="page-subtitle">{{ _('User management, roles, passwords and Single Sign-On (SSO/OIDC)') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
 
     <div class="settings-section">
       <h2>{{ _('User Management') }}</h2>
@@ -1127,7 +1127,11 @@ function setUiLanguage(lang) {
   ══════════════════════════════════════════════════════ -->
   {% if is_admin %}
   <div class="settings-tab-panel" id="tab-api">
-    {% for card in get_settings_cards('settings', 'api') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">API</h1>
+      <p class="page-subtitle">{{ _('External REST API key, endpoint reference and integration documentation') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
     <div class="settings-section">
       <h2>MediaForge API</h2>
       <div class="settings-hint">
@@ -1233,6 +1237,10 @@ function setUiLanguage(lang) {
        Tab: Privacy & Telemetry
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-privacy">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Privacy & Telemetry') }}</h1>
+      <p class="page-subtitle">{{ _('Crash reports, diagnostic telemetry and data privacy controls') }}</p>
+    </div>
 
     <div class="settings-section">
       <h2>{{ _('Your installation') }}</h2>
@@ -1307,7 +1315,11 @@ function setUiLanguage(lang) {
        Tab: Updates
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-updates">
-    {% for card in get_settings_cards('settings', 'updates') %}{{ ext.render_settings_card(card) }}{% endfor %}
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Updates') }}</h1>
+      <p class="page-subtitle">{{ _('Check for updates, switch release channels and configure automatic updates') }}</p>
+    </div>
+    {# module cards moved to the Module Settings page #}
     <div class="settings-section">
       <h2>Updates</h2>
       <div class="settings-row" style="align-items:center;gap:16px;flex-wrap:wrap">
@@ -1398,6 +1410,10 @@ function setUiLanguage(lang) {
        Tab: Backup (admin only)
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-backup">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Backup') }}</h1>
+      <p class="page-subtitle">{{ _('Create, download and restore full system backups') }}</p>
+    </div>
 
     <!-- Export -->
     <div class="settings-section">
@@ -1474,14 +1490,16 @@ function setUiLanguage(lang) {
   </div><!-- /tab-backup -->
   {% endif %}
 
-  {# Brand-new tabs a thirdparty registers with settings_host="settings"
-     (see the dynamic tab-button loop in the tab bar above and
-     registry.py's resolve_dynamic_tabs()/_KNOWN_TABS["settings"]). #}
-  {% for t in get_dynamic_tabs('settings') %}
-  <div class="settings-tab-panel" id="tab-{{ t.id }}">
-    {% for card in get_settings_cards('settings', t.id) %}{{ ext.render_settings_card(card) }}{% endfor %}
+  {# Module-contributed settings tabs render on the Module Settings page
+     (registry.resolve_module_settings), not here anymore. #}
+
+  {# Encoding is embedded here as a client-side panel (no reload) — same body
+     the standalone /encoding route uses. Admin-only, matching encoding_page. #}
+  {% if is_admin %}
+  <div class="settings-tab-panel" id="tab-encoding">
+    {% include "_encoding_body.html" %}
   </div>
-  {% endfor %}
+  {% endif %}
 
 </div><!-- /settings-container -->
 

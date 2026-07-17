@@ -111,6 +111,20 @@ def register_extensions_routes(app):
         """
         return render_template("extensions.html", **_page_context())
 
+    @app.route("/module-settings")
+    def module_settings_page():
+        """Render the Module Settings page. Route: GET /module-settings.
+
+        Menu rework: modules that register settings for the main Settings page
+        (settings_host="settings") no longer show up inside the Settings tabs.
+        Their cards are collected by registry.resolve_module_settings() (exposed
+        to the template as module_settings_cards via app.py's context
+        processor) and rendered here instead, reachable from the Module Manager
+        sub-menu. Admin-only, gated by app.py's _admin_only set exactly like
+        extensions_page / settings_page.
+        """
+        return render_template("module_settings.html")
+
     @app.route("/api/extensions/rescan", methods=["POST"])
     def api_extensions_rescan():
         """Modulmanager's "Refresh" button -- scans web/thirdparties/ for

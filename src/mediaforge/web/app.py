@@ -284,6 +284,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             from .thirdparties.registry import (
                 resolve_menu_items, resolve_settings_cards, resolve_dynamic_tabs,
                 resolve_provider_pill_scripts, resolve_dashboard_widgets, resolve_card,
+                resolve_module_settings,
             )
             return {
                 "current_user": get_current_user(),
@@ -304,6 +305,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "management_menu_items": resolve_menu_items("management"),
                 "syncplay_menu_items": resolve_menu_items("syncplay"),
                 "system_menu_items": resolve_menu_items("system"),
+                # Menu rework: module sidebar links no longer sit as their own
+                # top-level entries. base.html groups them into a collapsible
+                # "Module" sub-menu per main category. Discover absorbs the
+                # former SyncPlay category's modules (section="syncplay" stays
+                # a valid value -- back-compat -- and is merged in here).
+                "discover_module_items": resolve_menu_items("discover") + resolve_menu_items("syncplay"),
+                "management_module_items": resolve_menu_items("management"),
+                "system_module_items": resolve_menu_items("system"),
+                # Module Settings page (under the Module Manager) -- all cards a
+                # module registered for settings_host="settings".
+                "module_settings_cards": resolve_module_settings(),
                 # Back-compat: Integrations page's "Third Party" tab, unchanged.
                 "thirdparty_cards": resolve_settings_cards("integrations", "thirdparty"),
                 # Generic hooks any settings template can call directly to pull
@@ -346,6 +358,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             from .thirdparties.registry import (
                 resolve_menu_items, resolve_settings_cards, resolve_dynamic_tabs,
                 resolve_provider_pill_scripts, resolve_dashboard_widgets, resolve_card,
+                resolve_module_settings,
             )
             return {
                 "current_user": None,
@@ -364,6 +377,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "management_menu_items": resolve_menu_items("management"),
                 "syncplay_menu_items": resolve_menu_items("syncplay"),
                 "system_menu_items": resolve_menu_items("system"),
+                # Menu rework: module sidebar links no longer sit as their own
+                # top-level entries. base.html groups them into a collapsible
+                # "Module" sub-menu per main category. Discover absorbs the
+                # former SyncPlay category's modules (section="syncplay" stays
+                # a valid value -- back-compat -- and is merged in here).
+                "discover_module_items": resolve_menu_items("discover") + resolve_menu_items("syncplay"),
+                "management_module_items": resolve_menu_items("management"),
+                "system_module_items": resolve_menu_items("system"),
+                # Module Settings page (under the Module Manager) -- all cards a
+                # module registered for settings_host="settings".
+                "module_settings_cards": resolve_module_settings(),
                 "thirdparty_cards": resolve_settings_cards("integrations", "thirdparty"),
                 "get_settings_cards": resolve_settings_cards,
                 "get_dynamic_tabs": resolve_dynamic_tabs,
@@ -787,6 +811,10 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # the store configuration (which remote MediaForge trusts) and the
             # uninstall buttons. Gate the page, not just the link.
             "extensions_page",
+            # Module Settings page under the Module Manager -- hosts every
+            # module's settings_host="settings" card (resolve_module_settings).
+            # Admin-only for the same reason settings_page is.
+            "module_settings_page",
             # Imports and executes arbitrary code found on disk (any new
             # web/thirdparties/<name>/ folder).
             "api_extensions_rescan",

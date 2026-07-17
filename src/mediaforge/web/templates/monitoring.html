@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Monitoring — MediaForge{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='history.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='uptime.css') }}">
+{% endblock %}
+
+{% block content %}
+{# Monitoring — built exactly like the Settings / Integrations pages: one page,
+   a floating side menu switching client-side between panels (no reload). The
+   Statistics / Download History / Uptime bodies are the same partials the
+   standalone routes use, so there is a single source of truth. #}
+<div class="settings-container has-floating-menu">
+  {# Full-width page header on top (like Settings/Integrations), then the
+     floating menu + panels below it. #}
+  <div class="page-header" style="margin-bottom:20px;">
+    <h1 class="page-title">Monitoring</h1>
+    <p class="page-subtitle">{{ _('Statistics, download history and uptime at a glance') }}</p>
+  </div>
+
+  {% include "_monitoring_nav.html" %}
+
+  <div class="settings-tab-panel active" id="montab-overview">
+    <div class="settings-overview-grid">
+      <div class="settings-overview-card" onclick="switchMonTab('stats')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Statistics') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Overview of your download activity') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Open') }}</span> &#8594;</div>
+      </div>
+      <div class="settings-overview-card" onclick="switchMonTab('history')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><polyline points="12 7 12 12 15 15"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Download History') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Every downloaded episode with start and end time') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Open') }}</span> &#8594;</div>
+      </div>
+      {% if uptime_enabled %}
+      <div class="settings-overview-card" onclick="switchMonTab('uptime')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <div class="settings-overview-title">UpTime</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Live monitoring of your source sites — reachability and real-site verification') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Open') }}</span> &#8594;</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="settings-tab-panel" id="montab-stats">
+    {% include "_stats_body.html" %}
+  </div>
+
+  <div class="settings-tab-panel" id="montab-history">
+    {% include "_history_body.html" %}
+  </div>
+
+  {% if uptime_enabled %}
+  <div class="settings-tab-panel" id="montab-uptime">
+    {% include "_uptime_body.html" %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Client-side tab switching for Monitoring — mirrors settings.js's switchTab.
+  function switchMonTab(name) {
+    document.querySelectorAll('#monitoringMenu .settings-tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.montab === name);
+    });
+    document.querySelectorAll('.settings-container .settings-tab-panel').forEach(function (p) {
+      p.classList.toggle('active', p.id === 'montab-' + name);
+    });
+    try { history.replaceState(null, '', '#' + name); localStorage.setItem('monitoringActiveTab', name); } catch (e) { }
+  }
+  (function restoreMonTab() {
+    var hash = '';
+    try { hash = (window.location.hash || '').replace('#', '').trim(); } catch (e) { }
+    var valid = Array.prototype.map.call(
+      document.querySelectorAll('#monitoringMenu .settings-tab'),
+      function (b) { return b.dataset.montab; }
+    );
+    var tab = (hash && valid.indexOf(hash) !== -1) ? hash : 'overview';
+    switchMonTab(tab);
+  })();
+</script>
+<script src="{{ url_for('static', filename='stats.js') }}"></script>
+<script src="{{ url_for('static', filename='history.js') }}"></script>
+<script src="{{ url_for('static', filename='uptime.js') }}"></script>
+{% endblock %}
