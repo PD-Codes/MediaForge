@@ -1,13 +1,5 @@
-{% extends "base.html" %} {% block title %}{{ _('Settings') }} — MediaForge<script>
-function setUiLanguage(lang) {
-  fetch('/api/user/language', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({language: lang})
-  }).then(r => r.json()).then(() => location.reload());
-}
-</script>
-{% endblock %}
+{% extends "base.html" %}
+{% block title %}{{ _('Settings') }} — MediaForge{% endblock %}
 {% import "_settings_card_macro.html" as ext %}
 {% import "_settings_menu.html" as menu %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
@@ -1549,7 +1541,16 @@ function setUiLanguage(lang) {
 </div>
 {% endblock %}
 {% block scripts %}
-<script>var settingsCanEdit = {{ 'true' if is_admin else 'false' }};</script>
+<script>
+function setUiLanguage(lang) {
+  fetch('/api/user/language', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({language: lang})
+  }).then(r => r.json()).then(() => location.reload());
+}
+var settingsCanEdit = {{ 'true' if is_admin else 'false' }};
+</script>
 <script src="{{ url_for('static', filename='settings.js') }}"></script>
 <script src="{{ url_for('static', filename='pwa.js') }}"></script>
 <!-- Generic collapsible-card behaviour + enable toggle for any thirdparty
