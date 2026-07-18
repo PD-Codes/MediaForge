@@ -201,7 +201,7 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
             tid  = best["id"]
             mt   = best["media_type"]
         # 3. Fetch details, watch-providers, FSK
-        details  = _call("/" + mt + "/" + str(tid))
+        details  = _call("/" + mt + "/" + str(tid), {"append_to_response": "credits,external_ids"})
         genres   = [g["name"] for g in details.get("genres", [])]
         wp_data  = _call("/" + mt + "/" + str(tid) + "/watch/providers")
         c_data   = wp_data.get("results", {}).get(country, {})
@@ -295,7 +295,8 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
                "genres": genres, "providers": providers, "fsk": fsk,
                "vote_average": round(details.get("vote_average") or 0, 1),
                "trailer_key": trailer_key,
-               "recommendations": recommendations}
+               "recommendations": recommendations,
+               "raw_details": details}
         # Store under both keys so card (title) and modal (imdb_id) share the entry
         logger.info("[CineInfo] TMDB data for %r: trailer=%s, recs=%d", title, trailer_key, len(recommendations))
         for ck in filter(None, [imdb_key, title_key]):
@@ -399,3 +400,28 @@ def _tmdb_movie_release(tmdb_id, api_key, ui_lang="de"):
         logger.debug("[Calendar] movie lookup failed for tmdb %s: %s", tmdb_id, exc)
     set_tmdb_cache(cache_key, out)
     return out
+def _tmdb_fetch_season_and_episode(tmdb_id, season_num, episode_num, api_key, ui_lang='de'):
+    '''Fetch detailed season and episode info from TMDB for NFO generation.'''
+    lang = 'en-US' if ui_lang == 'en' else 'de-DE'
+    out = {'season': None, 'episode': None}
+    
+    def _call(path):
+        _tmdb_rl.acquire()
+        r = _rq_tmdb.get(
+            'https://api.themoviedb.org/3' + path,
+            params={'api_key': api_key, 'language': lang, 'append_to_response': 'credits,external_ids,videos'}, timeout=8,
+            headers={'User-Agent': 'MediaForge/1.0'},
+        )
+        if r.status_code == 200:
+            return r.json()
+        return None
+
+    try:
+        if season_num is not None:
+            out['season'] = _call('/tv/' + str(tmdb_id) + '/season/' + str(season_num))
+        if season_num is not None and episode_num is not None:
+            out['episode'] = _call('/tv/' + str(tmdb_id) + '/season/' + str(season_num) + '/episode/' + str(episode_num))
+    except Exception as exc:
+        logger.debug('[TMDB] Fetch season/episode failed for %s (S%sE%s): %s', tmdb_id, season_num, episode_num, exc)
+    return out
+

@@ -4916,3 +4916,66 @@ msgstr "Statistiken, Download-Verlauf und Uptime auf einen Blick"
 
 msgid "Configure FFmpeg encoding, hardware acceleration and upscaling profiles"
 msgstr "Konfiguriere FFmpeg-Kodierung, Hardwarebeschleunigung und Upscaling-Profile"
+
+
+# --- Jellyfin NFO Provider ---
+msgid "Automatically generates NFO metadata for Jellyfin, Kodi and Plex after successful downloads. Requires a TMDB API key configured in CineInfo."
+msgstr "Erstellt nach erfolgreichen Downloads automatisch NFO-Metadaten für Jellyfin, Kodi und Plex. Benötigt einen in CineInfo konfigurierten TMDB API Key."
+
+msgid "CineInfo Integration is not set up! To generate NFO files, CineInfo must be configured and enabled."
+msgstr "CineInfo Integration ist nicht eingerichtet! Um NFO-Dateien generieren zu können, muss CineInfo konfiguriert und aktiviert sein."
+
+msgid "Enable Jellyfin NFO Generation"
+msgstr "Jellyfin NFO Generierung aktivieren"
+
+msgid "Enables writing NFO files after a download."
+msgstr "Aktiviert das Schreiben von NFO-Dateien nach dem Download."
+
+msgid "Create NFO for"
+msgstr "Erstelle NFO für"
+
+msgid "Series (tvshow.nfo)"
+msgstr "Serie (tvshow.nfo)"
+
+msgid "Season (season.nfo)"
+msgstr "Staffel (season.nfo)"
+
+msgid "Episode (&lt;name&gt;.nfo)"
+msgstr "Episode (&lt;name&gt;.nfo)"
+
+msgid "Movie (movie.nfo / &lt;name&gt;.nfo)"
+msgstr "Film (movie.nfo / &lt;name&gt;.nfo)"
+
+msgid "Enable Movie Subfolders"
+msgstr "Film-Unterordner aktivieren"
+
+msgid "Each movie gets its own subfolder (Synchronized with global download settings)."
+msgstr "Jeder Film bekommt seinen eigenen Unterordner (Synchronisiert mit den globalen Download-Einstellungen)."
+
+msgid "Include Metadata"
+msgstr "Metadaten einschließen"
+
+msgid "Plot / Overview"
+msgstr "Handlung (Plot / Overview)"
+
+msgid "Genres"
+msgstr "Genres"
+
+msgid "Rating"
+msgstr "Bewertung (Rating)"
+
+msgid "Age Rating (FSK)"
+msgstr "Altersfreigabe (FSK)"
+
+msgid "Cast / Crew"
+msgstr "Schauspieler (Cast / Crew)"
+
+msgid "Trailer Link"
+msgstr "Trailer Link"
+
+msgid "Aired / Released Date"
+msgstr "Erscheinungsdatum (Aired / Released)"
+
+msgid "Studio / Network"
+msgstr "Studio / Network"
+

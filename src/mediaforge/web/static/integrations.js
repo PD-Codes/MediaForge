@@ -656,6 +656,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadFernsehserienSettings();
   loadMediaplayerSettings();
   loadMediascanSettings();
+  loadJellyfinNfoSettings();
   // loadThirdpartyToggles() and restoreIntegCollapse() now run on their own
   // from static/extension_cards.js — see the <script> tag in
   // integrations.html.
@@ -1539,3 +1540,119 @@ async function _savePillOrder() {
 
 
 // -- Fernsehserien.de --
+// ===== Jellyfin NFO Provider =====
+let _jellyfinNfoCineinfoConfigured = false;
+
+async function loadJellyfinNfoSettings() {
+  try {
+    const resp = await fetch('/api/settings/jellyfin-nfo');
+    const d = await resp.json();
+    _jellyfinNfoCineinfoConfigured = d.cineinfo_configured;
+    
+    const warnEl = document.getElementById('jellyfinNfoCineinfoWarning');
+    if (warnEl) warnEl.style.display = _jellyfinNfoCineinfoConfigured ? 'none' : 'block';
+
+    const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = (val === '1'); };
+    chk('jellyfinNfoEnabled', d.enabled);
+    chk('jellyfinNfoCreateSeries', d.create_series);
+    chk('jellyfinNfoCreateSeason', d.create_season);
+    chk('jellyfinNfoCreateEpisode', d.create_episode);
+    chk('jellyfinNfoCreateMovie', d.create_movie);
+    chk('jellyfinNfoMetaPlot', d.meta_plot);
+    chk('jellyfinNfoMetaGenres', d.meta_genres);
+    chk('jellyfinNfoMetaRating', d.meta_rating);
+    chk('jellyfinNfoMetaFsk', d.meta_fsk);
+    chk('jellyfinNfoMetaActors', d.meta_actors);
+    chk('jellyfinNfoMetaTrailer', d.meta_trailer);
+    chk('jellyfinNfoMetaDate', d.meta_date);
+    chk('jellyfinNfoMetaStudio', d.meta_studio);
+    _applyJellyfinNfoState();
+  } catch (e) {
+    showToast(t('Jellyfin NFO Einstellungen konnten nicht geladen werden: ', 'Jellyfin NFO settings could not be loaded: ') + e.message);
+  }
+
+  // Load global movie subfolder setting
+  try {
+    const sResp = await fetch('/api/settings');
+    const sData = await sResp.json();
+    const chkSf = document.getElementById('jellyfinNfoMovieSubfolder');
+    if (chkSf) {
+      chkSf.checked = sData.movie_subfolder === "1" || sData.filmpalast_movie_subfolder === "1";
+    }
+  } catch (e) {}
+}
+
+function _applyJellyfinNfoState() {
+  const mainToggle = document.getElementById('jellyfinNfoEnabled');
+  
+  if (!_jellyfinNfoCineinfoConfigured && mainToggle) {
+    mainToggle.checked = false;
+    mainToggle.disabled = true;
+  } else if (mainToggle) {
+    mainToggle.disabled = false;
+  }
+  
+  const enabled = !!mainToggle?.checked;
+  const ids = [
+    'jellyfinNfoCreateSeries', 'jellyfinNfoCreateSeason', 'jellyfinNfoCreateEpisode', 'jellyfinNfoCreateMovie',
+    'jellyfinNfoMetaPlot', 'jellyfinNfoMetaGenres', 'jellyfinNfoMetaRating', 'jellyfinNfoMetaFsk',
+    'jellyfinNfoMetaActors', 'jellyfinNfoMetaTrailer', 'jellyfinNfoMetaDate', 'jellyfinNfoMetaStudio',
+    'jellyfinNfoMovieSubfolder'
+  ];
+  ids.forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !enabled;
+  });
+}
+
+async function saveJellyfinNfoSettings() {
+  _applyJellyfinNfoState();
+  const getChk = (id) => document.getElementById(id)?.checked ? '1' : '0';
+  const body = {
+    enabled: getChk('jellyfinNfoEnabled'),
+    create_series: getChk('jellyfinNfoCreateSeries'),
+    create_season: getChk('jellyfinNfoCreateSeason'),
+    create_episode: getChk('jellyfinNfoCreateEpisode'),
+    create_movie: getChk('jellyfinNfoCreateMovie'),
+    meta_plot: getChk('jellyfinNfoMetaPlot'),
+    meta_genres: getChk('jellyfinNfoMetaGenres'),
+    meta_rating: getChk('jellyfinNfoMetaRating'),
+    meta_fsk: getChk('jellyfinNfoMetaFsk'),
+    meta_actors: getChk('jellyfinNfoMetaActors'),
+    meta_trailer: getChk('jellyfinNfoMetaTrailer'),
+    meta_date: getChk('jellyfinNfoMetaDate'),
+    meta_studio: getChk('jellyfinNfoMetaStudio')
+  };
+  try {
+    const resp = await fetch('/api/settings/jellyfin-nfo', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await resp.json();
+    if (d.ok) showToast(t('Jellyfin NFO Provider gespeichert', 'Jellyfin NFO Provider saved'));
+  } catch (e) {
+    showToast(t('Fehler: ', 'Error: ') + e.message);
+  }
+}
+
+async function saveJellyfinNfoMovieSubfolder() {
+  const chk = document.getElementById('jellyfinNfoMovieSubfolder');
+  if (!chk) return;
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filmpalast_movie_subfolder: chk.checked,
+        movie_subfolder: chk.checked
+      }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(t("Film-Unterordner ", "Movie subfolder ") + (chk.checked ? t("aktiviert","activated") : t("deaktiviert","deactivated")));
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+

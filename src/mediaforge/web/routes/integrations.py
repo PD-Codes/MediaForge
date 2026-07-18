@@ -649,3 +649,40 @@ def register_integrations_routes(app):
                          "tvdb_id": r["tvdb_id"], "title": r["title"],
                          "media_type": r["media_type"]} for r in rows],
         })
+
+    @app.route("/api/settings/jellyfin-nfo", methods=["GET"])
+    def api_settings_jellyfin_nfo_get():
+        return jsonify({
+            "enabled": get_setting("jellyfin_nfo_enabled", "0"),
+            "create_series": get_setting("jellyfin_nfo_create_series", "1"),
+            "create_season": get_setting("jellyfin_nfo_create_season", "1"),
+            "create_episode": get_setting("jellyfin_nfo_create_episode", "1"),
+            "create_movie": get_setting("jellyfin_nfo_create_movie", "1"),
+            "meta_plot": get_setting("jellyfin_nfo_meta_plot", "1"),
+            "meta_genres": get_setting("jellyfin_nfo_meta_genres", "1"),
+            "meta_rating": get_setting("jellyfin_nfo_meta_rating", "1"),
+            "meta_fsk": get_setting("jellyfin_nfo_meta_fsk", "1"),
+            "meta_actors": get_setting("jellyfin_nfo_meta_actors", "1"),
+            "meta_trailer": get_setting("jellyfin_nfo_meta_trailer", "1"),
+            "meta_date": get_setting("jellyfin_nfo_meta_date", "1"),
+            "meta_studio": get_setting("jellyfin_nfo_meta_studio", "1"),
+            "cineinfo_configured": get_setting("cineinfo_tmdb_api_key", "") != ""
+        })
+
+    @app.route("/api/settings/jellyfin-nfo", methods=["PUT"])
+    def api_settings_jellyfin_nfo_put():
+        data = request.get_json(silent=True) or {}
+        set_setting("jellyfin_nfo_enabled", "1" if data.get("enabled") else "0")
+        set_setting("jellyfin_nfo_create_series", "1" if data.get("create_series") else "0")
+        set_setting("jellyfin_nfo_create_season", "1" if data.get("create_season") else "0")
+        set_setting("jellyfin_nfo_create_episode", "1" if data.get("create_episode") else "0")
+        set_setting("jellyfin_nfo_create_movie", "1" if data.get("create_movie") else "0")
+        set_setting("jellyfin_nfo_meta_plot", "1" if data.get("meta_plot") else "0")
+        set_setting("jellyfin_nfo_meta_genres", "1" if data.get("meta_genres") else "0")
+        set_setting("jellyfin_nfo_meta_rating", "1" if data.get("meta_rating") else "0")
+        set_setting("jellyfin_nfo_meta_fsk", "1" if data.get("meta_fsk") else "0")
+        set_setting("jellyfin_nfo_meta_actors", "1" if data.get("meta_actors") else "0")
+        set_setting("jellyfin_nfo_meta_trailer", "1" if data.get("meta_trailer") else "0")
+        set_setting("jellyfin_nfo_meta_date", "1" if data.get("meta_date") else "0")
+        set_setting("jellyfin_nfo_meta_studio", "1" if data.get("meta_studio") else "0")
+        return jsonify({"ok": True})

@@ -24,6 +24,7 @@
     <button class="settings-tab" data-tab="mediaplayer" onclick="switchIntegTab('mediaplayer')">Mediaplayer</button>
     <button class="settings-tab" data-tab="cineinfo" onclick="switchIntegTab('cineinfo')">CineInfo</button>
     <button class="settings-tab" data-tab="thirdparty" onclick="switchIntegTab('thirdparty')">{{ _('Third Party') }}</button>
+    <button class="settings-tab" data-tab="jellyfinnfo" onclick="switchIntegTab('jellyfinnfo')">Jellyfin NFO</button>
     <button class="settings-tab" data-tab="syncplay" onclick="switchIntegTab('syncplay')">SyncPlay</button>
     <button class="settings-tab" data-tab="uptime" onclick="switchIntegTab('uptime')">UpTime</button>
     {# Brand-new tabs requested by a registered extension whose settings_tab
@@ -84,6 +85,17 @@
           <div class="settings-overview-title">{{ _('Third Party') }}</div>
         </div>
         <div class="settings-overview-desc">{{ _('Connect external services like Crunchyroll & Fernsehserien.de.') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
+      <div class="settings-overview-card" onclick="switchIntegTab('jellyfinnfo')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          </div>
+          <div class="settings-overview-title">Jellyfin NFO Provider</div>
+        </div>
+        <div class="settings-overview-desc">Automatische NFO-Metadaten für heruntergeladene Medien.</div>
         <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
       </div>
 
@@ -916,6 +928,8 @@
       </div>
     </div>
 
+    <!-- Card moved to separate tab -->
+
     <!-- ══ Auto-registered third-party integrations (web/thirdparties/<name>/) ══
          Each integration calls register_thirdparty(...) from its own
          register(app) — see web/thirdparties/registry.py — so a new
@@ -926,6 +940,123 @@
     {% endfor %}
 
   </div><!-- /tab-thirdparty -->
+
+  <!-- ══════════════════════════════════════════════════════
+       Tab: Jellyfin NFO Provider
+  ══════════════════════════════════════════════════════ -->
+  <div class="settings-tab-panel" id="tab-jellyfinnfo">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Jellyfin NFO Provider</h1>
+      <p class="page-subtitle">Automatische NFO-Metadaten für heruntergeladene Medien.</p>
+    </div>
+
+    <div class="settings-section">
+      <h2>
+        Jellyfin NFO Provider
+        <span class="section-badge" style="background:#00a4dc;color:#fff;">Metadata</span>
+      </h2>
+      <div class="settings-hint integ-hint-border">
+        {{ _('Automatically generates NFO metadata for Jellyfin, Kodi and Plex after successful downloads. Requires a TMDB API key configured in CineInfo.') }}
+      </div>
+
+      <div class="settings-hint" id="jellyfinNfoCineinfoWarning" style="display:none; color: var(--danger); margin-bottom: 15px; border-left: 3px solid var(--danger); padding-left: 10px;">
+        <i class="fas fa-exclamation-triangle"></i> {{ _('CineInfo Integration is not set up! To generate NFO files, CineInfo must be configured and enabled.') }}
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Enable Jellyfin NFO Generation') }}</div>
+          <div class="settings-row-desc">{{ _('Enables writing NFO files after a download.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" id="jellyfinNfoEnabled" onchange="saveJellyfinNfoSettings()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="integ-subsection-header"><span class="integ-subsection-title">{{ _('Create NFO for') }}</span></div>
+      
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Series (tvshow.nfo)') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle"><input type="checkbox" id="jellyfinNfoCreateSeries" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Season (season.nfo)') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle"><input type="checkbox" id="jellyfinNfoCreateSeason" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Episode (&lt;name&gt;.nfo)') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle"><input type="checkbox" id="jellyfinNfoCreateEpisode" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Movie (movie.nfo / &lt;name&gt;.nfo)') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle"><input type="checkbox" id="jellyfinNfoCreateMovie" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Enable Movie Subfolders') }}</div>
+          <div class="settings-row-desc">{{ _('Each movie gets its own subfolder (Synchronized with global download settings).') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle"><input type="checkbox" id="jellyfinNfoMovieSubfolder" onchange="saveJellyfinNfoMovieSubfolder()" /><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="integ-subsection-header"><span class="integ-subsection-title">{{ _('Include Metadata') }}</span></div>
+
+      <div class="settings-row">
+        <div class="settings-row-left"><div class="settings-row-label">{{ _('Plot / Overview') }}</div></div>
+        <div class="settings-row-right"><label class="toggle"><input type="checkbox" id="jellyfinNfoMetaPlot" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left"><div class="settings-row-label">{{ _('Genres') }}</div></div>
+        <div class="settings-row-right"><label class="toggle"><input type="checkbox" id="jellyfinNfoMetaGenres" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left"><div class="settings-row-label">{{ _('Rating') }}</div></div>
+        <div class="settings-row-right"><label class="toggle"><input type="checkbox" id="jellyfinNfoMetaRating" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left"><div class="settings-row-label">{{ _('Age Rating (FSK)') }}</div></div>
+        <div class="settings-row-right"><label class="toggle"><input type="checkbox" id="jellyfinNfoMetaFsk" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left"><div class="settings-row-label">{{ _('Cast / Crew') }}</div></div>
+        <div class="settings-row-right"><label class="toggle"><input type="checkbox" id="jellyfinNfoMetaActors" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left"><div class="settings-row-label">{{ _('Trailer Link') }}</div></div>
+        <div class="settings-row-right"><label class="toggle"><input type="checkbox" id="jellyfinNfoMetaTrailer" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left"><div class="settings-row-label">{{ _('Aired / Released Date') }}</div></div>
+        <div class="settings-row-right"><label class="toggle"><input type="checkbox" id="jellyfinNfoMetaDate" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left"><div class="settings-row-label">{{ _('Studio / Network') }}</div></div>
+        <div class="settings-row-right"><label class="toggle"><input type="checkbox" id="jellyfinNfoMetaStudio" onchange="saveJellyfinNfoSettings()" /><span class="toggle-slider"></span></label></div>
+      </div>
+    </div>
+  </div><!-- /tab-jellyfinnfo -->
 
   <!-- ══════════════════════════════════════════════════════
        Tab: SyncPlay (native watch-together, own server)

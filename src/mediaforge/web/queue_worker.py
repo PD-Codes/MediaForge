@@ -824,6 +824,28 @@ def _queue_worker():
                         downloaded_count += 1
                         print_episode_summary(item["title"], ep_url, success=True)
                         _record_download_history(item, ep_url, _ep_start_time, _ep_path, _ep_size_bytes, "completed")
+                        
+                        # ------ START JELLYFIN NFO HOOK ------
+                        try:
+                            from .nfo_provider import generate_nfo_for_download
+                            from .tmdb_cache import _tmdb_lookup_cached, _tmdb_fetch_season_and_episode
+                            
+                            cineinfo_api_key = get_setting("cineinfo_tmdb_api_key", "")
+                            cineinfo_country = get_setting("cineinfo_country", "DE")
+                            if cineinfo_api_key and _ep_path:
+                                tmdb_data = _tmdb_lookup_cached(item["title"], None, cineinfo_api_key, cineinfo_country)
+                                if tmdb_data and tmdb_data.get("found"):
+                                    season_data = None
+                                    episode_data = None
+                                    if _tel_media_type == "series" and _tel_season is not None and _tel_episode is not None:
+                                        se_data = _tmdb_fetch_season_and_episode(tmdb_data["tmdb_id"], _tel_season, _tel_episode, cineinfo_api_key)
+                                        season_data = se_data.get("season")
+                                        episode_data = se_data.get("episode")
+                                    generate_nfo_for_download(_ep_path, tmdb_data, _tel_media_type, season_data, episode_data)
+                        except Exception as nfo_exc:
+                            logger.error(f"[JellyfinNFO] NFO Generation failed: {nfo_exc}", exc_info=True)
+                        # ------ END JELLYFIN NFO HOOK ------
+
                         telemetry_client.submit_all(telemetry_events.build_download_event(
                             provider=item.get("provider"), media_type=_tel_media_type, title=item.get("title"),
                             season=_tel_season, episode=_tel_episode, status="completed",
