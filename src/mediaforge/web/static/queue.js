@@ -166,6 +166,7 @@ function updateBadge(items) {
   } else {
     badge.style.display = "none";
   }
+  if (window.updateTotalQueueBadge) window.updateTotalQueueBadge();
 }
 
 function renderQueue(items, paused) {
@@ -783,3 +784,20 @@ function closeCaptchaModal() {
   updateSeerrBadge();
   setInterval(updateSeerrBadge, 60000); // refresh every 60s
 })();
+
+window.updateTotalQueueBadge = function() {
+  const dBadge = document.getElementById("queueBadge");
+  const eBadge = document.getElementById("encodingBadge");
+  const uBadge = document.getElementById("upscaleBadge");
+  const totalBadge = document.getElementById("totalQueueBadge");
+  if (!totalBadge) return;
+
+  const dCount = (dBadge && dBadge.style.display !== "none") ? parseInt(dBadge.textContent) || 0 : 0;
+  const eCount = (eBadge && eBadge.style.display !== "none") ? parseInt(eBadge.textContent) || 0 : 0;
+  const uCount = (uBadge && uBadge.style.display !== "none") ? parseInt(uBadge.textContent) || 0 : 0;
+  
+  const total = dCount + eCount + uCount;
+  
+  totalBadge.textContent = total;
+  totalBadge.style.display = total > 0 ? "inline-block" : "none";
+};

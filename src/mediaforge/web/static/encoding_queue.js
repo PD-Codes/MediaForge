@@ -89,6 +89,7 @@ function _updateEncodingBadges(count) {
     el.style.display = count > 0 ? "" : "none";
     if (count > 0) el.textContent = count;
   });
+  if (window.updateTotalQueueBadge) window.updateTotalQueueBadge();
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
