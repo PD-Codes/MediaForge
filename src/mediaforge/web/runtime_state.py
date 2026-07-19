@@ -64,10 +64,25 @@ def _get_working_providers():
             working.append(p)
         finally:
             _logging.disable(_logging.NOTSET)  # restore normal logging
-    return tuple(working)
+    return working
 
 
-WORKING_PROVIDERS = _get_working_providers()
+# A list, not a tuple: refresh_working_providers() below mutates it in place
+# (WORKING_PROVIDERS[:] = ...) rather than rebinding the name, specifically so
+# every module that already did `from .runtime_state import WORKING_PROVIDERS`
+# at import time (app.py, routes/search.py, routes/settings.py, routes/seerr.py)
+# keeps seeing the same, now-updated, list object -- a plain reassignment here
+# would only update runtime_state.WORKING_PROVIDERS itself, not those already-
+# bound names (see extractors/__init__.py's register_hoster()).
+WORKING_PROVIDERS = list(_get_working_providers())
+
+
+def refresh_working_providers() -> None:
+    """Recompute WORKING_PROVIDERS after SUPPORTED_PROVIDERS gained a new
+    entry at runtime (a third-party hoster registered via
+    extractors.register_hoster()). Mutates WORKING_PROVIDERS in place -- see
+    the comment above for why that matters."""
+    WORKING_PROVIDERS[:] = _get_working_providers()
 
 
 # ---------------------------------------------------------------------------

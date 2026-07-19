@@ -169,6 +169,82 @@ def invalidate_cache():
         _active.clear()
 
 
+# ---------------------------------------------------------------------------
+# Third-party site mirrors
+# ---------------------------------------------------------------------------
+_EXTRA_SITES = {}  # item_id -> site_id
+
+
+def register_site_mirrors(item_id, site_id, hosts, label=None) -> None:
+    """Register a mirror/fallback domain list for a third-party content
+    source, from the module's own ``register(app)``::
+
+        register_provider("kinox_mod", Provider(name="Kinox", ...))
+        register_site_mirrors("kinox_mod", "kinox",
+                               ["kinox.to", "kinox.cx", "kinox.am"], label="Kinox")
+
+    *site_id* becomes a key in :data:`DEFAULT_SITE_MIRRORS` / :data:`SITE_LABELS`
+    -- the exact same dicts the five built-in sites (aniworld/sto/filmpalast/
+    megakino/hanime) live in. Everything downstream of those two dicts is
+    already generic (see the module docstring above), so this one call gets
+    you, for free, no template/route/JS changes:
+
+    - A mirror-editing card under Settings -> Sources -> "Domain fallback
+      (mirrors)", right alongside the built-in sites -- ``web/routes/
+      settings.py``'s settings API and ``web/static/settings.js``'s
+      ``_loadMirrorSettings()`` both already iterate
+      ``mirrors.DEFAULT_SITE_MIRRORS`` generically, they don't special-case
+      the five built-in ids.
+    - Persistence of the user's edits under
+      ``app_settings["site_mirrors_<site_id>"]`` (same route as above).
+    - Transparent host failover for outgoing requests -- **but only for
+      requests your module makes through ``mediaforge.config.GLOBAL_SESSION``**
+      (`config._SessionProxy` is what's wired to
+      :func:`request_with_failover`); a bare `requests`/`niquests` session of
+      your own never sees a mirror, same as it never saw DoH DNS either.
+
+    ``hosts[0]`` becomes the canonical host -- the one your ``Provider``'s URL
+    patterns (see ``providers.register_provider``) should be written against.
+    The rest are fallback hosts, in priority order; a bare IP is allowed for
+    the same last-resort reason the built-in sites use one (see the module
+    docstring). This is exactly the seed list a user can later edit under
+    Settings, same as any built-in site's.
+
+    Raises ``ValueError`` if *site_id* is already registered (built-in or
+    another module) or *hosts* is empty after cleaning. Removed automatically
+    on disable/uninstall via :func:`unregister_site_mirrors` (see
+    ``web/thirdparties/registry.py``'s ``unregister_module()``).
+    """
+    if site_id in DEFAULT_SITE_MIRRORS:
+        raise ValueError(f"register_site_mirrors: site id already registered: {site_id!r}")
+    cleaned = [h for h in (_clean_host(h) for h in hosts) if h]
+    if not cleaned:
+        raise ValueError("register_site_mirrors: hosts must contain at least one host")
+    DEFAULT_SITE_MIRRORS[site_id] = cleaned
+    SITE_LABELS[site_id] = label or site_id
+    _EXTRA_SITES[item_id] = site_id
+    invalidate_cache()
+    logger.info("[Mirrors] Registered third-party site mirrors: %s (%s)", site_id, item_id)
+
+
+def unregister_site_mirrors(item_id) -> None:
+    """Drop a mirror list previously added via :func:`register_site_mirrors`.
+
+    Leaves any saved ``app_settings["site_mirrors_<site_id>"]`` row in place
+    -- it is a flat, un-namespaced key (see the module README's "Settings
+    namespacing" section for why that matters for a module's *own* settings);
+    here it is simply inert once the site id is gone, the same way any
+    setting for a since-removed feature is.
+    """
+    site_id = _EXTRA_SITES.pop(item_id, None)
+    if site_id is None:
+        return
+    DEFAULT_SITE_MIRRORS.pop(site_id, None)
+    SITE_LABELS.pop(site_id, None)
+    invalidate_cache()
+    logger.info("[Mirrors] Unregistered third-party site mirrors: %s", site_id)
+
+
 def get_mirrors(site=None):
     """All mirror lists, or the list for one site."""
     mirrors, _ = _get_tables()

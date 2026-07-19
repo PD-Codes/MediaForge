@@ -7,7 +7,7 @@
 import threading
 
 from ..logger import get_logger
-from .db import get_setting, prune_uptime_heartbeats, record_uptime_heartbeat
+from .db import get_setting, prune_uptime_heartbeats, record_uptime_heartbeat, set_setting
 from .dns_patch import _ip_provider
 
 logger = get_logger(__name__)
@@ -249,6 +249,97 @@ def _uptime_config():
 # restart, which at worst grants one extra round of tolerance).
 _consec_fail = {}
 _consec_fail_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# Third-party monitor sites
+# ---------------------------------------------------------------------------
+_EXTRA_MONITOR_SITES = {}  # item_id -> site_id
+# site_id -> the app_settings key that reflects "is this source itself
+# enabled" (shown as the enabled_source badge on the site's Uptime card).
+# Only set for third-party sites -- a built-in one keeps using the
+# "source_enabled_<id>" convention baked into web/routes/uptime.py.
+_MONITOR_ENABLED_KEYS = {}
+
+
+def register_monitor_site(
+    item_id,
+    site_id,
+    label,
+    url,
+    expected_domain,
+    body_markers,
+    expected_headers=None,
+    enabled_setting_key=None,
+    tracked_by_default=True,
+) -> None:
+    """Register a third-party content source for UpTime tracking, from the
+    module's own ``register(app)``::
+
+        register_monitor_site(
+            "kinox_mod", "kinox", "Kinox", "https://kinox.to", "kinox.to",
+            body_markers=["kinox"], expected_headers={"server": "cloudflare"},
+            enabled_setting_key="kinox_search_enabled",
+        )
+
+    *site_id* becomes a key in :data:`_MONITOR_SITES` -- the exact dict the
+    five built-in sites (aniworld/sto/filmpalast/megakino/hanime) live in, and
+    the one every part of the UpTime feature (the probe loop, the DNS test,
+    ``web/routes/uptime.py``'s API, ``web/static/uptime.js``'s rendering) is
+    already generic over. Registering here is therefore the whole
+    integration: your site gets a card on the UpTime dashboard, its own
+    heartbeat history, the same failure-threshold debounce and blocked-page
+    detection as a built-in site, with no template/route/JS change needed.
+
+    - *label*, *url*, *expected_domain*: same meaning as a built-in entry --
+      *url* is what gets probed, *expected_domain* is checked against the
+      final response to catch a DNS hijack/wrong-site redirect.
+    - *body_markers*: substrings that must appear in the response body to
+      count the site as actually itself (not just "some server answered").
+    - *expected_headers*: optional dict of response-header-name -> substring
+      (e.g. ``{"server": "cloudflare"}``) -- the CDN/edge signature check, see
+      the module docstring's explanation of why this is checked instead of
+      the resolved IP.
+    - *enabled_setting_key*: optional -- the ``app_settings`` key that
+      reflects whether this source is actually enabled (typically the same
+      ``enabled_setting_key`` you already passed to ``register_thirdparty()``).
+      Purely cosmetic (feeds the "enabled_source" badge on the UpTime card);
+      omit it and the card just won't show that badge as accurately.
+    - *tracked_by_default*: whether the "track this site" toggle starts on.
+      Seeded once, the same "only if never explicitly set" semantics as
+      ``MODULE_ENABLED_DEFAULT`` (see the module README) -- a later call never
+      re-flips a value a user (or a previous run) already changed.
+
+    Raises ``ValueError`` if *site_id* is already registered. Removed
+    automatically on disable/uninstall via :func:`unregister_monitor_site`.
+    """
+    if site_id in _MONITOR_SITES:
+        raise ValueError(f"register_monitor_site: site id already registered: {site_id!r}")
+    _MONITOR_SITES[site_id] = (label, url, expected_domain, list(body_markers), dict(expected_headers or {}))
+    _EXTRA_MONITOR_SITES[item_id] = site_id
+    if enabled_setting_key:
+        _MONITOR_ENABLED_KEYS[site_id] = enabled_setting_key
+    if get_setting("uptime_track_" + site_id, None) is None:
+        # Seed the toggle explicitly either way -- _uptime_config()'s own
+        # fallback ("0" only for "hanime", "1" for everything else it
+        # doesn't recognize) would otherwise default an unseeded
+        # tracked_by_default=False site to tracked=True anyway.
+        set_setting("uptime_track_" + site_id, "1" if tracked_by_default else "0")
+    logger.info("[Uptime] Registered third-party monitor site: %s (%s)", site_id, item_id)
+
+
+def unregister_monitor_site(item_id) -> None:
+    """Drop a monitor site previously added via :func:`register_monitor_site`.
+    Leaves stored heartbeats/settings in place (same "inert, not deleted"
+    treatment as :func:`mirrors.unregister_site_mirrors`)."""
+    site_id = _EXTRA_MONITOR_SITES.pop(item_id, None)
+    if site_id is None:
+        return
+    _MONITOR_SITES.pop(site_id, None)
+    _MONITOR_ENABLED_KEYS.pop(site_id, None)
+    with _consec_fail_lock:
+        _consec_fail.pop(site_id, None)
+    logger.info("[Uptime] Unregistered third-party monitor site: %s", site_id)
 
 
 def _uptime_run_round(cfg=None):

@@ -648,6 +648,104 @@ def get_thirdparty(item_id):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Notification channels & lifecycle event hooks
+# ---------------------------------------------------------------------------
+# Two related, but distinct, extension points a module can use from its own
+# register(app) -- neither requires app.py, notifications.py's notify_all()
+# call sites, or any built-in notification pill to change:
+#
+#   * register_notification_channel -- "I am another place to send the same
+#     title/body MediaForge already sends to WebPush/Telegram/Discord/...".
+#     notify_all() calls every registered channel exactly like its six
+#     built-in ones (own try/except, one channel's failure never blocks
+#     another).
+#   * register_event_hook -- "run my own code when this event happens",
+#     for anything that isn't itself a notification (auto-tagging, kicking
+#     off an external automation, ...). Same events notify_all() already
+#     knows about: on_completed, on_errors, on_cancelled, on_autosync,
+#     on_sync_hold, on_sync_resume (see web/notifications.py's module
+#     docstring for the authoritative list).
+#
+# Both are fired from web/notifications.py's notify_all(), so anything that
+# already triggers a notification (queue_worker.py, autosync_worker.py)
+# reaches modules for free -- no separate wiring per call site.
+_NOTIFICATION_CHANNELS = {}  # item_id -> send_fn
+_EVENT_HOOKS = {}  # event -> {item_id: callback}
+
+
+def register_notification_channel(item_id, send_fn) -> None:
+    """Register *send_fn* as another notification channel, fired by
+    ``web/notifications.py``'s ``notify_all()`` alongside WebPush/Telegram/
+    Pushover/ntfy/WhatsApp/Discord.
+
+    ``send_fn`` is called with the exact same keyword arguments ``notify_all``
+    itself receives: ``title, body, event, username=None, status=None,
+    episode_count=0, errors=None, is_movie=False``. Do your own enabled/pref
+    checks inside it (same as every built-in ``notify_*`` function) --
+    registering here does not imply "always on". A ``send_fn`` that raises is
+    logged and never blocks another channel; prefer sending asynchronously
+    (own thread) so a slow upstream can't delay the request that triggered
+    the notification, same as the built-in channels do.
+
+    ``item_id`` should match a ``register_thirdparty()`` id so
+    ``unregister_module()`` removes this automatically on disable/uninstall.
+    """
+    if not callable(send_fn):
+        raise ValueError("register_notification_channel: send_fn must be callable")
+    _NOTIFICATION_CHANNELS[item_id] = send_fn
+    logger.info("[Registry] Registered notification channel: %s", item_id)
+
+
+def unregister_notification_channel(item_id) -> None:
+    if _NOTIFICATION_CHANNELS.pop(item_id, None) is not None:
+        logger.info("[Registry] Unregistered notification channel: %s", item_id)
+
+
+def notification_channels() -> dict:
+    """Snapshot of {item_id: send_fn}. Used by web/notifications.py's notify_all()."""
+    return dict(_NOTIFICATION_CHANNELS)
+
+
+def register_event_hook(item_id, event, callback) -> None:
+    """Register *callback* to run whenever *event* fires (see the module
+    docstring above for the event list). Called with the same keyword
+    arguments as :func:`register_notification_channel`'s ``send_fn``. Use
+    this instead of a notification channel when the reaction isn't itself a
+    "send a message somewhere" -- e.g. triggering an external webhook,
+    updating your own module's state. A module can register more than one
+    hook for the same event (e.g. once per ``item_id``); all of them run,
+    each isolated by its own try/except.
+    """
+    if not callable(callback):
+        raise ValueError("register_event_hook: callback must be callable")
+    _EVENT_HOOKS.setdefault(event, {})[item_id] = callback
+    logger.info("[Registry] Registered event hook: %s -> %s", item_id, event)
+
+
+def unregister_event_hooks(item_id) -> None:
+    """Drop every hook *item_id* registered, across all events."""
+    removed_any = False
+    for event in list(_EVENT_HOOKS):
+        if _EVENT_HOOKS[event].pop(item_id, None) is not None:
+            removed_any = True
+        if not _EVENT_HOOKS[event]:
+            del _EVENT_HOOKS[event]
+    if removed_any:
+        logger.info("[Registry] Unregistered event hooks for: %s", item_id)
+
+
+def fire_event_hooks(event, **payload) -> None:
+    """Run every hook registered for *event*, in registration order, isolated
+    from one another and from the caller (never raises). Used by
+    web/notifications.py's notify_all()."""
+    for item_id, callback in list(_EVENT_HOOKS.get(event, {}).items()):
+        try:
+            callback(**payload)
+        except Exception:
+            logger.exception("[Registry] Event hook '%s' for event '%s' raised", item_id, event)
+
+
 def unregister_module(name):
     """Remove every trace of thirdparties/<name>/ from the registry, live.
 
@@ -680,6 +778,28 @@ def unregister_module(name):
     # item to know it should be off, and the thread would outlive the module.
     for item_id in ids:
         unregister_background_worker(item_id)
+        unregister_notification_channel(item_id)
+        unregister_event_hooks(item_id)
+    # Same idea for a registered content source / search source / mirror list
+    # / uptime entry (see providers.register_provider,
+    # search.register_search_source, mirrors.register_site_mirrors,
+    # uptime_monitor.register_monitor_site) -- lazy imports, both to avoid a
+    # core -> web import at module load time and because a module that never
+    # called one of these leaves nothing to clean up.
+    try:
+        from ...providers import unregister_provider
+        from ...search import unregister_search_source
+        from ...extractors import unregister_hoster
+        from ...mirrors import unregister_site_mirrors
+        from ..uptime_monitor import unregister_monitor_site
+        for item_id in ids:
+            unregister_provider(item_id)
+            unregister_search_source(item_id)
+            unregister_hoster(item_id)
+            unregister_site_mirrors(item_id)
+            unregister_monitor_site(item_id)
+    except Exception:
+        logger.exception("[Registry] Failed to clean up content/search/hoster/mirror/uptime sources for module '%s'", name)
     _ITEMS = [item for item in _ITEMS if item["id"] not in ids]
     _MODULES.pop(name, None)
     return sorted(blueprints)

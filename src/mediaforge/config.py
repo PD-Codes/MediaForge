@@ -718,7 +718,14 @@ logger.debug("Config initialized successfully")
 # Hosters actually offered to users. The commented-out names below have a
 # working extractor under extractors/provider/ but are intentionally left
 # disabled here (e.g. unreliable or superseded) -- re-enable by uncommenting.
-SUPPORTED_PROVIDERS = (
+#
+# A *list*, not a tuple: extractors/__init__.py's register_hoster() appends a
+# third-party hoster's name here in place (list.append(), never reassigned),
+# so every existing `from .config import SUPPORTED_PROVIDERS` import -- which
+# binds to this exact list object -- sees the addition immediately. Iterating
+# it (`for p in SUPPORTED_PROVIDERS`) or checking membership behaves exactly
+# like it did as a tuple; nothing else needed to change.
+SUPPORTED_PROVIDERS = [
     "VOE",
     "Vidmoly",
     "Vidoza",
@@ -730,7 +737,7 @@ SUPPORTED_PROVIDERS = (
     # "LoadX",
     # "Luluvdo",
     # "Streamtape",
-)
+]
 
 PROVIDER_HEADERS_D = {
     "Vidmoly": {"Referer": "https://vidmoly.biz"},

@@ -700,10 +700,13 @@ def notify_all(
     is_movie: bool = False,
 ) -> None:
     """Fan out one notification to every configured channel (WebPush,
-    Telegram, Pushover, NTFY, WhatsApp, Discord). Each channel is called in
-    its own try/except so one failing/misconfigured service never blocks
-    the others; individual notify_* functions handle their own
-    enabled/pref checks and send asynchronously in a background thread.
+    Telegram, Pushover, NTFY, WhatsApp, Discord), then to every third-party
+    channel/event hook a module has registered (see
+    ``web/thirdparties/registry.py``'s ``register_notification_channel`` /
+    ``register_event_hook``). Each channel/hook is called in its own
+    try/except so one failing/misconfigured service never blocks the
+    others; individual notify_* functions handle their own enabled/pref
+    checks and send asynchronously in a background thread.
 
     Used by: queue_worker.py (download completion/error/cancel events) and
     autosync_worker.py (auto-sync found episodes / sync hold / resume).
@@ -744,3 +747,40 @@ def notify_all(
             )
     except Exception as exc:
         logger.error("[Notif] Discord notification failed: %s", exc, exc_info=True)
+
+    # Third-party notification channels (see registry.register_notification_channel).
+    try:
+        from .thirdparties.registry import notification_channels
+        for _channel_id, _send_fn in notification_channels().items():
+            try:
+                _send_fn(
+                    title=title,
+                    body=body,
+                    event=event,
+                    username=username,
+                    status=status,
+                    episode_count=episode_count,
+                    errors=errors,
+                    is_movie=is_movie,
+                )
+            except Exception as exc:
+                logger.error("[Notif] Module channel '%s' failed: %s", _channel_id, exc, exc_info=True)
+    except Exception as exc:
+        logger.error("[Notif] Failed to fan out to module notification channels: %s", exc, exc_info=True)
+
+    # Generic lifecycle event hooks (see registry.register_event_hook) --
+    # for modules reacting to the event itself rather than sending a message.
+    try:
+        from .thirdparties.registry import fire_event_hooks
+        fire_event_hooks(
+            event,
+            title=title,
+            body=body,
+            username=username,
+            status=status,
+            episode_count=episode_count,
+            errors=errors,
+            is_movie=is_movie,
+        )
+    except Exception as exc:
+        logger.error("[Notif] Failed to fire module event hooks: %s", exc, exc_info=True)

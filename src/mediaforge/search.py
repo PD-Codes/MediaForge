@@ -724,6 +724,65 @@ def fetch_hanime_trending(show_censored=True, show_uncensored=True):
     return _hanime_scraper().fetch_trending(show_censored=show_censored, show_uncensored=show_uncensored)
 
 
+# ---------------------------------------------------------------------------
+# Third-party search sources
+# ---------------------------------------------------------------------------
+# ``web/routes/search.py``'s ``api_search()`` dispatches POST /api/search by a
+# ``site`` string (today: "aniworld"/"sto" (default branch), "filmpalast",
+# "megakino", "hanime"). A third-party module adding a new content source
+# (see ``providers.register_provider`` for the URL-resolution half of the
+# same feature) registers its own site id here so ``api_search()`` picks it
+# up automatically -- no change to that route needed.
+_EXTRA_SEARCH_SOURCES: dict = {}  # item_id -> {"site_id", "search_fn", "label"}
+
+
+def register_search_source(item_id: str, site_id: str, search_fn, label: str | None = None) -> None:
+    """Register a keyword search function for a third-party content source.
+
+    - ``item_id``: the id the module already passed to ``register_thirdparty()``
+      -- lets ``web/thirdparties/registry.py``'s ``unregister_module()`` remove
+      this registration automatically when the module is disabled/uninstalled.
+    - ``site_id``: the value the frontend will send as ``site`` in
+      ``POST /api/search``. Must not collide with a built-in id
+      (``"aniworld"``, ``"sto"``, ``"filmpalast"``, ``"megakino"``,
+      ``"hanime"``) or another registered one.
+    - ``search_fn(keyword: str) -> list[dict]``: called with the raw search
+      keyword, must return a list of ``{"title": str, "url": str}`` dicts (the
+      same shape every built-in search returns) -- ``url`` should be
+      resolvable by :func:`mediaforge.providers.resolve_provider` (i.e. match
+      the ``Provider`` this module registered via ``register_provider``).
+      Exceptions are the caller's (``api_search()``'s) responsibility to
+      catch, same as any built-in source failing upstream.
+    - ``label``: optional human-readable name for logs; defaults to ``site_id``.
+    """
+    if not callable(search_fn):
+        raise ValueError("register_search_source: search_fn must be callable")
+    reserved = {"aniworld", "sto", "filmpalast", "megakino", "hanime"}
+    if site_id in reserved:
+        raise ValueError(f"register_search_source: {site_id!r} is a built-in site id")
+    for existing_id, entry in _EXTRA_SEARCH_SOURCES.items():
+        if entry["site_id"] == site_id and existing_id != item_id:
+            raise ValueError(f"register_search_source: site id already registered: {site_id!r}")
+    _EXTRA_SEARCH_SOURCES[item_id] = {"site_id": site_id, "search_fn": search_fn, "label": label or site_id}
+    logger.info("[Search] Registered third-party search source: %s (%s)", site_id, item_id)
+
+
+def unregister_search_source(item_id: str) -> None:
+    """Drop a search source previously added via :func:`register_search_source`."""
+    removed = _EXTRA_SEARCH_SOURCES.pop(item_id, None)
+    if removed:
+        logger.info("[Search] Unregistered third-party search source: %s (%s)", removed["site_id"], item_id)
+
+
+def get_search_source(site_id: str):
+    """Return the ``{"site_id", "search_fn", "label"}`` entry for *site_id*, or
+    ``None``. Used by ``web/routes/search.py``'s ``api_search()``."""
+    for entry in _EXTRA_SEARCH_SOURCES.values():
+        if entry["site_id"] == site_id:
+            return entry
+    return None
+
+
 if __name__ == "__main__":
     print("New series:", fetch_new_series())
     print("Popular series:", fetch_popular_series())

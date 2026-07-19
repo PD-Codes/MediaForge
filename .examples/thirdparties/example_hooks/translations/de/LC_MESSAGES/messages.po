@@ -1,0 +1,43 @@
+# German translations for the "Example Hooks" reference module.
+# msgid = English source (exactly what __init__.py passes to
+# register_thirdparty() -- translated via flask_babel.gettext() inside
+# web/thirdparties/registry.py's _build_card(), so the msgid must match the
+# Python string literal exactly).
+# msgstr = German translation
+#
+# See .examples/thirdparties/README.md's "Translations" section for how
+# this file is discovered and compiled.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-07-19 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: de\n"
+"Language-Team: de <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.8.0\n"
+
+# ── __init__.py's register_thirdparty() call ────────────────────────────
+msgid "Example Hooks"
+msgstr "Beispiel-Hooks"
+
+msgid "Demo"
+msgstr "Demo"
+
+msgid "Hooks"
+msgstr "Hooks"
+
+msgid "Settings-only reference: registers one notification channel and one event hook. Both just log -- enable it and trigger a download/AutoSync event to see the log lines, no network calls made."
+msgstr "Reines Settings-Referenzmodul: registriert einen Notification-Channel und einen Event-Hook. Beide loggen nur -- aktivieren und einen Download-/AutoSync-Event ausloesen, um die Log-Zeilen zu sehen, keine Netzwerkzugriffe."
+
+msgid "Enable Example Hooks"
+msgstr "Beispiel-Hooks aktivieren"
+
+msgid "Logs every notify_all() event through a demo channel and a demo on_completed hook."
+msgstr "Loggt jeden notify_all()-Event ueber einen Demo-Channel und einen Demo-on_completed-Hook."

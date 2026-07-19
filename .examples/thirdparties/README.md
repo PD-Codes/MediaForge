@@ -805,12 +805,54 @@ markup underneath each one; the table below is the quick-reference version.
 | Badges/tags | `.badge` + `.badge-accent`/`-success`/`-warning`/`-error`/`-neutral` | `tabs-badges.css` | `<span class="badge badge-accent">Beta</span>` |
 | Service pills (tab selector) | `.service-pills` (wrapper) / `.service-pill` (+ `.active`) | `settings_rows.css` | The same pill row Notifications uses per channel; see `notifications.html` |
 | Toggle switch | `.toggle` (wrapper) / `.toggle-slider` | `tables.css` | `<label class="toggle"><input type="checkbox" .../><span class="toggle-slider"></span></label>`. Inside a settings card, add `class="thirdparty-toggle" data-thirdparty-id="..."` and it wires itself up for free — see `_settings_card_macro.html` / `static/extension_cards.js` |
+| Checkbox | `chb-main` (on the `<input type="checkbox">` itself) | `forms.css` | `<input type="checkbox" class="chb-main" .../>` — MediaForge's *only* plain-checkbox style (as opposed to the on/off `.toggle` switch above): a purple accent box with an animated SVG checkmark, used everywhere from Settings to Auto-Sync to SyncPlay to custom multi-select dropdowns. Use this, not a bare unstyled `<input type="checkbox">`, for anything that reads as "check one or more of these" rather than "flip this setting on/off". Building one from JS: `el.className = "chb-main ..."` works exactly like in a template. |
 | Number stepper (−/+) | *(none needed)* | `forms.css` + `number_input.js` | Any `<input type="number">` is auto-enhanced on page load (and for anything added to the DOM later) — no markup, no JS, of your own |
 | Buttons | `.btn` + `.btn-primary`/`-secondary`/`-ghost`/`-danger`, `.btn-sm`/`-lg`, `.btn-icon` | `buttons.css` | |
 | Settings row layout | `.settings-section` (card) / `.settings-row` / `-left`/`-right`/`-label`/`-desc` | `settings_rows.css` (needs its own `<link>`) | The label-left/control-right row every Settings page is built from |
 | Empty state | `.empty-state` / `-icon` / `-title` / `-desc` | `feedback.css` | Centered icon+title+description for "nothing here yet" |
 | Progress bar | `.progress-wrap` (track) / `.progress-bar` (fill, inline `style="width:N%"`) | `tabs-badges.css` | Prefix your own bar class instead of styling `.progress-bar` directly if several bars exist on one page at once |
 | Icons | *(convention, not a class)* | — | Inline `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` — no sprite sheet, `stroke="currentColor"` is what makes it follow theme/text color automatically |
+
+## Mobile / responsive design
+
+MediaForge's own pages are fully responsive, and a third-party page built
+from the shared components above (`.browse-card`, `.settings-row`,
+`.service-pills`, ...) already inherits their mobile behavior — this
+section is about the handful of things that need a deliberate choice on
+your part, not something CSS gives you for free.
+
+- **Test at a phone width, not just a shrunk browser window.** The core
+  breakpoint used throughout `web/static/*.css` is `@media (max-width:
+  640px)` — a card, table or settings row that looks fine at 900px can
+  still overflow or wrap badly at 375px. `example_ui_components/`'s live
+  gallery (see "Reusable UI components" above) is already responsive at
+  every width, so resizing it is a fast way to sanity-check you're seeing
+  the same behavior on your own markup.
+- **A brand-new settings/dashboard tab gets the off-canvas drawer for
+  free.** Since the July 2026 menu rework, any page with a
+  `.floating-side-menu` (which `resolve_dynamic_tabs()` renders
+  automatically for a brand-new tab — see "Settings placement" above) gets
+  a fixed top-right FAB on mobile that opens the menu as an off-canvas
+  drawer instead of a fixed sidebar; nothing to build for this. It only
+  applies to the *sub-navigation* chrome, not your panel's own content —
+  the content itself still needs to reflow at 640px like any other page.
+- **`.browse-card`-based grids reflow on their own** (the grid's own
+  `auto-fill`/`minmax` sizing collapses to fewer columns, then one column,
+  as the viewport shrinks) — don't fix a column count or a fixed card
+  width in your own CSS, or you'll fight the built-in reflow instead of
+  getting it for free.
+- **Touch targets.** A `.btn`/`.btn-icon`/`chb-main`/`.toggle` is already
+  sized for touch; if you add a custom clickable element that isn't one of
+  these, keep it at least ~40×40px so it's usable without zooming on a
+  phone.
+- **Don't assume hover is available.** A tooltip, badge, or action that
+  only appears `:hover` is unreachable on a touch device — pair it with a
+  tap/click state, or make the information visible without hovering at
+  all.
+
+If your integration's page does none of the above (plain settings card
+only, no page of your own) there is nothing extra to do — the generic
+card/toggle/field macros are already responsive.
 
 ## Translations (optional, modular)
 
@@ -906,6 +948,8 @@ read top to bottom in a few minutes.
 | `example_advanced/` | Own page, `section="syncplay"` | Just the implicit enable toggle, on a *brand-new* Settings-page tab (`settings_host="settings"`) | `requires_enabled` (soft runtime dependency on `example_own_menu`) and `auth_required="admin"` (admin-only routes) together, plus placing a link under the SyncPlay sidebar category instead of Discover/Management/System. Start here for anything SyncPlay-adjacent, Settings-hosted, dependent on another integration, or admin-only. |
 | `src/mediaforge/web/thirdparties/anime_seasons/` | Own page, `section="discover"` | Extra `toggle` field, on the shared tab | A real, shipped integration (fetches seasonal anime listings from the Jikan/MyAnimeList API) — external HTTP calls with rate-limiting, a persistent cache, and a richer page (a season picker plus a card grid reusing the app's existing browse-card enrichment pipeline). Read this once you've outgrown the demo examples. |
 | `example_ui_components/` | Own page, `section="management"` | Just the implicit enable toggle | Not a placement pattern — a live, click-through gallery of the core UI classes from "Reusable UI components" above, with copyable markup under each one. Enable it and browse it whenever you're building a new page and want it to look native. |
+| `example_content_source/` | None | Its own dynamic tab | Not a sidebar/settings placement pattern — registers a whole demo streaming site (`register_provider` + `register_search_source` + `register_site_mirrors` + `register_monitor_site` together), fully offline (`.invalid` domain, no network calls). Start here if you're adding a new streaming site as a module — see "Content sources" below. |
+| `example_hooks/` | None | Just the implicit enable toggle, on the shared tab | The smallest "settings-only" shape again, but for `register_notification_channel` + `register_event_hook` instead of `extra_settings` — both just log. Start here if your module needs to react to a download/AutoSync event instead of adding a settings field. |
 
 `example_own_menu/` vs. `example_attach_tab/` / `example_new_tab/` is the
 "eigenes Menü" vs. "eigener Tab" choice mentioned earlier in this
@@ -1026,3 +1070,240 @@ pass-through, so default behaviour is unchanged.
 See **`example_cineinfo_source/`** for a complete, offline-safe reference that
 registers one source of *each* batch form (per-item and bulk) under the CineInfo
 settings tab.
+
+## Content sources (`register_provider` / `register_search_source`)
+
+A **CineInfo source** (above) adds *metadata* about a title MediaForge
+already knows about. A **content source** is different: it teaches
+MediaForge about a whole new streaming site to browse and download
+from — the same role AniWorld/SerienStream/FilmPalast/MegaKino/hanime.tv
+play today. This is the one part of the app that predates the plugin
+system, so a full integration is a handful of small, composable
+registrations from your own `register(app)` instead of one call — pick the
+ones you need:
+
+```python
+from mediaforge.providers import Provider, register_provider
+from mediaforge.search import register_search_source
+from mediaforge.mirrors import register_site_mirrors
+from mediaforge.web.uptime_monitor import register_monitor_site
+import re as _re
+
+MY_SERIES_PATTERN = _re.compile(r"^https?://mysite\.example/serie/[a-zA-Z0-9\-]+/?$")
+MY_EPISODE_PATTERN = _re.compile(r"^https?://mysite\.example/serie/[a-zA-Z0-9\-]+/staffel-\d+/episode-\d+/?$")
+
+def register(app):
+    register_thirdparty(item_id="my_source", label="My Source", ...)
+
+    # 1. URL resolution -- turns a mysite.example URL into your scraper classes.
+    register_provider("my_source", Provider(
+        name="MySource",                 # must be globally unique
+        series_pattern=MY_SERIES_PATTERN,
+        episode_pattern=MY_EPISODE_PATTERN,
+        series_cls=MySourceSeries,       # your own scraper classes
+        episode_cls=MySourceEpisode,
+    ))
+
+    # 2. The search bar / POST /api/search.
+    def _search(keyword):
+        # return [{"title": ..., "url": ...}, ...] -- url must match one of
+        # the patterns registered above.
+        ...
+    register_search_source("my_source", site_id="my_source", search_fn=_search)
+
+    # 3. Optional: domain fallback, same as AniWorld/s.to/etc already have.
+    register_site_mirrors("my_source", "my_source",
+                           ["mysite.example", "mysite.cc"], label="My Source")
+
+    # 4. Optional: an UpTime dashboard card for this site.
+    register_monitor_site(
+        "my_source", "my_source", "My Source", "https://mysite.example",
+        "mysite.example", body_markers=["mysite"],
+        expected_headers={"server": "cloudflare"},
+        enabled_setting_key="my_source_enabled",
+    )
+```
+
+- **`register_provider(item_id, provider)`** (`mediaforge/providers.py`) adds
+  your `Provider` — the exact dataclass the built-in sites use: URL regexes
+  plus the model classes (`series_cls`/`season_cls`/`episode_cls`) that
+  implement scraping. `resolve_provider()`, the single function
+  `web/routes/{browse,search,stream}.py`, `queue_worker.py` and
+  `autosync_worker.py` all use to turn a URL into a scraper class, checks
+  every built-in provider first, then yours — a third-party name can never
+  shadow a built-in one (raises `ValueError` on a collision either way).
+  Your `series_cls`/`season_cls`/`episode_cls` need to expose whatever
+  interface the rest of the app already calls on a built-in provider's
+  classes for the URL kinds you support — read a `models/<site>/` package
+  (e.g. `models/megakino_to/`, the newest and closest in shape to a
+  from-scratch site) as the reference for that interface; it isn't
+  re-documented here since it's the same either way, built-in or not.
+- **`register_search_source(item_id, site_id, search_fn, label=None)`**
+  (`mediaforge/search.py`) is the search half: it makes
+  `POST /api/search {"site": "<site_id>", "keyword": "..."}` (the endpoint
+  itself, the one every built-in site's search already goes through) reach
+  your `search_fn`. `site_id` must not collide with a built-in one
+  (`aniworld`/`sto`/`filmpalast`/`megakino`/`hanime`) or another
+  registration. Exceptions inside `search_fn` are caught by the route and
+  logged, same as everything else in this document. **This wires up the
+  route, not the search-bar UI that calls it** — see "Still not automatic"
+  below, this is the one piece that needs more than a registration call
+  today.
+- **`register_site_mirrors(item_id, site_id, hosts, label=None)`**
+  (`mediaforge/mirrors.py`) is optional, for a site that (like most of the
+  built-in ones) sometimes moves domains or gets DNS-blocked. It adds an
+  entry to the exact same `DEFAULT_SITE_MIRRORS`/`SITE_LABELS` dicts the
+  five built-in sites live in, and everything downstream of those two dicts
+  is already generic — you get, for free: a mirror-editing card under
+  Settings → Sources → "Domain fallback (mirrors)", persistence, and
+  transparent host failover for any request your module makes through
+  `mediaforge.config.GLOBAL_SESSION` (not a bare `requests`/`niquests`
+  session of your own — only `GLOBAL_SESSION` is wired to the failover
+  logic). `hosts[0]` is the canonical host your `Provider`'s patterns should
+  be written against.
+- **`register_monitor_site(item_id, site_id, label, url, expected_domain, body_markers, expected_headers=None, enabled_setting_key=None, tracked_by_default=True)`**
+  (`mediaforge/web/uptime_monitor.py`) is also optional, and equally
+  free-standing — it adds an entry to `_MONITOR_SITES`, the dict the UpTime
+  dashboard (probe loop, API, JS rendering) is already generic over, so
+  your site gets its own tracked/untracked toggle, heartbeat history and
+  blocked-page detection with no other change. `enabled_setting_key` (e.g.
+  the same key you passed `register_thirdparty()`) makes the card's
+  "enabled_source" badge reflect your actual toggle instead of guessing.
+- **Uninstall is automatic for all four.** Every registration above is keyed
+  by `item_id`, the same id you already pass to `register_thirdparty()` —
+  `web/thirdparties/registry.py`'s `unregister_module()` calls
+  `unregister_provider()` / `unregister_search_source()` /
+  `unregister_site_mirrors()` / `unregister_monitor_site()` for every
+  `item_id` a module owned, so disabling/removing the module removes all of
+  it, live, no restart.
+- **Still not automatic — read this before assuming a registered source is
+  "done":**
+  - **The main search bar / Advanced Search UI does not yet ask for it.**
+    `web/static/app.js`'s search functions (the homepage quick search and
+    Advanced Search both) loop over a *fixed* list of built-in site ids
+    (`aniworld`/`sto`/`filmpalast`/`megakino`/`hanime`) — they don't read
+    the list of registered sources from the backend, so a registered
+    `search_fn` is reachable by calling `POST /api/search` directly (curl,
+    a module's own page, `resolve_provider()` on a pasted URL, AutoSync)
+    but not from the search bar a user actually types into, until `app.js`
+    is generalized to ask the backend which sites exist instead of
+    hardcoding them. This is a known gap, not something missing from your
+    module.
+  - A Discover homepage section (new/popular carousels) and a
+    settings toggle for enabling/disabling the source's own search results
+    the way MegaKino/hanime have also aren't automatic. Build those
+    yourself (a `dashboard_widget_template` or your own page, plus an
+    `extra_settings` toggle you check inside `search_fn`) if you need them;
+    nothing here prevents it, it's just not automatic yet.
+
+See **`example_content_source/`** for a complete, offline-safe reference
+that registers a whole demo streaming site (`example-source.invalid`, one
+series, three episodes, no network calls anywhere) using all four
+registrations above together.
+
+## Hosters (`register_hoster`)
+
+The video-hoster layer (VOE, Vidoza, Filemoon, ...) that `get_direct_link_for()`
+dispatches to is normally auto-discovered from `extractors/provider/*.py` —
+but that directory lives inside MediaForge's own source tree, not
+`~/.mediaforge/thirdparties/`, so a module can't add a file there the way it
+adds a template or a route. `register_hoster()` (`mediaforge/extractors/
+__init__.py`) is the external equivalent, called from your own `register(app)`:
+
+```python
+from mediaforge.extractors import register_hoster
+
+def _get_direct_link(url):
+    ...  # same contract as a get_direct_link_from_<provider> function
+    return direct_url
+
+def register(app):
+    register_thirdparty(item_id="my_hoster_mod", label="My Hoster", ...)
+    register_hoster(
+        "my_hoster_mod",
+        name="MyHoster",
+        get_direct_link=_get_direct_link,
+        headers={"Referer": "https://myhoster.example/"},
+        host_patterns=("myhoster.example", "myhoster.cc"),
+    )
+```
+
+This adds `name` to `config.SUPPORTED_PROVIDERS` (so it's actually offered,
+not just resolvable), wires `get_direct_link`/`get_preview_image` into the
+same `provider_functions` dict the auto-discovered extractors populate, merges
+`host_patterns` into `HOST_PROVIDER_MAP` (so a mislabeled/mirrored embed still
+resolves to your extractor by its actual domain, same as the built-in hosters
+— see `extractors/__init__.py`'s `provider_for_url()`), and merges `headers`
+into `config.PROVIDER_HEADERS_D`/`PROVIDER_HEADERS_W` (only if the hoster name
+isn't already present — never overwrites a built-in hoster's headers). All of
+this takes effect immediately, no restart, including
+`web/runtime_state.py`'s `WORKING_PROVIDERS` (what Settings and the provider
+picker actually show users), which is refreshed as part of the call.
+Uninstalling the module (`unregister_module()`) calls `unregister_hoster()`
+for you, same `item_id`-based cleanup as everywhere else in this document.
+
+## Notification channels (`register_notification_channel`)
+
+`extra_settings` (see "Richer settings fields" above) lets you add one more
+*toggle* to an existing notification pill (e.g. Discord). It does not let you
+add a whole new *channel* that fires when a download completes, errors,
+AutoSync finds new episodes, etc. — that's what this hook is for:
+
+```python
+from mediaforge.web.thirdparties.registry import register_notification_channel
+
+def _send(title, body, event, username=None, status=None, episode_count=0,
+          errors=None, is_movie=False):
+    if get_setting("my_channel_enabled", "0") != "1":
+        return
+    # send asynchronously (own thread), same as every built-in notify_* —
+    # don't block the request/worker that triggered this.
+    ...
+
+def register(app):
+    register_thirdparty(item_id="my_channel", label="My Channel", ...)
+    register_notification_channel("my_channel", _send)
+```
+
+`web/notifications.py`'s `notify_all()` — already called by `queue_worker.py`
+(on_completed/on_errors/on_cancelled) and `autosync_worker.py`
+(on_autosync/on_sync_hold/on_sync_resume) — calls every registered channel
+with the exact same keyword arguments it passes its six built-in ones
+(WebPush/Telegram/Pushover/ntfy/WhatsApp/Discord), each isolated in its own
+try/except so one broken channel never blocks another or the notification
+itself. Do your own enabled/preference check inside `_send` (as above) —
+registering here does not imply "always on". Removed automatically on
+disable/uninstall, same `item_id`-keyed cleanup as the other hooks in this
+document.
+
+## Lifecycle event hooks (`register_event_hook`)
+
+For a reaction that isn't itself a notification — auto-tagging, kicking off
+an external automation, updating your own module's state — hook the event
+directly instead of pretending to be a notification channel:
+
+```python
+from mediaforge.web.thirdparties.registry import register_event_hook
+
+def _on_completed(title, body, event, username=None, status=None,
+                   episode_count=0, errors=None, is_movie=False):
+    ...  # e.g. POST to an external webhook -- this is what covers the
+         # open "Generic Outgoing Webhook" roadmap item for your own module,
+         # without waiting for a built-in one
+
+def register(app):
+    register_thirdparty(item_id="my_hooks", label="My Hooks", ...)
+    register_event_hook("my_hooks", "on_completed", _on_completed)
+```
+
+Fired from the same place as notification channels (`notify_all()`), with the
+same events and the same keyword arguments — see `web/notifications.py`'s
+module docstring for the full event list (`on_completed`, `on_errors`,
+`on_cancelled`, `on_autosync`, `on_sync_hold`, `on_sync_resume`). A hook that
+raises is logged and never blocks another hook, another channel, or the
+notification itself. You can register more than one hook per event (e.g. one
+per `item_id`); all of them run. Removed automatically on disable/uninstall.
+
+See **`example_hooks/`** for a complete, offline-safe reference that
+registers one notification channel and one `on_completed` event hook
+(both just log — safe to enable, no network calls).

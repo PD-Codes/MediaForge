@@ -14,6 +14,7 @@ from ...search import hanime_search
 from ...search import megakino_search
 from ...search import query as aniworld_query
 from ...search import query_s_to
+from ...search import get_search_source
 from ..db import clear_tmdb_cache
 from .browse import _browse_cache
 from .browse import _prefetch_cycle
@@ -267,6 +268,7 @@ def register_search_routes(app):
                         site_res.append({"title": title, "url": f"https://aniworld.to{link}"})
             return site_res
 
+        _extra_source = get_search_source(site)
         if site == "filmpalast":
             results = _filmpalast_search(keyword)
         elif site == "megakino":
@@ -274,6 +276,14 @@ def register_search_routes(app):
         elif site == "hanime":
             # Adult source: only search when explicitly enabled.
             results = (hanime_search(keyword) or []) if _hanime_enabled() else []
+        elif _extra_source is not None:
+            # Third-party content source, see providers.register_provider /
+            # search.register_search_source.
+            try:
+                results = _extra_source["search_fn"](keyword) or []
+            except Exception as exc:
+                logger.error("[Search] Third-party source '%s' failed: %s", site, exc, exc_info=True)
+                results = []
         else:
             results = _get_site_results(keyword, site)
             

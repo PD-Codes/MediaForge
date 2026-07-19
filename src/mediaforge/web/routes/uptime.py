@@ -9,6 +9,7 @@ from ..db import get_uptime_heartbeats_between
 from ..db import get_uptime_range
 from ..db import set_setting
 from ..uptime_monitor import _MONITOR_SITES
+from ..uptime_monitor import _MONITOR_ENABLED_KEYS
 from ..uptime_monitor import _uptime_config
 from ..uptime_monitor import _uptime_run_round
 from ..uptime_monitor import _uptime_wake
@@ -83,13 +84,19 @@ def register_uptime_routes(app):
         for _sid, (_label, _url, _domain, _markers, _headers) in _MONITOR_SITES.items():
             rr = get_uptime_range(_sid, start, end, n_buckets=n_buckets)
             latest = rr["latest"] or {}
-            _src_def = "0" if _sid == "hanime" else "1"
+            # Third-party sites (see uptime_monitor.register_monitor_site) may
+            # declare their own "am I enabled" setting key instead of the
+            # built-in "source_enabled_<id>" convention, and default to
+            # untracked-looking ("0") rather than the five built-ins' "1"
+            # unless they said otherwise.
+            _enabled_key = _MONITOR_ENABLED_KEYS.get(_sid, "source_enabled_" + _sid)
+            _src_def = "0" if (_sid == "hanime" or _sid in _MONITOR_ENABLED_KEYS) else "1"
             sources.append({
                 "id":               _sid,
                 "label":            _label,
                 "url":              _url,
                 "tracked":          cfg["tracked"].get(_sid, False),
-                "enabled_source":   get_setting("source_enabled_" + _sid, _src_def) == "1",
+                "enabled_source":   get_setting(_enabled_key, _src_def) == "1",
                 "current_status":   latest.get("status"),
                 "last_ts":          latest.get("ts"),
                 "last_response_ms": latest.get("response_ms"),

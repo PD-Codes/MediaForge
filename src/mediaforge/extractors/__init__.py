@@ -12,6 +12,16 @@ offered (e.g. "VOE", "Vidmoly") and looks up
 ``provider_functions[f"get_direct_link_from_{provider.lower()}"]`` to get the
 right extractor function at runtime. This lets new provider modules be added
 without touching any dispatch code.
+
+A third-party module cannot drop a file into this package (it lives inside
+MediaForge's own source tree, not the external ``~/.mediaforge/thirdparties/``
+directory everything else discovers from) -- instead it calls
+:func:`register_hoster` from its own ``register(app)`` to add a hoster the
+same auto-discovered modules above end up in: ``provider_functions``,
+``HOST_PROVIDER_MAP`` and ``config.SUPPORTED_PROVIDERS`` all gain the new
+entry live, no restart needed for search text URLs. Live playback also picks
+it up immediately because ``web/runtime_state.py``'s ``WORKING_PROVIDERS`` is
+refreshed as part of registration (see :func:`register_hoster`).
 """
 import importlib
 import inspect
@@ -99,3 +109,102 @@ def get_direct_link_for(url, fallback_provider=None):
     if fn is None:
         raise ValueError(f"The provider '{provider}' is not yet implemented.")
     return fn(url)
+
+
+# ---------------------------------------------------------------------------
+# Third-party hosters
+# ---------------------------------------------------------------------------
+_EXTRA_HOSTERS = {}  # item_id -> provider key (lowercase)
+
+
+def register_hoster(
+    item_id,
+    name,
+    get_direct_link=None,
+    get_preview_image=None,
+    headers=None,
+    host_patterns=(),
+) -> None:
+    """Register an additional video-hoster extractor from a third-party
+    module's ``register(app)`` -- the external-module counterpart of dropping
+    a file into ``extractors/provider/`` (see the module docstring above).
+
+    - ``item_id``: the id already passed to ``register_thirdparty()`` for this
+      module's entry, so ``web/thirdparties/registry.py``'s
+      ``unregister_module()`` can undo this on disable/uninstall.
+    - ``name``: the hoster's display name, e.g. ``"MyHoster"`` -- becomes the
+      ``provider_functions`` key suffix (lower-cased) and the entry added to
+      ``config.SUPPORTED_PROVIDERS``. Must not collide with an existing name.
+    - ``get_direct_link(url) -> str``: same contract as a
+      ``get_direct_link_from_<provider>`` function in ``extractors/provider/``.
+      Optional if this hoster only needs preview images (unusual, but not
+      disallowed).
+    - ``get_preview_image(url) -> str | None``: optional, same contract as
+      ``get_preview_image_link_from_<provider>``.
+    - ``headers``: optional dict merged into both ``config.PROVIDER_HEADERS_D``
+      and ``config.PROVIDER_HEADERS_W`` under ``name`` (only if not already
+      present -- never overwrites a built-in hoster's headers).
+    - ``host_patterns``: optional iterable of domains (e.g.
+      ``("myhoster.com", "myhoster.cc")``) merged into ``HOST_PROVIDER_MAP``,
+      so :func:`provider_for_url` recognizes a resolved/mirrored embed URL as
+      this hoster even when the site's own label says something else.
+
+    Live effect: ``provider_functions`` and ``HOST_PROVIDER_MAP`` are plain
+    dict lookups, read fresh on every call, so both take effect immediately.
+    ``config.SUPPORTED_PROVIDERS`` is mutated in place (``list.append``, never
+    reassigned) for the same reason -- see that list's definition in
+    ``config.py``. ``web/runtime_state.py``'s ``WORKING_PROVIDERS`` (what the
+    UI actually offers users) is refreshed as part of this call too, via a
+    lazy import (avoids a load-time circular import between this package and
+    ``web/runtime_state.py``, which itself imports ``provider_functions`` from
+    here).
+    """
+    if get_direct_link is None and get_preview_image is None:
+        raise ValueError("register_hoster: need at least one of get_direct_link/get_preview_image")
+    key = name.lower()
+    from .. import config as _config
+
+    existing = {p.lower() for p in _config.SUPPORTED_PROVIDERS} | set(_EXTRA_HOSTERS.values())
+    if key in existing:
+        raise ValueError(f"register_hoster: name already registered: {name!r}")
+
+    if get_direct_link is not None:
+        provider_functions[f"get_direct_link_from_{key}"] = get_direct_link
+    if get_preview_image is not None:
+        provider_functions[f"get_preview_image_link_from_{key}"] = get_preview_image
+    for host in host_patterns:
+        HOST_PROVIDER_MAP[host.lower()] = key
+    if headers:
+        _config.PROVIDER_HEADERS_D.setdefault(name, dict(headers))
+        _config.PROVIDER_HEADERS_W.setdefault(name, dict(headers))
+
+    _config.SUPPORTED_PROVIDERS.append(name)
+    _EXTRA_HOSTERS[item_id] = key
+
+    try:
+        from ..web import runtime_state as _runtime_state
+        _runtime_state.refresh_working_providers()
+    except Exception:
+        logger.exception("[Extractors] Failed to refresh WORKING_PROVIDERS after registering hoster '%s'", name)
+
+    logger.info("[Extractors] Registered third-party hoster: %s (%s)", name, item_id)
+
+
+def unregister_hoster(item_id) -> None:
+    """Drop a hoster previously added via :func:`register_hoster`. Leaves
+    ``config.SUPPORTED_PROVIDERS``/``HOST_PROVIDER_MAP`` entries in place
+    (harmless once ``provider_functions`` no longer resolves them -- callers
+    already treat an unresolvable provider as "not implemented") but removes
+    it from ``provider_functions`` and refreshes ``WORKING_PROVIDERS`` so it
+    stops being offered."""
+    key = _EXTRA_HOSTERS.pop(item_id, None)
+    if key is None:
+        return
+    provider_functions.pop(f"get_direct_link_from_{key}", None)
+    provider_functions.pop(f"get_preview_image_link_from_{key}", None)
+    try:
+        from ..web import runtime_state as _runtime_state
+        _runtime_state.refresh_working_providers()
+    except Exception:
+        logger.exception("[Extractors] Failed to refresh WORKING_PROVIDERS after unregistering hoster '%s'", item_id)
+    logger.info("[Extractors] Unregistered third-party hoster: %s", item_id)
