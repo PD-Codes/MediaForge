@@ -3,10 +3,10 @@
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 
-# TODO(telemetry): wire up flag.integrations.crunchyroll/fernsehserien/seerr/
-# mediascan (usage counters) and detail.integrations (per-integration
-# connection errors, no credentials) -- see telemetry/registry.py.
-# Registry-only for now.
+detail.integrations (per-integration connection errors, no credentials) is
+wired at each "test connection" endpoint below -- see _report_integration_error().
+flag.integrations.* (per-service usage counters) are intentionally NOT
+wired -- out of scope for now, see telemetry/registry.py.
 """
 
 from ..db import get_mediascan_count
@@ -26,9 +26,38 @@ from flask import request
 import json
 import threading
 from ...logger import get_logger
+from ...telemetry import client as telemetry_client
+from ...telemetry import events as telemetry_events
 
 
 logger = get_logger(__name__)
+
+
+def _report_integration_error(integration, *, error_type=None, reason=None):
+    """Submit a detail.integrations telemetry event for a failed connection
+    test/attempt (see registry.py's "detail.integrations" -- "Verbindungsfehler
+    pro Integration ... niemals Zugangsdaten").
+
+    Deliberately carries ONLY a short classifier (exception class name or a
+    fixed reason string), never the raw exception message/detail text a
+    service may return -- that text can legitimately echo back a URL,
+    hostname or (for a bad-credentials response) part of what was typed in,
+    so it never leaves this function. Matches the error_type-only pattern
+    already used by autosync_worker.py's detail.autosync events.
+
+    Wrapped in its own try/except so a telemetry bug can never affect the
+    integration test/connection flow itself.
+    """
+    try:
+        event = telemetry_events.build_feature_detail_event(
+            "detail.integrations", action="connect", status="error",
+            metadata={"integration": integration,
+                      "error_type": error_type or reason or "unknown"},
+        )
+        if event:
+            telemetry_client.submit(event)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.integrations event", exc_info=True)
 
 
 _PLEX_CLIENT_ID = "mediaforge-downloader"
@@ -118,9 +147,12 @@ def register_integrations_routes(app):
         try:
             from .. import crunchyroll_service
             result = crunchyroll_service.test_connection(email, password, locale, anon, profile_id)
+            if not result.get("ok"):
+                _report_integration_error("crunchyroll", reason=result.get("error"))
         except Exception as exc:
             logger.debug("[Crunchyroll] test endpoint error: %s", exc)
             result = {"ok": False, "error": "unknown", "detail": str(exc)}
+            _report_integration_error("crunchyroll", error_type=type(exc).__name__)
         return jsonify(result)
     @app.route("/api/settings/crunchyroll/profiles", methods=["GET"])
     def api_settings_crunchyroll_profiles():
@@ -195,9 +227,12 @@ def register_integrations_routes(app):
         try:
             from .. import fernsehserien_service
             result = fernsehserien_service.test_connection()
+            if not result.get("ok"):
+                _report_integration_error("fernsehserien", reason=result.get("error"))
         except Exception as exc:
             logger.debug("[Fernsehserien] test endpoint error: %s", exc)
             result = {"ok": False, "error": "unknown", "detail": str(exc)}
+            _report_integration_error("fernsehserien", error_type=type(exc).__name__)
         return jsonify(result)
     @app.route("/api/fernsehserien/availability", methods=["GET"])
     def api_fernsehserien_availability():
@@ -293,6 +328,7 @@ def register_integrations_routes(app):
             else:
                 return jsonify({"ok": False, "error": "Unbekannter Typ"})
         except Exception as e:
+            _report_integration_error("mediaplayer_" + (svc or "unknown"), error_type=type(e).__name__)
             return jsonify({"ok": False, "error": str(e)})
     @app.route("/api/settings/mediaplayer/scan-status", methods=["GET"])
     def api_mediaplayer_scan_status():

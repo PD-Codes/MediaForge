@@ -13,14 +13,18 @@ calls the post-download refresh + delayed rescan after a completed download;
 ``web/routes/integrations.py`` exposes the manual-trigger and status-polling
 endpoints backed by ``_run_mediascan`` / ``_mediascan_status``.
 
-TODO(telemetry): wire up flag.library_scan / detail.library_scan (scan
-duration, new-finds count, errors) at the scan-finished point in this
-module -- see telemetry/registry.py. Registry-only for now.
+detail.library_scan (scan duration, entry count, errors) is wired at the
+end of ``_run_mediascan()``. detail.integrations (media-server connection
+errors) is wired in ``_trigger_mediaplayer_refresh()``'s except block.
+flag.library_scan (pure usage counter) is intentionally NOT wired -- out of
+scope for now, see telemetry/registry.py.
 """
 
 import threading
 
 from ..logger import get_logger
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
 from .db import (
     get_setting,
     get_tmdb_cache,
@@ -250,6 +254,50 @@ def _mediascan_resolve_ids(entries: list) -> list:
     return entries
 
 
+def _report_library_scan(source, *, status, duration=None, count=None, error_type=None):
+    """Submit a detail.library_scan telemetry event for one finished scan run
+    (see registry.py's "detail.library_scan" -- "Scan-Dauer, Anzahl neu
+    gefundener Titel und aufgetretene Fehler"). Metadata is limited to the
+    source ("plex"/"jellyfin"), duration, entry count and, on failure, the
+    exception class name -- never a title or the raw exception message
+    (which could echo a configured URL/hostname). Wrapped in its own
+    try/except so a telemetry bug can never affect a scan run.
+    """
+    try:
+        metadata = {"source": source}
+        if duration is not None:
+            metadata["duration_seconds"] = round(duration, 1)
+        if count is not None:
+            metadata["entry_count"] = count
+        if error_type:
+            metadata["error_type"] = error_type
+        event = telemetry_events.build_feature_detail_event(
+            "detail.library_scan", action="scan", status=status, metadata=metadata,
+        )
+        if event:
+            telemetry_client.submit(event)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.library_scan event", exc_info=True)
+
+
+def _report_mediaplayer_error(svc, exc):
+    """Submit a detail.integrations telemetry event for a failed Jellyfin/Plex
+    library-refresh call (see registry.py's "detail.integrations"). Only the
+    exception class name is sent, never the raw message. Wrapped in its own
+    try/except so a telemetry bug can never affect the refresh call itself.
+    """
+    try:
+        event = telemetry_events.build_feature_detail_event(
+            "detail.integrations", action="connect", status="error",
+            metadata={"integration": "mediaplayer_" + (svc or "unknown"),
+                      "error_type": type(exc).__name__},
+        )
+        if event:
+            telemetry_client.submit(event)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.integrations event", exc_info=True)
+
+
 def _run_mediascan(source: str | None = None) -> None:
     """
     Core refresh: fetch library from Plex / Jellyfin and populate mediascan_cache.
@@ -310,6 +358,9 @@ def _run_mediascan(source: str | None = None) -> None:
                 "error":       None,
             })
         logger.info("[MediaScan] Completed — %d entries cached", len(entries))
+        _report_library_scan(source, status="success",
+                              duration=_t.time() - _mediascan_status["started_at"],
+                              count=len(entries))
 
     except Exception as exc:
         logger.error("[MediaScan] Fetch failed: %s", exc)
@@ -319,6 +370,9 @@ def _run_mediascan(source: str | None = None) -> None:
                 "finished_at": _t.time(),
                 "error":       str(exc),
             })
+        _report_library_scan(source, status="error",
+                              duration=_t.time() - _mediascan_status["started_at"],
+                              error_type=type(exc).__name__)
 
 
 def _schedule_mediascan_delayed(delay: float = 120.0) -> None:
@@ -420,3 +474,4 @@ def _trigger_mediaplayer_refresh(title: str | None = None, selected_path: str | 
 
     except Exception as exc:
         logger.warning("Media-player refresh failed: %s", exc)
+        _report_mediaplayer_error(svc if 'svc' in locals() else None, exc)

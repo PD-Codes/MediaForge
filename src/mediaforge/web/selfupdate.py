@@ -1,9 +1,10 @@
 """
 Self-update support for **pip** and **pipx** installations.
 
-TODO(telemetry): wire up flag.self_update (usage counter) and
-detail.self_update (success/failure of an update run) -- see
-telemetry/registry.py. Registry-only for now.
+detail.self_update (success/failure of an update run) is wired at
+finalize_after_restart() -- see _report_self_update() below. flag.self_update
+(pure usage counter) is intentionally NOT wired -- out of scope for now, see
+telemetry/registry.py.
 
 Capabilities by install type:
 
@@ -37,6 +38,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+from ..logger import get_logger
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -265,7 +272,7 @@ def ack_status() -> None:
     """Reset the state back to idle (frontend dismissed the result)."""
     _write_state("idle")
     meta = _read_meta()
-    for k in ("error", "to_version"):
+    for k in ("error", "to_version", "telemetry_reported"):
         meta.pop(k, None)
     _write_meta(meta)
 
@@ -589,12 +596,48 @@ def finalize_after_restart() -> None:
         meta["to_version"] = _current_version()
         _write_meta(meta)
         _write_state("success")
+        _report_self_update(status="success")
     elif state == "installing":
         meta = _read_meta()
         meta["error"] = "Update did not complete (process restarted unexpectedly)."
         _write_meta(meta)
         _write_state("failed")
-    # 'failed' / 'success' / 'idle' are left untouched.
+        _report_self_update(status="failed", error_type="interrupted")
+    elif state == "failed":
+        # The helper script itself already wrote "failed" (the pip/pipx
+        # upgrade command exited non-zero) before relaunching the app -- this
+        # is the first boot after that. Report it once via a meta flag: this
+        # function runs on EVERY app start, and the state stays "failed"
+        # until the user opens the UI and dismisses it (ack_status()), so
+        # without the flag a crash-loop before that dismissal would
+        # re-report the same old failure on every restart.
+        meta = _read_meta()
+        if not meta.get("telemetry_reported"):
+            meta["telemetry_reported"] = True
+            _write_meta(meta)
+            _report_self_update(status="failed", error_type="upgrade_command_failed")
+    # 'success' / 'idle' are left untouched.
+
+
+def _report_self_update(*, status, error_type=None):
+    """Submit a detail.self_update telemetry event (see registry.py --
+    "Ob ein Selbst-Update erfolgreich war oder fehlgeschlagen ist"). Only a
+    coarse status/error classifier is sent, never the update log or the raw
+    pip/pipx output (which can contain package index URLs). Wrapped in its
+    own try/except so a telemetry bug can never affect the update flow.
+    """
+    try:
+        metadata = {}
+        if error_type:
+            metadata["error_type"] = error_type
+        event = telemetry_events.build_feature_detail_event(
+            "detail.self_update", action="update", status=status,
+            metadata=metadata or None,
+        )
+        if event:
+            telemetry_client.submit(event)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.self_update event", exc_info=True)
 
 
 def _current_version() -> str:

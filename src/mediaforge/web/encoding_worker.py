@@ -24,6 +24,8 @@ import threading
 import time
 
 from ..logger import get_logger
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
 from .db import (
     add_to_encoding_queue,
     claim_next_encoding_queued,
@@ -148,6 +150,34 @@ def _encode_one_file(input_path, output_path, label, cancel_event):
         raise RuntimeError(f"ffmpeg exited with code {process.returncode}")
 
 
+def _report_transcode_failure(*, status, failed, total):
+    """Submit a detail.transcoding telemetry event for a finished job that
+    had at least one failed file (see registry.py's "detail.transcoding" --
+    "Fehlermeldungen, wenn ein Transcoding-Vorgang fehlschlägt"). Deliberately
+    NOT called on a clean success -- stage 3 is for feature errors/context,
+    not a usage counter (that would be flag.transcoding, not wired here).
+
+    Metadata is limited to the codec/hw settings and failure counts -- no
+    title, no file path, per TELEMETRY_PLAN.md's "kein Titel/Inhalt" rule
+    for stage 3. Wrapped in its own try/except so a telemetry bug can never
+    affect the encoding worker itself (same defensive pattern as
+    telemetry/hooks.py's _report_exception).
+    """
+    try:
+        mode = get_setting("encoding_mode", "copy")
+        hw = get_setting(f"encoding_hw_{mode}", "cpu") if mode in ("h264", "h265") else None
+        preset = get_setting(f"encoding_preset_{mode}", "") if mode in ("h264", "h265") else None
+        event = telemetry_events.build_feature_detail_event(
+            "detail.transcoding", action="encode", status=status,
+            metadata={"mode": mode, "hw": hw, "preset": preset,
+                      "failed_files": failed, "total_files": total},
+        )
+        if event:
+            telemetry_client.submit(event)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.transcoding event", exc_info=True)
+
+
 def _encoding_worker():
     """Single global worker loop: claim one queued job, process it fully, repeat.
 
@@ -245,9 +275,13 @@ def _encoding_worker():
                 elif _overall_failed < _total_files:
                     set_encoding_status(item["id"], "completed")
                     set_encoding_error(item["id"], f"{_overall_failed}/{_total_files} Datei(en) fehlgeschlagen")
+                    _report_transcode_failure(status="partial_failure",
+                                               failed=_overall_failed, total=_total_files)
                 else:
                     set_encoding_status(item["id"], "failed")
                     set_encoding_error(item["id"], f"Alle {_total_files} Datei(en) fehlgeschlagen")
+                    _report_transcode_failure(status="failed",
+                                               failed=_overall_failed, total=_total_files)
                 _final_status_set = True
             else:
                 set_encoding_status(item["id"], "cancelled")

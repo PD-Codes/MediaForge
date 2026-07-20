@@ -3,9 +3,12 @@
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 
-# TODO(telemetry): wire up flag.captcha (usage counter) and detail.captcha
-# (solve success/failure statistic) -- see telemetry/registry.py.
-# Registry-only for now.
+detail.captcha (solve timeout/error) is already wired at the actual solve
+call sites in playwright/captcha.py (_solve_captcha_cli/_interactive,
+solve_sto_modal) -- this module only forwards screenshot/click/status
+polling for an already-open interactive session, so there is no separate
+success/failure point to add here. flag.captcha (usage counter) is
+intentionally NOT wired -- out of scope for now, see telemetry/registry.py.
 """
 
 from ..db import get_queue_item

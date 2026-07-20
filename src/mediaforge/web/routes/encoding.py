@@ -3,9 +3,11 @@
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 
-# TODO(telemetry): wire up flag.transcoding / detail.transcoding (encoding
-# errors) at the transcode call site -- see telemetry/registry.py.
-# Registry-only for now.
+detail.transcoding (encoding errors) is wired at the actual transcode call
+site -- see encoding_worker.py's _report_transcode_failure(), called from
+_encoding_worker()'s final-status block. flag.transcoding (pure usage
+counter) is intentionally NOT wired -- out of scope for now, see
+telemetry/registry.py.
 """
 
 from ..db import cancel_encoding_item

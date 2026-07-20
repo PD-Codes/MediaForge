@@ -2,6 +2,10 @@
 
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
+
+detail.integrations (connection errors, no credentials) is wired at the
+Jellyseerr/Overseerr fetch below -- see registry.py. flag.integrations.seerr
+(usage counter) is intentionally NOT wired -- out of scope for now.
 """
 
 from ...config import LANG_LABELS
@@ -17,9 +21,29 @@ from flask import request
 import json
 from .image_proxy import _poster_proxy
 from ...logger import get_logger
+from ...telemetry import client as telemetry_client
+from ...telemetry import events as telemetry_events
 
 
 logger = get_logger(__name__)
+
+
+def _report_seerr_error(exc):
+    """Submit a detail.integrations telemetry event for a failed Seerr fetch
+    (see registry.py's "detail.integrations"). Only the exception class name
+    is sent -- never the raw message, which echoes the configured Seerr URL
+    (see the "Seerr nicht erreichbar: {e}" string below). Wrapped in its own
+    try/except so a telemetry bug can never affect the requests page itself.
+    """
+    try:
+        event = telemetry_events.build_feature_detail_event(
+            "detail.integrations", action="connect", status="error",
+            metadata={"integration": "seerr", "error_type": type(exc).__name__},
+        )
+        if event:
+            telemetry_client.submit(event)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.integrations event", exc_info=True)
 
 
 def register_seerr_routes(app):
@@ -86,6 +110,7 @@ def register_seerr_routes(app):
                 mv_pending    = fut_mv_pending.result().get("results", [])
                 mv_approved   = fut_mv_approved.result().get("results", [])
         except Exception as e:
+            _report_seerr_error(e)
             return jsonify({"error": f"Seerr nicht erreichbar: {e}"}), 502
 
         # Tag each item with its media type so we know which detail endpoint to call
