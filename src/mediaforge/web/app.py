@@ -1095,6 +1095,20 @@ def start_web_ui(
     # this function. Only open the browser in the parent (reloader) process
     # to avoid opening it twice.
     is_reloader_child = os.environ.get("WERKZEUG_RUN_MAIN") == "true"
+    
+    is_docker = os.path.exists("/.dockerenv") or os.environ.get("MEDIAFORGE_DOCKER") == "1"
+    
+    from .db import get_setting
+    if not is_docker:
+        tray_mode = get_setting("tray_mode", "0") == "1"
+        open_browser_db = get_setting("open_browser_on_startup", "1") == "1"
+    else:
+        tray_mode = False
+        open_browser_db = False
+        
+    if not open_browser_db:
+        open_browser = False
+
     if open_browser and not is_reloader_child:
         threading.Timer(0.5, webbrowser.open, args=(url,)).start()
 
@@ -1138,6 +1152,15 @@ def start_web_ui(
                 with _upscale_cancel_lock:
                     for ev in list(_upscale_active_cancel_events.values()):
                         ev.set()
+            except Exception:
+                pass
+
+            # Silence waitress's own death rattle. Closing the listening socket from this
+            # thread makes the worker threads still servicing other requests fail their next
+            # trigger pull — on Windows that surfaces as a stack of
+            # "OSError [WinError 10038] ... not a socket" logged by waitress itself.
+            try:
+                logging.getLogger("waitress").setLevel(logging.CRITICAL)
             except Exception:
                 pass
 
@@ -1212,7 +1235,64 @@ def start_web_ui(
             except (ValueError, AttributeError, OSError):
                    pass
 
-        try:
-            server.run()
-        except (KeyboardInterrupt, SystemExit):
-            _graceful_shutdown()
+        def _run_server():
+            try:
+                server.run()
+            except (KeyboardInterrupt, SystemExit):
+                _graceful_shutdown()
+
+        if tray_mode and not debug:
+            try:
+                import pystray
+                from PIL import Image
+                import platform
+                
+                # Hide console window on Windows when starting in tray mode
+                if platform.system() == "Windows":
+                    import ctypes
+                    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                    if hwnd:
+                        ctypes.windll.user32.ShowWindow(hwnd, 0) # SW_HIDE
+                
+                icon_path = os.path.join(app.root_path, "static", "icon-192.png")
+                if not os.path.exists(icon_path):
+                    icon_path = os.path.join(app.root_path, "static", "icon.png")
+                
+                try:
+                    image = Image.open(icon_path)
+                except Exception:
+                    image = Image.new('RGB', (64, 64), color=(73, 109, 137))
+
+                def on_open(icon, item):
+                    webbrowser.open(url)
+
+                def on_exit(icon, item):
+                    icon.stop()
+                    # Show window again on exit before closing
+                    if platform.system() == "Windows":
+                        import ctypes
+                        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                        if hwnd:
+                            ctypes.windll.user32.ShowWindow(hwnd, 5) # SW_SHOW
+                    _graceful_shutdown()
+
+                menu = pystray.Menu(
+                    pystray.MenuItem("MediaForge öffnen", on_open, default=True),
+                    pystray.MenuItem("Beenden", on_exit)
+                )
+
+                icon = pystray.Icon("MediaForge", image, "MediaForge", menu)
+
+                server_thread = threading.Thread(target=_run_server, daemon=True, name="waitress-server")
+                server_thread.start()
+
+                try:
+                    icon.run()
+                except (KeyboardInterrupt, SystemExit):
+                    _graceful_shutdown()
+            except ImportError:
+                import logging
+                logging.getLogger(__name__).warning("pystray or Pillow not installed; tray mode disabled.")
+                _run_server()
+        else:
+            _run_server()

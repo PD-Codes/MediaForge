@@ -4979,3 +4979,27 @@ msgstr "Erscheinungsdatum (Aired / Released)"
 msgid "Studio / Network"
 msgstr "Studio / Network"
 
+msgid "Startup & Tray"
+msgstr "Startup & Tray"
+
+msgid "Start in System Tray"
+msgstr "Im System-Tray starten"
+
+msgid "Starts the application as an icon in the system tray instead of blocking a terminal window."
+msgstr "Startet die Anwendung als Icon im System-Tray, anstatt ein Terminal-Fenster zu blockieren."
+
+msgid "Autostart with PC"
+msgstr "Autostart mit PC"
+
+msgid "Automatically start MediaForge when you log in to your computer."
+msgstr "MediaForge beim Login automatisch mit dem PC starten."
+
+msgid "Open browser automatically on startup"
+msgstr "Browser beim Start automatisch öffnen"
+
+msgid "Whether to open the Web UI in your default browser when MediaForge starts."
+msgstr "Legt fest, ob das Web-Interface im Standardbrowser geöffnet wird, wenn MediaForge startet."
+
+msgid "This feature is not available in Docker."
+msgstr "Diese Funktion ist für Docker nicht verfügbar."
+

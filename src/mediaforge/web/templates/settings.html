@@ -320,6 +320,36 @@
 
     {% if is_admin %}
     <div class="settings-section">
+      <h2>{{ _('Startup & Tray') }}</h2>
+      <div id="startupTrayOptions">
+        <div class="settings-row">
+          <label class="settings-checkbox-row" for="trayMode">
+            <input type="checkbox" class="chb-main" id="trayMode" onchange="saveStartupSettings()" />
+            <span>{{ _('Start in System Tray') }}</span>
+          </label>
+        </div>
+        <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Starts the application as an icon in the system tray instead of blocking a terminal window.') }}</div>
+        
+        <div class="settings-row">
+          <label class="settings-checkbox-row" for="autostartEnabled">
+            <input type="checkbox" class="chb-main" id="autostartEnabled" onchange="saveStartupSettings()" />
+            <span>{{ _('Autostart with PC') }}</span>
+          </label>
+        </div>
+        <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Automatically start MediaForge when you log in to your computer.') }}</div>
+        
+        <div class="settings-row">
+          <label class="settings-checkbox-row" for="openBrowserOnStartup">
+            <input type="checkbox" class="chb-main" id="openBrowserOnStartup" onchange="saveStartupSettings()" />
+            <span>{{ _('Open browser automatically on startup') }}</span>
+          </label>
+        </div>
+        <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Whether to open the Web UI in your default browser when MediaForge starts.') }}</div>
+      </div>
+      <div class="settings-hint" id="dockerStartupHint" style="display:none;padding:0 22px 14px;color:var(--accent,#4ea1ff);">{{ _('This feature is not available in Docker.') }}</div>
+    </div>
+
+    <div class="settings-section">
       <h2>{{ _('System') }}</h2>
       <h3 class="settings-subtitle" style="padding:0 22px">{{ _('Debug Mode') }}</h3>
       <div class="settings-row">

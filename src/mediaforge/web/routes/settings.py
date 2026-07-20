@@ -137,6 +137,12 @@ def register_settings_routes(app):
             debug_mode = "1"
         media_stats_enabled  = get_setting("media_stats_enabled")  or os.environ.get("MEDIAFORGE_MEDIA_STATS_ENABLED", "0")
         web_console          = get_setting("web_console")          or os.environ.get("MEDIAFORGE_WEB_CONSOLE", "0")
+        
+        tray_mode            = get_setting("tray_mode", "0")
+        autostart_enabled    = get_setting("autostart_enabled", "0")
+        open_browser_on_startup = get_setting("open_browser_on_startup", "1")
+        is_docker            = os.path.exists("/.dockerenv") or os.environ.get("MEDIAFORGE_DOCKER") == "1"
+
         return jsonify(
             {
                 "download_path":             resolved,
@@ -170,6 +176,10 @@ def register_settings_routes(app):
                 "debug_forced":              debug_forced,
                 "media_stats_enabled":       media_stats_enabled,
                 "web_console":               web_console,
+                "tray_mode":                 tray_mode,
+                "autostart_enabled":         autostart_enabled,
+                "open_browser_on_startup":   open_browser_on_startup,
+                "is_docker":                 is_docker,
                 "syncplay_enabled":          get_setting("syncplay_enabled", "0"),
                 "auto_update_enabled":       get_setting("auto_update_enabled", "0"),
                 "auto_update_days":          get_setting("auto_update_days", "0,1,2,3,4,5,6"),
@@ -867,6 +877,23 @@ def register_settings_routes(app):
             val = "1" if str(data["web_console"]).lower() in ("true", "1") else "0"
             set_setting("web_console", val)
             os.environ["MEDIAFORGE_WEB_CONSOLE"] = val
+
+        if "tray_mode" in data:
+            val = "1" if str(data["tray_mode"]).lower() in ("true", "1") else "0"
+            set_setting("tray_mode", val)
+
+        if "open_browser_on_startup" in data:
+            val = "1" if str(data["open_browser_on_startup"]).lower() in ("true", "1") else "0"
+            set_setting("open_browser_on_startup", val)
+
+        if "autostart_enabled" in data:
+            val = "1" if str(data["autostart_enabled"]).lower() in ("true", "1") else "0"
+            set_setting("autostart_enabled", val)
+            try:
+                from ...autostart import set_autostart
+                set_autostart(val == "1")
+            except Exception as e:
+                logger.error(f"Failed to configure autostart: {e}")
         if "syncplay_enabled" in data:
             val = "1" if str(data["syncplay_enabled"]).lower() in ("true", "1") else "0"
             set_setting("syncplay_enabled", val)

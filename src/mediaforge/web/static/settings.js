@@ -203,6 +203,24 @@ async function loadSettings() {
     }
 
 
+    // Startup & Tray
+    const trayModeEl = document.getElementById("trayMode");
+    if (trayModeEl) trayModeEl.checked = data.tray_mode === "1";
+    const autostartEl = document.getElementById("autostartEnabled");
+    if (autostartEl) autostartEl.checked = data.autostart_enabled === "1";
+    const openBrowserEl = document.getElementById("openBrowserOnStartup");
+    if (openBrowserEl) openBrowserEl.checked = data.open_browser_on_startup !== "0"; // Default true
+    
+    if (data.is_docker) {
+      if (trayModeEl) trayModeEl.disabled = true;
+      if (autostartEl) autostartEl.disabled = true;
+      if (openBrowserEl) openBrowserEl.disabled = true;
+      const dhint = document.getElementById("dockerStartupHint");
+      if (dhint) dhint.style.display = "block";
+      const trayOpts = document.getElementById("startupTrayOptions");
+      if (trayOpts) trayOpts.style.opacity = "0.6";
+    }
+
     // Design tab - Extended Settings
     _loadDesignCheckboxes();
 
@@ -797,6 +815,30 @@ async function saveWebConsole() {
     if (el.checked) startWebConsole();
     else stopWebConsole();
     showToast(t("Web-Konsole " + (el.checked ? "aktiviert" : "deaktiviert"), "Web-Console " + (el.checked ? "enabled" : "disabled")));
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+async function saveStartupSettings() {
+  const trayModeEl = document.getElementById("trayMode");
+  const autostartEl = document.getElementById("autostartEnabled");
+  const openBrowserEl = document.getElementById("openBrowserOnStartup");
+  
+  const payload = {};
+  if (trayModeEl) payload.tray_mode = trayModeEl.checked;
+  if (autostartEl) payload.autostart_enabled = autostartEl.checked;
+  if (openBrowserEl) payload.open_browser_on_startup = openBrowserEl.checked;
+  
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(t("Startup-Einstellungen gespeichert", "Startup settings saved"));
   } catch (e) {
     showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
   }

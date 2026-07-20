@@ -42,9 +42,9 @@ dependencies = [
   "bleach",
   # Validate TLS certificates against the OS trust store (Windows/macOS/Linux)
   # instead of the ageing certifi bundle. Used as an explicitly passed SSLContext
-  # only — never truststore.inject_into_ssl(), which breaks urllib3-future.
-  # See config.py's _os_trust_store_context().
   "truststore",
+  "pystray",
+  "Pillow",
 ]
 
 classifiers = [
