@@ -269,7 +269,7 @@ def register_encoding_routes(app):
             except Exception as exc:
                 results[encoder] = {"available": False, "reason": str(exc)}
 
-        _null = ["ffmpeg", "-f", "lavfi", "-i", "nullsrc=size=128x128:rate=1",
+        _null = ["ffmpeg", "-f", "lavfi", "-i", "nullsrc=size=256x256:rate=1",
                  "-frames:v", "1", "-an"]
 
         probes = {
@@ -278,12 +278,12 @@ def register_encoding_routes(app):
             "h264_nvenc":         _null + ["-c:v", "h264_nvenc",         "-f", "null", "-"],
             "hevc_nvenc":         _null + ["-c:v", "hevc_nvenc",         "-f", "null", "-"],
             "h264_vaapi":         ["ffmpeg", "-vaapi_device", vaapi_device,
-                                   "-f", "lavfi", "-i", "nullsrc=size=128x128:rate=1",
+                                   "-f", "lavfi", "-i", "nullsrc=size=256x256:rate=1",
                                    "-frames:v", "1", "-an",
                                    "-vf", "format=nv12,hwupload",
                                    "-c:v", "h264_vaapi", "-f", "null", "-"],
             "hevc_vaapi":         ["ffmpeg", "-vaapi_device", vaapi_device,
-                                   "-f", "lavfi", "-i", "nullsrc=size=128x128:rate=1",
+                                   "-f", "lavfi", "-i", "nullsrc=size=256x256:rate=1",
                                    "-frames:v", "1", "-an",
                                    "-vf", "format=nv12,hwupload",
                                    "-c:v", "hevc_vaapi", "-f", "null", "-"],
