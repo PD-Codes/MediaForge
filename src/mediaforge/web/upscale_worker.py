@@ -127,10 +127,12 @@ def _upscale_worker():
                 output_path = _fentry.get("output_path") or file_path
 
                 _replace_original = (file_path == output_path)
-                if _replace_original:
-                    actual_output = str(_WPath(file_path).with_suffix(".upscale_tmp.mkv"))
-                else:
-                    actual_output = output_path
+                
+                from ..config import MEDIAFORGE_TEMP_DIR
+                import uuid
+                import shutil
+                temp_output = str(MEDIAFORGE_TEMP_DIR / f"{_WPath(file_path).stem}_{uuid.uuid4().hex[:8]}_upscale_tmp.mkv")
+                actual_output = output_path
 
                 # Track current file index (poller reads this)
                 item["_runtime_file_idx"] = _fi
@@ -141,7 +143,7 @@ def _upscale_worker():
                 try:
                     upscale_file(
                         input_path=file_path,
-                        output_path=actual_output,
+                        output_path=temp_output,
                         settings=settings,
                         cancel_event=cancel_ev,
                         label=item.get("title", ""),
@@ -149,12 +151,12 @@ def _upscale_worker():
                     if not is_upscale_cancelled(item["id"]):
                         if _replace_original:
                             _WPath(file_path).unlink(missing_ok=True)
-                            _WPath(actual_output).rename(file_path)
+                        shutil.move(temp_output, actual_output)
                 except Exception as _fe:
                     _overall_failed += 1
                     logger.error(f"[Upscale] Fehler bei {file_path}: {_fe}")
                     try:
-                        _WPath(actual_output).unlink(missing_ok=True)
+                        _WPath(temp_output).unlink(missing_ok=True)
                     except Exception:
                         pass
                     # Continue with next file unless cancelled
