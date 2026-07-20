@@ -297,6 +297,51 @@ def _run_autosync_for_job(job, force_notify=False):
                 logger.warning("[AutoSync] Resume notification failed: %s", e)
 
         prov = resolve_provider(job["series_url"])
+        if prov.series_cls is None or prov.season_cls is None:
+            # Some providers have no series/season concept for Auto-Sync to
+            # drive at all -- e.g. a movie-only site, or MegaKino specifically,
+            # where a series URL and a movie URL share the exact same shape
+            # (MEGAKINO_SERIES_PATTERN == MEGAKINO_MOVIE_PATTERN in config.py)
+            # and can only be told apart by hitting the JSON API, which
+            # resolve_provider() never does -- see providers.py's PROVIDERS
+            # comment. This is a permanent mismatch, not a transient failure:
+            # retrying will never succeed, and leaving it to reach
+            # `prov.series_cls(...)` below throws an uncaught
+            # `TypeError: 'NoneType' object is not callable` every single
+            # cycle forever. Disable the job once, with a clear reason, and
+            # notify a single time instead.
+            _msg = (
+                f"Auto-Sync wird für „{prov.name}“ nicht unterstützt "
+                "(diese Seite hat kein Serien-/Staffel-Konzept, das sich "
+                "aus der URL erkennen lässt)."
+            )
+            logger.warning(
+                "Auto-sync job '%s' targets provider '%s' which has no "
+                "series_cls/season_cls -- disabling the job instead of "
+                "retrying forever.",
+                job.get("title", "?"), prov.name,
+            )
+            update_autosync_job(
+                job["id"],
+                enabled=0,
+                last_error=_msg,
+                last_check=__import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            telemetry_client.submit(telemetry_events.build_feature_detail_event(
+                "detail.autosync", action="run", status="unsupported_provider",
+                metadata={"provider": prov.name},
+            ))
+            try:
+                from .notifications import notify_all
+                notify_all(
+                    title=job.get("title", "Auto-Sync"),
+                    body="⚠️ " + _msg + " Auto-Sync wurde für diesen Job deaktiviert.",
+                    event="on_sync_error",
+                    username=job.get("added_by"),
+                )
+            except Exception as notif_exc:
+                logger.warning("[AutoSync] Unsupported-provider notification failed: %s", notif_exc)
+            return
         series = prov.series_cls(url=job["series_url"])
 
         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
