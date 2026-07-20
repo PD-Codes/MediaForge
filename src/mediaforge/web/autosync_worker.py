@@ -147,6 +147,38 @@ def _title_is_confident(source, candidates, threshold=0.86):
     return best >= threshold
 
 
+def _job_notif_lang(job):
+    """Best-effort UI language ('en' or 'de') for the user who created *job*.
+
+    Used to localize the handful of user-facing strings this background
+    worker builds itself (custom-path hold/resume, unsupported-provider, the
+    generic failure wrapper). Flask's request-bound session -- and therefore
+    app.py's get_locale() -- isn't available from a daemon thread, but the
+    per-user language preference is persisted in the DB and can be read
+    directly from here. Falls back to "en" (the same default used everywhere
+    else -- see get_locale() / db.get_user_language()) if the job has no
+    creator, the lookup fails, or the users table doesn't exist (no-auth
+    mode, see db.get_user_id_by_username()'s docstring).
+    """
+    try:
+        from .db import get_user_id_by_username, get_user_language
+        uid = get_user_id_by_username(job.get("added_by"))
+        if uid is None:
+            return "en"
+        return get_user_language(uid)
+    except Exception:
+        return "en"
+
+
+def _tr(lang, de, en):
+    """Tiny DE/EN string picker -- the backend equivalent of the frontend's
+    t(de, en) helper (static/app.js) -- for the few notification/error
+    strings this file builds itself. Deliberately NOT used for raw scraper
+    exception text (str(e)): that originates deep in the site models and
+    isn't ours to translate here."""
+    return de if lang == "de" else en
+
+
 def _run_autosync_for_job(job, force_notify=False):
     """Check a single autosync job for new/missing episodes and queue them.
 
@@ -238,10 +270,13 @@ def _run_autosync_for_job(job, force_notify=False):
             if _action == "hold":
                 if not _was_on_hold:
                     # First time going on hold — persist state + notify
+                    _lang = _job_notif_lang(job)
                     update_autosync_job(
                         job["id"],
                         on_hold=1,
-                        last_error="Custom Path nicht erreichbar — Sync pausiert (Hold)",
+                        last_error=_tr(_lang,
+                            "Custom Path nicht erreichbar — Sync pausiert (Hold)",
+                            "Custom path unreachable — sync paused (hold)"),
                     )
                     logger.warning(
                         "Auto-sync HOLD for '%s' — custom path '%s' not accessible",
@@ -252,8 +287,10 @@ def _run_autosync_for_job(job, force_notify=False):
                         from .notifications import notify_all
                         notify_all(
                             title=job.get("title", "Auto-Sync"),
-                            body="⚠️ Sync pausiert: Custom Path nicht erreichbar — "
-                                 + str(_cp_record['path'] if _cp_record else 'Unbekannt'),
+                            body=_tr(_lang,
+                                "⚠️ Sync pausiert: Custom Path nicht erreichbar — ",
+                                "⚠️ Sync paused: custom path unreachable — ")
+                                + str(_cp_record['path'] if _cp_record else _tr(_lang, 'Unbekannt', 'Unknown')),
                             event="on_sync_hold",
                             username=job.get("added_by"),
                         )
@@ -274,7 +311,9 @@ def _run_autosync_for_job(job, force_notify=False):
                 update_autosync_job(
                     job["id"],
                     last_check=__import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-                    last_error="Custom Path nicht erreichbar — Sync übersprungen",
+                    last_error=_tr(_job_notif_lang(job),
+                        "Custom Path nicht erreichbar — Sync übersprungen",
+                        "Custom path unreachable — sync skipped"),
                 )
                 return
         elif job.get("on_hold"):
@@ -286,10 +325,13 @@ def _run_autosync_for_job(job, force_notify=False):
             )
             try:
                 from .notifications import notify_all
+                _lang = _job_notif_lang(job)
                 notify_all(
                     title=job.get("title", "Auto-Sync"),
-                    body="▶️ Sync wird fortgesetzt: Custom Path ist wieder erreichbar — "
-                         + str(_cp_record['path'] if _cp_record else ''),
+                    body=_tr(_lang,
+                        "▶️ Sync wird fortgesetzt: Custom Path ist wieder erreichbar — ",
+                        "▶️ Sync resuming: custom path is reachable again — ")
+                        + str(_cp_record['path'] if _cp_record else ''),
                     event="on_sync_resume",
                     username=job.get("added_by"),
                 )
@@ -310,10 +352,14 @@ def _run_autosync_for_job(job, force_notify=False):
             # `TypeError: 'NoneType' object is not callable` every single
             # cycle forever. Disable the job once, with a clear reason, and
             # notify a single time instead.
-            _msg = (
+            _lang = _job_notif_lang(job)
+            _msg = _tr(_lang,
                 f"Auto-Sync wird für „{prov.name}“ nicht unterstützt "
                 "(diese Seite hat kein Serien-/Staffel-Konzept, das sich "
-                "aus der URL erkennen lässt)."
+                "aus der URL erkennen lässt).",
+                f"Auto-Sync is not supported for \"{prov.name}\" "
+                "(this site has no series/season concept that can be "
+                "detected from the URL).",
             )
             logger.warning(
                 "Auto-sync job '%s' targets provider '%s' which has no "
@@ -335,7 +381,9 @@ def _run_autosync_for_job(job, force_notify=False):
                 from .notifications import notify_all
                 notify_all(
                     title=job.get("title", "Auto-Sync"),
-                    body="⚠️ " + _msg + " Auto-Sync wurde für diesen Job deaktiviert.",
+                    body="⚠️ " + _msg + " " + _tr(_lang,
+                        "Auto-Sync wurde für diesen Job deaktiviert.",
+                        "Auto-Sync has been disabled for this job."),
                     event="on_sync_error",
                     username=job.get("added_by"),
                 )
@@ -665,9 +713,12 @@ def _run_autosync_for_job(job, force_notify=False):
         # Notify when episodes were actually queued for download
         if total_new_queued > 0:
             from .notifications import notify_all
+            _lang = _job_notif_lang(job)
             notify_all(
                 title=job["title"],
-                body=f"⬇️ {total_new_queued} neue Folge(n) werden heruntergeladen",
+                body=_tr(_lang,
+                    f"⬇️ {total_new_queued} neue Folge(n) werden heruntergeladen",
+                    f"⬇️ {total_new_queued} new episode(s) are being downloaded"),
                 event="on_autosync",
                 username=job.get("added_by"),
                 episode_count=total_new_queued,
@@ -777,14 +828,23 @@ def _run_autosync_for_job(job, force_notify=False):
                 metadata=_telemetry_meta,
             ))
             if _is_new_backoff:
-                _notif_body = (
-                    f"⚠️ AniWorld-Layout hat sich vermutlich geändert — Parser muss "
-                    f"aktualisiert werden. Sync-Jobs pausieren für {LAYOUT_BACKOFF_MINUTES} Minuten."
-                    if _failure == "layout_changed" else
-                    f"⚠️ AniWorld hat eine Antwort geschickt, die nicht dekodiert werden "
-                    f"konnte (fehlt evtl. Brotli-Unterstützung) — Sync-Jobs pausieren für "
-                    f"{LAYOUT_BACKOFF_MINUTES} Minuten."
-                )
+                _lang = _job_notif_lang(job)
+                if _failure == "layout_changed":
+                    _notif_body = _tr(_lang,
+                        f"⚠️ AniWorld-Layout hat sich vermutlich geändert — Parser muss "
+                        f"aktualisiert werden. Sync-Jobs pausieren für {LAYOUT_BACKOFF_MINUTES} Minuten.",
+                        f"⚠️ AniWorld's layout appears to have changed — the parser needs "
+                        f"updating. Sync jobs are pausing for {LAYOUT_BACKOFF_MINUTES} minutes.",
+                    )
+                else:
+                    _notif_body = _tr(_lang,
+                        f"⚠️ AniWorld hat eine Antwort geschickt, die nicht dekodiert werden "
+                        f"konnte (fehlt evtl. Brotli-Unterstützung) — Sync-Jobs pausieren für "
+                        f"{LAYOUT_BACKOFF_MINUTES} Minuten.",
+                        f"⚠️ AniWorld sent a response that could not be decoded "
+                        f"(possibly missing Brotli support) — sync jobs are pausing for "
+                        f"{LAYOUT_BACKOFF_MINUTES} minutes.",
+                    )
                 try:
                     from .notifications import notify_all
                     notify_all(
@@ -843,9 +903,10 @@ def _run_autosync_for_job(job, force_notify=False):
             if should_notify:
                 try:
                     from .notifications import notify_all
+                    _lang = _job_notif_lang(job)
                     notify_all(
                         title=job.get("title", "Auto-Sync"),
-                        body=f"❌ Sync-Fehler: {str(e)[:200]}",
+                        body=_tr(_lang, "❌ Sync-Fehler: ", "❌ Sync error: ") + str(e)[:200],
                         event="on_sync_error",
                         username=job.get("added_by"),
                     )
