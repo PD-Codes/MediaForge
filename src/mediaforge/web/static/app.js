@@ -48,6 +48,12 @@ let currentSeriesUrl = "";
 // one modal). Any continuation whose captured value no longer matches this
 // counter belongs to a superseded openSeries() call and must bail out.
 let _seriesLoadSeq = 0;
+// Seerr request context for the currently-open modal, or null when the
+// modal was opened normally (Discover/Home/search). Set by
+// openSeriesFromSeerr() (called from seerr.js) and cleared in closeModal().
+// See _updateSeerrModalActions() and the approve hook in
+// _submitDownloadGroups() for how this is consumed.
+let _seerrModalContext = null;
 // Provider data per language label
 let availableProviders = null;
 let langSeparationEnabled = false;
@@ -929,11 +935,15 @@ function toggleSite() { /* no-op: both sites always shown */ }
 
 function rebuildLanguageSelect(foundLangs = null) {
   const url = currentSeriesUrl || "";
-  const isFilmPalast = url.includes("filmpalast.to");
+  // FilmPalast and MegaKino movies are both German-dub-only (see
+  // seerrUpdateLangDropdown() in seerr.js, which treats these two sites the
+  // same way -- kept in sync here so the Seerr modal doesn't regress now
+  // that it uses this shared implementation).
+  const isFilmPalast = url.includes("filmpalast.to") || url.includes("megakino");
   languageSelect.innerHTML = "";
 
   if (isFilmPalast) {
-    // FilmPalast movies are always German-dubbed
+    // FilmPalast/MegaKino movies are always German-dubbed
     const opt = document.createElement("option");
     opt.value = "German Dub";
     opt.textContent = "German Dub";
@@ -1683,8 +1693,9 @@ function renderLangAvailBanner(results) {
   const banner = document.getElementById("langAvailBanner");
   if (!banner) return;
   banner.classList.remove("skeleton");
-  // FilmPalast movies don't need a language availability banner
-  if ((currentSeriesUrl || "").includes("filmpalast.to")) {
+  // FilmPalast/MegaKino movies don't need a language availability banner
+  // (German-dub-only, see rebuildLanguageSelect() above)
+  if ((currentSeriesUrl || "").includes("filmpalast.to") || (currentSeriesUrl || "").includes("megakino")) {
     banner.style.display = "none";
     return;
   }
@@ -2000,6 +2011,14 @@ async function _submitDownloadGroups(groups) {
     }
   }
 
+  // Seerr integration: approve the pending request before queuing the
+  // download, mirroring the original seerr.js flow (best-effort -- the
+  // download proceeds even if the approve call fails, see
+  // _approveSeerrRequestIfPending()).
+  if (_seerrModalContext && _seerrModalContext.isPending && _seerrModalContext.reqId) {
+    await _approveSeerrRequestIfPending(_seerrModalContext);
+  }
+
   downloadAllBtn.disabled = true;
   downloadSelectedBtn.disabled = true;
   const upscaleCheck = document.getElementById("upscaleCheck");
@@ -2031,6 +2050,13 @@ async function _submitDownloadGroups(groups) {
     if (ok) {
       showToast(t("Zur Download-Warteschlange hinzugefügt", "Added to download queue"));
       if (typeof loadQueue === "function") loadQueue();
+      // Seerr integration: the original seerr.js flow closed the modal and
+      // refreshed the request grid after a successful download so the
+      // card's status pill updates right away -- keep that behavior here.
+      if (_seerrModalContext) {
+        closeModal();
+        if (typeof seerrLoad === "function") seerrLoad();
+      }
     } else if (lastErr) {
       showToast(lastErr);
     }
@@ -2126,9 +2152,80 @@ function closeModal() {
   overlay.style.display = "none";
   document.body.style.overflow = "";
   _currentSyncJob = null;
+  if (_seerrModalContext) {
+    _seerrModalContext = null;
+    _updateSeerrModalActions();
+  }
 }
 function closeModalOutside(e) {
   if (e.target === overlay) closeModal();
+}
+
+// ---------------------------------------------------------------
+// Seerr integration -- lets seerr.js open the standard modal for a
+// series/movie tied to a Seerr request, so Discover/Home and the Seerr
+// requests page share one modal implementation (see project memory
+// mediaforge-seerr-modal-unification.md for background).
+// ---------------------------------------------------------------
+
+window.openSeriesFromSeerr = function (url, reqId, isPending, isMovie) {
+  _seerrModalContext = { reqId: reqId || null, isPending: !!isPending, isMovie: !!isMovie };
+  openSeries(url);
+  _updateSeerrModalActions();
+};
+
+// Relabels the standard download buttons ("Approve & Download" instead of
+// "Download" while the request is still pending) and shows/hides the
+// Decline button injected into shared_modals.html's modal-actions bar.
+// Called both when a Seerr-context modal opens and when it closes (to
+// restore the normal Discover/Home labels for the next open).
+function _updateSeerrModalActions() {
+  const declineBtn = document.getElementById("modalDeclineBtn");
+  if (!_seerrModalContext) {
+    if (downloadSelectedBtn) downloadSelectedBtn.textContent = t("Ausgewählte herunterladen", "Download selected");
+    if (downloadAllBtn) downloadAllBtn.textContent = t("Alle herunterladen", "Download all");
+    if (declineBtn) declineBtn.style.display = "none";
+    return;
+  }
+  const ctx = _seerrModalContext;
+  if (downloadSelectedBtn) {
+    downloadSelectedBtn.textContent = ctx.isPending
+      ? t("Annehmen & Herunterladen", "Approve & Download")
+      : t("Herunterladen", "Download");
+  }
+  if (downloadAllBtn) {
+    downloadAllBtn.textContent = ctx.isPending
+      ? t("Annehmen & alle herunterladen", "Approve & download all")
+      : t("Alle herunterladen", "Download all");
+  }
+  if (declineBtn) {
+    declineBtn.style.display = (ctx.reqId && typeof seerrCanDecline !== "undefined" && seerrCanDecline) ? "" : "none";
+  }
+}
+
+// Best-effort: approves the Seerr request, warns via toast on failure but
+// never blocks the download (matches the original seerrStartDownload()
+// behavior in seerr.js before the modal unification).
+async function _approveSeerrRequestIfPending(ctx) {
+  try {
+    const resp = await fetch(`/api/seerr/requests/${ctx.reqId}/approve`, { method: "POST" });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      console.warn("Seerr approve failed:", resp.status, err);
+      showToast("⚠ " + t("Seerr-Genehmigung fehlgeschlagen: ", "Seerr approval failed: ") + (err.error || resp.status));
+    } else {
+      ctx.isPending = false; // don't re-approve if the user downloads again from the same modal session
+    }
+  } catch (e) {
+    console.warn("Seerr approve error:", e);
+  }
+}
+
+// Wired to the Decline button injected into modal-actions by
+// _updateSeerrModalActions(); delegates to seerr.js's existing decline flow.
+function _declineSeerrFromModal() {
+  if (!_seerrModalContext || !_seerrModalContext.reqId) return;
+  if (typeof seerrDeclineRequest === "function") seerrDeclineRequest(_seerrModalContext.reqId);
 }
 
 // Auto-Sync configuration (opens the shared filter dialog)

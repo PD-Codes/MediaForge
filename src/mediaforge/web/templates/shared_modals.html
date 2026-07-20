@@ -228,7 +228,7 @@
       </label>
       </div>
     </div>
-    <div class="modal-actions">
+    <div class="modal-actions" id="modalActions">
       <button class="btn-download-selected" id="downloadSelectedBtn" onclick="startDownload(false)">
         {{ _('Download selected') }}
       </button>
@@ -238,6 +238,12 @@
       <button class="btn-download-all-langs" id="downloadAllLangsBtn" onclick="startDownloadAllLangs()"
         style="display: none">
         {{ _('Download all languages') }}
+      </button>
+      <!-- Shown only for modals opened from a Seerr request via
+           openSeriesFromSeerr() (static/app.js) -- see
+           _updateSeerrModalActions() / _declineSeerrFromModal(). -->
+      <button class="btn-reject" id="modalDeclineBtn" onclick="_declineSeerrFromModal()" style="display:none">
+        {{ _('Decline') }}
       </button>
     </div>
   </div>
