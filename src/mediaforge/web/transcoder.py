@@ -81,7 +81,7 @@ def detect_available_encoders() -> dict:
         # Fast test: 1-frame null source
         base_cmd = [
             ffmpeg, "-y",
-            "-f", "lavfi", "-i", "nullsrc=size=64x64:rate=1",
+            "-f", "lavfi", "-i", "nullsrc=size=256x256:rate=1",
             "-vframes", "1",
         ]
         # Helper: check if encoder exists in ffmpeg build (cheap, no GPU needed)
@@ -131,12 +131,12 @@ def detect_available_encoders() -> dict:
         nvenc_cmd = None  # handled by _test_nvenc above
         vaapi_base = [
             ffmpeg, "-y",
-            "-f", "lavfi", "-i", "nullsrc=size=64x64:rate=1",
+            "-f", "lavfi", "-i", "nullsrc=size=256x256:rate=1",
             "-vframes", "1",
         ]
         sw_base = [
             ffmpeg, "-y",
-            "-f", "lavfi", "-i", "color=c=black:size=64x64:rate=25",
+            "-f", "lavfi", "-i", "color=c=black:size=256x256:rate=25",
             "-t", "0.2",
         ]
         tests = {

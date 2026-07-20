@@ -171,8 +171,8 @@ def run_mediaforge_tests(ffmpeg):
 
     tests = [
         (
-            "Test 1: MediaForge Web-UI (/encoding) Check (128x128 pixels)",
-            [ffmpeg, "-y", "-f", "lavfi", "-i", "nullsrc=size=128x128:rate=1", "-frames:v", "1", "-an", "-c:v", "h264_nvenc", "-f", "null", "-"]
+            "Test 1: MediaForge Web-UI (/encoding) Check (256x256 pixels)",
+            [ffmpeg, "-y", "-f", "lavfi", "-i", "nullsrc=size=256x256:rate=1", "-frames:v", "1", "-an", "-c:v", "h264_nvenc", "-f", "null", "-"]
         ),
         (
             "Test 2: MediaForge Transcoder Check 1 (256x256, hwaccel cuda, preset p1)",
@@ -232,18 +232,18 @@ def analyze_results(results):
     if not results:
         return
 
-    test1_code, test1_out = results.get("Test 1: MediaForge Web-UI (/encoding) Check (128x128 pixels)", (-1, ""))
+    test1_code, test1_out = results.get("Test 1: MediaForge Web-UI (/encoding) Check (256x256 pixels)", (-1, ""))
     test4_code, test4_out = results.get("Test 4: MediaForge Transcoder Check 3 (256x256, legacy preset fast)", (-1, ""))
     test2_code, _ = results.get("Test 2: MediaForge Transcoder Check 1 (256x256, hwaccel cuda, preset p1)", (-1, ""))
     test3_code, _ = results.get("Test 3: MediaForge Transcoder Check 2 (256x256, preset p1, no hwaccel)", (-1, ""))
 
     nvenc_works = any(code == 0 for code in [test2_code, test3_code, test4_code])
 
-    # If Test 1 (128x128 as used on the /encoding settings page) fails, but NVENC works at 256x256:
+    # If Test 1 (256x256 as used on the /encoding settings page) fails, but NVENC works at 256x256:
     if test1_code != 0 and nvenc_works:
         print(">>> ROOT CAUSE DETECTED: RESOLUTION DISCREPANCY IN WEB-UI CHECK (/encoding) <<<")
         print(" -> NVIDIA NVENC hardware encoder requires a minimum resolution of 145x145 pixels on almost all GPUs.")
-        print(" -> Test 1 (as implemented in 'src/mediaforge/web/routes/encoding.py') tests with 128x128 pixels.")
+        print(" -> Test 1 (as implemented in 'src/mediaforge/web/routes/encoding.py') tests with 256x256 pixels.")
         print(" -> Consequently, the /encoding settings page reports 'Only CPU available', even though the")
         print("    actual video transcoder works flawlessly with NVENC during playback (at 256x256+ pixels)!")
         print("\n    SOLUTION: You can manually force select 'nvenc' on the /encoding page despite the warning.")
