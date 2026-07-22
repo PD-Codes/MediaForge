@@ -1367,6 +1367,7 @@ CREATE TABLE IF NOT EXISTS autosync_jobs (
     movie_custom_path_id INTEGER,
     filter_dirty INTEGER NOT NULL DEFAULT 0,
     group_name TEXT,
+    cover_url TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -1456,6 +1457,11 @@ def init_autosync_db():
             )
         except Exception:
             pass
+        # Migration: add cover_url (poster images) for existing DBs
+        try:
+            conn.execute("ALTER TABLE autosync_jobs ADD COLUMN cover_url TEXT")
+        except Exception:
+            pass
         # One-time migration: rewrite legacy s.to AutoSync URLs to serienstream.to
         # (the s.to domain was deactivated). Done per-row so the UNIQUE index on
         # series_url can't be violated: if the serienstream.to equivalent already
@@ -1509,6 +1515,7 @@ def init_autosync_db():
 def add_autosync_job(
     title, series_url, language, provider, custom_path_id=None, added_by=None,
     path_unavailable_action="skip", episode_filter=None, movie_custom_path_id=None,
+    cover_url: str | None = None,
 ):
     """Create a new autosync job.
 
@@ -1525,10 +1532,10 @@ def add_autosync_job(
         cur = conn.execute(
             "INSERT INTO autosync_jobs "
             "(title, series_url, language, provider, custom_path_id, added_by, "
-            "path_unavailable_action, episode_filter, movie_custom_path_id, last_check) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "path_unavailable_action, episode_filter, movie_custom_path_id, cover_url, last_check) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (title, series_url, language, provider, custom_path_id, added_by,
-             path_unavailable_action, episode_filter, movie_custom_path_id, now_str),
+             path_unavailable_action, episode_filter, movie_custom_path_id, cover_url, now_str),
         )
         conn.commit()
         return cur.lastrowid
@@ -1604,6 +1611,7 @@ def update_autosync_job(job_id, **fields):
         "movie_custom_path_id",
         "filter_dirty",
         "group_name",
+        "cover_url",
     }
     filtered = {k: v for k, v in fields.items() if k in allowed}
     if not filtered:

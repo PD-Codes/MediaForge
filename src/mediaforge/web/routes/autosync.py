@@ -162,6 +162,7 @@ def register_autosync_routes(app):
         provider = data.get("provider", "VOE")
         custom_path_id = data.get("custom_path_id")
         movie_custom_path_id = data.get("movie_custom_path_id")
+        cover_url = data.get("cover_url")
         episode_filter = _normalize_episode_filter(data.get("episode_filter"))
 
         if not title or not series_url:
@@ -192,7 +193,16 @@ def register_autosync_routes(app):
             path_unavailable_action=path_action,
             episode_filter=episode_filter,
             movie_custom_path_id=movie_custom_path_id,
+            cover_url=cover_url,
         )
+        fresh_job = get_autosync_job(job_id)
+        if fresh_job:
+            threading.Thread(
+                target=_run_autosync_for_job,
+                args=(fresh_job,),
+                kwargs={"queue_downloads": False},
+                daemon=True
+            ).start()
         return jsonify({"ok": True, "id": job_id})
     @app.route("/api/autosync/site-search", methods=["POST"])
     def api_autosync_site_search():

@@ -1,19 +1,50 @@
-/* Auto-Sync grouping / view controls — page-specific styles */
+/* Auto-Sync redesign */
+.autosync-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px;
+}
 
-/* ===== Controls row (view dropdown, auto-grouping, search) ===== */
+.autosync-intro {
+  color: var(--text-secondary);
+}
+
+.autoSyncHeader {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.autosync-hdr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .autosync-controls {
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
 }
+
 .autosync-control-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
+
 .autosync-control-label {
   font-size: 0.72rem;
   font-weight: 600;
@@ -21,13 +52,30 @@
   color: var(--text-secondary);
   text-transform: uppercase;
 }
+
 .autosync-search-field {
   flex: 1 1 220px;
 }
+
+.autosync-search-wrap {
+  position: relative;
+}
+
+.autosync-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
 .autosync-search-input {
   height: 38px;
   width: 100%;
-  padding: 0 12px;
+  padding-left: 36px;
+  padding-right: 12px;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
   border-radius: var(--radius-md);
@@ -35,21 +83,289 @@
   font-size: 0.85rem;
   font-family: inherit;
 }
+
 .autosync-search-input:focus {
   outline: none;
   border-color: var(--accent);
 }
-.autosync-controls .sync-select:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+
+.autosync-filter-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
-.autosync-rename-btn {
+
+.autosync-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.autosync-stats-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.autosync-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.autosync-stat-chip.stat-running {
+  color: var(--accent);
+  border-color: rgba(124,58,237,0.3);
+}
+
+.autosync-stat-pulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(124,58,237,0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(124,58,237,0); }
+  100% { box-shadow: 0 0 0 0 rgba(124,58,237,0); }
+}
+
+.sync-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sync-card {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--card-status-color, var(--border));
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  gap: 14px;
+  transition: all var(--transition);
+}
+
+.sync-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-focus);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+
+.sync-card-cover-wrap {
+  flex-shrink: 0;
+  width: 64px;
+  position: relative;
+}
+
+.sync-card-cover {
+  width: 100%;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+
+.sync-card-cover-placeholder {
+  width: 100%;
+  aspect-ratio: 2/3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+.sync-card-cover-placeholder svg {
+  width: 24px;
+  height: 24px;
+}
+
+.sync-card-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sync-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sync-card-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: break-word;
+}
+
+.sync-card-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--card-status-color);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.sync-card-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.sync-card-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+}
+
+.sync-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
   font-size: 0.8rem;
-  padding: 8px 14px;
+}
+
+.sync-stat-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sync-stat-value {
+  color: var(--text-secondary);
+  text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ===== Bulk action toolbar ===== */
+.sync-stat-new {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.sync-progress-bar {
+  height: 4px;
+  background: var(--input-bg);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.sync-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  transition: width 0.5s ease;
+}
+
+.sync-card-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(239,68,68,0.08);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--error);
+}
+
+.sync-card-error svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.sync-card-error span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-card.sync-card-running {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.2); }
+  50% { box-shadow: 0 0 12px 2px rgba(124,58,237,0.15); }
+}
+
+.sync-card.sync-card-disabled {
+  opacity: 0.55;
+  filter: grayscale(0.3);
+}
+
+.sync-card.sync-card-disabled:hover {
+  opacity: 0.75;
+}
+
+.sync-card.sync-card-fresh {
+  box-shadow: inset 0 0 20px rgba(34,197,94,0.06);
+}
+
+.sync-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+  justify-content: flex-end;
+}
+
+.sync-card-btn {
+  font-size: 0.75rem;
+  padding: 5px 10px;
+  gap: 4px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sync-card-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sync-card-btn-sync {
+  color: var(--accent) !important;
+  border-color: rgba(124,58,237,0.3) !important;
+}
+
+.sync-card-btn-sync:hover:not(:disabled) {
+  background: rgba(124,58,237,0.1) !important;
+  border-color: rgba(124,58,237,0.5) !important;
+}
+
+.sync-card-cb-wrap {
+  display: flex;
+  align-items: flex-start;
+  align-self: center;
+  padding-top: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .batch-toolbar {
   display: flex;
   flex-direction: column;
@@ -59,7 +375,18 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(12px);
+  animation: slideDown 0.2s ease;
 }
+
+@keyframes slideDown {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 .batch-head {
   display: flex;
   align-items: center;
@@ -93,8 +420,6 @@
 .batch-clear:hover { color: var(--text-primary); }
 .batch-clear svg { width: 14px; height: 14px; flex-shrink: 0; }
 
-/* 2-row grid: row 1 holds the status/path selects + delete button, row 2
-   (.bg-group) spans the full width beneath them. */
 .batch-actions {
   display: grid;
   grid-template-columns: auto auto 1fr;
@@ -144,7 +469,6 @@
 .batch-toolbar .batch-input:focus,
 .batch-toolbar .batch-select:focus { outline: none; border-color: var(--accent); }
 
-/* ===== Auto-grouping accordion sections ===== */
 .autosync-group {
   margin-bottom: 18px;
 }
@@ -163,19 +487,18 @@
 .autosync-group-header:hover {
   border-color: var(--accent);
 }
-/* Chevron glyph (▸) points right by default; rotated 90deg to point down
-   when the group is expanded. .collapsed is toggled by autosync.js on
-   header click and persisted to localStorage. */
+
 .autosync-group-chevron {
   display: inline-block;
   font-size: 0.8rem;
   color: var(--text-secondary);
-  transform: rotate(90deg);
-  transition: transform 0.15s ease;
+  transform: rotate(0deg);
+  transition: transform 0.25s ease;
 }
 .autosync-group.collapsed .autosync-group-chevron {
-  transform: rotate(0deg);
+  transform: rotate(-90deg);
 }
+
 .autosync-group-name {
   font-size: 0.92rem;
   font-weight: 600;
@@ -196,43 +519,92 @@
   padding: 2px 9px;
   flex-shrink: 0;
 }
+
 .autosync-group-body {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.25s ease, padding 0.25s ease;
   padding-top: 14px;
 }
 .autosync-group.collapsed .autosync-group-body {
-  display: none;
+  max-height: 0 !important;
+  opacity: 0;
+  padding-top: 0;
 }
 
-/* ===== Grayed (adaptive-captured) cards inside a group view ===== */
-.sync-card.sync-card-grayed {
-  opacity: 0.55;
-  filter: grayscale(0.35);
+.autosync-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 16px;
 }
-.sync-card.sync-card-grayed:hover {
-  opacity: 0.8;
+.autosync-empty-icon {
+  width: 80px;
+  height: 80px;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+.autosync-empty-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.autosync-empty-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 }
 
-/* Group pill on cards */
-.queue-meta-pill.queue-group-pill {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+.editModal {
+  max-width: 520px !important;
+}
+@media (max-width: 768px) {
+  .editModal {
+    max-width: 320px !important;
+  }
+  .editModalHint {
+    padding: unset !important;
+  }
+}
+.editModalHint {
+  margin-bottom: 18px;
+  padding: 0 0 0 calc(80px + 12px);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+label.btn.btn-ghost.autosync-hdr-btn.autosync-import-lbl {
+  margin-bottom: 0px !important;
+}
+.modal-btn-row {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 14px;
+}
+.modal-info-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
 }
 
-/* ===== Mobile ===== */
 @media (max-width: 640px) {
+  .sync-card-cover-wrap {
+    width: 48px;
+  }
+  .sync-card-stats {
+    grid-template-columns: 1fr;
+  }
+  .sync-card-actions {
+    flex-wrap: wrap;
+  }
   .autosync-controls {
     gap: 10px;
   }
   .autosync-control-field {
     flex: 1 1 100%;
   }
-  .autosync-control-field .sync-select {
-    width: 100%;
-  }
   .autosync-search-field {
-    flex: 1 1 100%;
-  }
-  .autosync-rename-btn {
     flex: 1 1 100%;
   }
   .batch-actions {
@@ -257,170 +629,32 @@
     width: 100%;
     min-width: 0;
   }
-}
-
-/* ===== Moved from style.css: autosync-item cards, edit modal, sync-card widgets (Auto-Sync run table), and misc modal helpers ===== */
-/* Narrow the edit-run modal (base 520px, set further below) and drop the
-   hint's label-aligned indent on small screens where there's no room for it. */
-@media (max-width: 768px) {.editModal {
-    max-width: 320px !important;
+  .autosync-container .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
   }
-
-  .editModalHint{
-    padding: unset !important;
+  .autosync-container .page-header>div:last-child {
+    width: 100%;
   }
+  .autosync-container .page-header>div:last-child button,
+  .autosync-container .page-header>div:last-child label.btn {
+    flex: 1;
+    justify-content: center;
+    min-width: 100% !important;
+    min-height: 40px !important;
+  }
+  .autoSyncHeader {
+    flex-direction: column !important;
+  }
+  .autosync-container label.btn {
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+  }
+}
 
-  
-
-
-}.autosync-item {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  transition: border-color var(--transition);
-}.autosync-item:hover {
-  border-color: rgba(124, 58, 237, 0.3);
-}.autosync-item-thumb {
-  width: 48px;
-  height: 68px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  flex-shrink: 0;
-}.autosync-item-body {
-  flex: 1;
-  min-width: 0;
-}.autosync-item-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}.autosync-item-meta {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  margin-top: 2px;
-}.autosync-item-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-/* Widen the generic .modal for the multi-field edit-run form (narrowed again below 768px above). */
-.editModal{
- max-width: 520px !important;
-}
-/* calc(80px + 12px) aligns the hint text with the form's field values: the
-   .settings-field-label columns in the edit modal (autosync.html) are 80px wide + a 12px gap. */
-.editModalHint{
- margin-bottom:18px;padding:0 0 0 calc(80px + 12px);font-size:0.78rem;color:var(--text-muted);line-height:1.5;
-}.autoSyncHeader{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  align-items:center;
-}
-/* Cancels the global label { margin-bottom: 6px } (forms.css) since this
-   label is styled as an inline header button, not a stacked form field. */
-label.btn.btn-ghost.autosync-hdr-btn.autosync-import-lbl{
-  margin-bottom: 0px !important;
-}.modal-btn-row {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  padding-top: 14px;
-}.modal-info-text {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
-}.autosync-container {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 32px;
-}.autosync-table-wrap {
-  /* No overflow needed — cards wrap naturally */
-}.sync-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px;
-}.sync-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transition: border-color var(--transition), box-shadow var(--transition);
-}.sync-card:hover {
-  border-color: var(--border-focus);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
-}.sync-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}.sync-card-title {
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.35;
-  flex: 1;
-  min-width: 0;
-  /* Allow wrapping so full title is visible */
-  overflow-wrap: break-word;
-  word-break: break-word;
-}.sync-card-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}.sync-card-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}.sync-stat-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 0.8rem;
-}.sync-stat-label {
-  color: var(--text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}.sync-stat-value {
-  color: var(--text-secondary);
-  text-align: right;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}.sync-stat-new {
-  color: var(--success, #4ade80);
-  font-weight: 600;
-}.sync-stat-neutral {
-  color: var(--text-muted);
-}.sync-card-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 2px;
-}.sync-card-btn {
-  flex: 1;
-  justify-content: center;
-  font-size: 0.78rem;
-  white-space: nowrap;
-}.sync-card-btn-sync {
-  color: var(--accent) !important;
-  border-color: rgba(99, 102, 241, 0.3) !important;
-}.sync-card-btn-sync:hover:not(:disabled) {
-  background: rgba(99, 102, 241, 0.1) !important;
-  border-color: rgba(99, 102, 241, 0.5) !important;
-}
-/* @keyframes spin is defined in feedback.css (shared loading-spinner animation). */
 .sync-spinner {
   display: inline-block;
   width: 10px;
@@ -431,72 +665,4 @@ label.btn.btn-ghost.autosync-hdr-btn.autosync-import-lbl{
   animation: spin 0.7s linear infinite;
   margin-right: 6px;
   vertical-align: middle;
-}@media (max-width: 640px) {.autosync-container {
-      padding: 12px;
-    }
-
-    /* Header: stack title + buttons */
-    .autosync-container .page-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 10px;
-    }
-
-    .autosync-container .page-header>div:last-child {
-      width: 100%;
-    }
-
-    .autosync-container .page-header>div:last-child button,
-    .autosync-container .page-header>div:last-child label.btn {
-      flex: 1;
-      justify-content: center;
-      min-width: 100% !important;
-      min-height: 40px !important;
-    }
-
-    
-
-    
-
-    .autoSyncHeader{
-      flex-direction: column !important;
-    }
-
-    /* Import label: same height as the Export button */
-    .autosync-container label.btn {
-      height: 40px;
-      display: inline-flex;
-      align-items: center;
-      box-sizing: border-box;
-    }
-
-    /* Sync cards: single column */
-    .sync-card-grid {
-      grid-template-columns: 1fr !important;
-    }
-  }.autosync-hdr-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 40px;
-    padding: 0 14px;
-    box-sizing: border-box;
-    cursor: pointer;
-    white-space: nowrap;
-  }.autosync-import-lbl {
-    cursor: pointer;
-  }.sync-card-cb-wrap {
-    display: flex;
-    align-items: flex-start;
-    padding-top: 2px;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  /* Base size/color for the card-select checkbox; it also carries the
-     .chb-main class (forms.css), which layers the custom check mark on top. */
-  .sync-card-cb-wrap input[type="checkbox"] {
-    width: 15px;
-    height: 15px;
-    accent-color: var(--accent, #6366f1);
-    cursor: pointer;
-  }
+}

@@ -427,6 +427,7 @@
     overlay.innerHTML = "";
 
     const existing = opts.existing || null;
+    const coverUrl = opts.coverUrl || "";
     const langs = (opts.languages && opts.languages.length ? opts.languages : DEFAULT_LANGS).slice();
     if (opts.langSepEnabled && langs.indexOf("All Languages") === -1) langs.unshift("All Languages");
     const providers = opts.providers && opts.providers.length ? opts.providers : DEFAULT_PROVIDERS;
@@ -532,6 +533,7 @@
             body: JSON.stringify({
               title: opts.title,
               series_url: opts.seriesUrl,
+              cover_url: coverUrl,
               language: langSelect.value,
               provider: provSelect.value,
               custom_path_id: pathVal,

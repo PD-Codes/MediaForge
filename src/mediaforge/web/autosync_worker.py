@@ -179,7 +179,7 @@ def _tr(lang, de, en):
     return de if lang == "de" else en
 
 
-def _run_autosync_for_job(job, force_notify=False):
+def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True):
     """Check a single autosync job for new/missing episodes and queue them.
 
     Guarded by `_syncing_jobs`/`_syncing_jobs_lock` so the same job never runs
@@ -391,6 +391,18 @@ def _run_autosync_for_job(job, force_notify=False):
                 logger.warning("[AutoSync] Unsupported-provider notification failed: %s", notif_exc)
             return
         series = prov.series_cls(url=job["series_url"])
+
+        if not job.get("cover_url"):
+            _poster = getattr(series, "poster_url", None)
+            if callable(_poster):
+                try:
+                    _poster = _poster()
+                except Exception:
+                    _poster = None
+            if _poster:
+                update_autosync_job(job["id"], cover_url=_poster)
+                job["cover_url"] = _poster
+
 
         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
         # Only use lang_sep for "All Languages" when the global setting is enabled;
@@ -665,16 +677,17 @@ def _run_autosync_for_job(job, force_notify=False):
                         continue
 
                     total_new_queued += len(_group)
-                    add_to_queue(
-                        title=job["title"],
-                        series_url=job["series_url"],
-                        episodes=_group,
-                        language=target_lang,
-                        provider=job["provider"],
-                        username=job.get("added_by"),
-                        custom_path_id=_path_id,
-                        source=_src,
-                    )
+                    if queue_downloads:
+                        add_to_queue(
+                            title=job["title"],
+                            series_url=job["series_url"],
+                            episodes=_group,
+                            language=target_lang,
+                            provider=job["provider"],
+                            username=job.get("added_by"),
+                            custom_path_id=_path_id,
+                            source=_src,
+                        )
                 logger.info(
                     "Auto-sync queued %d %s episode(s) for '%s' (%s)",
                     len(_group), _kind, job["title"], target_lang,
@@ -711,7 +724,7 @@ def _run_autosync_for_job(job, force_notify=False):
         ))
 
         # Notify when episodes were actually queued for download
-        if total_new_queued > 0:
+        if total_new_queued > 0 and queue_downloads:
             from .notifications import notify_all
             _lang = _job_notif_lang(job)
             notify_all(

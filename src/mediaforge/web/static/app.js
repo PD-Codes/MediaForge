@@ -38,6 +38,7 @@ const hanimeTrendingGrid = document.getElementById("hanimeTrendingGrid");
 let currentSeasons = [];
 let currentSeriesTitle = "";
 let currentSeriesUrl = "";
+let currentSeriesCoverUrl = "";
 // Bumped by every openSeries() call; each call captures its own value and
 // checks it against this after every await before writing to the modal DOM.
 // Without this, opening series B while series A's fetches (openSeries,
@@ -1451,6 +1452,7 @@ async function openSeries(url) {
     document.getElementById("modalPoster").style.opacity = "";
 
     currentSeriesTitle = seriesData.title || t("Unbekannt", "Unknown");
+    currentSeriesCoverUrl = seriesData.poster_url || "";
     document.getElementById("modalTitle").textContent = currentSeriesTitle;
     if (seriesData.poster_url)
       document.getElementById("modalPoster").src = proxyImg(seriesData.poster_url);
@@ -2252,6 +2254,7 @@ function openAutoSyncConfig() {
   window.AutosyncFilter.openCreate({
     seriesUrl: currentSeriesUrl,
     title: currentSeriesTitle,
+    coverUrl: currentSeriesCoverUrl,
     customPaths: _customPathsCache,
     languages: languageSelect
       ? Array.from(languageSelect.options)

@@ -1753,13 +1753,13 @@ async function libAddToAutosync(folder) {
     return;
   }
   if (results.length === 1) {
-    _libOpenAutosyncCreate(results[0].url, results[0].title);
+    _libOpenAutosyncCreate(results[0].url, results[0].title, results[0].poster_url);
   } else {
     _libShowAutosyncPicker(folder, results);
   }
 }
 
-async function _libOpenAutosyncCreate(url, title) {
+async function _libOpenAutosyncCreate(url, title, coverUrl) {
   if (!window.AutosyncFilter) { showToast(t("Auto-Sync ist nicht verfügbar", "Auto-Sync is unavailable")); return; }
   var customPaths = [], langSep = false;
   try {
@@ -1773,6 +1773,7 @@ async function _libOpenAutosyncCreate(url, title) {
   window.AutosyncFilter.openCreate({
     seriesUrl: url,
     title: title,
+    coverUrl: coverUrl,
     customPaths: customPaths,
     langSepEnabled: langSep,
     onSaved: function(r) {
@@ -1817,7 +1818,7 @@ function _libShowAutosyncPicker(folder, results) {
     b.addEventListener("click", function() {
       var r = results[parseInt(b.getAttribute("data-idx"), 10)];
       ov.remove();
-      _libOpenAutosyncCreate(r.url, r.title);
+      _libOpenAutosyncCreate(r.url, r.title, r.poster_url);
     });
   });
 }

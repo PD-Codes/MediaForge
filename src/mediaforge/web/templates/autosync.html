@@ -52,11 +52,30 @@
     </div>
     <div class="autosync-control-field autosync-search-field">
       <label class="autosync-control-label" for="syncSearch">{{ _('Search') }}</label>
-      <input type="search" id="syncSearch" class="autosync-search-input" placeholder="{{ _('Search by name…') }}" autocomplete="off" oninput="onSearchInput(this.value)" />
+      <div class="autosync-search-wrap">
+        <svg class="autosync-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="syncSearch" class="autosync-search-input" placeholder="{{ _('Search by name…') }}" autocomplete="off" oninput="onSearchInput(this.value)" />
+      </div>
+    </div>
+    <div class="autosync-control-field">
+      <label class="autosync-control-label" for="sortSelect">{{ _('Sort') }}</label>
+      <select id="sortSelect" class="sync-select" onchange="onSortChange()">
+        <option value="name-asc">{{ _('Name A–Z') }}</option>
+        <option value="name-desc">{{ _('Name Z–A') }}</option>
+        <option value="last_check-desc">{{ _('Last checked') }}</option>
+        <option value="next_check-asc">{{ _('Next check') }}</option>
+        <option value="episodes-desc">{{ _('Episodes') }}</option>
+        <option value="last_new-desc">{{ _('Recently new') }}</option>
+      </select>
     </div>
     <button type="button" id="renameGroupBtn" class="btn btn-ghost autosync-rename-btn" style="display:none;" onclick="promptRenameGroup()" title="{{ _('Rename group') }}">
       ✎ {{ _('Rename group') }}
     </button>
+  </div>
+
+  <div class="autosync-meta-row">
+    <div id="autosyncStats" class="autosync-stats-bar"></div>
+    <span id="filterCount" class="autosync-filter-count"></span>
   </div>
 
   <!-- Batch toolbar (shown when checkboxes are selected) -->
@@ -131,8 +150,13 @@
 
   <div class="autosync-table-wrap">
     <div id="autosyncList">
-      <div class="queue-empty" id="autosyncEmpty">
-        {{ _('No sync jobs yet. Add a series from the search page.') }}
+      <div class="autosync-empty" id="autosyncEmpty">
+        <svg class="autosync-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        <span class="autosync-empty-title">{{ _('No sync jobs yet') }}</span>
+        <span class="autosync-empty-text">{{ _('Add a series from the search page to get started.') }}</span>
       </div>
     </div>
   </div>
