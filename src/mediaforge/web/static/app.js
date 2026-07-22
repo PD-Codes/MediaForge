@@ -58,6 +58,9 @@ let _seerrModalContext = null;
 // Provider data per language label
 let availableProviders = null;
 let langSeparationEnabled = false;
+// Language fallback groups ("group:<id>" + name + ordered languages), loaded
+// with the settings in checkLangSeparation().
+let languageGroups = [];
 // Static list of providers rendered into the template
 const staticProviders = providerSelect ? Array.from(providerSelect.options).map((o) => o.value) : [];
 
@@ -971,6 +974,7 @@ function rebuildLanguageSelect(foundLangs = null) {
     languageSelect.appendChild(opt);
   }
 
+  const siteLangs = new Set(Object.values(langs));
   for (const [key, label] of Object.entries(langs)) {
     if (foundLangs && !foundLangs.has(label)) {
       continue;
@@ -980,6 +984,43 @@ function rebuildLanguageSelect(foundLangs = null) {
     opt.textContent = label;
     languageSelect.appendChild(opt);
   }
+
+  // Fallback groups (settings → Downloads). Offered only with language
+  // separation on — without per-language folders a group cannot tell which
+  // language an existing file is in, so the backend rejects it too. A group
+  // shows up as long as this series can serve at least one of its languages:
+  // the queue worker picks the first available one per episode, so partial
+  // overlap is still exactly what the user wants.
+  const usable = !langSeparationEnabled ? [] : (languageGroups || []).filter((g) =>
+    (g.languages || []).some((l) => siteLangs.has(l) && (!foundLangs || foundLangs.has(l))),
+  );
+  if (usable.length) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = t("Sprachgruppen", "Language groups");
+    usable.forEach((g) => {
+      const opt = document.createElement("option");
+      opt.value = "group:" + g.id;
+      opt.textContent = g.name;
+      opt.title = (g.languages || []).join(" → ");
+      optgroup.appendChild(opt);
+    });
+    languageSelect.appendChild(optgroup);
+  }
+}
+
+// The ordered languages behind a dropdown value: one entry for a plain
+// language, the whole chain for a "group:<id>" selection.
+function languageChainFor(value) {
+  if (!String(value || "").startsWith("group:")) return value ? [value] : [];
+  const group = (languageGroups || []).find((g) => "group:" + g.id === value);
+  return group ? (group.languages || []).slice() : [];
+}
+
+// Display name for a dropdown value — a group's name instead of "group:<id>".
+function languageLabelFor(value) {
+  if (!String(value || "").startsWith("group:")) return value || "";
+  const group = (languageGroups || []).find((g) => "group:" + g.id === value);
+  return group ? group.name : value;
 }
 
 
@@ -1834,7 +1875,20 @@ function updateProviderDropdown() {
   if (!availableProviders) return;
 
   const lang = languageSelect.value;
-  const providers = availableProviders[lang];
+  // A fallback group has no hoster list of its own: offer every hoster that
+  // serves any of its languages, in chain order, so the preferred language's
+  // hosters come first. Which language an episode ends up in is decided by the
+  // queue worker, and it falls back to another hoster anyway if the picked one
+  // doesn't serve that episode.
+  let providers = availableProviders[lang];
+  if (!providers && String(lang || "").startsWith("group:")) {
+    providers = [];
+    languageChainFor(lang).forEach((l) => {
+      (availableProviders[l] || []).forEach((p) => {
+        if (!providers.includes(p)) providers.push(p);
+      });
+    });
+  }
 
   providerSelect.innerHTML = "";
   if (providers && providers.length) {
@@ -1935,16 +1989,25 @@ async function streamEpisode(episodeUrl, title, langOptions) {
     showToast(t("Player wird geladen…", "Player loading…"));
     return;
   }
-  const language = languageSelect ? languageSelect.value : "German Dub";
+  let language = languageSelect ? languageSelect.value : "German Dub";
   const provider = providerSelect ? providerSelect.value : "VOE";
   if (!provider) {
     showToast(t("Keine Quelle verfügbar", "No Source available"));
     return;
   }
-  // Available languages: this episode's, else fall back to the page selector.
+  // Available languages: this episode's, else fall back to the page selector
+  // (fallback groups are not languages the player can request).
   let langs = (langOptions && langOptions.length) ? langOptions.slice() : [];
   if (!langs.length && languageSelect) {
-    langs = Array.from(languageSelect.options).map((o) => o.value);
+    langs = Array.from(languageSelect.options)
+      .map((o) => o.value)
+      .filter((v) => !String(v).startsWith("group:"));
+  }
+  // Streaming happens now, for one episode: resolve a fallback group to the
+  // first of its languages this episode actually offers.
+  if (String(language).startsWith("group:")) {
+    const chain = languageChainFor(language);
+    language = chain.find((l) => !langs.length || langs.includes(l)) || chain[0] || "German Dub";
   }
   // Available providers from the page's provider selector.
   let providers = providerSelect ? Array.from(providerSelect.options).map((o) => o.value) : [];
@@ -1975,13 +2038,18 @@ async function startDownload(all) {
   }
 
   // Detect selected episodes that do not offer the chosen language. This is a
-  // manual-download safeguard only — it never runs for Auto-Sync.
+  // manual-download safeguard only — it never runs for Auto-Sync. With a
+  // fallback group selected, an episode only counts as mismatched when it
+  // offers none of the group's languages: falling back is the point, so a
+  // missing first choice is not a problem to warn about.
   const map = window._epLangMap || {};
+  const wanted = languageChainFor(language);
   const matched = [];
   const mismatched = [];
   episodes.forEach((url) => {
     const info = map[url];
-    if (info && Array.isArray(info.languages) && info.languages.length && !info.languages.includes(language)) {
+    if (info && Array.isArray(info.languages) && info.languages.length &&
+        !wanted.some((l) => info.languages.includes(l))) {
       mismatched.push(url);
     } else {
       matched.push(url);
@@ -2087,10 +2155,18 @@ function openLangMismatchModal(matched, mismatched, language, provider) {
   if (titleEl) titleEl.textContent = t("Sprache nicht verfügbar", "Language not available");
   const introEl = document.getElementById("langMismatchIntro");
   if (introEl) {
-    introEl.textContent = t(
-      `Für die gewählte Sprache „${language}" sind ${mismatched.length} ausgewählte Episode(n) nicht verfügbar. Wähle pro Episode eine andere Sprache oder überspringe sie.`,
-      `The selected language "${language}" is not available for ${mismatched.length} selected episode(s). Pick another language per episode or skip it.`
-    );
+    // With a fallback group the episodes listed here offer none of its
+    // languages, so the wording has to name the group, not one language.
+    const label = languageLabelFor(language);
+    introEl.textContent = String(language || "").startsWith("group:")
+      ? t(
+        `Für keine Sprache der Gruppe „${label}" sind ${mismatched.length} ausgewählte Episode(n) verfügbar. Wähle pro Episode eine andere Sprache oder überspringe sie.`,
+        `${mismatched.length} selected episode(s) are available in none of the languages of the group "${label}". Pick another language per episode or skip it.`
+      )
+      : t(
+        `Für die gewählte Sprache „${label}" sind ${mismatched.length} ausgewählte Episode(n) nicht verfügbar. Wähle pro Episode eine andere Sprache oder überspringe sie.`,
+        `The selected language "${label}" is not available for ${mismatched.length} selected episode(s). Pick another language per episode or skip it.`
+      );
   }
   const cancelBtn = document.getElementById("langMismatchCancel");
   if (cancelBtn) cancelBtn.textContent = t("Abbrechen", "Cancel");
@@ -2264,6 +2340,7 @@ function openAutoSyncConfig() {
     currentLanguage: languageSelect ? languageSelect.value : null,
     currentProvider: providerSelect ? providerSelect.value : null,
     langSepEnabled: langSeparationEnabled,
+    languageGroups: languageGroups,
     existing: _currentSyncJob,
     onSaved: async (res) => {
       if (res && res.removed) {
@@ -2927,6 +3004,10 @@ async function checkLangSeparation() {
     const resp = await fetch("/api/settings");
     const data = await resp.json();
     langSeparationEnabled = data.lang_separation === "1";
+    // Language fallback groups are offered alongside the plain languages in
+    // every language dropdown (see rebuildLanguageSelect).
+    languageGroups = data.language_groups || [];
+    if (languageSelect && languageSelect.options.length) rebuildLanguageSelect();
     if (data.sync_language) {
       defaultSyncLanguage = data.sync_language;
     }

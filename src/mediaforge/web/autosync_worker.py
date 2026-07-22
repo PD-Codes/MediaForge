@@ -16,6 +16,12 @@ from .db import (
     prune_download_history,
     update_autosync_job,
 )
+from .language_groups import (
+    is_group_ref,
+    labels_from_provider_data,
+    pick_language,
+    resolve_chain,
+)
 from .queue_worker import _dl_lock
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
@@ -338,6 +344,32 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             except Exception as e:
                 logger.warning("[AutoSync] Resume notification failed: %s", e)
 
+        lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
+
+        # Language fallback group (see web/language_groups.py): an ordered chain
+        # instead of one language, resolved here and never passed on — every
+        # queue entry this run creates carries a concrete language label.
+        # Checked before the series page is fetched: a job that cannot run must
+        # say why instead of failing later with whatever the network said.
+        lang_chain = []
+        if is_group_ref(job.get("language")):
+            if not lang_sep:
+                # Turned off after the job was created. Without per-language
+                # folders a group cannot tell which language an existing file is
+                # in, so it could neither skip nor upgrade correctly.
+                raise RuntimeError(
+                    "language groups require the 'Separate languages into folders' "
+                    "setting — enable it again or pick a single language for this job"
+                )
+            lang_chain = resolve_chain(job["language"])
+            if not lang_chain:
+                # The group was deleted (or emptied) behind this job's back.
+                # Failing loudly beats syncing nothing and reporting success.
+                raise RuntimeError(
+                    f"language group '{job['language']}' no longer exists — "
+                    "pick a language or another group for this job"
+                )
+
         prov = resolve_provider(job["series_url"])
         if prov.series_cls is None or prov.season_cls is None:
             # Some providers have no series/season concept for Auto-Sync to
@@ -404,7 +436,6 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                 job["cover_url"] = _poster
 
 
-        lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
         # Only use lang_sep for "All Languages" when the global setting is enabled;
         # otherwise scan root directory to avoid phantom missing-episode detection.
         if job.get("language") == "All Languages" and not lang_sep:
@@ -425,6 +456,9 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                 if disable_eng_sub and lang == "English Sub":
                     continue
                 target_languages.append(lang)
+        elif lang_chain:
+            # Handled as one chain further down, not language by language.
+            target_languages = []
         else:
             target_languages.append(job["language"])
 
@@ -557,12 +591,17 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
         title_clean = (getattr(series, "title_cleaned", "") or series_title).lower()
         ep_re = re.compile(r"S(\d{2})E(\d{2,3})", re.IGNORECASE)
 
-        # mtime-based scan cache: {base_path_str -> (mtime, downloaded_eps_set)}
+        # mtime-based scan cache: {base_path_str -> (mtime, {(s, e): [paths]})}
         # Avoids re-scanning the same folder multiple times within one sync run.
         _scan_cache: dict = {}
 
-        def _scan_base(base: Path) -> set:
-            """Return (season, episode) pairs found under base, using mtime cache."""
+        def _scan_base(base: Path) -> dict:
+            """Map (season, episode) -> file paths found under base (mtime-cached).
+
+            The paths are what a language upgrade needs: to replace an episode
+            with a better-language copy, the old file has to be nameable, not
+            just countable.
+            """
             key = str(base)
             try:
                 mtime = base.stat().st_mtime if base.is_dir() else 0
@@ -571,7 +610,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             cached = _scan_cache.get(key)
             if cached and cached[0] == mtime:
                 return cached[1]
-            eps: set = set()
+            eps: dict = {}
             if base.is_dir() and title_clean:
                 for folder in base.iterdir():
                     if not folder.is_dir() or not folder.name.lower().startswith(title_clean):
@@ -580,20 +619,104 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                         if f.is_file():
                             m = ep_re.search(f.name)
                             if m:
-                                eps.add((int(m.group(1)), int(m.group(2))))
+                                eps.setdefault(
+                                    (int(m.group(1)), int(m.group(2))), []
+                                ).append(f)
             _scan_cache[key] = (mtime, eps)
             return eps
 
-        for target_lang in target_languages:
-            job_lang_folder = lang_folder_map.get(
-                target_lang, target_lang.lower().replace(" ", "-")
-            )
+        def _scan_languages(languages) -> dict:
+            """(season, episode) -> paths already on disk for any of `languages`."""
+            found: dict = {}
+            for lang in languages:
+                folder = lang_folder_map.get(lang, lang.lower().replace(" ", "-"))
+                for root in scan_roots:
+                    for pair, paths in _scan_base((root / folder) if lang_sep else root).items():
+                        found.setdefault(pair, []).extend(paths)
+            return found
 
+        # What this run will queue: (language, series_urls, movie_urls,
+        # {episode_url: [files to delete afterwards]}). Both modes below fill
+        # the same plan so the queueing code stays single.
+        queue_plan = []
+
+        if lang_chain:
+            # Fallback group. One pass over the episode list instead of one per
+            # language, with a per-language view of what is already on disk —
+            # which is exactly why groups require lang_separation: the language
+            # of an existing file is only knowable from its folder.
+            #
+            # Per episode, three outcomes:
+            #   * already there in the best available language  -> nothing
+            #   * not there at all                              -> download
+            #   * there, but only in a worse language than the  -> upgrade:
+            #     best one now available                           re-download,
+            #     then delete the old copies
+            present_by_lang = {lang: _scan_languages([lang]) for lang in lang_chain}
+            downloaded_eps = {}
+            for _lang_present in present_by_lang.values():
+                for _pair, _paths in _lang_present.items():
+                    downloaded_eps.setdefault(_pair, []).extend(_paths)
+            max_local_found = len(downloaded_eps.keys() & scope_pairs)
+
+            # language -> ([series urls], [movie urls], {url: [old paths]})
+            chain_buckets: dict = {}
+            for (s_num, e_num, url, ep_obj, is_movie) in online_episodes:
+                available = labels_from_provider_data(_pd_cache.get(url))
+                chosen = pick_language(lang_chain, available)
+                if not chosen:
+                    # Either the episode has none of the chain's languages yet,
+                    # or the prefetch failed — same conservative skip as the
+                    # single-language path: try again next cycle.
+                    logger.debug(
+                        "Auto-sync: S%02dE%02d of '%s' offers none of %s — skipping",
+                        s_num, e_num, job["title"], ", ".join(lang_chain),
+                    )
+                    continue
+                chosen_rank = lang_chain.index(chosen)
+                # Languages this episode is already on disk in, worst-ranked ones
+                # first — everything ranked below `chosen` is what an upgrade
+                # would replace.
+                have_ranks = [
+                    i for i, lang in enumerate(lang_chain)
+                    if (s_num, e_num) in present_by_lang[lang]
+                ]
+                if have_ranks and min(have_ranks) <= chosen_rank:
+                    # Already there in the best language available right now
+                    # (or in an even better one) — leave it alone.
+                    continue
+
+                replaced = []
+                if have_ranks:
+                    for rank in have_ranks:
+                        replaced.extend(
+                            str(p) for p in present_by_lang[lang_chain[rank]][(s_num, e_num)]
+                        )
+                    logger.info(
+                        "Auto-sync: upgrading S%02dE%02d of '%s' from '%s' to '%s' "
+                        "(%d old file(s) will be replaced)",
+                        s_num, e_num, job["title"], lang_chain[min(have_ranks)],
+                        chosen, len(replaced),
+                    )
+                elif chosen != lang_chain[0]:
+                    logger.info(
+                        "Auto-sync: S%02dE%02d of '%s' not available in '%s' — "
+                        "falling back to '%s'",
+                        s_num, e_num, job["title"], lang_chain[0], chosen,
+                    )
+                bucket = chain_buckets.setdefault(chosen, ([], [], {}))
+                bucket[1 if is_movie else 0].append(url)
+                if replaced:
+                    bucket[2][url] = replaced
+
+            for chosen_lang in lang_chain:  # keep the chain's order in the queue
+                if chosen_lang in chain_buckets:
+                    series_urls, movie_urls, replace_map = chain_buckets[chosen_lang]
+                    queue_plan.append((chosen_lang, series_urls, movie_urls, replace_map))
+
+        for target_lang in target_languages:
             # Build set of downloaded (season, episode) on disk using cached scans
-            downloaded_eps: set = set()
-            for root in scan_roots:
-                base = (root / job_lang_folder) if lang_sep else root
-                downloaded_eps |= _scan_base(base)
+            downloaded_eps = _scan_languages([target_lang]).keys()
 
             in_scope_local = downloaded_eps & scope_pairs
             if len(in_scope_local) > max_local_found:
@@ -653,8 +776,11 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                 else:
                     missing_series.append(url)
 
-            _src = ("sync:all_langs"
-                    if job.get("language") == "All Languages" else "sync")
+            queue_plan.append((target_lang, missing_series, missing_movies, {}))
+
+        _src = ("sync:all_langs"
+                if job.get("language") == "All Languages" else "sync")
+        for (target_lang, missing_series, missing_movies, replace_map) in queue_plan:
             # Queue series episodes and movie episodes as separate entries so they
             # can land in different download paths.
             for (_group, _path_id, _kind) in (
@@ -687,6 +813,9 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                             username=job.get("added_by"),
                             custom_path_id=_path_id,
                             source=_src,
+                            replace_paths={
+                                u: replace_map[u] for u in _group if u in replace_map
+                            },
                         )
                 logger.info(
                     "Auto-sync queued %d %s episode(s) for '%s' (%s)",

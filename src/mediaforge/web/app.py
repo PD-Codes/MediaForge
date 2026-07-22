@@ -28,6 +28,7 @@ from .db import (
     init_favourites_db,
     init_seerr_hidden_db,
     init_custom_paths_db,
+    init_language_groups_db,
     init_queue_db,
     init_library_db,
     init_media_ignored_db,
@@ -403,6 +404,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # Initialize download queue, custom paths and autosync (works with or without auth)
     init_queue_db()
     init_custom_paths_db()
+    init_language_groups_db()
     init_autosync_db()
     init_favourites_db()
     init_seerr_hidden_db()

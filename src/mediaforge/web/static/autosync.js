@@ -43,6 +43,7 @@ let adaptiveRetryValue = 2;
 let adaptiveRetryUnit = "days";
 let customPathsCache = [];
 let langSepEnabled = false;
+let languageGroupsCache = [];
 let _runningJobs = new Set();
 let _pollTimer = null;
 
@@ -92,6 +93,7 @@ async function loadSyncSchedule() {
     adaptiveRetryValue = parseInt(data.sync_adaptive_retry_value, 10) || 2;
     adaptiveRetryUnit = data.sync_adaptive_retry_unit || "days";
     langSepEnabled = data.lang_separation === "1";
+    languageGroupsCache = data.language_groups || [];
   } catch (e) {
     /* ignore */
   }
@@ -377,7 +379,7 @@ function _autoGroupValue(job, attr) {
     }
     return t("Standard", "Default");
   }
-  if (attr === "language") return job.language || "—";
+  if (attr === "language") return job.language_label || job.language || "—";
   if (attr === "provider") return job.provider || "—";
   if (attr === "user") return job.added_by || "—";
   return "—";
@@ -532,7 +534,7 @@ function _buildJobCard(job, grayed) {
     : "";
 
   const pillsHtml = `
-    <span class="queue-meta-pill">${esc(job.language)}</span>
+    <span class="queue-meta-pill">${esc(job.language_label || job.language)}</span>
     <span class="queue-meta-pill">${esc(job.provider)}</span>
     <span class="queue-meta-pill">${esc(dlPath)}</span>
     ${filterPill}${groupPill}
@@ -836,6 +838,23 @@ async function openEditModal(id) {
       opt.textContent = l;
       langSelect.appendChild(opt);
     });
+    // Fallback groups (settings → Downloads): selectable in place of a single
+    // language, resolved per episode by the worker. They require language
+    // separation — but a job that already uses one keeps showing it either way,
+    // so the dropdown never misrepresents what the job is set to.
+    const _jobUsesGroup = String(job.language || "").indexOf("group:") === 0;
+    if (languageGroupsCache.length && (langSepEnabled || _jobUsesGroup)) {
+      const optgroup = document.createElement("optgroup");
+      optgroup.label = t("Sprachgruppen", "Language groups");
+      languageGroupsCache.forEach((g) => {
+        const opt = document.createElement("option");
+        opt.value = "group:" + g.id;
+        opt.textContent = g.name;
+        opt.title = (g.languages || []).join(" → ");
+        optgroup.appendChild(opt);
+      });
+      langSelect.appendChild(optgroup);
+    }
     langSelect.value = job.language || "German Dub";
 
     document.getElementById("editProvider").value = job.provider || "VOE";

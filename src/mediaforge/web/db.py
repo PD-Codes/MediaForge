@@ -688,6 +688,17 @@ def init_queue_db():
         except sqlite3.OperationalError as _mig_err:
             if "duplicate column" not in str(_mig_err).lower():
                 logger.warning("[Migration] Unexpected error adding column: %s", _mig_err)
+        # Add replace_paths column (migration for existing DBs) — {episode_url:
+        # [old file paths]} for a language upgrade queued by auto-sync: once the
+        # episode has been re-downloaded in the better language, the worker
+        # deletes the listed files (see queue_worker's _delete_replaced_files).
+        try:
+            conn.execute(
+                "ALTER TABLE download_queue ADD COLUMN replace_paths TEXT NOT NULL DEFAULT '{}'"
+            )
+        except sqlite3.OperationalError as _mig_err:
+            if "duplicate column" not in str(_mig_err).lower():
+                logger.warning("[Migration] Unexpected error adding column: %s", _mig_err)
         # Migrate CHECK constraint to include 'partial' status (existing DBs)
         # SQLite cannot ALTER constraints — must recreate the table
         try:
@@ -714,6 +725,7 @@ def init_queue_db():
                     ("hidden",      "ALTER TABLE download_queue ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0"),
                     ("format_id",   "ALTER TABLE download_queue ADD COLUMN format_id TEXT"),
                     ("source_provider", "ALTER TABLE download_queue ADD COLUMN source_provider TEXT"),
+                    ("replace_paths", "ALTER TABLE download_queue ADD COLUMN replace_paths TEXT NOT NULL DEFAULT '{}'"),
                 ]:
                     try:
                         conn.execute(sql)
@@ -730,7 +742,8 @@ def init_queue_db():
                             captcha_url = (SELECT captcha_url FROM _download_queue_old WHERE id = new.id),
                             hidden = (SELECT hidden FROM _download_queue_old WHERE id = new.id),
                             format_id = (SELECT format_id FROM _download_queue_old WHERE id = new.id),
-                            source_provider = (SELECT source_provider FROM _download_queue_old WHERE id = new.id)"""
+                            source_provider = (SELECT source_provider FROM _download_queue_old WHERE id = new.id),
+                            replace_paths = COALESCE((SELECT replace_paths FROM _download_queue_old WHERE id = new.id), '{}')"""
                     )
                 except Exception as _mig_err:
                     logger.warning("[Migration] Could not copy extra columns: %s", _mig_err)
@@ -760,14 +773,22 @@ def add_to_queue(
     upscale=False,
     format_id=None,
     source_provider=None,
+    replace_paths=None,
 ):
+    """Queue a download.
+
+    `replace_paths` is {episode_url: [old file paths]} for a language upgrade:
+    the listed files are deleted once that episode has been downloaded again in
+    the better language. Only auto-sync sets it (see autosync_worker), so a
+    manual download never removes anything.
+    """
     import json
 
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO download_queue (title, series_url, episodes, total_episodes, language, provider, username, custom_path_id, source, upscale, format_id, source_provider) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO download_queue (title, series_url, episodes, total_episodes, language, provider, username, custom_path_id, source, upscale, format_id, source_provider, replace_paths) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 title,
                 series_url,
@@ -781,6 +802,7 @@ def add_to_queue(
                 1 if upscale else 0,
                 format_id,
                 source_provider,
+                json.dumps(replace_paths or {}),
             ),
         )
         row_id = cur.lastrowid
@@ -1338,6 +1360,158 @@ def get_custom_path_by_id(path_id):
             "SELECT id, name, path, default_sites FROM custom_paths WHERE id = ?", (path_id,)
         ).fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+# ===== Language Fallback Groups =====
+#
+# An ordered list of language labels that can be selected instead of a single
+# language (see web/language_groups.py). `languages` is a JSON array whose
+# order is the fallback priority, so it is stored — and returned — verbatim.
+
+_CREATE_LANGUAGE_GROUPS_TABLE = """\
+CREATE TABLE IF NOT EXISTS language_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    languages TEXT NOT NULL DEFAULT '[]'
+);
+"""
+
+
+def init_language_groups_db():
+    MEDIAFORGE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    conn = get_db()
+    try:
+        conn.execute(_CREATE_LANGUAGE_GROUPS_TABLE)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _row_to_language_group(row):
+    """Decode a language_groups row, tolerating a corrupt languages column."""
+    import json
+
+    try:
+        languages = json.loads(row["languages"] or "[]")
+    except (TypeError, ValueError):
+        languages = []
+    if not isinstance(languages, list):
+        languages = []
+    return {"id": row["id"], "name": row["name"], "languages": languages}
+
+
+def get_language_groups():
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, name, languages FROM language_groups ORDER BY id"
+        ).fetchall()
+        return [_row_to_language_group(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_language_group(group_id):
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id, name, languages FROM language_groups WHERE id = ?",
+            (group_id,),
+        ).fetchone()
+        return _row_to_language_group(row) if row else None
+    finally:
+        conn.close()
+
+
+def add_language_group(name, languages_json):
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "INSERT INTO language_groups (name, languages) VALUES (?, ?)",
+            (name, languages_json),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def update_language_group(group_id, name=None, languages_json=None):
+    fields = []
+    values = []
+    if name is not None:
+        fields.append("name = ?")
+        values.append(name)
+    if languages_json is not None:
+        fields.append("languages = ?")
+        values.append(languages_json)
+    if not fields:
+        return
+
+    values.append(group_id)
+    conn = get_db()
+    try:
+        conn.execute(
+            f"UPDATE language_groups SET {', '.join(fields)} WHERE id = ?", values
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def count_language_group_users():
+    """How many sync jobs + waiting/running downloads use any language group.
+
+    Used to warn before language separation is switched off, which is what
+    fallback groups need to work at all.
+    """
+    from .language_groups import GROUP_PREFIX
+
+    like = GROUP_PREFIX + "%"
+    conn = get_db()
+    try:
+        jobs = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM autosync_jobs WHERE language LIKE ?", (like,)
+        ).fetchone()
+        queued = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM download_queue "
+            "WHERE language LIKE ? AND status IN ('queued', 'running')",
+            (like,),
+        ).fetchone()
+        return (jobs["cnt"] if jobs else 0) + (queued["cnt"] if queued else 0)
+    finally:
+        conn.close()
+
+
+def remove_language_group(group_id):
+    """Delete a group. Returns (True, None) or (False, reason) if still in use.
+
+    Mirrors remove_custom_path: a group referenced by a sync job or a waiting
+    download must not vanish, because the reference is all those rows have —
+    resolving it later would yield an empty chain and the job would silently
+    stop syncing.
+    """
+    from .language_groups import group_ref
+
+    ref = group_ref(group_id)
+    conn = get_db()
+    try:
+        row_sync = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM autosync_jobs WHERE language = ?", (ref,)
+        ).fetchone()
+        if row_sync and row_sync["cnt"] > 0:
+            return False, "Diese Sprachgruppe wird von mindestens einem Auto-Sync-Job verwendet und kann nicht gelöscht werden."
+        row_queue = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM download_queue WHERE language = ? AND status IN ('queued', 'running')",
+            (ref,),
+        ).fetchone()
+        if row_queue and row_queue["cnt"] > 0:
+            return False, "Diese Sprachgruppe wird noch von aktiven oder wartenden Downloads in der Warteschlange verwendet."
+        conn.execute("DELETE FROM language_groups WHERE id = ?", (group_id,))
+        conn.commit()
+        return True, None
     finally:
         conn.close()
 

@@ -463,6 +463,30 @@ msgstr "Wähle die Seiten aus, für die dieser Pfad als Download-Ordner vorausge
 msgid "Actions"
 msgstr "Aktionen"
 
+msgid "Language Fallback Groups"
+msgstr "Sprach-Fallback-Gruppen"
+
+msgid "An ordered list of languages that can be selected instead of a single language — in the download dialog and in auto-sync. Every episode is fetched in the first language of the list it is actually available in, so a series that switches from dub to sub mid-season no longer needs two jobs."
+msgstr "Eine geordnete Liste von Sprachen, die anstelle einer einzelnen Sprache ausgewählt werden kann — im Download-Dialog und im Auto-Sync. Jede Episode wird in der ersten Sprache der Liste geladen, in der sie tatsächlich verfügbar ist. Eine Serie, die mitten in der Staffel von Dub auf Sub wechselt, braucht so keine zwei Jobs mehr."
+
+msgid "Auto-sync also upgrades: as soon as an episode you already have becomes available in a language further up the list, it is downloaded again in that language and the old file is deleted."
+msgstr "Auto-Sync führt auch Upgrades durch: Sobald eine bereits vorhandene Episode in einer Sprache weiter oben in der Liste verfügbar wird, wird sie in dieser Sprache erneut geladen und die alte Datei gelöscht."
+
+msgid "Language groups require “Separate languages into folders” above. Only per-language folders make it possible to tell which language an existing episode is in — without them a group can neither skip nor upgrade correctly. You can still define groups here; they become selectable once the setting is on."
+msgstr "Sprachgruppen benötigen „Sprachen in Ordner trennen“ weiter oben. Nur getrennte Sprachordner machen erkennbar, in welcher Sprache eine vorhandene Episode vorliegt — ohne sie kann eine Gruppe weder korrekt überspringen noch upgraden. Gruppen lassen sich hier trotzdem anlegen; auswählbar werden sie, sobald die Einstellung aktiv ist."
+
+msgid "Add Group"
+msgstr "Gruppe hinzufügen"
+
+msgid "Name (e.g. German first)"
+msgstr "Name (z.B. Deutsch zuerst)"
+
+msgid "Fallback order"
+msgstr "Fallback-Reihenfolge"
+
+msgid "A group needs at least two languages. Groups still used by a sync job or a waiting download cannot be deleted."
+msgstr "Eine Gruppe braucht mindestens zwei Sprachen. Gruppen, die noch von einem Sync-Job oder einem wartenden Download verwendet werden, können nicht gelöscht werden."
+
 msgid "Auto-Sync Defaults"
 msgstr "Auto-Sync Standards"
 

@@ -428,14 +428,42 @@
 
     const existing = opts.existing || null;
     const coverUrl = opts.coverUrl || "";
-    const langs = (opts.languages && opts.languages.length ? opts.languages : DEFAULT_LANGS).slice();
+    // "group:<id>" values may already be in opts.languages (the search modal
+    // passes its dropdown verbatim); the group list is what turns them into
+    // readable names, so drop them when it isn't available.
+    // Groups need language separation (the backend refuses them otherwise); an
+    // existing job that already uses one still gets its option so the dialog
+    // shows the truth.
+    const groups = (opts.langSepEnabled
+      || String((existing && existing.language) || "").indexOf("group:") === 0)
+      ? (opts.languageGroups || [])
+      : [];
+    const isGroup = (v) => String(v || "").indexOf("group:") === 0;
+    const groupName = (v) => {
+      const g = groups.find((x) => "group:" + x.id === v);
+      return g ? g.name : null;
+    };
+    const langs = (opts.languages && opts.languages.length ? opts.languages : DEFAULT_LANGS)
+      .filter((l) => !isGroup(l));
     if (opts.langSepEnabled && langs.indexOf("All Languages") === -1) langs.unshift("All Languages");
     const providers = opts.providers && opts.providers.length ? opts.providers : DEFAULT_PROVIDERS;
     const customPaths = opts.customPaths || [];
 
     const langSelect = el("select", { class: "asf-select" },
       langs.map((l) => el("option", { value: l, text: l === "All Languages" ? tr("Alle Sprachen", "All Languages") : l })));
-    langSelect.value = (existing && existing.language) || opts.currentLanguage || langs[0];
+    if (groups.length) {
+      const optgroup = el("optgroup", { label: tr("Sprachgruppen", "Language groups") },
+        groups.map((g) => el("option", {
+          value: "group:" + g.id,
+          text: g.name,
+          title: (g.languages || []).join(" → "),
+        })));
+      langSelect.appendChild(optgroup);
+    }
+    const wantedLang = (existing && existing.language) || opts.currentLanguage || langs[0];
+    // A job may point at a group this instance no longer has; don't silently
+    // show the first language as if that were the job's setting.
+    langSelect.value = (isGroup(wantedLang) && !groupName(wantedLang)) ? langs[0] : wantedLang;
 
     const provSelect = el("select", { class: "asf-select" },
       providers.map((p) => el("option", { value: p, text: p })));
