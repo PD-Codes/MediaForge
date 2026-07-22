@@ -231,11 +231,25 @@ def init_telemetry(app):
     # A one-off system_info event on startup (if the user has enabled it) so
     # the devInfo server sees an install "check in" even on runs with no
     # crash at all -- not gated behind any particular route/request.
-    try:
-        event = events.build_system_info_event()
-        if event:
-            get_client().submit(event)
-    except Exception:
-        logger.debug("[Telemetry] startup system_info event failed", exc_info=True)
+    #
+    # Emitted from a short-lived daemon thread rather than inline: building the
+    # event now runs the extended sysinfo.collect() probes, which may spawn
+    # ffmpeg/nvidia-smi subprocesses (each bounded by a per-probe timeout).
+    # That is cheap and cached, but on a slow NAS the very first ffmpeg spawn
+    # can take a couple of seconds -- doing it inline would add that straight
+    # onto create_app()/app startup. Off-thread, it never delays anything the
+    # user is waiting on; the TelemetryClient queue it submits to is already
+    # thread-safe.
+    def _emit_startup_system_info():
+        try:
+            event = events.build_system_info_event()
+            if event:
+                get_client().submit(event)
+        except Exception:
+            logger.debug("[Telemetry] startup system_info event failed", exc_info=True)
+
+    threading.Thread(
+        target=_emit_startup_system_info, daemon=True, name="telemetry-sysinfo"
+    ).start()
 
     logger.debug("[Telemetry] initialized")

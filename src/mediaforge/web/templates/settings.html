@@ -293,11 +293,11 @@
     <div class="settings-section">
       <h2>{{ _('Language') }}</h2>
       <div class="settings-row" style="gap:10px;padding:12px;">
-        <button class="appearance-theme-btn{% if ui_language == 'en' %} active{% endif %}"
+        <button class="appearance-theme-btn lang-btn{% if ui_language == 'en' %} active{% endif %}"
                 onclick="setUiLanguage('en')">
           🇺🇸 English
         </button>
-        <button class="appearance-theme-btn{% if ui_language == 'de' %} active{% endif %}"
+        <button class="appearance-theme-btn lang-btn{% if ui_language == 'de' %} active{% endif %}"
                 onclick="setUiLanguage('de')">
           🇩🇪 Deutsch
         </button>
