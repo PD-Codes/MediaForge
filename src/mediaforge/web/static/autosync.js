@@ -580,7 +580,7 @@ function _buildJobCard(job, grayed) {
   </div>`;
 
   const cbHtml = autosyncCanManage
-    ? `<label class="sync-card-cb-wrap"><input type="checkbox" class="chb-main" ${selectedJobIds.has(job.id)?'checked':''} onchange="toggleJobSelection(${job.id},this.checked)"></label>`
+    ? `<label class="sync-card-cb-wrap"><input type="checkbox" class="chb-main sync-card-checkbox" ${selectedJobIds.has(job.id)?'checked':''} onchange="toggleJobSelection(${job.id},this.checked)"></label>`
     : '';
 
   return `<div class="${cardClasses}" style="--card-status-color:${statusColor}" data-id="${job.id}">

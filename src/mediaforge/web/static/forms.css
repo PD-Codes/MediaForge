@@ -23,16 +23,6 @@
   border-color: var(--text-primary) !important;
 }
 
-/* Larger checkmark for the "select all" checkbox in the Auto-Sync batch
-   toolbar (templates/autosync.html) — overrides the default .chb-main::after
-   checkmark size/position below. */
-.chb-autosync-all::after {
-  height: 34px !important;
-  width: 44px !important;
-  margin-top:-5px !important;
-  margin-left: -8px !important;
-}
-
 .chb-main:hover {
   border-color: var(--accent, #8b5cf6);
 }
