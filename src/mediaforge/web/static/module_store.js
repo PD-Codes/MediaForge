@@ -217,15 +217,31 @@
       // their own card in the installed view, and count them onto the store button.
       // The store view is a click away, so out-of-date has to be visible from the
       // other side of that click.
+      //
+      // Match a store entry to its installed card by MODULE_ID, not by folder name.
+      // The store computes update_available on MODULE_ID (see store.py's catalog(),
+      // installed_by_id keyed on module_id), and the card exposes that same id via
+      // data-module-id. Matching on the store's declared folder instead — as this
+      // used to — silently attached the badge to nothing whenever the on-disk folder
+      // differed from it (a hand-installed or locally renamed module), which is the
+      // whole reason installed modules often showed no update at all. The folder id
+      // (integCard-ext-<folder>) is kept only as a last-ditch fallback.
+      const cardsById = {};
+      document.querySelectorAll(".integ-card[data-module-id]").forEach((el) => {
+        cardsById[el.getAttribute("data-module-id")] = el;
+      });
       const updates = data.modules.filter((m) => m.update_available);
       renderUpdateCount(updates.length);
       updates.forEach((m) => {
-        const card = document.getElementById("integCard-ext-" + m.folder);
+        const card = cardsById[m.id] || document.getElementById("integCard-ext-" + m.folder);
         if (!card || card.querySelector(".badge-update")) return;
+        const header = card.querySelector(".integ-subsection-header");
+        if (!header) return;
         const badge = document.createElement("span");
         badge.className = "integ-subsection-badge badge-update";
         badge.textContent = t("Update: v", "Update: v") + m.version;
-        card.querySelector(".integ-subsection-header").appendChild(badge);
+        badge.title = t("Neuere Version im Store verfügbar", "A newer version is available in the store");
+        header.appendChild(badge);
       });
     } catch (e) {
       const aborted = e && e.name === "AbortError";
