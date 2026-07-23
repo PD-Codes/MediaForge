@@ -133,6 +133,10 @@ URLs from **aniworld.to**, **s.to** and **filmpalast.to** are supported, deliver
 
 Contributions are **highly appreciated** — report bugs, suggest features, submit pull requests, or improve the docs. Please check existing [issues](https://github.com/PD-Codes/MediaForge/issues) first to avoid duplicates, and feel free to discuss ideas on [Discord](https://discord.gg/TGaZ9hFFhC) before opening a PR.
 
+### Translations
+Help us translate MediaForge into your language! We use Weblate to manage all localizations. You can easily contribute translations online without any coding knowledge here:
+**[Translate MediaForge on Weblate](https://webplate.softarchiv.com/projects/mediaforge/)**
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Credits

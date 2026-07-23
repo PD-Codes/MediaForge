@@ -7,15 +7,17 @@ msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2026-06-28 13:22+0000\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: PD-Codes\n"
+"PO-Revision-Date: 2026-07-23 15:29+0000\n"
+"Last-Translator: Pascal Keller <keller.pascal1313@proton.me>\n"
 "Language: de\n"
-"Language-Team: de <LL@li.org>\n"
-"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"Language-Team: German <https://webplate.softarchiv.com/projects/mediaforge/"
+"mediaforge/de/>\n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
+"X-Generator: Weblate 2026.7.1\n"
 
 # ── base.html ──────────────────────────────────────────────────────────────
 msgid "Discover"
@@ -32,9 +34,6 @@ msgstr "Mediathek"
 
 msgid "Queue"
 msgstr "Warteschlange"
-
-msgid "Upscaling"
-msgstr "Upscaling"
 
 msgid "Advanced Search"
 msgstr "Erweiterte Suche"
@@ -151,7 +150,7 @@ msgid "Loading browser screenshot..."
 msgstr "Lade Browser-Screenshot..."
 
 msgid "Starting transcoder..."
-msgstr "Transcoding wird gestartet\\u2026"
+msgstr "Transcoding wird gestartet"
 
 msgid "Close (Esc)"
 msgstr "Schließen (Esc)"
@@ -1337,9 +1336,6 @@ msgstr "Streaming-Anbieter"
 msgid "1 provider on the card · all in the modal below the title"
 msgstr "1 Anbieter auf der Karte · alle im Modal unter dem Titel"
 
-msgid "Age Rating (FSK)"
-msgstr "Altersfreigabe (FSK)"
-
 msgid "FSK badge on the card and centered below the cover in the modal"
 msgstr "FSK-Badge auf der Karte und zentriert unter dem Cover im Modal"
 
@@ -1584,17 +1580,11 @@ msgstr "Suffix (upscale)"
 msgid "Queues"
 msgstr "Warteschlangen"
 
-msgid "Encoding"
-msgstr "Encoding"
-
 msgid "Upscaling"
 msgstr "Upscaling"
 
 msgid "Inactive"
 msgstr "Inaktiv"
-
-msgid "Encoding"
-msgstr "Encoding"
 
 msgid ""
 "Only relevant for H.264/H.265 — decides whether the transcode runs "
@@ -3370,9 +3360,6 @@ msgstr "Fehler beim Ablehnen: "
 msgid "Error loading (seerr)"
 msgstr "Fehler beim Laden"
 
-msgid "Loading…"
-msgstr "Lädt…"
-
 msgid "Connected"
 msgstr "Verbunden"
 
@@ -3956,7 +3943,6 @@ msgstr ""
 " PC. Alle verbinden sich mit dieser Instanz — kein Drittanbieter-Server. "
 "Eingeladene Gäste können per Link ohne Konto beitreten."
 
-
 msgid "↳ Sync with my CR Watchlist"
 msgstr "↳ Mit meiner CR Watchlist synchronisieren"
 
@@ -3967,7 +3953,6 @@ msgid "Adds the series from your Crunchyroll custom lists (Crunchylists) to the 
 msgstr "Fügt die Serien aus deinen Crunchyroll-Listen (Crunchylists) zum Kalender hinzu — funktioniert auch, wenn die allgemeine Crunchyroll-Anzeige aus ist, solange ein Crunchyroll-Konto konfiguriert ist. Episodendaten kommen von TMDB (CineInfo-API-Key erforderlich)."
 
 # ── Integrations: "Third Party" tab (Crunchyroll, Fernsehserien.de) ──────────
-
 msgid "Third Party"
 msgstr "Drittanbieter"
 
@@ -3975,7 +3960,6 @@ msgid "Scraper"
 msgstr "Scraper"
 
 # ── Fernsehserien.de (CineInfo) ───────────────────────────────────────────────
-
 msgid "Enable Fernsehserien.de integration"
 msgstr "Fernsehserien.de-Integration aktivieren"
 
@@ -3998,7 +3982,6 @@ msgid "Metadata is preloaded in the background and cached in the database for 24
 msgstr "Metadaten werden im Hintergrund vorgeladen und 24 h in der Datenbank gecacht. Fernsehserien.de-Anbieterabfragen werden ebenfalls 24 h lang gecacht."
 
 # ── legacy import (MediaForge rename) ──
-
 msgid "Coming from AniWorld Downloader? Your data from ~/.aniworld is imported automatically on first start — nothing gets lost."
 msgstr "Kommst du von AniWorld Downloader? Deine Daten aus ~/.aniworld werden beim ersten Start automatisch übernommen — es geht nichts verloren."
 
@@ -4030,7 +4013,6 @@ msgid "Import failed."
 msgstr "Import fehlgeschlagen."
 
 # ── legacy import card (dismiss/description) ──
-
 msgid "Data from previous installation"
 msgstr "Daten aus vorheriger Installation"
 
@@ -4047,7 +4029,6 @@ msgid "Nothing left to import — everything is already here."
 msgstr "Nichts mehr zu importieren — es ist bereits alles da."
 
 # --- MediaForge: Quellen / Sources feature ---
-
 msgid "Sources"
 msgstr "Quellen"
 
@@ -4067,7 +4048,6 @@ msgid "When enabled, disabled sources are also skipped in the search results."
 msgstr "Wenn aktiviert, werden deaktivierte Quellen auch in den Suchergebnissen übersprungen."
 
 # ── settings.html: Captcha / Browser + Restart ──
-
 msgid "Captcha / Browser"
 msgstr "Captcha / Browser"
 
@@ -4093,7 +4073,6 @@ msgid "Restarts MediaForge with the same startup arguments — without installin
 msgstr "Startet MediaForge mit denselben Startargumenten neu — ohne ein Update zu installieren. Laufende Downloads werden pausiert und danach fortgesetzt."
 
 # -- settings.html: Captcha options --
-
 msgid "Captcha options"
 msgstr "Captcha-Optionen"
 
@@ -4122,7 +4101,6 @@ msgid "Captcha timeout (seconds, empty = default)"
 msgstr "Captcha-Timeout (Sekunden, leer = Standard)"
 
 # -- settings.html: nachgezogene Bestands-Strings --
-
 msgid "Add time"
 msgstr "Zeit hinzufügen"
 
@@ -4189,7 +4167,6 @@ msgstr "Sollen wir dir jetzt wirklich glauben, dass du mindestens 18 bist?"
 
 msgid "hanime.tv is an adult source (18+) for sexually explicit animated content (hentai). Disabled by default; enabling requires an age confirmation."
 msgstr "hanime.tv ist eine nicht jugendfreie Quelle (18+) für sexuell explizite Zeichentrick-Inhalte (Hentai). Standardmäßig deaktiviert; zum Aktivieren ist eine Altersbestätigung erforderlich."
-
 
 # ── UpTime (added) ─────────────────────────────────────────────────────────
 msgid "Monitoring"
@@ -4258,9 +4235,6 @@ msgstr "UpTime öffnen →"
 msgid "Live monitoring of your source sites — reachability and real-site verification"
 msgstr "Live-Überwachung deiner Quellen-Seiten — Erreichbarkeit und Echtheits-Prüfung"
 
-msgid "Loading…"
-msgstr "Lädt…"
-
 msgid "Online"
 msgstr "Online"
 
@@ -4299,11 +4273,6 @@ msgstr "Setup starten"
 # ── extensions.html / Module Manager (base.html sidebar link + page) ──────
 msgid "Module Manager"
 msgstr "Modulmanager"
-
-# base.html sidebar "M" pill tooltip next to module-registered links (see
-# thirdparties/registry.py's resolve_menu_items()) -- "{{ _('Module') }}: <name>"
-msgid "Module"
-msgstr "Modul"
 
 msgid "Every discovered web/thirdparties/ folder, who made it, and a working on/off switch for what it registered"
 msgstr "Jeder gefundene web/thirdparties/-Ordner, wer ihn gemacht hat, und ein funktionierender Ein/Aus-Schalter für das, was er registriert hat"
@@ -4482,7 +4451,6 @@ msgstr "Weitere Repositories"
 msgid "One URL per line. Modules from a third-party repository are unverified unless they carry a signature this MediaForge trusts."
 msgstr "Eine URL pro Zeile. Module aus fremden Repositories gelten als unverifiziert, solange sie keine Signatur tragen, der dieses MediaForge vertraut."
 
-
 # -- Dev Infos --------------------------------------------------------------
 msgid "Dev Infos"
 msgstr "Dev Infos"
@@ -4513,7 +4481,6 @@ msgstr "Gelesen"
 
 msgid "Dismiss"
 msgstr "Schließen"
-
 
 msgid "Provider order"
 msgstr "Provider-Reihenfolge"
@@ -4654,7 +4621,6 @@ msgstr "Datenlöschung beantragen"
 msgid "Telemetry active at all"
 msgstr "Telemetrie grundsätzlich aktiv"
 
-
 # ── integrations.html (added 2026-07-12) ──────────
 msgid "↳ Show Media Library series in calendar"
 msgstr "↳ Serien aus Mediathek im Kalender anzeigen"
@@ -4759,6 +4725,7 @@ msgstr "Modul-Ordner"
 
 msgid "Installed modules live here, outside MediaForge's program files — next to your database and cache, so they survive an update. A module installed by hand is simply a folder dropped in here; it is picked up on the next start."
 msgstr "Installierte Module liegen hier, außerhalb der Programmdaten von MediaForge — neben Ihrer Datenbank und dem Cache, damit sie ein Update überleben. Ein manuell installiertes Modul ist einfach ein Ordner, der hier abgelegt wird; es wird beim nächsten Start geladen."
+
 # Module dependencies (Modulmanager: "needs dependency" + Install button --
 # see web/thirdparties/deps.py and routes/extensions.py).
 msgid "This module needs a Python dependency that is not installed:"
@@ -4772,7 +4739,6 @@ msgstr "Lädt das Paket von PyPI in den MediaForge-Modulordner und lädt das Mod
 
 msgid "This build cannot install packages itself. Install the dependency into the environment MediaForge runs in."
 msgstr "Dieser Build kann keine Pakete selbst installieren. Installiere die Abhängigkeit in der Umgebung, in der MediaForge läuft."
-
 
 # ── Backup (Full & Selective) ───────────────────────────────────────────────
 msgid "Backup"
@@ -4884,7 +4850,6 @@ msgstr "Überwache die Erreichbarkeit, Antwortzeiten und Quellenstatus von Seite
 msgid "External integration module"
 msgstr "Externes Integrationsmodul"
 
-
 # --- Menu rework (2026-07): new sidebar/menu strings ---
 msgid "Modules"
 msgstr "Module"
@@ -4916,7 +4881,6 @@ msgstr "Statistiken, Download-Verlauf und Uptime auf einen Blick"
 
 msgid "Configure FFmpeg encoding, hardware acceleration and upscaling profiles"
 msgstr "Konfiguriere FFmpeg-Kodierung, Hardwarebeschleunigung und Upscaling-Profile"
-
 
 # --- Jellyfin NFO Provider ---
 msgid "Automatically generates NFO metadata for Jellyfin, Kodi and Plex after successful downloads. Requires a TMDB API key configured in CineInfo."
@@ -4961,9 +4925,6 @@ msgstr "Handlung (Plot / Overview)"
 msgid "Genres"
 msgstr "Genres"
 
-msgid "Rating"
-msgstr "Bewertung (Rating)"
-
 msgid "Age Rating (FSK)"
 msgstr "Altersfreigabe (FSK)"
 
@@ -5002,4 +4963,3 @@ msgstr "Legt fest, ob das Web-Interface im Standardbrowser geöffnet wird, wenn 
 
 msgid "This feature is not available in Docker."
 msgstr "Diese Funktion ist für Docker nicht verfügbar."
-
