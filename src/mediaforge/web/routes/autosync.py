@@ -437,4 +437,26 @@ def register_autosync_routes(app):
                                      "set_group", "remove_group"):
             return jsonify({"error": "ids und action (enable|disable|set_path|delete|set_group|remove_group) erforderlich"}), 400
 
-   
+        updated = 0
+        for job_id in ids:
+            job = get_autosync_job(job_id)
+            if not job:
+                continue
+            if not is_admin and job.get("added_by") != username:
+                continue
+            if action == "enable":
+                update_autosync_job(job_id, enabled=1)
+            elif action == "disable":
+                update_autosync_job(job_id, enabled=0)
+            elif action == "set_path":
+                update_autosync_job(job_id, custom_path_id=data.get("custom_path_id"))
+            elif action == "delete":
+                remove_autosync_job(job_id)
+            elif action == "set_group":
+                gn = data.get("group_name")
+                gn = (str(gn).strip() if gn is not None else "")
+                update_autosync_job(job_id, group_name=gn or None)
+            elif action == "remove_group":
+                update_autosync_job(job_id, group_name=None)
+            updated += 1
+        return jsonify({"ok": True, "updated": updated})
