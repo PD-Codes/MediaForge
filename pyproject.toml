@@ -78,6 +78,7 @@ mediaforge = [
   "web/static/*.svg",
   "web/static/*.png",
   "web/static/flags/*.svg",
+  "web/static/TranslationFlags/*.svg",
   "bin/windows/*",
   "anime4k/shader/*.glsl",
   "web/translations/de/LC_MESSAGES/*.mo",

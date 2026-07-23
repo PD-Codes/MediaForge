@@ -451,22 +451,18 @@
         <div class="sidebar-lang-dropdown" id="langDropdown">
           <button class="footer-action-icon" onclick="toggleLangDropdown(event)" type="button"
             title="{{ _('Change language') }}">
-            <img src="{{ url_for('static', filename='flags/' + ('german' if ui_language == 'de' else 'english') + '.svg') }}"
-                 class="sidebar-lang-flag" alt="" />
+            <img src="{{ url_for('static', filename=get_flag_filename(ui_language)) }}"
+                 class="sidebar-lang-flag" alt="" onerror="this.src='{{ url_for('static', filename='placeholder.svg') }}'" />
           </button>
           <div class="sidebar-lang-menu" id="langMenu">
-          <button class="sidebar-lang-option{% if ui_language == 'de' %} active{% endif %}"
-                  onclick="setUiLanguage('de')" type="button">
-            <img src="{{ url_for('static', filename='flags/german.svg') }}" class="sidebar-lang-flag" alt="" />
-            <span>Deutsch</span>
-            {% if ui_language == 'de' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:auto;color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}
+          {% for lang in available_languages %}
+          <button class="sidebar-lang-option{% if ui_language == lang %} active{% endif %}"
+                  onclick="setUiLanguage('{{ lang }}')" type="button">
+            <img src="{{ url_for('static', filename=get_flag_filename(lang)) }}" class="sidebar-lang-flag" alt="" style="object-fit:cover;" onerror="this.src='{{ url_for('static', filename='placeholder.svg') }}'" />
+            <span>{{ get_language_name(lang) }}</span>
+            {% if ui_language == lang %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:auto;color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}
           </button>
-          <button class="sidebar-lang-option{% if ui_language == 'en' %} active{% endif %}"
-                  onclick="setUiLanguage('en')" type="button">
-            <img src="{{ url_for('static', filename='flags/english.svg') }}" class="sidebar-lang-flag" alt="" />
-            <span>English</span>
-            {% if ui_language == 'en' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:auto;color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}
-          </button>
+          {% endfor %}
         </div>
       </div>
     </div>

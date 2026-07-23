@@ -80,7 +80,8 @@ def register_settings_routes(app):
         from ..db import set_user_language as _set_lang
         data = request.get_json(force=True, silent=True) or {}
         lang = data.get("language", "en")
-        if lang not in ("en", "de"):
+        from flask import current_app
+        if lang not in current_app.config.get("AVAILABLE_LANGUAGES", ["en", "de"]):
             return jsonify({"error": "Unsupported language"}), 400
         _sess["ui_language"] = lang
         _sess["_lang_synced"] = True
