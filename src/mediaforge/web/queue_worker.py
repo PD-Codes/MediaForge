@@ -20,6 +20,12 @@ from .db import (
     update_queue_stats,
 )
 from .download_history import _record_download_history
+from .language_groups import (
+    is_group_ref,
+    labels_from_provider_data,
+    pick_language,
+    resolve_chain,
+)
 from .mediascan import _schedule_mediascan_delayed, _trigger_mediaplayer_refresh
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
@@ -53,6 +59,77 @@ _PROVIDER_UNAVAILABLE_MARKERS = (
 def _is_provider_unavailable_error(exc) -> bool:
     msg = str(exc).lower()
     return any(marker in msg for marker in _PROVIDER_UNAVAILABLE_MARKERS)
+
+
+def _resolve_episode_language(ep_url, chain):
+    """First language of `chain` this episode is actually offered in.
+
+    Returns the chain's first language when the episode page can't be read at
+    all: guessing beats dropping the episode, and the download surfaces the
+    real problem in the normal way. Costs one extra page fetch per episode,
+    which is why it only runs for items that use a fallback group.
+    """
+    try:
+        prov = resolve_provider(ep_url)
+        probe = prov.episode_cls(url=ep_url)
+        pd = probe.provider_data
+        available = labels_from_provider_data(pd._data if hasattr(pd, "_data") else pd)
+    except Exception as exc:
+        logger.warning(
+            "[LangGroup] Could not read available languages for %s: %s — "
+            "trying '%s'", ep_url, exc, chain[0],
+        )
+        return chain[0]
+    chosen = pick_language(chain, available)
+    if chosen is None:
+        # Nothing in the chain exists for this episode. Still hand back the
+        # first language so the attempt runs and fails with the usual
+        # "not available" message instead of a silent skip.
+        return chain[0]
+    if chosen != chain[0]:
+        logger.info(
+            "[LangGroup] %s not available in '%s' — falling back to '%s'",
+            ep_url, chain[0], chosen,
+        )
+    return chosen
+
+
+def _delete_replaced_files(old_paths, new_path, ep_url):
+    """Delete the previous, worse-language copies of an episode.
+
+    Only ever called with paths auto-sync recorded on the queue item when it
+    planned a language upgrade (see autosync_worker), and only after the new
+    file exists — losing the old copy to a download that then failed is the one
+    outcome this must never produce. `new_path` is excluded by resolved path so
+    a mis-planned upgrade cannot delete what was just written.
+    """
+    if not old_paths:
+        return
+    try:
+        new_resolved = Path(new_path).resolve()
+    except (OSError, TypeError):
+        logger.warning(
+            "[LangGroup] Not deleting replaced files for %s: new file %r unusable",
+            ep_url, new_path,
+        )
+        return
+    if not new_resolved.is_file():
+        logger.warning(
+            "[LangGroup] Not deleting replaced files for %s: %s does not exist",
+            ep_url, new_resolved,
+        )
+        return
+    for raw in old_paths:
+        try:
+            old = Path(raw).resolve()
+            if old == new_resolved or not old.is_file():
+                continue
+            old.unlink()
+            logger.info("[LangGroup] Replaced by better language, deleted: %s", old)
+        except OSError as exc:
+            # A locked or already-removed file must not fail the download that
+            # has otherwise succeeded.
+            logger.warning("[LangGroup] Could not delete replaced file %s: %s", raw, exc)
 
 
 def _build_attempt_plan(primary_provider, max_retries):
@@ -478,12 +555,46 @@ def _queue_worker():
                 else:
                     base = Path.home() / "Downloads"
 
-            if lang_sep:
-                from .lang_folders import lang_folder_for
+            # Language fallback group (see web/language_groups.py): the item
+            # carries a "group:<id>" reference instead of a language label, and
+            # the actual language is picked per episode below — a chain only
+            # means anything if each episode may resolve differently. Nothing
+            # past this point may see the reference itself: it is neither a
+            # legal folder name nor a language any episode model knows.
+            lang_chain = []
+            if is_group_ref(item["language"]):
+                if not lang_sep:
+                    raise RuntimeError(
+                        "Sprachgruppen benötigen die Einstellung 'Sprachen in Ordner "
+                        "trennen'. Bitte wieder aktivieren oder den Download mit einer "
+                        "einzelnen Sprache neu anlegen."
+                    )
+                lang_chain = resolve_chain(item["language"])
+                if not lang_chain:
+                    raise RuntimeError(
+                        f"Die Sprachgruppe '{item['language']}' existiert nicht mehr. "
+                        "Bitte den Download mit einer Sprache oder Gruppe neu anlegen."
+                    )
 
-                selected_path = str(base / lang_folder_for(item["language"]))
-            elif custom_path_id:
-                selected_path = str(base)
+            def _path_for_language(language):
+                """Target folder for one episode's resolved language."""
+                if lang_sep:
+                    from .lang_folders import lang_folder_for
+
+                    return str(base / lang_folder_for(language))
+                if custom_path_id:
+                    return str(base)
+                return None
+
+            if not lang_chain:
+                selected_path = _path_for_language(item["language"])
+
+            # {episode_url: [old files]} for language upgrades planned by
+            # auto-sync — deleted per episode once the new file is on disk.
+            try:
+                _replace_paths = json.loads(item.get("replace_paths") or "{}")
+            except (TypeError, ValueError):
+                _replace_paths = {}
 
             MAX_EP_RETRIES = 3
 
@@ -508,6 +619,11 @@ def _queue_worker():
                 msg = str(exc)
                 if "No provider data found for language" not in msg:
                     return None
+                if lang_chain:
+                    # The episode was already probed against the whole chain, so
+                    # reaching this point means none of its languages exists —
+                    # naming only the one that was attempted would mislead.
+                    return "Nicht verfügbar in: " + ", ".join(lang_chain)
                 audio_m = re.search(r"Audio\.(\w+)", msg)
                 subs_m  = re.search(r"Subtitles\.(\w+)", msg)
                 audio = audio_m.group(1).upper() if audio_m else ""
@@ -526,6 +642,14 @@ def _queue_worker():
                 last_error = None
                 _episode_skipped = False
                 _episode_cancelled = False
+                # Language for THIS episode: the item's own language, or — for a
+                # fallback group — the first language of the chain the episode is
+                # offered in. The target folder follows the resolved language, so
+                # a series that falls back mid-season still sorts correctly.
+                _ep_language = item["language"]
+                if lang_chain:
+                    _ep_language = _resolve_episode_language(ep_url, lang_chain)
+                    selected_path = _path_for_language(_ep_language)
                 # Per-episode tracking for the download history
                 _ep_start_time = time.time()
                 _ep_path = None
@@ -581,7 +705,7 @@ def _queue_worker():
                             prov = resolve_provider(ep_url)
                             ep_kwargs = {
                                 "url": ep_url,
-                                "selected_language": item["language"],
+                                "selected_language": _ep_language,
                                 "selected_provider": _hoster,
                             }
                             if selected_path:
@@ -810,7 +934,7 @@ def _queue_worker():
                     errors.append({"url": ep_url, "error": str(last_error)})
                     update_queue_errors(item["id"], json.dumps(errors))
                     print_episode_summary(item["title"], ep_url, success=False)
-                    _record_download_history(item, ep_url, _ep_start_time, None, 0, "failed", error=last_error)
+                    _record_download_history(item, ep_url, _ep_start_time, None, 0, "failed", error=last_error, language=_ep_language)
                     telemetry_client.submit_all(telemetry_events.build_download_event(
                         provider=item.get("provider"), media_type=_tel_media_type, title=item.get("title"),
                         season=_tel_season, episode=_tel_episode, status="failed",
@@ -818,13 +942,17 @@ def _queue_worker():
                     ))
                 elif _episode_cancelled:
                     print_episode_summary(item["title"], ep_url, success="Abgebrochen")
-                    _record_download_history(item, ep_url, _ep_start_time, None, 0, "cancelled")
+                    _record_download_history(item, ep_url, _ep_start_time, None, 0, "cancelled", language=_ep_language)
                 elif not _episode_skipped:
                     if _dl_res[0] is not False:
                         downloaded_count += 1
                         print_episode_summary(item["title"], ep_url, success=True)
-                        _record_download_history(item, ep_url, _ep_start_time, _ep_path, _ep_size_bytes, "completed")
-                        
+                        _record_download_history(item, ep_url, _ep_start_time, _ep_path, _ep_size_bytes, "completed", language=_ep_language)
+
+                        # Language upgrade: the better-language file is on disk
+                        # now, so the copies it supersedes can go.
+                        _delete_replaced_files(_replace_paths.get(ep_url), _ep_path, ep_url)
+
                         # ------ START JELLYFIN NFO HOOK ------
                         try:
                             from .nfo_provider import generate_nfo_for_download
@@ -852,10 +980,10 @@ def _queue_worker():
                         ))
                     else:
                         print_episode_summary(item["title"], ep_url, success="Bereits vorhanden")
-                        _record_download_history(item, ep_url, _ep_start_time, _ep_path, 0, "skipped", error="Bereits vorhanden")
+                        _record_download_history(item, ep_url, _ep_start_time, _ep_path, 0, "skipped", error="Bereits vorhanden", language=_ep_language)
                 else:
                     print_episode_summary(item["title"], ep_url, success=True)
-                    _record_download_history(item, ep_url, _ep_start_time, None, 0, "skipped", error="Übersprungen")
+                    _record_download_history(item, ep_url, _ep_start_time, None, 0, "skipped", error="Übersprungen", language=_ep_language)
 
                 # Mark episode as done: increment counter and clear current URL
                 update_queue_progress(item["id"], i + 1, "")

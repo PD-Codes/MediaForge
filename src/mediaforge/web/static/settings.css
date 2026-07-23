@@ -271,6 +271,112 @@
     font-size: 0.8rem;
   }
 }
+/* ─── Language fallback groups (Downloads tab) ─────────────────────────
+   The order of the list IS the setting, so the editor shows the position
+   number and the move controls right on each entry rather than relying on
+   drag & drop, which the rest of the settings page doesn't use either. */
+.lang-group-notice {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning, #d9a441);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(217, 164, 65, 0.08);
+  color: var(--text-secondary, #c8cad0);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.lang-group-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0px 10px 0px 10px;
+}
+
+.lang-chain-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border, #2b2b2b);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-elevated, #17171a);
+  font-size: 0.8rem;
+  color: var(--text-primary, #e6e6e6);
+}
+
+.lang-chain-pos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--accent, #4a7dff);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.lang-chain-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #c8cad0);
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.lang-chain-btn:hover:not(:disabled) {
+  color: var(--accent, #4a7dff);
+}
+
+.lang-chain-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.lang-chain-btn.lang-chain-del:hover {
+  color: var(--danger, #e5484d);
+}
+
+.lang-chain-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lang-chain-add select {
+  width: auto;
+  min-width: 150px;
+}
+
+.lang-group-order {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 0.78rem;
+  color: var(--text-secondary, #c8cad0);
+}
+
+.lang-group-arrow {
+  opacity: 0.5;
+}
+
+.lang-group-flag {
+  font-size: 0.78rem;
+  color: var(--text-secondary, #c8cad0);
+  white-space: nowrap;
+}
+
+.lang-group-flag-on {
+  color: var(--text-primary, #e6e6e6);
+}
+
 /* ─── Full & Selective Backup tab ─────────────────────────────────────── */
 .backup-cat-grid {
   display: grid;

@@ -90,6 +90,12 @@ async function loadSettings() {
     if (disableEnglishSubCb) disableEnglishSubCb.checked = data.disable_english_sub === "1";
     if (filmpalastSubfolderCb) filmpalastSubfolderCb.checked = data.movie_subfolder === "1" || data.filmpalast_movie_subfolder === "1";
 
+    // Before any language dropdown gets its stored value: a saved default may
+    // BE a fallback group, and a select silently ignores a value it has no
+    // option for.
+    languageGroupsCache = data.language_groups || [];
+    _applyLanguageGroupOptions();
+
     const dlLangEl = document.getElementById("downloadLanguage");
     if (dlLangEl && data.download_language) dlLangEl.value = data.download_language;
 
@@ -254,10 +260,23 @@ async function saveLangSeparation() {
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
-    showToast("Sprachentrennung " + (langSeparationCb && langSeparationCb.checked ? t("aktiviert","activated") : t("deaktiviert","deactivated")));
+        showToast(langSeparationCb && langSeparationCb.checked
+      ? t("Sprachentrennung aktiviert", "Language separation activated")
+      : t("Sprachentrennung deaktiviert", "Language separation deactivated"));
+    // Switching it off breaks any job that uses a language fallback group — the
+    // backend counts them and says so instead of letting them fail silently.
+    if (data.warning) showToast(data.warning);
     const isLangSep = langSeparationCb ? langSeparationCb.checked : false;
+    // Groups become (un)selectable with this setting, so every language
+    // dropdown on the page has to be rebuilt.
+    _applyLanguageGroupOptions();
     let currentSyncLang = syncLanguageSelect ? syncLanguageSelect.value : null;
-    if (!isLangSep && currentSyncLang === "All Languages") {
+    // Both "All Languages" and a fallback group stop being valid defaults
+    // without language separation — write a real language back instead of
+    // leaving a setting the next sync job would inherit and choke on.
+    const _syncLangDead = currentSyncLang === "All Languages"
+      || String(currentSyncLang || "").indexOf("group:") === 0;
+    if (!isLangSep && _syncLangDead) {
       currentSyncLang = "German Dub";
       updateSyncLanguageDropdown(false, currentSyncLang);
       saveSyncDefaults();
@@ -284,6 +303,7 @@ function updateSyncLanguageDropdown(isLangSep, currentValue) {
     opt.textContent = l;
     syncLanguageSelect.appendChild(opt);
   });
+  appendLanguageGroupOptions(syncLanguageSelect);
   if (currentValue) syncLanguageSelect.value = currentValue;
 }
 
@@ -1371,6 +1391,290 @@ async function deleteCustomPath(id) {
     loadCustomPaths();
   } catch (e) {
     showToast(t("Benutzerdefinierter Pfad konnte nicht gelöscht werden: " + e.message, "Custom path could not be deleted: " + e.message));
+  }
+}
+
+// ─── Language fallback groups ────────────────────────────────────────────────
+//
+// A group is a named, ordered list of languages that can be picked instead of
+// a single language (see web/language_groups.py). The order is the whole
+// point, so the editor numbers every entry and moves it with buttons.
+
+const languageGroupsBody = document.getElementById("languageGroupsBody");
+let languageGroupsCache = [];
+let languageGroupLanguages = [
+  "German Dub", "English Sub", "German Sub", "English Dub", "English Dub (German Sub)",
+];
+// Chain of the "Add Group" form and of the row currently being edited.
+let newLangGroupChain = [];
+let editingLangGroupId = null;
+let editingLangGroupChain = [];
+
+if (languageGroupsBody) loadLanguageGroups();
+
+async function loadLanguageGroups() {
+  if (!languageGroupsBody) return;
+  try {
+    const resp = await fetch("/api/language-groups");
+    const data = await resp.json();
+    languageGroupsCache = data.groups || [];
+    if (data.languages && data.languages.length) languageGroupLanguages = data.languages;
+    renderLanguageGroups();
+    _applyLanguageGroupOptions();
+  } catch (e) {
+    showToast(t("Sprachgruppen konnten nicht geladen werden: ", "Language groups could not be loaded: ") + e.message);
+  }
+}
+
+// Groups only work with per-language folders — see language_groups.py; the
+// backend rejects them otherwise, so they must not be offered either.
+function languageGroupsUsable() {
+  return !!(langSeparationCb && langSeparationCb.checked);
+}
+
+// Add every group as an option to a language dropdown, so a group can be
+// chosen wherever a single language can. Called after the groups change and
+// after the plain options of a dropdown have been (re)built.
+function appendLanguageGroupOptions(select) {
+  if (!select || !languageGroupsCache.length || !languageGroupsUsable()) return;
+  const grp = document.createElement("optgroup");
+  grp.label = t("Sprachgruppen", "Language groups");
+  languageGroupsCache.forEach(function (g) {
+    const opt = document.createElement("option");
+    opt.value = "group:" + g.id;
+    opt.textContent = g.name;
+    opt.title = (g.languages || []).join(" → ");
+    grp.appendChild(opt);
+  });
+  select.appendChild(grp);
+}
+
+function _applyLanguageGroupOptions() {
+  const notice = document.getElementById("langGroupsDisabledNotice");
+  if (notice) notice.style.display = languageGroupsUsable() ? "none" : "";
+  const dlLangEl = document.getElementById("downloadLanguage");
+  if (dlLangEl) {
+    const prev = dlLangEl.value;
+    const stale = dlLangEl.querySelector("optgroup");
+    if (stale) stale.remove();
+    appendLanguageGroupOptions(dlLangEl);
+    if (Array.from(dlLangEl.options).some(function (o) { return o.value === prev; })) {
+      dlLangEl.value = prev;
+    }
+  }
+  if (syncLanguageSelect) {
+    updateSyncLanguageDropdown(
+      langSeparationCb ? langSeparationCb.checked : false,
+      syncLanguageSelect.value,
+    );
+  }
+}
+
+function _langChainState(scope) {
+  return scope === "new" ? newLangGroupChain : editingLangGroupChain;
+}
+
+function _setLangChainState(scope, chain) {
+  if (scope === "new") newLangGroupChain = chain;
+  else editingLangGroupChain = chain;
+}
+
+function renderLangChainEditor(scope) {
+  const host = document.getElementById(
+    scope === "new" ? "newLangGroupEditor" : "editLangGroupEditor",
+  );
+  if (!host) return;
+  const chain = _langChainState(scope);
+  const items = chain.map(function (lang, i) {
+    return '<span class="lang-chain-item">' +
+      '<span class="lang-chain-pos">' + (i + 1) + "</span>" +
+      "<span>" + esc(lang) + "</span>" +
+      '<button type="button" class="lang-chain-btn" title="' + esc(t("Nach oben", "Move up")) + '"' +
+        (i === 0 ? " disabled" : "") + " onclick=\"moveLangChainEntry('" + scope + "'," + i + ",-1)\">&#9650;</button>" +
+      '<button type="button" class="lang-chain-btn" title="' + esc(t("Nach unten", "Move down")) + '"' +
+        (i === chain.length - 1 ? " disabled" : "") + " onclick=\"moveLangChainEntry('" + scope + "'," + i + ",1)\">&#9660;</button>" +
+      '<button type="button" class="lang-chain-btn lang-chain-del" title="' + esc(t("Entfernen", "Remove")) + '"' +
+        " onclick=\"removeLangChainEntry('" + scope + "'," + i + ")\">&times;</button>" +
+      "</span>";
+  }).join("");
+  const remaining = languageGroupLanguages.filter(function (l) { return chain.indexOf(l) === -1; });
+  const adder = remaining.length
+    ? '<span class="lang-chain-add">' +
+        '<select class="sync-select" id="langChainAdd-' + scope + '">' +
+          remaining.map(function (l) { return '<option value="' + esc(l) + '">' + esc(l) + "</option>"; }).join("") +
+        "</select>" +
+        "<button type=\"button\" class=\"btn btn-ghost\" onclick=\"addLangChainEntry('" + scope + "')\">" +
+          esc(t("Sprache hinzufügen", "Add language")) + "</button>" +
+      "</span>"
+    : "";
+  const empty = chain.length
+    ? ""
+    : '<span class="settings-hint" style="margin:0">' +
+      esc(t("Noch keine Sprache gewählt — die erste ist die bevorzugte.",
+            "No language picked yet — the first one is the preferred one.")) + "</span>";
+  host.innerHTML = empty + items + adder;
+}
+
+function addLangChainEntry(scope) {
+  const select = document.getElementById("langChainAdd-" + scope);
+  if (!select || !select.value) return;
+  const chain = _langChainState(scope).slice();
+  chain.push(select.value);
+  _setLangChainState(scope, chain);
+  renderLangChainEditor(scope);
+}
+
+function removeLangChainEntry(scope, index) {
+  const chain = _langChainState(scope).slice();
+  chain.splice(index, 1);
+  _setLangChainState(scope, chain);
+  renderLangChainEditor(scope);
+}
+
+function moveLangChainEntry(scope, index, delta) {
+  const chain = _langChainState(scope).slice();
+  const target = index + delta;
+  if (target < 0 || target >= chain.length) return;
+  const moved = chain.splice(index, 1)[0];
+  chain.splice(target, 0, moved);
+  _setLangChainState(scope, chain);
+  renderLangChainEditor(scope);
+}
+
+function renderLanguageGroups() {
+  if (!languageGroupsBody) return;
+  renderLangChainEditor("new");
+  languageGroupsBody.innerHTML = "";
+  if (!languageGroupsCache.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="4" style="color:#6b7280;text-align:center">' +
+      esc(t("Keine Sprachgruppen", "No language groups")) + "</td>";
+    languageGroupsBody.appendChild(tr);
+    return;
+  }
+  const canEdit = typeof settingsCanEdit === "undefined" || settingsCanEdit;
+  languageGroupsCache.forEach(function (g) {
+    const tr = document.createElement("tr");
+    if (g.id === editingLangGroupId) {
+      tr.innerHTML =
+        '<td><input type="text" id="editLangGroupName" value="' + esc(g.name) + '"></td>' +
+        '<td><div class="lang-group-editor" id="editLangGroupEditor"></div></td>' +
+        '<td><label class="path-site-chip"><input type="checkbox" id="editLangGroupDelete"' +
+          (g.delete_replaced ? " checked" : "") + "> " +
+          esc(t("Alte Datei löschen", "Delete old file")) + "</label></td>" +
+        "<td>" +
+          '<button onclick="saveLanguageGroup(' + g.id + ')">' + esc(t("Speichern", "Save")) + "</button> " +
+          '<button class="btn btn-ghost" onclick="cancelLanguageGroupEdit()">' + esc(t("Abbrechen", "Cancel")) + "</button>" +
+        "</td>";
+      languageGroupsBody.appendChild(tr);
+      renderLangChainEditor("edit");
+      return;
+    }
+    const order = (g.languages || []).map(function (lang, i) {
+      return (i ? '<span class="lang-group-arrow">→</span>' : "") + "<span>" + esc(lang) + "</span>";
+    }).join(" ");
+    const upgradeCell = g.delete_replaced
+      ? '<span class="lang-group-flag lang-group-flag-on">' + esc(t("Ja", "Yes")) + "</span>"
+      : '<span class="lang-group-flag">' + esc(t("Nein — beide behalten", "No — keep both")) + "</span>";
+    const actions = canEdit
+      ? '<button class="btn btn-ghost" onclick="startLanguageGroupEdit(' + g.id + ')">' + esc(t("Bearbeiten", "Edit")) + "</button> " +
+        '<button class="btn-del" onclick="deleteLanguageGroup(' + g.id + ')">' + esc(t("Löschen", "Delete")) + "</button>"
+      : "";
+    tr.innerHTML =
+      "<td>" + esc(g.name) + "</td>" +
+      '<td><div class="lang-group-order">' + order + "</div></td>" +
+      "<td>" + upgradeCell + "</td>" +
+      "<td>" + actions + "</td>";
+    languageGroupsBody.appendChild(tr);
+  });
+}
+
+function startLanguageGroupEdit(id) {
+  const group = languageGroupsCache.find(function (g) { return g.id === id; });
+  if (!group) return;
+  editingLangGroupId = id;
+  editingLangGroupChain = (group.languages || []).slice();
+  renderLanguageGroups();
+}
+
+function cancelLanguageGroupEdit() {
+  editingLangGroupId = null;
+  editingLangGroupChain = [];
+  renderLanguageGroups();
+}
+
+async function addLanguageGroup() {
+  const nameEl = document.getElementById("newLangGroupName");
+  const name = nameEl ? nameEl.value.trim() : "";
+  if (!name) { showToast(t("Name ist erforderlich", "Name is required")); return; }
+  if (newLangGroupChain.length < 2) {
+    showToast(t("Mindestens zwei Sprachen auswählen", "Pick at least two languages"));
+    return;
+  }
+  const deleteEl = document.getElementById("newLangGroupDelete");
+  try {
+    const resp = await fetch("/api/language-groups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name,
+        languages: newLangGroupChain,
+        delete_replaced: deleteEl ? deleteEl.checked : true,
+      }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    if (nameEl) nameEl.value = "";
+    if (deleteEl) deleteEl.checked = true;
+    newLangGroupChain = [];
+    showToast(t("Sprachgruppe hinzugefügt", "Language group added"));
+    loadLanguageGroups();
+  } catch (e) {
+    showToast(t("Sprachgruppe konnte nicht hinzugefügt werden: ", "Language group could not be added: ") + e.message);
+  }
+}
+
+async function saveLanguageGroup(id) {
+  const nameEl = document.getElementById("editLangGroupName");
+  const name = nameEl ? nameEl.value.trim() : "";
+  if (!name) { showToast(t("Name ist erforderlich", "Name is required")); return; }
+  if (editingLangGroupChain.length < 2) {
+    showToast(t("Mindestens zwei Sprachen auswählen", "Pick at least two languages"));
+    return;
+  }
+  const deleteEl = document.getElementById("editLangGroupDelete");
+  try {
+    const resp = await fetch("/api/language-groups/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name,
+        languages: editingLangGroupChain,
+        delete_replaced: deleteEl ? deleteEl.checked : true,
+      }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    editingLangGroupId = null;
+    editingLangGroupChain = [];
+    showToast(t("Sprachgruppe gespeichert", "Language group saved"));
+    loadLanguageGroups();
+  } catch (e) {
+    showToast(t("Sprachgruppe konnte nicht gespeichert werden: ", "Language group could not be saved: ") + e.message);
+  }
+}
+
+async function deleteLanguageGroup(id) {
+  if (!await showConfirm(t("Diese Sprachgruppe löschen?", "Delete this language group?"))) return;
+  try {
+    const resp = await fetch("/api/language-groups/" + id, { method: "DELETE" });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    if (editingLangGroupId === id) cancelLanguageGroupEdit();
+    showToast(t("Sprachgruppe gelöscht", "Language group deleted"));
+    loadLanguageGroups();
+  } catch (e) {
+    showToast(t("Sprachgruppe konnte nicht gelöscht werden: ", "Language group could not be deleted: ") + e.message);
   }
 }
 
@@ -2622,6 +2926,7 @@ const BACKUP_CAT_LABELS = {
   history:        function () { return t("Download-Verlauf", "Download history"); },
   watch_progress: function () { return t("Wiedergabe-Fortschritt", "Watch progress"); },
   custom_paths:   function () { return t("Eigene Pfade", "Custom paths"); },
+  language_groups: function () { return t("Sprachgruppen", "Language groups"); },
   users:          function () { return t("Benutzerkonten", "User accounts"); },
   queues:         function () { return t("Warteschlangen & Jobs", "Queues & jobs"); },
   calendar:       function () { return t("Kalender", "Calendar"); },

@@ -549,7 +549,7 @@ function renderQueue(items, paused) {
       '<div class="queue-item-meta">' +
       statusBadge + captchaBadge +
       '<span class="queue-meta-pill">' + ((item.series_url || "").includes("filmpalast.to") ? "Film" : item.total_episodes + " Ep.") + '</span>' +
-      '<span class="queue-meta-pill">' + escQ(item.language) + '</span>' +
+      '<span class="queue-meta-pill">' + escQ(item.language_label || item.language) + '</span>' +
       '<span class="queue-meta-pill">' + escQ(item.provider) + '</span>' +
       pathHtml + userHtml +
       '</div>' +

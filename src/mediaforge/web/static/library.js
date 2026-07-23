@@ -1761,7 +1761,7 @@ async function libAddToAutosync(folder) {
 
 async function _libOpenAutosyncCreate(url, title, coverUrl) {
   if (!window.AutosyncFilter) { showToast(t("Auto-Sync ist nicht verfügbar", "Auto-Sync is unavailable")); return; }
-  var customPaths = [], langSep = false;
+  var customPaths = [], langSep = false, langGroups = [];
   try {
     var res = await Promise.all([
       fetch("/api/custom-paths").then(function(x){ return x.json(); }),
@@ -1769,6 +1769,7 @@ async function _libOpenAutosyncCreate(url, title, coverUrl) {
     ]);
     customPaths = (res[0] && res[0].paths) || [];
     langSep = res[1] && res[1].lang_separation === "1";
+    langGroups = (res[1] && res[1].language_groups) || [];
   } catch (e) { /* fall back to defaults */ }
   window.AutosyncFilter.openCreate({
     seriesUrl: url,
@@ -1776,6 +1777,7 @@ async function _libOpenAutosyncCreate(url, title, coverUrl) {
     coverUrl: coverUrl,
     customPaths: customPaths,
     langSepEnabled: langSep,
+    languageGroups: langGroups,
     onSaved: function(r) {
       if (r && r.created) showToast(t("Auto-Sync eingerichtet", "Auto-Sync set up"));
     },
