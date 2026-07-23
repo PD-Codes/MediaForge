@@ -336,6 +336,96 @@
     </div>
   </div>
   {% endfor %}
+
+  <!-- ── Installed theme packs (web/themes.py) ──────────────────────────────
+       Same card idiom as modules above, same store, different lifecycle:
+       themes are inert CSS/asset packs, so install, upgrade and uninstall are
+       always live — no restart banner ever applies to them. Invalid folders
+       (hand-copied, missing manifest, disallowed file types) are still listed
+       with their reasons, for the same "why isn't it showing up" job this
+       page does for modules. data-module-id carries the manifest id the store
+       matches on for the "Update: v…" badge, exactly like module cards. -->
+  {% if theme_packs %}
+  <div class="settings-section" style="padding:14px 20px;">
+    <span class="integ-subsection-title">{{ _('Theme Packs') }}</span>
+    <span class="integ-subsection-badge badge-version">{{ theme_packs | length }}</span>
+  </div>
+  {% endif %}
+  {% for tp in theme_packs %}
+  <div class="settings-section integ-card collapsed" id="integCard-theme-{{ tp.folder }}"
+       data-module-id="{{ tp.id }}" data-kind="theme">
+    <div class="integ-subsection-header integ-collapsible-header"
+         onclick="toggleIntegCollapse('theme-{{ tp.folder }}')">
+      <span class="integ-collapsible-chevron">▸</span>
+      <span class="integ-subsection-title">{{ tp.name }}</span>
+      <span class="integ-subsection-badge badge-version">v{{ tp.version }}</span>
+      <span class="integ-subsection-badge badge-depends">{{ _('Theme') }}</span>
+      {% if tp.signature.tier == 'official' %}
+      <span class="integ-subsection-badge badge-official" title="{{ _('Signed by') }} {{ tp.signature.signer }}">{{ _('Official') }}</span>
+      {% elif tp.signature.tier == 'verified' %}
+      <span class="integ-subsection-badge badge-verified" title="{{ _('Signed by') }} {{ tp.signature.signer }}">{{ _('Verified') }}</span>
+      {% elif tp.signature.signed %}
+      <span class="integ-subsection-badge badge-incompatible" title="{{ tp.signature.reason }}">{{ _('Signature invalid') }}</span>
+      {% else %}
+      <span class="integ-subsection-badge badge-unsigned" title="{{ _('No MODULE.sig — nobody vouches for this theme') }}">{{ _('Unsigned') }}</span>
+      {% endif %}
+      {% if tp.author %}
+      <span class="integ-subsection-badge badge-author" title="{{ _('Author') }}">{{ tp.author }}</span>
+      {% endif %}
+      {% if not tp.valid %}
+      <span class="integ-subsection-badge badge-import-failed" title="{{ tp.errors | join('; ') }}">{{ _('Invalid') }}</span>
+      {% endif %}
+      {% if active_theme_folder == tp.folder %}
+      <span class="integ-subsection-badge badge-enabled">{{ _('Instance default') }}</span>
+      {% endif %}
+    </div>
+    <div class="integ-collapsible-body">
+      {% set desc = tp.description.get(ui_language) or tp.description.get('en') %}
+      {% if desc %}
+      <div class="settings-hint" style="padding:10px 20px 0;">{{ desc }}</div>
+      {% endif %}
+      {% if not tp.valid %}
+      <div class="settings-hint" style="padding:10px 20px 0;color:var(--error);">
+        {{ _('This theme pack is invalid and will not be offered:') }}
+        {{ tp.errors | join('; ') }}
+      </div>
+      {% endif %}
+      {% if tp.preview %}
+      <div style="padding:12px 20px 0;">
+        <img class="theme-pack-preview" loading="lazy" alt="{{ tp.name }} preview"
+             src="{{ url_for('theme_asset', folder=tp.folder, asset=tp.preview) }}?v={{ tp.version }}" />
+      </div>
+      {% endif %}
+      <div class="settings-row" style="padding:10px 20px;">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Instance default') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Make this the theme every user sees unless they picked their own in Settings → Design.') }}
+          </div>
+        </div>
+        <div class="settings-row-right">
+          {% if active_theme_folder == tp.folder %}
+          <button class="btn btn-secondary theme-default-btn" data-folder="">{{ _('Revert to default look') }}</button>
+          {% elif tp.valid %}
+          <button class="btn btn-primary theme-default-btn" data-folder="{{ tp.folder }}">{{ _('Set as default') }}</button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="settings-row" style="border-bottom:none;">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Uninstall theme') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Deletes the theme folder immediately — themes are plain CSS and assets, no restart needed. Users who selected it fall back to the default look.') }}
+          </div>
+        </div>
+        <div class="settings-row-right">
+          <button class="btn btn-danger ext-uninstall-btn" data-folder="{{ tp.folder }}"
+                  data-kind="theme" data-label="{{ tp.name }}">{{ _('Uninstall') }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
   </div><!-- /#extInstalledView -->
 
   <!-- ── View 2: the module store ─────────────────────────────────────────
@@ -443,6 +533,18 @@
           <code style="opacity:.8;">{{ modules_dir }}</code>
         </div>
       </div>
+      <!-- Same fact for theme packs (web/themes.py). -->
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Theme folder') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Installed theme packs live here. A theme installed by hand is a folder with a theme.json dropped in here — it shows up on the next page load, no restart needed.') }}
+          </div>
+        </div>
+        <div class="settings-row-right">
+          <code style="opacity:.8;">{{ themes_dir }}</code>
+        </div>
+      </div>
 
       <div class="settings-row" id="extStoreKeysRow">
         <div class="settings-row-left">
@@ -478,6 +580,13 @@
     <div class="integ-subsection-header" style="padding:14px 20px !important;">
       <span class="integ-subsection-title">{{ _('Available modules') }}</span>
       <span class="integ-subsection-badge badge-version" id="extStoreCount" style="display:none;"></span>
+      <!-- Type filter (module_store.js): the same catalog carries modules and
+           theme packs (index "type" field); this narrows the list client-side. -->
+      <div class="ext-type-filter" id="extTypeFilter" role="group" aria-label="{{ _('Filter by type') }}">
+        <button type="button" class="ext-type-filter-btn active" data-type="">{{ _('All') }}</button>
+        <button type="button" class="ext-type-filter-btn" data-type="module">{{ _('Modules') }}</button>
+        <button type="button" class="ext-type-filter-btn" data-type="theme">{{ _('Themes') }}</button>
+      </div>
       <button class="btn btn-secondary" id="extStoreRefreshBtn" style="margin-left:auto;{% if not store_enabled %}display:none;{% endif %}">
         {{ _('Refresh store') }}
       </button>

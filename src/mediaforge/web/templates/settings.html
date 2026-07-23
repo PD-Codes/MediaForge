@@ -292,14 +292,15 @@
 
     <div class="settings-section">
       <h2>{{ _('Language') }}</h2>
-      <div class="settings-row" style="gap:10px;padding:12px;flex-wrap:wrap;">
-        {% for lang in available_languages %}
-        <button class="appearance-theme-btn lang-btn{% if ui_language == lang %} active{% endif %}"
-                onclick="setUiLanguage('{{ lang }}')" style="display:flex;align-items:center;gap:6px;">
-          <img src="{{ url_for('static', filename=get_flag_filename(lang)) }}" style="width:16px;height:12px;object-fit:cover;border-radius:2px;" onerror="this.src='{{ url_for('static', filename='placeholder.svg') }}'" />
-          {{ get_language_name(lang) }}
+      <div class="settings-row" style="gap:10px;padding:12px;">
+        <button class="appearance-theme-btn lang-btn{% if ui_language == 'en' %} active{% endif %}"
+                onclick="setUiLanguage('en')">
+          🇺🇸 English
         </button>
-        {% endfor %}
+        <button class="appearance-theme-btn lang-btn{% if ui_language == 'de' %} active{% endif %}"
+                onclick="setUiLanguage('de')">
+          🇩🇪 Deutsch
+        </button>
       </div>
       <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Choose the interface language. The page reloads automatically.') }}</div>
     </div>
@@ -443,6 +444,34 @@
         </div>
         <button class="btn btn-secondary" onclick="resetAppearance()">{{ _('Reset appearance') }}</button>
       </div>
+    </div>
+    <div class="settings-section">
+      <h2>{{ _('Theme Packs') }}</h2>
+      <div class="settings-hint">{{ _('Theme packs restyle the whole interface — fonts, animations, checkboxes, inputs, the calendar and more. New theme packs can be installed from the Module Store.') }}</div>
+      <h3 class="settings-subtitle">{{ _('Your theme') }}</h3>
+      <div class="settings-row theme-pack-row">
+        <select id="themePackSelect" onchange="saveThemePackChoice()">
+          <option value="">{{ _('Instance default') }}{% if active_theme_pack %} ({{ active_theme_pack.name }}){% endif %}</option>
+          <option value="default">{{ _('MediaForge default look') }}</option>
+          {% for tp in installed_theme_packs %}
+          <option value="{{ tp.folder }}">{{ tp.name }} (v{{ tp.version }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="settings-hint">{{ _('Only changes the look on this device. The dark/light switch above keeps working within a theme pack.') }}</div>
+      {% if is_admin %}
+      <h3 class="settings-subtitle">{{ _('Instance default (all users)') }}</h3>
+      <div class="settings-row theme-pack-row">
+        <select id="themePackDefaultSelect" onchange="saveThemePackDefault()">
+          <option value="default">{{ _('MediaForge default look') }}</option>
+          {% for tp in installed_theme_packs %}
+          <option value="{{ tp.folder }}" {% if active_theme_pack and active_theme_pack.folder==tp.folder %}selected{% endif %}>{{ tp.name }} (v{{ tp.version }})</option>
+          {% endfor %}
+        </select>
+        <a class="btn btn-secondary" href="{{ url_for('extensions_page') }}#store">{{ _('Get more themes') }}</a>
+      </div>
+      <div class="settings-hint">{{ _('The theme every user sees unless they pick their own above. Installed and managed in the Module Manager.') }}</div>
+      {% endif %}
     </div>
     <div class="settings-section">
       <h2>{{ _('Advanced Settings') }}</h2>

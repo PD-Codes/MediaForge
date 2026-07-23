@@ -2071,6 +2071,9 @@ CREATE TABLE IF NOT EXISTS favourites (
     title TEXT NOT NULL,
     poster_url TEXT,
     added_by TEXT,
+    media_type TEXT,
+    provider TEXT,
+    language TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(series_url, added_by)
 );
@@ -2082,17 +2085,40 @@ def init_favourites_db():
     conn = get_db()
     try:
         conn.execute(_CREATE_FAVOURITES_TABLE)
+        # Migrations: add the metadata columns for existing DBs. Same best-effort
+        # ALTER TABLE pattern as init_queue_db()/init_autosync_db() -- each column
+        # is added on its own and the "duplicate column" error is ignored when it
+        # already exists. All three are nullable so legacy rows stay valid.
+        for _col in (
+            "ALTER TABLE favourites ADD COLUMN media_type TEXT",
+            "ALTER TABLE favourites ADD COLUMN provider TEXT",
+            "ALTER TABLE favourites ADD COLUMN language TEXT",
+        ):
+            try:
+                conn.execute(_col)
+            except Exception:
+                pass
         conn.commit()
     finally:
         conn.close()
 
 
-def add_favourite(series_url: str, title: str, poster_url: str | None, added_by: str | None):
+def add_favourite(
+    series_url: str,
+    title: str,
+    poster_url: str | None,
+    added_by: str | None,
+    media_type: str | None = None,
+    provider: str | None = None,
+    language: str | None = None,
+):
     conn = get_db()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO favourites (series_url, title, poster_url, added_by) VALUES (?, ?, ?, ?)",
-            (series_url, title, poster_url, added_by),
+            "INSERT OR IGNORE INTO favourites "
+            "(series_url, title, poster_url, added_by, media_type, provider, language) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (series_url, title, poster_url, added_by, media_type, provider, language),
         )
         conn.commit()
     finally:
@@ -2112,6 +2138,25 @@ def remove_favourite(series_url: str, added_by: str | None):
         conn.commit()
     finally:
         conn.close()
+
+
+def remove_favourites_bulk(series_urls: list[str], added_by: str | None):
+    if not series_urls:
+        return
+    conn = get_db()
+    try:
+        placeholders = ",".join("?" for _ in series_urls)
+        params = list(series_urls)
+        if added_by:
+            query = f"DELETE FROM favourites WHERE series_url IN ({placeholders}) AND (added_by = ? OR added_by IS NULL)"
+            params.append(added_by)
+        else:
+            query = f"DELETE FROM favourites WHERE series_url IN ({placeholders})"
+        conn.execute(query, params)
+        conn.commit()
+    finally:
+        conn.close()
+
 
 
 def get_favourites(added_by: str | None = None):

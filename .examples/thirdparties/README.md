@@ -8,6 +8,11 @@ copy as a starting point.
 
 Read this file top to bottom once; after that it should work as a checklist.
 
+> **Looking to restyle the UI instead of extending it?** That is a **theme
+> pack**, not a module — CSS + assets only, distributed through the same store
+> (`"type": "theme"` in the index), always applied live without a restart. See
+> `../themes/README.md` and the `../themes/example_theme/` reference pack.
+
 ## Where modules live
 
 **Not in the source tree.** Installed modules live in MediaForge's data
@@ -146,45 +151,52 @@ sidebar and a settings page. Its parameters:
   `get_setting("example_integration_enabled", "0") == "1"`, and redirect
   or 404 if it's off — see `routes.py` in `example_integration/`.
 
-## Settings placement — attach to an existing tab/pill, or create a new one
+## Settings placement — attach to an existing tab, or create a new one
 
-`settings_host` picks *which page* your card shows up on:
+`settings_host` picks *which page* your card shows up on. All three hosts
+render the same way: a vertical **floating side menu** (`.floating-side-menu`,
+sticky on desktop, an off-canvas drawer on mobile) next to the page content —
+see `_settings_menu.html`/`_notifications_menu.html` and `integrations.html`'s
+own in-template menu:
 
-- `"integrations"` (default) — the Integrations page's tab bar.
-- `"notifications"` — the Notifications page's service-pill row.
-- `"settings"` — the main Settings page's tab bar.
+- `"integrations"` (default) — the Integrations page's floating side menu.
+- `"notifications"` — the Notifications page's floating side menu.
+- `"settings"` — the main Settings page's floating side menu.
 
 `settings_tab` then picks *where on that page*:
 
-- Match one of that host's existing tab/pill ids and your card is appended
-  into that tab/pill's own content, below whatever it already renders by
-  hand. Existing ids: `"seerr"`, `"mediaplayer"`, `"cineinfo"`,
-  `"thirdparty"`, `"syncplay"`, `"uptime"` for `"integrations"`;
-  `"webpush"`, `"telegram"`, `"pushover"`, `"ntfy"`, `"discord"`,
-  `"whatsapp"`, `"storage"` for `"notifications"`; `"general"`, `"design"`,
-  `"sources"`, `"downloads"`, `"autosync"`, `"network"`, `"auth"`, `"api"`,
-  `"updates"` for `"settings"`. Example: an extension that adds one more
-  toggle to the existing Discord notification pill would use
+- Match one of that host's existing tab ids and your card is appended into
+  that tab's own content, below whatever it already renders by hand.
+  Existing ids: `"seerr"`, `"mediaplayer"`, `"cineinfo"`, `"thirdparty"`,
+  `"syncplay"`, `"uptime"` for `"integrations"`; `"webpush"`, `"telegram"`,
+  `"pushover"`, `"ntfy"`, `"discord"`, `"whatsapp"`, `"storage"` for
+  `"notifications"`; `"general"`, `"design"`, `"sources"`, `"downloads"`,
+  `"autosync"`, `"network"`, `"auth"`, `"api"`, `"updates"` for `"settings"`.
+  Example: an extension that adds one more toggle to the existing Discord
+  notification tab would use
   `settings_host="notifications", settings_tab="discord"`.
-- Anything else creates a brand-new tab/pill automatically, titled from
+- Anything else creates a brand-new tab automatically, titled from
   `settings_tab_label` (defaults to `label`). No template edit needed
   either way — both cases are handled generically by
   `web/thirdparties/registry.py`'s `resolve_dynamic_tabs()`.
 
-A brand-new tab no longer lives in a tab bar: it renders as a **sidebar
-sub-menu entry** (carrying the module **"M" pill**), a tile in the page's
-**overview grid**, and its own content panel — the sub-menu + overview surface
-that replaced the old tab bar. Feed that tile with two optional info fields:
+A brand-new tab no longer lives in a horizontal tab bar: it's appended to the
+same floating side menu, grouped under a **"Modules"** heading and carrying
+the module **"M" pill** — plus, on hosts that have one (Integrations,
+Settings; Notifications currently doesn't), a tile in the page's **overview
+grid** — and its own content panel. Feed that tile with two optional info
+fields:
 
 - `overview_description` — text shown on the overview tile (defaults to
   `description`).
-- `overview_icon_svg` — icon for the tile and the sub-menu entry (defaults to
-  `settings_tab_icon_svg`, then a generic placeholder).
+- `overview_icon_svg` — icon for the tile (defaults to `settings_tab_icon_svg`,
+  then a generic placeholder).
 
 `resolve_dynamic_tabs()` surfaces `id`, `label`, `icon_svg`, `description`,
-`module_name` and `is_module` so the template can render all three places
-(sub-menu link, overview tile, panel). See `example_cineinfo_source/` for a
-module that registers its own dynamic tab this way.
+`module_name` and `is_module` so the template can render all of these places
+(menu entry, overview tile where applicable, panel). See
+`example_cineinfo_source/` for a module that registers its own dynamic tab
+this way.
 
 This is entirely independent of `section`/the sidebar: an integration can
 have a sidebar link *and* a settings card, just a settings card (no
@@ -803,7 +815,8 @@ markup underneath each one; the table below is the quick-reference version.
 | Component | Classes | Defined in | Notes |
 |---|---|---|---|
 | Badges/tags | `.badge` + `.badge-accent`/`-success`/`-warning`/`-error`/`-neutral` | `tabs-badges.css` | `<span class="badge badge-accent">Beta</span>` |
-| Service pills (tab selector) | `.service-pills` (wrapper) / `.service-pill` (+ `.active`) | `settings_rows.css` | The same pill row Notifications uses per channel; see `notifications.html` |
+| Service pills (in-content mode selector) | `.service-pills` (wrapper) / `.service-pill` (+ `.active`) | `settings_rows.css` | A horizontal pill row for switching between a few modes *within* one panel — e.g. Settings › Encoding's Copy/H.264/H.265/Expert/Upscaling selector (`_encoding_body.html`). For page-level sub-navigation use the floating side menu below instead — that's what `settings_host`/`settings_tab` (see "Settings placement" above) plugs your own tab into automatically. |
+| Floating side menu (page sub-navigation) | `.settings-tabs.floating-side-menu` (wrapper) / `.settings-tab` (+ `.active`, + `.settings-tab-module` for module-contributed entries) on `.settings-container.has-floating-menu`; panels are `.settings-tab-panel` (+ `.active`) | `shell.css` (menu/drawer chrome) + `settings_rows.css` (tab/panel base) | The vertical sticky menu used by Settings, Integrations, Monitoring and Notifications; auto-generated for `settings_host`/`settings_tab` entries via `resolve_dynamic_tabs()`, so a third-party rarely hand-writes this — see `_settings_menu.html`/`_notifications_menu.html` if you're building a brand-new page with its own such menu. Comes with the mobile off-canvas drawer for free (see "Mobile / responsive design" below). |
 | Toggle switch | `.toggle` (wrapper) / `.toggle-slider` | `tables.css` | `<label class="toggle"><input type="checkbox" .../><span class="toggle-slider"></span></label>`. Inside a settings card, add `class="thirdparty-toggle" data-thirdparty-id="..."` and it wires itself up for free — see `_settings_card_macro.html` / `static/extension_cards.js` |
 | Checkbox | `chb-main` (on the `<input type="checkbox">` itself) | `forms.css` | `<input type="checkbox" class="chb-main" .../>` — MediaForge's *only* plain-checkbox style (as opposed to the on/off `.toggle` switch above): a purple accent box with an animated SVG checkmark, used everywhere from Settings to Auto-Sync to SyncPlay to custom multi-select dropdowns. Use this, not a bare unstyled `<input type="checkbox">`, for anything that reads as "check one or more of these" rather than "flip this setting on/off". Building one from JS: `el.className = "chb-main ..."` works exactly like in a template. |
 | Number stepper (−/+) | *(none needed)* | `forms.css` + `number_input.js` | Any `<input type="number">` is auto-enhanced on page load (and for anything added to the DOM later) — no markup, no JS, of your own |

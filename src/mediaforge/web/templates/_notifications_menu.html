@@ -1,0 +1,23 @@
+{# Notifications floating side menu — client-side tab switching (switchNotifTab
+   in notifications.html), same markup/behaviour as the Settings/Integrations/
+   Monitoring menu (menu rework, July 2026). Dynamic entries come from
+   get_dynamic_tabs('notifications') for any thirdparty registered with
+   settings_host="notifications" and a settings_tab outside the built-in list
+   below (see registry.py's resolve_dynamic_tabs() / _KNOWN_TABS) — grouped
+   under a "Modules" heading, same as integrations.html. #}
+<div class="settings-tabs floating-side-menu" id="notificationsMenu">
+  <button class="settings-tab active" data-tab="webpush" onclick="switchNotifTab('webpush')">Web Push</button>
+  <button class="settings-tab" data-tab="telegram" onclick="switchNotifTab('telegram')">Telegram</button>
+  <button class="settings-tab" data-tab="pushover" onclick="switchNotifTab('pushover')">Pushover</button>
+  <button class="settings-tab" data-tab="ntfy" onclick="switchNotifTab('ntfy')">NTFY</button>
+  <button class="settings-tab" data-tab="discord" onclick="switchNotifTab('discord')">Discord</button>
+  <button class="settings-tab" data-tab="whatsapp" onclick="switchNotifTab('whatsapp')">WhatsApp</button>
+  <button class="settings-tab" data-tab="storage" onclick="switchNotifTab('storage')">{{ _('Storage') }}</button>
+  {% set notif_module_tabs = get_dynamic_tabs('notifications') %}
+  {% if notif_module_tabs %}
+  <div class="settings-tab-group-label">{{ _('Modules') }}</div>
+  {% for t in notif_module_tabs %}
+  <button class="settings-tab settings-tab-module" data-tab="{{ t.id }}" onclick="switchNotifTab('{{ t.id }}')">{{ t.label }}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span></button>
+  {% endfor %}
+  {% endif %}
+</div>

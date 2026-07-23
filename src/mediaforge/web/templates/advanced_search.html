@@ -7,15 +7,29 @@
 
 {% block content %}
 <div class="adv-search-page-container">
+  <!-- Header -->
   <div class="page-header adv-header">
-    <h1 class="page-title">{{ _('Advanced Search') }}</h1>
-    <p class="page-subtitle">{{ _('Discover new series and movies with TMDB filters') }}</p>
+    <div class="adv-header-titles">
+      <h1 class="page-title">{{ _('Advanced Search') }}</h1>
+      <p class="page-subtitle">{{ _('Discover new series and movies with TMDB filters & presets') }}</p>
+    </div>
+
+    <!-- Quick Presets Bar -->
+    <div class="adv-presets-bar" id="advPresetsBar">
+      <span class="adv-presets-label">{{ _('Quick Presets') }}:</span>
+      <button type="button" class="adv-preset-btn" data-preset="anime">{{ _('🔥 Top Anime') }}</button>
+      <button type="button" class="adv-preset-btn" data-preset="popular_tv">{{ _('📺 Popular Series') }}</button>
+      <button type="button" class="adv-preset-btn" data-preset="popular_movies">{{ _('🍿 Popular Movies') }}</button>
+      <button type="button" class="adv-preset-btn" data-preset="new_2026">{{ _('✨ New 2026') }}</button>
+      <button type="button" class="adv-preset-btn" data-preset="action">{{ _('⚡ Action & Thriller') }}</button>
+    </div>
   </div>
 
+  <!-- Filter Container -->
   <div class="adv-filters-container" id="advFiltersContainer">
     <!-- Basic Row (Always Visible) -->
     <div class="adv-filters-basic-row">
-      <!-- Type Filter -->
+      <!-- Type Filter Segmented Buttons -->
       <div class="filter-group basic-filter" id="mediaTypeGroup">
         <div class="filter-buttons" id="mediaTypeFilter">
           <button class="filter-btn active" data-type="tv">{{ _('Series') }}</button>
@@ -34,7 +48,7 @@
             </svg>
           </div>
           <div class="custom-select-dropdown" id="genreSelectDropdown">
-            <!-- Checkboxes will be injected here -->
+            <!-- Checkboxes injected client-side -->
           </div>
         </div>
       </div>
@@ -61,7 +75,10 @@
       </div>
     </div>
 
-    <!-- Collapsible Advanced Filters -->
+    <!-- Active Filters Summary Chips Bar -->
+    <div class="adv-active-tags-bar" id="advActiveFilterTags" style="display:none;"></div>
+
+    <!-- Collapsible Advanced Filters Panel -->
     <div class="adv-filters-body" id="advFiltersBody">
       <div class="adv-filters-grid">
         <!-- Sortierung -->
@@ -78,7 +95,7 @@
 
         <!-- Keywords -->
         <div class="adv-filter-col">
-          <label class="filter-title" for="keywordInput">Keywords</label>
+          <label class="filter-title" for="keywordInput">{{ _('Keywords') }}</label>
           <div class="keyword-search-wrap">
             <input type="text" id="keywordInput" class="keyword-input" placeholder="{{ _('Search keyword (e.g. anime)...') }}"
               autocomplete="off" />
@@ -91,15 +108,18 @@
         <div class="adv-filter-col">
           <span class="filter-title">{{ _('Release year') }}</span>
           <div class="range-inputs">
-            <input type="number" id="yearMin" placeholder="{{ _('From (e.g. 2000)') }}" min="1900" max="2099" />
+            <input type="text" id="yearMin" inputmode="numeric" pattern="[0-9]*" placeholder="{{ _('From (e.g. 2000)') }}" maxlength="4" autocomplete="off" />
             <span class="range-sep">-</span>
-            <input type="number" id="yearMax" placeholder="{{ _('To (e.g. 2024)') }}" min="1900" max="2099" />
+            <input type="text" id="yearMax" inputmode="numeric" pattern="[0-9]*" placeholder="{{ _('To (e.g. 2026)') }}" maxlength="4" autocomplete="off" />
           </div>
         </div>
 
         <!-- TMDB Bewertung -->
         <div class="adv-filter-col">
-          <span class="filter-title">{{ _('TMDB Rating') }} (<span id="voteLabel">0 - 10</span>)</span>
+          <div class="adv-slider-header">
+            <span class="filter-title">{{ _('Min Rating') }}</span>
+            <span id="voteLabel" class="adv-slider-val">0 - 10</span>
+          </div>
           <div class="range-slider-wrap">
             <input type="range" id="voteMin" min="0" max="10" step="1" value="0" />
           </div>
@@ -137,42 +157,46 @@
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Results Area -->
-    <div class="adv-results" id="advResults">
-      <div class="results-header">
+  <!-- Results Area -->
+  <div class="adv-results" id="advResults">
+    <div class="results-header">
+      <div class="results-header-left">
         <h2>{{ _('Results') }}</h2>
-        <div class="pagination" id="advPagination" style="display:none">
-          <button class="btn btn-secondary pagination-btn" id="prevPageBtn" title="{{ _('Back') }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round" style="width:16px;height:16px;">
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
-          </button>
-          <span id="pageIndicator" class="page-indicator">{{ _('Page') }} 1</span>
-          <button class="btn btn-secondary pagination-btn" id="nextPageBtn" title="{{ _('Next') }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round" style="width:16px;height:16px;">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </button>
-        </div>
         <span class="results-count" id="resultsCount"></span>
       </div>
-      <div class="results-grid" id="resultsGrid">
-        <div class="adv-empty-state">
-          {{ _('Please select your filters and click Search.') }}
-        </div>
+
+      <div class="pagination" id="advPagination" style="display:none">
+        <button class="btn btn-secondary pagination-btn" id="prevPageBtn" title="{{ _('Back') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" style="width:16px;height:16px;">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <span id="pageIndicator" class="page-indicator">{{ _('Page') }} 1</span>
+        <button class="btn btn-secondary pagination-btn" id="nextPageBtn" title="{{ _('Next') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" style="width:16px;height:16px;">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Results Grid -->
+    <div class="results-grid" id="resultsGrid">
+      <div class="adv-empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:48px;height:48px;margin-bottom:12px;opacity:0.4;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <div>{{ _('Select filters or click a Quick Preset above to discover series and movies.') }}</div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- The AniWorld/S.TO/FilmPalast search modal (aniSearchModalOverlay) now
-       lives in shared_modals.html itself, included below, since three pages
-       (this one, anime_seasons_view.html, mediacalendar.html) all need the
-       identical markup. -->
-  {% include "shared_modals.html" %}
+{% include "shared_modals.html" %}
 {% endblock %}
+
 {% block scripts %}
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% endblock %}

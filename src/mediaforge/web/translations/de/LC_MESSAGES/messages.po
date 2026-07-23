@@ -859,8 +859,26 @@ msgid "New Movies"
 msgstr "Neue Filme"
 
 # ── advanced_search.html ──────────────────────────────────────────────────
-msgid "Discover new series and movies with TMDB filters"
-msgstr "Entdecke neue Serien und Filme mit den TMDB-Filtern"
+msgid "Discover new series and movies with TMDB filters & presets"
+msgstr "Entdecke neue Serien und Filme mit TMDB-Filtern & Presets"
+
+msgid "Quick Presets"
+msgstr "Schnellauswahl"
+
+msgid "🔥 Top Anime"
+msgstr "🔥 Top-Anime"
+
+msgid "📺 Popular Series"
+msgstr "📺 Beliebte Serien"
+
+msgid "🍿 Popular Movies"
+msgstr "🍿 Beliebte Filme"
+
+msgid "✨ New 2026"
+msgstr "✨ Neu 2026"
+
+msgid "⚡ Action & Thriller"
+msgstr "⚡ Action & Thriller"
 
 msgid "Movies"
 msgstr "Filme"
@@ -889,6 +907,9 @@ msgstr "Release (Neuste zuerst)"
 msgid "Release (Oldest first)"
 msgstr "Release (Älteste zuerst)"
 
+msgid "Keywords"
+msgstr "Keywords"
+
 msgid "Search keyword (e.g. anime)..."
 msgstr "Keyword suchen (z.B. anime)..."
 
@@ -898,11 +919,11 @@ msgstr "Erscheinungsjahr"
 msgid "From (e.g. 2000)"
 msgstr "Von (z.B. 2000)"
 
-msgid "To (e.g. 2024)"
-msgstr "Bis (z.B. 2024)"
+msgid "To (e.g. 2026)"
+msgstr "Bis (z.B. 2026)"
 
-msgid "TMDB Rating"
-msgstr "TMDB Bewertung"
+msgid "Min Rating"
+msgstr "Mind. Bewertung"
 
 msgid "Watch Region"
 msgstr "Streaming-Region"
@@ -934,8 +955,8 @@ msgstr "Seite"
 msgid "Next"
 msgstr "Weiter"
 
-msgid "Please select your filters and click Search."
-msgstr "Bitte wähle deine Filter und klicke auf Suchen."
+msgid "Select filters or click a Quick Preset above to discover series and movies."
+msgstr "Wähle Filter oder klicke oben auf eine Schnellauswahl, um Serien und Filme zu entdecken."
 
 msgid "Searching streams on AniWorld, SerienStream & FilmPalast..."
 msgstr "Suche Streams auf AniWorld, SerienStream & FilmPalast..."
@@ -1014,6 +1035,39 @@ msgstr "Deine gespeicherten Serien & Anime"
 
 msgid "Loading favorites…"
 msgstr "Lade Favoriten…"
+
+msgid "Search saved series or movies…"
+msgstr "Gespeicherte Serien oder Filme suchen…"
+
+msgid "Clear search"
+msgstr "Suche löschen"
+
+msgid "Filter by source"
+msgstr "Nach Quelle filtern"
+
+msgid "Grouping: Off"
+msgstr "Gruppierung: Aus"
+
+msgid "Group by Source"
+msgstr "Nach Quelle gruppieren"
+
+msgid "Select mode"
+msgstr "Auswahlmodus"
+
+msgid "selected"
+msgstr "ausgewählt"
+
+msgid "Select All"
+msgstr "Alle auswählen"
+
+msgid "Deselect"
+msgstr "Auswahl aufheben"
+
+msgid "Add selected to Auto-Sync"
+msgstr "Auswahl zu Auto-Sync hinzufügen"
+
+msgid "Remove selected"
+msgstr "Auswahl entfernen"
 
 # ── library.html ─────────────────────────────────────────────────────────
 msgid "Search series, movie or file…"
@@ -4963,3 +5017,115 @@ msgstr "Legt fest, ob das Web-Interface im Standardbrowser geöffnet wird, wenn 
 
 msgid "This feature is not available in Docker."
 msgstr "Diese Funktion ist für Docker nicht verfügbar."
+
+
+# --- Favorites page (added) ---
+msgid "Sort"
+msgstr "Sortieren"
+
+msgid "Recently added"
+msgstr "Zuletzt hinzugefügt"
+
+msgid "Oldest first"
+msgstr "Älteste zuerst"
+
+msgid "Name A–Z"
+msgstr "Name A–Z"
+
+msgid "Name Z–A"
+msgstr "Name Z–A"
+
+msgid "Grouping"
+msgstr "Gruppierung"
+
+msgid "Type"
+msgstr "Typ"
+
+
+#: src/mediaforge/web/templates/settings.html src/mediaforge/web/templates/extensions.html
+msgid "Theme Packs"
+msgstr "Theme-Pakete"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Theme packs restyle the whole interface — fonts, animations, checkboxes, inputs, the calendar and more. New theme packs can be installed from the Module Store."
+msgstr "Theme-Pakete gestalten die gesamte Oberfläche neu — Schriftarten, Animationen, Checkboxen, Eingabefelder, den Kalender und mehr. Neue Theme-Pakete können aus dem Modul-Store installiert werden."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Your theme"
+msgstr "Dein Theme"
+
+#: src/mediaforge/web/templates/settings.html src/mediaforge/web/templates/extensions.html
+msgid "Instance default"
+msgstr "Instanz-Standard"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "MediaForge default look"
+msgstr "MediaForge-Standard-Look"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Only changes the look on this device. The dark/light switch above keeps working within a theme pack."
+msgstr "Ändert das Aussehen nur auf diesem Gerät. Der Dark/Light-Schalter oben funktioniert innerhalb eines Theme-Pakets weiterhin."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Instance default (all users)"
+msgstr "Instanz-Standard (alle Benutzer)"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Get more themes"
+msgstr "Mehr Themes holen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The theme every user sees unless they pick their own above. Installed and managed in the Module Manager."
+msgstr "Das Theme, das jeder Benutzer sieht, sofern er oben kein eigenes wählt. Installiert und verwaltet im Modulmanager."
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Theme"
+msgstr "Theme"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Themes"
+msgstr "Themes"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Invalid"
+msgstr "Ungültig"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "No MODULE.sig — nobody vouches for this theme"
+msgstr "Keine MODULE.sig — niemand bürgt für dieses Theme"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "This theme pack is invalid and will not be offered:"
+msgstr "Dieses Theme-Paket ist ungültig und wird nicht angeboten:"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Make this the theme every user sees unless they picked their own in Settings → Design."
+msgstr "Macht dies zum Theme für alle Benutzer, sofern sie unter Einstellungen → Design kein eigenes gewählt haben."
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Revert to default look"
+msgstr "Zum Standard-Look zurückkehren"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Set as default"
+msgstr "Als Standard festlegen"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Uninstall theme"
+msgstr "Theme deinstallieren"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Deletes the theme folder immediately — themes are plain CSS and assets, no restart needed. Users who selected it fall back to the default look."
+msgstr "Löscht den Theme-Ordner sofort — Themes sind reines CSS mit Assets, kein Neustart nötig. Benutzer, die es gewählt hatten, fallen auf den Standard-Look zurück."
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Filter by type"
+msgstr "Nach Typ filtern"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Theme folder"
+msgstr "Theme-Ordner"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Installed theme packs live here. A theme installed by hand is a folder with a theme.json dropped in here — it shows up on the next page load, no restart needed."
+msgstr "Installierte Theme-Pakete liegen hier. Ein von Hand installiertes Theme ist einfach ein Ordner mit einer theme.json, der hier abgelegt wird — es erscheint beim nächsten Seitenaufruf, ohne Neustart."

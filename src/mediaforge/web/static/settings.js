@@ -1809,6 +1809,53 @@ function _loadDesignCheckboxes() {
     const el = document.getElementById(s.id);
     if (el) el.checked = localStorage.getItem(s.key) === 'true';
   });
+  _loadThemePackSelect();
+}
+
+// ─── Theme packs (web/themes.py) ────────────────────────────────────────────
+// The personal choice is localStorage 'aw-themepack' (same pattern as the
+// dark/light 'aw-theme' key); applyThemePack() in base.html swaps the
+// stylesheet live. The instance default is a server setting (admin only).
+
+function _loadThemePackSelect() {
+  const el = document.getElementById('themePackSelect');
+  if (!el) return;
+  let choice = '';
+  try { choice = localStorage.getItem('aw-themepack') || ''; } catch (e) { }
+  // A stale override (theme uninstalled since) falls back to instance default.
+  if (choice && ![...el.options].some(o => o.value === choice)) choice = '';
+  el.value = choice;
+}
+
+function saveThemePackChoice() {
+  const el = document.getElementById('themePackSelect');
+  if (!el) return;
+  applyThemePack(el.value);
+  showToast(t('Theme übernommen', 'Theme applied'));
+}
+
+function saveThemePackDefault() {
+  const el = document.getElementById('themePackDefaultSelect');
+  if (!el) return;
+  const folder = el.value === 'default' ? '' : el.value;
+  fetch('/api/themes/active', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder })
+  }).then(r => r.json()).then(d => {
+    if (d && d.ok) {
+      showToast(t('Standard-Theme gespeichert', 'Default theme saved'));
+      // If this user follows the instance default, apply it right away.
+      let choice = '';
+      try { choice = localStorage.getItem('aw-themepack') || ''; } catch (e) { }
+      if (!choice) {
+        window._THEME_DEFAULT = folder;
+        applyThemePack('');
+      }
+    } else {
+      showToast((d && d.error) || t('Speichern fehlgeschlagen', 'Save failed'));
+    }
+  }).catch(() => showToast(t('Speichern fehlgeschlagen', 'Save failed')));
 }
 
 function _toggleDesignSetting(key, id, className, label) {
