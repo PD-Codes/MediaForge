@@ -1,7 +1,7 @@
 name: Docker PR Check
 
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - main
     paths:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
