@@ -1,0 +1,105 @@
+/* ===================================================================
+   Example Theme — token layer
+   Loaded AFTER every core stylesheet (see base.html), so anything set
+   here wins the cascade. Everything NOT set here falls back to the
+   built-in values from variables.css — a theme only has to override
+   what it wants to change.
+
+   Dark and light are both supported: target [data-theme="dark"] and
+   [data-theme="light"] exactly like variables.css does. The user's
+   dark/light toggle keeps working inside the theme.
+   =================================================================== */
+
+/* ----- Typography: a serif look, loaded from the theme's own font or a
+   system stack. Fonts shipped inside the pack are referenced relatively —
+   the bundle is served from /themes/<folder>/bundle.css, so url(...) paths
+   resolve inside the theme folder. -----*/
+:root {
+  --theme-font-body: Georgia, "Times New Roman", serif;
+  --theme-font-heading: Georgia, "Times New Roman", serif;
+}
+
+body {
+  font-family: var(--theme-font-body);
+}
+
+h1, h2, h3, h4, .page-title {
+  font-family: var(--theme-font-heading);
+  letter-spacing: 0.01em;
+}
+
+/* ----- Color tokens, dark variant ----- */
+[data-theme="dark"] {
+  --bg-base: #14100b;
+  --bg-surface: #1c1712;
+  --bg-elevated: #241e17;
+  --bg-hover: #2e261d;
+  --bg-card: #201a13;
+
+  --sidebar-bg: #181310;
+
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --accent-soft: rgba(217, 119, 6, 0.15);
+  --accent-glow: rgba(217, 119, 6, 0.35);
+  --brand-color: #d97706;
+
+  --text-primary: #f5efe6;
+  --text-secondary: #b3a794;
+  --text-muted: #6e6353;
+  --text-link: #f0b35c;
+  --text-link-hover: #ffc97e;
+
+  --border: rgba(255, 240, 220, 0.08);
+  --border-focus: rgba(217, 119, 6, 0.6);
+
+  --input-bg: #262019;
+  --input-border: rgba(255, 240, 220, 0.12);
+
+  /* A subtle paper-grain background pattern via data: URL — images inside a
+     theme can also be real files, e.g. url(assets/pattern.png). */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Ccircle cx='2' cy='2' r='1' fill='%23d97706' fill-opacity='0.05'/%3E%3C/svg%3E");
+}
+
+/* ----- Color tokens, light variant ----- */
+[data-theme="light"] {
+  --bg-base: #faf6ef;
+  --bg-surface: #fffdf8;
+  --bg-elevated: #f6f0e6;
+  --bg-hover: #efe7d8;
+  --bg-card: #fffdf8;
+
+  --sidebar-bg: #fffdf8;
+
+  --accent: #b45309;
+  --accent-hover: #92400e;
+  --accent-soft: rgba(180, 83, 9, 0.1);
+  --accent-glow: rgba(180, 83, 9, 0.22);
+  --brand-color: #b45309;
+
+  --text-primary: #241c10;
+  --text-secondary: #6b5d45;
+  --text-muted: #a3947b;
+  --text-link: #92400e;
+  --text-link-hover: #7c3607;
+
+  --border: rgba(60, 40, 10, 0.1);
+  --border-focus: rgba(180, 83, 9, 0.5);
+
+  --input-bg: #f4ede1;
+  --input-border: rgba(60, 40, 10, 0.15);
+}
+
+/* ----- Shape & motion tokens shared by both variants ----- */
+:root,
+[data-theme="dark"],
+[data-theme="light"] {
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Slightly slower, softer transitions than the default theme */
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}

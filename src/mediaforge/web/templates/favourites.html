@@ -1,15 +1,116 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Favorites') }} — MediaForge{% endblock %}
-{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='favourites.css') }}">{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='favourites.css') }}">
+{% endblock %}
 
 {% block content %}
-<div class="page-container">
-  <div class="page-header" style="margin-bottom:28px;">
-    <h1 class="page-title">{{ _('Favorites') }}</h1>
-    <p class="page-subtitle">{{ _('Your saved series & anime') }}</p>
+<div class="favourites-container">
+  <!-- Header -->
+  <div class="fav-header">
+    <div class="fav-header-titles">
+      <h1 class="page-title">{{ _('Favorites') }}</h1>
+      <p class="page-subtitle">{{ _('Your saved series & anime') }}</p>
+    </div>
+    <!-- Summary Stat Pills -->
+    <div id="favSummaryPills" class="fav-summary-pills"></div>
   </div>
+
+  <!-- Sticky Modern Toolbar -->
+  <div class="fav-toolbar" id="favControls" style="display:none;">
+    
+    <!-- Search Row -->
+    <div class="fav-search-row">
+      <div class="fav-search-wrap">
+        <svg class="fav-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" id="favSearch" class="fav-search-input" style="padding-left:32px" placeholder="{{ _('Search saved series or movies…') }}" autocomplete="off" />
+        <button type="button" id="favSearchClear" class="fav-search-clear" title="{{ _('Clear search') }}" style="display:none;">✕</button>
+      </div>
+    </div>
+
+    <!-- Controls Row -->
+    <div class="fav-controls-row">
+      
+      <!-- Type Filter Segmented Buttons -->
+      <div class="fav-segmented-group" id="favTypeSegmented">
+        <button type="button" class="fav-segmented-btn active" data-type="all">{{ _('All') }}</button>
+        <button type="button" class="fav-segmented-btn" data-type="series">{{ _('Series') }}</button>
+        <button type="button" class="fav-segmented-btn" data-type="movie">{{ _('Movies') }}</button>
+      </div>
+
+      <!-- Provider Select -->
+      <div class="fav-field-inline">
+        <select id="favProvider" class="fav-select" title="{{ _('Filter by source') }}">
+          <option value="all">{{ _('All sources') }}</option>
+        </select>
+      </div>
+
+      <!-- Sort Select -->
+      <div class="fav-field-inline">
+        <select id="favSort" class="fav-select" title="{{ _('Sort by') }}">
+          <option value="date-desc">{{ _('Recently added') }}</option>
+          <option value="date-asc">{{ _('Oldest first') }}</option>
+          <option value="name-asc">{{ _('Name A–Z') }}</option>
+          <option value="name-desc">{{ _('Name Z–A') }}</option>
+        </select>
+      </div>
+
+      <!-- Grouping Select -->
+      <div class="fav-field-inline">
+        <select id="favGroup" class="fav-select" title="{{ _('Grouping') }}">
+          <option value="off">{{ _('Grouping: Off') }}</option>
+          <option value="provider">{{ _('Group by Source') }}</option>
+        </select>
+      </div>
+
+      <!-- View Switcher + Refresh & Select Mode -->
+      <div class="fav-toolbar-right">
+        <!-- View Grid/List -->
+        <div class="fav-segmented-group fav-view-group">
+          <button type="button" class="fav-segmented-btn active" id="favViewGrid" title="{{ _('Grid view') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </button>
+          <button type="button" class="fav-segmented-btn" id="favViewList" title="{{ _('List view') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          </button>
+        </div>
+
+        <!-- Multi-Select Toggle -->
+        <button type="button" class="fav-action-icon-btn" id="favSelectToggleBtn" title="{{ _('Select mode') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </button>
+
+        <!-- Refresh -->
+        <button type="button" class="fav-action-icon-btn" id="favRefreshBtn" onclick="loadFavourites(true)" title="{{ _('Refresh') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-select Bulk Action Bar (Hidden by default) -->
+  <div class="fav-bulk-bar" id="favBulkBar" style="display:none;">
+    <div class="fav-bulk-info">
+      <span id="favBulkCount">0</span> {{ _('selected') }}
+    </div>
+    <div class="fav-bulk-actions">
+      <button type="button" class="btn btn-sm btn-ghost" id="favBulkSelectAll">{{ _('Select All') }}</button>
+      <button type="button" class="btn btn-sm btn-ghost" id="favBulkDeselectAll">{{ _('Deselect') }}</button>
+      <button type="button" class="btn btn-sm btn-primary" id="favBulkAutoSyncBtn">{{ _('Add selected to Auto-Sync') }}</button>
+      <button type="button" class="btn btn-sm btn-danger" id="favBulkRemoveBtn">{{ _('Remove selected') }}</button>
+    </div>
+  </div>
+
+  <!-- Status / Count Meta Row -->
+  <div class="fav-meta-row" id="favMetaRow">
+    <span id="favCount" class="fav-count"></span>
+  </div>
+
+  <!-- Main Grid / List Content -->
   <div id="favouritesList" class="fav-list">
-    <div class="stats-loading">{{ _('Loading favorites…') }}</div>
+    <!-- Skeleton loader rendered client-side -->
   </div>
 </div>
 {% endblock %}

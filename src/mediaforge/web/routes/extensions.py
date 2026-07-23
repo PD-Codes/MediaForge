@@ -42,6 +42,7 @@ from ..thirdparties import (
 )
 from ..thirdparties import deps as module_deps
 from .. import restart as web_restart
+from .. import themes as theme_packs
 from ..thirdparties import store as module_store
 from ..thirdparties.registry import REGISTRY_API_VERSION, resolve_extensions_overview
 from ..thirdparties.trusted_keys import trusted_keys
@@ -93,6 +94,16 @@ def _page_context():
         # change it. There is deliberately no route that writes this list; a trust root
         # a user can edit is one an attacker can talk them into editing.
         "trusted_keys": sorted(trusted_keys().values(), key=lambda k: k.get("name", "")),
+        # Installed theme packs (web/themes.py) — listed on the same page,
+        # since they install from the same store. Invalid ones included, with
+        # reasons, for the same "why isn't it showing up" job this page does
+        # for modules.
+        # Named active_theme_folder, NOT active_theme_pack: render_template
+        # kwargs override context-processor values, and base.html's <head>
+        # needs the processor's dict-shaped active_theme_pack untouched.
+        "theme_packs": theme_packs.installed_themes(),
+        "active_theme_folder": (theme_packs.active_theme() or {}).get("folder", ""),
+        "themes_dir": str(theme_packs.THEMES_DIR),
     }
 
 
@@ -311,6 +322,13 @@ def register_extensions_routes(app):
             return jsonify({"ok": False, "error": "missing module id"}), 400
         result = module_store.install(module_id, force=str(data.get("force")) == "1")
 
+        if result.get("ok") and result.get("type") == "theme":
+            # Themes are applied live inside store.install() itself — nothing
+            # to register, no restart, the next page load links the new CSS.
+            result["pending"] = pending_changes()
+            result["extensions"] = resolve_extensions_overview()
+            return jsonify(result), 200
+
         if result.get("ok"):
             applied = install_staged_live(app, result.get("folder"))
             result["live"] = result.get("folder") in applied["live"]
@@ -343,7 +361,13 @@ def register_extensions_routes(app):
         so it is deliberately not gated on store_enabled().
         """
         data = request.get_json(silent=True) or {}
-        result = uninstall_module_live(app, str(data.get("folder") or ""))
+        if str(data.get("kind") or "") == "theme":
+            # Theme packs are inert data — deleted live by web/themes.py,
+            # never staged, and the active-theme setting is reset first if it
+            # pointed at the theme being removed.
+            result = theme_packs.uninstall_theme(str(data.get("folder") or ""))
+        else:
+            result = uninstall_module_live(app, str(data.get("folder") or ""))
         result["pending"] = pending_changes()
         result["extensions"] = resolve_extensions_overview()
         return jsonify(result), (200 if result["ok"] else 400)

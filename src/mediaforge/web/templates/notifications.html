@@ -10,56 +10,24 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">
 {% endblock %}
 {% block content %}
-<div class="settings-container">
+{# Notifications — built exactly like the Settings / Integrations / Monitoring
+   pages: one page, a floating side menu switching client-side between panels
+   (no reload). See _notifications_menu.html for the menu markup and
+   switchNotifTab() below for the switching logic (menu rework, July 2026). #}
+<div class="settings-container has-floating-menu">
   <div class="page-header" style="margin-bottom:28px;">
     <h1 class="page-title">{{ _('Notifications') }}</h1>
     <p class="page-subtitle">{{ _('Configure services') }}</p>
   </div>
 
-  <!-- Service Pills -->
-  <div class="service-pills">
-    <button class="service-pill active" onclick="showService('webpush',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      Web Push
-    </button>
-    <button class="service-pill" onclick="showService('telegram',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 4.8L2.8 11.6c-1.1.4-1.1 1.1-.2 1.4l4.6 1.4 1.8 5.5c.2.6.5.8.9.8.4 0 .6-.2.9-.4l2.7-2.6 5.3 3.9c1 .5 1.7.3 1.9-.9l3.4-16c.3-1.4-.5-2-1.9-1.4z"/></svg>
-      Telegram
-    </button>
-    <button class="service-pill" onclick="showService('pushover',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
-      Pushover
-    </button>
-    <button class="service-pill" onclick="showService('ntfy',this)">
-      <svg viewBox="0 0 24 24"><g transform="scale(.046875)" fill="currentColor"><path d="M78.1 32.7C40.9 32.7 9 62 9 99.2l.4 311.2-9.4 69 127.1-33.8H443c37.2 0 69.1-29.3 69.1-66.5V99.2c0-37.2-31.9-66.5-69-66.5zm0 46.9H443c13.1 0 22.1 9.5 22.1 19.6V379c0 10-9 19.8-22.1 19.6H120.2l-64.6 19.5.7-3.8-.4-315.1c0-10.1 9.1-19.6 22.2-19.6"/><path d="M116.4 310.9v-34.8l73.1-38.7c2.4-1.2 4.6-2.1 6.8-2.7 2.3-.8 4.5-1.4 6.3-1.8l6-.6V230q-3-.3-6-1.2-2.85-.6-6.3-1.5c-2.2-.8-4.5-1.8-6.8-3l-73.1-38.7v-35.1l113 61.5v37.4z"/><path d="M110.5 139.7v50.4l76.6 40.6.5.2-.5.2-76.6 40.6v50.1l8.2-4.5L235.1 254v-46.4zm11.8 21.7 101.2 55.1V245l-101.2 55.1v-19.4l69.6-36.8.1-.1c1.9-1 3.8-1.7 5.8-2.3h.1l.2-.1c2.1-.7 3.9-1.2 5.5-1.6l11.1-1.1v-15.2l-5.4-.5c-1.7-.2-3.5-.5-5.1-1.1h-.2l-.2-.1c-2-.4-3.9-.9-5.9-1.4-2-.7-4-1.6-5.9-2.6l-.1-.1-69.6-36.7zm152.3 137.4h120.7v32.6H274.6z"/><path d="M268.7 292.1v46h132.4v-46zm11.7 13.4h109v19.2h-109z"/></g></svg>
-      NTFY
-    </button>
-    <button class="service-pill" onclick="showService('discord',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M7.5 7.5c1-.5 2.5-.5 4.5-.5s3.5 0 4.5.5M7.5 16.5c1 .5 2.5.5 4.5.5s3.5 0 4.5-.5"/><path d="M5 5.5S3 6 2 9c0 4 1 8 4 9.5 1 .5 2.5.5 3 0l1-2M19 5.5s2 .5 3 3c0 4-1 8-4 9.5-1 .5-2.5.5-3 0l-1-2"/></svg>
-      Discord
-    </button>
-    <button class="service-pill" onclick="showService('whatsapp',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-      WhatsApp
-    </button>
-  <button class="service-pill" onclick="showService('storage',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-      {{ _('Storage') }}
-    </button>
-    {# Brand-new pills requested by a registered extension whose settings_tab
-       doesn't match one of the built-in ids above (see registry.py's
-       resolve_dynamic_tabs / _KNOWN_TABS). No template edit needed to add
-       one — see the matching panel loop at the bottom of this file. #}
-    {% for t in get_dynamic_tabs('notifications') %}
-    <button class="service-pill" onclick="showService('{{ t.id }}',this)">
-      {{ t.icon_svg|safe }}
-      {{ t.label }}
-    </button>
-    {% endfor %}
-  </div>
+  {% include "_notifications_menu.html" %}
 
   <!-- ═══ WEB PUSH ═══ -->
-  <div class="service-panel active" id="panel-webpush">
+  <div class="settings-tab-panel active" id="panel-webpush">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Web Push</h1>
+      <p class="page-subtitle">{{ _('Push notifications straight to your browser, even with the tab closed.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -191,7 +159,11 @@
   </div>
 
   <!-- ═══ TELEGRAM ═══ -->
-  <div class="service-panel" id="panel-telegram">
+  <div class="settings-tab-panel" id="panel-telegram">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Telegram</h1>
+      <p class="page-subtitle">{{ _('Get notified via a Telegram bot.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -359,7 +331,11 @@
   </div>
 
   <!-- ═══ PUSHOVER ═══ -->
-  <div class="service-panel" id="panel-pushover">
+  <div class="settings-tab-panel" id="panel-pushover">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Pushover</h1>
+      <p class="page-subtitle">{{ _('Push notifications to your phone via the Pushover app.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -527,7 +503,11 @@
   </div>
 
   <!-- ═══ NTFY ═══ -->
-  <div class="service-panel" id="panel-ntfy">
+  <div class="settings-tab-panel" id="panel-ntfy">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">NTFY</h1>
+      <p class="page-subtitle">{{ _('Self-hosted or ntfy.sh push notifications.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -710,7 +690,11 @@
   </div>
 
   <!-- ═══ DISCORD ═══ -->
-  <div class="service-panel" id="panel-discord">
+  <div class="settings-tab-panel" id="panel-discord">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Discord</h1>
+      <p class="page-subtitle">{{ _('Send notifications to a Discord channel via webhook.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -854,7 +838,11 @@
   </div>
 
   <!-- ═══ WHATSAPP ═══ -->
-  <div class="service-panel" id="panel-whatsapp">
+  <div class="settings-tab-panel" id="panel-whatsapp">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">WhatsApp</h1>
+      <p class="page-subtitle">{{ _('Send notifications via WhatsApp (using Twilio).') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -1041,7 +1029,11 @@
   </div>
 
   <!-- ═══ SPEICHER ═══ -->
-  <div class="service-panel" id="panel-storage">
+  <div class="settings-tab-panel" id="panel-storage">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Storage') }}</h1>
+      <p class="page-subtitle">{{ _('Get warned when free disk space runs low.') }}</p>
+    </div>
     <div class="settings-section">
       <div class="settings-section-header">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:6px;vertical-align:-2px;"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
@@ -1069,12 +1061,16 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════
-       Dynamic pills — brand-new pills an extension asked for via
-       settings_tab=<something not in _KNOWN_TABS> (see the pill loop in
-       .service-pills above and registry.py's resolve_dynamic_tabs()).
+       Dynamic panels — brand-new tabs an extension asked for via
+       settings_tab=<something not in _KNOWN_TABS> (see the "Modules" group
+       in _notifications_menu.html and registry.py's resolve_dynamic_tabs()).
   ══════════════════════════════════════════════════════ -->
   {% for t in get_dynamic_tabs('notifications') %}
-  <div class="service-panel" id="panel-{{ t.id }}">
+  <div class="settings-tab-panel" id="panel-{{ t.id }}">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ t.label }}</h1>
+      <p class="page-subtitle">{{ t.description or _('External notification module') }}</p>
+    </div>
     {% for card in get_settings_cards('notifications', t.id) %}
     {{ ext.render_settings_card(card) }}
     {% endfor %}
@@ -1126,13 +1122,6 @@
     flex: 1;
     min-width: 0;
   }
-  .service-pills {
-    gap: 6px;
-  }
-  .service-pill {
-    padding: 7px 13px;
-    font-size: 0.82rem;
-  }
   .settings-section-header {
     padding: 14px 16px;
   }
@@ -1169,35 +1158,48 @@ function showToast(msg) {
   t._hideTimer = setTimeout(() => t.classList.remove("show"), 4000);
 }
 
-/* ── Service panel switcher ── */
-function showService(id, pill) {
-  document.querySelectorAll('.service-pill').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.service-panel').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  document.getElementById('panel-' + id).classList.add('active');
+/* ── Tab switcher — mirrors settings.js's switchTab() / monitoring.html's
+   switchMonTab() / integrations.js's switchIntegTab(). Named switchNotifTab
+   (not switchTab) since this page defines its own JS inline instead of
+   loading settings.js/app.js — kept distinct to avoid any future collision. */
+function switchNotifTab(name) {
+  document.querySelectorAll('#notificationsMenu .settings-tab').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.tab === name);
+  });
+  document.querySelectorAll('.settings-container .settings-tab-panel').forEach(function (p) {
+    p.classList.toggle('active', p.id === 'panel-' + name);
+  });
+  try { history.replaceState(null, '', '#' + name); localStorage.setItem('notificationsActiveTab', name); } catch (e) {}
 }
+
+/* ── Restore the active tab from a #hash deep-link (e.g. a sidebar link or
+   the Modulmanager's "Open module" button); otherwise always start on
+   Web Push, matching settings.js's restoreTab(). Valid ids are read off the
+   DOM instead of hardcoded, so tabs an extension registers dynamically (see
+   registry.py's resolve_dynamic_tabs(), which adds extra buttons to
+   #notificationsMenu at render time) are restorable via #hash too. ── */
+(function restoreNotifTab() {
+  var hash = '';
+  try { hash = (window.location.hash || '').replace('#', '').trim(); } catch (e) {}
+  var valid = Array.prototype.map.call(
+    document.querySelectorAll('#notificationsMenu .settings-tab'),
+    function (b) { return b.dataset.tab; }
+  );
+  var tab = (hash && valid.indexOf(hash) !== -1) ? hash : 'webpush';
+  switchNotifTab(tab);
+})();
 
 /* ── Deep link from the Modulmanager ("Open module" button) ──
    Mirrors integrations.js's openDeepLinkedThirdpartyCard(): extensions.html
-   links here as .../notifications?open=<item_id>#<pill_id> for any
-   thirdparty registered with settings_host="notifications". Pills don't
-   carry a dedicated data-id (their onclick already encodes it as
-   showService('id', this)), so this pulls it back out of that attribute
-   instead of requiring a template change on every existing pill. */
-(function openDeepLinkedNotificationPanel() {
+   links here as .../notifications?open=<item_id>#<tab_id> for any
+   thirdparty registered with settings_host="notifications". The #tab half is
+   already handled by restoreNotifTab() above; this part additionally
+   force-expands that one item's settings card and scrolls it into view. */
+(function openDeepLinkedNotificationCard() {
   var openId = "";
   try { openId = new URLSearchParams(window.location.search).get("open") || ""; } catch (e) {}
-  var hash = "";
-  try { hash = (window.location.hash || "").replace("#", "").trim(); } catch (e) {}
-  if (!hash) return;
+  if (!openId) return;
   document.addEventListener("DOMContentLoaded", function () {
-    var pills = Array.prototype.slice.call(document.querySelectorAll(".service-pill"));
-    var match = pills.find(function (p) {
-      var m = (p.getAttribute("onclick") || "").match(/showService\('([^']+)'/);
-      return m && m[1] === hash;
-    });
-    if (match) showService(hash, match);
-    if (!openId) return;
     setTimeout(function () {
       var card = document.getElementById("integCard-" + openId);
       if (!card) return;

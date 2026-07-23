@@ -79,6 +79,12 @@
   function moduleRow(m) {
     const trust = TRUST_META[m.trust] || TRUST_META.unverified;
     const desc = (m.description && (m.description[window.__LANG] || m.description.en)) || "";
+    // Theme packs share the catalog (index "type" field). They get their own
+    // badge so an admin never installs a skin expecting a feature or vice
+    // versa; the filter buttons above the list narrow by exactly this field.
+    const typeBadge = m.type === "theme"
+      ? `<span class="integ-subsection-badge badge-depends">${esc(t("Theme", "Theme"))}</span>`
+      : "";
 
     // Exactly one of these four states applies, in this order of precedence:
     // incompatible (can't run here at all) > blocked by trust (admin hasn't
@@ -119,6 +125,9 @@
 
     const meta = [];
     if (m.author) meta.push(esc(m.author));
+    // Free-form grouping label from the index ("notifications", "integration",
+    // …) — display-only, next to the author.
+    if (m.category) meta.push(esc(m.category));
     // Which repository this came from — only worth saying when there's more than
     // one, but always worth saying then: "official" from a repo you added
     // yourself would be a claim, not a fact, and the badge already reflects that.
@@ -148,6 +157,7 @@
           <div class="settings-row-label">
             ${esc(m.name)}
             <span class="integ-subsection-badge badge-version">v${esc(m.version)}</span>
+            ${typeBadge}
             <span class="integ-subsection-badge ${trust.cls}">${esc(t(trust.de, trust.en))}</span>
             ${unreviewed}
           </div>
@@ -165,6 +175,26 @@
   // simply go quiet, so this side gets a deadline of its own and always ends in either a
   // catalog or a reason.
   const CATALOG_TIMEOUT_MS = 20000;
+
+  // The last successfully fetched catalog and the active type filter
+  // (""=all, "module", "theme") — filtering happens client-side so switching
+  // never refetches.
+  let _catalogModules = [];
+  let _typeFilter = "";
+
+  function renderCatalogList() {
+    const list = $("extStoreList");
+    if (!list) return;
+    const mods = _typeFilter
+      ? _catalogModules.filter((m) => (m.type || "module") === _typeFilter)
+      : _catalogModules;
+    list.innerHTML = mods.map(moduleRow).join("");
+    const count = $("extStoreCount");
+    if (count) {
+      count.textContent = mods.length + " " + t("Einträge", "entries");
+      count.style.display = "";
+    }
+  }
 
   function fetchWithTimeout(url, ms) {
     if (!window.AbortController) return fetch(url);   // old browser: no timeout, but no crash
@@ -207,12 +237,8 @@
         return;
       }
       if (brokenHtml) { status.innerHTML = brokenHtml; } else { status.style.display = "none"; }
-      list.innerHTML = data.modules.map(moduleRow).join("");
-      const count = $("extStoreCount");
-      if (count) {
-        count.textContent = data.modules.length + " " + t("Module", "modules");
-        count.style.display = "";
-      }
+      _catalogModules = data.modules;
+      renderCatalogList();
       // Also mark already-installed modules that have a newer version upstream, on
       // their own card in the installed view, and count them onto the store button.
       // The store view is a click away, so out-of-date has to be visible from the
@@ -305,7 +331,13 @@
       const data = await post("/api/store/install", { id: installBtn.dataset.id });
       if (data.ok) {
         renderPending(data.pending);
-        if (data.warning) {
+        if (data.type === "theme") {
+          // Themes apply live, always — the reload is only so the new card,
+          // the picker options and the badges show up server-rendered.
+          toast(t(`Theme "${data.folder}" v${data.version} installiert. Auswählbar unter Einstellungen → Design.`,
+                  `Theme "${data.folder}" v${data.version} installed. Selectable under Settings → Design.`));
+          setTimeout(() => window.location.reload(), 900);
+        } else if (data.warning) {
           // Installed, verified — but it refused to load here (unmet DEPENDS_ON,
           // incompatible version, broken code). Its Modulmanager card has the reason.
           toast(t(`${data.folder} installiert, startet aber nicht: ${data.warning}`,
@@ -331,13 +363,35 @@
       return;
     }
 
+    // "Set as default" / "Revert to default look" on an installed theme card
+    // (templates/extensions.html). data-folder="" means built-in look.
+    const themeDefaultBtn = ev.target.closest(".theme-default-btn");
+    if (themeDefaultBtn) {
+      themeDefaultBtn.disabled = true;
+      const data = await post("/api/themes/active",
+        { folder: themeDefaultBtn.dataset.folder || "" }, "PUT");
+      if (data.ok) {
+        toast(t("Standard-Theme gespeichert.", "Default theme saved."));
+        setTimeout(() => window.location.reload(), 700);
+      } else {
+        toast(t("Fehler: ", "Error: ") + (data.error || ""));
+        themeDefaultBtn.disabled = false;
+      }
+      return;
+    }
+
     const uninstallBtn = ev.target.closest(".ext-uninstall-btn");
     if (uninstallBtn) {
       const label = uninstallBtn.dataset.label || uninstallBtn.dataset.folder;
       if (!window.confirm(t(`"${label}" jetzt abschalten und entfernen?`,
                             `Switch "${label}" off and remove it now?`))) return;
       uninstallBtn.disabled = true;
-      const data = await post("/api/store/uninstall", { folder: uninstallBtn.dataset.folder });
+      const data = await post("/api/store/uninstall", {
+        folder: uninstallBtn.dataset.folder,
+        // "theme" on theme-pack cards (templates/extensions.html) — routes the
+        // uninstall to web/themes.py (live delete) instead of the module path.
+        kind: uninstallBtn.dataset.kind || "",
+      });
       if (data.ok) {
         renderPending(data.pending);
         toast(data.restart_required
@@ -401,6 +455,19 @@
       // the wrong answer. Getting the same list back after toggling is exactly how a
       // setting earns a reputation for not working.
       loadCatalog(true);
+    });
+  }
+
+  // Module/Theme type filter above the catalog — client-side, no refetch.
+  const typeFilter = $("extTypeFilter");
+  if (typeFilter) {
+    typeFilter.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".ext-type-filter-btn");
+      if (!btn) return;
+      _typeFilter = btn.dataset.type || "";
+      typeFilter.querySelectorAll(".ext-type-filter-btn").forEach((b) =>
+        b.classList.toggle("active", b === btn));
+      renderCatalogList();
     });
   }
 

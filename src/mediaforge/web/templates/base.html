@@ -31,6 +31,53 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='autosync_filter.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='selfupdate.css') }}" />
   {% block styles %}{% endblock %}
+  {# Theme pack (web/themes.py). Loaded LAST among stylesheets so a theme's
+     component overrides win the cascade against every core sheet above; the
+     built-in tokens in variables.css remain the fallback for everything a
+     theme does not define. The instance default is rendered server-side so
+     the very first paint is already themed; a user's personal override
+     (localStorage 'aw-themepack') is applied by the synchronous script below
+     before paint — same no-FOUC pattern as the dark/light bootstrap. #}
+  {% if active_theme_pack %}
+  <link rel="stylesheet" id="themePackCss" data-theme-folder="{{ active_theme_pack.folder }}"
+    href="{{ url_for('theme_bundle_css', folder=active_theme_pack.folder) }}?v={{ active_theme_pack.version }}" />
+  {% endif %}
+  <script>
+    // Theme pack override bootstrap. localStorage 'aw-themepack':
+    //   missing/''  -> follow the instance default (server-rendered link above)
+    //   'default'   -> force the built-in MediaForge look (drop the link)
+    //   '<folder>'  -> use that installed theme instead
+    // Runs synchronously in <head> so the swap happens before first paint.
+    window._THEME_PACKS = {{ installed_theme_packs | tojson }};
+    window._THEME_DEFAULT = {{ (active_theme_pack.folder if active_theme_pack else '') | tojson }};
+    (function () {
+      try {
+        var ov = localStorage.getItem('aw-themepack');
+        if (!ov) return;
+        // Folder names are validated server-side at install; re-checked here
+        // anyway so a tampered localStorage value can never build markup.
+        if (!/^[A-Za-z0-9._-]+$/.test(ov)) return;
+        var link = document.getElementById('themePackCss');
+        if (ov === (window._THEME_DEFAULT || '')) return;
+        if (ov === 'default') { if (link) link.parentNode.removeChild(link); return; }
+        var t = null;
+        for (var i = 0; i < (window._THEME_PACKS || []).length; i++) {
+          if (window._THEME_PACKS[i].folder === ov) { t = window._THEME_PACKS[i]; break; }
+        }
+        if (!t) return; // stale override (theme uninstalled) -> instance default
+        var href = '/themes/' + encodeURIComponent(ov) + '/bundle.css?v=' + encodeURIComponent(t.version);
+        if (link) {
+          link.setAttribute('href', href);
+          link.setAttribute('data-theme-folder', ov);
+        } else {
+          // document.write is deliberate: it blocks parsing, so the sheet is
+          // in place before <body> renders — no flash of the default look.
+          document.write('<link rel="stylesheet" id="themePackCss" data-theme-folder="'
+            + ov + '" href="' + href + '" />');
+        }
+      } catch (e) { }
+    })();
+  </script>
   <script>
     // Prevent flash: apply saved theme (and collapsed-sidebar state) before paint
     (function () {
@@ -319,6 +366,9 @@
       <span class="sidebar-category">{{ _('System') }}</span>
       <div class="sidebar-category-group">
         <div class="sidebar-category-inner">
+          {# Notifications — single link; sub-navigation now lives in the page as
+             a floating side menu (see notifications.html), same pattern as
+             Integrations/Settings/Monitoring. #}
           <a href="{{ url_for('notifications_page') }}" class="sidebar-link" data-page="notifications">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round">
@@ -451,18 +501,22 @@
         <div class="sidebar-lang-dropdown" id="langDropdown">
           <button class="footer-action-icon" onclick="toggleLangDropdown(event)" type="button"
             title="{{ _('Change language') }}">
-            <img src="{{ url_for('static', filename=get_flag_filename(ui_language)) }}"
-                 class="sidebar-lang-flag" alt="" onerror="this.src='{{ url_for('static', filename='placeholder.svg') }}'" />
+            <img src="{{ url_for('static', filename='flags/' + ('german' if ui_language == 'de' else 'english') + '.svg') }}"
+                 class="sidebar-lang-flag" alt="" />
           </button>
           <div class="sidebar-lang-menu" id="langMenu">
-          {% for lang in available_languages %}
-          <button class="sidebar-lang-option{% if ui_language == lang %} active{% endif %}"
-                  onclick="setUiLanguage('{{ lang }}')" type="button">
-            <img src="{{ url_for('static', filename=get_flag_filename(lang)) }}" class="sidebar-lang-flag" alt="" style="object-fit:cover;" onerror="this.src='{{ url_for('static', filename='placeholder.svg') }}'" />
-            <span>{{ get_language_name(lang) }}</span>
-            {% if ui_language == lang %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:auto;color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}
+          <button class="sidebar-lang-option{% if ui_language == 'de' %} active{% endif %}"
+                  onclick="setUiLanguage('de')" type="button">
+            <img src="{{ url_for('static', filename='flags/german.svg') }}" class="sidebar-lang-flag" alt="" />
+            <span>Deutsch</span>
+            {% if ui_language == 'de' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:auto;color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}
           </button>
-          {% endfor %}
+          <button class="sidebar-lang-option{% if ui_language == 'en' %} active{% endif %}"
+                  onclick="setUiLanguage('en')" type="button">
+            <img src="{{ url_for('static', filename='flags/english.svg') }}" class="sidebar-lang-flag" alt="" />
+            <span>English</span>
+            {% if ui_language == 'en' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:auto;color:var(--accent)"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}
+          </button>
         </div>
       </div>
     </div>
@@ -911,6 +965,37 @@
     function toggleTheme() {
       var current = document.documentElement.getAttribute('data-theme') || 'dark';
       setTheme(current === 'dark' ? 'light' : 'dark');
+    }
+    // Theme packs (web/themes.py). Persists the personal override and swaps
+    // the stylesheet live — no reload. '' = follow the instance default,
+    // 'default' = force the built-in look, '<folder>' = that installed theme.
+    function applyThemePack(folder) {
+      folder = folder || '';
+      if (folder && folder !== 'default' && !/^[A-Za-z0-9._-]+$/.test(folder)) return;
+      try { localStorage.setItem('aw-themepack', folder); } catch (e) { }
+      var target = folder || (window._THEME_DEFAULT || '');
+      var link = document.getElementById('themePackCss');
+      if (!target || target === 'default') {
+        if (link) link.parentNode.removeChild(link);
+        return;
+      }
+      var t = null;
+      for (var i = 0; i < (window._THEME_PACKS || []).length; i++) {
+        if (window._THEME_PACKS[i].folder === target) { t = window._THEME_PACKS[i]; break; }
+      }
+      if (!t) return;
+      var href = '/themes/' + encodeURIComponent(target) + '/bundle.css?v=' + encodeURIComponent(t.version);
+      if (link) {
+        link.setAttribute('href', href);
+        link.setAttribute('data-theme-folder', target);
+      } else {
+        link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.id = 'themePackCss';
+        link.setAttribute('data-theme-folder', target);
+        link.href = href;
+        document.head.appendChild(link);
+      }
     }
     function _updateThemeBtns(t) {
       var d = document.getElementById('themeBtnDark');

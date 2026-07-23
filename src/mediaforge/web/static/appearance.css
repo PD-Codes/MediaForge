@@ -895,3 +895,74 @@ body.icon-move .sidebar-sub-link[data-page="module_settings"]:hover svg {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-2px); }
 }
+
+/* ===== Theme packs (Settings → Design + Modulmanager) ===== */
+/* Picker rows: full-width on phones, capped on desktop, same input look as
+   every other select (forms.css). */
+.theme-pack-row {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.theme-pack-row select {
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .theme-pack-row select {
+    max-width: 100%;
+  }
+
+  .theme-pack-row .btn {
+    width: 100%;
+  }
+}
+
+/* Modulmanager: small preview thumbnail on an installed theme card */
+.theme-pack-preview {
+  max-width: 260px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  display: block;
+}
+
+/* Modulmanager store: Module/Theme type filter pills */
+.ext-type-filter {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 10px;
+  flex-wrap: wrap;
+}
+
+.ext-type-filter-btn {
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.ext-type-filter-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.ext-type-filter-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+  .ext-type-filter {
+    width: 100%;
+    margin-left: 0;
+    order: 3;
+  }
+}

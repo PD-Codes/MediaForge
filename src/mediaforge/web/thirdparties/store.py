@@ -133,6 +133,16 @@ STORE_API_VERSION = 1
 
 TRUST_LEVELS = ("official", "verified", "unverified")
 
+# What a store entry can be. Modules are Python the app imports; themes are
+# CSS/asset packs handled by web/themes.py. Same download/checksum/signature
+# pipeline, different landing folder and lifecycle (themes always apply live).
+# The store index's canonical value for a theme pack is "template"; "theme" is
+# accepted as an alias. Both normalize to the internal value "theme", which is
+# what every downstream consumer (catalog, install, the UI's filter and
+# badges) switches on.
+ENTRY_TYPES = ("module", "theme")
+_TYPE_ALIASES = {"module": "module", "theme": "theme", "template": "theme"}
+
 # Downloads are small (a module is a handful of Python/JS/CSS files); anything
 # this far outside that is either a mistake or something we don't want to
 # unpack into the app's own package directory.
@@ -275,6 +285,12 @@ def _normalize(entry: dict, base_url: str) -> dict:
     trust = str(entry.get("trust") or "").lower()
     if trust not in TRUST_LEVELS:
         trust = "unverified"
+    # Index "type": "module" (default), or "template"/"theme" for theme packs
+    # (both normalize to the internal "theme"). Anything unknown is treated as
+    # a module, which is the strict choice: a module goes through the full
+    # compat gates and never installs live into the themes folder.
+    entry_type = _TYPE_ALIASES.get(
+        str(entry.get("type") or "").strip().lower(), "module")
     module_id = str(entry.get("id") or "").strip()
     download_url = str(entry.get("download_url") or "").strip()
     if download_url:
@@ -284,6 +300,15 @@ def _normalize(entry: dict, base_url: str) -> dict:
         description = {"en": description}
     return {
         "id": module_id,
+        "type": entry_type,
+        # Free-form grouping label from the index (e.g. "notifications",
+        # "integration"). Display-only: shown in the store row's meta line —
+        # never used for any decision here.
+        "category": str(entry.get("category") or "").strip(),
+        # Who the index *claims* packaged/signed this. Display-only, like the
+        # claimed trust tier: the tier that counts is still proven by
+        # verify_module() against the package's own MODULE.sig at install.
+        "signed_by": str(entry.get("signed_by") or "").strip(),
         # The folder the module must be installed into. Defaults to the id --
         # they're normally the same, and MODULE_ID exists precisely so they
         # don't *have* to be.
@@ -355,6 +380,7 @@ def fetch_index(url: str = None, force: bool = False, include_unapproved: bool =
             return cached["index"]
 
     index_url = _index_url(url, include_unapproved)
+    used_unapproved_index = include_unapproved
     try:
         try:
             raw = _http_get(index_url, 4 * 1024 * 1024, timeout=INDEX_TIMEOUT)
@@ -368,6 +394,7 @@ def fetch_index(url: str = None, force: bool = False, include_unapproved: bool =
             logger.info("[ModuleStore] %s offers no index-all.json — falling back to %s",
                         url, fallback)
             index_url = fallback
+            used_unapproved_index = False
             raw = _http_get(index_url, 4 * 1024 * 1024, timeout=INDEX_TIMEOUT)
 
         data = json.loads(raw.decode("utf-8"))
@@ -378,6 +405,36 @@ def fetch_index(url: str = None, force: bool = False, include_unapproved: bool =
                 f"v{STORE_API_VERSION} — update MediaForge")
         modules = [_normalize(e, index_url) for e in (data.get("modules") or [])]
         modules = [m for m in modules if m["id"] and m["folder"]]
+
+        if used_unapproved_index:
+            # index-all.json is index.json PLUS the review queue -- every already-approved
+            # module is repeated in it, not just the new submissions. A store that takes the
+            # lazy way out and stamps that whole file "unverified"/review_status "draft"
+            # wholesale (rather than carrying each repeat's real, already-decided trust
+            # along) quietly undoes the one distinction this client goes out of its way to
+            # keep separate: "nobody has reviewed this yet" (true, for a fresh submission)
+            # is not the same claim as "nobody signed this" (false, for a module that has
+            # been official for months) -- see _normalize()'s review_status comment.
+            #
+            # Reconciling against the reviewed index here means a store's sloppy index-all
+            # can no longer make every installed, previously-official module flip to
+            # "Unverified" the moment an admin turns the "allow unverified modules" switch
+            # on -- which is exactly what it did before this reconciliation existed. Best
+            # effort only: this never raises and never forces a refresh, so a store that's
+            # briefly unreachable just leaves index-all's (possibly too-conservative)
+            # claims in place rather than failing the whole catalog load.
+            try:
+                reviewed = fetch_index(url, force=False, include_unapproved=False)
+            except Exception:
+                reviewed = None
+            if reviewed and reviewed.get("ok"):
+                reviewed_by_id = {m["id"]: m for m in reviewed.get("modules", [])}
+                for m in modules:
+                    known = reviewed_by_id.get(m["id"])
+                    if known is not None:
+                        m["trust"] = known["trust"]
+                        m["review_status"] = ""
+
         index = {
             "ok": True,
             "error": None,
@@ -404,7 +461,13 @@ def _compat_reason(entry: dict) -> str:
     module's pip requirements), applied *before* downloading rather than after
     -- offering an admin an install button for a module that will refuse to
     load is just a slower way of saying no.
+
+    Themes get only the app-version gate: they carry no Python, so the
+    registry-API version and pip requirements simply do not apply to them.
     """
+    if entry.get("type") == "theme":
+        return check_app_compatibility(
+            entry.get("min_app_version"), entry.get("max_app_version")) or ""
     reason = check_api_compatibility(entry.get("api_version")) or check_app_compatibility(
         entry.get("min_app_version"), entry.get("max_app_version"))
     if reason:
@@ -513,6 +576,11 @@ def catalog(force: bool = False) -> dict:
     for name, mod in module_entries().items():
         installed_by_id[mod.get("module_id") or name] = mod
 
+    # Theme packs live in their own folder (web/themes.py) and are matched by
+    # manifest id, exactly like modules are matched by MODULE_ID.
+    from ..themes import themes_by_id
+    installed_themes_by_id = themes_by_id()
+
     unverified_ok = allow_unverified()
     from packaging.version import InvalidVersion, Version
 
@@ -589,7 +657,10 @@ def catalog(force: bool = False) -> dict:
 
     modules = []
     for entry in raw_entries:
-        local = installed_by_id.get(entry["id"])
+        if entry.get("type") == "theme":
+            local = installed_themes_by_id.get(entry["id"])
+        else:
+            local = installed_by_id.get(entry["id"])
         installed_ver = local.get("version") if local else None
         update = False
         if local and installed_ver:
@@ -651,7 +722,9 @@ def catalog(force: bool = False) -> dict:
     }
 
 
-def _safe_extract(data: bytes, folder: str, target_root: Path) -> Path:
+def _safe_extract(data: bytes, folder: str, target_root: Path,
+                  required_file: str = "__init__.py",
+                  kind: str = "MediaForge module") -> Path:
     """Unpack a .mfmod (a zip of exactly one module folder) into
     ``target_root/<folder>/``, refusing anything that doesn't look like one.
 
@@ -685,8 +758,8 @@ def _safe_extract(data: bytes, folder: str, target_root: Path) -> Path:
         if not name.startswith(prefix):
             raise ValueError(
                 f"archive member outside the '{folder}/' folder: {member.filename}")
-    if not any(m.filename.replace("\\", "/") == prefix + "__init__.py" for m in members):
-        raise ValueError(f"archive has no {folder}/__init__.py — not a MediaForge module")
+    if not any(m.filename.replace("\\", "/") == prefix + required_file for m in members):
+        raise ValueError(f"archive has no {folder}/{required_file} — not a {kind}")
 
     if staged.exists():
         shutil.rmtree(staged)
@@ -759,6 +832,13 @@ def install(module_id: str, force: bool = False) -> dict:
         # guarantee to the unverified one.
         return {"ok": False, "error": f"{entry['trust']} module without sha256 — refused"}
 
+    # Theme packs branch off here: same download/checksum above and the same
+    # signature verification below, but they stage into the themes folder,
+    # must pass the CSS-only validator, and always apply live (a theme is
+    # inert data — there is no blueprint that would need a restart).
+    if entry.get("type") == "theme":
+        return _install_theme_package(entry, data, module_id, force)
+
     # A folder name that would collide with this package's own submodules must never
     # reach the disk — see RESERVED_NAMES. Checked here as well as at discovery,
     # because "refused at install" is a message an admin can act on, while "installed
@@ -806,6 +886,81 @@ def install(module_id: str, force: bool = False) -> dict:
         "trust": effective,
         "signer": signature["signer"],
         "restart_required": True,
+    }
+
+
+def _install_theme_package(entry: dict, data: bytes, module_id: str, force: bool) -> dict:
+    """The theme-typed tail of install(): stage, verify, validate, go live.
+
+    The caller has already gated trust, compatibility and the checksum, so this
+    only handles what is different about themes: the landing folder, the
+    theme.json requirement instead of __init__.py, the CSS-only validation
+    (web/themes.py — the security boundary of the whole feature), and the
+    always-live application at the end.
+    """
+    from ..themes import (
+        _safe_theme_folder,
+        install_theme_from_staged,
+        themes_dir,
+        validate_theme_dir,
+    )
+
+    # Reserved names, dot-names, separators — one gate for everything a store
+    # index must never be able to name a folder (same check the uninstall and
+    # asset paths apply).
+    if _safe_theme_folder(entry["folder"]) is None:
+        return {"ok": False,
+                "error": f"'{entry['folder']}' is not an allowed theme folder name "
+                         f"and cannot be installed"}
+
+    pending_root = themes_dir() / PENDING_DIR
+    try:
+        staged = _safe_extract(data, entry["folder"], pending_root,
+                               required_file="theme.json", kind="MediaForge theme pack")
+    except Exception as exc:
+        logger.exception("[ModuleStore] Rejected theme package for '%s'", module_id)
+        return {"ok": False, "error": f"invalid package: {exc}"}
+
+    # Same signature story as modules: the tier the package can *prove* is the
+    # only one that counts, and an unproven claim collapses to unverified.
+    signature = verify_module(staged, module_id=entry["id"], version=entry["version"])
+    effective = signature["tier"]
+    if effective != entry["trust"]:
+        logger.warning("[ModuleStore] theme '%s': store claims %r, signature proves %r (%s)",
+                       module_id, entry["trust"], effective, signature["reason"])
+    if effective == "unverified" and not allow_unverified() and not force:
+        shutil.rmtree(staged, ignore_errors=True)
+        detail = signature["reason"] or "not signed"
+        return {"ok": False,
+                "error": (f"the store lists this as '{entry['trust']}', but the package is "
+                          f"not signed by a key this MediaForge trusts ({detail}) — "
+                          "it can only be installed with unverified modules allowed")}
+
+    # The CSS-only contract. A "theme" carrying a .js or .py file is not a
+    # theme, whoever signed it — refused before it ever reaches the live dir.
+    problems = validate_theme_dir(staged)
+    if problems:
+        shutil.rmtree(staged, ignore_errors=True)
+        return {"ok": False, "error": "invalid theme pack: " + "; ".join(problems[:5])}
+
+    ok, error = install_theme_from_staged(staged)
+    if not ok:
+        return {"ok": False, "error": error}
+
+    logger.info("[ModuleStore] Installed theme '%s' v%s (%s%s) live",
+                module_id, entry["version"], effective,
+                f", signed by {signature['signer']}" if signature["valid"] else ", unsigned")
+    return {
+        "ok": True,
+        "error": None,
+        "type": "theme",
+        "folder": entry["folder"],
+        "version": entry["version"],
+        "trust": effective,
+        "signer": signature["signer"],
+        # Live already — themes never need the restart dance.
+        "restart_required": False,
+        "live": True,
     }
 
 

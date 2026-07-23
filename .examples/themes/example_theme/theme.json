@@ -1,0 +1,21 @@
+{
+  "id": "example_theme",
+  "name": "Example Theme",
+  "version": "1.0.0",
+  "author": "MediaForge",
+  "description": {
+    "en": "A complete example theme pack: serif typography, amber accent, rounded animated checkboxes, restyled inputs and number steppers, a compact calendar look and a subtle background pattern. Copy it as a starting point for your own theme.",
+    "de": "Ein vollständiges Beispiel-Themepack: Serifen-Typografie, Bernstein-Akzent, abgerundete animierte Checkboxen, neu gestaltete Eingabefelder und Nummern-Stepper, ein kompakter Kalender-Look und ein dezentes Hintergrundmuster. Als Startpunkt für ein eigenes Theme kopieren."
+  },
+  "stylesheets": [
+    "theme.css",
+    "components.css"
+  ],
+  "preview": "preview.svg",
+  "supports": {
+    "dark": true,
+    "light": true
+  },
+  "min_app_version": "",
+  "max_app_version": ""
+}

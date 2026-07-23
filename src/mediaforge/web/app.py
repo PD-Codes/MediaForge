@@ -130,42 +130,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     _translation_dirs = [_core_translations_dir] + discover_translation_dirs()
     app.config["BABEL_TRANSLATION_DIRECTORIES"] = ";".join(_translation_dirs)
 
-    # Discover available languages dynamically
-    _available_languages = set(["en"]) # Always include English as fallback
-    if Path(_core_translations_dir).exists():
-        for _entry in Path(_core_translations_dir).iterdir():
-            if _entry.is_dir() and _entry.name != "__pycache__":
-                _available_languages.add(_entry.name)
-    app.config["AVAILABLE_LANGUAGES"] = sorted(list(_available_languages))
-
-    @app.context_processor
-    def inject_available_languages():
-        def get_flag_filename(lang_code):
-            # Map language codes to country codes for flags if needed (e.g. en -> gb)
-            mapping = {"en": "gb", "zh": "cn", "ja": "jp", "ko": "kr"}
-            flag_code = mapping.get(lang_code, lang_code)
-            return f"TranslationFlags/{flag_code}.svg"
-            
-        def get_language_name(lang_code):
-            try:
-                from babel import Locale
-                return Locale.parse(lang_code).get_display_name(lang_code).title()
-            except Exception:
-                return lang_code.upper()
-
-        return dict(
-            available_languages=app.config.get("AVAILABLE_LANGUAGES", ["en", "de"]),
-            get_flag_filename=get_flag_filename,
-            get_language_name=get_language_name
-        )
-
     babel = Babel()
 
     def get_locale():
         from flask import session as _sess
         # 1. Prefer language stored in session (set after DB lookup or login)
         lang = _sess.get("ui_language")
-        if lang in app.config.get("AVAILABLE_LANGUAGES", ["en", "de"]):
+        if lang in ("en", "de"):
             return lang
         # 2. Fall back to English
         return "en"
@@ -193,6 +164,27 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             return _inner_wsgi(environ, start_response)
 
         app.wsgi_app = _proxy_wsgi
+
+    # ---- Theme packs (web/themes.py) ------------------------------------
+    # Shared by both context processors below (auth and no-auth). Cheap per
+    # request: installed_themes() is cached with a short TTL and invalidated
+    # by install/uninstall, so this is a dict lookup, not a disk scan.
+    def _resolve_active_theme_pack():
+        from . import themes as _themes
+        active = _themes.active_theme()
+        if not active:
+            return None
+        return {"id": active["id"], "folder": active["folder"],
+                "name": active["name"], "version": active["version"]}
+
+    def _resolve_theme_pack_list():
+        from . import themes as _themes
+        return [
+            {"id": t["id"], "folder": t["folder"], "name": t["name"],
+             "version": t["version"], "supports": t["supports"],
+             "preview": t["preview"]}
+            for t in _themes.installed_themes() if t["valid"]
+        ]
 
     if auth_enabled:
         from .auth import (
@@ -329,6 +321,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "cineinfo_calendar": _get_setting("cineinfo_calendar", "0") == "1",
                 "syncplay_enabled": _get_setting("syncplay_enabled", "0") == "1",
                 "uptime_enabled": _get_setting("uptime_enabled", "0") == "1",
+                # Theme packs (web/themes.py): the instance default rendered
+                # server-side into base.html's <head> (first paint is already
+                # themed), plus a light id/name/version list the pre-paint
+                # override script and the Design-tab picker are built from.
+                "active_theme_pack": _resolve_active_theme_pack(),
+                "installed_theme_packs": _resolve_theme_pack_list(),
                 # Sidebar entries per category (see web/thirdparties/registry.py's
                 # section= param and base.html's per-category loops).
                 "discover_menu_items": resolve_menu_items("discover"),
@@ -403,6 +401,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "cineinfo_calendar": _get_setting("cineinfo_calendar", "0") == "1",
                 "syncplay_enabled": _get_setting("syncplay_enabled", "0") == "1",
                 "uptime_enabled": _get_setting("uptime_enabled", "0") == "1",
+                # Theme packs (web/themes.py): the instance default rendered
+                # server-side into base.html's <head> (first paint is already
+                # themed), plus a light id/name/version list the pre-paint
+                # override script and the Design-tab picker are built from.
+                "active_theme_pack": _resolve_active_theme_pack(),
+                "installed_theme_packs": _resolve_theme_pack_list(),
                 "discover_menu_items": resolve_menu_items("discover"),
                 "management_menu_items": resolve_menu_items("management"),
                 "syncplay_menu_items": resolve_menu_items("syncplay"),
@@ -728,6 +732,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     from .routes.progress import register_progress_routes
     from .routes.direct_link import register_direct_link_routes
     from .routes.backup import register_backup_routes
+    from .routes.themes import register_themes_routes
 
     register_search_routes(app)
     register_queue_routes(app)
@@ -779,6 +784,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     register_stream_routes(app)
     register_progress_routes(app)
     register_backup_routes(app)
+    register_themes_routes(app)
 
     # ---- Background workers relocated into their feature modules ----
     from .routes.image_proxy import ensure_image_cache_cleanup
@@ -863,6 +869,8 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # catalog also reveals the configured store URL.
             "api_store_config",
             "api_store_catalog",
+            # Instance-wide default theme pack — changes what every user sees.
+            "api_themes_active",
             # Installs pip packages into this process's import path. As privileged as an
             # action gets — and it is why the endpoint takes a module id, never a package name.
             "api_store_requirements",
@@ -888,6 +896,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # (admin_required for settings endpoints)
         _exempt = {
             "static",
+            # Theme pack stylesheets/assets — same standing as /static: the
+            # login page is themed through base.html too, and a CSS request
+            # must never bounce into a login redirect. Themes are validated
+            # CSS/fonts/images only (web/themes.py), nothing sensitive.
+            "theme_bundle_css",
+            "theme_asset",
             "auth.login",
             "auth.logout",
             "auth.setup",
