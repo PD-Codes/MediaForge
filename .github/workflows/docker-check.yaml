@@ -1,4 +1,4 @@
-name: Docker PR Check
+name: Test Build Docker
 
 on:
   pull_request_target:
