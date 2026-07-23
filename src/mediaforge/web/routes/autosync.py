@@ -132,22 +132,6 @@ def find_site_candidates(title: str) -> list:
     return candidates[:12]
 
 
-def _language_group_error(language):
-    """Reason a language value can't be used, or None if it's fine.
-
-    Only group references can fail here: they need per-language folders to work
-    at all (see language_groups.lang_separation_enabled) and the group itself
-    has to still exist.
-    """
-    if not is_group_ref(language):
-        return None
-    if not lang_separation_enabled():
-        return "Sprachgruppen benötigen die Einstellung 'Sprachen in Ordner trennen'."
-    if not resolve_chain(language):
-        return "Diese Sprachgruppe existiert nicht mehr."
-    return None
-
-
 def register_autosync_routes(app):
     """Register all AutoSync job management routes (CRUD, triggering, batch
     operations, import/export) on the given Flask app."""
@@ -167,9 +151,6 @@ def register_autosync_routes(app):
         jobs = get_autosync_jobs(username=None if is_admin else username)
         for job in jobs:
             job["adaptive_paused"] = _is_job_adaptive_paused(job)
-            # Jobs using a language fallback group store "group:<id>"; the
-            # cards and the filter dropdown show the group's name.
-            job["language_label"] = language_display(job.get("language"))
         return jsonify({"jobs": jobs})
     @app.route("/api/autosync", methods=["POST"])
     def api_autosync_create():
@@ -264,9 +245,6 @@ def register_autosync_routes(app):
                    "path_unavailable_action", "episode_filter", "movie_custom_path_id",
                    "group_name"}
         filtered = {k: v for k, v in data.items() if k in allowed}
-        _lang_err = _language_group_error(filtered.get("language"))
-        if _lang_err:
-            return jsonify({"error": _lang_err}), 400
         if "group_name" in filtered:
             gn = filtered["group_name"]
             gn = (str(gn).strip() if gn is not None else "")
@@ -473,4 +451,26 @@ def register_autosync_routes(app):
                                      "set_group", "remove_group"):
             return jsonify({"error": "ids und action (enable|disable|set_path|delete|set_group|remove_group) erforderlich"}), 400
 
-   
+        updated = 0
+        for job_id in ids:
+            job = get_autosync_job(job_id)
+            if not job:
+                continue
+            if not is_admin and job.get("added_by") != username:
+                continue
+            if action == "enable":
+                update_autosync_job(job_id, enabled=1)
+            elif action == "disable":
+                update_autosync_job(job_id, enabled=0)
+            elif action == "set_path":
+                update_autosync_job(job_id, custom_path_id=data.get("custom_path_id"))
+            elif action == "delete":
+                remove_autosync_job(job_id)
+            elif action == "set_group":
+                gn = data.get("group_name")
+                gn = (str(gn).strip() if gn is not None else "")
+                update_autosync_job(job_id, group_name=gn or None)
+            elif action == "remove_group":
+                update_autosync_job(job_id, group_name=None)
+            updated += 1
+        return jsonify({"ok": True, "updated": updated})
