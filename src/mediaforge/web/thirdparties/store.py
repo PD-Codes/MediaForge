@@ -380,6 +380,7 @@ def fetch_index(url: str = None, force: bool = False, include_unapproved: bool =
             return cached["index"]
 
     index_url = _index_url(url, include_unapproved)
+    used_unapproved_index = include_unapproved
     try:
         try:
             raw = _http_get(index_url, 4 * 1024 * 1024, timeout=INDEX_TIMEOUT)
@@ -393,6 +394,7 @@ def fetch_index(url: str = None, force: bool = False, include_unapproved: bool =
             logger.info("[ModuleStore] %s offers no index-all.json — falling back to %s",
                         url, fallback)
             index_url = fallback
+            used_unapproved_index = False
             raw = _http_get(index_url, 4 * 1024 * 1024, timeout=INDEX_TIMEOUT)
 
         data = json.loads(raw.decode("utf-8"))
@@ -403,6 +405,36 @@ def fetch_index(url: str = None, force: bool = False, include_unapproved: bool =
                 f"v{STORE_API_VERSION} — update MediaForge")
         modules = [_normalize(e, index_url) for e in (data.get("modules") or [])]
         modules = [m for m in modules if m["id"] and m["folder"]]
+
+        if used_unapproved_index:
+            # index-all.json is index.json PLUS the review queue -- every already-approved
+            # module is repeated in it, not just the new submissions. A store that takes the
+            # lazy way out and stamps that whole file "unverified"/review_status "draft"
+            # wholesale (rather than carrying each repeat's real, already-decided trust
+            # along) quietly undoes the one distinction this client goes out of its way to
+            # keep separate: "nobody has reviewed this yet" (true, for a fresh submission)
+            # is not the same claim as "nobody signed this" (false, for a module that has
+            # been official for months) -- see _normalize()'s review_status comment.
+            #
+            # Reconciling against the reviewed index here means a store's sloppy index-all
+            # can no longer make every installed, previously-official module flip to
+            # "Unverified" the moment an admin turns the "allow unverified modules" switch
+            # on -- which is exactly what it did before this reconciliation existed. Best
+            # effort only: this never raises and never forces a refresh, so a store that's
+            # briefly unreachable just leaves index-all's (possibly too-conservative)
+            # claims in place rather than failing the whole catalog load.
+            try:
+                reviewed = fetch_index(url, force=False, include_unapproved=False)
+            except Exception:
+                reviewed = None
+            if reviewed and reviewed.get("ok"):
+                reviewed_by_id = {m["id"]: m for m in reviewed.get("modules", [])}
+                for m in modules:
+                    known = reviewed_by_id.get(m["id"])
+                    if known is not None:
+                        m["trust"] = known["trust"]
+                        m["review_status"] = ""
+
         index = {
             "ok": True,
             "error": None,
