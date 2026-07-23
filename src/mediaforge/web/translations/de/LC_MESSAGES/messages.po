@@ -4758,7 +4758,7 @@ msgid "Module folder"
 msgstr "Modul-Ordner"
 
 msgid "Installed modules live here, outside MediaForge's program files — next to your database and cache, so they survive an update. A module installed by hand is simply a folder dropped in here; it is picked up on the next start."
-msgstr "Installierte Module liegen hier, außerhalb der Programmdat
+msgstr "Installierte Module liegen hier, außerhalb der Programmdaten von MediaForge — neben Ihrer Datenbank und dem Cache, damit sie ein Update überleben. Ein manuell installiertes Modul ist einfach ein Ordner, der hier abgelegt wird; es wird beim nächsten Start geladen."
 # Module dependencies (Modulmanager: "needs dependency" + Install button --
 # see web/thirdparties/deps.py and routes/extensions.py).
 msgid "This module needs a Python dependency that is not installed:"
