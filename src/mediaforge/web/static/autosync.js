@@ -47,6 +47,10 @@ let languageGroupsCache = [];
 let _runningJobs = new Set();
 let _pollTimer = null;
 
+let currentLayout = 'list';  // 'list' or 'grid'
+let currentPage = 1;
+let perPage = 25;
+
 // Grouping / view state
 let currentView = "__all__";        // "__all__" | "__adaptive__" | "g:<name>"
 let currentAutoGroup = "off";       // off | path | language | provider | user
@@ -185,6 +189,7 @@ function computeNextCheck(lastCheck, job) {
 
 function onSortChange() {
   currentSort = document.getElementById('sortSelect').value;
+  currentPage = 1;
   _savePrefs();
   clearSelection();
   renderJobs(currentJobs);
@@ -273,7 +278,17 @@ function renderJobs(jobs) {
   }
   
   filtered = _sortJobs(filtered, currentSort);
-  const result = autoOn ? renderAutoGroups(filtered) : renderManualView(filtered);
+  let result;
+  
+  if (autoOn) {
+    result = renderAutoGroups(filtered);
+    _renderPagination(filtered.length, 1);
+  } else {
+    const paged = _paginate(filtered);
+    result = renderManualView(paged.page);
+    _renderPagination(filtered.length, paged.totalPages);
+  }
+  
   _visibleJobIds = result.ids;
   autosyncList.innerHTML =
     result.html ||
@@ -353,6 +368,7 @@ function _updateRenameBtn() {
 function onViewChange() {
   const sel = document.getElementById("viewSelect");
   currentView = sel ? sel.value : "__all__";
+  currentPage = 1;
   _savePrefs();
   clearSelection();
   renderJobs(currentJobs);
@@ -361,6 +377,7 @@ function onViewChange() {
 function onAutoGroupChange() {
   const sel = document.getElementById("autoGroupSelect");
   currentAutoGroup = sel ? sel.value : "off";
+  currentPage = 1;
   _savePrefs();
   clearSelection();
   renderJobs(currentJobs);
@@ -368,6 +385,7 @@ function onAutoGroupChange() {
 
 function onSearchInput(val) {
   currentSearch = (val || "").trim().toLowerCase();
+  currentPage = 1;
   renderJobs(currentJobs);
 }
 
@@ -409,8 +427,8 @@ function renderManualView(filtered) {
   }
   const ids = new Set(list.map((j) => j.id));
   if (!list.length) return { html: "", ids };
-  let html = '<div class="sync-card-list">';
-  list.forEach((j) => { html += _buildJobCard(j, grayedFn(j)); });
+  let html = `<div class="${currentLayout === 'grid' ? 'sync-card-grid' : 'sync-card-list'}">`;
+  list.forEach((j) => { html += currentLayout === 'grid' ? _buildCompactCard(j, grayedFn(j)) : _buildJobCard(j, grayedFn(j)); });
   html += "</div>";
   return { html, ids };
 }
@@ -437,8 +455,8 @@ function renderAutoGroups(filtered) {
           '<span class="autosync-group-name">' + esc(k) + "</span>" +
           '<span class="autosync-group-count">' + arr.length + "</span>" +
         "</div>" +
-        '<div class="autosync-group-body"><div class="sync-card-list">';
-    arr.forEach((j) => { html += _buildJobCard(j, !!j.adaptive_paused); });
+        '<div class="autosync-group-body"><div class="' + (currentLayout === 'grid' ? 'sync-card-grid' : 'sync-card-list') + '">';
+    arr.forEach((j) => { html += currentLayout === 'grid' ? _buildCompactCard(j, !!j.adaptive_paused) : _buildJobCard(j, !!j.adaptive_paused); });
     html += "</div></div></div>";
   });
   return { html, ids };
@@ -609,6 +627,8 @@ function _loadPrefs() {
     const a = localStorage.getItem("autosync_autogroup"); if (a) currentAutoGroup = a;
     const c = localStorage.getItem("autosync_collapsed"); if (c) _collapsedGroups = JSON.parse(c) || {};
     const s = localStorage.getItem("autosync_sort"); if (s) currentSort = s;
+    const l = localStorage.getItem("autosync_layout"); if (l) currentLayout = l;
+    const p = localStorage.getItem("autosync_perpage"); if (p) perPage = parseInt(p) || 25;
   } catch (_) {}
 }
 function _savePrefs() {
@@ -617,12 +637,16 @@ function _savePrefs() {
     localStorage.setItem("autosync_autogroup", currentAutoGroup);
     localStorage.setItem("autosync_collapsed", JSON.stringify(_collapsedGroups));
     localStorage.setItem("autosync_sort", currentSort);
+    localStorage.setItem("autosync_layout", currentLayout);
+    localStorage.setItem("autosync_perpage", perPage);
   } catch (_) {}
 }
 function _applyPrefsToControls() {
   const ag = document.getElementById("autoGroupSelect"); if (ag) ag.value = currentAutoGroup;
   const ss = document.getElementById("syncSearch"); if (ss && currentSearch) ss.value = currentSearch;
   const st = document.getElementById("sortSelect"); if (st) st.value = currentSort;
+  const btnList = document.getElementById('layoutListBtn'); if (btnList) btnList.classList.toggle('active', currentLayout === 'list');
+  const btnGrid = document.getElementById('layoutGridBtn'); if (btnGrid) btnGrid.classList.toggle('active', currentLayout === 'grid');
 }
 
 // ===== Rename group modal =====
@@ -801,6 +825,153 @@ function toggleSelectAll(checked) {
   });
   _updateBatchToolbar();
 }
+
+function setLayout(mode) {
+  currentLayout = mode;
+  _savePrefs();
+  document.getElementById('layoutListBtn').classList.toggle('active', mode === 'list');
+  document.getElementById('layoutGridBtn').classList.toggle('active', mode === 'grid');
+  currentPage = 1;
+  renderJobs(currentJobs);
+}
+
+function _buildCompactCard(job, grayed) {
+  const isRunning = _runningJobs.has(job.id);
+  const isOnHold = job.on_hold === 1;
+  const isAdaptivePaused = job.adaptive_paused && !isOnHold;
+  let statusColor, statusBadgeClass, statusText, cardClasses = 'sync-card sync-card-compact';
+  
+  if (isRunning) {
+    statusColor = 'var(--accent, #7c3aed)';
+    statusBadgeClass = 'queue-status-running';
+    statusText = `<span class="sync-spinner"></span>${t('Läuft…','Running…')}`;
+    cardClasses += ' sync-card-running';
+  } else if (isOnHold) {
+    statusColor = 'var(--warning, #f59e0b)';
+    statusBadgeClass = 'queue-status-hold';
+    statusText = `⏸ ${t('Wartend','Hold')}`;
+  } else if (isAdaptivePaused) {
+    statusColor = 'var(--info, #3b82f6)';
+    statusBadgeClass = 'queue-status-adaptive';
+    statusText = t('Adaptiv pausiert','Adaptive paused');
+  } else if (job.enabled) {
+    statusColor = 'var(--success, #22c55e)';
+    statusBadgeClass = 'queue-status-completed';
+    statusText = t('Aktiviert','Enabled');
+  } else {
+    statusColor = 'var(--text-muted, #55556a)';
+    statusBadgeClass = 'queue-status-queued';
+    statusText = t('Deaktiviert','Disabled');
+    cardClasses += ' sync-card-disabled';
+  }
+
+  if (job.last_new_found && job.last_new_count > 0) {
+    const lastNewTs = new Date(job.last_new_found + 'Z').getTime();
+    if (Date.now() - lastNewTs < 86400000) cardClasses += ' sync-card-fresh';
+  }
+
+  if (job.last_error) cardClasses += ' sync-card-error-state';
+  if (grayed) cardClasses += ' sync-card-grayed';
+  
+  const total = job.episodes_found || 0;
+  const local = job.local_episodes_found || 0;
+  const pct = total > 0 ? Math.round((local / total) * 100) : 0;
+  
+  const coverUrl = job.cover_url ? esc(proxyImg(job.cover_url)) : '';
+  const coverHtml = coverUrl
+    ? `<img class="sync-card-cover" src="${coverUrl}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="sync-card-cover-placeholder" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d='M4 12l1.5-5A2 2 0 0 1 7.4 5.5h9.2a2 2 0 0 1 1.9 1.5L20 12'/><rect x='2' y='12' width='20' height='8' rx='2'/><circle cx='12' cy='16' r='2'/></svg></div>`
+    : `<img class="sync-card-cover" style="display:none" src="" alt=""><div class="sync-card-cover-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d='M4 12l1.5-5A2 2 0 0 1 7.4 5.5h9.2a2 2 0 0 1 1.9 1.5L20 12'/><rect x='2' y='12' width='20' height='8' rx='2'/><circle cx='12' cy='16' r='2'/></svg></div>`;
+
+  const cbHtml = autosyncCanManage
+    ? `<label class="sync-card-cb-wrap"><input type="checkbox" class="chb-main sync-card-checkbox" ${selectedJobIds.has(job.id)?'checked':''} onchange="toggleJobSelection(${job.id},this.checked)"></label>`
+    : '';
+
+  const editSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
+  const syncSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+  const delSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+
+  return `<div class="${cardClasses}" style="--card-status-color:${statusColor}" data-id="${job.id}">
+    ${cbHtml}
+    <div class="sync-card-cover-wrap">${coverHtml}</div>
+    <div class="sync-card-content">
+      <div class="sync-card-header">
+        <span class="sync-card-title" title="${esc(job.series_url || '')}">${esc(job.title)}</span>
+        <span class="queue-status ${statusBadgeClass}"><span class="sync-card-status-dot"></span>${statusText}</span>
+      </div>
+      <div class="sync-card-pills">
+        <span class="queue-meta-pill">${esc(job.language)}</span>
+        <span class="queue-meta-pill">${esc(job.provider)}</span>
+      </div>
+      <div class="sync-stat-row"><span class="sync-stat-label">${t('Episoden','Episodes')}</span><span class="sync-stat-value">${local} / ${total}</span></div>
+      <div class="sync-progress-bar"><div class="sync-progress-fill" style="width:${pct}%"></div></div>
+      <div class="sync-card-actions">
+        ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn" onclick="openEditModal(${job.id})" title="${t('Bearbeiten','Edit')}">${editSvg}</button>` : ''}
+        <button class="btn btn-ghost sync-card-btn sync-card-btn-sync" onclick="syncNow(${job.id})" ${isRunning || grayed ? 'disabled' : ''} title="Sync">${syncSvg}</button>
+        ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn sync-card-btn-del" onclick="removeJob(${job.id})" title="${t('Entfernen','Remove')}">${delSvg}</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function _paginate(items) {
+  if (perPage <= 0 || perPage >= items.length) return { page: items, totalPages: 1 };
+  const totalPages = Math.ceil(items.length / perPage);
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const start = (currentPage - 1) * perPage;
+  return { page: items.slice(start, start + perPage), totalPages };
+}
+
+function _renderPagination(totalItems, totalPages) {
+  const el = document.getElementById('autosyncPagination');
+  if (!el) return;
+  if (totalPages <= 1 && perPage >= totalItems) { el.innerHTML = ''; return; }
+  
+  const prevDisabled = currentPage <= 1 ? 'disabled' : '';
+  const nextDisabled = currentPage >= totalPages ? 'disabled' : '';
+  
+  el.innerHTML = `
+    <div class="pagination-controls">
+      <div class="pagination-perpage">
+        <label>${t('Pro Seite','Per page')}</label>
+        <select id="perPageSelect" class="sync-select pagination-select" onchange="onPerPageChange()">
+          <option value="10" ${perPage===10?'selected':''}>10</option>
+          <option value="15" ${perPage===15?'selected':''}>15</option>
+          <option value="20" ${perPage===20?'selected':''}>20</option>
+          <option value="25" ${perPage===25?'selected':''}>25</option>
+          <option value="50" ${perPage===50?'selected':''}>50</option>
+          <option value="0" ${perPage<=0?'selected':''}>${t('Alle','All')}</option>
+        </select>
+      </div>
+      <div class="pagination-nav">
+        <button class="btn btn-ghost pagination-btn" onclick="goToPage(1)" ${prevDisabled} title="${t('Erste Seite','First page')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+        </button>
+        <button class="btn btn-ghost pagination-btn" onclick="prevPage()" ${prevDisabled} title="${t('Vorherige','Previous')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="pagination-info">${t('Seite','Page')} ${currentPage} ${t('von','of')} ${totalPages}</span>
+        <button class="btn btn-ghost pagination-btn" onclick="nextPage()" ${nextDisabled} title="${t('Nächste','Next')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button class="btn btn-ghost pagination-btn" onclick="goToPage(${totalPages})" ${nextDisabled} title="${t('Letzte Seite','Last page')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+function onPerPageChange() {
+  const sel = document.getElementById('perPageSelect');
+  perPage = parseInt(sel.value) || 0;
+  currentPage = 1;
+  _savePrefs();
+  renderJobs(currentJobs);
+}
+
+function goToPage(n) { currentPage = n; renderJobs(currentJobs); }
+function prevPage() { if (currentPage > 1) { currentPage--; renderJobs(currentJobs); } }
+function nextPage() { currentPage++; renderJobs(currentJobs); }
 
 function clearSelection() {
   selectedJobIds.clear();

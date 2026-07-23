@@ -37,13 +37,32 @@ def _event(data_key, payload):
 # Stage 1 — crash / system
 # ---------------------------------------------------------------------------
 
+def _attach_runtime(payload):
+    """Attach a small volatile runtime snapshot (RAM/disk/load/threads/fds at
+    the moment of the error) to a crash payload, so a report can show the
+    machine state when it broke -- was RAM exhausted (OOM), the disk full, the
+    load pegged. Best-effort and fully guarded: a problem here must never turn
+    a crash report into a second failure, so it simply omits the snapshot.
+    Rides on the crash_reports consent (the event it is attached to); the
+    registry's crash_reports explain text documents it."""
+    try:
+        from . import sysinfo
+        snap = sysinfo.runtime_snapshot()
+        if snap:
+            payload["runtime"] = snap
+    except Exception:
+        pass
+
+
 def build_crash_event(exc_type, exc_value, tb):
     """Build a crash_reports event from a (exc_type, exc_value, tb) triple
     (sys.exc_info() shape). Returns None if the user hasn't enabled
     crash_reports."""
     if not settings.is_key_enabled("crash_reports"):
         return None
-    return _event("crash_reports", sanitize_exception(exc_type, exc_value, tb))
+    payload = sanitize_exception(exc_type, exc_value, tb)
+    _attach_runtime(payload)
+    return _event("crash_reports", payload)
 
 
 def build_log_error_event(record):
@@ -69,31 +88,80 @@ def build_log_error_event(record):
         f'  File "{filename}", line {record.lineno}, in {record.funcName}\n'
         f"    {message}"
     )
-    return _event("crash_reports", {
+    payload = {
         "exception_type": "LoggedError",
         "message": message,
         "frames": [frame],
         "traceback_text": traceback_text,
-    })
+    }
+    _attach_runtime(payload)
+    return _event("crash_reports", payload)
 
 
 def build_system_info_event():
-    """Build a system_info event (app/OS/Python/arch). Returns None if the
-    user hasn't enabled system_info. Usually sent once per app start rather
-    than per-crash; hooks.init_telemetry() takes care of that timing."""
+    """Build a system_info event. Returns None if the user hasn't enabled
+    system_info. Usually sent once per app start rather than per-crash;
+    hooks.init_telemetry() takes care of that timing.
+
+    Beyond the original app/OS/Python/arch fields, this now carries the
+    extended, error-analysis-oriented context gathered by ``sysinfo.collect()``
+    (container runtime, Linux distro/libc/kernel, CPU model + core counts, GPU
+    names and -- most useful for the transcoding/upscaling failure paths -- the
+    hardware-acceleration methods and encoders ffmpeg actually has). All of
+    those are best-effort: any field the current platform can't determine is
+    simply omitted from the payload, so the event stays small and truthful
+    rather than padded with nulls. ``sysinfo.collect()`` caches its result, so
+    the (subprocess-touching) detection runs once per process, not per event."""
     if not settings.is_key_enabled("system_info"):
         return None
     import platform
 
     from .. import config
+    from . import sysinfo
 
-    return _event("system_info", {
+    payload = {
         "app_version": config.VERSION or "unknown",
         "os": platform.system(),
         "os_version": platform.version(),
         "python_version": platform.python_version(),
         "arch": platform.machine(),
-    })
+    }
+
+    # Extended context -- merged in only where a value was actually determined,
+    # so the payload never carries a key whose value is None/empty. Guarded on
+    # its own so a problem gathering the extras can never suppress the core
+    # fields above.
+    try:
+        extra = sysinfo.collect()
+    except Exception:
+        extra = {}
+    for key, value in (extra or {}).items():
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple)) and not value:
+            continue  # drop empty lists (e.g. no GPU / no hwaccel found)
+        payload[key] = list(value) if isinstance(value, (list, tuple)) else value
+
+    # UI language(s) in use -- an install-level field, so it lives here rather
+    # than in the OS-level sysinfo leaf: the distinct set of per-user UI
+    # languages ("de", "en", or "de,en"), which helps place locale-specific
+    # rendering/formatting bugs. Read straight from the users table via the
+    # existing sqlite helper (no request/session context needed); fully
+    # guarded so a DB hiccup never suppresses the rest of the event.
+    try:
+        from ..web.db import get_db
+        conn = get_db()
+        try:
+            rows = conn.execute("SELECT DISTINCT language FROM users").fetchall()
+        finally:
+            conn.close()
+        langs = sorted({r["language"] for r in rows if r["language"] in ("en", "de")})
+        if langs:
+            payload["ui_language"] = ",".join(langs)
+    except Exception:
+        pass
+
+    return _event("system_info", payload)
 
 
 # ---------------------------------------------------------------------------

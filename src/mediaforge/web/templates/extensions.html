@@ -103,7 +103,13 @@
        web/thirdparties/__init__.py's docstring), falling back to the
        folder name / nothing when a module doesn't declare them. -->
   {% for ext in extensions %}
-  <div class="settings-section integ-card collapsed" id="integCard-ext-{{ ext.name }}">
+  <!-- data-module-id carries the module's stable MODULE_ID (falls back to the
+       folder name). module_store.js matches an installed card to a store entry
+       by exactly this id when deciding where to hang the "Update: v…" badge —
+       the store computes update_available on MODULE_ID too, so matching on the
+       folder name (which can differ from the store's declared folder for a
+       hand-installed or renamed module) would attach the badge to nothing. -->
+  <div class="settings-section integ-card collapsed" id="integCard-ext-{{ ext.name }}" data-module-id="{{ ext.module_id }}">
     <div class="integ-subsection-header integ-collapsible-header" style="padding:14px 20px !important;" onclick="toggleIntegCollapse('ext-{{ ext.name }}')">
       <span class="integ-collapsible-chevron">▸</span>
       <span class="integ-subsection-title">{{ ext.module_name }}</span>

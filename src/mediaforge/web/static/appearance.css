@@ -747,6 +747,23 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hov
   border-color: var(--accent);
 }
 
+/* Language selection buttons: slightly larger by default, and noticeably
+   bigger tap targets on mobile so the flags/labels are easy to hit. */
+.appearance-theme-btn.lang-btn {
+  padding: 9px 0;
+  font-size: 0.9rem;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .appearance-theme-btn.lang-btn {
+    padding: 15px 0;
+    font-size: 1.1rem;
+    gap: 10px;
+    border-radius: var(--radius-lg);
+  }
+}
+
 .accent-presets {
   display: flex;
   gap: 6px;

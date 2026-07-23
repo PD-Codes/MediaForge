@@ -123,15 +123,28 @@ DATA_REGISTRY = {
             "Technischer Fehlerbericht (Programmzeile, Dateiname, Fehlertyp), wenn MediaForge "
             "unerwartet abstürzt oder eine interne Ausnahme auftritt. Enthält niemals Passwörter, "
             "Zugangsdaten, Variableninhalte oder komplette URLs mit Tokens -- nur den bereinigten "
-            "technischen Ablauf, der zum Fehler geführt hat."
+            "technischen Ablauf, der zum Fehler geführt hat. Zusätzlich wird eine kleine "
+            "Momentaufnahme des Gerätezustands im Fehlermoment angehängt (freier Arbeitsspeicher "
+            "und dessen Auslastung, freier Speicherplatz auf dem Download-Ziel, Systemlast sowie "
+            "Anzahl aktiver Threads/Dateihandles), damit erkennbar ist, ob z. B. der Speicher voll "
+            "war -- keine Titel, Pfade oder Inhalte."
         ),
     },
     "system_info": {
         "stage": 1, "group": "system", "label": "System-Info",
         "explain": (
-            "App-Version, Betriebssystem, Python-Version und Prozessorarchitektur. Hilft dabei, "
-            "Absturzberichte richtig einzuordnen (z. B. ein Fehler, der nur unter Windows oder nur "
-            "in einer alten Version auftritt)."
+            "Technische Eckdaten dieser Installation, um Absturz- und Fehlerberichte richtig "
+            "einordnen zu können (z. B. ein Fehler, der nur unter Windows, nur im Docker-Container "
+            "oder nur ohne Hardware-Beschleunigung auftritt): App-Version, Betriebssystem und "
+            "-Version, ob MediaForge in einem Container läuft (Docker/Podman/Kubernetes) und wie es "
+            "installiert wurde (Docker/pip/pipx/PyInstaller), ob mit Administrator-/Root-Rechten und "
+            "auf einem schreibgeschützten Dateisystem, ob ein VPN-Netzwerk erkannt wurde, Zeitzone; "
+            "unter Linux zusätzlich Distribution, C-Bibliothek und Kernel; Python-Version und "
+            "-Variante, Oberflächensprache, Prozessorarchitektur, CPU-Modell und Kernanzahl, "
+            "Arbeitsspeicher-Gesamtgröße, erkannte Grafikkarte(n) samt Treiberversion, die von "
+            "ffmpeg unterstützten sowie die tatsächlich funktionierenden Hardware-Beschleunigungen, "
+            "und die Versionen zentraler Komponenten (ffmpeg, yt-dlp, mpv, Captcha-Browser). Enthält "
+            "keinen Geräte- oder Benutzernamen, keine IP-Adresse und keine Dateipfade."
         ),
     },
     # ---- Stage 2: Feature flags (usage yes/no + counter) --------------
