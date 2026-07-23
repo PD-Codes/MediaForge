@@ -292,15 +292,14 @@
 
     <div class="settings-section">
       <h2>{{ _('Language') }}</h2>
-      <div class="settings-row" style="gap:10px;padding:12px;">
-        <button class="appearance-theme-btn lang-btn{% if ui_language == 'en' %} active{% endif %}"
-                onclick="setUiLanguage('en')">
-          🇺🇸 English
+      <div class="settings-row" style="gap:10px;padding:12px;flex-wrap:wrap;">
+        {% for lang in available_languages %}
+        <button class="appearance-theme-btn lang-btn{% if ui_language == lang %} active{% endif %}"
+                onclick="setUiLanguage('{{ lang }}')" style="display:flex;align-items:center;gap:6px;">
+          <img src="{{ url_for('static', filename=get_flag_filename(lang)) }}" style="width:16px;height:12px;object-fit:cover;border-radius:2px;" onerror="this.src='{{ url_for('static', filename='placeholder.svg') }}'" />
+          {{ get_language_name(lang) }}
         </button>
-        <button class="appearance-theme-btn lang-btn{% if ui_language == 'de' %} active{% endif %}"
-                onclick="setUiLanguage('de')">
-          🇩🇪 Deutsch
-        </button>
+        {% endfor %}
       </div>
       <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Choose the interface language. The page reloads automatically.') }}</div>
     </div>

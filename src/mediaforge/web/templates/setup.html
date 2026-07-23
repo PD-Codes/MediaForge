@@ -24,16 +24,13 @@
 
       <!-- Language switcher -->
       <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:6px;">
-        <a href="{{ url_for('auth.setup') }}{% if setup_token %}?token={{ setup_token }}&lang=en{% else %}?lang=en{% endif %}"
+        {% for lang in available_languages %}
+        <a href="{{ url_for('auth.setup') }}{% if setup_token %}?token={{ setup_token }}&lang={{ lang }}{% else %}?lang={{ lang }}{% endif %}"
            style="font-size:0.78rem;font-weight:600;padding:3px 10px;border-radius:6px;text-decoration:none;
                   border:1px solid var(--border);
-                  background:{{ 'var(--accent)' if ui_language == 'en' else 'transparent' }};
-                  color:{{ '#fff' if ui_language == 'en' else 'var(--text-muted)' }};">EN</a>
-        <a href="{{ url_for('auth.setup') }}{% if setup_token %}?token={{ setup_token }}&lang=de{% else %}?lang=de{% endif %}"
-           style="font-size:0.78rem;font-weight:600;padding:3px 10px;border-radius:6px;text-decoration:none;
-                  border:1px solid var(--border);
-                  background:{{ 'var(--accent)' if ui_language == 'de' else 'transparent' }};
-                  color:{{ '#fff' if ui_language == 'de' else 'var(--text-muted)' }};">DE</a>
+                  background:{{ 'var(--accent)' if ui_language == lang else 'transparent' }};
+                  color:{{ '#fff' if ui_language == lang else 'var(--text-muted)' }};">{{ get_language_name(lang) }}</a>
+        {% endfor %}
       </div>
 
       <div style="margin-bottom:8px;">

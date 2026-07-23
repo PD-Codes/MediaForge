@@ -130,13 +130,42 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     _translation_dirs = [_core_translations_dir] + discover_translation_dirs()
     app.config["BABEL_TRANSLATION_DIRECTORIES"] = ";".join(_translation_dirs)
 
+    # Discover available languages dynamically
+    _available_languages = set(["en"]) # Always include English as fallback
+    if Path(_core_translations_dir).exists():
+        for _entry in Path(_core_translations_dir).iterdir():
+            if _entry.is_dir() and _entry.name != "__pycache__":
+                _available_languages.add(_entry.name)
+    app.config["AVAILABLE_LANGUAGES"] = sorted(list(_available_languages))
+
+    @app.context_processor
+    def inject_available_languages():
+        def get_flag_filename(lang_code):
+            # Map language codes to country codes for flags if needed (e.g. en -> gb)
+            mapping = {"en": "gb", "zh": "cn", "ja": "jp", "ko": "kr"}
+            flag_code = mapping.get(lang_code, lang_code)
+            return f"TranslationFlags/{flag_code}.svg"
+            
+        def get_language_name(lang_code):
+            try:
+                from babel import Locale
+                return Locale.parse(lang_code).get_display_name(lang_code).title()
+            except Exception:
+                return lang_code.upper()
+
+        return dict(
+            available_languages=app.config.get("AVAILABLE_LANGUAGES", ["en", "de"]),
+            get_flag_filename=get_flag_filename,
+            get_language_name=get_language_name
+        )
+
     babel = Babel()
 
     def get_locale():
         from flask import session as _sess
         # 1. Prefer language stored in session (set after DB lookup or login)
         lang = _sess.get("ui_language")
-        if lang in ("en", "de"):
+        if lang in app.config.get("AVAILABLE_LANGUAGES", ["en", "de"]):
             return lang
         # 2. Fall back to English
         return "en"
