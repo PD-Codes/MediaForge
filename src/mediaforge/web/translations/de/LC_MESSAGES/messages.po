@@ -1755,6 +1755,31 @@ msgstr "Upscaling:"
 msgid "Configure services"
 msgstr "Dienste konfigurieren"
 
+# ── notifications.html (per-channel panel headings, menu rework July 2026) ──
+msgid "Push notifications straight to your browser, even with the tab closed."
+msgstr "Push-Benachrichtigungen direkt an deinen Browser, auch wenn der Tab geschlossen ist."
+
+msgid "Get notified via a Telegram bot."
+msgstr "Benachrichtigungen über einen Telegram-Bot erhalten."
+
+msgid "Push notifications to your phone via the Pushover app."
+msgstr "Push-Benachrichtigungen auf dein Handy über die Pushover-App."
+
+msgid "Self-hosted or ntfy.sh push notifications."
+msgstr "Selbst gehostete oder ntfy.sh Push-Benachrichtigungen."
+
+msgid "Send notifications to a Discord channel via webhook."
+msgstr "Benachrichtigungen per Webhook an einen Discord-Kanal senden."
+
+msgid "Send notifications via WhatsApp (using Twilio)."
+msgstr "Benachrichtigungen per WhatsApp senden (über Twilio)."
+
+msgid "Get warned when free disk space runs low."
+msgstr "Gewarnt werden, wenn der freie Speicherplatz knapp wird."
+
+msgid "External notification module"
+msgstr "Externes Benachrichtigungsmodul"
+
 msgid "Storage"
 msgstr "Speicher"
 
@@ -5129,3 +5154,52 @@ msgstr "Theme-Ordner"
 #: src/mediaforge/web/templates/extensions.html
 msgid "Installed theme packs live here. A theme installed by hand is a folder with a theme.json dropped in here — it shows up on the next page load, no restart needed."
 msgstr "Installierte Theme-Pakete liegen hier. Ein von Hand installiertes Theme ist einfach ein Ordner mit einer theme.json, der hier abgelegt wird — es erscheint beim nächsten Seitenaufruf, ohne Neustart."
+
+# ── Menu rework additions (added 2026-07-23) ──────────────────────────────
+#: src/mediaforge/web/templates/base.html
+msgid "Change language"
+msgstr "Sprache ändern"
+
+#: src/mediaforge/web/templates/base.html
+msgid "Collapse / expand menu"
+msgstr "Menü ein-/ausklappen"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Layout"
+msgstr "Layout"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Recently new"
+msgstr "Kürzlich neu"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Clear"
+msgstr "Leeren"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "No sync jobs yet"
+msgstr "Noch keine Sync-Jobs"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Add a series from the search page to get started."
+msgstr "Füge eine Serie über die Suche hinzu, um loszulegen."
+
+#: src/mediaforge/web/templates/_encoding_body.html
+msgid "Encoding Queue"
+msgstr "Encoding-Warteschlange"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Available modules"
+msgstr "Verfügbare Module"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Install now"
+msgstr "Jetzt installieren"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Trusted signing keys"
+msgstr "Vertrauenswürdige Signierschlüssel"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "This build trusts no signing keys — nothing can be official."
+msgstr "Dieser Build vertraut keinen Signierschlüsseln — nichts kann offiziell sein."

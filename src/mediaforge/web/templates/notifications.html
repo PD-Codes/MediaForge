@@ -24,6 +24,10 @@
 
   <!-- ═══ WEB PUSH ═══ -->
   <div class="settings-tab-panel active" id="panel-webpush">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Web Push</h1>
+      <p class="page-subtitle">{{ _('Push notifications straight to your browser, even with the tab closed.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -156,6 +160,10 @@
 
   <!-- ═══ TELEGRAM ═══ -->
   <div class="settings-tab-panel" id="panel-telegram">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Telegram</h1>
+      <p class="page-subtitle">{{ _('Get notified via a Telegram bot.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -324,6 +332,10 @@
 
   <!-- ═══ PUSHOVER ═══ -->
   <div class="settings-tab-panel" id="panel-pushover">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Pushover</h1>
+      <p class="page-subtitle">{{ _('Push notifications to your phone via the Pushover app.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -492,6 +504,10 @@
 
   <!-- ═══ NTFY ═══ -->
   <div class="settings-tab-panel" id="panel-ntfy">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">NTFY</h1>
+      <p class="page-subtitle">{{ _('Self-hosted or ntfy.sh push notifications.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -675,6 +691,10 @@
 
   <!-- ═══ DISCORD ═══ -->
   <div class="settings-tab-panel" id="panel-discord">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">Discord</h1>
+      <p class="page-subtitle">{{ _('Send notifications to a Discord channel via webhook.') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -819,6 +839,10 @@
 
   <!-- ═══ WHATSAPP ═══ -->
   <div class="settings-tab-panel" id="panel-whatsapp">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">WhatsApp</h1>
+      <p class="page-subtitle">{{ _('Send notifications via WhatsApp (using Twilio).') }}</p>
+    </div>
 
     {% if is_admin %}
     <div class="settings-section">
@@ -1006,6 +1030,10 @@
 
   <!-- ═══ SPEICHER ═══ -->
   <div class="settings-tab-panel" id="panel-storage">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Storage') }}</h1>
+      <p class="page-subtitle">{{ _('Get warned when free disk space runs low.') }}</p>
+    </div>
     <div class="settings-section">
       <div class="settings-section-header">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:6px;vertical-align:-2px;"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
@@ -1039,6 +1067,10 @@
   ══════════════════════════════════════════════════════ -->
   {% for t in get_dynamic_tabs('notifications') %}
   <div class="settings-tab-panel" id="panel-{{ t.id }}">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ t.label }}</h1>
+      <p class="page-subtitle">{{ t.description or _('External notification module') }}</p>
+    </div>
     {% for card in get_settings_cards('notifications', t.id) %}
     {{ ext.render_settings_card(card) }}
     {% endfor %}
