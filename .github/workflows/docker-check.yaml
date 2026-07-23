@@ -1,7 +1,11 @@
 name: Test Build Docker
 
+# Uses pull_request (not pull_request_target) on purpose: this job checks out
+# and builds untrusted fork PR code, and does not need repo secrets or a
+# write-scoped GITHUB_TOKEN, so it runs safely with the default read-only,
+# secret-less fork token.
 on:
-  pull_request_target:
+  pull_request:
     branches:
       - main
     paths:
