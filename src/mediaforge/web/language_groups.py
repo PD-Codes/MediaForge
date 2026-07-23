@@ -125,6 +125,20 @@ def resolve_chain(value, respect_disabled=True):
     return chain
 
 
+def deletes_replaced(value):
+    """True if this group replaces the old file when it upgrades an episode.
+
+    Per-group switch: with it off an upgraded episode is still downloaded in the
+    better language, but the copy in the worse language stays on disk — both
+    languages then live side by side in their own folders. Only groups can
+    answer this; a plain language never upgrades anything.
+    """
+    if not is_group_ref(value):
+        return False
+    group = get_group(value)
+    return bool(group and group.get("delete_replaced", True))
+
+
 def language_display(value):
     """Human-readable label for a stored language value.
 

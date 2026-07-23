@@ -367,6 +367,16 @@
   opacity: 0.5;
 }
 
+.lang-group-flag {
+  font-size: 0.78rem;
+  color: var(--text-secondary, #c8cad0);
+  white-space: nowrap;
+}
+
+.lang-group-flag-on {
+  color: var(--text-primary, #e6e6e6);
+}
+
 /* ─── Full & Selective Backup tab ─────────────────────────────────────── */
 .backup-cat-grid {
   display: grid;

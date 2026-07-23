@@ -17,6 +17,7 @@ from .db import (
     update_autosync_job,
 )
 from .language_groups import (
+    deletes_replaced,
     is_group_ref,
     labels_from_provider_data,
     pick_language,
@@ -651,7 +652,10 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             #   * not there at all                              -> download
             #   * there, but only in a worse language than the  -> upgrade:
             #     best one now available                           re-download,
-            #     then delete the old copies
+            #                                                      then replace
+            # Whether the upgrade replaces the old file or leaves both languages
+            # on disk is the group's own "delete old files" switch.
+            _replace_old_files = deletes_replaced(job["language"])
             present_by_lang = {lang: _scan_languages([lang]) for lang in lang_chain}
             local_pairs = set()
             for _lang_present in present_by_lang.values():
@@ -687,15 +691,16 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
 
                 replaced = []
                 if have_ranks:
-                    for rank in have_ranks:
-                        replaced.extend(
-                            str(p) for p in present_by_lang[lang_chain[rank]][(s_num, e_num)]
-                        )
+                    if _replace_old_files:
+                        for rank in have_ranks:
+                            replaced.extend(
+                                str(p) for p in present_by_lang[lang_chain[rank]][(s_num, e_num)]
+                            )
                     logger.info(
-                        "Auto-sync: upgrading S%02dE%02d of '%s' from '%s' to '%s' "
-                        "(%d old file(s) will be replaced)",
-                        s_num, e_num, job["title"], lang_chain[min(have_ranks)],
-                        chosen, len(replaced),
+                        "Auto-sync: upgrading S%02dE%02d of '%s' from '%s' to '%s' (%s)",
+                        s_num, e_num, job["title"], lang_chain[min(have_ranks)], chosen,
+                        f"{len(replaced)} old file(s) will be replaced" if replaced
+                        else "old file(s) are kept",
                     )
                 elif chosen != lang_chain[0]:
                     logger.info(

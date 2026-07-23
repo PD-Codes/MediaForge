@@ -1374,7 +1374,8 @@ _CREATE_LANGUAGE_GROUPS_TABLE = """\
 CREATE TABLE IF NOT EXISTS language_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    languages TEXT NOT NULL DEFAULT '[]'
+    languages TEXT NOT NULL DEFAULT '[]',
+    delete_replaced INTEGER NOT NULL DEFAULT 1
 );
 """
 
@@ -1384,6 +1385,16 @@ def init_language_groups_db():
     conn = get_db()
     try:
         conn.execute(_CREATE_LANGUAGE_GROUPS_TABLE)
+        # Migration for groups created before the upgrade behaviour became
+        # configurable. Default 1 keeps what those groups already did: replace
+        # the old file instead of leaving both languages on disk.
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(language_groups)").fetchall()
+        }
+        if "delete_replaced" not in columns:
+            conn.execute(
+                "ALTER TABLE language_groups ADD COLUMN delete_replaced INTEGER NOT NULL DEFAULT 1"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -1399,14 +1410,19 @@ def _row_to_language_group(row):
         languages = []
     if not isinstance(languages, list):
         languages = []
-    return {"id": row["id"], "name": row["name"], "languages": languages}
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "languages": languages,
+        "delete_replaced": bool(row["delete_replaced"]),
+    }
 
 
 def get_language_groups():
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, name, languages FROM language_groups ORDER BY id"
+            "SELECT id, name, languages, delete_replaced FROM language_groups ORDER BY id"
         ).fetchall()
         return [_row_to_language_group(r) for r in rows]
     finally:
@@ -1417,7 +1433,7 @@ def get_language_group(group_id):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT id, name, languages FROM language_groups WHERE id = ?",
+            "SELECT id, name, languages, delete_replaced FROM language_groups WHERE id = ?",
             (group_id,),
         ).fetchone()
         return _row_to_language_group(row) if row else None
@@ -1425,12 +1441,12 @@ def get_language_group(group_id):
         conn.close()
 
 
-def add_language_group(name, languages_json):
+def add_language_group(name, languages_json, delete_replaced=True):
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO language_groups (name, languages) VALUES (?, ?)",
-            (name, languages_json),
+            "INSERT INTO language_groups (name, languages, delete_replaced) VALUES (?, ?, ?)",
+            (name, languages_json, 1 if delete_replaced else 0),
         )
         conn.commit()
         return cur.lastrowid
@@ -1438,7 +1454,7 @@ def add_language_group(name, languages_json):
         conn.close()
 
 
-def update_language_group(group_id, name=None, languages_json=None):
+def update_language_group(group_id, name=None, languages_json=None, delete_replaced=None):
     fields = []
     values = []
     if name is not None:
@@ -1447,6 +1463,9 @@ def update_language_group(group_id, name=None, languages_json=None):
     if languages_json is not None:
         fields.append("languages = ?")
         values.append(languages_json)
+    if delete_replaced is not None:
+        fields.append("delete_replaced = ?")
+        values.append(1 if delete_replaced else 0)
     if not fields:
         return
 

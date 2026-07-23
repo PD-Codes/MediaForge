@@ -132,6 +132,22 @@ def find_site_candidates(title: str) -> list:
     return candidates[:12]
 
 
+def _language_group_error(language):
+    """Reason a language value can't be used, or None if it's fine.
+
+    Only group references can fail here: they need per-language folders to work
+    at all (see language_groups.lang_separation_enabled) and the group itself
+    has to still exist.
+    """
+    if not is_group_ref(language):
+        return None
+    if not lang_separation_enabled():
+        return "Sprachgruppen benötigen die Einstellung 'Sprachen in Ordner trennen'."
+    if not resolve_chain(language):
+        return "Diese Sprachgruppe existiert nicht mehr."
+    return None
+
+
 def register_autosync_routes(app):
     """Register all AutoSync job management routes (CRUD, triggering, batch
     operations, import/export) on the given Flask app."""

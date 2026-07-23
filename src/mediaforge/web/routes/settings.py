@@ -1209,7 +1209,10 @@ def register_settings_routes(app):
         # empty one would resolve to "no language at all" in both workers.
         if len(json.loads(languages_json)) < 2:
             return jsonify({"error": "at least two languages are required"}), 400
-        group_id = add_language_group(name, languages_json)
+        # Default on: a group that upgrades an episode replaces the old copy.
+        # That is what groups did before the switch existed.
+        delete_replaced = bool(data.get("delete_replaced", True))
+        group_id = add_language_group(name, languages_json, delete_replaced=delete_replaced)
         return jsonify({"ok": True, "id": group_id})
 
     @app.route("/api/language-groups/<int:group_id>", methods=["PUT"])
@@ -1232,6 +1235,9 @@ def register_settings_routes(app):
             group_id,
             name=name.strip() if isinstance(name, str) else None,
             languages_json=languages_json,
+            delete_replaced=(
+                bool(data["delete_replaced"]) if "delete_replaced" in data else None
+            ),
         )
         return jsonify({"ok": True})
 

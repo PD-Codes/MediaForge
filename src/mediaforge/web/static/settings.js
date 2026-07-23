@@ -1547,7 +1547,7 @@ function renderLanguageGroups() {
   languageGroupsBody.innerHTML = "";
   if (!languageGroupsCache.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="3" style="color:#6b7280;text-align:center">' +
+    tr.innerHTML = '<td colspan="4" style="color:#6b7280;text-align:center">' +
       esc(t("Keine Sprachgruppen", "No language groups")) + "</td>";
     languageGroupsBody.appendChild(tr);
     return;
@@ -1559,6 +1559,9 @@ function renderLanguageGroups() {
       tr.innerHTML =
         '<td><input type="text" id="editLangGroupName" value="' + esc(g.name) + '"></td>' +
         '<td><div class="lang-group-editor" id="editLangGroupEditor"></div></td>' +
+        '<td><label class="path-site-chip"><input type="checkbox" id="editLangGroupDelete"' +
+          (g.delete_replaced ? " checked" : "") + "> " +
+          esc(t("Alte Datei löschen", "Delete old file")) + "</label></td>" +
         "<td>" +
           '<button onclick="saveLanguageGroup(' + g.id + ')">' + esc(t("Speichern", "Save")) + "</button> " +
           '<button class="btn btn-ghost" onclick="cancelLanguageGroupEdit()">' + esc(t("Abbrechen", "Cancel")) + "</button>" +
@@ -1570,6 +1573,9 @@ function renderLanguageGroups() {
     const order = (g.languages || []).map(function (lang, i) {
       return (i ? '<span class="lang-group-arrow">→</span>' : "") + "<span>" + esc(lang) + "</span>";
     }).join(" ");
+    const upgradeCell = g.delete_replaced
+      ? '<span class="lang-group-flag lang-group-flag-on">' + esc(t("Ja", "Yes")) + "</span>"
+      : '<span class="lang-group-flag">' + esc(t("Nein — beide behalten", "No — keep both")) + "</span>";
     const actions = canEdit
       ? '<button class="btn btn-ghost" onclick="startLanguageGroupEdit(' + g.id + ')">' + esc(t("Bearbeiten", "Edit")) + "</button> " +
         '<button class="btn-del" onclick="deleteLanguageGroup(' + g.id + ')">' + esc(t("Löschen", "Delete")) + "</button>"
@@ -1577,6 +1583,7 @@ function renderLanguageGroups() {
     tr.innerHTML =
       "<td>" + esc(g.name) + "</td>" +
       '<td><div class="lang-group-order">' + order + "</div></td>" +
+      "<td>" + upgradeCell + "</td>" +
       "<td>" + actions + "</td>";
     languageGroupsBody.appendChild(tr);
   });
@@ -1604,15 +1611,21 @@ async function addLanguageGroup() {
     showToast(t("Mindestens zwei Sprachen auswählen", "Pick at least two languages"));
     return;
   }
+  const deleteEl = document.getElementById("newLangGroupDelete");
   try {
     const resp = await fetch("/api/language-groups", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name, languages: newLangGroupChain }),
+      body: JSON.stringify({
+        name: name,
+        languages: newLangGroupChain,
+        delete_replaced: deleteEl ? deleteEl.checked : true,
+      }),
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
     if (nameEl) nameEl.value = "";
+    if (deleteEl) deleteEl.checked = true;
     newLangGroupChain = [];
     showToast(t("Sprachgruppe hinzugefügt", "Language group added"));
     loadLanguageGroups();
@@ -1629,11 +1642,16 @@ async function saveLanguageGroup(id) {
     showToast(t("Mindestens zwei Sprachen auswählen", "Pick at least two languages"));
     return;
   }
+  const deleteEl = document.getElementById("editLangGroupDelete");
   try {
     const resp = await fetch("/api/language-groups/" + id, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name, languages: editingLangGroupChain }),
+      body: JSON.stringify({
+        name: name,
+        languages: editingLangGroupChain,
+        delete_replaced: deleteEl ? deleteEl.checked : true,
+      }),
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }

@@ -468,8 +468,17 @@ msgstr "Sprach-Fallback-Gruppen"
 msgid "An ordered list of languages that can be selected instead of a single language — in the download dialog and in auto-sync. Every episode is fetched in the first language of the list it is actually available in, so a series that switches from dub to sub mid-season no longer needs two jobs."
 msgstr "Eine geordnete Liste von Sprachen, die anstelle einer einzelnen Sprache ausgewählt werden kann — im Download-Dialog und im Auto-Sync. Jede Episode wird in der ersten Sprache der Liste geladen, in der sie tatsächlich verfügbar ist. Eine Serie, die mitten in der Staffel von Dub auf Sub wechselt, braucht so keine zwei Jobs mehr."
 
-msgid "Auto-sync also upgrades: as soon as an episode you already have becomes available in a language further up the list, it is downloaded again in that language and the old file is deleted."
-msgstr "Auto-Sync führt auch Upgrades durch: Sobald eine bereits vorhandene Episode in einer Sprache weiter oben in der Liste verfügbar wird, wird sie in dieser Sprache erneut geladen und die alte Datei gelöscht."
+msgid "Auto-sync also upgrades: as soon as an episode you already have becomes available in a language further up the list, it is downloaded again in that language. Whether the previous file is then deleted or kept alongside it is set per group."
+msgstr "Auto-Sync führt auch Upgrades durch: Sobald eine bereits vorhandene Episode in einer Sprache weiter oben in der Liste verfügbar wird, wird sie in dieser Sprache erneut geladen. Ob die bisherige Datei danach gelöscht oder daneben behalten wird, legst du pro Gruppe fest."
+
+msgid "Delete the old file after an upgrade"
+msgstr "Alte Datei nach einem Upgrade löschen"
+
+msgid "On: the episode exists only in the better language afterwards. Off: both language versions are kept, each in its own folder — your library then holds the episode twice."
+msgstr "An: Die Episode existiert danach nur noch in der besseren Sprache. Aus: Beide Sprachfassungen bleiben erhalten, jede in ihrem eigenen Ordner — die Episode liegt dann doppelt in deiner Bibliothek."
+
+msgid "Delete old file"
+msgstr "Alte Datei löschen"
 
 msgid "Language groups require “Separate languages into folders” above. Only per-language folders make it possible to tell which language an existing episode is in — without them a group can neither skip nor upgrade correctly. You can still define groups here; they become selectable once the setting is on."
 msgstr "Sprachgruppen benötigen „Sprachen in Ordner trennen“ weiter oben. Nur getrennte Sprachordner machen erkennbar, in welcher Sprache eine vorhandene Episode vorliegt — ohne sie kann eine Gruppe weder korrekt überspringen noch upgraden. Gruppen lassen sich hier trotzdem anlegen; auswählbar werden sie, sobald die Einstellung aktiv ist."
