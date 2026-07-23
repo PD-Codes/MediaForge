@@ -260,7 +260,9 @@ async function saveLangSeparation() {
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
-    showToast("Sprachentrennung " + (langSeparationCb && langSeparationCb.checked ? t("aktiviert","activated") : t("deaktiviert","deactivated")));
+        showToast(langSeparationCb && langSeparationCb.checked
+      ? t("Sprachentrennung aktiviert", "Language separation activated")
+      : t("Sprachentrennung deaktiviert", "Language separation deactivated"));
     // Switching it off breaks any job that uses a language fallback group — the
     // backend counts them and says so instead of letting them fail silently.
     if (data.warning) showToast(data.warning);

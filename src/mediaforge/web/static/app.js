@@ -970,7 +970,7 @@ function rebuildLanguageSelect(foundLangs = null) {
   if (langSeparationEnabled) {
     const opt = document.createElement("option");
     opt.value = "All Languages";
-    opt.textContent = "Alle Sprachen";
+        opt.textContent = t("Alle Sprachen", "All Languages");
     languageSelect.appendChild(opt);
   }
 

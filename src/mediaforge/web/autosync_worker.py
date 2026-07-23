@@ -653,11 +653,10 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             #     best one now available                           re-download,
             #     then delete the old copies
             present_by_lang = {lang: _scan_languages([lang]) for lang in lang_chain}
-            downloaded_eps = {}
+            local_pairs = set()
             for _lang_present in present_by_lang.values():
-                for _pair, _paths in _lang_present.items():
-                    downloaded_eps.setdefault(_pair, []).extend(_paths)
-            max_local_found = len(downloaded_eps.keys() & scope_pairs)
+                local_pairs |= _lang_present.keys()
+            max_local_found = len(local_pairs & scope_pairs)
 
             # language -> ([series urls], [movie urls], {url: [old paths]})
             chain_buckets: dict = {}
@@ -678,7 +677,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                 # first — everything ranked below `chosen` is what an upgrade
                 # would replace.
                 have_ranks = [
-                    i for i, lang in enumerate(lang_chain)
+                    rank for rank, lang in enumerate(lang_chain)
                     if (s_num, e_num) in present_by_lang[lang]
                 ]
                 if have_ranks and min(have_ranks) <= chosen_rank:
@@ -716,7 +715,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
 
         for target_lang in target_languages:
             # Build set of downloaded (season, episode) on disk using cached scans
-            downloaded_eps = _scan_languages([target_lang]).keys()
+            downloaded_eps = set(_scan_languages([target_lang]))
 
             in_scope_local = downloaded_eps & scope_pairs
             if len(in_scope_local) > max_local_found:
@@ -817,10 +816,11 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                                 u: replace_map[u] for u in _group if u in replace_map
                             },
                         )
-                logger.info(
-                    "Auto-sync queued %d %s episode(s) for '%s' (%s)",
-                    len(_group), _kind, job["title"], target_lang,
-                )
+                if queue_downloads:
+                    logger.info(
+                        "Auto-sync queued %d %s episode(s) for '%s' (%s)",
+                        len(_group), _kind, job["title"], target_lang,
+                    )
 
         update_fields = {
             "last_check": now_str,
@@ -1052,8 +1052,8 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                         event="on_sync_error",
                         username=job.get("added_by"),
                     )
-                except Exception as e:
-                    logger.warning("[AutoSync] Error notification failed: %s", e)
+                except Exception as notif_exc:
+                    logger.warning("[AutoSync] Error notification failed: %s", notif_exc)
     finally:
         with _syncing_jobs_lock:
             _syncing_jobs.discard(job_id)
