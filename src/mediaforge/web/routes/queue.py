@@ -20,6 +20,10 @@ from ..runtime_state import request_episode_skip
 from ..runtime_state import set_queue_paused
 from .. import runtime_state
 from ..auth import get_current_user
+from ..language_groups import is_group_ref
+from ..language_groups import lang_separation_enabled
+from ..language_groups import language_display
+from ..language_groups import resolve_chain
 from ..queue_worker import _dl_lock
 from flask import jsonify
 from flask import request
@@ -53,6 +57,18 @@ def register_queue_routes(app):
             and os.environ.get("MEDIAFORGE_DISABLE_ENGLISH_SUB", "0") == "1"
         ):
             return jsonify({"error": "English Sub downloads are disabled"}), 403
+
+        # A language fallback group is stored as-is ("group:<id>") and resolved
+        # per episode by the queue worker; all that's checked here is that it
+        # can still work, so a stale dropdown can't queue an item that is
+        # guaranteed to fail later. (resolve_chain also drops English Sub when
+        # that language is globally disabled, hence the empty check covering a
+        # group that consisted only of it.)
+        if is_group_ref(language):
+            if not lang_separation_enabled():
+                return jsonify({"error": "Sprachgruppen benötigen die Einstellung 'Sprachen in Ordner trennen'."}), 400
+            if not resolve_chain(language):
+                return jsonify({"error": "Diese Sprachgruppe existiert nicht mehr."}), 400
 
         username = None
         if runtime_state.AUTH_ENABLED:
@@ -97,6 +113,10 @@ def register_queue_routes(app):
 
         items = get_queue()
         ffmpeg_pct = get_ffmpeg_progress()
+        # Items using a fallback group store the internal "group:<id>"; the
+        # queue rows show the group's name instead.
+        for _it in items:
+            _it["language_label"] = language_display(_it.get("language"))
 
         return jsonify({
             "items": items,

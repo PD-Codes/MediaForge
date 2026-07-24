@@ -706,6 +706,44 @@
     </div>
 
     <div class="settings-section">
+      <h2>{{ _('Language Fallback Groups') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('An ordered list of languages that can be selected instead of a single language — in the download dialog and in auto-sync. Every episode is fetched in the first language of the list it is actually available in, so a series that switches from dub to sub mid-season no longer needs two jobs.') }}
+        {{ _('Auto-sync also upgrades: as soon as an episode you already have becomes available in a language further up the list, it is downloaded again in that language. Whether the previous file is then deleted or kept alongside it is set per group.') }}
+      </div>
+      <div class="lang-group-notice" id="langGroupsDisabledNotice" style="display:none;">
+        {{ _('Language groups require “Separate languages into folders” above. Only per-language folders make it possible to tell which language an existing episode is in — without them a group can neither skip nor upgrade correctly. You can still define groups here; they become selectable once the setting is on.') }}
+      </div>
+
+      <h3 class="settings-subtitle">{{ _('Add Group') }}</h3>
+      <div class="add-user-row" style="margin-bottom:12px">
+        <input type="text" id="newLangGroupName" placeholder="{{ _('Name (e.g. German first)') }}" />
+        <button onclick="addLanguageGroup()">{{ _('Add') }}</button>
+      </div>
+      <div class="lang-group-editor" id="newLangGroupEditor"></div>
+      <label class="settings-checkbox-row" for="newLangGroupDelete" style="margin-top:10px;">
+        <input type="checkbox" class="chb-main" id="newLangGroupDelete" checked />
+        <span>{{ _('Delete the old file after an upgrade') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('On: the episode exists only in the better language afterwards. Off: both language versions are kept, each in its own folder — your library then holds the episode twice.') }}</div>
+
+      <div class="user-table-wrapper" style="margin-top:18px;">
+        <table class="user-table" id="languageGroupsTable">
+          <thead>
+            <tr>
+              <th>{{ _('Name') }}</th>
+              <th>{{ _('Fallback order') }}</th>
+              <th>{{ _('Delete old file') }}</th>
+              <th>{{ _('Actions') }}</th>
+            </tr>
+          </thead>
+          <tbody id="languageGroupsBody"></tbody>
+        </table>
+      </div>
+      <div class="settings-hint">{{ _('A group needs at least two languages. Groups still used by a sync job or a waiting download cannot be deleted.') }}</div>
+    </div>
+
+    <div class="settings-section">
       <h2>{{ _('Bandwidth & Schedule') }}</h2>
 
       <h3 class="settings-subtitle">{{ _('Bandwidth Limit') }}</h3>

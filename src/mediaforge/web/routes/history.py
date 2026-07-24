@@ -10,6 +10,7 @@ from ..db import delete_download_history_entries
 from ..db import delete_download_history_entry
 from ..db import get_download_history
 from ..db import get_download_history_entry
+from ..language_groups import language_display
 from ..queue_worker import _ensure_queue_worker
 from flask import jsonify
 from flask import render_template
@@ -66,6 +67,10 @@ def register_history_routes(app):
             search=search, status=status, source=source, since=since,
             limit=limit, offset=offset,
         )
+        # Entries whose episode never got a resolved language (a cancelled
+        # remainder, say) still hold the "group:<id>" reference the retry needs.
+        for entry in entries:
+            entry["language_label"] = language_display(entry.get("language"))
         return jsonify({"entries": entries, "total": total, "limit": limit, "offset": offset})
     @app.route("/api/history/<int:entry_id>/retry", methods=["POST"])
     def api_history_retry(entry_id):

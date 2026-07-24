@@ -8,10 +8,18 @@ from .db import add_download_history
 logger = get_logger(__name__)
 
 
-def _record_download_history(item, ep_url, start_time, ep_path, size_bytes, status, error=None):
+def _record_download_history(item, ep_url, start_time, ep_path, size_bytes, status, error=None, language=None):
     """Persist a single episode download to the history table. Best-effort
     (exceptions are logged and swallowed so a history-write failure never
     breaks the download itself).
+
+    `language` overrides the item's language for this one episode — items using
+    a fallback group resolve a real language per episode, and the history is
+    about what was actually downloaded. Without it the item's own value is
+    stored, which for a group is its "group:<id>" reference: retrying such an
+    entry has to go through the same per-episode resolution again, so the
+    reference is what must survive, not a display name (routes/history.py adds
+    that for the UI).
 
     Used by: queue_worker.py, called once per episode after a download
     attempt finishes (success, failure, or skip).
@@ -41,7 +49,7 @@ def _record_download_history(item, ep_url, start_time, ep_path, size_bytes, stat
             episode_url=ep_url,
             season=season,
             episode=episode,
-            language=item.get("language"),
+            language=language or item.get("language"),
             provider=item.get("provider"),
             source=item.get("source") or "manual",
             username=item.get("username"),

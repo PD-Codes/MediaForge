@@ -17,6 +17,10 @@ from ..db import get_autosync_jobs
 from ..db import get_setting
 from ..db import remove_autosync_job
 from ..db import update_autosync_job
+from ..language_groups import is_group_ref
+from ..language_groups import lang_separation_enabled
+from ..language_groups import language_display
+from ..language_groups import resolve_chain
 from ..queue_worker import _hanime_enabled
 from ..queue_worker import _is_job_adaptive_paused
 from ..runtime_state import _SERIES_LINK_PATTERN
@@ -128,6 +132,22 @@ def find_site_candidates(title: str) -> list:
     return candidates[:12]
 
 
+def _language_group_error(language):
+    """Reason a language value can't be used, or None if it's fine.
+
+    Only group references can fail here: they need per-language folders to work
+    at all (see language_groups.lang_separation_enabled) and the group itself
+    has to still exist.
+    """
+    if not is_group_ref(language):
+        return None
+    if not lang_separation_enabled():
+        return "Sprachgruppen benötigen die Einstellung 'Sprachen in Ordner trennen'."
+    if not resolve_chain(language):
+        return "Diese Sprachgruppe existiert nicht mehr."
+    return None
+
+
 def register_autosync_routes(app):
     """Register all AutoSync job management routes (CRUD, triggering, batch
     operations, import/export) on the given Flask app."""
@@ -167,6 +187,9 @@ def register_autosync_routes(app):
 
         if not title or not series_url:
             return jsonify({"error": "title and series_url are required"}), 400
+        _lang_err = _language_group_error(language)
+        if _lang_err:
+            return jsonify({"error": _lang_err}), 400
 
         existing = find_autosync_by_url(series_url)
         if existing:
@@ -405,6 +428,13 @@ def register_autosync_routes(app):
             if find_autosync_by_url(series_url):
                 skipped += 1
                 continue
+            _lang_err = _language_group_error(language)
+            if _lang_err:
+                # Exported from an instance where this group works; here it
+                # doesn't (missing, or language separation is off). Importing it
+                # would create a job that errors on every run.
+                errors.append(f"{title}: {_lang_err} — übersprungen")
+                continue
             try:
                 job_id = add_autosync_job(
                     title=title,
@@ -459,4 +489,4 @@ def register_autosync_routes(app):
             elif action == "remove_group":
                 update_autosync_job(job_id, group_name=None)
             updated += 1
-        return jsonify({"ok": True, "updated": updated})
+        return jsonify({"ok": True, "updated": updated})

@@ -277,7 +277,7 @@
           row(t("Größe", "Size"), e.size_mb != null ? fmtSize(e.size_mb) : null) +
           row(t("Ø Geschwindigkeit", "Avg. speed"), e.avg_speed_mbps != null ? fmtSpeed(e.avg_speed_mbps) : null) +
           row("Provider", e.provider) +
-          row(t("Sprache", "Language"), e.language) +
+          row(t("Sprache", "Language"), e.language_label || e.language) +
           row(t("Quelle", "Source"), srcLabels[e.source] || e.source) +
           row(t("Hinzugefügt von", "Added by"), e.username) +
           row(t("Zielpfad", "Target path"), e.target_path, true) +

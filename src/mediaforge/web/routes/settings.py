@@ -11,12 +11,22 @@ from ...config import LANG_LABELS
 from ..autosync_worker import _normalize_sync_times
 from ..autosync_worker import _parse_sync_days
 from ..db import add_custom_path
+from ..db import add_language_group
 from ..db import clear_tmdb_cache
+from ..db import count_language_group_users
 from ..db import get_custom_paths
+from ..db import get_language_groups
 from ..db import get_setting
 from ..db import remove_custom_path
+from ..db import remove_language_group
 from ..db import set_setting
 from ..db import update_custom_path
+from ..db import update_language_group
+from ..language_groups import SELECTABLE_LANGUAGES
+from ..language_groups import group_languages_json
+from ..language_groups import is_group_ref
+from ..language_groups import lang_separation_enabled
+from ..language_groups import resolve_chain
 from ..dns_patch import _DNS_PRESETS
 from ..dns_patch import _apply_dns_patch
 from .. import dns_patch
@@ -32,6 +42,7 @@ from ..uptime_monitor import _probe_site
 from flask import jsonify
 from flask import render_template
 from flask import request
+import json
 import os
 import secrets
 import threading
@@ -40,6 +51,21 @@ from ...logger import get_logger
 
 
 logger = get_logger(__name__)
+
+
+def _language_group_error(language):
+    """Reason a language value can't be used, or None if it's fine.
+
+    Mirrors routes/autosync.py's check: a group needs per-language folders (see
+    language_groups.lang_separation_enabled) and has to still exist.
+    """
+    if not is_group_ref(language):
+        return None
+    if not lang_separation_enabled():
+        return "Sprachgruppen benötigen die Einstellung 'Sprachen in Ordner trennen'."
+    if not resolve_chain(language):
+        return f"Unknown language group: {language}"
+    return None
 
 
 def _normalize_default_sites(value):
@@ -139,6 +165,23 @@ def register_settings_routes(app):
         media_stats_enabled  = get_setting("media_stats_enabled")  or os.environ.get("MEDIAFORGE_MEDIA_STATS_ENABLED", "0")
         web_console          = get_setting("web_console")          or os.environ.get("MEDIAFORGE_WEB_CONSOLE", "0")
         
+        # A default may point at a group that has since been deleted (deletion
+        # is only blocked while jobs/queue items use it), or language separation
+        # may have been switched off, which disables groups entirely. Either way
+        # hand the frontend a language it can actually preselect rather than a
+        # value no dropdown can show. (Turning the setting off in the UI also
+        # writes a real language back, same as it already does for "All
+        # Languages" — this only covers the paths that don't.)
+        language_groups = get_language_groups()
+        _usable_groups = (
+            {f"group:{g['id']}" for g in language_groups}
+            if lang_separation == "1" else set()
+        )
+        if is_group_ref(sync_language) and sync_language not in _usable_groups:
+            sync_language = "German Dub"
+        if is_group_ref(download_language) and download_language not in _usable_groups:
+            download_language = "German Dub"
+
         tray_mode            = get_setting("tray_mode", "0")
         autostart_enabled    = get_setting("autostart_enabled", "0")
         open_browser_on_startup = get_setting("open_browser_on_startup", "1")
@@ -156,6 +199,10 @@ def register_settings_routes(app):
                 "sync_days":                 sync_days,
                 "sync_times":                sync_times,
                 "sync_language":              sync_language,
+                # Every page with a language dropdown reads /api/settings
+                # already, so the groups ride along instead of costing each of
+                # them a second request (app.js, autosync.js, settings.js).
+                "language_groups":           language_groups,
                 "sync_provider":              sync_provider,
                 "sync_path_unavailable_action": sync_path_unavailable_action,
                 "sync_error_retries":         sync_error_retries,
@@ -682,8 +729,20 @@ def register_settings_routes(app):
             val = str(data["download_path"]).strip()
             set_setting("download_path", val)
             os.environ["MEDIAFORGE_DOWNLOAD_PATH"] = val
+        # Set below when language separation is switched off while fallback
+        # groups are still in use — those jobs stop working, and silently
+        # letting them fail on the next run would be the worse answer.
+        _lang_sep_warning = None
         if "lang_separation" in data:
             val = "1" if data["lang_separation"] else "0"
+            if val == "0":
+                _in_use = count_language_group_users()
+                if _in_use:
+                    _lang_sep_warning = (
+                        f"{_in_use} Auto-Sync-Job(s)/Download(s) verwenden eine Sprachgruppe. "
+                        "Ohne Sprachtrennung funktionieren Sprachgruppen nicht — "
+                        "diese Einträge schlagen beim nächsten Lauf fehl."
+                    )
             set_setting("lang_separation", val)
             os.environ["MEDIAFORGE_LANG_SEPARATION"] = val
         if "disable_english_sub" in data:
@@ -725,8 +784,19 @@ def register_settings_routes(app):
             os.environ["MEDIAFORGE_SYNC_TIMES"] = times_str
         if "sync_language" in data:
             lang = str(data["sync_language"])
-            valid_langs = set(LANG_LABELS.values()) | {"All Languages"}
-            if lang not in valid_langs:
+            valid_langs = (
+                set(LANG_LABELS.values())
+                | set(SELECTABLE_LANGUAGES)
+                | {"All Languages"}
+            )
+            if is_group_ref(lang):
+                # A group is only a valid default while it still exists and can
+                # actually run — otherwise new sync jobs inherit a setting that
+                # fails on their first run.
+                _err = _language_group_error(lang)
+                if _err:
+                    return jsonify({"error": _err}), 400
+            elif lang not in valid_langs:
                 return jsonify({"error": f"Invalid sync_language: {lang}"}), 400
             set_setting("sync_language", lang)
             os.environ["MEDIAFORGE_SYNC_LANGUAGE"] = lang
@@ -793,8 +863,18 @@ def register_settings_routes(app):
             os.environ["MEDIAFORGE_HISTORY_RETENTION_DAYS"] = str(hrd)
         if "download_language" in data:
             val = str(data["download_language"]).strip()
-            set_setting("download_language", val)
-            os.environ["MEDIAFORGE_LANGUAGE"] = val
+            if is_group_ref(val):
+                _err = _language_group_error(val)
+                if _err:
+                    return jsonify({"error": _err}), 400
+                # This is only the download dialog's preselection. It must not
+                # reach MEDIAFORGE_LANGUAGE, which episode models use as their
+                # own default and which knows nothing about groups (see
+                # settings_migration._sync_db_settings_to_env).
+                set_setting("download_language", val)
+            else:
+                set_setting("download_language", val)
+                os.environ["MEDIAFORGE_LANGUAGE"] = val
         if "download_provider" in data:
             val = str(data["download_provider"]).strip()
             set_setting("download_provider", val)
@@ -1031,6 +1111,8 @@ def register_settings_routes(app):
         if _mirrors_changed:
             _mirrors.invalidate_cache()  # re-read the lists + retry the primary host
 
+        if _lang_sep_warning:
+            return jsonify({"ok": True, "warning": _lang_sep_warning})
         return jsonify({"ok": True})
     @app.route("/api/custom-paths")
     def api_custom_paths():
@@ -1096,6 +1178,82 @@ def register_settings_routes(app):
         if not ok:
             return jsonify({"error": err}), 409
         return jsonify({"ok": True})
+    # ===== Language fallback groups (Downloads tab) =====
+
+    @app.route("/api/language-groups")
+    def api_language_groups():
+        """Serve GET /api/language-groups: list the configured language
+        fallback groups plus the languages a group may be built from. Called
+        from static/settings.js's `loadLanguageGroups()`; the group list is
+        also embedded in /api/settings so the download and auto-sync pages
+        don't need a second request just to fill a dropdown."""
+        return jsonify({
+            "groups": get_language_groups(),
+            "languages": SELECTABLE_LANGUAGES,
+        })
+
+    @app.route("/api/language-groups", methods=["POST"])
+    def api_language_groups_add():
+        """Serve POST /api/language-groups: create a fallback group from a
+        name and an ordered language list. Called from static/settings.js's
+        `addLanguageGroup()`."""
+        _username, is_admin = _get_current_user_info()
+        if not is_admin:
+            return jsonify({"error": "admin access required"}), 403
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        languages_json = group_languages_json(data.get("languages"))
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        # A one-language group is pointless (it can never fall back) and an
+        # empty one would resolve to "no language at all" in both workers.
+        if len(json.loads(languages_json)) < 2:
+            return jsonify({"error": "at least two languages are required"}), 400
+        # Default on: a group that upgrades an episode replaces the old copy.
+        # That is what groups did before the switch existed.
+        delete_replaced = bool(data.get("delete_replaced", True))
+        group_id = add_language_group(name, languages_json, delete_replaced=delete_replaced)
+        return jsonify({"ok": True, "id": group_id})
+
+    @app.route("/api/language-groups/<int:group_id>", methods=["PUT"])
+    def api_language_groups_update(group_id):
+        """Serve PUT /api/language-groups/<id>: rename a group or replace its
+        language chain. Called from static/settings.js's `saveLanguageGroup()`."""
+        _username, is_admin = _get_current_user_info()
+        if not is_admin:
+            return jsonify({"error": "admin access required"}), 403
+        data = request.get_json(silent=True) or {}
+        name = data.get("name")
+        languages_json = None
+        if "languages" in data:
+            languages_json = group_languages_json(data.get("languages"))
+            if len(json.loads(languages_json)) < 2:
+                return jsonify({"error": "at least two languages are required"}), 400
+        if isinstance(name, str) and not name.strip():
+            return jsonify({"error": "name is required"}), 400
+        update_language_group(
+            group_id,
+            name=name.strip() if isinstance(name, str) else None,
+            languages_json=languages_json,
+            delete_replaced=(
+                bool(data["delete_replaced"]) if "delete_replaced" in data else None
+            ),
+        )
+        return jsonify({"ok": True})
+
+    @app.route("/api/language-groups/<int:group_id>", methods=["DELETE"])
+    def api_language_groups_delete(group_id):
+        """Serve DELETE /api/language-groups/<id>: remove a group unless a
+        sync job or a waiting download still references it. Called from
+        static/settings.js's `deleteLanguageGroup()`."""
+        _username, is_admin = _get_current_user_info()
+        if not is_admin:
+            return jsonify({"error": "admin access required"}), 403
+        ok, err = remove_language_group(group_id)
+        if not ok:
+            return jsonify({"error": err}), 409
+        return jsonify({"ok": True})
+
     @app.route("/api/settings/api-key", methods=["GET"])
     def api_settings_api_key_get():
         """Serve GET /api/settings/api-key: return the current external API

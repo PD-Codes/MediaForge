@@ -56,6 +56,8 @@ BACKUP_CATEGORIES: dict = {
                        "tables": ["watch_progress"]},
     "custom_paths":   {"kind": "tables", "default": True,
                        "tables": ["custom_paths"]},
+    "language_groups": {"kind": "tables", "default": True,
+                        "tables": ["language_groups"]},
     "users":          {"kind": "tables", "default": True,
                        "tables": ["users", "user_notification_prefs"]},
     "queues":         {"kind": "tables", "default": False,

@@ -149,9 +149,18 @@ def _sync_db_settings_to_env():
         "web_sso":               "MEDIAFORGE_WEB_SSO",
         "web_force_sso":         "MEDIAFORGE_WEB_FORCE_SSO",
     }
+    from .language_groups import is_group_ref
+
     for db_key, env_key in mapping.items():
         val = get_setting(db_key)
         if val is not None and val != "":
+            # MEDIAFORGE_LANGUAGE is the language an episode model falls back to
+            # when nothing was passed in (CLI runs, mostly). A language fallback
+            # group is a web-only concept resolved per episode by the workers, so
+            # its "group:<id>" reference must never leak into that default — the
+            # UI default stays in the DB and the env keeps the last real label.
+            if db_key == "download_language" and is_group_ref(val):
+                continue
             os.environ[env_key] = val
 
     # Ensure all movie subfolder environment variables stay in sync
