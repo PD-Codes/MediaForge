@@ -186,6 +186,21 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             for t in _themes.installed_themes() if t["valid"]
         ]
 
+    # The current account's saved appearance (theme pack, dark/light, accent).
+    # Rendered into base.html's <head> so the very first paint already uses
+    # what the user picked -- on any browser or device, not just the one whose
+    # localStorage happens to hold it. Values are whitelisted and validated in
+    # db.get_user_ui_prefs(), so a template can use them without escaping
+    # worries. In no-auth mode session user_id is 0 (the pseudo-user), which
+    # makes the same storage act as an instance-wide preference.
+    def _resolve_user_ui_prefs():
+        from flask import session as _sess
+        from .db import get_user_ui_prefs as _get_prefs
+        try:
+            return _get_prefs(_sess.get("user_id"))
+        except Exception:
+            return {}
+
     if auth_enabled:
         from .auth import (
             auth_bp,
@@ -327,6 +342,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 # override script and the Design-tab picker are built from.
                 "active_theme_pack": _resolve_active_theme_pack(),
                 "installed_theme_packs": _resolve_theme_pack_list(),
+                # Per-account appearance (theme pack / dark-light / accent),
+                # so the look follows the user instead of the browser.
+                "user_ui_prefs": _resolve_user_ui_prefs(),
                 # Sidebar entries per category (see web/thirdparties/registry.py's
                 # section= param and base.html's per-category loops).
                 "discover_menu_items": resolve_menu_items("discover"),
@@ -407,6 +425,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 # override script and the Design-tab picker are built from.
                 "active_theme_pack": _resolve_active_theme_pack(),
                 "installed_theme_packs": _resolve_theme_pack_list(),
+                # Per-account appearance (theme pack / dark-light / accent),
+                # so the look follows the user instead of the browser.
+                "user_ui_prefs": _resolve_user_ui_prefs(),
                 "discover_menu_items": resolve_menu_items("discover"),
                 "management_menu_items": resolve_menu_items("management"),
                 "syncplay_menu_items": resolve_menu_items("syncplay"),

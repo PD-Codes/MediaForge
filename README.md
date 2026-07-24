@@ -52,11 +52,12 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **AutoSync** — keep series up to date automatically on an **interval or weekly schedule**, with per-job **season/episode filters** and a separate path for movies/specials
 - **Download queue & history** — a real-time queue plus a searchable, filterable **history** (failed/cancelled/skipped, retry, bulk delete, export, auto-retention)
 - **Media library, favourites & statistics** built in
+- **Advanced search** — TMDB Discover with genres (include/exclude), rating & vote-count thresholds, year and runtime ranges, keywords, original language, series status, networks and streaming providers, grouped in a floating filter menu with quick presets
 - **CineInfo (TMDB)** metadata, a **Calendar** of upcoming episodes, plus **Jellyfin/Plex** and **Jellyseerr/Overseerr** integration
 - **Notifications** via Web Push, Telegram, Pushover, Discord or WhatsApp
 - **Encoding** (Stream Copy / H.264 / H.265, with NVENC, VAAPI, VideoToolbox) and **Anime4K** upscaling
 - **Full & Selective Backup** — export/import settings and user data as a password-protected file to back up or migrate a MediaForge install (admin only)
-- **Modules & Theme Packs** — extend MediaForge with store-installable modules, and reskin the whole UI (fonts, animations, checkboxes, inputs, calendar, images) with CSS-only theme packs from the same store
+- **Modules & Theme Packs** — extend MediaForge with store-installable modules, and reskin the whole UI (fonts, animations, checkboxes, inputs, calendar, images) with CSS-only theme packs from the same store; the theme, dark/light mode and accent colour are saved per account and follow the user to every browser and device
 - **Multi-user auth & OIDC SSO**, a full **REST API**, **Docker**-ready, and a UI in **English & German**
 
 → Full feature tour in the **[Wiki](https://github.com/PD-Codes/MediaForge/wiki/Web-UI)**.

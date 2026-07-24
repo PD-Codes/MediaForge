@@ -1,194 +1,321 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Advanced Search') }} — MediaForge{% endblock %}
 {% block styles %}
+{# settings_rows.css is NOT loaded globally by base.html — every page that uses
+   .settings-container / .settings-tabs links it itself (settings.html,
+   integrations.html, notifications.html, monitoring.html, ...). It carries the
+   container's max-width, centering and page padding; without it the whole page
+   ran edge to edge at full window width. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='advanced_search.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
 {% endblock %}
 
 {% block content %}
-<div class="adv-search-page-container">
-  <!-- Header -->
-  <div class="page-header adv-header">
-    <div class="adv-header-titles">
-      <h1 class="page-title">{{ _('Advanced Search') }}</h1>
-      <p class="page-subtitle">{{ _('Discover new series and movies with TMDB filters & presets') }}</p>
-    </div>
+{# Advanced Search — reworked July 2026.
 
-    <!-- Quick Presets Bar -->
-    <div class="adv-presets-bar" id="advPresetsBar">
-      <span class="adv-presets-label">{{ _('Quick Presets') }}:</span>
-      <button type="button" class="adv-preset-btn" data-preset="anime">{{ _('🔥 Top Anime') }}</button>
-      <button type="button" class="adv-preset-btn" data-preset="popular_tv">{{ _('📺 Popular Series') }}</button>
-      <button type="button" class="adv-preset-btn" data-preset="popular_movies">{{ _('🍿 Popular Movies') }}</button>
-      <button type="button" class="adv-preset-btn" data-preset="new_2026">{{ _('✨ New 2026') }}</button>
-      <button type="button" class="adv-preset-btn" data-preset="action">{{ _('⚡ Action & Thriller') }}</button>
-    </div>
+   Structure follows the Settings / Integrations / Monitoring / Notifications
+   pages: one .has-floating-menu shell with a sticky floating side menu that
+   switches filter groups client-side (advanced_search.js's switchAdvTab), plus
+   the Quick Presets as a second menu section. On mobile the menu becomes the
+   off-canvas drawer base.html injects for every .floating-side-menu — nothing
+   page-specific needed for that.
+
+   Unlike the settings pages the results are NOT inside a .settings-tab-panel:
+   they live in .adv-main below the filter card so they stay visible no matter
+   which filter group is open.
+
+   All behaviour lives in static/advanced_search.js (it used to be ~1100 lines
+   inside the shared app.js, which every page of the app loads). #}
+<div class="settings-container has-floating-menu adv-shell">
+  <div class="page-header">
+    <h1 class="page-title">{{ _('Advanced Search') }}</h1>
+    <p class="page-subtitle">{{ _('Discover new series and movies with TMDB filters & presets') }}</p>
   </div>
 
-  <!-- Filter Container -->
-  <div class="adv-filters-container" id="advFiltersContainer">
-    <!-- Basic Row (Always Visible) -->
-    <div class="adv-filters-basic-row">
-      <!-- Type Filter Segmented Buttons -->
-      <div class="filter-group basic-filter" id="mediaTypeGroup">
-        <div class="filter-buttons" id="mediaTypeFilter">
-          <button class="filter-btn active" data-type="tv">{{ _('Series') }}</button>
-          <button class="filter-btn" data-type="movie">{{ _('Movies') }}</button>
+  <!-- ═══ Floating side menu: filter groups + quick presets ═══ -->
+  <div class="settings-tabs floating-side-menu" id="advFilterMenu">
+    <button type="button" class="settings-tab active" data-tab="basics">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+      {{ _('Basics') }}
+      <span class="adv-menu-count" data-count-for="basics" hidden>0</span>
+    </button>
+    <button type="button" class="settings-tab" data-tab="quality">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      {{ _('Rating & Year') }}
+      <span class="adv-menu-count" data-count-for="quality" hidden>0</span>
+    </button>
+    <button type="button" class="settings-tab" data-tab="streaming">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      {{ _('Streaming') }}
+      <span class="adv-menu-count" data-count-for="streaming" hidden>0</span>
+    </button>
+    <button type="button" class="settings-tab" data-tab="details">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+      {{ _('Details') }}
+      <span class="adv-menu-count" data-count-for="details" hidden>0</span>
+    </button>
+
+    <div class="settings-tab-group-label">{{ _('Quick Presets') }}</div>
+    <button type="button" class="settings-tab adv-preset-tab" data-preset="anime">{{ _('🔥 Top Anime') }}</button>
+    <button type="button" class="settings-tab adv-preset-tab" data-preset="popular_tv">{{ _('📺 Popular Series') }}</button>
+    <button type="button" class="settings-tab adv-preset-tab" data-preset="popular_movies">{{ _('🍿 Popular Movies') }}</button>
+    <button type="button" class="settings-tab adv-preset-tab" data-preset="new_this_year">{{ _('✨ New this year') }}</button>
+    <button type="button" class="settings-tab adv-preset-tab" data-preset="action">{{ _('⚡ Action & Thriller') }}</button>
+    <button type="button" class="settings-tab adv-preset-tab" data-preset="hidden_gems">{{ _('💎 Hidden Gems') }}</button>
+  </div>
+
+  <!-- ═══ Main column: filter card, action bar, results ═══ -->
+  <div class="adv-main">
+
+    <!-- ── Filter card (one panel per menu entry) ── -->
+    <div class="adv-filter-card">
+
+      <!-- Basics -->
+      <div class="adv-panel active" id="advPanel-basics" role="group" aria-label="{{ _('Basics') }}">
+        <div class="adv-grid">
+          <div class="adv-field">
+            <span class="adv-label">{{ _('Media type') }}</span>
+            <div class="mf-segmented" id="mediaTypeFilter">
+              <button type="button" class="mf-segmented-btn active" data-type="tv">{{ _('Series') }}</button>
+              <button type="button" class="mf-segmented-btn" data-type="movie">{{ _('Movies') }}</button>
+            </div>
+          </div>
+
+          <div class="adv-field">
+            <label class="adv-label" for="sortBy">{{ _('Sort by') }}</label>
+            <select id="sortBy" class="mf-token-input" style="cursor:pointer">
+              <option value="popularity.desc">{{ _('Popularity (Descending)') }}</option>
+              <option value="popularity.asc">{{ _('Popularity (Ascending)') }}</option>
+              <option value="vote_average.desc">{{ _('Rating (Descending)') }}</option>
+              <option value="vote_average.asc">{{ _('Rating (Ascending)') }}</option>
+              <option value="vote_count.desc">{{ _('Number of votes (Descending)') }}</option>
+              <option value="primary_release_date.desc">{{ _('Release (Newest first)') }}</option>
+              <option value="primary_release_date.asc">{{ _('Release (Oldest first)') }}</option>
+            </select>
+          </div>
+
+          <div class="adv-field">
+            <span class="adv-label">{{ _('Genres') }}</span>
+            <div class="mf-multiselect" id="genreSelect">
+              <button type="button" class="mf-multiselect-trigger" id="genreSelectTrigger" aria-expanded="false" aria-haspopup="true">
+                <span class="mf-multiselect-label" id="genreSelectLabel">{{ _('All Genres') }}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              <div class="mf-multiselect-dropdown" id="genreSelectDropdown"><!-- injected client-side --></div>
+            </div>
+          </div>
+
+          <div class="adv-field">
+            <span class="adv-label">{{ _('Exclude genres') }}</span>
+            <div class="mf-multiselect" id="genreExcludeSelect">
+              <button type="button" class="mf-multiselect-trigger" id="genreExcludeTrigger" aria-expanded="false" aria-haspopup="true">
+                <span class="mf-multiselect-label" id="genreExcludeLabel">{{ _('Nothing excluded') }}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              <div class="mf-multiselect-dropdown" id="genreExcludeDropdown"><!-- injected client-side --></div>
+            </div>
+            <span class="adv-hint">{{ _('Results must not contain any of these genres.') }}</span>
+          </div>
         </div>
       </div>
 
-      <!-- Genres Multi-Select Dropdown -->
-      <div class="filter-group basic-filter genre-select-group" id="genreSelectGroup">
-        <div class="custom-select" id="genreSelect">
-          <div class="custom-select-trigger" id="genreSelectTrigger">
-            <span id="genreSelectLabel">{{ _('All Genres') }}</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round" style="width:16px;height:16px">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
+      <!-- Rating & Year -->
+      <div class="adv-panel" id="advPanel-quality" role="group" aria-label="{{ _('Rating & Year') }}">
+        <div class="adv-grid">
+          <div class="adv-field">
+            <div class="mf-range-header">
+              <label class="adv-label" for="voteMin">{{ _('Min Rating') }}</label>
+              <span id="voteLabel" class="mf-range-value">0 – 10</span>
+            </div>
+            <div class="mf-range">
+              <input type="range" id="voteMin" min="0" max="10" step="0.5" value="0" />
+            </div>
           </div>
-          <div class="custom-select-dropdown" id="genreSelectDropdown">
-            <!-- Checkboxes injected client-side -->
+
+          <div class="adv-field">
+            <label class="adv-label" for="voteCountMin">{{ _('Min number of votes') }}</label>
+            {# No .mf-token-input here on purpose: number_input.js wraps every
+               <input type="number"> in its own .num-input-wrap stepper pill,
+               which brings its own border/background/sizing. #}
+            <input type="number" id="voteCountMin" min="0" max="100000" step="50" placeholder="0" autocomplete="off" />
+            <span class="adv-hint">{{ _('Filters out titles with barely any ratings — recommended when sorting by rating.') }}</span>
+          </div>
+
+          <div class="adv-field">
+            <span class="adv-label">{{ _('Release year') }}</span>
+            <div class="adv-range-row">
+              <input type="text" id="yearMin" inputmode="numeric" pattern="[0-9]*" placeholder="{{ _('From (e.g. 2000)') }}" maxlength="4" autocomplete="off" />
+              <span class="adv-range-sep">–</span>
+              <input type="text" id="yearMax" inputmode="numeric" pattern="[0-9]*" placeholder="{{ _('To (e.g. 2026)') }}" maxlength="4" autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="adv-field">
+            <span class="adv-label">{{ _('Runtime (minutes)') }}</span>
+            <div class="adv-range-row">
+              <input type="text" id="runtimeMin" inputmode="numeric" pattern="[0-9]*" placeholder="{{ _('From (e.g. 20)') }}" maxlength="4" autocomplete="off" />
+              <span class="adv-range-sep">–</span>
+              <input type="text" id="runtimeMax" inputmode="numeric" pattern="[0-9]*" placeholder="{{ _('To (e.g. 120)') }}" maxlength="4" autocomplete="off" />
+            </div>
+            <span class="adv-hint">{{ _('For series this is the runtime of a single episode.') }}</span>
           </div>
         </div>
       </div>
 
-      <!-- Actions & Toggle -->
-      <div class="filter-actions-inline" id="filterActionsInline">
-        <button class="btn btn-secondary" id="resetFiltersBtn">{{ _('Reset') }}</button>
-        <button class="btn btn-primary adv-search-btn" id="runSearchBtn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" class="adv-search-icon">
+      <!-- Streaming -->
+      <div class="adv-panel" id="advPanel-streaming" role="group" aria-label="{{ _('Streaming') }}">
+        <div class="adv-grid">
+          <div class="adv-field">
+            <label class="adv-label" for="watchRegion">{{ _('Watch Region') }}</label>
+            <select id="watchRegion" class="mf-token-input" style="cursor:pointer">
+              <option value="">{{ _('Any region') }}</option>
+            </select>
+            <span class="adv-hint">{{ _('Required for provider filters') }}</span>
+          </div>
+
+          <div class="adv-field">
+            <label class="adv-label" for="includeProviderInput">{{ _('Include Providers') }}</label>
+            <div class="mf-token-field">
+              <input type="text" id="includeProviderInput" class="mf-token-input"
+                placeholder="{{ _('Search provider (e.g. Netflix)...') }}" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+              <div class="mf-token-suggestions" id="includeProviderAutocomplete" role="listbox"></div>
+            </div>
+            <div class="mf-token-list" id="selectedIncludeProviders"></div>
+          </div>
+
+          <div class="adv-field">
+            <label class="adv-label" for="excludeProviderInput">{{ _('Exclude Providers') }}</label>
+            <div class="mf-token-field">
+              <input type="text" id="excludeProviderInput" class="mf-token-input"
+                placeholder="{{ _('Search provider (e.g. Netflix)...') }}" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+              <div class="mf-token-suggestions" id="excludeProviderAutocomplete" role="listbox"></div>
+            </div>
+            <div class="mf-token-list" id="selectedExcludeProviders"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Details -->
+      <div class="adv-panel" id="advPanel-details" role="group" aria-label="{{ _('Details') }}">
+        <div class="adv-grid">
+          <div class="adv-field">
+            <label class="adv-label" for="keywordInput">{{ _('Keywords') }}</label>
+            <div class="mf-token-field">
+              <input type="text" id="keywordInput" class="mf-token-input" placeholder="{{ _('Search keyword (e.g. anime)...') }}"
+                autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+              <div class="mf-token-suggestions" id="keywordAutocomplete" role="listbox"></div>
+            </div>
+            <div class="mf-token-list" id="selectedKeywords"></div>
+          </div>
+
+          <div class="adv-field">
+            <label class="adv-label" for="originalLanguage">{{ _('Original language') }}</label>
+            <select id="originalLanguage" class="mf-token-input" style="cursor:pointer">
+              <option value="">{{ _('Any language') }}</option>
+            </select>
+          </div>
+
+          <div class="adv-field adv-tv-only">
+            <span class="adv-label">{{ _('Status') }}</span>
+            <div class="mf-multiselect" id="statusSelect">
+              <button type="button" class="mf-multiselect-trigger" id="statusTrigger" aria-expanded="false" aria-haspopup="true">
+                <span class="mf-multiselect-label" id="statusLabel">{{ _('Any status') }}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              {# TMDB with_status codes — 0 Returning, 1 Planned, 2 In Production,
+                 3 Ended, 4 Cancelled, 5 Pilot. Series only: TMDB ignores the
+                 parameter for movies, so the whole field is hidden there. #}
+              <div class="mf-multiselect-dropdown" id="statusDropdown">
+                <label class="mf-multiselect-item"><input type="checkbox" class="chb-main adv-status-checkbox" value="0" /><span>{{ _('Returning Series') }}</span></label>
+                <label class="mf-multiselect-item"><input type="checkbox" class="chb-main adv-status-checkbox" value="3" /><span>{{ _('Ended') }}</span></label>
+                <label class="mf-multiselect-item"><input type="checkbox" class="chb-main adv-status-checkbox" value="4" /><span>{{ _('Canceled') }}</span></label>
+                <label class="mf-multiselect-item"><input type="checkbox" class="chb-main adv-status-checkbox" value="2" /><span>{{ _('In Production') }}</span></label>
+                <label class="mf-multiselect-item"><input type="checkbox" class="chb-main adv-status-checkbox" value="1" /><span>{{ _('Planned') }}</span></label>
+                <label class="mf-multiselect-item"><input type="checkbox" class="chb-main adv-status-checkbox" value="5" /><span>{{ _('Pilot') }}</span></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="adv-field adv-tv-only">
+            <label class="adv-label" for="networkInput">{{ _('TV network') }}</label>
+            <div class="mf-token-field">
+              <input type="text" id="networkInput" class="mf-token-input"
+                placeholder="{{ _('Search network (e.g. HBO)...') }}" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+              <div class="mf-token-suggestions" id="networkAutocomplete" role="listbox"></div>
+            </div>
+            <div class="mf-token-list" id="selectedNetworks"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Action bar: active filter chips + Reset / Search ── -->
+    <div class="adv-actionbar" id="advActionbar">
+      <div class="adv-chips" id="advActiveFilterTags"></div>
+      <div class="adv-actionbar-buttons">
+        <button type="button" class="btn btn-secondary" id="resetFiltersBtn">{{ _('Reset') }}</button>
+        <button type="button" class="btn btn-primary adv-search-btn" id="runSearchBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="adv-search-icon">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
           {{ _('Search') }}
         </button>
-
-        <!-- Toggle Expand Button -->
-        <button class="btn btn-icon toggle-adv-btn" id="advFiltersToggle" title="{{ _('Show advanced filters') }}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" class="adv-filters-chevron">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
       </div>
     </div>
 
-    <!-- Active Filters Summary Chips Bar -->
-    <div class="adv-active-tags-bar" id="advActiveFilterTags" style="display:none;"></div>
+    <!-- ── Results ── -->
+    <div class="adv-results">
+      <div class="adv-results-header">
+        <h2>{{ _('Results') }}</h2>
+        <span class="adv-results-count" id="resultsCount"></span>
+      </div>
 
-    <!-- Collapsible Advanced Filters Panel -->
-    <div class="adv-filters-body" id="advFiltersBody">
-      <div class="adv-filters-grid">
-        <!-- Sortierung -->
-        <div class="adv-filter-col">
-          <label class="filter-title" for="sortBy">{{ _('Sort by') }}</label>
-          <select id="sortBy" class="keyword-input" style="cursor:pointer">
-            <option value="popularity.desc">{{ _('Popularity (Descending)') }}</option>
-            <option value="popularity.asc">{{ _('Popularity (Ascending)') }}</option>
-            <option value="vote_average.desc">{{ _('Rating (Descending)') }}</option>
-            <option value="primary_release_date.desc">{{ _('Release (Newest first)') }}</option>
-            <option value="primary_release_date.asc">{{ _('Release (Oldest first)') }}</option>
-          </select>
-        </div>
-
-        <!-- Keywords -->
-        <div class="adv-filter-col">
-          <label class="filter-title" for="keywordInput">{{ _('Keywords') }}</label>
-          <div class="keyword-search-wrap">
-            <input type="text" id="keywordInput" class="keyword-input" placeholder="{{ _('Search keyword (e.g. anime)...') }}"
-              autocomplete="off" />
-            <div class="keyword-autocomplete" id="keywordAutocomplete" style="display:none"></div>
-          </div>
-          <div class="selected-keywords" id="selectedKeywords"></div>
-        </div>
-
-        <!-- Erscheinungsjahr -->
-        <div class="adv-filter-col">
-          <span class="filter-title">{{ _('Release year') }}</span>
-          <div class="range-inputs">
-            <input type="text" id="yearMin" inputmode="numeric" pattern="[0-9]*" placeholder="{{ _('From (e.g. 2000)') }}" maxlength="4" autocomplete="off" />
-            <span class="range-sep">-</span>
-            <input type="text" id="yearMax" inputmode="numeric" pattern="[0-9]*" placeholder="{{ _('To (e.g. 2026)') }}" maxlength="4" autocomplete="off" />
-          </div>
-        </div>
-
-        <!-- TMDB Bewertung -->
-        <div class="adv-filter-col">
-          <div class="adv-slider-header">
-            <span class="filter-title">{{ _('Min Rating') }}</span>
-            <span id="voteLabel" class="adv-slider-val">0 - 10</span>
-          </div>
-          <div class="range-slider-wrap">
-            <input type="range" id="voteMin" min="0" max="10" step="1" value="0" />
-          </div>
-        </div>
-
-        <!-- Watch Region -->
-        <div class="adv-filter-col">
-          <label class="filter-title" for="watchRegion">{{ _('Watch Region') }}</label>
-          <select id="watchRegion" class="keyword-input" style="cursor:pointer">
-            <option value="">{{ _('Any region') }}</option>
-          </select>
-          <span class="filter-hint">{{ _('Required for provider filters') }}</span>
-        </div>
-
-        <!-- Include Providers -->
-        <div class="adv-filter-col">
-          <label class="filter-title" for="includeProviderInput">{{ _('Include Providers') }}</label>
-          <div class="keyword-search-wrap">
-            <input type="text" id="includeProviderInput" class="keyword-input"
-              placeholder="{{ _('Search provider (e.g. Netflix)...') }}" autocomplete="off" />
-            <div class="keyword-autocomplete" id="includeProviderAutocomplete" style="display:none"></div>
-          </div>
-          <div class="selected-keywords" id="selectedIncludeProviders"></div>
-        </div>
-
-        <!-- Exclude Providers -->
-        <div class="adv-filter-col">
-          <label class="filter-title" for="excludeProviderInput">{{ _('Exclude Providers') }}</label>
-          <div class="keyword-search-wrap">
-            <input type="text" id="excludeProviderInput" class="keyword-input"
-              placeholder="{{ _('Search provider (e.g. Netflix)...') }}" autocomplete="off" />
-            <div class="keyword-autocomplete" id="excludeProviderAutocomplete" style="display:none"></div>
-          </div>
-          <div class="selected-keywords" id="selectedExcludeProviders"></div>
+      <div class="results-grid" id="resultsGrid">
+        <div class="adv-empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:48px;height:48px;margin-bottom:12px;opacity:0.4;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <div>{{ _('Select filters or pick a Quick Preset from the menu to discover series and movies.') }}</div>
         </div>
       </div>
+
+      <div class="mf-pagination adv-pagination" id="advPagination" hidden></div>
     </div>
   </div>
+</div>
 
-  <!-- Results Area -->
-  <div class="adv-results" id="advResults">
-    <div class="results-header">
-      <div class="results-header-left">
-        <h2>{{ _('Results') }}</h2>
-        <span class="results-count" id="resultsCount"></span>
-      </div>
-
-      <div class="pagination" id="advPagination" style="display:none">
-        <button class="btn btn-secondary pagination-btn" id="prevPageBtn" title="{{ _('Back') }}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" style="width:16px;height:16px;">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
-        </button>
-        <span id="pageIndicator" class="page-indicator">{{ _('Page') }} 1</span>
-        <button class="btn btn-secondary pagination-btn" id="nextPageBtn" title="{{ _('Next') }}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" style="width:16px;height:16px;">
-            <polyline points="9 18 15 12 9 6"></polyline>
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Results Grid -->
-    <div class="results-grid" id="resultsGrid">
-      <div class="adv-empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:48px;height:48px;margin-bottom:12px;opacity:0.4;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <div>{{ _('Select filters or click a Quick Preset above to discover series and movies.') }}</div>
+{# Details modal — opened by the "Details" button on a result card. The old
+   page put the description in a CSS :hover overlay, which is unreachable on
+   touch devices and cut the text off; this shows the full TMDB overview.
+   Reuses .adv-search-overlay / .ani-search-close from shared_modals.css so it
+   looks identical to the stream-search modal. #}
+<div class="adv-search-overlay adv-details-overlay" id="advDetailsOverlay" style="display:none;">
+  <div class="adv-details-modal" id="advDetailsModal" role="dialog" aria-modal="true" aria-labelledby="advDetailsTitle">
+    <button type="button" class="ani-search-close" id="advDetailsClose" aria-label="{{ _('Close') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+        stroke-linejoin="round" style="width:16px;height:16px;">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+    <div class="adv-details-body">
+      <div class="adv-details-poster" id="advDetailsPoster"></div>
+      <div class="adv-details-info">
+        <h2 class="adv-details-title" id="advDetailsTitle"></h2>
+        <div class="adv-details-meta" id="advDetailsMeta"></div>
+        <div class="adv-details-genres" id="advDetailsGenres"></div>
+        <h3 class="adv-details-section">{{ _('Description') }}</h3>
+        <p class="adv-details-overview" id="advDetailsOverview"></p>
+        <div class="adv-details-actions">
+          <button type="button" class="btn btn-primary adv-search-btn" id="advDetailsSearchBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" class="adv-search-icon">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            {{ _('Search streams') }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -198,5 +325,8 @@
 {% endblock %}
 
 {% block scripts %}
+{# app.js first: advanced_search.js reuses its shared helpers (openAniSearchModal,
+   addDownloadedBadgeForTmdb, addSyncBadgeForTmdb, loadAutoSyncJobs, ...). #}
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='advanced_search.js') }}"></script>
 {% endblock %}

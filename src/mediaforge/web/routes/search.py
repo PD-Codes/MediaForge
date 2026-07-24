@@ -39,7 +39,9 @@ import json
 import os
 import re
 import threading
+import time
 from ..tmdb_cache import _tmdb_lookup_cached
+from ..tmdb_cache import _tmdb_rl
 from .image_proxy import _poster_proxy
 from ..cineinfo import enrich as _cineinfo_enrich
 from ..cineinfo import QueryContext as _CineInfoCtx
@@ -47,6 +49,190 @@ from ...logger import get_logger
 
 
 logger = get_logger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Advanced Search / TMDB Discover — shared helpers
+#  (rework July 2026: parameter whitelist, error sanitising, response cache)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Reference data (genres, watch regions/providers, languages, networks) changes
+# a few times per year but used to be re-fetched from TMDB on *every* page load
+# of the Advanced Search — the genre dropdown alone cost four upstream calls per
+# visit. Everything is cached process-wide instead; discover result pages get a
+# much shorter TTL because they are live user queries.
+_TMDB_REF_TTL = 6 * 60 * 60        # 6 h  — genres / regions / providers / languages / networks
+_TMDB_DISCOVER_TTL = 5 * 60        # 5 min — discover result pages
+_TMDB_SEASONS_TTL = 6 * 60 * 60    # 6 h  — season counts per TV id
+# Hard caps: a crafted query flood must not grow either cache unbounded.
+# Two separate buckets on purpose — the season counts are one entry per TV id
+# (~20 per result page), so a few minutes of paging would otherwise evict the
+# reference data (rebuilding "networks" alone costs 35 upstream calls).
+_TMDB_CACHE_MAX_ENTRIES = 400
+_TMDB_SEASONS_MAX_ENTRIES = 2000
+
+_tmdb_ref_cache: dict = {}
+_tmdb_seasons_cache: dict = {}
+_tmdb_ref_lock = threading.Lock()
+
+
+def _cache_bucket(key):
+    """Season counts live in their own bucket, everything else shares one."""
+    if key.startswith("seasons:"):
+        return _tmdb_seasons_cache, _TMDB_SEASONS_MAX_ENTRIES
+    return _tmdb_ref_cache, _TMDB_CACHE_MAX_ENTRIES
+
+
+def _ref_cache_get(key):
+    """Return a cached TMDB helper response, or None when absent/expired."""
+    bucket, _limit = _cache_bucket(key)
+    with _tmdb_ref_lock:
+        entry = bucket.get(key)
+        if not entry:
+            return None
+        expires_at, _stored_at, value = entry
+        if expires_at < time.monotonic():
+            bucket.pop(key, None)
+            return None
+        return value
+
+
+def _ref_cache_put(key, value, ttl):
+    """Store a TMDB helper response with a TTL, evicting expired/oldest first.
+
+    Eviction goes by insertion time, not by expiry: one bucket mixes 5-minute
+    discover pages with 6-hour reference data, and evicting the soonest-to-
+    expire entry would drop every discover page the moment the cache fills up
+    — exactly the entries the cache exists for.
+    """
+    bucket, limit = _cache_bucket(key)
+    now = time.monotonic()
+    with _tmdb_ref_lock:
+        if len(bucket) >= limit:
+            for stale in [k for k, (exp, _s, _v) in bucket.items() if exp < now]:
+                bucket.pop(stale, None)
+            while len(bucket) >= limit:
+                oldest = min(bucket, key=lambda k: bucket[k][1])
+                bucket.pop(oldest, None)
+        bucket[key] = (now + ttl, now, value)
+
+
+def clear_tmdb_discover_cache():
+    """Drop every cached TMDB discover/reference response (called on cache clear)."""
+    with _tmdb_ref_lock:
+        _tmdb_ref_cache.clear()
+        _tmdb_seasons_cache.clear()
+
+
+def _safe_tmdb_error(exc):
+    """Map an upstream exception to a (code, message) pair that is safe to return.
+
+    SECURITY: ``requests`` embeds the full request URL in the text of the
+    exceptions raised by ``raise_for_status()`` and by connection errors — and
+    that URL carries ``api_key=<secret>``. The previous implementation returned
+    ``str(e)`` straight to the browser, so a single upstream 401 printed the
+    instance's TMDB API key into the page (and into any browser/proxy log along
+    the way). The detail is logged server-side; the browser only ever sees the
+    short classification below, which the UI translates via its ``code``.
+    """
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status == 401 or status == 403:
+        return "tmdb_unauthorized", "TMDB rejected the API key."
+    if status == 404:
+        return "tmdb_not_found", "TMDB resource not found."
+    if status == 429:
+        return "tmdb_rate_limited", "TMDB rate limit reached, please retry shortly."
+    if status:
+        return "tmdb_http_error", f"TMDB request failed (HTTP {status})."
+    if exc.__class__.__name__ in ("Timeout", "ConnectTimeout", "ReadTimeout"):
+        return "tmdb_timeout", "TMDB request timed out."
+    return "tmdb_error", "TMDB request failed."
+
+
+def _tmdb_error_response(exc, context):
+    """Log ``exc`` with context and build the sanitised JSON error response."""
+    code, message = _safe_tmdb_error(exc)
+    # The exception text carries the request URL — redact the key before it
+    # reaches the log file, which users routinely attach to support requests.
+    detail = re.sub(r"api_key=[^&\s'\"]+", "api_key=<redacted>", str(exc))
+    logger.error("[TMDB] %s failed: %s", context, detail, exc_info=False)
+    return jsonify({"error": message, "code": code}), 502
+
+
+# Every TMDB /discover parameter the Advanced Search is allowed to forward.
+# The old implementation passed **all** query args through verbatim, so any
+# caller could drive the upstream request with parameters the UI never offers
+# (and, by omission, whatever TMDB adds in future). Unknown keys are now
+# dropped silently — an explicit allow-list is the only thing that keeps this
+# proxy from being a general-purpose TMDB relay.
+_DISCOVER_ALLOWED_PARAMS = frozenset({
+    "page", "sort_by", "language",
+    "with_genres", "without_genres",
+    "with_keywords", "without_keywords",
+    "with_original_language",
+    "with_runtime.gte", "with_runtime.lte",
+    "with_status", "with_type",
+    "with_networks", "with_companies", "without_companies",
+    "vote_average.gte", "vote_average.lte",
+    "vote_count.gte", "vote_count.lte",
+    "first_air_date.gte", "first_air_date.lte",
+    "primary_release_date.gte", "primary_release_date.lte",
+    "release_date.gte", "release_date.lte",
+    "air_date.gte", "air_date.lte",
+    "first_air_date_year", "primary_release_year", "year",
+    "watch_region", "with_watch_providers", "without_watch_providers",
+    "with_watch_monetization_types",
+    "include_null_first_air_dates",
+    "screened_theatrically",
+})
+
+# Candidate TMDB network ids offered by the "Network" filter (TV only). TMDB
+# exposes no search endpoint for networks, so the shortlist is curated here and
+# then verified against /network/<id> at runtime (see api_tmdb_networks): the
+# UI label always comes from TMDB and an id that does not resolve is dropped,
+# so a typo here degrades to "one entry missing", never to "filters for the
+# wrong broadcaster". Add ids freely — no other change is needed.
+_TMDB_NETWORK_CANDIDATES = (
+    2, 4, 6, 13, 16, 19, 26, 30, 33, 41, 47, 49, 54, 56, 64, 67, 71, 77, 80, 88,
+    94, 111, 174, 213, 318, 332, 359, 453, 1024, 1112, 2552, 2739, 3186, 3353, 4330,
+)
+
+# TMDB itself refuses discover pages above 500 (its 10 000-result window).
+_DISCOVER_MAX_PAGE = 500
+_DISCOVER_MAX_VALUE_LEN = 200
+
+
+def _sanitise_discover_params(raw_args):
+    """Filter/normalise incoming discover parameters against the allow-list.
+
+    Returns ``(params, page)``. Values are length-capped and stripped of control
+    characters; ``page`` is clamped into TMDB's own 1..500 window so the UI can
+    never ask for a page the upstream API rejects.
+    """
+    params = {}
+    for key in _DISCOVER_ALLOWED_PARAMS:
+        if key not in raw_args:
+            continue
+        value = raw_args.get(key)
+        if value is None:
+            continue
+        value = str(value).strip()
+        if not value or len(value) > _DISCOVER_MAX_VALUE_LEN:
+            continue
+        if any(ch in value for ch in ("\n", "\r", "\t", "\0")):
+            continue
+        params[key] = value
+
+    try:
+        page = int(params.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    page = max(1, min(page, _DISCOVER_MAX_PAGE))
+    params["page"] = str(page)
+
+    # Never let the caller decide this one — the UI has no adult mode.
+    params["include_adult"] = "false"
+    return params, page
 
 
 def _filter_and_dedup_providers(providers_map):
@@ -322,30 +508,45 @@ def register_search_routes(app):
     def api_tmdb_genres():
         """Fetch TV and Movie genres (German + English labels) from TMDB.
 
-        GET /api/tmdb/genres. Called from app.js's loadGenres().
+        GET /api/tmdb/genres. Called from advanced_search.js's loadGenres().
+        Cached for _TMDB_REF_TTL: the four upstream calls below used to run on
+        every single page load of the Advanced Search.
         """
         import requests as _req
         from ..db import get_setting
         api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
         if not api_key:
-            return jsonify({"error": "No TMDB API Key"}), 400
-        
+            return jsonify({"error": "No TMDB API Key", "code": "no_api_key"}), 400
+
+        cached = _ref_cache_get("genres")
+        if cached is not None:
+            return jsonify(cached)
+
         try:
             headers = {"accept": "application/json"}
-            tv_de   = _req.get(f"https://api.themoviedb.org/3/genre/tv/list?language=de&api_key={api_key}",    headers=headers, timeout=10)
-            tv_en   = _req.get(f"https://api.themoviedb.org/3/genre/tv/list?language=en&api_key={api_key}",    headers=headers, timeout=10)
-            mov_de  = _req.get(f"https://api.themoviedb.org/3/genre/movie/list?language=de&api_key={api_key}", headers=headers, timeout=10)
-            mov_en  = _req.get(f"https://api.themoviedb.org/3/genre/movie/list?language=en&api_key={api_key}", headers=headers, timeout=10)
-            for r in (tv_de, tv_en, mov_de, mov_en):
+            responses = {}
+            for name, path, lang in (
+                ("tv_de",  "genre/tv/list",    "de"),
+                ("tv_en",  "genre/tv/list",    "en"),
+                ("mov_de", "genre/movie/list", "de"),
+                ("mov_en", "genre/movie/list", "en"),
+            ):
+                _tmdb_rl.acquire()
+                r = _req.get(
+                    f"https://api.themoviedb.org/3/{path}?language={lang}&api_key={api_key}",
+                    headers=headers, timeout=10,
+                )
                 r.raise_for_status()
+                responses[name] = r.json().get("genres", [])
 
-            return jsonify({
-                "tv":    {"de": tv_de.json().get("genres", []),  "en": tv_en.json().get("genres", [])},
-                "movie": {"de": mov_de.json().get("genres", []), "en": mov_en.json().get("genres", [])},
-            })
+            payload = {
+                "tv":    {"de": responses["tv_de"],  "en": responses["tv_en"]},
+                "movie": {"de": responses["mov_de"], "en": responses["mov_en"]},
+            }
+            _ref_cache_put("genres", payload, _TMDB_REF_TTL)
+            return jsonify(payload)
         except Exception as e:
-            logger.error(f"Error fetching TMDB genres: {e}")
-            return jsonify({"error": str(e)}), 500
+            return _tmdb_error_response(e, "genre list")
     @app.route("/api/tmdb/keywords")
     def api_tmdb_keywords():
         """Autocomplete search over the downloaded keyword_ids.json file."""
@@ -372,93 +573,288 @@ def register_search_routes(app):
             return jsonify({"error": str(e)}), 500
     @app.route("/api/tmdb/watch_regions")
     def api_tmdb_watch_regions():
-        """Fetch the list of available watch-provider regions from TMDB."""
+        """Fetch the list of available watch-provider regions from TMDB (cached)."""
         import requests as _req
         from ..db import get_setting
         api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
         if not api_key:
-            return jsonify({"error": "No TMDB API Key"}), 400
+            return jsonify({"error": "No TMDB API Key", "code": "no_api_key"}), 400
 
         _ui_lang = session.get("ui_language", "de")
         _tmdb_lang = "en-US" if _ui_lang == "en" else "de-DE"
+        cache_key = f"watch_regions:{_tmdb_lang}"
+        cached = _ref_cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
         url = f"https://api.themoviedb.org/3/watch/providers/regions?language={_tmdb_lang}&api_key={api_key}"
         try:
+            _tmdb_rl.acquire()
             resp = _req.get(url, headers={"accept": "application/json"}, timeout=10)
             resp.raise_for_status()
-            return jsonify({"results": resp.json().get("results", [])})
+            payload = {"results": resp.json().get("results", [])}
+            _ref_cache_put(cache_key, payload, _TMDB_REF_TTL)
+            return jsonify(payload)
         except Exception as e:
-            logger.error(f"Error fetching TMDB watch regions: {e}")
-            return jsonify({"error": str(e)}), 500
+            return _tmdb_error_response(e, "watch regions")
     @app.route("/api/tmdb/watch_providers")
     def api_tmdb_watch_providers():
-        """Fetch the list of watch providers for tv/movie from TMDB."""
+        """Fetch the list of watch providers for tv/movie from TMDB (cached)."""
         import requests as _req
         from ..db import get_setting
         api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
         if not api_key:
-            return jsonify({"error": "No TMDB API Key"}), 400
+            return jsonify({"error": "No TMDB API Key", "code": "no_api_key"}), 400
 
         media_type = request.args.get("type", "tv")
         if media_type not in ("tv", "movie"):
             media_type = "tv"
-        watch_region = request.args.get("watch_region", "").strip()
+        # ISO 3166-1 alpha-2 only — anything else is ignored rather than forwarded.
+        watch_region = (request.args.get("watch_region") or "").strip().upper()
+        if not re.fullmatch(r"[A-Z]{2}", watch_region or ""):
+            watch_region = ""
 
         _ui_lang = session.get("ui_language", "de")
         _tmdb_lang = "en-US" if _ui_lang == "en" else "de-DE"
+        cache_key = f"watch_providers:{media_type}:{watch_region}:{_tmdb_lang}"
+        cached = _ref_cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
         url = f"https://api.themoviedb.org/3/watch/providers/{media_type}?language={_tmdb_lang}&api_key={api_key}"
         if watch_region:
             url += f"&watch_region={watch_region}"
         try:
+            _tmdb_rl.acquire()
             resp = _req.get(url, headers={"accept": "application/json"}, timeout=10)
             resp.raise_for_status()
             results = resp.json().get("results", [])
             results.sort(key=lambda p: p.get("display_priority", 9999))
-            return jsonify({"results": results})
+            payload = {"results": results}
+            _ref_cache_put(cache_key, payload, _TMDB_REF_TTL)
+            return jsonify(payload)
         except Exception as e:
-            logger.error(f"Error fetching TMDB watch providers: {e}")
-            return jsonify({"error": str(e)}), 500
-    @app.route("/api/tmdb/discover")
-    def api_tmdb_discover():
-        """Search TMDB discover API with given params."""
+            return _tmdb_error_response(e, "watch providers")
+    @app.route("/api/tmdb/languages")
+    def api_tmdb_languages():
+        """Fetch TMDB's spoken-language list for the "original language" filter.
+
+        GET /api/tmdb/languages -> {"results": [{iso_639_1, name, english_name}]}
+        Static upstream data, cached for _TMDB_REF_TTL. Added with the Advanced
+        Search rework (July 2026).
+        """
         import requests as _req
         from ..db import get_setting
         api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
         if not api_key:
-            return jsonify({"error": "No TMDB API Key"}), 400
-            
-        params = request.args.to_dict()
-        media_type = params.pop("type", "tv")
-        if media_type not in ["tv", "movie"]:
-            media_type = "tv"
-            
-        import urllib.parse
-        args = dict(request.args)
-        args["api_key"] = api_key
-        args.pop("type", None)
-        
-        # Map sorting key for TV shows / movies since TMDB uses different release date keys
-        if "sort_by" in args:
-            sort_val = args["sort_by"]
-            if isinstance(sort_val, list):
-                sort_val = sort_val[0] if sort_val else ""
-            
-            if isinstance(sort_val, str):
-                if media_type == "tv" and sort_val.startswith("primary_release_date"):
-                    args["sort_by"] = sort_val.replace("primary_release_date", "first_air_date")
-                elif media_type == "movie" and sort_val.startswith("first_air_date"):
-                    args["sort_by"] = sort_val.replace("first_air_date", "primary_release_date")
-                    
-        qs = urllib.parse.urlencode(args, doseq=True)
-        url = f"https://api.themoviedb.org/3/discover/{media_type}?{qs}"
-        logger.info(f"Discovering on TMDB: /discover/{media_type} (params redacted)")
+            return jsonify({"error": "No TMDB API Key", "code": "no_api_key"}), 400
+
+        cached = _ref_cache_get("languages")
+        if cached is not None:
+            return jsonify(cached)
+
         try:
+            _tmdb_rl.acquire()
+            resp = _req.get(
+                f"https://api.themoviedb.org/3/configuration/languages?api_key={api_key}",
+                headers={"accept": "application/json"}, timeout=10,
+            )
+            resp.raise_for_status()
+            results = []
+            for entry in resp.json() or []:
+                iso = (entry.get("iso_639_1") or "").strip()
+                if not iso:
+                    continue
+                english = (entry.get("english_name") or "").strip()
+                native = (entry.get("name") or "").strip()
+                results.append({
+                    "iso_639_1": iso,
+                    "english_name": english or iso,
+                    "name": native or english or iso,
+                })
+            results.sort(key=lambda x: x["english_name"].lower())
+            payload = {"results": results}
+            _ref_cache_put("languages", payload, _TMDB_REF_TTL)
+            return jsonify(payload)
+        except Exception as e:
+            return _tmdb_error_response(e, "language list")
+    @app.route("/api/tmdb/networks")
+    def api_tmdb_networks():
+        """Resolve the curated TV-network shortlist for the "network" filter.
+
+        GET /api/tmdb/networks -> {"results": [{id, name}]}
+
+        TMDB has no search endpoint for *networks* (only for companies), so the
+        candidate ids below are curated. To make sure a wrong id can never
+        silently filter for the wrong broadcaster, every candidate is resolved
+        against /network/<id> once per _TMDB_REF_TTL: the label shown in the UI
+        is always the name TMDB returns, and ids that do not resolve are dropped
+        from the list instead of being offered. Extending the shortlist is
+        therefore just a matter of adding an id here.
+        """
+        import concurrent.futures as _cf
+        import requests as _req
+        from ..db import get_setting
+        api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
+        if not api_key:
+            return jsonify({"error": "No TMDB API Key", "code": "no_api_key"}), 400
+
+        cached = _ref_cache_get("networks")
+        if cached is not None:
+            return jsonify(cached)
+
+        def _resolve(network_id):
+            try:
+                _tmdb_rl.acquire()
+                r = _req.get(
+                    f"https://api.themoviedb.org/3/network/{network_id}?api_key={api_key}",
+                    headers={"accept": "application/json"}, timeout=8,
+                )
+                r.raise_for_status()
+                name = (r.json() or {}).get("name") or ""
+                name = name.strip()
+                return {"id": network_id, "name": name} if name else None
+            except Exception:
+                logger.debug("[TMDB] network id %s did not resolve", network_id)
+                return None
+
+        results = []
+        try:
+            with _cf.ThreadPoolExecutor(max_workers=4, thread_name_prefix="tmdb-net") as pool:
+                for entry in pool.map(_resolve, _TMDB_NETWORK_CANDIDATES):
+                    if entry:
+                        results.append(entry)
+        except Exception as e:
+            return _tmdb_error_response(e, "network list")
+
+        results.sort(key=lambda x: x["name"].lower())
+        payload = {"results": results}
+        # Only cache a list that actually resolved — a transient outage should
+        # not pin an empty dropdown in place for six hours.
+        if results:
+            _ref_cache_put("networks", payload, _TMDB_REF_TTL)
+        return jsonify(payload)
+    @app.route("/api/tmdb/tv_seasons", methods=["POST"])
+    def api_tmdb_tv_seasons():
+        """Season counts for up to 40 TMDB TV ids in ONE request.
+
+        POST {"ids": [1399, 1396, ...]} -> {"1399": 8, "1396": 5}
+
+        PERFORMANCE: the Advanced Search result grid shows "N seasons" under
+        every TV card. That used to be one /api/tmdb/details round-trip *per
+        card* — 20 browser requests and 20 uncached upstream calls for a single
+        page of results, repeated on every page flip and every restore from
+        localStorage. This collapses them into one request, and each id is
+        cached for _TMDB_SEASONS_TTL so paging back and forth costs nothing.
+        """
+        import concurrent.futures as _cf
+        import requests as _req
+        from ..db import get_setting
+
+        data = request.get_json(silent=True) or {}
+        raw_ids = data.get("ids") or []
+        ids = []
+        for value in raw_ids:
+            try:
+                tv_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if tv_id > 0 and tv_id not in ids:
+                ids.append(tv_id)
+            if len(ids) >= 40:
+                break
+        if not ids:
+            return jsonify({})
+
+        api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
+        if not api_key:
+            return jsonify({"error": "No TMDB API Key", "code": "no_api_key"}), 400
+
+        out = {}
+        missing = []
+        for tv_id in ids:
+            cached = _ref_cache_get(f"seasons:{tv_id}")
+            if cached is not None:
+                out[str(tv_id)] = cached
+            else:
+                missing.append(tv_id)
+
+        def _fetch(tv_id):
+            try:
+                _tmdb_rl.acquire()
+                r = _req.get(
+                    f"https://api.themoviedb.org/3/tv/{tv_id}?api_key={api_key}",
+                    headers={"accept": "application/json"}, timeout=8,
+                )
+                r.raise_for_status()
+                return tv_id, (r.json() or {}).get("number_of_seasons")
+            except Exception:
+                logger.debug("[TMDB] season count for tv/%s failed", tv_id)
+                return tv_id, None
+
+        if missing:
+            try:
+                with _cf.ThreadPoolExecutor(max_workers=4, thread_name_prefix="tmdb-seasons") as pool:
+                    for tv_id, seasons in pool.map(_fetch, missing):
+                        if isinstance(seasons, int):
+                            _ref_cache_put(f"seasons:{tv_id}", seasons, _TMDB_SEASONS_TTL)
+                            out[str(tv_id)] = seasons
+            except Exception as e:
+                return _tmdb_error_response(e, "season counts")
+
+        return jsonify(out)
+    @app.route("/api/tmdb/discover")
+    def api_tmdb_discover():
+        """Proxy TMDB's /discover API for the Advanced Search.
+
+        GET /api/tmdb/discover?type=tv|movie&<filters>
+
+        Reworked July 2026:
+          * parameters are matched against _DISCOVER_ALLOWED_PARAMS instead of
+            being forwarded verbatim (see the note there),
+          * ``page`` is clamped to TMDB's own 1..500 window,
+          * upstream errors are sanitised (the raw text carries the API key),
+          * identical queries are served from a 5-minute in-process cache, which
+            is what makes paging back and forth in the grid free.
+        """
+        import requests as _req
+        from ..db import get_setting
+        api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
+        if not api_key:
+            return jsonify({"error": "No TMDB API Key", "code": "no_api_key"}), 400
+
+        media_type = request.args.get("type", "tv")
+        if media_type not in ("tv", "movie"):
+            media_type = "tv"
+
+        params, _page = _sanitise_discover_params(request.args)
+
+        # TMDB uses different date keys for series and movies — accept either
+        # spelling from the client and normalise to the one this type needs.
+        sort_val = params.get("sort_by") or ""
+        if media_type == "tv" and sort_val.startswith("primary_release_date"):
+            params["sort_by"] = sort_val.replace("primary_release_date", "first_air_date")
+        elif media_type == "movie" and sort_val.startswith("first_air_date"):
+            params["sort_by"] = sort_val.replace("first_air_date", "primary_release_date")
+
+        cache_key = "discover:" + media_type + ":" + json.dumps(params, sort_keys=True)
+        cached = _ref_cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        import urllib.parse
+        qs = urllib.parse.urlencode({**params, "api_key": api_key})
+        url = f"https://api.themoviedb.org/3/discover/{media_type}?{qs}"
+        logger.info("Discovering on TMDB: /discover/%s (%d params, redacted)", media_type, len(params))
+        try:
+            _tmdb_rl.acquire()
             resp = _req.get(url, headers={"accept": "application/json"}, timeout=10)
             resp.raise_for_status()
             data = resp.json()
+            _ref_cache_put(cache_key, data, _TMDB_DISCOVER_TTL)
             return jsonify(data)
         except Exception as e:
-            logger.error(f"Error discovering on TMDB: {e}")
-            return jsonify({"error": str(e)}), 500
+            return _tmdb_error_response(e, "discover")
     @app.route("/api/tmdb/details")
     def api_tmdb_details():
         """Fetch details for a specific TMDB item (e.g., to get number of seasons)."""
@@ -483,8 +879,9 @@ def register_search_routes(app):
             data = resp.json()
             return jsonify(data)
         except Exception as e:
-            logger.error(f"Error fetching TMDB details: {e}")
-            return jsonify({"error": str(e)}), 500
+            # Same leak as the other TMDB endpoints: requests puts the full
+            # request URL (with api_key=...) into the exception text.
+            return _tmdb_error_response(e, "details")
     @app.route("/api/series")
     def api_series():
         """Fetch series/movie metadata (title, poster, description, genres) for a URL.
@@ -1285,6 +1682,10 @@ def register_search_routes(app):
         """
         clear_tmdb_cache()
         _browse_cache.clear()   # force re-evaluation of inline TMDB data
+        # Advanced Search reference data + discover pages live in their own
+        # in-process cache (see clear_tmdb_discover_cache) — drop them too, or
+        # "Clear cache" would leave a stale genre/provider list behind.
+        clear_tmdb_discover_cache()
         # Also drop the Fernsehserien and Crunchyroll provider caches — they're
         # part of the same "Cache Options" section in the UI and now use the
         # same persistent (SQLite) caching mechanism as TMDB.

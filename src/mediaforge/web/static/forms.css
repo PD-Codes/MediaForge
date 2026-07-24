@@ -383,3 +383,460 @@ label {
   width: 16px;
   height: 16px;
 }
+
+/* ===================================================================
+   Reusable composite form controls (added with the Advanced Search
+   rework, July 2026).
+
+   These five blocks used to live in advanced_search.css and were
+   therefore usable on exactly one page. They are generic, they are what
+   the Advanced Search is built from, and third-party modules kept
+   re-inventing them — so they live here now, next to .chb-main, and are
+   documented in .examples/thirdparties/README.md ("Reusable UI
+   components"). forms.css is linked from base.html on every page, so a
+   module gets all of this without adding a <link> of its own.
+
+     .mf-segmented   — segmented button group (2-4 mutually exclusive modes)
+     .mf-multiselect — dropdown that checks several .chb-main options
+     .mf-token-field — text input with autocomplete + removable tokens
+     .mf-range       — themed <input type="range"> row with a value label
+     .mf-chip        — removable "active filter" chip
+     .mf-pagination  — numbered pager (first/prev/pages/next/last + jump)
+   =================================================================== */
+
+/* ---- Segmented button group ---- */
+.mf-segmented {
+  display: inline-flex;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  padding: 3px;
+  gap: 2px;
+  max-width: 100%;
+}
+
+.mf-segmented-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 7px 16px;
+  border-radius: calc(var(--radius-sm, 8px) - 3px);
+  white-space: nowrap;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+  min-height: 34px;
+}
+
+.mf-segmented-btn:hover { color: var(--text-primary); }
+
+.mf-segmented-btn.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 10px var(--accent-glow, rgba(124, 58, 237, 0.4));
+}
+
+.mf-segmented-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Multi-select dropdown ---- */
+.mf-multiselect {
+  position: relative;
+  width: 100%;
+}
+
+.mf-multiselect-trigger {
+  width: 100%;
+  padding: 8px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-family: inherit;
+  font-weight: 500;
+  text-align: left;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.mf-multiselect-trigger:hover { border-color: var(--accent); }
+
+.mf-multiselect-trigger svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.mf-multiselect-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-multiselect.is-open .mf-multiselect-trigger {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft, rgba(124, 58, 237, 0.18));
+}
+
+.mf-multiselect.is-open .mf-multiselect-trigger svg { transform: rotate(180deg); }
+
+.mf-multiselect-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  min-width: 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  max-height: 280px;
+  overflow-y: auto;
+  display: none;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.mf-multiselect.is-open .mf-multiselect-dropdown { display: block; }
+
+.mf-multiselect-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background 0.18s, color 0.18s;
+  font-size: 0.88rem;
+  gap: 10px;
+  user-select: none;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.mf-multiselect-item:hover {
+  background: var(--accent-soft, rgba(124, 58, 237, 0.18));
+  color: var(--text-primary);
+}
+
+.mf-multiselect-item > span {
+  flex: 1;
+  pointer-events: none;
+}
+
+.mf-multiselect-empty {
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* ---- Token field (autocomplete + removable tokens) ---- */
+.mf-token-field { position: relative; }
+
+.mf-token-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.88rem;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  min-height: 40px;
+}
+
+.mf-token-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft, rgba(124, 58, 237, 0.15));
+}
+
+.mf-token-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 30;
+  max-height: 220px;
+  overflow-y: auto;
+  display: none;
+}
+
+.mf-token-suggestions.is-open { display: block; }
+
+.mf-token-suggestion {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  transition: background 0.18s, color 0.18s;
+}
+
+.mf-token-suggestion:hover,
+.mf-token-suggestion.is-active {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.mf-token-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.mf-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  max-width: 100%;
+}
+
+.mf-token > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-token-remove {
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.18s;
+  display: inline-flex;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+
+.mf-token-remove:hover { opacity: 1; }
+
+/* ---- Range slider row ---- */
+.mf-range-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mf-range-value {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.mf-range {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+.mf-range input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-elevated, #252836);
+  outline: none;
+  transition: background 0.18s;
+}
+
+.mf-range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent, #7c3aed);
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.6);
+  transition: transform 0.15s ease;
+}
+
+.mf-range input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent, #7c3aed);
+  cursor: pointer;
+  border: 2px solid #ffffff;
+}
+
+.mf-range input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+.mf-range input[type="range"]:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-soft, rgba(124, 58, 237, 0.25));
+}
+
+/* ---- Removable filter chip ---- */
+.mf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  background: var(--accent-soft, rgba(124, 58, 237, 0.18));
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 100%;
+}
+
+.mf-chip.mf-chip-static { padding-right: 12px; }
+
+.mf-chip > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-chip-remove {
+  cursor: pointer;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  font-size: 0.8rem;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.mf-chip-remove:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.25);
+}
+
+/* ---- Numbered pagination ---- */
+.mf-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mf-pagination-btn,
+.mf-pagination-page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+
+.mf-pagination-btn svg { width: 16px; height: 16px; }
+
+.mf-pagination-btn:hover:not(:disabled),
+.mf-pagination-page:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.mf-pagination-btn:disabled,
+.mf-pagination-page:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mf-pagination-page.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  cursor: default;
+}
+
+.mf-pagination-ellipsis {
+  min-width: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.mf-pagination-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.mf-pagination-jump input {
+  width: 64px;
+  height: 40px;
+  padding: 0 8px;
+  text-align: center;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.mf-pagination-jump input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft, rgba(124, 58, 237, 0.15));
+}
+
+@media (max-width: 640px) {
+  /* Keep the pager usable on a phone: the numbers wrap, the jump box moves
+     onto its own line instead of squeezing the buttons. */
+  .mf-pagination-jump {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
+  }
+  .mf-pagination-btn,
+  .mf-pagination-page {
+    min-width: 40px;
+    padding: 0 8px;
+  }
+}

@@ -189,6 +189,143 @@
     </div>
   </div>
 
+  <!-- ─── Segmented buttons ───────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Segmented buttons') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/forms.css — two to four mutually exclusive modes in one pill group (the Series/Movies switch on the Advanced Search). More than four options belong in a <select>; switching whole panels belongs in the floating side menu instead.') }}</div>
+      <div class="mf-segmented" id="uicSegmented">
+        <button type="button" class="mf-segmented-btn active" data-value="tv">{{ _('Series') }}</button>
+        <button type="button" class="mf-segmented-btn" data-value="movie">{{ _('Movies') }}</button>
+      </div>
+      <div class="uic-hint" id="uicSegmentedResult" style="margin-top:10px;">tv</div>
+      <pre class="uic-snippet">&lt;div class="mf-segmented"&gt;
+  &lt;button type="button" class="mf-segmented-btn active" data-value="tv"&gt;Series&lt;/button&gt;
+  &lt;button type="button" class="mf-segmented-btn" data-value="movie"&gt;Movies&lt;/button&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Multi-select dropdown ───────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Multi-select dropdown') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/forms.css — a trigger showing a summary, opening a .chb-main checkbox list. Toggle .is-open on the root yourself and listen for change on the dropdown; wrap every option in a <label class="mf-multiselect-item"> so the whole row is clickable.') }}</div>
+      <div class="mf-multiselect" id="uicMultiselect" style="max-width:320px;">
+        <button type="button" class="mf-multiselect-trigger" aria-expanded="false" aria-haspopup="true">
+          <span class="mf-multiselect-label">{{ _('Nothing selected') }}</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+        <div class="mf-multiselect-dropdown">
+          <label class="mf-multiselect-item"><input type="checkbox" class="chb-main" value="Action" /><span>Action</span></label>
+          <label class="mf-multiselect-item"><input type="checkbox" class="chb-main" value="Comedy" /><span>Comedy</span></label>
+          <label class="mf-multiselect-item"><input type="checkbox" class="chb-main" value="Drama" /><span>Drama</span></label>
+        </div>
+      </div>
+      <pre class="uic-snippet">&lt;div class="mf-multiselect"&gt;
+  &lt;button type="button" class="mf-multiselect-trigger"&gt;
+    &lt;span class="mf-multiselect-label"&gt;Nothing selected&lt;/span&gt;
+    &lt;svg ...&gt;&lt;polyline points="6 9 12 15 18 9"/&gt;&lt;/svg&gt;
+  &lt;/button&gt;
+  &lt;div class="mf-multiselect-dropdown"&gt;
+    &lt;label class="mf-multiselect-item"&gt;
+      &lt;input type="checkbox" class="chb-main" value="Action" /&gt;&lt;span&gt;Action&lt;/span&gt;
+    &lt;/label&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Token field ─────────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Token field (autocomplete + tags)') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/forms.css — text input with a suggestion list and removable tokens below (the Keywords / Providers / Network filters). Delegate the remove click on .mf-token-list and read the id off the button — never build an inline onclick. .mf-token-input on its own is also the plain themed text input and <select> style.') }}</div>
+      <div class="mf-token-field" style="max-width:320px;">
+        <input type="text" class="mf-token-input" id="uicTokenInput" placeholder="{{ _('Type a, b or c...') }}" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+        <div class="mf-token-suggestions" id="uicTokenSuggestions" role="listbox"></div>
+      </div>
+      <div class="mf-token-list" id="uicTokenList" style="max-width:320px;"></div>
+      <pre class="uic-snippet">&lt;div class="mf-token-field"&gt;
+  &lt;input type="text" class="mf-token-input" placeholder="Search..." /&gt;
+  &lt;div class="mf-token-suggestions"&gt;
+    &lt;div class="mf-token-suggestion"&gt;Suggestion&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="mf-token-list"&gt;
+  &lt;span class="mf-token"&gt;&lt;span&gt;Alpha&lt;/span&gt;
+    &lt;button type="button" class="mf-token-remove" data-token-id="alpha"&gt;...&lt;/button&gt;
+  &lt;/span&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Range slider ────────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Range slider') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/forms.css — the themed track and thumb for any <input type="range">, with an optional label/value header above it.') }}</div>
+      <div style="max-width:320px;">
+        <div class="mf-range-header">
+          <label for="uicRange">{{ _('Min Rating') }}</label>
+          <span class="mf-range-value" id="uicRangeValue">0</span>
+        </div>
+        <div class="mf-range">
+          <input type="range" id="uicRange" min="0" max="10" step="0.5" value="0" />
+        </div>
+      </div>
+      <pre class="uic-snippet">&lt;div class="mf-range-header"&gt;
+  &lt;label for="rating"&gt;Min Rating&lt;/label&gt;&lt;span class="mf-range-value"&gt;0&lt;/span&gt;
+&lt;/div&gt;
+&lt;div class="mf-range"&gt;&lt;input type="range" id="rating" min="0" max="10" step="0.5" /&gt;&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Filter chips ────────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Filter chips') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/forms.css — the "active filter" pills above a result list. Add .mf-chip-static for a chip that cannot be removed; delegate the ✕ click on the container.') }}</div>
+      <div class="uic-row" id="uicChips">
+        <span class="mf-chip mf-chip-static"><span>{{ _('Type: Series') }}</span></span>
+        <span class="mf-chip"><span>Genre: Action</span><button type="button" class="mf-chip-remove" data-chip="action" aria-label="{{ _('Remove filter') }}">✕</button></span>
+        <span class="mf-chip"><span>⭐ 7+</span><button type="button" class="mf-chip-remove" data-chip="rating" aria-label="{{ _('Remove filter') }}">✕</button></span>
+      </div>
+      <pre class="uic-snippet">&lt;span class="mf-chip"&gt;&lt;span&gt;Genre: Action&lt;/span&gt;
+  &lt;button type="button" class="mf-chip-remove" data-chip="action"&gt;✕&lt;/button&gt;
+&lt;/span&gt;
+&lt;span class="mf-chip mf-chip-static"&gt;&lt;span&gt;Type: Series&lt;/span&gt;&lt;/span&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Pagination ──────────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Pagination') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/forms.css — first/prev, numbered pages with ellipses, next/last and a jump box. Put data-page on everything clickable and delegate the click on the container, because the pager is rebuilt on every page change.') }}</div>
+      <div class="mf-pagination" id="uicPagination"></div>
+      <pre class="uic-snippet">&lt;div class="mf-pagination"&gt;
+  &lt;button class="mf-pagination-btn" data-page="1"&gt;«&lt;/button&gt;
+  &lt;button class="mf-pagination-page active" data-page="3" disabled&gt;3&lt;/button&gt;
+  &lt;span class="mf-pagination-ellipsis"&gt;…&lt;/span&gt;
+  &lt;button class="mf-pagination-btn" data-page="12"&gt;»&lt;/button&gt;
+  &lt;span class="mf-pagination-jump"&gt;&lt;label&gt;Page&lt;/label&gt;&lt;input type="text" /&gt;&lt;span&gt;of 12&lt;/span&gt;&lt;/span&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+
   <!-- ─── Progress bar ───────────────────────────────────────────────── -->
   <div class="settings-section">
     <div class="integ-subsection-header" style="padding:14px 20px !important;">

@@ -295,9 +295,9 @@ function renderQueue(items, paused) {
       const isFilmPalast = (item.series_url || "").includes("filmpalast.to");
       let epLabel;
       if (isFilmPalast) {
-        epLabel = isCancelling ? t("Film – beendet...","Movie - finished...") : item.status === "cancelled" ? t("Film (gestoppt)","Movie (stopped)") : t("Film","Movie");
+        epLabel = isCancelling ? t("Film – wird abgebrochen...","Movie - cancelling...") : item.status === "cancelled" ? t("Film (gestoppt)","Movie (stopped)") : t("Film","Movie");
       } else if (isCancelling) {
-        epLabel = item.current_episode + "/" + item.total_episodes + t(" Ep. – beendet aktuelle Episode..."," Ep. - finished current episode...");
+        epLabel = item.current_episode + "/" + item.total_episodes + t(" Ep. – wird abgebrochen..."," Ep. - cancelling...");
       } else if (item.status === "cancelled") {
         epLabel = item.current_episode + "/" + item.total_episodes + t(" Ep. (gestoppt)", " Ep. (stopped)");
       } else {
@@ -501,7 +501,7 @@ function renderQueue(items, paused) {
         : '';
       actionBtn =
         captchaBtn +
-        '<button class="queue-cancel" onclick="cancelQueueItem(' + item.id + ')" title="'+t("Nach aktueller Episode abbrechen","Cancel after current episode")+'">Abbrechen</button>';
+        '<button class="queue-cancel" onclick="cancelQueueItem(' + item.id + ')" title="'+t("Download sofort abbrechen","Cancel the download right away")+'">Abbrechen</button>';
     } else if (isCancelling) {
       actionBtn = '';
     } else if (item.status === "failed" || item.status === "cancelled") {
@@ -595,7 +595,7 @@ async function cancelQueueItem(id) {
       if (typeof showToast === "function") showToast(data.error);
     } else {
       if (typeof showToast === "function")
-        showToast(t("Nach aktueller Episode wird abgebrochen...","After current episode is cancelled..."));
+        showToast(t("Download wird abgebrochen – Teildateien werden aufgeräumt.","Cancelling the download – partial files are being cleaned up."));
     }
     loadQueue();
   } catch (e) {

@@ -115,6 +115,42 @@ def register_settings_routes(app):
         if uid and uid > 0:
             _set_lang(uid, lang)
         return jsonify({"ok": True, "language": lang})
+    @app.route("/api/user/preferences", methods=["GET"])
+    def api_user_preferences_get():
+        """Serve GET /api/user/preferences: the current account's appearance
+        settings (theme pack, dark/light, accent colour).
+
+        base.html renders the same values into <head> server-side; this
+        endpoint is for clients that need them after the fact — and for
+        modules that want to read the look the user actually has."""
+        from flask import session as _sess
+        from ..db import get_user_ui_prefs as _get_prefs
+        uid = _sess.get("user_id")
+        if uid is None:
+            return jsonify({"ok": True, "preferences": {}})
+        return jsonify({"ok": True, "preferences": _get_prefs(uid)})
+    @app.route("/api/user/preferences", methods=["POST"])
+    def api_user_preferences_set():
+        """Serve POST /api/user/preferences: persist the current account's
+        appearance settings, so the chosen look follows the user to every
+        browser and device instead of living in one browser's localStorage.
+
+        Body: {"theme_pack": ..., "theme_mode": "dark"|"light",
+        "accent": "#rrggbb"} — any subset. Keys and values are whitelisted
+        server-side in db.USER_UI_PREF_KEYS. Called from base.html's
+        _persistAppearance() (applyThemePack / setTheme / applyAccent)."""
+        from flask import session as _sess
+        from ..db import set_user_ui_prefs as _set_prefs
+        uid = _sess.get("user_id")
+        if uid is None:
+            # Auth is on and nobody is logged in. The client keeps its
+            # localStorage copy, so this is not worth shouting about.
+            return jsonify({"ok": False, "error": "Not logged in"}), 401
+        data = request.get_json(silent=True) or {}
+        ok, error = _set_prefs(uid, data)
+        if not ok:
+            return jsonify({"ok": False, "error": error}), 400
+        return jsonify({"ok": True})
     @app.route("/api/settings", methods=["GET"])
     def api_settings():
         """Serve GET /api/settings: return the full combined settings blob

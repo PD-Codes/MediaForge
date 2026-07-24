@@ -1,7 +1,13 @@
 <!-- Cross-provider search modal, opened via openAniSearchModal() (static/app.js).
-     Needs static/advanced_search.css (for .adv-search-overlay/.ani-search-modal)
-     and static/shared_modals.css loaded on the page -- see advanced_search.html,
-     anime_seasons_view.html and mediacalendar.html for the three current callers. -->
+     Needs static/shared_modals.css loaded on the page -- that is where
+     .adv-search-overlay / .ani-search-modal / .results-poster-grid live since
+     the July 2026 fix. They used to sit in advanced_search.css and got lost
+     when that file was split; with no rules at all, display:flex turned the
+     overlay into an ordinary block below the page content, so opening the
+     modal looked like nothing happened. The other callers never loaded
+     advanced_search.css in the first place.
+     Current callers: advanced_search.html, anime_seasons_view.html and
+     mediacalendar.html. -->
 <div class="adv-search-overlay" id="aniSearchModalOverlay" style="display:none;"
   onclick="closeAniSearchModalOutside(event)">
   <div class="ani-search-modal" id="aniSearchModal">

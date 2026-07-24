@@ -2117,15 +2117,22 @@ function _loadDesignCheckboxes() {
 }
 
 // ─── Theme packs (web/themes.py) ────────────────────────────────────────────
-// The personal choice is localStorage 'aw-themepack' (same pattern as the
-// dark/light 'aw-theme' key); applyThemePack() in base.html swaps the
-// stylesheet live. The instance default is a server setting (admin only).
+// The personal choice is stored on the ACCOUNT (window._USER_PREFS.theme_pack,
+// served from db.user_ui_prefs) and mirrored into localStorage 'aw-themepack'
+// for logged-out/offline pages; applyThemePack() in base.html swaps the
+// stylesheet live and writes both. The instance default is a server setting
+// (admin only).
 
 function _loadThemePackSelect() {
   const el = document.getElementById('themePackSelect');
   if (!el) return;
   let choice = '';
-  try { choice = localStorage.getItem('aw-themepack') || ''; } catch (e) { }
+  const prefs = window._USER_PREFS || {};
+  if (typeof prefs.theme_pack === 'string') {
+    choice = prefs.theme_pack;
+  } else {
+    try { choice = localStorage.getItem('aw-themepack') || ''; } catch (e) { }
+  }
   // A stale override (theme uninstalled since) falls back to instance default.
   if (choice && ![...el.options].some(o => o.value === choice)) choice = '';
   el.value = choice;
@@ -2134,8 +2141,8 @@ function _loadThemePackSelect() {
 function saveThemePackChoice() {
   const el = document.getElementById('themePackSelect');
   if (!el) return;
-  applyThemePack(el.value);
-  showToast(t('Theme übernommen', 'Theme applied'));
+  applyThemePack(el.value);   // applies live AND saves to the account
+  showToast(t('Theme für dein Konto gespeichert', 'Theme saved to your account'));
 }
 
 function saveThemePackDefault() {
@@ -2150,11 +2157,14 @@ function saveThemePackDefault() {
     if (d && d.ok) {
       showToast(t('Standard-Theme gespeichert', 'Default theme saved'));
       // If this user follows the instance default, apply it right away.
-      let choice = '';
-      try { choice = localStorage.getItem('aw-themepack') || ''; } catch (e) { }
+      // persist=false: this admin didn't change their *personal* choice.
+      let choice = (window._USER_PREFS || {}).theme_pack;
+      if (typeof choice !== 'string') {
+        try { choice = localStorage.getItem('aw-themepack') || ''; } catch (e) { choice = ''; }
+      }
       if (!choice) {
         window._THEME_DEFAULT = folder;
-        applyThemePack('');
+        applyThemePack('', false);
       }
     } else {
       showToast((d && d.error) || t('Speichern fehlgeschlagen', 'Save failed'));

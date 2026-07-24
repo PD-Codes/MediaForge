@@ -231,3 +231,123 @@
   outline: none;
   border-color: var(--accent);
 }
+/* ===================================================================
+   Cross-provider search modal (#aniSearchModalOverlay in
+   templates/shared_modals.html, opened by app.js's openAniSearchModal).
+
+   REGRESSION FIX, July 2026: these five rules used to live at the top of
+   advanced_search.css and were lost when that file was split up. Without
+   them .adv-search-overlay has no styling at all, so
+   `modal.style.display = "flex"` turned the overlay into a plain block in
+   the normal document flow — the modal rendered far below the result grid
+   instead of on top of the page, which looked exactly like "clicking
+   Search does nothing".
+
+   They belong here, not in advanced_search.css: the partial is included by
+   index.html, seerr.html and advanced_search.html, and openAniSearchModal
+   is also called from the Anime Seasons and Media Calendar modules — none
+   of which load advanced_search.css.
+   =================================================================== */
+
+.adv-search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  animation: mf-modal-fade-in 0.2s ease;
+}
+
+.ani-search-modal {
+  background: var(--bg-card);
+  width: 100%;
+  max-width: 900px;
+  max-height: calc(100vh - 4rem);
+  border-radius: var(--radius-lg, 16px);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: mf-modal-scale-in 0.2s ease;
+}
+
+.ani-search-close {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.ani-search-close:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.ani-search-container {
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.ani-search-container h2 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  font-size: 1.4rem;
+  color: var(--text-primary);
+  font-weight: 700;
+  padding-right: 3rem;
+}
+
+.results-poster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1.25rem;
+}
+
+@keyframes mf-modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mf-modal-scale-in {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .adv-search-overlay { padding: 0; }
+
+  .ani-search-modal {
+    max-width: none;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    border: none;
+  }
+
+  .ani-search-container { padding: 1.25rem; }
+  .ani-search-container h2 { font-size: 1.15rem; }
+
+  .results-poster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+  }
+}

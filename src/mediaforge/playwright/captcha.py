@@ -24,7 +24,11 @@ import queue as _queue_module
 import time as _time
 import random as _random
 
-# Threading-local: set queue_id from the web worker to enable interactive mode
+# Threading-local: set queue_id from the web worker to enable interactive mode.
+# `cancel_event` is set alongside it (a threading.Event owned by the queue
+# worker / routes.queue's cancel endpoint). Every solve loop below polls it, so
+# cancelling a download also tears the browser down instead of leaving
+# patchright grinding away at a captcha nobody is waiting for any more.
 _local = _threading.local()
 
 # Active captcha sessions keyed by queue_id (int).
@@ -32,6 +36,56 @@ _local = _threading.local()
 # from the Web UI) and mediaforge.web.routes.settings (busy check).
 _active_sessions = {}
 _active_sessions_lock = _threading.Lock()
+
+
+class CaptchaCancelled(Exception):
+    """Raised inside a solve loop when the owning download was cancelled.
+
+    Never surfaces to callers: both public solvers translate it into
+    ``RuntimeError("Download cancelled")``, the string the queue worker and
+    models.common.common already treat as "user aborted", so a cancel during a
+    captcha behaves exactly like a cancel during the yt-dlp phase.
+    """
+
+
+def set_cancel_event(event) -> None:
+    """Bind a threading.Event to THIS thread's captcha solves.
+
+    Called by the queue worker (and available to modules that run their own
+    download threads) right before an operation that may open the captcha
+    browser. Thread-local on purpose: the solver runs in the same thread that
+    set it, so no cross-thread registry and no lock is needed.
+    """
+    _local.cancel_event = event
+
+
+def clear_cancel_event() -> None:
+    """Drop this thread's cancel event again (mirror of set_cancel_event)."""
+    _local.cancel_event = None
+
+
+def cancel_requested() -> bool:
+    """True when the download owning this thread's solve has been cancelled."""
+    event = getattr(_local, "cancel_event", None)
+    return event is not None and event.is_set()
+
+
+def _raise_if_cancelled(handle=None) -> None:
+    """Abort the current solve if the owning download was cancelled.
+
+    Closes the browser handle first: the ``with sync_playwright()`` block would
+    tear the driver down on the way out anyway, but doing it explicitly means
+    the Chromium process is gone before the exception unwinds through the
+    telemetry/notification code above it.
+    """
+    if not cancel_requested():
+        return
+    if handle is not None:
+        try:
+            handle.close()
+        except Exception:
+            pass
+    raise CaptchaCancelled()
 
 # Optional hooks set by mediaforge.web.app to avoid circular imports
 _on_captcha_start = None  # callable(queue_id: int, url: str)
@@ -1538,6 +1592,10 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
             pass
 
     try:
+        # Checked before anything is launched: an extractor's own retry loop
+        # (e.g. extractors/provider/voe.py) can call back in here several times
+        # after a cancel, and each of those must not cost a browser start.
+        _raise_if_cancelled()
         from ..autodeps import _ensure_xvfb
         _ensure_xvfb()
         with sync_playwright() as p:
@@ -1550,6 +1608,7 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
             context = _handle.context
             page = context.new_page()
             _attach_debug_listeners(page, logger)
+            _raise_if_cancelled(_handle)
             page.goto(url)
             _focus_page(page)
             _sync_session_user_agent(page)
@@ -1557,6 +1616,11 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
             solved = False
             challenge_solver = _ChallengeSolver()
             for _ in range(_captcha_timeout(300)):  # ~1s per iteration
+                # Download cancelled while we were solving: stop here and let
+                # the browser go. Checked first in the loop so the tear-down
+                # happens within one iteration (~1s) of the click on "Cancel".
+                _raise_if_cancelled(_handle)
+
                 # Stream screenshot to Web UI
                 try:
                     shot = page.screenshot(type="jpeg", quality=65)
@@ -1644,6 +1708,13 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
         session.done = True
 
         return result_url if solved else None
+
+    except CaptchaCancelled:
+        # The user cancelled the download while this solve was running. Not an
+        # error worth a telemetry event — re-raised as the same message the
+        # yt-dlp path uses so the queue worker books it as "cancelled".
+        logger.info("CAPTCHA solve aborted — download cancelled by the user")
+        raise RuntimeError("Download cancelled")
 
     finally:
         if _on_captcha_end is not None:
@@ -1747,6 +1818,9 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                 pass
 
     try:
+        # Checked before anything is launched — see the same call in
+        # _solve_captcha_interactive for why.
+        _raise_if_cancelled()
         from ..autodeps import _ensure_xvfb
         _ensure_xvfb()
 
@@ -1779,6 +1853,7 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
             _inject_session_cookies(context, episode_url)
             page = context.new_page()
             _attach_debug_listeners(page, logger)
+            _raise_if_cancelled(_handle)
 
             # New-tab guard: s.to has invisible full-page <a target="_blank">
             # ad overlays that open an ad tab on any click.
@@ -1884,6 +1959,11 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
             start = _time.time()
 
             while _time.time() - start < _captcha_timeout(90):
+                # Download cancelled while we were solving: stop here and let
+                # the browser go. Checked first in the loop so the tear-down
+                # happens within one iteration (~1s) of the click on "Cancel".
+                _raise_if_cancelled(_handle)
+
                 # WebUI: stream screenshots + forward user clicks
                 if session_obj is not None:
                     try:
@@ -2026,6 +2106,13 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
             session_obj.done = True
 
         return final_url
+
+    except CaptchaCancelled:
+        # Deliberately NOT swallowed like the generic error below: returning
+        # None here would let SerienstreamEpisode.provider_url fall back to the
+        # unresolved s.to URL and start a download the user just cancelled.
+        logger.info("CAPTCHA solve aborted — download cancelled by the user")
+        raise RuntimeError("Download cancelled")
 
     except Exception as e:
         from ..logger import get_logger

@@ -13,6 +13,7 @@ from ..db import move_queue_item
 from ..db import remove_from_queue
 from ..db import restart_queue_item_inplace
 from ..db import retry_single_episode
+from ..db import update_queue_progress
 from ..runtime_state import _active_cancel_events
 from ..runtime_state import _active_cancel_events_lock
 from ..runtime_state import is_queue_paused
@@ -157,14 +158,27 @@ def register_queue_routes(app):
         POST /api/queue/<queue_id>/cancel. Called from queue.js's
         cancelQueueItem().
         """
+        item = get_queue_item(queue_id)
         ok, err = cancel_queue_item(queue_id)
         if not ok:
             return jsonify({"error": err}), 400
-        # Signal the worker to kill the active subprocess immediately.
+        # Signal the worker to kill the active subprocess immediately. The same
+        # event is handed to the captcha solver (see queue_worker), so a cancel
+        # during a captcha tears the patchright browser down too.
         with _active_cancel_events_lock:
             ev = _active_cancel_events.get(queue_id)
         if ev is not None:
             ev.set()
+        # Clear the "currently downloading" URL right here rather than waiting
+        # for the worker to reach its own clear. queue.js derives the
+        # "Cancelling..." state from status=cancelled + a non-empty
+        # current_url; when the worker was parked in a blocking scrape the row
+        # stayed stuck on "finishing current episode..." long after yt-dlp had
+        # already stopped. The abort is immediate now, so the row should say so.
+        try:
+            update_queue_progress(queue_id, (item or {}).get("current_episode") or 0, "")
+        except Exception:
+            pass
         return jsonify({"ok": True})
     @app.route("/api/queue/<int:queue_id>/restart", methods=["POST"])
     def api_queue_restart(queue_id):

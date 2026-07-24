@@ -907,8 +907,8 @@ msgstr "📺 Beliebte Serien"
 msgid "🍿 Popular Movies"
 msgstr "🍿 Beliebte Filme"
 
-msgid "✨ New 2026"
-msgstr "✨ Neu 2026"
+msgid "✨ New this year"
+msgstr "✨ Neu dieses Jahr"
 
 msgid "⚡ Action & Thriller"
 msgstr "⚡ Action & Thriller"
@@ -918,9 +918,6 @@ msgstr "Filme"
 
 msgid "All Genres"
 msgstr "Alle Genres"
-
-msgid "Show advanced filters"
-msgstr "Erweiterte Filter anzeigen"
 
 msgid "Sort by"
 msgstr "Sortierung"
@@ -988,11 +985,103 @@ msgstr "Seite"
 msgid "Next"
 msgstr "Weiter"
 
-msgid "Select filters or click a Quick Preset above to discover series and movies."
-msgstr "Wähle Filter oder klicke oben auf eine Schnellauswahl, um Serien und Filme zu entdecken."
+msgid "Select filters or pick a Quick Preset from the menu to discover series and movies."
+msgstr "Wähle Filter oder eine Schnellauswahl im Menü, um Serien und Filme zu entdecken."
 
 msgid "Searching streams on AniWorld, SerienStream & FilmPalast..."
 msgstr "Suche Streams auf AniWorld, SerienStream & FilmPalast..."
+
+
+# ── advanced_search.html (rework July 2026: filter groups, new filters) ──
+msgid "Basics"
+msgstr "Grundlagen"
+
+msgid "Rating & Year"
+msgstr "Bewertung & Jahr"
+
+msgid "Streaming"
+msgstr "Streaming"
+
+msgid "💎 Hidden Gems"
+msgstr "💎 Geheimtipps"
+
+msgid "Media type"
+msgstr "Medientyp"
+
+msgid "Rating (Ascending)"
+msgstr "Bewertung (Aufsteigend)"
+
+msgid "Number of votes (Descending)"
+msgstr "Anzahl Stimmen (Absteigend)"
+
+msgid "Exclude genres"
+msgstr "Genres ausschließen"
+
+msgid "Nothing excluded"
+msgstr "Nichts ausgeschlossen"
+
+msgid "Results must not contain any of these genres."
+msgstr "Ergebnisse dürfen keines dieser Genres enthalten."
+
+msgid "Min number of votes"
+msgstr "Mind. Anzahl Stimmen"
+
+msgid "Filters out titles with barely any ratings — recommended when sorting by rating."
+msgstr "Filtert Titel mit kaum Bewertungen heraus — empfohlen beim Sortieren nach Bewertung."
+
+msgid "Runtime (minutes)"
+msgstr "Laufzeit (Minuten)"
+
+msgid "From (e.g. 20)"
+msgstr "Von (z.B. 20)"
+
+msgid "To (e.g. 120)"
+msgstr "Bis (z.B. 120)"
+
+msgid "For series this is the runtime of a single episode."
+msgstr "Bei Serien ist das die Laufzeit einer einzelnen Episode."
+
+msgid "Original language"
+msgstr "Originalsprache"
+
+msgid "Any language"
+msgstr "Beliebige Sprache"
+
+msgid "Any status"
+msgstr "Beliebiger Status"
+
+msgid "Returning Series"
+msgstr "Laufend"
+
+msgid "Ended"
+msgstr "Beendet"
+
+msgid "In Production"
+msgstr "In Produktion"
+
+msgid "Planned"
+msgstr "Geplant"
+
+msgid "Pilot"
+msgstr "Pilot"
+
+msgid "Search network (e.g. HBO)..."
+msgstr "Sender suchen (z.B. HBO)..."
+
+# "Canceled" (US spelling) and "TV network" are deliberately distinct
+# msgids: the existing "Cancelled"/"Network" entries mean a cancelled
+# download and a computer network elsewhere in the UI.
+msgid "Canceled"
+msgstr "Abgesetzt"
+
+msgid "TV network"
+msgstr "Sender"
+
+msgid "Description"
+msgstr "Beschreibung"
+
+msgid "Search streams"
+msgstr "Streams suchen"
 
 # ── autosync.html ─────────────────────────────────────────────────────────
 msgid "Automatically search for new episodes and download them on a schedule."
@@ -5236,3 +5325,105 @@ msgstr "Vertrauenswürdige Signierschlüssel"
 #: src/mediaforge/web/templates/extensions.html
 msgid "This build trusts no signing keys — nothing can be official."
 msgstr "Dieser Build vertraut keinen Signierschlüsseln — nichts kann offiziell sein."
+
+# ── advanced_search.js ──
+# Client-side runtime strings. Rendered through base.html's t(de, en)
+# helper, not through Babel — listed here so both languages stay
+# reviewable in one place (same convention as the app.js section).
+msgid "Remove filter"
+msgstr "Filter entfernen"
+
+msgid "genres selected"
+msgstr "Genres ausgewählt"
+
+msgid "genres excluded"
+msgstr "Genres ausgeschlossen"
+
+msgid "statuses selected"
+msgstr "Status ausgewählt"
+
+msgid "Type: Series"
+msgstr "Typ: Serien"
+
+msgid "Type: Movies"
+msgstr "Typ: Filme"
+
+msgid "Without genre"
+msgstr "Ohne Genre"
+
+msgid "Sorting"
+msgstr "Sortierung"
+
+msgid "Min votes"
+msgstr "Min. Stimmen"
+
+msgid "Runtime"
+msgstr "Laufzeit"
+
+msgid "Region"
+msgstr "Region"
+
+msgid "Keyword"
+msgstr "Schlagwort"
+
+msgid "First page"
+msgstr "Erste Seite"
+
+msgid "Last page"
+msgstr "Letzte Seite"
+
+msgid "Jump to page"
+msgstr "Zu Seite springen"
+
+msgid "of"
+msgstr "von"
+
+msgid "1 Season"
+msgstr "1 Staffel"
+
+msgid "Network error in search."
+msgstr "Netzwerkfehler bei der Suche."
+
+msgid "The TMDB request timed out."
+msgstr "Zeitüberschreitung bei der TMDB-Anfrage."
+
+msgid "The TMDB request failed."
+msgstr "Die TMDB-Anfrage ist fehlgeschlagen."
+
+msgid "TMDB rejected the API key."
+msgstr "TMDB hat den API-Key abgelehnt."
+
+msgid "TMDB rate limit reached. Please wait a moment and search again."
+msgstr "TMDB-Limit erreicht. Bitte kurz warten und erneut suchen."
+
+msgid "TMDB found nothing for this request."
+msgstr "TMDB hat für diese Anfrage nichts gefunden."
+
+msgid "No TMDB API key configured. Add one under Integrations."
+msgstr "Kein TMDB API-Key hinterlegt. Bitte in den Integrationen eintragen."
+
+msgid "(TMDB caps at 10,000)"
+msgstr "(TMDB liefert max. 10.000)"
+
+msgid "votes"
+msgstr "Stimmen"
+
+msgid "Original"
+msgstr "Original"
+
+
+# --- Theme pack install hint (templates/extensions.html) ---
+msgid "Theme pack installed"
+msgstr "Theme-Pack installiert"
+
+msgid ""
+"Pick it for your own account under Settings → Design → Theme Packs. Admins "
+"can make it the default for everyone with \"Set as default\" on the theme "
+"card below."
+msgstr ""
+"Auswählbar für dein eigenes Konto unter Einstellungen → Design → Theme "
+"Packs. Admins können es mit „Als Standard setzen“ auf der Theme-Karte "
+"unten für alle zum Standard machen."
+
+msgid "Choose theme"
+msgstr "Theme auswählen"

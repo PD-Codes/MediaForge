@@ -83,6 +83,33 @@
     </div>
   </div>
 
+  <!-- Post-install hint for theme packs. A theme install changes nothing
+       visible on its own: it has to be picked in Settings → Design (per user)
+       or set as the instance default on its card below. The toast that used to
+       say so was wiped by the reload that follows the install, so the message
+       is carried across the reload in sessionStorage and shown here as a
+       banner that stays until it is dismissed. Filled by module_store.js. -->
+  <div class="settings-section" id="extThemeHintBanner"
+       style="display:none;border-color:var(--accent);">
+    <!-- flex-wrap so the two buttons drop under the text on phones instead of
+         squeezing it; .settings-row-left is flex:1/min-width:0 already. -->
+    <div class="settings-row" style="border-bottom:none;flex-wrap:wrap;gap:12px;">
+      <div class="settings-row-left">
+        <div class="settings-row-label" style="color:var(--accent);">
+          {{ _('Theme pack installed') }}
+        </div>
+        <div class="settings-row-desc" id="extThemeHintText"></div>
+        <div class="settings-row-desc">
+          {{ _('Pick it for your own account under Settings → Design → Theme Packs. Admins can make it the default for everyone with "Set as default" on the theme card below.') }}
+        </div>
+      </div>
+      <div class="settings-row-right" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <a class="btn btn-primary" href="{{ url_for('settings_page') }}#design">{{ _('Choose theme') }}</a>
+        <button class="btn btn-secondary" id="extThemeHintDismiss">{{ _('Dismiss') }}</button>
+      </div>
+    </div>
+  </div>
+
   <!-- View 1: what is installed here. Shown by default; module_store.js swaps it
        for the store view (and back) when the header button is used. -->
   <div id="extInstalledView">

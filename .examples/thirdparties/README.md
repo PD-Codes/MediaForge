@@ -612,6 +612,45 @@ path = module_data_dir(MODULE_ID) / "cache.json"   # ~/.mediaforge/module_data/<
 
 It survives upgrades and is deleted only when the module is uninstalled.
 
+## Per-user UI preferences (`register_ui_pref_key`)
+
+`set_setting()` is *instance*-wide and admin-owned. For something each user
+picks for themselves — a compact-rows toggle, a preferred layout, a colour —
+don't reach for `localStorage`: that is per browser, so the user loses it on
+their phone, in a private window and after a cache clear. The core's own
+appearance settings (theme pack, dark/light, accent) live in `user_ui_prefs`,
+and your module can use the same table, the same endpoint and the same
+server-side render:
+
+```python
+from mediaforge.web.db import register_ui_pref_key
+
+def register(app):
+    register_thirdparty(item_id="my_module", ...)
+    # Prefix with your MODULE_ID so two modules can never collide.
+    register_ui_pref_key("my_module_compact", lambda v: v in ("0", "1"))
+```
+
+Read and write it from the browser:
+
+```js
+// Rendered into every page by base.html, so it is available before first paint
+const compact = (window._USER_PREFS || {}).my_module_compact === "1";
+
+// Saving: same endpoint the core appearance settings use
+fetch("/api/user/preferences", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ my_module_compact: compact ? "1" : "0" })
+});
+```
+
+The validator is not optional politeness: values come back out into the page
+via `window._USER_PREFS`, so keep the accepted set as small as the feature
+needs. An unknown key or a value your validator rejects fails the whole
+request with 400 — nothing is stored half-way. `GET /api/user/preferences`
+returns the same dict for clients that need it after page load.
+
 ## Background workers (`register_background_worker`)
 
 Don't build a thread + lock + config-poll + restart path by hand. Hand the core
@@ -800,7 +839,12 @@ Two consequences to know about:
 - Your templates can `{% extends "base.html" %}` and `{% include
   "shared_modals.html" %}` exactly like the app's own templates — those
   live in the app's template folder, which Jinja always searches first,
-  regardless of which blueprint is rendering.
+  regardless of which blueprint is rendering. If you include
+  `shared_modals.html` (e.g. to reuse `openAniSearchModal()` from
+  `app.js`), also `<link>` `shared_modals.css` — that is where the modal's
+  overlay/backdrop chrome lives. Without it the overlay has no positioning
+  at all and renders as a plain block below your page content, which looks
+  exactly like the button doing nothing.
 
 ## Reusable UI components
 
@@ -820,6 +864,12 @@ markup underneath each one; the table below is the quick-reference version.
 | Toggle switch | `.toggle` (wrapper) / `.toggle-slider` | `tables.css` | `<label class="toggle"><input type="checkbox" .../><span class="toggle-slider"></span></label>`. Inside a settings card, add `class="thirdparty-toggle" data-thirdparty-id="..."` and it wires itself up for free — see `_settings_card_macro.html` / `static/extension_cards.js` |
 | Checkbox | `chb-main` (on the `<input type="checkbox">` itself) | `forms.css` | `<input type="checkbox" class="chb-main" .../>` — MediaForge's *only* plain-checkbox style (as opposed to the on/off `.toggle` switch above): a purple accent box with an animated SVG checkmark, used everywhere from Settings to Auto-Sync to SyncPlay to custom multi-select dropdowns. Use this, not a bare unstyled `<input type="checkbox">`, for anything that reads as "check one or more of these" rather than "flip this setting on/off". Building one from JS: `el.className = "chb-main ..."` works exactly like in a template. |
 | Number stepper (−/+) | *(none needed)* | `forms.css` + `number_input.js` | Any `<input type="number">` is auto-enhanced on page load (and for anything added to the DOM later) — no markup, no JS, of your own |
+| Segmented buttons | `.mf-segmented` (wrapper) / `.mf-segmented-btn` (+ `.active`) | `forms.css` | Two to four mutually exclusive modes in one pill-shaped group, e.g. the Series/Movies switch on the Advanced Search. For more than four options use a `<select>`; for switching *panels* on a page use the floating side menu above |
+| Multi-select dropdown | `.mf-multiselect` (+ `.is-open`) / `-trigger` / `-label` / `-dropdown` / `-item` / `-empty` | `forms.css` | A closed trigger showing a summary ("3 genres selected"), opening a checkbox list built from `.chb-main`. Put each option in a `<label class="mf-multiselect-item">` around its checkbox and listen for `change` on the dropdown; toggle `.is-open` on the root yourself |
+| Token field (autocomplete + tags) | `.mf-token-field` / `.mf-token-input` / `.mf-token-suggestions` (+ `.is-open`) / `.mf-token-suggestion` (+ `.is-active`) / `.mf-token-list` / `.mf-token` / `.mf-token-remove` | `forms.css` | Text input with a suggestion list and removable tokens underneath — the Keywords / Providers / Network filters on the Advanced Search. `.mf-token-input` on its own is also the plain themed text input/`<select>` used across that page |
+| Range slider | `.mf-range` (row) / `.mf-range-header` / `.mf-range-value` | `forms.css` | Wraps an `<input type="range">` in the themed track + thumb, with an optional label/value header above it |
+| Filter chip | `.mf-chip` (+ `.mf-chip-static` for one without an ✕) / `.mf-chip-remove` | `forms.css` | The "active filter" pills above a result list. Delegate the click on the container and read an index/id off the button — do not build an inline `onclick` |
+| Pagination | `.mf-pagination` / `-btn` / `-page` (+ `.active`) / `-ellipsis` / `-jump` | `forms.css` | First/prev, numbered pages with ellipses, next/last and a "jump to page" box. Give every clickable element a `data-page` attribute and delegate the click on the container, since the pager is re-rendered on each page change |
 | Buttons | `.btn` + `.btn-primary`/`-secondary`/`-ghost`/`-danger`, `.btn-sm`/`-lg`, `.btn-icon` | `buttons.css` | |
 | Settings row layout | `.settings-section` (card) / `.settings-row` / `-left`/`-right`/`-label`/`-desc` | `settings_rows.css` (needs its own `<link>`) | The label-left/control-right row every Settings page is built from |
 | Empty state | `.empty-state` / `-icon` / `-title` / `-desc` | `feedback.css` | Centered icon+title+description for "nothing here yet" |
@@ -1254,6 +1304,44 @@ this takes effect immediately, no restart, including
 picker actually show users), which is refreshed as part of the call.
 Uninstalling the module (`unregister_module()`) calls `unregister_hoster()`
 for you, same `item_id`-based cleanup as everywhere else in this document.
+
+## Cancellable downloads (`cancel_event`)
+
+A provider's `episode_cls.download(cancel_event=...)` is handed a
+`threading.Event` by the queue worker. Honour it — the user pressing **Cancel**
+in the queue must stop your download *now*, not at the end of the file:
+
+```python
+def download(self, cancel_event=None):
+    for chunk in stream:
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("Download cancelled")   # the string the worker books as "cancelled"
+        ...
+```
+
+Two follow-ups the built-in pipeline does and yours should too:
+
+```python
+# 1. Clean up your own partial files. yt-dlp deliberately keeps .part/.ytdl/
+#    fragment files behind for a later resume — a cancelled queue item is not
+#    a later resume, so they are just garbage in the user's library folder.
+from mediaforge.models.common.common import cleanup_partial_downloads
+cleanup_partial_downloads(output_path, reason="cancelled")
+
+# 2. If you open the captcha browser, hand it the same event, or patchright
+#    keeps solving a captcha for a download that no longer exists (up to the
+#    full 5 min solve timeout).
+from mediaforge.playwright import captcha
+captcha.set_cancel_event(cancel_event)      # thread-local: call it in the thread that solves
+try:
+    ...
+finally:
+    captcha.clear_cancel_event()
+```
+
+`captcha.cancel_requested()` is available for your own polling loops. Both
+solvers raise `RuntimeError("Download cancelled")` once the event is set, and
+close their browser on the way out.
 
 ## Notification channels (`register_notification_channel`)
 

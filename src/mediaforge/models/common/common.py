@@ -711,6 +711,67 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
         raise RuntimeError(f"ffmpeg error (rc={process.returncode}): {detail}")
 
 
+# Leftovers yt-dlp writes next to its output while a download is in flight.
+# Matched against the part of a file name that follows "<stem>." so nothing
+# outside this download's own file family is ever considered.
+_YTDLP_LEFTOVER_MARKERS = (".part", ".ytdl", ".temp.", ".part-Frag")
+_YTDLP_FORMAT_TEMP_RE = re.compile(r"^f\d+\.")
+
+
+def _cleanup_partial_downloads(output_path, reason="cancelled"):
+    """Delete yt-dlp's in-flight leftovers for *output_path*.
+
+    yt-dlp streams into ``<stem>.<ext>.part`` (plus ``.ytdl`` resume state,
+    ``.part-FragN`` fragment chunks and per-format ``<stem>.f137.mp4`` files
+    when video and audio are fetched separately) and only renames to the final
+    name once it is done. Aborting mid-download therefore used to leave those
+    behind — in the temp dir for the regular pipeline, and directly in the
+    user's library folder for Direct Link jobs, where they are plainly visible.
+
+    Only files whose name starts with ``<stem>.`` AND carries one of the
+    leftover markers are removed, so a finished file that happens to share the
+    stem (the episode's own .mkv, a subtitle sidecar) is never touched.
+    """
+    try:
+        output_path = Path(output_path)
+        folder = output_path.parent
+        stem = output_path.stem
+        if not stem or not folder.is_dir():
+            return
+        prefix = stem + "."
+        removed = 0
+        for entry in folder.iterdir():
+            name = entry.name
+            if not name.startswith(prefix) or name == output_path.name:
+                continue
+            tail = name[len(prefix):]
+            is_leftover = (
+                any(marker in name for marker in _YTDLP_LEFTOVER_MARKERS)
+                or bool(_YTDLP_FORMAT_TEMP_RE.match(tail))
+            )
+            if not is_leftover:
+                continue
+            try:
+                if entry.is_dir():
+                    shutil.rmtree(entry, ignore_errors=True)
+                else:
+                    entry.unlink()
+                removed += 1
+            except OSError as exc:
+                logger.debug(f"[cleanup] Could not remove {entry.name}: {exc}")
+        if removed:
+            logger.info(f"[cleanup] Removed {removed} partial download file(s) ({reason}): {stem}")
+    except Exception as exc:  # never let cleanup mask the original failure
+        logger.debug(f"[cleanup] Partial-file cleanup failed: {exc}")
+
+
+# Public alias: module providers that run their own yt-dlp download (rather
+# than going through episode_download here) should call this when their
+# download is cancelled or abandoned, so their leftovers are cleaned up the
+# same way the built-in pipeline cleans up its own.
+cleanup_partial_downloads = _cleanup_partial_downloads
+
+
 def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=None, impersonate=None, audio_lang=None, format_override=None):
     """Download an HLS stream using yt-dlp with concurrent fragment downloads.
 
@@ -904,7 +965,20 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
 
     except yt_dlp.utils.DownloadCancelled:
         logger.debug(f"[yt-dlp] Download cancelled: {label}")
+        # yt-dlp keeps its .part/.ytdl/fragment files on purpose so a later run
+        # can resume. A user-initiated cancel is not a "later run" — nothing
+        # resumes a cancelled queue item, so the leftovers are pure garbage
+        # (and for Direct Link jobs they sit in the user's library folder).
+        _cleanup_partial_downloads(output_path, reason="cancelled")
         raise RuntimeError("Download cancelled")
+
+    except Exception:
+        # Same reasoning for an external cancel that surfaced as something
+        # other than DownloadCancelled (e.g. the ffmpeg merge step being
+        # killed). A genuine error keeps its leftovers so the retry can resume.
+        if cancel_event is not None and cancel_event.is_set():
+            _cleanup_partial_downloads(output_path, reason="cancelled")
+        raise
 
     finally:
         with _ffmpeg_progress_lock:
@@ -1295,6 +1369,16 @@ def download(self, cancel_event=None):
             ):
                 if candidate.exists():
                     candidate.unlink()
+
+        # The list above only covers the *finished* intermediates. A download
+        # that was cancelled or died mid-stream also leaves yt-dlp's own
+        # .part/.ytdl/fragment files behind, named after those same stems —
+        # sweep them too, otherwise a cancelled multi-GB episode keeps its
+        # fragments in the temp dir until the OS cleans it up.
+        for _raw in (".raw_full", ".raw_audio", ".raw_video"):
+            _cleanup_partial_downloads(
+                _MEDIAFORGE_TEMP_DIR / f"{_stem_exc}{_raw}.mkv", reason="failed attempt"
+            )
 
         _remove_empty_dirs(self._folder_path, self._base_folder)
         raise

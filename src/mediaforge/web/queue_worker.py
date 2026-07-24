@@ -637,6 +637,13 @@ def _queue_worker():
 
             downloaded_count = 0
             for i, ep_url in enumerate(episodes):
+                # Cancelled between two episodes: leave before advertising the
+                # next URL as "currently downloading" in the web UI.
+                if _item_cancel.is_set() or is_queue_cancelled(item["id"]):
+                    update_queue_progress(item["id"], i, "")
+                    for _rem_url in episodes[i:]:
+                        _record_download_history(item, _rem_url, time.time(), None, 0, "cancelled")
+                    break
                 update_queue_progress(item["id"], i, ep_url)
 
                 last_error = None
@@ -680,6 +687,12 @@ def _queue_worker():
                     _last_attempt = _plan_idx == len(_attempt_plan) - 1
                     if _hoster in _dead_providers:
                         continue
+                    # Cancelled mid-chain: do not open the next hoster (each one
+                    # is a fresh scrape and possibly another captcha browser).
+                    if _item_cancel.is_set():
+                        _episode_cancelled = True
+                        last_error = None
+                        break
                     if _hoster != _current_provider and _current_provider is not None:
                         logger.debug(
                             f"[Provider-Fallback] {ep_url}: '{_current_provider}' failed — "
@@ -721,12 +734,22 @@ def _queue_worker():
                             # still streams to the web UI as during a download.
                             from ..playwright import captcha as _dedup_captcha
                             _dedup_captcha._local.queue_id = item["id"]
+                            # Resolving can open the captcha browser, which used
+                            # to block this thread for the full solve timeout
+                            # (up to 5 min) with no way out — the item was long
+                            # marked "cancelled" in the DB while patchright kept
+                            # clicking. Handing the cancel event to the solver
+                            # makes it tear the browser down within ~1s.
+                            _dedup_captcha.set_cancel_event(_item_cancel)
                             try:
                                 _resolved_url = episode.provider_url
                             except Exception:
                                 _resolved_url = None  # let the download surface the real error
                             finally:
                                 _dedup_captcha._local.queue_id = None
+                                _dedup_captcha.clear_cancel_event()
+                            if _item_cancel.is_set():
+                                raise RuntimeError("Download cancelled")
                             if _resolved_url:
                                 _owner = _seen_stream_urls.get(_resolved_url)
                                 if _owner is not None and _owner != _hoster:
@@ -756,6 +779,10 @@ def _queue_worker():
                             # threading.local() is per-thread — set queue_id here, not in the parent thread
                             _captcha_mod._local.queue_id = _queue_id
                             _captcha_mod._local.upscale = _upscale
+                            # Same reason as at the resolve step above: a captcha
+                            # opened from inside the download must abort with the
+                            # download, not run its own 5 min timeout out.
+                            _captcha_mod.set_cancel_event(_attempt_cancel)
                             try:
                                 _dl_res[0] = episode.download(cancel_event=_attempt_cancel)
                             except Exception as _e:
@@ -763,6 +790,7 @@ def _queue_worker():
                             finally:
                                 _captcha_mod._local.queue_id = None
                                 _captcha_mod._local.upscale = False
+                                _captcha_mod.clear_cancel_event()
                                 _dl_done.set()
 
                         _t = threading.Thread(target=_dl_thread, daemon=True)
@@ -773,9 +801,11 @@ def _queue_worker():
                         _last_change = time.monotonic()
                         _start_watch = time.monotonic()
                         _timed_out   = False
-                        while not _dl_done.wait(timeout=5):
+                        _cancelled   = False
+                        while not _dl_done.wait(timeout=1):
                             if _item_cancel.is_set():
                                 _attempt_cancel.set()
+                                _cancelled = True
                                 break
                             _now = time.monotonic()
                             if _now - _start_watch > _HANG_TIMEOUT:
@@ -797,6 +827,20 @@ def _queue_worker():
                                 _attempt_cancel.set()
                                 _timed_out = True
                                 break
+
+                        if _cancelled:
+                            # The download thread is still winding down (yt-dlp
+                            # aborts on the next progress hook, ffmpeg gets
+                            # killed). Waiting keeps the temp-file cleanup in
+                            # episode.download()'s except block inside this
+                            # attempt instead of racing the next queue item.
+                            # Raising is what actually fixes the old bug here:
+                            # the loop used to just `break`, leaving _dl_exc/
+                            # _dl_res at None, so a cancelled episode fell
+                            # through the success path and was booked as
+                            # "completed" in the history and telemetry.
+                            _dl_done.wait(timeout=30)
+                            raise RuntimeError("Download cancelled")
 
                         if _timed_out:
                             _dl_done.wait(timeout=10)  # give thread a moment to notice cancel
@@ -997,8 +1041,13 @@ def _queue_worker():
                         _record_download_history(item, _rem_url, time.time(), None, 0, "cancelled")
                     break
 
-                # Pause: hold here until resumed (checks every 2s)
+                # Pause: hold here until resumed (checks every 2s). A cancel
+                # that lands while the queue is paused breaks out too —
+                # otherwise the item sat here "cancelling" until somebody
+                # remembered to press Resume.
                 while is_queue_paused():
+                    if _item_cancel.is_set():
+                        break
                     time.sleep(2)
 
             # Batch-trigger after_download upscaling for all collected episode paths

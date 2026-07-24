@@ -43,9 +43,30 @@ _img_pool = _cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="img-precac
 _atexit.register(_img_pool.shutdown, wait=False)
 
 
+_IMAGE_CACHE_CLEANUP_INTERVAL = 24 * 60 * 60  # re-run cleanup every 24h
+
+
+def _image_cache_cleanup_worker():
+    """Background loop: purge stale cached image files every 24h.
+
+    Runs once shortly after startup, then repeats on a fixed 24h interval
+    for the lifetime of the process (daemon thread, same pattern as the
+    update-check / auto-update workers in routes/update.py).
+    """
+    import time as _time
+    while True:
+        try:
+            cleanup_image_cache()
+        except Exception:
+            logger.exception("Image cache cleanup error")
+        _time.sleep(_IMAGE_CACHE_CLEANUP_INTERVAL)
+
+
 def ensure_image_cache_cleanup():
-    """Run the image-cache cleanup once in the background at startup."""
-    threading.Thread(target=cleanup_image_cache, daemon=True).start()
+    """Start the periodic image-cache cleanup worker (runs every 24h)."""
+    threading.Thread(
+        target=_image_cache_cleanup_worker, daemon=True, name="image-cache-cleanup",
+    ).start()
 
 
 def _img_upstream_headers(raw_url: str) -> dict:
@@ -149,7 +170,7 @@ def _img_cache_path_any(url: str) -> "_Path | None":
     return None
 
 
-def cleanup_image_cache(max_age_days: int = 30):
+def cleanup_image_cache(max_age_days: int = 7):
     """Delete cached image files not accessed in the last max_age_days days."""
     import time
     cutoff = time.time() - max_age_days * 86400
@@ -244,7 +265,7 @@ def register_image_proxy_routes(app):
         Fetches poster/cover images on behalf of the client so mobile devices
         don't need a direct connection to source sites (avoids ISP DNS blocks,
         hotlink protection, and mixed-content issues).  Images are cached to
-        disk for 30 days; the cache is served directly without re-fetching.
+        disk for 7 days; the cache is served directly without re-fetching.
 
         Only whitelisted source domains are allowed.
 

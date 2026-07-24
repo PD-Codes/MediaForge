@@ -69,6 +69,41 @@
     banner.style.display = "";
   }
 
+  // ---- theme install hint ---------------------------------------------------
+  // A freshly installed theme pack does nothing until somebody selects it, so
+  // the install has to say where that happens. The install is followed by a
+  // page reload, which kills a toast, hence the sessionStorage hand-off:
+  // written right before the reload, read once on the next page load.
+  const THEME_HINT_KEY = "mf-theme-installed-hint";
+
+  function rememberThemeHint(folder, version) {
+    try {
+      sessionStorage.setItem(THEME_HINT_KEY, JSON.stringify({
+        folder: String(folder || ""), version: String(version || ""),
+      }));
+    } catch (e) { /* private mode — the toast above still fired */ }
+  }
+
+  function renderThemeHint() {
+    const banner = $("extThemeHintBanner");
+    if (!banner) return;
+    let hint = null;
+    try {
+      const raw = sessionStorage.getItem(THEME_HINT_KEY);
+      if (raw) hint = JSON.parse(raw);
+      sessionStorage.removeItem(THEME_HINT_KEY);   // show it once, not forever
+    } catch (e) { return; }
+    if (!hint || !hint.folder) return;
+    const label = hint.version ? `${hint.folder} v${hint.version}` : hint.folder;
+    // textContent, not innerHTML: the folder name comes from the store index.
+    $("extThemeHintText").textContent =
+      t(`"${label}" wurde installiert und ist sofort einsatzbereit — es muss nur noch ausgewählt werden.`,
+        `"${label}" is installed and ready to use — it only has to be selected.`);
+    banner.style.display = "";
+    const dismiss = $("extThemeHintDismiss");
+    if (dismiss) dismiss.addEventListener("click", () => { banner.style.display = "none"; });
+  }
+
   // ---- catalog -------------------------------------------------------------
   const TRUST_META = {
     official: { cls: "badge-loaded", de: "Offiziell", en: "Official" },
@@ -334,8 +369,13 @@
         if (data.type === "theme") {
           // Themes apply live, always — the reload is only so the new card,
           // the picker options and the badges show up server-rendered.
-          toast(t(`Theme "${data.folder}" v${data.version} installiert. Auswählbar unter Einstellungen → Design.`,
-                  `Theme "${data.folder}" v${data.version} installed. Selectable under Settings → Design.`));
+          // The toast would not survive that reload, and a theme that is
+          // installed but not selected looks like nothing happened — so the
+          // "where do I turn this on" hint is handed to the banner instead
+          // (see rememberThemeHint / renderThemeHint below).
+          rememberThemeHint(data.folder, data.version);
+          toast(t(`Theme "${data.folder}" v${data.version} installiert.`,
+                  `Theme "${data.folder}" v${data.version} installed.`));
           setTimeout(() => window.location.reload(), 900);
         } else if (data.warning) {
           // Installed, verified — but it refused to load here (unmet DEPENDS_ON,
@@ -586,5 +626,12 @@
     } else {
       loadCatalog(false);
     }
+  }
+
+  // Same t()-availability reasoning as the catalog load above.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", renderThemeHint);
+  } else {
+    renderThemeHint();
   }
 })();

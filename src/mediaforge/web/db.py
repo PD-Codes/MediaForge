@@ -16,6 +16,7 @@ WAL mode are handled. Tables are created and migrated lazily by the
 """
 
 import os
+import re
 import sqlite3
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -540,6 +541,10 @@ def delete_user(user_id):
                 return False, "Cannot delete the last admin"
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
+        # user_ui_prefs has no FK to users (see its CREATE TABLE for why), so
+        # the appearance rows would otherwise outlive the account and be
+        # inherited by whoever gets this id next.
+        clear_user_ui_prefs(user_id)
         return True, None
     finally:
         conn.close()
@@ -2640,6 +2645,7 @@ def init_app_settings_db():
                 value TEXT NOT NULL
             )
         """)
+        conn.execute(_CREATE_USER_UI_PREFS_TABLE)
         conn.commit()
     finally:
         conn.close()
@@ -3098,6 +3104,146 @@ def set_user_notif_prefs_bulk(user_id: int, prefs: dict) -> None:
                 (user_id, key, str(value)),
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Per-user UI preferences (appearance)
+# ---------------------------------------------------------------------------
+# The look a user picks — theme pack, dark/light, accent colour — used to live
+# in localStorage only, so it was per browser: a second device, a private
+# window or a cleared cache and the choice was gone. These are now stored on
+# the account and rendered into <head> server-side, which also removes the
+# flash of the wrong theme on first paint.
+#
+# Deliberately NO foreign key to users(id): in no-auth mode the session runs
+# as the pseudo-user id 0 (see app.py's _set_noauth_session) for which no row
+# exists — and the users table itself is only created when auth is enabled.
+# delete_user() cleans up explicitly instead.
+_CREATE_USER_UI_PREFS_TABLE = """\
+CREATE TABLE IF NOT EXISTS user_ui_prefs (
+    user_id INTEGER NOT NULL,
+    key     TEXT    NOT NULL,
+    value   TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (user_id, key)
+);
+"""
+
+# Whitelist of storable keys with a validator each. Anything not listed is
+# rejected by set_user_ui_prefs — the values end up in a <style>/<link> the
+# browser trusts, so "user-supplied string" is not something to wave through.
+_THEME_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _valid_theme_pack(value: str) -> bool:
+    # '' = follow the instance default, 'default' = built-in look,
+    # anything else must look like an installed theme folder name.
+    return value in ("", "default") or bool(_THEME_FOLDER_RE.match(value))
+
+
+USER_UI_PREF_KEYS = {
+    "theme_pack": _valid_theme_pack,
+    "theme_mode": lambda v: v in ("dark", "light"),
+    "accent": lambda v: bool(_HEX_COLOR_RE.match(v)),
+}
+
+
+def register_ui_pref_key(key: str, validator=None) -> None:
+    """Let a module store its own per-user UI preference under *key*.
+
+    Modules that add a UI toggle can persist it on the account through the
+    same table and the same /api/user/preferences endpoint the core
+    appearance settings use, instead of inventing per-browser localStorage
+    state that a user loses on their next device.
+
+        from mediaforge.web.db import register_ui_pref_key
+        register_ui_pref_key("mymodule_compact_rows", lambda v: v in ("0", "1"))
+
+    *validator* takes the string value and returns True if it may be stored;
+    the default accepts any string of at most 200 characters. Prefix the key
+    with the module id so two modules cannot collide. Values are echoed back
+    into the page via window._USER_PREFS, so keep validators tight.
+    """
+    key = str(key or "").strip()
+    if not key or not re.match(r"^[A-Za-z0-9_.-]{1,64}$", key):
+        raise ValueError(f"Invalid UI preference key: {key!r}")
+    if validator is None:
+        def validator(value):
+            return isinstance(value, str) and len(value) <= 200
+    USER_UI_PREF_KEYS[key] = validator
+
+
+def get_user_ui_prefs(user_id: int) -> dict:
+    """Return every stored appearance preference for *user_id*.
+
+    Unknown/invalid rows are dropped rather than returned: a key that was
+    removed from the whitelist (or a value written by an older build that no
+    longer validates) must not reach the template.
+    """
+    if user_id is None:
+        return {}
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT key, value FROM user_ui_prefs WHERE user_id = ?", (user_id,)
+        ).fetchall()
+    except sqlite3.Error:
+        return {}   # table not created yet (very first request during init)
+    finally:
+        conn.close()
+    out = {}
+    for row in rows:
+        key, value = row["key"], row["value"]
+        validator = USER_UI_PREF_KEYS.get(key)
+        if validator and validator(value):
+            out[key] = value
+    return out
+
+
+def set_user_ui_prefs(user_id: int, prefs: dict) -> "tuple[bool, str | None]":
+    """Upsert appearance preferences for *user_id*.
+
+    Returns (ok, error). Rejects the whole call on the first unknown key or
+    invalid value instead of silently storing a subset — a half-applied
+    appearance is harder to reason about than a failed save.
+    """
+    if user_id is None:
+        return False, "No user in session"
+    if not isinstance(prefs, dict) or not prefs:
+        return False, "No preferences given"
+    cleaned = {}
+    for key, value in prefs.items():
+        validator = USER_UI_PREF_KEYS.get(key)
+        if validator is None:
+            return False, f"Unknown preference: {key}"
+        value = "" if value is None else str(value)
+        if not validator(value):
+            return False, f"Invalid value for {key}"
+        cleaned[key] = value
+    conn = get_db()
+    try:
+        for key, value in cleaned.items():
+            conn.execute(
+                "INSERT INTO user_ui_prefs (user_id, key, value) VALUES (?, ?, ?)"
+                " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value",
+                (user_id, key, value),
+            )
+        conn.commit()
+        return True, None
+    finally:
+        conn.close()
+
+
+def clear_user_ui_prefs(user_id: int) -> None:
+    """Drop all appearance preferences for *user_id* (used by delete_user)."""
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM user_ui_prefs WHERE user_id = ?", (user_id,))
+        conn.commit()
+    except sqlite3.Error:
+        pass
     finally:
         conn.close()
 

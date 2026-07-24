@@ -43,14 +43,28 @@
     href="{{ url_for('theme_bundle_css', folder=active_theme_pack.folder) }}?v={{ active_theme_pack.version }}" />
   {% endif %}
   <script>
-    // Theme pack override bootstrap. localStorage 'aw-themepack':
+    // Theme pack override bootstrap. The personal choice is:
     //   missing/''  -> follow the instance default (server-rendered link above)
     //   'default'   -> force the built-in MediaForge look (drop the link)
     //   '<folder>'  -> use that installed theme instead
     // Runs synchronously in <head> so the swap happens before first paint.
+    //
+    // Source of truth is the ACCOUNT (user_ui_prefs, see db.get_user_ui_prefs
+    // and /api/user/preferences) — it is rendered right here, so the correct
+    // theme is in place on the first paint of every browser the user logs in
+    // from. localStorage stays as a mirror: it is what a logged-out page (the
+    // login screen) and an offline PWA start have to go on.
     window._THEME_PACKS = {{ installed_theme_packs | tojson }};
     window._THEME_DEFAULT = {{ (active_theme_pack.folder if active_theme_pack else '') | tojson }};
+    window._USER_PREFS = {{ (user_ui_prefs or {}) | tojson }};
     (function () {
+      // Account value wins; write it through so the mirror cannot go stale.
+      try {
+        var acc = window._USER_PREFS || {};
+        if (typeof acc.theme_pack === 'string') localStorage.setItem('aw-themepack', acc.theme_pack);
+        if (acc.theme_mode) localStorage.setItem('aw-theme', acc.theme_mode);
+        if (acc.accent) localStorage.setItem('aw-accent', acc.accent);
+      } catch (e) { }
       try {
         var ov = localStorage.getItem('aw-themepack');
         if (!ov) return;
@@ -79,7 +93,9 @@
     })();
   </script>
   <script>
-    // Prevent flash: apply saved theme (and collapsed-sidebar state) before paint
+    // Prevent flash: apply saved theme (and collapsed-sidebar state) before paint.
+    // 'aw-theme' was just refreshed from the account by the script above, so
+    // this reads the user's real choice even on a browser they've never used.
     (function () {
       try {
         var t = localStorage.getItem('aw-theme') || 'dark';
@@ -935,7 +951,45 @@
       return '#' + [c.r + amount * 255, c.g + amount * 255, c.b + amount * 255]
         .map(function (v) { return clamp(v).toString(16).padStart(2, '0'); }).join('');
     }
-    function applyAccent(hex) {
+    // ── Appearance persistence ──────────────────────────────────────────────
+    // Every look-related choice is stored on the ACCOUNT (POST
+    // /api/user/preferences -> db.user_ui_prefs) as well as in localStorage.
+    // The account copy is what base.html renders on the next page load, so the
+    // theme follows the user across browsers, devices and a cleared cache;
+    // localStorage remains the offline/logged-out fallback.
+    //
+    // Fire-and-forget on purpose: the look has already been applied locally, so
+    // a failed save must never interrupt the user. A 401 (auth on, session
+    // expired) is a normal outcome here and stays silent.
+    var _appearanceSaveTimer = null;
+    var _appearancePending = {};
+    function _persistAppearance(patch) {
+      if (!patch) return;
+      Object.keys(patch).forEach(function (k) { _appearancePending[k] = patch[k]; });
+      // Debounced: the accent colour picker fires on every 'input' event while
+      // the user drags through the spectrum — that must not be one request per
+      // pixel.
+      if (_appearanceSaveTimer) clearTimeout(_appearanceSaveTimer);
+      _appearanceSaveTimer = setTimeout(function () {
+        var body = _appearancePending;
+        _appearancePending = {};
+        _appearanceSaveTimer = null;
+        try {
+          fetch('/api/user/preferences', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          }).then(function (r) {
+            if (r.ok) {
+              window._USER_PREFS = Object.assign(window._USER_PREFS || {}, body);
+            }
+          }).catch(function () { });
+        } catch (e) { }
+      }, 500);
+    }
+    // persist=false is used by the restore paths below: replaying a stored
+    // value must not write it straight back.
+    function applyAccent(hex, persist) {
       if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return;
       var rgb = _hexToRgb(hex);
       var root = document.documentElement;
@@ -956,11 +1010,13 @@
         el.classList.toggle('active', el.dataset.color === hex.toLowerCase());
       });
       try { localStorage.setItem('aw-accent', hex); } catch (e) { }
+      if (persist !== false) _persistAppearance({ accent: hex });
     }
-    function setTheme(t) {
+    function setTheme(t, persist) {
       document.documentElement.setAttribute('data-theme', t);
       try { localStorage.setItem('aw-theme', t); } catch (e) { }
       _updateThemeBtns(t);
+      if (persist !== false) _persistAppearance({ theme_mode: t });
     }
     function toggleTheme() {
       var current = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -969,10 +1025,11 @@
     // Theme packs (web/themes.py). Persists the personal override and swaps
     // the stylesheet live — no reload. '' = follow the instance default,
     // 'default' = force the built-in look, '<folder>' = that installed theme.
-    function applyThemePack(folder) {
+    function applyThemePack(folder, persist) {
       folder = folder || '';
       if (folder && folder !== 'default' && !/^[A-Za-z0-9._-]+$/.test(folder)) return;
       try { localStorage.setItem('aw-themepack', folder); } catch (e) { }
+      if (persist !== false) _persistAppearance({ theme_pack: folder });
       var target = folder || (window._THEME_DEFAULT || '');
       var link = document.getElementById('themePackCss');
       if (!target || target === 'default') {
@@ -1025,11 +1082,13 @@
       popup.classList.add('open');
     }
     function resetAppearance() {
+      // Both calls persist the defaults to the account (and to localStorage),
+      // which is why the old localStorage.removeItem() pair is gone: clearing
+      // the mirror while the account still held the previous values would have
+      // brought them straight back on the next page load.
       setTheme('dark');
       applyAccent(_DEFAULT_ACCENT);
       try {
-        localStorage.removeItem('aw-accent');
-        localStorage.removeItem('aw-theme');
         var settings = ['aw-glow-effect', 'aw-header-color', 'aw-header-color-help', 'aw-skeleton-loader', 'aw-choose-border', 'aw-active-download-glow', 'aw-click-effect', 'aw-icon-move'];
         settings.forEach(function (s) {
           localStorage.setItem(s, 'false');
@@ -1084,12 +1143,13 @@
         if ((btn && btn.contains(e.target)) || popup.contains(e.target)) return;
         popup.classList.remove('open');
       });
-      // Restore saved accent
+      // Restore saved accent (account value was mirrored into localStorage by
+      // the <head> bootstrap). persist=false — this is a replay, not a change.
       try {
         var saved = localStorage.getItem('aw-accent');
-        if (saved) applyAccent(saved);
-        else applyAccent(_DEFAULT_ACCENT);
-      } catch (e) { applyAccent(_DEFAULT_ACCENT); }
+        if (saved) applyAccent(saved, false);
+        else applyAccent(_DEFAULT_ACCENT, false);
+      } catch (e) { applyAccent(_DEFAULT_ACCENT, false); }
       // Set theme button states
       var t = document.documentElement.getAttribute('data-theme') || 'dark';
       _updateThemeBtns(t);
