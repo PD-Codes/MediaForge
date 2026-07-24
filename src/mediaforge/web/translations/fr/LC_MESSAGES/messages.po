@@ -1,0 +1,5010 @@
+# German translations for MediaForge
+# msgid = English source (template key)
+# msgstr = German translation
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-06-28 13:22+0000\n"
+"PO-Revision-Date: 2026-07-23 15:29+0000\n"
+"Last-Translator: Automatically generated\n"
+"Language: fr\n"
+"Language-Team: none\n"
+"Plural-Forms: nplurals=2; plural=n > 1;\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.8.0\n"
+"X-Generator: Weblate 2026.7.1\n"
+
+# ── base.html ──────────────────────────────────────────────────────────────
+msgid "Discover"
+msgstr ""
+
+msgid "Home"
+msgstr ""
+
+msgid "Favorites"
+msgstr ""
+
+msgid "Library"
+msgstr ""
+
+msgid "Queue"
+msgstr ""
+
+msgid "Advanced Search"
+msgstr ""
+
+msgid "Management"
+msgstr ""
+
+msgid "Statistics"
+msgstr ""
+
+msgid "System"
+msgstr ""
+
+# notifications.html
+msgid "Notifications"
+msgstr ""
+
+# integrations.html
+msgid "Integrations"
+msgstr ""
+
+# encoding.html
+msgid "Encoding"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "Log out"
+msgstr ""
+
+msgid "Customize appearance"
+msgstr ""
+
+msgid "Appearance"
+msgstr ""
+
+msgid "Open menu"
+msgstr ""
+
+msgid "Remove completed, failed and cancelled entries"
+msgstr ""
+
+msgid "Clear entries"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "All"
+msgstr ""
+
+msgid "Running"
+msgstr ""
+
+msgid "Queued"
+msgstr ""
+
+msgid "Done"
+msgstr ""
+
+msgid "Partial"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Pause downloads"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "Accent Color"
+msgstr ""
+
+msgid "Reset"
+msgstr ""
+
+msgid "Delete title?"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "Move title"
+msgstr ""
+
+msgid "Move"
+msgstr ""
+
+msgid "to a different location."
+msgstr ""
+
+msgid "Destination"
+msgstr ""
+
+msgid "Moving"
+msgstr ""
+
+msgid "In background"
+msgstr ""
+
+msgid "Reading media information..."
+msgstr ""
+
+msgid "Solve Captcha"
+msgstr ""
+
+msgid "Loading browser screenshot..."
+msgstr ""
+
+msgid "Starting transcoder..."
+msgstr ""
+
+msgid "Close (Esc)"
+msgstr ""
+
+msgid "Play/Pause (Space)"
+msgstr ""
+
+msgid "Mute (M)"
+msgstr ""
+
+msgid "Fullscreen"
+msgstr ""
+
+msgid "Fullscreen (F)"
+msgstr ""
+
+# ── setup.html ────────────────────────────────────────────────────────────
+msgid "Setup"
+msgstr ""
+
+msgid "Initial Setup"
+msgstr ""
+
+msgid ""
+"No admin account exists yet. Create the first admin account to get "
+"started."
+msgstr ""
+
+msgid "Admin username"
+msgstr ""
+
+msgid "Password (min. 8 characters)"
+msgstr ""
+
+msgid "Confirm password"
+msgstr ""
+
+msgid "Create admin account"
+msgstr ""
+
+# ── settings.html ─────────────────────────────────────────────────────────
+msgid "Configuration & Management"
+msgstr ""
+
+msgid "Your .env has been imported"
+msgstr ""
+
+msgid "All settings from"
+msgstr ""
+
+msgid "are now stored in the database. The file is no longer needed."
+msgstr ""
+
+msgid "Delete .env now"
+msgstr ""
+
+msgid "General"
+msgstr ""
+
+msgid "Design"
+msgstr ""
+
+msgid "Downloads"
+msgstr ""
+
+msgid "Network"
+msgstr ""
+
+msgid "Authentication"
+msgstr ""
+
+msgid "Updates"
+msgstr ""
+
+msgid "Project & Support"
+msgstr ""
+
+msgid ""
+"MediaForge is an open-source project. For questions, bugs, "
+"or feature ideas please visit our GitHub repository."
+msgstr ""
+
+msgid "Language"
+msgstr ""
+
+msgid "Choose the interface language. The page reloads automatically."
+msgstr ""
+
+msgid "Media Statistics"
+msgstr ""
+
+msgid "Show Media category on the statistics page"
+msgstr ""
+
+msgid ""
+"Adds a Media category to the statistics page with movie, series and "
+"episode counts based on your media library. Also an watcher will be "
+"enabled"
+msgstr ""
+
+msgid "Incomplete series"
+msgstr ""
+
+msgid "Series with missing episodes will be listed here."
+msgstr ""
+
+msgid "Duplicate media"
+msgstr ""
+
+msgid "Media that exists more than once will be listed here."
+msgstr ""
+
+msgid "Debug Mode"
+msgstr ""
+
+msgid "Enable debug logging"
+msgstr ""
+
+msgid "Writes detailed logs. Takes effect immediately — no restart needed."
+msgstr ""
+
+msgid "Enable Web Console"
+msgstr ""
+
+msgid "Web Console"
+msgstr ""
+
+msgid "Show the console output directly here in the Web UI"
+msgstr ""
+
+msgid "Custom Color"
+msgstr ""
+
+msgid "Reset appearance"
+msgstr ""
+
+msgid "Advanced Settings"
+msgstr ""
+
+msgid "These settings only change the design minimally."
+msgstr ""
+
+msgid "Add glow effect"
+msgstr ""
+
+msgid "A glow highlight for active menu items in the accent color"
+msgstr ""
+
+msgid "Change header color with accent color"
+msgstr ""
+
+msgid "Fade header color for easier readability"
+msgstr ""
+
+msgid "Invert header color"
+msgstr ""
+
+msgid "Skeleton Loader"
+msgstr ""
+
+msgid "An animated loading indicator for items not yet loaded in the overview"
+msgstr ""
+
+msgid "Color highlight for selection"
+msgstr ""
+
+msgid "A highlight when hovering over a movie or series in the accent color"
+msgstr ""
+
+msgid "Color highlight for currently downloading items"
+msgstr ""
+
+msgid "A highlight for currently downloading items in the accent color"
+msgstr ""
+
+msgid "\"Button Press\" animation when clicking a button or link"
+msgstr ""
+
+#, python-format
+msgid "Button becomes slightly brighter and 5%% smaller on click"
+msgstr ""
+
+msgid "Icon animations"
+msgstr ""
+
+msgid "Icons animate on hover in menus"
+msgstr ""
+
+msgid "Download Settings"
+msgstr ""
+
+msgid "Download Path"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Changes take effect immediately for new downloads."
+msgstr ""
+
+msgid "Default Language"
+msgstr ""
+
+msgid "Download Language"
+msgstr ""
+
+msgid "Default Provider"
+msgstr ""
+
+msgid "Used as default when adding a new download."
+msgstr ""
+
+msgid "File Naming Template"
+msgstr ""
+
+msgid "Placeholders:"
+msgstr ""
+
+msgid "Separate languages into folders"
+msgstr ""
+
+msgid "Downloads are sorted by language (e.g. german-dub/, english-sub/)."
+msgstr ""
+
+msgid "Disable English subtitle downloads"
+msgstr ""
+
+msgid "Hides English Sub from the language selection."
+msgstr ""
+
+msgid "Enable movie subfolders"
+msgstr ""
+
+msgid "Each movie gets its own subfolder — recommended for Jellyfin."
+msgstr ""
+
+msgid "Bandwidth & Schedule"
+msgstr ""
+
+msgid "Bandwidth Limit"
+msgstr ""
+
+msgid "Max download speed (KB/s)"
+msgstr ""
+
+msgid ""
+"Throttles all downloads to this speed. 0 = unlimited. Applies to new "
+"downloads."
+msgstr ""
+
+msgid "Download Time Window"
+msgstr ""
+
+msgid "Only download during a specific time window"
+msgstr ""
+
+msgid "From"
+msgstr ""
+
+msgid "Until"
+msgstr ""
+
+msgid ""
+"New downloads only start within this window (server local time). "
+"Overnight windows like 22:00–06:00 are supported. Running downloads are "
+"not interrupted."
+msgstr ""
+
+msgid "Custom Paths"
+msgstr ""
+
+msgid "Add Path"
+msgstr ""
+
+msgid "Name (e.g. NAS)"
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Path"
+msgstr ""
+
+msgid "Default for sites"
+msgstr ""
+
+msgid "Select the sites for which this path should be preselected as the download folder."
+msgstr ""
+
+msgid "Actions"
+msgstr ""
+
+msgid "Auto-Sync Defaults"
+msgstr ""
+
+msgid "Schedule"
+msgstr ""
+
+msgid "1 hour"
+msgstr ""
+
+msgid "2 hours"
+msgstr ""
+
+msgid "4 hours"
+msgstr ""
+
+msgid "8 hours"
+msgstr ""
+
+msgid "12 hours"
+msgstr ""
+
+msgid "16 hours"
+msgstr ""
+
+msgid "24 hours"
+msgstr ""
+
+msgid "Custom path unavailable"
+msgstr ""
+
+msgid "Skip sync"
+msgstr ""
+
+msgid "Wait (Hold)"
+msgstr ""
+
+msgid ""
+"How often Auto-Sync checks for new episodes. Language and provider are "
+"defaults for new sync jobs."
+msgstr ""
+
+msgid "Custom path unavailable:"
+msgstr ""
+
+msgid ""
+"Defines what Auto-Sync should do when the assigned custom path is not "
+"available. This is the default for all new jobs but can be overridden per"
+" job."
+msgstr ""
+
+msgid "Auto-Sync Error Handling"
+msgstr ""
+
+msgid "Retries on error"
+msgstr ""
+
+msgid "No retries"
+msgstr ""
+
+msgid "1 retry"
+msgstr ""
+
+msgid "2 retries"
+msgstr ""
+
+msgid "3 retries"
+msgstr ""
+
+msgid "Time between attempts"
+msgstr ""
+
+msgid "No delay"
+msgstr ""
+
+msgid "1 minute"
+msgstr ""
+
+msgid "2 minutes"
+msgstr ""
+
+msgid "3 minutes"
+msgstr ""
+
+msgid "4 minutes"
+msgstr ""
+
+msgid "5 minutes"
+msgstr ""
+
+msgid ""
+"Defines how often and at what interval a failed Auto-Sync is retried "
+"before it is considered permanently failed."
+msgstr ""
+
+msgid "Adaptive Auto-Sync"
+msgstr ""
+
+msgid "Enable Adaptive Auto-Sync"
+msgstr ""
+
+msgid "Pause after"
+msgstr ""
+
+msgid "Retry after"
+msgstr ""
+
+msgid "2 weeks"
+msgstr ""
+
+msgid "3 weeks"
+msgstr ""
+
+msgid "4 weeks"
+msgstr ""
+
+msgid "5 weeks"
+msgstr ""
+
+msgid "6 weeks"
+msgstr ""
+
+msgid "7 weeks"
+msgstr ""
+
+msgid "8 weeks"
+msgstr ""
+
+msgid "Days"
+msgstr ""
+
+msgid "Weeks"
+msgstr ""
+
+msgid "Months"
+msgstr ""
+
+msgid ""
+"When an Auto-Sync job finds no new episodes for the selected period, it "
+"enters pause mode and is only re-checked at the wider interval below. As "
+"soon as a new episode is found again, it returns to the normal cycle."
+msgstr ""
+
+msgid "Only administrators can change Auto-Sync settings."
+msgstr ""
+
+msgid "Network / DNS"
+msgstr ""
+
+msgid "DNS Mode"
+msgstr ""
+
+msgid "System (Default)"
+msgstr ""
+
+msgid "Custom..."
+msgstr ""
+
+msgid "DNS Server IP"
+msgstr ""
+
+msgid ""
+"Defines which DNS server resolves domains. Useful if your ISP blocks "
+"AniWorld or S.TO."
+msgstr ""
+
+msgid "Test DNS"
+msgstr ""
+
+msgid "DNS Diagnostics"
+msgstr ""
+
+msgid "Test"
+msgstr ""
+
+msgid "DNS Status"
+msgstr ""
+
+msgid "— Not tested yet"
+msgstr ""
+
+msgid "Reachability"
+msgstr ""
+
+msgid "Web Server"
+msgstr ""
+
+msgid "Base URL (Reverse Proxy)"
+msgstr ""
+
+msgid ""
+"Public URL when MediaForge runs behind a reverse proxy (e.g. Nginx, "
+"Traefik). Required for OIDC callbacks and absolute links. Leave empty if "
+"no proxy is used."
+msgstr ""
+
+msgid "Changes take effect after the next restart."
+msgstr ""
+
+msgid "User Management"
+msgstr ""
+
+msgid "Add User"
+msgstr ""
+
+msgid "Username"
+msgstr ""
+
+msgid "Password"
+msgstr ""
+
+msgid "User"
+msgstr ""
+
+msgid "Administrator"
+msgstr ""
+
+msgid "Role"
+msgstr ""
+
+msgid "Created"
+msgstr ""
+
+msgid "Single Sign-On (SSO / OIDC)"
+msgstr ""
+
+msgid ""
+"Connect MediaForge with an external identity provider (Keycloak, Authentik,"
+" Google, etc.)."
+msgstr ""
+
+msgid "Changes require a server restart."
+msgstr ""
+
+msgid "Enable SSO login"
+msgstr ""
+
+msgid "SSO only (disable local logins)"
+msgstr ""
+
+msgid "Admin username (SSO)"
+msgstr ""
+
+msgid "Admin subject (sub claim)"
+msgstr ""
+
+msgid ""
+"The sub claim is more secure than the username. Found in server logs "
+"after the first SSO login."
+msgstr ""
+
+msgid "Save SSO settings"
+msgstr ""
+
+msgid "✓ Saved — restart required"
+msgstr ""
+
+msgid ""
+"External REST API for Home Assistant & Co. Auth via X-Api-Key header or "
+"?apikey=."
+msgstr ""
+
+msgid "Loading..."
+msgstr ""
+
+msgid "Show"
+msgstr ""
+
+msgid "Copy"
+msgstr ""
+
+msgid "Regenerate"
+msgstr ""
+
+msgid "Base URL"
+msgstr ""
+
+msgid "Endpoints"
+msgstr ""
+
+msgid "Status & queue overview"
+msgstr ""
+
+msgid "Download queue"
+msgstr ""
+
+msgid "Single queue item"
+msgstr ""
+
+msgid "Library — all titles"
+msgstr ""
+
+msgid "Series only"
+msgstr ""
+
+msgid "Movies only"
+msgstr ""
+
+msgid "Download statistics"
+msgstr ""
+
+msgid "Example:"
+msgstr ""
+
+msgid "Installed"
+msgstr ""
+
+msgid "Available"
+msgstr ""
+
+msgid "Check now"
+msgstr ""
+
+msgid "unknown"
+msgstr ""
+
+msgid "Open release"
+msgstr ""
+
+msgid "Install update"
+msgstr ""
+
+msgid "Development channel"
+msgstr ""
+
+msgid ""
+"You are using a stable release. The development channel contains the "
+"latest commits directly from the models branch — it may be unstable or "
+"contain unfinished features."
+msgstr ""
+
+# ── login.html ────────────────────────────────────────────────────────────
+msgid "Sign in"
+msgstr ""
+
+msgid "or"
+msgstr ""
+
+msgid "Sign in with"
+msgstr ""
+
+# ── index.html ────────────────────────────────────────────────────────────
+msgid "Download anime & series directly"
+msgstr ""
+
+msgid "Search anime & series…"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Direct Link"
+msgstr ""
+
+msgid "Searching..."
+msgstr ""
+
+msgid "New Anime"
+msgstr ""
+
+msgid "Popular Anime"
+msgstr ""
+
+msgid "New Series"
+msgstr ""
+
+msgid "Popular Series"
+msgstr ""
+
+msgid "New Movies"
+msgstr ""
+
+# ── advanced_search.html ──────────────────────────────────────────────────
+msgid "Discover new series and movies with TMDB filters & presets"
+msgstr ""
+
+msgid "Quick Presets"
+msgstr ""
+
+msgid "🔥 Top Anime"
+msgstr ""
+
+msgid "📺 Popular Series"
+msgstr ""
+
+msgid "🍿 Popular Movies"
+msgstr ""
+
+msgid "✨ New 2026"
+msgstr ""
+
+msgid "⚡ Action & Thriller"
+msgstr ""
+
+msgid "Movies"
+msgstr ""
+
+msgid "All Genres"
+msgstr ""
+
+msgid "Show advanced filters"
+msgstr ""
+
+msgid "Sort by"
+msgstr ""
+
+msgid "Popularity (Descending)"
+msgstr ""
+
+msgid "Popularity (Ascending)"
+msgstr ""
+
+msgid "Rating (Descending)"
+msgstr ""
+
+msgid "Release (Newest first)"
+msgstr ""
+
+msgid "Release (Oldest first)"
+msgstr ""
+
+msgid "Keywords"
+msgstr ""
+
+msgid "Search keyword (e.g. anime)..."
+msgstr ""
+
+msgid "Release year"
+msgstr ""
+
+msgid "From (e.g. 2000)"
+msgstr ""
+
+msgid "To (e.g. 2026)"
+msgstr ""
+
+msgid "Min Rating"
+msgstr ""
+
+msgid "Watch Region"
+msgstr ""
+
+msgid "Any region"
+msgstr ""
+
+msgid "Required for provider filters"
+msgstr ""
+
+msgid "Include Providers"
+msgstr ""
+
+msgid "Exclude Providers"
+msgstr ""
+
+msgid "Search provider (e.g. Netflix)..."
+msgstr ""
+
+msgid "Results"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Page"
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
+msgid "Select filters or click a Quick Preset above to discover series and movies."
+msgstr ""
+
+msgid "Searching streams on AniWorld, SerienStream & FilmPalast..."
+msgstr ""
+
+# ── autosync.html ─────────────────────────────────────────────────────────
+msgid "Automatically search for new episodes and download them on a schedule."
+msgstr ""
+
+msgid "Sync all"
+msgstr ""
+
+msgid "Export all jobs as JSON"
+msgstr ""
+
+msgid "Import jobs from JSON"
+msgstr ""
+
+msgid "0 selected"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "Disable"
+msgstr ""
+
+msgid "Default"
+msgstr ""
+
+msgid "Set path"
+msgstr ""
+
+msgid "No sync jobs yet. Add a series from the search page."
+msgstr ""
+
+msgid "Edit sync job"
+msgstr ""
+
+msgid "Provider"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Enabled"
+msgstr ""
+
+msgid "Path unavailable"
+msgstr ""
+
+msgid "Skip:"
+msgstr ""
+
+msgid ""
+"This sync run will be skipped. It will be retried on the next scheduled "
+"check."
+msgstr ""
+
+msgid "Wait (Hold):"
+msgstr ""
+
+msgid ""
+"The sync pauses until the custom path is reachable again — then starts "
+"automatically."
+msgstr ""
+
+# ── favourites.html ───────────────────────────────────────────────────────
+msgid "Your saved series & anime"
+msgstr ""
+
+msgid "Loading favorites…"
+msgstr ""
+
+msgid "Search saved series or movies…"
+msgstr ""
+
+msgid "Clear search"
+msgstr ""
+
+msgid "Filter by source"
+msgstr ""
+
+msgid "Grouping: Off"
+msgstr ""
+
+msgid "Group by Source"
+msgstr ""
+
+msgid "Select mode"
+msgstr ""
+
+msgid "selected"
+msgstr ""
+
+msgid "Select All"
+msgstr ""
+
+msgid "Deselect"
+msgstr ""
+
+msgid "Add selected to Auto-Sync"
+msgstr ""
+
+msgid "Remove selected"
+msgstr ""
+
+# ── library.html ─────────────────────────────────────────────────────────
+msgid "Search series, movie or file…"
+msgstr ""
+
+msgid "Show all"
+msgstr ""
+
+msgid "Sort by name"
+msgstr ""
+
+msgid "Sort by size"
+msgstr ""
+
+msgid "Size"
+msgstr ""
+
+msgid "Sort by episode count"
+msgstr ""
+
+msgid "Ep."
+msgstr ""
+
+msgid "Refresh"
+msgstr ""
+
+msgid "Scanning…"
+msgstr ""
+
+msgid "Watcher…"
+msgstr ""
+
+msgid "Move in progress"
+msgstr ""
+
+msgid "moving"
+msgstr ""
+
+# ── seerr.html ────────────────────────────────────────────────────────────
+msgid "Seerr Requests"
+msgstr ""
+
+msgid "Pending & accepted series requests"
+msgstr ""
+
+msgid "Enter title…"
+msgstr ""
+
+msgid "Decline"
+msgstr ""
+
+msgid "Episodes"
+msgstr ""
+
+msgid "Select all"
+msgstr ""
+
+msgid "Loading episodes…"
+msgstr ""
+
+msgid "Checking Availability"
+msgstr ""
+
+msgid "Checking if the selected content is available on Veev"
+msgstr ""
+
+# ── setup_locked.html ─────────────────────────────────────────────────────
+msgid "Setup locked"
+msgstr ""
+
+msgid "The setup link is invalid or expired."
+msgstr ""
+
+msgid "Restart the application to get a new token."
+msgstr ""
+
+# ── stats.html ────────────────────────────────────────────────────────────
+msgid "Overview of your download activity"
+msgstr ""
+
+msgid "Loading statistics…"
+msgstr ""
+
+msgid "Download speed details"
+msgstr ""
+
+msgid "Download performance details will be shown here."
+msgstr ""
+
+# ── shared_modals.html ────────────────────────────────────────────────────
+msgid "Paste a series URL (serienstream.to, aniworld.to, ...) or any direct media link, e.g. an .m3u8 stream"
+msgstr ""
+
+msgid "Choose Quality"
+msgstr ""
+
+msgid "MediaForge is checking which streams are available for this link."
+msgstr ""
+
+msgid "Continue"
+msgstr ""
+
+msgid "Save Direct Link"
+msgstr ""
+
+msgid "Give this download a name and choose where to save it."
+msgstr ""
+
+msgid "Filename"
+msgstr ""
+
+msgid "e.g. Movie Title"
+msgstr ""
+
+msgid "Save location"
+msgstr ""
+
+msgid "Bookmark"
+msgstr ""
+
+msgid "Recommendations"
+msgstr ""
+
+msgid "Loading episodes..."
+msgstr ""
+
+msgid "Keep up to date (Auto-Sync)"
+msgstr ""
+
+msgid "Upscale with Anime4K"
+msgstr ""
+
+msgid "Download selected"
+msgstr ""
+
+msgid "Download all"
+msgstr ""
+
+msgid "Download all languages"
+msgstr ""
+
+msgid "Connect external services"
+msgstr ""
+
+msgid "Seerr Integration"
+msgstr ""
+
+msgid ""
+"Connect MediaForge with your Jellyseerr or Overseerr instance. "
+"Pending requests will appear under \"Seerr Requests\"."
+msgstr ""
+
+msgid "Settings → General"
+msgstr ""
+
+msgid ""
+"After every completed download, a library refresh is automatically "
+"triggered on the selected server."
+msgstr ""
+
+msgid "Service"
+msgstr ""
+
+msgid "Which media server should MediaForge use?"
+msgstr ""
+
+msgid "— Disabled —"
+msgstr ""
+
+msgid "Enter API key"
+msgstr ""
+
+msgid "Enable if your Jellyfin is accessible via HTTPS"
+msgstr ""
+
+msgid ""
+"Jellyfin Dashboard → Advanced → API Keys → Create → copy the key and "
+"paste it here."
+msgstr ""
+
+msgid "Test connection"
+msgstr ""
+
+msgid "Test media scan"
+msgstr ""
+
+msgid "Enable if your Plex is accessible via HTTPS"
+msgstr ""
+
+msgid "Retrieve automatically via Plex login"
+msgstr ""
+
+msgid "No token stored"
+msgstr ""
+
+msgid "Sign in with Plex"
+msgstr ""
+
+msgid "Which one should be refreshed after a download?"
+msgstr ""
+
+msgid "Scan all"
+msgstr ""
+
+msgid "Load libraries"
+msgstr ""
+
+msgid "Load"
+msgstr ""
+
+msgid ""
+"Detects whether a series is already in your Plex or Jellyfin library and "
+"shows the ✓ Present badge on the home page. Connection data is "
+"automatically taken from the Mediaplayer integration."
+msgstr ""
+
+msgid "Presence detection via library instead of folder scan"
+msgstr ""
+
+msgid "Source"
+msgstr ""
+
+msgid "Which library should be used for detection?"
+msgstr ""
+
+msgid "Folders (Default)"
+msgstr ""
+
+msgid "Enable if Jellyfin is accessible via HTTPS"
+msgstr ""
+
+msgid "Enable if Plex is accessible via HTTPS"
+msgstr ""
+
+msgid "Shared with Mediaplayer — sign in once for both"
+msgstr ""
+
+msgid "Which one should be used for detection?"
+msgstr ""
+
+msgid "CineInfo not configured."
+msgstr ""
+
+msgid ""
+"A TMDB API key is required for accurate matching (German ↔ English). "
+"Please configure it under"
+msgstr ""
+
+msgid "Until then, MediaScan is disabled."
+msgstr ""
+
+msgid "Last update"
+msgstr ""
+
+msgid "Cached entries"
+msgstr ""
+
+msgid "Scan running…"
+msgstr ""
+
+msgid "Refresh library now"
+msgstr ""
+
+msgid ""
+"Shows streaming providers, genres and age rating on the home page and in "
+"the detail modal. Requires a free API key from"
+msgstr ""
+
+msgid "Without a key, CineInfo is automatically inactive."
+msgstr ""
+
+msgid "Your TMDB API key"
+msgstr ""
+
+msgid "Country (Providers & Age Rating)"
+msgstr ""
+
+msgid "Germany"
+msgstr ""
+
+msgid "Austria"
+msgstr ""
+
+msgid "Switzerland"
+msgstr ""
+
+msgid "United Kingdom"
+msgstr ""
+
+msgid "Advanced TMDB Search"
+msgstr ""
+
+msgid ""
+"Shows a menu item in the sidebar for advanced search including genres and"
+" keywords."
+msgstr ""
+
+msgid "Display Options"
+msgstr ""
+
+msgid "Streaming Providers"
+msgstr ""
+
+msgid "1 provider on the card · all in the modal below the title"
+msgstr ""
+
+msgid "FSK badge on the card and centered below the cover in the modal"
+msgstr ""
+
+msgid "TMDB Genres"
+msgstr ""
+
+msgid ""
+"Replaces the original site genres in the modal with TMDB genres (e.g. "
+"Action, Fantasy)"
+msgstr ""
+
+msgid "Rating"
+msgstr ""
+
+msgid ""
+"Shows the TMDB user rating as a badge next to the series title in the "
+"modal"
+msgstr ""
+
+msgid "Similar Series (Recommendations)"
+msgstr ""
+
+msgid "Shows a list of similar series based on TMDB below the episodes"
+msgstr ""
+
+msgid "Show trailer"
+msgstr ""
+
+msgid "Shows a YouTube trailer in the series detail modal (if available)"
+msgstr ""
+
+msgid "Hover Effects"
+msgstr ""
+
+msgid ""
+"These options control which info is shown when hovering over a series "
+"card on the home page."
+msgstr ""
+
+msgid "Show rating"
+msgstr ""
+
+msgid "Shows the TMDB rating when hovering on the home page"
+msgstr ""
+
+msgid "Show genres"
+msgstr ""
+
+msgid "Shows the TMDB genres when hovering on the home page"
+msgstr ""
+
+msgid "Show age rating"
+msgstr ""
+
+msgid "Shows the age rating when hovering on the home page"
+msgstr ""
+
+msgid "Clear cache &amp; reload"
+msgstr ""
+
+msgid ""
+"Deletes all stored TMDB data and restarts the preloading process. Useful "
+"when info is outdated or after an API key change."
+msgstr ""
+
+msgid "Clear cache"
+msgstr ""
+
+msgid ""
+"Metadata is preloaded in the background and cached in the database for 24"
+" h."
+msgstr ""
+
+msgid "FFmpeg encoding settings"
+msgstr ""
+
+msgid "Expert"
+msgstr ""
+
+msgid "Hardware Acceleration"
+msgstr ""
+
+msgid "Quality &amp; Speed"
+msgstr ""
+
+msgid "Encoder"
+msgstr ""
+
+msgid "VAAPI Device"
+msgstr ""
+
+msgid "Path to render device, e.g."
+msgstr ""
+
+msgid "Leave empty for auto-detection."
+msgstr ""
+
+msgid "Preset"
+msgstr ""
+
+msgid "Speed vs. compression. Slower = smaller files at the same quality."
+msgstr ""
+
+msgid "CRF (Quality)"
+msgstr ""
+
+msgid "Audio Codec"
+msgstr ""
+
+msgid "Copy recommended — no quality loss, faster."
+msgstr ""
+
+msgid "Save &amp; activate"
+msgstr ""
+
+msgid "Detect encoders"
+msgstr ""
+
+msgid "Always available"
+msgstr ""
+
+msgid "Video is always copied"
+msgstr ""
+
+msgid ""
+"no re-encoding, no quality loss, fastest possible. Audio can optionally "
+"be re-encoded, e.g. for better compatibility."
+msgstr ""
+
+msgid "Copy recommended — no quality loss, fastest."
+msgstr ""
+
+msgid "Choose the encoder for H.264"
+msgstr ""
+
+msgid ""
+"Checks which encoders actually work on this system. Green = available, "
+"grey = unavailable."
+msgstr ""
+
+msgid "0 = lossless, 51 = worst quality. Default: 23. Recommended: 18–28."
+msgstr ""
+
+msgid "Choose the encoder for H.265 / HEVC"
+msgstr ""
+
+msgid ""
+"Checks which encoders are available on this system. Green = found, grey ="
+" not present."
+msgstr ""
+
+msgid "0 = lossless, 51 = worst quality. Default: 28. Recommended: 24–30."
+msgstr ""
+
+msgid "Expert Mode"
+msgstr ""
+
+msgid "Enter FFmpeg flags directly in standard style. Examples:"
+msgstr ""
+
+msgid "If nothing is entered,"
+msgstr ""
+
+msgid "is used as fallback."
+msgstr ""
+
+msgid "Video flags"
+msgstr ""
+
+msgid "Audio flags"
+msgstr ""
+
+msgid "Upscaling Mode"
+msgstr ""
+
+msgid ""
+"Anime4K GLSL shaders are applied to every video via mpv encode mode or "
+"ffmpeg libplacebo. Upscaling is CPU/GPU-intensive — plan accordingly."
+msgstr ""
+
+msgid "Mode"
+msgstr ""
+
+msgid "When should upscaling happen?"
+msgstr ""
+
+msgid "During download"
+msgstr ""
+
+msgid "After download"
+msgstr ""
+
+msgid ""
+"The upscaling checkbox in the download modal is only shown when a mode "
+"other than \"Disabled\" is selected."
+msgstr ""
+
+msgid "Replace original"
+msgstr ""
+
+msgid "Overwrite original or create new file with"
+msgstr ""
+
+msgid "suffix."
+msgstr ""
+
+msgid "Replace"
+msgstr ""
+
+msgid "Suffix (upscale)"
+msgstr ""
+
+msgid "Queues"
+msgstr ""
+
+msgid "Upscaling"
+msgstr ""
+
+msgid "Inactive"
+msgstr ""
+
+msgid ""
+"Only relevant for H.264/H.265 — decides whether the transcode runs "
+"immediately after each download (part of the download queue) or later in "
+"its own separate queue, so a heavy re-encode never holds up other "
+"downloads."
+msgstr ""
+
+msgid "Timing"
+msgstr ""
+
+msgid "When should H.264/H.265 encoding happen?"
+msgstr ""
+
+msgid "After download (own queue)"
+msgstr ""
+
+msgid "Overwrite original or create new file with a codec suffix."
+msgstr ""
+
+msgid "Suffix"
+msgstr ""
+
+msgid "Queue timing:"
+msgstr ""
+
+msgid "Preset (Mode)"
+msgstr ""
+
+msgid ""
+"A = fastest / D = best quality. Each mode uses a different shader "
+"combination."
+msgstr ""
+
+msgid "Fast, good quality"
+msgstr ""
+
+msgid "Mode A – Fast"
+msgstr ""
+
+msgid "Balanced"
+msgstr ""
+
+msgid "Mode B – Balanced"
+msgstr ""
+
+msgid "High quality"
+msgstr ""
+
+msgid "Mode C – Quality"
+msgstr ""
+
+msgid "Best quality, very slow"
+msgstr ""
+
+msgid "Mode D – Ultra"
+msgstr ""
+
+msgid "Shaders are included in the package — no download needed."
+msgstr ""
+
+msgid "Check status"
+msgstr ""
+
+msgid "Output"
+msgstr ""
+
+msgid "Target resolution"
+msgstr ""
+
+msgid "What resolution should the video be upscaled to?"
+msgstr ""
+
+msgid "Original size"
+msgstr ""
+
+msgid "Engine"
+msgstr ""
+
+msgid ""
+"Auto detects what is available automatically. libplacebo requires ffmpeg "
+"with libplacebo support."
+msgstr ""
+
+msgid "Codec"
+msgstr ""
+
+msgid "H.264 recommended. Copy keeps the original codec (not always possible)."
+msgstr ""
+
+msgid "Lower value = better quality, larger file. Recommended: 16–22."
+msgstr ""
+
+msgid "Encoder preset"
+msgstr ""
+
+msgid "Speed vs. compression of the output encoder."
+msgstr ""
+
+msgid "Active encoding mode:"
+msgstr ""
+
+msgid "Upscaling:"
+msgstr ""
+
+msgid "Configure services"
+msgstr ""
+
+# ── notifications.html (per-channel panel headings, menu rework July 2026) ──
+msgid "Push notifications straight to your browser, even with the tab closed."
+msgstr ""
+
+msgid "Get notified via a Telegram bot."
+msgstr ""
+
+msgid "Push notifications to your phone via the Pushover app."
+msgstr ""
+
+msgid "Self-hosted or ntfy.sh push notifications."
+msgstr ""
+
+msgid "Send notifications to a Discord channel via webhook."
+msgstr ""
+
+msgid "Send notifications via WhatsApp (using Twilio)."
+msgstr ""
+
+msgid "Get warned when free disk space runs low."
+msgstr ""
+
+msgid "External notification module"
+msgstr ""
+
+msgid "Storage"
+msgstr ""
+
+msgid "Notify on"
+msgstr ""
+
+msgid "Notify on (global — applies to all)"
+msgstr ""
+
+msgid "My settings"
+msgstr ""
+
+msgid "Successful download"
+msgstr ""
+
+msgid "Partially successful"
+msgstr ""
+
+msgid "Download with errors"
+msgstr ""
+
+msgid "Cancelled download"
+msgstr ""
+
+msgid "Auto-sync: new episodes"
+msgstr ""
+
+msgid "Auto-sync: errors"
+msgstr ""
+
+msgid "Auto-sync: hold &amp; resume"
+msgstr ""
+
+msgid "Low disk space"
+msgstr ""
+
+msgid "Service status"
+msgstr ""
+
+msgid "↳ Only error notifications when all retries have failed"
+msgstr ""
+
+msgid ""
+"When enabled, a notification is sent for failed auto-syncs only after all"
+" retries are exhausted."
+msgstr ""
+
+msgid "When a sync is paused due to an unreachable custom path — or resumes."
+msgstr ""
+
+msgid "When free disk space drops below the configured threshold."
+msgstr ""
+
+msgid "When an auto-sync job crashes or fails."
+msgstr ""
+
+msgid "Message when at least one episode succeeded but errors also occurred."
+msgstr ""
+
+msgid "Message when individual episodes failed."
+msgstr ""
+
+msgid "Message when a running download was cancelled."
+msgstr ""
+
+msgid "Send test"
+msgstr ""
+
+msgid "Show/hide"
+msgstr ""
+
+msgid "Admin — Service"
+msgstr ""
+
+msgid "Enable Web Push globally"
+msgstr ""
+
+msgid "Disable to block browser push notifications for all users."
+msgstr ""
+
+msgid ""
+"Receive browser notifications directly in the browser — even when "
+"MediaForge is running in a background tab. The browser must be open. Works "
+"on desktop and mobile devices supporting Chrome/Firefox."
+msgstr ""
+
+msgid "Web Push only works via HTTPS or localhost."
+msgstr ""
+
+msgid "Enable Web Push"
+msgstr ""
+
+msgid "When all episodes of a queue entry completed without errors."
+msgstr ""
+
+msgid "When at least one episode succeeded but errors also occurred."
+msgstr ""
+
+msgid "When individual episodes of a queue entry failed."
+msgstr ""
+
+msgid "When a running download is manually cancelled."
+msgstr ""
+
+msgid "When auto-sync has found new episodes of a subscribed series."
+msgstr ""
+
+msgid "Admin — Bot configuration"
+msgstr ""
+
+msgid "Create a bot via"
+msgstr ""
+
+msgid "The bot then sends messages to users who have saved their chat ID."
+msgstr ""
+
+msgid "Bot token"
+msgstr ""
+
+msgid "Obtained from @BotFather after"
+msgstr ""
+
+msgid "Format:"
+msgstr ""
+
+msgid "Enable Telegram globally"
+msgstr ""
+
+msgid "Disable to block Telegram messages for all users."
+msgstr ""
+
+msgid "Send the bot a message first (e.g."
+msgstr ""
+
+msgid "), then click Detect. Or enter your chat ID manually — find it via"
+msgstr ""
+
+msgid "Bot not configured"
+msgstr ""
+
+msgid "Enable Telegram"
+msgstr ""
+
+msgid "Turn Telegram notifications for your account on or off."
+msgstr ""
+
+msgid "e.g. 123456789"
+msgstr ""
+
+msgid "Auto-detect chat ID"
+msgstr ""
+
+msgid "Detect"
+msgstr ""
+
+msgid "Message when all episodes of a job completed without errors."
+msgstr ""
+
+msgid "Message when a running download was manually cancelled."
+msgstr ""
+
+msgid "Message when auto-sync finds new episodes of a subscribed series."
+msgstr ""
+
+msgid "Admin — App configuration"
+msgstr ""
+
+msgid "Create an app at"
+msgstr ""
+
+msgid "Each user then enters their own user key."
+msgstr ""
+
+msgid "App token"
+msgstr ""
+
+msgid "Found on the app page after creation under"
+msgstr ""
+
+msgid "Enable Pushover globally"
+msgstr ""
+
+msgid "Disable to block Pushover messages for all users."
+msgstr ""
+
+msgid "Download the"
+msgstr ""
+
+msgid "Pushover app"
+msgstr ""
+
+msgid "to your device. After login, find your user key on the home page."
+msgstr ""
+
+msgid "App not configured"
+msgstr ""
+
+msgid "Enable Pushover"
+msgstr ""
+
+msgid "Turn Pushover notifications for your account on or off."
+msgstr ""
+
+msgid "User key"
+msgstr ""
+
+msgid "Your personal Pushover key — not the app API key."
+msgstr ""
+
+msgid "Message when all episodes completed without errors."
+msgstr ""
+
+msgid "Message when auto-sync finds new episodes."
+msgstr ""
+
+msgid "Admin — NTFY configuration"
+msgstr ""
+
+msgid "NTFY sends messages to a topic. Enter the server URL and topic here."
+msgstr ""
+
+msgid "NTFY server"
+msgstr ""
+
+msgid "Base URL of the ntfy server. Required."
+msgstr ""
+
+msgid "Enter server URL"
+msgstr ""
+
+msgid "NTFY topic"
+msgstr ""
+
+msgid "Topic name. Required. Messages are sent to &lt;server&gt;/&lt;topic&gt;."
+msgstr ""
+
+msgid "Enter topic"
+msgstr ""
+
+msgid ""
+"Optional: enter a bearer token if your ntfy server requires "
+"authentication."
+msgstr ""
+
+msgid "Basic Auth (optional)"
+msgstr ""
+
+msgid "Alternatively enter username/password for basic auth."
+msgstr ""
+
+msgid "Enable NTFY globally"
+msgstr ""
+
+msgid "Disable to block NTFY messages for all users."
+msgstr ""
+
+msgid "Enable NTFY for your account and receive messages to the configured topic."
+msgstr ""
+
+msgid "NTFY not configured"
+msgstr ""
+
+msgid "Enable NTFY"
+msgstr ""
+
+msgid "Turn NTFY notifications for your account on or off."
+msgstr ""
+
+msgid "Message when an auto-sync job crashes or fails."
+msgstr ""
+
+msgid "Admin — Webhook configuration"
+msgstr ""
+
+msgid ""
+"Discord sends to a shared channel. Channel → Settings → Integrations → "
+"Webhooks → Create new webhook → copy URL."
+msgstr ""
+
+msgid "Webhook URL"
+msgstr ""
+
+msgid "Must start with"
+msgstr ""
+
+msgid "Enable Discord globally"
+msgstr ""
+
+msgid "Disable to block Discord messages entirely."
+msgstr ""
+
+msgid "Green embed message when all episodes completed without errors."
+msgstr ""
+
+msgid ""
+"Orange embed message when at least one episode succeeded but errors "
+"occurred."
+msgstr ""
+
+msgid "Yellow embed message when individual episodes failed."
+msgstr ""
+
+msgid "Grey embed message when a download was cancelled."
+msgstr ""
+
+msgid "Blue embed message when auto-sync finds new episodes."
+msgstr ""
+
+msgid "Red embed message when an auto-sync job crashes."
+msgstr ""
+
+msgid "Embed message when a sync is paused or resumed."
+msgstr ""
+
+msgid "Yellow embed message when free storage drops below the threshold."
+msgstr ""
+
+msgid ""
+"Configured by an administrator. Once an admin sets up the webhook, "
+"MediaForge sends messages to the configured channel."
+msgstr ""
+
+msgid "Not configured"
+msgstr ""
+
+msgid "Admin — Twilio configuration"
+msgstr ""
+
+msgid "WhatsApp delivery runs via"
+msgstr ""
+
+msgid ""
+"You need a Twilio account with WhatsApp Sandbox enabled. Users must "
+"activate the sandbox once with"
+msgstr ""
+
+msgid "Found on the Twilio console home page under"
+msgstr ""
+
+msgid "Auth token"
+msgstr ""
+
+msgid "Next to the account SID in the Twilio console."
+msgstr ""
+
+msgid "Sender number"
+msgstr ""
+
+msgid "The Twilio WhatsApp sandbox number, e.g."
+msgstr ""
+
+msgid "Enable WhatsApp globally"
+msgstr ""
+
+msgid "Disable to block WhatsApp messages for all users."
+msgstr ""
+
+msgid "Enter your mobile number in international format (e.g."
+msgstr ""
+
+msgid "You must first activate the sandbox once by sending"
+msgstr ""
+
+msgid "to the Twilio number."
+msgstr ""
+
+msgid "Twilio not configured"
+msgstr ""
+
+msgid "Enable WhatsApp"
+msgstr ""
+
+msgid "Turn WhatsApp notifications for your account on or off."
+msgstr ""
+
+msgid "My number"
+msgstr ""
+
+msgid "Disk space warning"
+msgstr ""
+
+msgid ""
+"MediaForge checks free disk space before every download. If it drops below "
+"the threshold, a notification is sent (max. once per hour). The download "
+"continues anyway."
+msgstr ""
+
+msgid "Minimum disk space"
+msgstr ""
+
+msgid "Notification when less than this value (in GB) is free. 0 = disabled."
+msgstr ""
+
+msgid "Saved ✓"
+msgstr ""
+
+msgid "Error:"
+msgstr ""
+
+msgid "Searching for last message…"
+msgstr ""
+
+msgid "Chat ID detected:"
+msgstr ""
+
+msgid "please save!"
+msgstr ""
+
+msgid "No message found. Send the bot a message first."
+msgstr ""
+
+msgid "Network error while detecting."
+msgstr ""
+
+msgid "Sending test…"
+msgstr ""
+
+msgid "Test message sent ✓"
+msgstr ""
+
+msgid "Unknown error"
+msgstr ""
+
+msgid "Network error:"
+msgstr ""
+
+msgid "Configured ✓"
+msgstr ""
+
+msgid "Not configured — please contact admin"
+msgstr ""
+
+msgid "Disable Web Push"
+msgstr ""
+
+# base.html – color preset names
+msgid "Purple"
+msgstr ""
+
+msgid "Blue"
+msgstr ""
+
+msgid "Cyan"
+msgstr ""
+
+msgid "Green"
+msgstr ""
+
+msgid "Orange"
+msgstr ""
+
+msgid "Pink"
+msgstr ""
+
+msgid "Red"
+msgstr ""
+
+msgid "Yellow"
+msgstr ""
+
+# encoding.html – JS strings
+msgid "Detecting…"
+msgstr ""
+
+msgid "Encoder detection complete"
+msgstr ""
+
+msgid "Network error during detection"
+msgstr ""
+
+msgid "available"
+msgstr ""
+
+msgid "not available"
+msgstr ""
+
+msgid "✓ Settings saved"
+msgstr ""
+
+msgid "Network error while saving"
+msgstr ""
+
+msgid "Copy (no re-encoding)"
+msgstr ""
+
+msgid "✓ Upscaling settings saved"
+msgstr ""
+
+msgid "Network error"
+msgstr ""
+
+msgid "mpv.exe is being downloaded…"
+msgstr ""
+
+msgid "mpv download failed:"
+msgstr ""
+
+msgid "Checking…"
+msgstr ""
+
+msgid "✓ available"
+msgstr ""
+
+msgid "✗ not found (being downloaded…)"
+msgstr ""
+
+msgid "✗ not found"
+msgstr ""
+
+msgid "✓ Shaders found (bundled)"
+msgstr ""
+
+msgid "✗ Shaders missing"
+msgstr ""
+
+# ─────────────────────────────────────────────────────────────
+# JavaScript – Laufzeit-Strings (dynamische UI / Toasts / Labels)
+# ── app.js ──
+msgid "Error loading"
+msgstr ""
+
+msgid "✓ Available"
+msgstr ""
+
+msgid "No results found."
+msgstr ""
+
+msgid "Search failed: "
+msgstr ""
+
+msgid "No episodes available."
+msgstr ""
+
+msgid "No episodes selected."
+msgstr ""
+
+msgid "Added to download queue"
+msgstr ""
+
+msgid "Download request failed: "
+msgstr ""
+
+msgid "Series could not be loaded: "
+msgstr ""
+
+msgid "Auto-Sync enabled for \""
+msgstr ""
+
+msgid "Auto-Sync updated for \""
+msgstr ""
+
+msgid "Auto-Sync disabled for \""
+msgstr ""
+
+msgid "Sync job could not be created"
+msgstr ""
+
+msgid "Sync job could not be updated"
+msgstr ""
+
+msgid "Sync job could not be removed"
+msgstr ""
+
+msgid "Provider data not yet loaded."
+msgstr ""
+
+msgid "This film is currently not available on Veev."
+msgstr ""
+
+msgid "Error during availability check: "
+msgstr ""
+
+msgid "All Languages"
+msgstr ""
+
+msgid "Unknown"
+msgstr ""
+
+#, python-format
+msgid "%(n)s language(s) added to queue"
+msgstr ""
+
+msgid "Downloads could not be added to queue: "
+msgstr ""
+
+msgid "Removed from favourites"
+msgstr ""
+
+msgid "Added to favourites ♥"
+msgstr ""
+
+msgid "Error: "
+msgstr ""
+
+msgid "Invalid URL. Please enter a s.to or aniworld.to series URL."
+msgstr ""
+
+#, python-format
+msgid "%(n)s results"
+msgstr ""
+
+#, python-format
+msgid "%(n)s genres selected"
+msgstr ""
+
+msgid "Database is still loading..."
+msgstr ""
+
+msgid "No results"
+msgstr ""
+
+msgid "No image"
+msgstr ""
+
+#, python-format
+msgid "%(n)s seasons"
+msgstr ""
+
+msgid "1 season"
+msgstr ""
+
+msgid "No description available."
+msgstr ""
+
+#, python-format
+msgid "No exact matches for \"%(title)s\" found on AniWorld, S.to or FilmPalast."
+msgstr ""
+
+#, python-format
+msgid "Searching for \"%(title)s\"..."
+msgstr ""
+
+#, python-format
+msgid "Results for \"%(title)s\""
+msgstr ""
+
+msgid "API key error."
+msgstr ""
+
+msgid "Network error."
+msgstr ""
+
+msgid "Error during search."
+msgstr ""
+
+msgid "Filters reset. Please select your filters and click Search."
+msgstr ""
+
+msgid "Network error during search."
+msgstr ""
+
+msgid "No results on this page."
+msgstr ""
+
+#, python-format
+msgid "Page %(current)s / %(total)s"
+msgstr ""
+
+# ── settings.js ──
+msgid "Settings could not be loaded: "
+msgstr ""
+
+msgid "Language separation enabled"
+msgstr ""
+
+msgid "Language separation disabled"
+msgstr ""
+
+msgid "Setting could not be saved: "
+msgstr ""
+
+msgid "English subtitle downloads disabled"
+msgstr ""
+
+msgid "English subtitle downloads enabled"
+msgstr ""
+
+msgid "Movie subfolder enabled"
+msgstr ""
+
+msgid "Movie subfolder disabled"
+msgstr ""
+
+msgid "Download path saved"
+msgstr ""
+
+msgid "Default language saved"
+msgstr ""
+
+msgid "Default provider saved"
+msgstr ""
+
+msgid "Name template saved"
+msgstr ""
+
+msgid "Auto-Sync schedule saved"
+msgstr ""
+
+msgid "Schedule could not be saved"
+msgstr ""
+
+msgid "Auto-Sync defaults saved"
+msgstr ""
+
+msgid "Defaults could not be saved"
+msgstr ""
+
+msgid "Path offline behaviour saved"
+msgstr ""
+
+msgid "Error retries saved"
+msgstr ""
+
+msgid "Retry delay saved"
+msgstr ""
+
+msgid "Base URL saved — restart required"
+msgstr ""
+
+msgid "Debug mode enabled"
+msgstr ""
+
+msgid "Debug mode disabled"
+msgstr ""
+
+msgid "System DNS active (no custom DNS configured)"
+msgstr ""
+
+msgid "active — server: "
+msgstr ""
+
+#, python-format
+msgid "Saved mode: %(mode)s — but no server active. Save settings again?"
+msgstr ""
+
+msgid "— No data"
+msgstr ""
+
+msgid "✓ Reachable & verified"
+msgstr ""
+
+msgid "⚠ Reachable…but content unknown"
+msgstr ""
+
+msgid "⚠ DNS resolved…but HTTP failed"
+msgstr ""
+
+msgid "✗ Not reachable"
+msgstr ""
+
+msgid "Show error"
+msgstr ""
+
+msgid "Hide error"
+msgstr ""
+
+msgid "⏳ Testing…"
+msgstr ""
+
+msgid "⏳ Loading…"
+msgstr ""
+
+msgid "↺ Retest"
+msgstr ""
+
+msgid "Please enter a DNS server"
+msgstr ""
+
+msgid "DNS reset — system DNS active"
+msgstr ""
+
+#, python-format
+msgid "DNS saved — %(server)s active"
+msgstr ""
+
+msgid "Error saving"
+msgstr ""
+
+msgid "No custom paths"
+msgstr ""
+
+msgid "Name and path are required"
+msgstr ""
+
+msgid "Custom path added"
+msgstr ""
+
+msgid "Custom path deleted"
+msgstr ""
+
+msgid "Delete this custom path?"
+msgstr ""
+
+msgid "protected"
+msgstr ""
+
+msgid "SSO"
+msgstr ""
+
+msgid "Local"
+msgstr ""
+
+msgid "Username and password are required"
+msgstr ""
+
+msgid "User created"
+msgstr ""
+
+msgid "User deleted"
+msgstr ""
+
+msgid "Delete this user?"
+msgstr ""
+
+msgid "Role updated"
+msgstr ""
+
+msgid "Users could not be loaded: "
+msgstr ""
+
+msgid "API key copied"
+msgstr ""
+
+msgid "Copy failed: "
+msgstr ""
+
+msgid "Regenerate API key? The old key will be immediately invalidated."
+msgstr ""
+
+msgid "New API key generated"
+msgstr ""
+
+msgid "Error generating"
+msgstr ""
+
+msgid "✓ Already up to date."
+msgstr ""
+
+msgid "Newer commits available"
+msgstr ""
+
+#, python-format
+msgid "Version %(version)s available"
+msgstr ""
+
+msgid "Command copied"
+msgstr ""
+
+msgid "SSO settings saved — restart required"
+msgstr ""
+
+msgid "SSO settings could not be saved: "
+msgstr ""
+
+msgid "Delete ~/.mediaforge/.env now? This action cannot be undone."
+msgstr ""
+
+msgid ".env successfully deleted"
+msgstr ""
+
+msgid "Error deleting"
+msgstr ""
+
+msgid "Glow effect enabled"
+msgstr ""
+
+msgid "Glow effect disabled"
+msgstr ""
+
+msgid "Header color enabled"
+msgstr ""
+
+msgid "Header color disabled"
+msgstr ""
+
+msgid "Skeleton Loader enabled"
+msgstr ""
+
+msgid "Skeleton Loader disabled"
+msgstr ""
+
+msgid "Color highlight enabled"
+msgstr ""
+
+msgid "Color highlight disabled"
+msgstr ""
+
+msgid "Download highlight enabled"
+msgstr ""
+
+msgid "Download highlight disabled"
+msgstr ""
+
+msgid "Click effect enabled"
+msgstr ""
+
+msgid "Click effect disabled"
+msgstr ""
+
+msgid "Icon Movement enabled"
+msgstr ""
+
+msgid "Icon Movement disabled"
+msgstr ""
+
+# ── queue.js ──
+msgid "Downloads resumed."
+msgstr ""
+
+msgid "Downloads paused."
+msgstr ""
+
+msgid "Old entries deleted"
+msgstr ""
+
+msgid "Paused"
+msgstr ""
+
+msgid "Completed"
+msgstr ""
+
+msgid "Cancelling..."
+msgstr ""
+
+msgid "Cancelled"
+msgstr ""
+
+msgid "No download running."
+msgstr ""
+
+msgid "No downloads queued."
+msgstr ""
+
+msgid "No completed downloads."
+msgstr ""
+
+msgid "No partially completed downloads."
+msgstr ""
+
+msgid "No failed or cancelled downloads."
+msgstr ""
+
+msgid "Queue is empty"
+msgstr ""
+
+msgid "FFmpeg"
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "Film — finishing..."
+msgstr ""
+
+msgid "Film (stopped)"
+msgstr ""
+
+msgid "Film"
+msgstr ""
+
+msgid "Ep. — finishing current episode..."
+msgstr ""
+
+msgid "Resume downloads"
+msgstr ""
+
+msgid "Resume"
+msgstr ""
+
+msgid "Pause"
+msgstr ""
+
+msgid "Cancelling after current episode..."
+msgstr ""
+
+msgid "Restart failed (server error)."
+msgstr ""
+
+msgid "Restart failed: "
+msgstr ""
+
+msgid "Episode(s) re-queued."
+msgstr ""
+
+msgid "Restarted."
+msgstr ""
+
+msgid "Captcha solved! Download resuming..."
+msgstr ""
+
+msgid "Click anywhere in the screenshot to interact with the captcha."
+msgstr ""
+
+msgid "Waiting for captcha browser..."
+msgstr ""
+
+msgid "Auto-Sync"
+msgstr ""
+
+msgid "Move up"
+msgstr ""
+
+msgid "Move down"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Cancel after current episode"
+msgstr ""
+
+msgid "Solve"
+msgstr ""
+
+msgid "new"
+msgstr ""
+
+msgid "Restart"
+msgstr ""
+
+msgid "restart failed episodes"
+msgstr ""
+
+msgid "Restart all episodes"
+msgstr ""
+
+msgid "Errors"
+msgstr ""
+
+# ── autosync.js ──
+msgid "Sync started"
+msgstr ""
+
+msgid "Sync could not be started"
+msgstr ""
+
+msgid "Synchronising…"
+msgstr ""
+
+#, python-format
+msgid "%(n)s job(s) started"
+msgstr ""
+
+msgid "already active"
+msgstr ""
+
+msgid "No jobs to start (all already active or disabled)"
+msgstr ""
+
+msgid "Error starting"
+msgstr ""
+
+msgid "Error starting all syncs"
+msgstr ""
+
+msgid "Remove this sync job?"
+msgstr ""
+
+msgid "Sync job removed"
+msgstr ""
+
+msgid "Remove failed"
+msgstr ""
+
+msgid "Job not found"
+msgstr ""
+
+msgid "Job could not be loaded"
+msgstr ""
+
+msgid "Job updated"
+msgstr ""
+
+msgid "Update failed"
+msgstr ""
+
+msgid "Export failed"
+msgstr ""
+
+msgid "Export successful"
+msgstr ""
+
+msgid "Import failed"
+msgstr ""
+
+msgid "imported"
+msgstr ""
+
+msgid "skipped"
+msgstr ""
+
+msgid "path set"
+msgstr ""
+
+msgid "cleared"
+msgstr ""
+
+msgid "updated"
+msgstr ""
+
+msgid "Batch action failed"
+msgstr ""
+
+msgid "Sync jobs could not be loaded."
+msgstr ""
+
+msgid "No sync jobs yet. Add a series via the search page."
+msgstr ""
+
+msgid "Last result"
+msgstr ""
+
+msgid "Last checked"
+msgstr ""
+
+msgid "Next check"
+msgstr ""
+
+msgid "Last new"
+msgstr ""
+
+msgid "Up to date"
+msgstr ""
+
+msgid "Soon"
+msgstr ""
+
+msgid "Edit"
+msgstr ""
+
+msgid "Sync"
+msgstr ""
+
+msgid "Running…"
+msgstr ""
+
+msgid "Hold"
+msgstr ""
+
+msgid " selected"
+msgstr ""
+
+msgid "Really delete sync job(s)?"
+msgstr ""
+
+# ── library.js ──
+msgid "Updated: "
+msgstr ""
+
+msgid "Watcher inactive"
+msgstr ""
+
+msgid "Watcher active"
+msgstr ""
+
+msgid "Watcher starting…"
+msgstr ""
+
+msgid "Series"
+msgstr ""
+
+msgid "total"
+msgstr ""
+
+msgid "A–Z (click for Z–A)"
+msgstr ""
+
+msgid "Z–A (click for A–Z)"
+msgstr ""
+
+msgid "Ascending"
+msgstr ""
+
+msgid "Descending"
+msgstr ""
+
+msgid "watched"
+msgstr ""
+
+msgid "Season "
+msgstr ""
+
+msgid "Play film"
+msgstr ""
+
+msgid "Play"
+msgstr ""
+
+msgid "More options"
+msgstr ""
+
+msgid "Rename"
+msgstr ""
+
+msgid "Upscale"
+msgstr ""
+
+msgid "Details"
+msgstr ""
+
+msgid "Delete title"
+msgstr ""
+
+msgid "Delete film"
+msgstr ""
+
+msgid "Delete season"
+msgstr ""
+
+msgid "Delete episode"
+msgstr ""
+
+msgid "Upscale episode"
+msgstr ""
+
+msgid "Confirm"
+msgstr ""
+
+msgid "Renamed"
+msgstr ""
+
+msgid "Rename failed"
+msgstr ""
+
+#, python-format
+msgid "Delete %(title)s completely? This action cannot be undone."
+msgstr ""
+
+#, python-format
+msgid "Delete all episodes of season %(n)s in %(title)s?"
+msgstr ""
+
+#, python-format
+msgid "Delete episode E%(n)s in %(title)s?"
+msgstr ""
+
+msgid "Successfully deleted"
+msgstr ""
+
+msgid "Season deleted"
+msgstr ""
+
+msgid "Episode deleted"
+msgstr ""
+
+msgid "Preparing…"
+msgstr ""
+
+msgid "Connection lost"
+msgstr ""
+
+msgid "Network error: "
+msgstr ""
+
+msgid "Server error "
+msgstr ""
+
+#, python-format
+msgid "\"%(folder)s\" has been moved"
+msgstr ""
+
+msgid "Action failed"
+msgstr ""
+
+msgid "Library could not be loaded."
+msgstr ""
+
+msgid "No downloaded content found. Downloads will be shown here automatically."
+msgstr ""
+
+#, python-format
+msgid "No results for \"%(query)s\"."
+msgstr ""
+
+msgid "No file paths found."
+msgstr ""
+
+#, python-format
+msgid "✓ %(n)s file(s) added to upscaling queue"
+msgstr ""
+
+msgid "✓ Episode added to upscaling queue"
+msgstr ""
+
+msgid "No file path found."
+msgstr ""
+
+msgid "Player is loading…"
+msgstr ""
+
+msgid "Copied!"
+msgstr ""
+
+msgid "Copy failed"
+msgstr ""
+
+msgid "Filename:"
+msgstr ""
+
+msgid "Path:"
+msgstr ""
+
+msgid "Copy path"
+msgstr ""
+
+msgid "Size:"
+msgstr ""
+
+msgid "Container:"
+msgstr ""
+
+msgid "Video Stream"
+msgstr ""
+
+msgid "Profile:"
+msgstr ""
+
+msgid "Level:"
+msgstr ""
+
+msgid "Resolution:"
+msgstr ""
+
+msgid "Framerate:"
+msgstr ""
+
+msgid "Bit depth:"
+msgstr ""
+
+msgid "Range:"
+msgstr ""
+
+msgid "Pixel format:"
+msgstr ""
+
+msgid "Bitrate:"
+msgstr ""
+
+msgid "AVC:"
+msgstr ""
+
+msgid "Ref Frames:"
+msgstr ""
+
+msgid "NAL:"
+msgstr ""
+
+msgid "No video stream found"
+msgstr ""
+
+msgid "Audio Stream"
+msgstr ""
+
+msgid "Channels:"
+msgstr ""
+
+msgid "Layout:"
+msgstr ""
+
+msgid "Sample Rate:"
+msgstr ""
+
+msgid "Default:"
+msgstr ""
+
+msgid "Forced:"
+msgstr ""
+
+msgid "No audio stream found"
+msgstr ""
+
+msgid "Watched"
+msgstr ""
+
+#, python-format
+msgid "Continue watching (%(pct)s%%)"
+msgstr ""
+
+# ── integrations.js ──
+msgid "Integrations settings could not be loaded: "
+msgstr ""
+
+msgid "Seerr settings saved"
+msgstr ""
+
+msgid "Error saving settings"
+msgstr ""
+
+msgid "CineInfo saved"
+msgstr ""
+
+msgid "CineInfo settings could not be loaded: "
+msgstr ""
+
+msgid "Cache cleared — TMDB data will be reloaded in the background"
+msgstr ""
+
+msgid "Error clearing cache"
+msgstr ""
+
+msgid "Clearing…"
+msgstr ""
+
+msgid "Media player settings saved"
+msgstr ""
+
+msgid "✓ Plex login successful!"
+msgstr ""
+
+msgid "Connecting to Plex…"
+msgstr ""
+
+msgid "Waiting for Plex login…"
+msgstr ""
+
+msgid "Popup was blocked — please disable popup blocker"
+msgstr ""
+
+msgid "Timeout — please try again"
+msgstr ""
+
+msgid "Pin creation failed"
+msgstr ""
+
+msgid "Libraries: "
+msgstr ""
+
+msgid "Libraries could not be loaded"
+msgstr ""
+
+msgid "Triggering…"
+msgstr ""
+
+msgid "Test mediascan"
+msgstr ""
+
+msgid "✓ Mediascan completed"
+msgstr ""
+
+msgid "⚠ Scan timeout — it may still be running in the background"
+msgstr ""
+
+msgid "⚠ No active scan detected — check if Plex/Jellyfin is scanning"
+msgstr ""
+
+msgid "✓ Connected to: "
+msgstr ""
+
+msgid "Connection failed"
+msgstr ""
+
+msgid "MediaScan saved"
+msgstr ""
+
+msgid "No token saved"
+msgstr ""
+
+msgid "✓ Token saved ("
+msgstr ""
+
+msgid "Ready"
+msgstr ""
+
+msgid "No scan yet"
+msgstr ""
+
+msgid "Just now"
+msgstr ""
+
+#, python-format
+msgid "%(n)s min. ago"
+msgstr ""
+
+#, python-format
+msgid "%(n)s h. ago"
+msgstr ""
+
+#, python-format
+msgid "%(n)s day(s) ago"
+msgstr ""
+
+#, python-format
+msgid "%(n)s entries"
+msgstr ""
+
+msgid "Scan started…"
+msgstr ""
+
+#, python-format
+msgid "✓ Library updated — %(n)s entries"
+msgstr ""
+
+msgid "✗ Scan failed: "
+msgstr ""
+
+msgid "Starting…"
+msgstr ""
+
+msgid "↻ Update library now"
+msgstr ""
+
+msgid "↻ Load"
+msgstr ""
+
+msgid "Popup blocked — please disable popup blocker"
+msgstr ""
+
+# ── upscale_queue.js ──
+msgid "No upscaling running."
+msgstr ""
+
+msgid "No upscaling jobs queued."
+msgstr ""
+
+msgid "No completed upscaling jobs."
+msgstr ""
+
+msgid "No failed or cancelled upscaling jobs."
+msgstr ""
+
+msgid "Upscaling queue is empty"
+msgstr ""
+
+msgid "Files"
+msgstr ""
+
+msgid "✨ File"
+msgstr ""
+
+msgid "✨ Upscaling"
+msgstr ""
+
+# ── favourites.js ──
+msgid "Error loading favourites."
+msgstr ""
+
+msgid "No favourites saved. Add series via the search page."
+msgstr ""
+
+msgid "Open"
+msgstr ""
+
+# ── seerr.js ──
+msgid "Loading requests…"
+msgstr ""
+
+msgid "Seerr is not yet configured..."
+msgstr ""
+
+msgid "No pending or accepted series requests."
+msgstr ""
+
+#, python-format
+msgid "%(n)s requests"
+msgstr ""
+
+msgid "Search film"
+msgstr ""
+
+msgid "Search series"
+msgstr ""
+
+msgid "Search running…"
+msgstr ""
+
+msgid "No results."
+msgstr ""
+
+msgid "Pending"
+msgstr ""
+
+msgid "Accepted"
+msgstr ""
+
+msgid "Not loaded"
+msgstr ""
+
+msgid "In Sync"
+msgstr ""
+
+msgid "Season"
+msgstr ""
+
+msgid "Seasons"
+msgstr ""
+
+msgid "Requested"
+msgstr ""
+
+msgid "Accept & Download"
+msgstr ""
+
+msgid "Accept all & download"
+msgstr ""
+
+msgid "Really decline request? This action cannot be undone."
+msgstr ""
+
+msgid "Error declining: "
+msgstr ""
+
+msgid "Error loading (seerr)"
+msgstr ""
+
+msgid "Connected"
+msgstr ""
+
+msgid "⚠ Seerr approval failed: "
+msgstr ""
+
+# ── player.js ──
+msgid "No encoder: "
+msgstr ""
+
+msgid "ffmpeg missing"
+msgstr ""
+
+msgid "Starting transcoding…"
+msgstr ""
+
+msgid "Transcoding failed"
+msgstr ""
+
+msgid "Generating first segments…"
+msgstr ""
+
+msgid "Encoder error: "
+msgstr ""
+
+msgid "Timeout: Stream did not start within 90s"
+msgstr ""
+
+msgid "Stream error: "
+msgstr ""
+
+msgid "Video could not be loaded."
+msgstr ""
+
+msgid "Browser does not support HLS. Please use Chrome/Firefox/Safari."
+msgstr ""
+
+msgid "Buffering…"
+msgstr ""
+
+#, python-format
+msgid "Jumping to %(time)s…"
+msgstr ""
+
+msgid "Restart failed"
+msgstr ""
+
+#, python-format
+msgid "Generating segments from %(time)s…"
+msgstr ""
+
+msgid "Network error during restart: "
+msgstr ""
+
+msgid "Hardware encoder"
+msgstr ""
+
+msgid "Software encoder (CPU)"
+msgstr ""
+
+# ── stats.js ──
+msgid "Error loading statistics."
+msgstr ""
+
+msgid "Completed Downloads"
+msgstr ""
+
+msgid "Successfully downloaded queue entries"
+msgstr ""
+
+msgid "Downloaded Episodes"
+msgstr ""
+
+msgid "Individual episodes across all downloads"
+msgstr ""
+
+msgid "Downloaded Films"
+msgstr ""
+
+#, python-format
+msgid "%(n)s FilmPalast downloads"
+msgstr ""
+
+msgid "Downloads with errors or without stream"
+msgstr ""
+
+msgid "Last 24 hours"
+msgstr ""
+
+msgid "Downloads completed in the last 24h"
+msgstr ""
+
+msgid "Avg. download duration"
+msgstr ""
+
+msgid "Average time per queue entry"
+msgstr ""
+
+msgid "Avg. speed"
+msgstr ""
+
+#, python-format
+msgid "Total: %(n)s MB loaded"
+msgstr ""
+
+msgid "No data"
+msgstr ""
+
+msgid "Click for details"
+msgstr ""
+
+#, python-format
+msgid "%(n)s active"
+msgstr ""
+
+#, python-format
+msgid "%(n)s jobs total configured"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "Speed"
+msgstr ""
+
+msgid "Queue Status"
+msgstr ""
+
+msgid "Anime (AniWorld)"
+msgstr ""
+
+msgid "Series (S.TO)"
+msgstr ""
+
+msgid "Films (FilmPalast)"
+msgstr ""
+
+#, python-format
+msgid "%(n)s episodes downloaded"
+msgstr ""
+
+msgid "By Language"
+msgstr ""
+
+# ── pwa.js ──
+msgid "Push keys are being generated, please wait a moment …"
+msgstr ""
+
+msgid "Push configuration failed. Check server logs."
+msgstr ""
+
+msgid "Push notifications disabled"
+msgstr ""
+
+msgid "Permission denied"
+msgstr ""
+
+msgid "Push notifications enabled 🔔"
+msgstr ""
+
+msgid "Push subscription failed: "
+msgstr ""
+
+msgid "Hidden"
+msgstr ""
+
+msgid "Hidden requests"
+msgstr ""
+
+msgid "No hidden requests."
+msgstr ""
+
+msgid "Hide"
+msgstr ""
+
+# ── calendar.html / Calendar View ──────────────────────────────────────────
+msgid "Calendar"
+msgstr ""
+
+msgid "Calendar View"
+msgstr ""
+
+msgid ""
+"Shows a sidebar menu item with upcoming episode air dates for your "
+"AutoSync jobs based on TMDB data."
+msgstr ""
+
+msgid "Upcoming episode air dates for your AutoSync jobs"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+msgid "Month"
+msgstr ""
+
+msgid "Week"
+msgstr ""
+
+msgid "Grid view"
+msgstr ""
+
+msgid "List view"
+msgstr ""
+
+msgid "Loading calendar..."
+msgstr ""
+
+msgid "A TMDB API key is required. Configure it under"
+msgstr ""
+
+msgid "No upcoming episode dates found for your AutoSync jobs."
+msgstr ""
+
+# ── Calendar: Seerr sub-option ──────────────────────────────────────────────
+msgid "↳ Show Seerr requests in calendar"
+msgstr ""
+
+msgid ""
+"Adds open Seerr requests to the calendar based on their TMDB air/release "
+"dates."
+msgstr ""
+
+msgid "Enable the calendar above and set up Seerr first to use this option."
+msgstr ""
+
+msgid ""
+"Please be aware that the calendar displays the airtime based on the "
+"country of origin. The time zone cannot currently be converted."
+msgstr ""
+
+# ── history.html / Download History ─────────────────────────────────────────
+msgid "Download History"
+msgstr ""
+
+msgid "Every downloaded episode with start and end time"
+msgstr ""
+
+# ── autosync.html (Gruppen / Ansicht / Suche) ──
+msgid "View"
+msgstr ""
+
+msgid "Auto-grouping"
+msgstr ""
+
+msgid "Search by name…"
+msgstr ""
+
+msgid "Off"
+msgstr ""
+
+msgid "Rename group"
+msgstr ""
+
+msgid "Group name"
+msgstr ""
+
+msgid "Set group"
+msgstr ""
+
+msgid "Remove from group"
+msgstr ""
+
+msgid "Group"
+msgstr ""
+
+msgid "No group"
+msgstr ""
+
+msgid "New name"
+msgstr ""
+
+# ── autosync.html (Bulk-Menü) ──
+msgid "Clear selection"
+msgstr ""
+
+msgid "Set"
+msgstr ""
+
+# --- Self-update feature (added) ---
+msgid "Install update now"
+msgstr ""
+
+msgid "Update channel"
+msgstr ""
+
+msgid "Stable"
+msgstr ""
+
+msgid "Automatic updates"
+msgstr ""
+
+msgid "Install available updates automatically"
+msgstr ""
+
+msgid "Weekdays"
+msgstr ""
+
+msgid "Time"
+msgstr ""
+
+msgid "Times"
+msgstr ""
+
+msgid ""
+"Switch between the stable release and the development channel (latest "
+"commits from the models branch — may be unstable). Switching installs the"
+" selected version right away."
+msgstr ""
+
+msgid ""
+"When enabled, an available update is installed automatically at the "
+"selected time on the chosen weekdays. The app restarts itself and running"
+" downloads resume afterwards."
+msgstr ""
+
+msgid "Console"
+msgstr ""
+
+msgid "Auto-scroll"
+msgstr ""
+
+msgid ""
+"The application was started with --debug. Debug mode is locked on and "
+"cannot be changed here."
+msgstr ""
+
+msgid "Continue watching?"
+msgstr ""
+
+msgid "Start over"
+msgstr ""
+
+msgid "Syncplay"
+msgstr ""
+
+msgid ""
+"Synchronised playback with others via a Syncplay server (compatible with "
+"the Syncplay desktop app)."
+msgstr ""
+
+msgid "Server address"
+msgstr ""
+
+msgid "Port"
+msgstr ""
+
+msgid "Server password (optional)"
+msgstr ""
+
+msgid "Use TLS"
+msgstr ""
+
+msgid "Watch together (Syncplay)"
+msgstr ""
+
+# ── Crunchyroll (CineInfo) ─────────────────────────────────────────────────
+msgid ""
+"Logs in to Crunchyroll to add provider pills for current simulcasts "
+"(which TMDB often lacks) and to sync the Crunchyroll calendar. Your "
+"password is stored encrypted. Without login, only public metadata is "
+"available in anonymous mode."
+msgstr ""
+
+msgid "Enable Crunchyroll integration"
+msgstr ""
+
+msgid "Master switch for all Crunchyroll features below."
+msgstr ""
+
+msgid "Email"
+msgstr ""
+
+msgid "Crunchyroll account email"
+msgstr ""
+
+msgid "Stored encrypted"
+msgstr ""
+
+msgid "Language (Locale)"
+msgstr ""
+
+msgid "Anonymous mode (no account)"
+msgstr ""
+
+msgid ""
+"Use public metadata only — no login required. Watchlist sync needs an "
+"account and is unavailable here."
+msgstr ""
+
+msgid "Crunchyroll provider pill"
+msgstr ""
+
+msgid ""
+"Adds a Crunchyroll pill in the detail modal when a title is on "
+"Crunchyroll — even for new simulcasts TMDB does not list yet."
+msgstr ""
+
+msgid "↳ Sync Crunchyroll simulcast calendar"
+msgstr ""
+
+msgid "↳ Sync with my custom lists (Crunchylists)"
+msgstr ""
+
+msgid ""
+"Adds the series from your Crunchyroll custom lists (Crunchylists) to the "
+"calendar. Episode dates come from TMDB (CineInfo API key required). Requires "
+"an account."
+msgstr ""
+
+msgid ""
+"Adds dated episode releases from the weekly Crunchyroll simulcast "
+"schedule to the calendar (best effort)."
+msgstr ""
+
+msgid "Active rooms"
+msgstr ""
+
+msgid "Apply"
+msgstr ""
+
+msgid "Change"
+msgstr ""
+
+msgid "Chat"
+msgstr ""
+
+msgid "Choose what to watch"
+msgstr ""
+
+msgid "Close room for everyone"
+msgstr ""
+
+msgid "Enter room"
+msgstr ""
+
+msgid "Host control"
+msgstr ""
+
+msgid "Host settings"
+msgstr ""
+
+msgid "If the room is protected"
+msgstr ""
+
+msgid "Invite"
+msgstr ""
+
+msgid "Invite to room"
+msgstr ""
+
+msgid "Leave"
+msgstr ""
+
+msgid "Max participants (0 = unlimited)"
+msgstr ""
+
+msgid "Message…"
+msgstr ""
+
+msgid "No media found in your library."
+msgstr ""
+
+msgid "Nothing selected yet."
+msgstr ""
+
+msgid "Only I control playback"
+msgstr ""
+
+msgid "Only the host controls playback"
+msgstr ""
+
+msgid "Required"
+msgstr ""
+
+msgid "Room name"
+msgstr ""
+
+msgid "Room password"
+msgstr ""
+
+msgid "Room password (empty = none)"
+msgstr ""
+
+msgid "Scan the code or share the link. Guests can join without an account."
+msgstr ""
+
+msgid "Search library…"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "Share the room link with friends — they can join without an account."
+msgstr ""
+
+msgid "Start or join a room"
+msgstr ""
+
+msgid "Waiting for the host to pick something…"
+msgstr ""
+
+msgid "Watch"
+msgstr ""
+
+msgid "Watch together, perfectly in sync — phone, tablet and PC."
+msgstr ""
+
+msgid "Watched in this room"
+msgstr ""
+
+msgid "Watching"
+msgstr ""
+
+msgid "Your display name"
+msgstr ""
+
+msgid "e.g. movie-night"
+msgstr ""
+
+msgid "Enable SyncPlay"
+msgstr ""
+
+msgid "Open SyncPlay"
+msgstr ""
+
+msgid "Open SyncPlay →"
+msgstr ""
+
+msgid "Watch Together"
+msgstr ""
+
+msgid "Also appears in the sidebar on the left once enabled."
+msgstr ""
+
+msgid ""
+"Adds a SyncPlay entry to the sidebar and lets you start watch-together "
+"rooms."
+msgstr ""
+
+msgid ""
+"Watch films and series together, perfectly in sync across phone, tablet "
+"and PC. Everyone connects to this instance — no third-party server. "
+"Invited guests can join via a link without an account."
+msgstr ""
+
+msgid "↳ Sync with my CR Watchlist"
+msgstr ""
+
+msgid "Adds your Crunchyroll watchlist series to the calendar — works even when the general Crunchyroll display is off, as long as a Crunchyroll account is configured. Episode dates come from TMDB (CineInfo API key required)."
+msgstr ""
+
+msgid "Adds the series from your Crunchyroll custom lists (Crunchylists) to the calendar — works even when the general Crunchyroll display is off, as long as a Crunchyroll account is configured. Episode dates come from TMDB (CineInfo API key required)."
+msgstr ""
+
+# ── Integrations: "Third Party" tab (Crunchyroll, Fernsehserien.de) ──────────
+msgid "Third Party"
+msgstr ""
+
+msgid "Scraper"
+msgstr ""
+
+# ── Fernsehserien.de (CineInfo) ───────────────────────────────────────────────
+msgid "Enable Fernsehserien.de integration"
+msgstr ""
+
+msgid "Master switch for the Fernsehserien provider pill below."
+msgstr ""
+
+msgid "Reads public pages on fernsehserien.de (no official API, no login) to add a provider pill in the detail modal showing the German streaming premiere provider — useful as a fallback when TMDB has no German provider data. Titles are matched to pages by a best-effort guess, so this sometimes shows no pill rather than a wrong one."
+msgstr ""
+
+msgid "Fernsehserien provider pill"
+msgstr ""
+
+msgid "Adds a pill in the detail modal naming the streaming provider fernsehserien.de reports for the German premiere."
+msgstr ""
+
+msgid "Deletes all stored TMDB data and restarts the preloading process. Also clears cached Fernsehserien.de provider lookups. Useful when info is outdated or after an API key change."
+msgstr ""
+
+msgid "Metadata is preloaded in the background and cached in the database for 24 h. Fernsehserien.de provider lookups are cached for 24 h as well."
+msgstr ""
+
+# ── legacy import (MediaForge rename) ──
+msgid "Coming from AniWorld Downloader? Your data from ~/.aniworld is imported automatically on first start — nothing gets lost."
+msgstr ""
+
+msgid "Import from previous installation"
+msgstr ""
+
+msgid "A previous AniWorld Downloader installation was detected. Your data is imported automatically on first start; use the button below to copy any remaining files. An existing database is never overwritten."
+msgstr ""
+
+msgid "Import legacy data"
+msgstr ""
+
+msgid "Already imported."
+msgstr ""
+
+msgid "Importing…"
+msgstr ""
+
+msgid "item(s) imported."
+msgstr ""
+
+msgid "Restart to load an imported database."
+msgstr ""
+
+msgid "Nothing to import."
+msgstr ""
+
+msgid "Import failed."
+msgstr ""
+
+# ── legacy import card (dismiss/description) ──
+msgid "Data from previous installation"
+msgstr ""
+
+msgid "A previous AniWorld Downloader installation (~/.aniworld) was detected. Your settings, download history, users and profiles are imported automatically the first time MediaForge starts — so everything is usually already here. Use \"Import remaining files\" only if something appears to be missing; an existing database is never overwritten. You can hide this notice once you are done, or if you do not want to import."
+msgstr ""
+
+msgid "Import remaining files"
+msgstr ""
+
+msgid "Your data was already imported automatically on first start."
+msgstr ""
+
+msgid "Nothing left to import — everything is already here."
+msgstr ""
+
+# --- MediaForge: Quellen / Sources feature ---
+msgid "Sources"
+msgstr ""
+
+msgid "Source order"
+msgstr ""
+
+msgid "Set the order in which sources appear on the start page. Drag the rows or use the arrows. For each source you can also choose whether new or popular items are shown first."
+msgstr ""
+
+msgid "Enable or disable the available sources. Disabled sources are hidden on the start page and are no longer loaded there."
+msgstr ""
+
+msgid "Also hide disabled sources from search results"
+msgstr ""
+
+msgid "When enabled, disabled sources are also skipped in the search results."
+msgstr ""
+
+# ── settings.html: Captcha / Browser + Restart ──
+msgid "Captcha / Browser"
+msgstr ""
+
+msgid "Persistent browser profile (keeps a warm Cloudflare trust for captcha solving)"
+msgstr ""
+
+msgid "Reuses one Chromium profile across captcha solves so a once-earned Cloudflare trust (cf_clearance) and browser fingerprint survive. This raises the Turnstile success rate. Applies on the next captcha; a restart guarantees a clean state."
+msgstr ""
+
+msgid "Clear browser profile"
+msgstr ""
+
+msgid "Restart app"
+msgstr ""
+
+msgid "If Turnstile keeps failing (red cross), delete the profile and solve one captcha manually in the web UI to seed a fresh trust."
+msgstr ""
+
+msgid "Restart app now"
+msgstr ""
+
+msgid "Restarts MediaForge with the same startup arguments — without installing an update. Running downloads pause and resume afterwards."
+msgstr ""
+
+# -- settings.html: Captcha options --
+msgid "Captcha options"
+msgstr ""
+
+msgid "Solve manually (no auto-click) — only your own click on the checkbox counts"
+msgstr ""
+
+msgid "Show the captcha window on screen (do not move it off-screen)"
+msgstr ""
+
+msgid "Network ad-blocker active (turn off if the captcha does not load)"
+msgstr ""
+
+msgid "Ad-tab guard active (auto-closes pop-up ad tabs)"
+msgstr ""
+
+msgid "Ad-overlay remover active (recommended — off can let clicks be hijacked)"
+msgstr ""
+
+msgid "User-agent sync active (recommended — keeps the cf_clearance cookie valid)"
+msgstr ""
+
+msgid "WebGL renderer spoof (only useful on servers/Docker without a GPU)"
+msgstr ""
+
+msgid "Captcha timeout (seconds, empty = default)"
+msgstr ""
+
+# -- settings.html: nachgezogene Bestands-Strings --
+msgid "Add time"
+msgstr ""
+
+msgid "Adds a Media category to the statistics page with movie, series and episode counts based on your media library."
+msgstr ""
+
+msgid "Automatically delete download-history entries older than the selected period. Runs about hourly."
+msgstr ""
+
+msgid "Interval"
+msgstr ""
+
+msgid "Keep history for"
+msgstr ""
+
+msgid "Time Format"
+msgstr ""
+
+msgid "Unlimited"
+msgstr ""
+
+msgid "Weekly schedule"
+msgstr ""
+
+msgid "days"
+msgstr ""
+
+# ── hanime (18+) source ──
+msgid "New"
+msgstr ""
+
+msgid "Trending"
+msgstr ""
+
+msgid "Popular"
+msgstr ""
+
+msgid "Yes"
+msgstr ""
+
+msgid "No"
+msgstr ""
+
+msgid "One more thing…"
+msgstr ""
+
+msgid "Enable hanime (18+)"
+msgstr ""
+
+msgid "hanime.tv is a source for adult, sexually explicit animated content (hentai) and is only permitted for users aged 18 or older."
+msgstr ""
+
+msgid "Are you UNDER 18 years old?"
+msgstr ""
+
+msgid "Yes, I am under 18"
+msgstr ""
+
+msgid "No, I am 18 or older"
+msgstr ""
+
+msgid "Should we really believe you are at least 18?"
+msgstr ""
+
+msgid "hanime.tv is an adult source (18+) for sexually explicit animated content (hentai). Disabled by default; enabling requires an age confirmation."
+msgstr ""
+
+# ── UpTime (added) ─────────────────────────────────────────────────────────
+msgid "Monitoring"
+msgstr ""
+
+msgid "Continuously monitors your source sites — reachability and real-site verification, the same check used in the DNS diagnostics. When enabled, an \"UpTime\" entry appears in the sidebar with an Uptime-Kuma-style dashboard (online/offline, uptime percentage, response time, heartbeat history)."
+msgstr ""
+
+msgid "Enable UpTime monitoring"
+msgstr ""
+
+msgid "Adds an UpTime entry to the sidebar and starts the background monitor."
+msgstr ""
+
+msgid "Check interval"
+msgstr ""
+
+msgid "How often each site is checked. Minimum 1 minute."
+msgstr ""
+
+msgid "min"
+msgstr ""
+
+msgid "Retention"
+msgstr ""
+
+msgid "How long heartbeats are kept. Maximum 7 days."
+msgstr ""
+
+msgid "Timeout"
+msgstr ""
+
+msgid "Request timeout per check (5–120 s)."
+msgstr ""
+
+msgid "sec"
+msgstr ""
+
+msgid "Failure threshold"
+msgstr ""
+
+msgid "Consecutive failed checks before a site is reported offline. Higher values ignore brief hiccups."
+msgstr ""
+
+msgid "checks"
+msgstr ""
+
+msgid "Verify with full GET request"
+msgstr ""
+
+msgid "More reliable for Cloudflare/DDoS-Guard sites than a HEAD request, at the cost of more bandwidth."
+msgstr ""
+
+msgid "Tracked sources"
+msgstr ""
+
+msgid "Choose which of your source sites should be monitored."
+msgstr ""
+
+msgid "Open UpTime"
+msgstr ""
+
+msgid "Open UpTime →"
+msgstr ""
+
+msgid "Live monitoring of your source sites — reachability and real-site verification"
+msgstr ""
+
+msgid "Online"
+msgstr ""
+
+msgid "Degraded"
+msgstr ""
+
+msgid "Offline"
+msgstr ""
+
+msgid "Defines which DNS server resolves domains. Useful if your ISP blocks AniWorld or SerienStream."
+msgstr ""
+
+# ── UpTime range selector ──
+msgid "Range"
+msgstr ""
+
+msgid "Custom"
+msgstr ""
+
+msgid "To"
+msgstr ""
+
+# ── setup_token.html ──────────────────────────────────────────────────────
+msgid "To secure your initial setup, a setup token is required."
+msgstr ""
+
+msgid "You can find the token in your server console or Docker container logs."
+msgstr ""
+
+msgid "Enter setup token"
+msgstr ""
+
+msgid "Start setup"
+msgstr ""
+
+# ── extensions.html / Module Manager (base.html sidebar link + page) ──────
+msgid "Module Manager"
+msgstr ""
+
+msgid "Every discovered web/thirdparties/ folder, who made it, and a working on/off switch for what it registered"
+msgstr ""
+
+msgid "No extension folders discovered."
+msgstr ""
+
+msgid "Loaded"
+msgstr ""
+
+msgid "Skipped"
+msgstr ""
+
+msgid "Sidebar"
+msgstr ""
+
+msgid "Author"
+msgstr ""
+
+msgid "Dashboard widget"
+msgstr ""
+
+msgid "Provider pill"
+msgstr ""
+
+msgid "This folder registered no sidebar/settings item — could be a background-job-only integration, or one that failed before reaching register_thirdparty()."
+msgstr ""
+
+msgid "DEPENDS_ON"
+msgstr ""
+
+msgid "Requires"
+msgstr ""
+
+msgid "One or more required modules are not currently enabled — this module will not work until they are."
+msgstr ""
+
+msgid "Enable module"
+msgstr ""
+
+msgid "Open module"
+msgstr ""
+
+msgid "Configure its settings on the"
+msgstr ""
+
+msgid "page"
+msgstr ""
+
+msgid "Scan web/thirdparties/ for new module folders and register them without restarting the app."
+msgstr ""
+
+# Module versioning / module-store metadata (MODULE_VERSION, MODULE_ID,
+# MODULE_MIN/MAX_APP_VERSION, MODULE_LICENSE, MODULE_HOMEPAGE) shown on the
+# Module Manager page -- see web/thirdparties/__init__.py's docstring.
+msgid "MediaForge core version"
+msgstr ""
+
+msgid "Module version"
+msgstr ""
+
+msgid "Incompatible"
+msgstr ""
+
+msgid "Module ID"
+msgstr ""
+
+msgid "Folder"
+msgstr ""
+
+msgid "Requires MediaForge"
+msgstr ""
+
+msgid "up to"
+msgstr ""
+
+msgid "License"
+msgstr ""
+
+msgid "This module declares a MediaForge version range the running version is outside of, so it was not loaded."
+msgstr ""
+
+# Registry API version + pip requirements (MODULE_API_VERSION /
+# MODULE_REQUIREMENTS), shown on each module's Module Manager card.
+msgid "Registry API"
+msgstr ""
+
+msgid "Requirements"
+msgstr ""
+
+# Staged install/uninstall — everything the store does is applied on the next
+# start (web/thirdparties/__init__.py's apply_pending_changes).
+msgid "Restart required"
+msgstr ""
+
+msgid "To be installed/updated"
+msgstr ""
+
+msgid "To be removed"
+msgstr ""
+
+msgid "These changes are applied the next time MediaForge starts."
+msgstr ""
+
+msgid "Discard staged changes"
+msgstr ""
+
+msgid "Uninstall module"
+msgstr ""
+
+msgid "Uninstall"
+msgstr ""
+
+msgid "Removes the folder and its namespaced settings on the next start. Data in its own tables is kept."
+msgstr ""
+
+# Module store (web/thirdparties/store.py). The whole section is hidden until a
+# store URL is configured.
+msgid "Module Store"
+msgstr ""
+
+msgid "Refresh store"
+msgstr ""
+
+msgid "Store repository URL"
+msgstr ""
+
+msgid "Base URL or index.json of a MediaForge module repository. Leave empty to disable the store entirely."
+msgstr ""
+
+# The old wording, kept because an old .mo may still be in use somewhere. Superseded by the
+# pair below: the switch now also decides *which catalog is fetched* (index.json vs
+# index-all.json), so its label had to say so.
+msgid "Allow unverified modules"
+msgstr ""
+
+msgid "Unverified entries are community links nobody reviewed — the code can change under the same URL at any time. Installing one runs it inside MediaForge with full access to your data."
+msgstr ""
+
+msgid "Allow unverified and unreviewed modules"
+msgstr ""
+
+msgid "Unverified entries carry no signature this build trusts, and unreviewed ones are submissions nobody has read yet — they are shown only while this is on. Installing one runs it inside MediaForge with full access to your data."
+msgstr ""
+
+msgid "Loading store…"
+msgstr ""
+
+# Trust tiers, derived from the module's MODULE.sig (web/thirdparties/signing.py).
+# "official" = written by the MediaForge team; "verified" = written by someone
+# else and reviewed + signed by us; everything else is unverified.
+msgid "Official"
+msgstr ""
+
+msgid "Verified"
+msgstr ""
+
+msgid "Unsigned"
+msgstr ""
+
+msgid "Signature invalid"
+msgstr ""
+
+msgid "Signed by"
+msgstr ""
+
+msgid "No MODULE.sig — nobody vouches for this code"
+msgstr ""
+
+msgid "This module carries a signature that does not check out."
+msgstr ""
+
+msgid "Additional repositories"
+msgstr ""
+
+msgid "One URL per line. Modules from a third-party repository are unverified unless they carry a signature this MediaForge trusts."
+msgstr ""
+
+# -- Dev Infos --------------------------------------------------------------
+msgid "Dev Infos"
+msgstr ""
+
+msgid "Latest news, fixes and known issues from the developers"
+msgstr ""
+
+msgid "Feature"
+msgstr ""
+
+msgid "Fix"
+msgstr ""
+
+msgid "Warning"
+msgstr ""
+
+msgid "Announcement"
+msgstr ""
+
+msgid "No dev infos yet."
+msgstr ""
+
+msgid "Mark as read"
+msgstr ""
+
+msgid "Read"
+msgstr ""
+
+msgid "Dismiss"
+msgstr ""
+
+msgid "Provider order"
+msgstr ""
+
+msgid "Order in which hosters are tried. If the hoster selected for a download fails (dead link, hoster not offered for that episode), MediaForge automatically continues with the next one in this list. Drag the rows or use the arrows."
+msgstr ""
+
+msgid "Automatic provider fallback"
+msgstr ""
+
+msgid "When disabled, only the selected hoster is used and a download fails if it is unavailable."
+msgstr ""
+
+msgid "Domain fallback (mirrors)"
+msgstr ""
+
+msgid "Alternative domains per site, tried top to bottom whenever a domain is unreachable or blocked (e.g. s.to → serienstream.to → 186.2.175.5). The first entry is the primary domain and cannot be removed. An IP address is called with the primary domain as its Host header. One entry per line."
+msgstr ""
+
+msgid "Which source may show its provider pill first. The first source that knows the title wins; the others are skipped. Modules that register their own pill appear here automatically."
+msgstr ""
+
+# ── Newly extracted strings, added after messages.mo was found corrupt and
+#    several templates (base.html consent dialog, history.html, settings.html's
+#    Privacy & Telemetry tab, calendar/autosync) turned out to have no catalog
+#    entry at all yet -- see the .mo corruption + missing-translation fix. ──
+msgid "On"
+msgstr ""
+
+msgid "Seasons & episodes"
+msgstr ""
+
+msgid "Send crash reports to the developer?"
+msgstr ""
+
+msgid "If MediaForge crashes unexpectedly, it can automatically send a technical error report (file/line/error type) plus basic system info (app version, OS, Python version) to the developer -- this helps find and fix bugs. Passwords, credentials and file contents are never included."
+msgstr ""
+
+msgid "You can change this decision at any time under Settings -> Privacy & Telemetry. More extensive data points (e.g. download titles or watch behaviour) always stay separate, off by default, and individually toggled -- this question only covers crash reports and basic system info."
+msgstr ""
+
+msgid "No, thanks"
+msgstr ""
+
+msgid "Yes, send crash reports"
+msgstr ""
+
+msgid "Seerr is active, but none of your open requests have an upcoming air or release date yet — so there is nothing to show here."
+msgstr ""
+
+msgid "The first synchronization may take a while — your calendar is being filled in the background."
+msgstr ""
+
+msgid "Export"
+msgstr ""
+
+msgid "Clear history"
+msgstr ""
+
+msgid "Search by title..."
+msgstr ""
+
+msgid "All sources"
+msgstr ""
+
+msgid "Manual"
+msgstr ""
+
+msgid "Time range"
+msgstr ""
+
+msgid "All time"
+msgstr ""
+
+msgid "Last 7 days"
+msgstr ""
+
+msgid "Last 30 days"
+msgstr ""
+
+msgid "Results per page"
+msgstr ""
+
+msgid "Delete selected"
+msgstr ""
+
+msgid "Loading history..."
+msgstr ""
+
+msgid "No downloads recorded yet."
+msgstr ""
+
+msgid "Episode"
+msgstr ""
+
+msgid "Start"
+msgstr ""
+
+msgid "End"
+msgstr ""
+
+msgid "Duration"
+msgstr ""
+
+msgid "Download details"
+msgstr ""
+
+msgid "Retry"
+msgstr ""
+
+msgid "Popular Movies"
+msgstr ""
+
+msgid "Set up Auto-Sync"
+msgstr ""
+
+msgid "Language not available"
+msgstr ""
+
+msgid "Privacy & Telemetry"
+msgstr ""
+
+msgid "Reset identity"
+msgstr ""
+
+msgid "Request deletion or export of any data already sent under your installation ID -- available whether or not telemetry is currently enabled. The request is sent from this app, with your installation ID attached automatically (never typed by hand)."
+msgstr ""
+
+msgid "Your name"
+msgstr ""
+
+msgid "Request data export"
+msgstr ""
+
+msgid "Request data deletion"
+msgstr ""
+
+msgid "Telemetry active at all"
+msgstr ""
+
+# ── integrations.html (added 2026-07-12) ──────────
+msgid "↳ Show Media Library series in calendar"
+msgstr ""
+
+msgid "Adds series from your Media Library to the calendar."
+msgstr ""
+
+msgid "↳ Calendar refresh interval"
+msgstr ""
+
+msgid "How often to refresh existing calendar data from TMDB (in hours)."
+msgstr ""
+
+msgid "Hours"
+msgstr ""
+
+msgid "Cache Options"
+msgstr ""
+
+msgid "ATTENTION"
+msgstr ""
+
+msgid "Profile"
+msgstr ""
+
+msgid "Which account profile to use for watchlist and calendar sync."
+msgstr ""
+
+msgid "German only"
+msgstr ""
+
+msgid "Calendar sync requires a TMDB API key — configure it in CineInfo above."
+msgstr ""
+
+msgid "Adds the current Crunchyroll simulcast lineup to the calendar. Episode air dates are resolved via TMDB (CineInfo API key required)."
+msgstr ""
+
+msgid "Country (Providers &amp; Age Rating)"
+msgstr ""
+
+# ── settings.html (added 2026-07-12) ──────────
+msgid "AutoSync jobs — status overview (all users)"
+msgstr ""
+
+msgid "UpTime monitor — current status per source"
+msgstr ""
+
+msgid "Self-update progress / state"
+msgstr ""
+
+msgid "MediaScan run status"
+msgstr ""
+
+msgid "Upscale queue, badge count & progress"
+msgstr ""
+
+msgid "Download history — all users"
+msgstr ""
+
+msgid "Your installation"
+msgstr ""
+
+msgid "This ID is generated once per installation and is pseudonymous, not anonymous, from stage 2 onward -- it lets usage over time be linked to this one installation. It is never linked to your MediaForge account or username."
+msgstr ""
+
+msgid "Installation ID"
+msgstr ""
+
+msgid "Manage my data"
+msgstr ""
+
+msgid "Email (for contact only)"
+msgstr ""
+
+msgid "Data collection stages"
+msgstr ""
+
+msgid "Nothing here is sent unless you actively enable it. Turning a stage on enables every data point in it at once; you can then switch individual points back off -- the stage switch always reflects the combined state of its data points."
+msgstr ""
+
+# ── extensions.html (added 2026-07-12) ──────────
+msgid "Browse the module store"
+msgstr ""
+
+msgid "Restart now"
+msgstr ""
+
+msgid "Restart MediaForge to apply — this process cannot restart itself (debug mode)."
+msgstr ""
+
+msgid "Official store"
+msgstr ""
+
+msgid "Ships with MediaForge and cannot be changed here — this is the one repository whose modules this build is willing to call official."
+msgstr ""
+
+msgid "This build ships no official store."
+msgstr ""
+
+msgid "Module folder"
+msgstr ""
+
+msgid "Installed modules live here, outside MediaForge's program files — next to your database and cache, so they survive an update. A module installed by hand is simply a folder dropped in here; it is picked up on the next start."
+msgstr ""
+
+# Module dependencies (Modulmanager: "needs dependency" + Install button --
+# see web/thirdparties/deps.py and routes/extensions.py).
+msgid "This module needs a Python dependency that is not installed:"
+msgstr ""
+
+msgid "Install dependency"
+msgstr ""
+
+msgid "Downloads the package from PyPI into the MediaForge module folder and loads the module afterwards."
+msgstr ""
+
+msgid "This build cannot install packages itself. Install the dependency into the environment MediaForge runs in."
+msgstr ""
+
+# ── Backup (Full & Selective) ───────────────────────────────────────────────
+msgid "Backup"
+msgstr ""
+
+msgid "Create backup"
+msgstr ""
+
+msgid "Export your settings and data to a single backup file. Choose which categories to include. A password is required — it encrypts sensitive values such as API keys and passwords. Without the password the backup cannot be restored."
+msgstr ""
+
+msgid "Loading…"
+msgstr ""
+
+msgid "Backup password"
+msgstr ""
+
+msgid "Repeat password"
+msgstr ""
+
+msgid "Restore backup"
+msgstr ""
+
+msgid "Restore a backup file. Select the file and enter its password to preview the contents, then choose which categories to restore."
+msgstr ""
+
+msgid "Backup file"
+msgstr ""
+
+msgid "Preview"
+msgstr ""
+
+msgid "Merge (keep existing, add/overwrite from backup)"
+msgstr ""
+
+msgid "Replace (clear selected data first)"
+msgstr ""
+
+msgid "Restore"
+msgstr ""
+
+msgid "Choose backup file"
+msgstr ""
+
+msgid "Choose file…"
+msgstr ""
+
+msgid "Save backup without a password (insecure)"
+msgstr ""
+
+# ── Einstellungs-Übersicht (Overview Dashboard) ──────────────────────────
+msgid "Overview"
+msgstr ""
+
+msgid "Configure"
+msgstr ""
+
+msgid "General settings, language, system options and debug mode"
+msgstr ""
+
+msgid "Appearance themes, accent color, visual effects and layout options"
+msgstr ""
+
+msgid "Configure streaming providers, mirrors and search order"
+msgstr ""
+
+msgid "Download paths, naming template, language preferences and bandwidth limits"
+msgstr ""
+
+msgid "Automatic synchronization, schedules, weekly blocks and adaptive intervals"
+msgstr ""
+
+msgid "DNS server configuration, Captcha solver behavior and reverse proxy base URL"
+msgstr ""
+
+msgid "User management, roles, passwords and Single Sign-On (SSO/OIDC)"
+msgstr ""
+
+msgid "External REST API key, endpoint reference and integration documentation"
+msgstr ""
+
+msgid "Crash reports, diagnostic telemetry and data privacy controls"
+msgstr ""
+
+msgid "Check for updates, switch release channels and configure automatic updates"
+msgstr ""
+
+msgid "Create, download and restore full system backups"
+msgstr ""
+
+msgid "Connect MediaForge with your Jellyseerr or Overseerr instance."
+msgstr ""
+
+msgid "Automatic library refresh for Jellyfin & Plex after every download."
+msgstr ""
+
+msgid "Shows streaming providers, genres and age rating via TMDB API."
+msgstr ""
+
+msgid "Connect external services like Crunchyroll & Fernsehserien.de."
+msgstr ""
+
+msgid "Synchronized playback and party rooms with external instances."
+msgstr ""
+
+msgid "Monitor site availability, response times and scrapable sources."
+msgstr ""
+
+msgid "External integration module"
+msgstr ""
+
+# --- Menu rework (2026-07): new sidebar/menu strings ---
+msgid "Modules"
+msgstr ""
+
+msgid "Module"
+msgstr ""
+
+msgid "Module Settings"
+msgstr ""
+
+msgid "Toggle Submenu"
+msgstr ""
+
+msgid "Settings contributed by installed modules"
+msgstr ""
+
+msgid "No module has contributed settings yet. Enable a module in the Module Manager to see its settings here."
+msgstr ""
+
+msgid "Open Module Manager"
+msgstr ""
+
+# --- Menu rework follow-up (Monitoring overview, mobile drawer) ---
+msgid "Menu"
+msgstr ""
+
+msgid "Statistics, download history and uptime at a glance"
+msgstr ""
+
+msgid "Configure FFmpeg encoding, hardware acceleration and upscaling profiles"
+msgstr ""
+
+# --- Jellyfin NFO Provider ---
+msgid "Automatically generates NFO metadata for Jellyfin, Kodi and Plex after successful downloads. Requires a TMDB API key configured in CineInfo."
+msgstr ""
+
+msgid "CineInfo Integration is not set up! To generate NFO files, CineInfo must be configured and enabled."
+msgstr ""
+
+msgid "Enable Jellyfin NFO Generation"
+msgstr ""
+
+msgid "Enables writing NFO files after a download."
+msgstr ""
+
+msgid "Create NFO for"
+msgstr ""
+
+msgid "Series (tvshow.nfo)"
+msgstr ""
+
+msgid "Season (season.nfo)"
+msgstr ""
+
+msgid "Episode (&lt;name&gt;.nfo)"
+msgstr ""
+
+msgid "Movie (movie.nfo / &lt;name&gt;.nfo)"
+msgstr ""
+
+msgid "Enable Movie Subfolders"
+msgstr ""
+
+msgid "Each movie gets its own subfolder (Synchronized with global download settings)."
+msgstr ""
+
+msgid "Include Metadata"
+msgstr ""
+
+msgid "Plot / Overview"
+msgstr ""
+
+msgid "Genres"
+msgstr ""
+
+msgid "Age Rating (FSK)"
+msgstr ""
+
+msgid "Cast / Crew"
+msgstr ""
+
+msgid "Trailer Link"
+msgstr ""
+
+msgid "Aired / Released Date"
+msgstr ""
+
+msgid "Studio / Network"
+msgstr ""
+
+msgid "Startup & Tray"
+msgstr ""
+
+msgid "Start in System Tray"
+msgstr ""
+
+msgid "Starts the application as an icon in the system tray instead of blocking a terminal window."
+msgstr ""
+
+msgid "Autostart with PC"
+msgstr ""
+
+msgid "Automatically start MediaForge when you log in to your computer."
+msgstr ""
+
+msgid "Open browser automatically on startup"
+msgstr ""
+
+msgid "Whether to open the Web UI in your default browser when MediaForge starts."
+msgstr ""
+
+msgid "This feature is not available in Docker."
+msgstr ""
+
+# --- Favorites page (added) ---
+msgid "Sort"
+msgstr ""
+
+msgid "Recently added"
+msgstr ""
+
+msgid "Oldest first"
+msgstr ""
+
+msgid "Name A–Z"
+msgstr ""
+
+msgid "Name Z–A"
+msgstr ""
+
+msgid "Grouping"
+msgstr ""
+
+msgid "Type"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html src/mediaforge/web/templates/extensions.html
+msgid "Theme Packs"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Theme packs restyle the whole interface — fonts, animations, checkboxes, inputs, the calendar and more. New theme packs can be installed from the Module Store."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Your theme"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html src/mediaforge/web/templates/extensions.html
+msgid "Instance default"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "MediaForge default look"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Only changes the look on this device. The dark/light switch above keeps working within a theme pack."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Instance default (all users)"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Get more themes"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The theme every user sees unless they pick their own above. Installed and managed in the Module Manager."
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Theme"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Themes"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Invalid"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "No MODULE.sig — nobody vouches for this theme"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "This theme pack is invalid and will not be offered:"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Make this the theme every user sees unless they picked their own in Settings → Design."
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Revert to default look"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Set as default"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Uninstall theme"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Deletes the theme folder immediately — themes are plain CSS and assets, no restart needed. Users who selected it fall back to the default look."
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Filter by type"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Theme folder"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Installed theme packs live here. A theme installed by hand is a folder with a theme.json dropped in here — it shows up on the next page load, no restart needed."
+msgstr ""
+
+# ── Menu rework additions (added 2026-07-23) ──────────────────────────────
+#: src/mediaforge/web/templates/base.html
+msgid "Change language"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html
+msgid "Collapse / expand menu"
+msgstr ""
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Layout"
+msgstr ""
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Recently new"
+msgstr ""
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Clear"
+msgstr ""
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "No sync jobs yet"
+msgstr ""
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Add a series from the search page to get started."
+msgstr ""
+
+#: src/mediaforge/web/templates/_encoding_body.html
+msgid "Encoding Queue"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Available modules"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Install now"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Trusted signing keys"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "This build trusts no signing keys — nothing can be official."
+msgstr ""
