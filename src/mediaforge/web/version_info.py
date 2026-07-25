@@ -48,12 +48,44 @@ def _get_dev_install_info():
         return False, None
 
 
+def _is_editable_install():
+    """
+    True when mediaforge is installed in "editable" mode from a local
+    checkout (``pip install -e .`` / ``uv sync`` against a cloned repo),
+    as opposed to a normal wheel/sdist install from PyPI, a git ref, or a
+    PyInstaller build.
+
+    This is intentionally separate from ``_get_dev_install_info()`` above:
+    that one only fires for ``pip install git+...@branch`` installs and
+    drives the self-update "dev channel" logic (it needs a real commit SHA
+    to compare against). A local editable install has no ``vcs_info`` at
+    all -- pip's ``direct_url.json`` instead carries a ``dir_info.editable``
+    flag -- so it's invisible to that check even though it's obviously "not
+    the packaged release". Kept as its own helper, used only for the
+    version string shown in the UI, so it can't affect update-check behavior.
+    """
+    try:
+        import importlib.metadata as _meta
+        import json as _json
+
+        dist = _meta.distribution("mediaforge")
+        direct_url_text = dist.read_text("direct_url.json")
+        if not direct_url_text:
+            return False
+        data = _json.loads(direct_url_text)
+        return bool(data.get("dir_info", {}).get("editable"))
+    except Exception:
+        return False
+
+
 def _get_display_version():
     """
     Return the version string shown in the UI.
 
-    - Release install (``@v2.1.6``):  ``"2.1.6"``
-    - Dev install    (``@main``):   ``"2.1.6-dev+abc1234"``
+    - Release install (``@v2.1.6``):        ``"2.1.6"``
+    - Dev install    (``@main``):            ``"2.1.6-dev+abc1234"``
+    - Local editable install (``uv sync`` / ``pip install -e .`` on a
+      checked-out repo, e.g. this project's own dev setup): ``"2.1.6 DEV"``
     """
     base = _get_version()
     if not base:
@@ -61,6 +93,8 @@ def _get_display_version():
     is_dev, commit_hash = _get_dev_install_info()
     if is_dev and commit_hash:
         return f"{base}-dev+{commit_hash[:7]}"
+    if _is_editable_install():
+        return f"{base} DEV"
     return base
 
 

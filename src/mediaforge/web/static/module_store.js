@@ -321,39 +321,81 @@
   }
 
   // ---- actions -------------------------------------------------------------
-  async function post(url, body, method) {
-    const resp = await fetch(url, {
+  // Installs/deps downloads are the slowest, most timing-sensitive requests on this
+  // page (a package fetch, pip, signature verification, live registration — all
+  // synchronous server-side before the response comes back), yet until now they were
+  // the only ones with no client-side deadline and no error handling. A network
+  // hiccup, a slow line, or a proxy in front of MediaForge that closes the connection
+  // before the server answers left the fetch's promise unresolved with nothing to
+  // catch it — the button sat on "Lade…"/"Downloading…" forever, no reload, no error,
+  // indistinguishable from a hang. That is exactly the "install doesn't reload, just
+  // keeps showing a loading message until I click refresh" report: the install had
+  // very likely already succeeded server-side, but this side never found out. Every
+  // action below now has a deadline and a catch, so it always ends in either the
+  // normal success path or a visible error with the button restored — and on a
+  // timeout/error it re-checks the catalog itself instead of leaving that to a manual
+  // "Aktualisieren" click, since the action may well have gone through anyway.
+  const ACTION_TIMEOUT_MS = 90000;
+
+  function fetchActionWithTimeout(url, opts, ms) {
+    if (!window.AbortController) return fetch(url, opts);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+  }
+
+  async function post(url, body, method, timeoutMs) {
+    const opts = {
       method: method || "POST",
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
-    });
+    };
+    const resp = timeoutMs
+      ? await fetchActionWithTimeout(url, opts, timeoutMs)
+      : await fetch(url, opts);
     return resp.json();
+  }
+
+  function actionErrorMessage(e) {
+    if (e && e.name === "AbortError") {
+      return t("Zeitüberschreitung — die Anfrage hat zu lange gedauert.",
+                "Timed out — the request took too long.");
+    }
+    return String((e && e.message) || e);
   }
 
   document.addEventListener("click", async (ev) => {
     const depsBtn = ev.target.closest(".store-deps-btn");
     if (depsBtn) {
-      // pip is slow and this is a fetch with no timeout on purpose: a cold install of
-      // something like discord.py pulls half a dozen wheels over whatever line the NAS has.
+      // pip is slow, hence the generous deadline: a cold install of something like
+      // discord.py pulls half a dozen wheels over whatever line the NAS has.
       // The button says what is happening rather than pretending it is instant.
       depsBtn.disabled = true;
       const original = depsBtn.textContent;
       depsBtn.textContent = t("Installiere… (kann dauern)", "Installing… (can take a while)");
 
-      const data = await post("/api/store/requirements", { id: depsBtn.dataset.id });
-      if (data.ok) {
-        toast(t("Abhängigkeiten installiert. Das Modul kann jetzt installiert werden.",
-                "Dependencies installed. The module can be installed now."));
-        loadCatalog(true);      // the module is no longer "incompatible" — re-render it
-      } else {
-        // pip's own output, not a summary of it. "Could not install" tells an admin nothing;
-        // "No matching distribution found for discord.py>=2.0" tells them everything.
-        toast(t("Fehlgeschlagen: ", "Failed: ") + (data.error || ""));
-        if (data.output) {
-          console.error("[ModuleStore] pip output:\n" + data.output);
+      try {
+        const data = await post("/api/store/requirements", { id: depsBtn.dataset.id },
+          "POST", ACTION_TIMEOUT_MS);
+        if (data.ok) {
+          toast(t("Abhängigkeiten installiert. Das Modul kann jetzt installiert werden.",
+                  "Dependencies installed. The module can be installed now."));
+          loadCatalog(true);      // the module is no longer "incompatible" — re-render it
+        } else {
+          // pip's own output, not a summary of it. "Could not install" tells an admin nothing;
+          // "No matching distribution found for discord.py>=2.0" tells them everything.
+          toast(t("Fehlgeschlagen: ", "Failed: ") + (data.error || ""));
+          if (data.output) {
+            console.error("[ModuleStore] pip output:\n" + data.output);
+          }
+          depsBtn.disabled = false;
+          depsBtn.textContent = original;
         }
+      } catch (e) {
+        toast(t("Fehler: ", "Error: ") + actionErrorMessage(e));
         depsBtn.disabled = false;
         depsBtn.textContent = original;
+        loadCatalog(true);   // it may have installed anyway before the response was lost
       }
       return;
     }
@@ -363,42 +405,55 @@
       installBtn.disabled = true;
       const original = installBtn.textContent;
       installBtn.textContent = t("Lade…", "Downloading…");
-      const data = await post("/api/store/install", { id: installBtn.dataset.id });
-      if (data.ok) {
-        renderPending(data.pending);
-        if (data.type === "theme") {
-          // Themes apply live, always — the reload is only so the new card,
-          // the picker options and the badges show up server-rendered.
-          // The toast would not survive that reload, and a theme that is
-          // installed but not selected looks like nothing happened — so the
-          // "where do I turn this on" hint is handed to the banner instead
-          // (see rememberThemeHint / renderThemeHint below).
-          rememberThemeHint(data.folder, data.version);
-          toast(t(`Theme "${data.folder}" v${data.version} installiert.`,
-                  `Theme "${data.folder}" v${data.version} installed.`));
-          setTimeout(() => window.location.reload(), 900);
-        } else if (data.warning) {
-          // Installed, verified — but it refused to load here (unmet DEPENDS_ON,
-          // incompatible version, broken code). Its Modulmanager card has the reason.
-          toast(t(`${data.folder} installiert, startet aber nicht: ${data.warning}`,
-                  `${data.folder} installed, but it won't load: ${data.warning}`));
-          setTimeout(() => window.location.reload(), 1200);
-        } else if (data.live) {
-          // Already running — the reload is only so the server-rendered sidebar
-          // link and settings card show up.
-          toast(t(`${data.folder} v${data.version} installiert und aktiv.`,
-                  `${data.folder} v${data.version} installed and running.`));
-          setTimeout(() => window.location.reload(), 800);
+      try {
+        const data = await post("/api/store/install", { id: installBtn.dataset.id },
+          "POST", ACTION_TIMEOUT_MS);
+        if (data.ok) {
+          renderPending(data.pending);
+          if (data.type === "theme") {
+            // Themes apply live, always — the reload is only so the new card,
+            // the picker options and the badges show up server-rendered.
+            // The toast would not survive that reload, and a theme that is
+            // installed but not selected looks like nothing happened — so the
+            // "where do I turn this on" hint is handed to the banner instead
+            // (see rememberThemeHint / renderThemeHint below).
+            rememberThemeHint(data.folder, data.version);
+            toast(t(`Theme "${data.folder}" v${data.version} installiert.`,
+                    `Theme "${data.folder}" v${data.version} installed.`));
+            setTimeout(() => window.location.reload(), 900);
+          } else if (data.warning) {
+            // Installed, verified — but it refused to load here (unmet DEPENDS_ON,
+            // incompatible version, broken code). Its Modulmanager card has the reason.
+            toast(t(`${data.folder} installiert, startet aber nicht: ${data.warning}`,
+                    `${data.folder} installed, but it won't load: ${data.warning}`));
+            setTimeout(() => window.location.reload(), 1200);
+          } else if (data.live) {
+            // Already running — the reload is only so the server-rendered sidebar
+            // link and settings card show up.
+            toast(t(`${data.folder} v${data.version} installiert und aktiv.`,
+                    `${data.folder} v${data.version} installed and running.`));
+            setTimeout(() => window.location.reload(), 800);
+          } else {
+            // An upgrade of an already-loaded module: unavoidable restart.
+            toast(t(`${data.folder} v${data.version} vorgemerkt — das Update wird beim nächsten Start aktiv.`,
+                    `${data.folder} v${data.version} staged — the update goes live on the next start.`));
+            loadCatalog(false);
+          }
         } else {
-          // An upgrade of an already-loaded module: unavoidable restart.
-          toast(t(`${data.folder} v${data.version} vorgemerkt — das Update wird beim nächsten Start aktiv.`,
-                  `${data.folder} v${data.version} staged — the update goes live on the next start.`));
-          loadCatalog(false);
+          toast(t("Fehler: ", "Error: ") + (data.error || ""));
+          installBtn.disabled = false;
+          installBtn.textContent = original;
         }
-      } else {
-        toast(t("Fehler: ", "Error: ") + (data.error || ""));
+      } catch (e) {
+        // The request never came back (timeout, dropped connection, a proxy that gave
+        // up) — but the install may well have gone through on the server regardless.
+        // Re-checking the catalog here is what used to require a manual "Aktualisieren"
+        // click; do it automatically instead of leaving the button stuck.
+        toast(t("Fehler: ", "Error: ") + actionErrorMessage(e) + " " +
+              t("Store wird neu geladen…", "Reloading the store…"));
         installBtn.disabled = false;
         installBtn.textContent = original;
+        loadCatalog(true);
       }
       return;
     }
@@ -408,13 +463,18 @@
     const themeDefaultBtn = ev.target.closest(".theme-default-btn");
     if (themeDefaultBtn) {
       themeDefaultBtn.disabled = true;
-      const data = await post("/api/themes/active",
-        { folder: themeDefaultBtn.dataset.folder || "" }, "PUT");
-      if (data.ok) {
-        toast(t("Standard-Theme gespeichert.", "Default theme saved."));
-        setTimeout(() => window.location.reload(), 700);
-      } else {
-        toast(t("Fehler: ", "Error: ") + (data.error || ""));
+      try {
+        const data = await post("/api/themes/active",
+          { folder: themeDefaultBtn.dataset.folder || "" }, "PUT", ACTION_TIMEOUT_MS);
+        if (data.ok) {
+          toast(t("Standard-Theme gespeichert.", "Default theme saved."));
+          setTimeout(() => window.location.reload(), 700);
+        } else {
+          toast(t("Fehler: ", "Error: ") + (data.error || ""));
+          themeDefaultBtn.disabled = false;
+        }
+      } catch (e) {
+        toast(t("Fehler: ", "Error: ") + actionErrorMessage(e));
         themeDefaultBtn.disabled = false;
       }
       return;
@@ -426,22 +486,28 @@
       if (!window.confirm(t(`"${label}" jetzt abschalten und entfernen?`,
                             `Switch "${label}" off and remove it now?`))) return;
       uninstallBtn.disabled = true;
-      const data = await post("/api/store/uninstall", {
-        folder: uninstallBtn.dataset.folder,
-        // "theme" on theme-pack cards (templates/extensions.html) — routes the
-        // uninstall to web/themes.py (live delete) instead of the module path.
-        kind: uninstallBtn.dataset.kind || "",
-      });
-      if (data.ok) {
-        renderPending(data.pending);
-        toast(data.restart_required
-          ? t("Abgeschaltet und entfernt — die Dateien werden beim nächsten Start gelöscht.",
-              "Switched off and removed — its files are deleted on the next start.")
-          : t("Abgeschaltet und entfernt.", "Switched off and removed."));
-        setTimeout(() => window.location.reload(), 800);
-      } else {
-        toast(t("Fehler: ", "Error: ") + (data.error || ""));
+      try {
+        const data = await post("/api/store/uninstall", {
+          folder: uninstallBtn.dataset.folder,
+          // "theme" on theme-pack cards (templates/extensions.html) — routes the
+          // uninstall to web/themes.py (live delete) instead of the module path.
+          kind: uninstallBtn.dataset.kind || "",
+        }, "POST", ACTION_TIMEOUT_MS);
+        if (data.ok) {
+          renderPending(data.pending);
+          toast(data.restart_required
+            ? t("Abgeschaltet und entfernt — die Dateien werden beim nächsten Start gelöscht.",
+                "Switched off and removed — its files are deleted on the next start.")
+            : t("Abgeschaltet und entfernt.", "Switched off and removed."));
+          setTimeout(() => window.location.reload(), 800);
+        } else {
+          toast(t("Fehler: ", "Error: ") + (data.error || ""));
+          uninstallBtn.disabled = false;
+        }
+      } catch (e) {
+        toast(t("Fehler: ", "Error: ") + actionErrorMessage(e));
         uninstallBtn.disabled = false;
+        loadCatalog(true);   // it may have gone through before the response was lost
       }
       return;
     }
@@ -450,15 +516,19 @@
   const cancelBtn = $("extPendingCancelBtn");
   if (cancelBtn) {
     cancelBtn.addEventListener("click", async () => {
-      const data = await post("/api/store/pending", null, "DELETE");
-      renderPending(data.pending);
-      // Buttons that were disabled after staging are re-enabled by the reload
-      // of the catalog; the installed cards' uninstall buttons need the page.
-      if (data.ok) {
-        toast(t("Vorgemerkte Änderungen verworfen.", "Staged changes discarded."));
-        setTimeout(() => window.location.reload(), 600);
-      } else {
-        toast(t("Fehler: ", "Error: ") + (data.error || ""));
+      try {
+        const data = await post("/api/store/pending", null, "DELETE", ACTION_TIMEOUT_MS);
+        renderPending(data.pending);
+        // Buttons that were disabled after staging are re-enabled by the reload
+        // of the catalog; the installed cards' uninstall buttons need the page.
+        if (data.ok) {
+          toast(t("Vorgemerkte Änderungen verworfen.", "Staged changes discarded."));
+          setTimeout(() => window.location.reload(), 600);
+        } else {
+          toast(t("Fehler: ", "Error: ") + (data.error || ""));
+        }
+      } catch (e) {
+        toast(t("Fehler: ", "Error: ") + actionErrorMessage(e));
       }
     });
   }
