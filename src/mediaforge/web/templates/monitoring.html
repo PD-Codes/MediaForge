@@ -2,6 +2,7 @@
 {% block title %}Monitoring — MediaForge{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='mf-charts.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='history.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='uptime.css') }}">
@@ -76,6 +77,8 @@
 {% endblock %}
 
 {% block scripts %}
+{# MFCharts must load before stats.js, which draws the Statistics panel. #}
+<script src="{{ url_for('static', filename='mf-charts.js') }}"></script>
 <script>
   // Client-side tab switching for Monitoring — mirrors settings.js's switchTab.
   function switchMonTab(name) {

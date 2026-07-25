@@ -174,3 +174,71 @@ function uicSwitchPill(id, el) {
     render();
   }
 })();
+
+/* ---- Charts (MFCharts) -------------------------------------------------
+   Demo data only. MFCharts comes from web/static/mf-charts.js, which this
+   page links in its scripts block -- it is not loaded globally by base.html,
+   so any module page that draws charts must link it (and mf-charts.css)
+   itself. Guarded so the rest of this gallery still works if it is missing. */
+(function () {
+  if (typeof MFCharts === "undefined") return;
+
+  MFCharts.render("uicAreaChart", {
+    type: "area",
+    height: 190,
+    labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    series: [
+      { name: "Downloads", values: [4, 9, 6, 12, 8, 15, 11], color: "#7c3aed" },
+      { name: "Failed", values: [1, 0, 2, 1, 0, 3, 1], color: "#f87171" },
+    ],
+  });
+
+  MFCharts.render("uicBarsChart", {
+    type: "bars",
+    height: 190,
+    color: "#e8914a",
+    data: [
+      { label: "1080p", value: 128 }, { label: "720p", value: 74 },
+      { label: "480p", value: 31 }, { label: "2160p", value: 12 },
+    ],
+  });
+
+  MFCharts.render("uicDonutChart", {
+    type: "donut",
+    height: 190,
+    centerValue: "245",
+    centerLabel: "total",
+    data: [
+      { label: "AniWorld", value: 120 }, { label: "SerienStream", value: 85 },
+      { label: "FilmPalast", value: 40 },
+    ],
+  });
+
+  MFCharts.render("uicGaugeChart", {
+    type: "gauge", height: 190, percent: 87, sub: "success", color: "#22c55e",
+  });
+
+  MFCharts.render("uicHBarsChart", {
+    type: "bars",
+    horizontal: true,
+    color: "#06b6d4",
+    data: [
+      { label: "German Dub", value: 210 }, { label: "German Sub", value: 96 },
+      { label: "English Sub", value: 44 },
+    ],
+  });
+
+  MFCharts.render("uicHeatChart", {
+    type: "heatmap",
+    color: "#7c3aed",
+    cols: ["00", "04", "08", "12", "16", "20"],
+    rows: [
+      { label: "Mon", values: [3, 1, 0, 5, 8, 12] },
+      { label: "Tue", values: [1, 0, 2, 7, 4, 9] },
+      { label: "Wed", values: [0, 0, 1, 3, 6, 14] },
+    ],
+  });
+
+  var spark = document.getElementById("uicSparkline");
+  if (spark) spark.innerHTML = MFCharts.sparkline([2, 5, 3, 9, 6, 11, 8], { color: "#22c55e", width: 140, height: 34 });
+})();

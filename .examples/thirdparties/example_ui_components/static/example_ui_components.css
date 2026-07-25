@@ -39,3 +39,17 @@
   overflow-x: auto;
   white-space: pre;
 }
+
+/* Chart gallery (MFCharts section). Two columns on desktop, one on mobile --
+   the charts themselves are fluid and re-render at the new width. */
+.uic-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+@media (max-width: 640px) {
+  .uic-chart-grid {
+    grid-template-columns: 1fr;
+  }
+}

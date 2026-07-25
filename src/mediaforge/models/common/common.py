@@ -60,6 +60,25 @@ except ImportError:
         logger,
     )
 
+try:
+    from .dupecheck import (
+        audio_merge_enabled,
+        find_existing_variant,
+        is_better_quality,
+        probe_remote_quality,
+        quality_from_probe,
+        quality_upgrade_enabled,
+    )
+except ImportError:
+    from mediaforge.models.common.dupecheck import (
+        audio_merge_enabled,
+        find_existing_variant,
+        is_better_quality,
+        probe_remote_quality,
+        quality_from_probe,
+        quality_upgrade_enabled,
+    )
+
 
 # Precompile regex for forbidden filename characters
 FORBIDDEN_CHARS = re.compile(r'[<>:"/\\|?*]')
@@ -289,8 +308,16 @@ def check_downloaded(episode_path):
         "exists": False,
         "video_langs": set(),
         "audio_langs": set(),
+        # Resolution/bitrate of the copy on disk, taken from the same probe the
+        # language scan already runs (so this costs nothing extra). Consumed by
+        # the quality-upgrade check in download(); 0 means "could not tell",
+        # which that check deliberately reads as "do not replace".
+        "height": 0,
+        "width": 0,
+        "bitrate": 0,
     }
 
+    episode_path = Path(episode_path)
     if not episode_path.exists():
         return result
 
@@ -310,6 +337,7 @@ def check_downloaded(episode_path):
         elif s.get("codec_type") == "audio":
             result["audio_langs"].add(lang)
 
+    result.update(quality_from_probe(probe))
     return result
 
 
@@ -996,6 +1024,26 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
             )
 
 
+def _replace_destination(dst, replace_existing):
+    """Delete *dst* before a quality upgrade overwrites it.
+
+    ``_move_with_progress`` falls back to a chunked copy when ``rename()`` hits
+    an existing file (Windows never overwrites on rename), which would stream
+    gigabytes through Python for what is a same-device move. Removing the old
+    file first keeps the fast rename path — and only ever runs when the quality
+    check already decided this exact file is to be replaced.
+    """
+    if not replace_existing:
+        return
+    dst = Path(dst)
+    try:
+        if dst.exists():
+            dst.unlink()
+    except OSError as exc:
+        # Not fatal: the move below still succeeds via the copy path.
+        logger.warning("[QUALITY UPGRADE] could not remove %s: %s", dst, exc)
+
+
 def _move_with_progress(src, dst, label="", cancel_event=None):
     """Move *src* to *dst* while streaming progress into _ffmpeg_progress.
 
@@ -1093,7 +1141,24 @@ def download(self, cancel_event=None):
         manager.fetch_binary("ffmpeg")
 
     try:
-        check = check_downloaded(self._episode_path)
+        # Where the finished file goes. Normally the episode's own path, but the
+        # audio-track merge can redirect it onto an existing copy of the same
+        # episode that a *different* language job downloaded earlier (see
+        # dupecheck.find_existing_variant): the new audio track is muxed into
+        # that file instead of writing a second, near-identical one.
+        target_path = self._episode_path
+        merged_into_existing = False
+        if not target_path.exists() and audio_merge_enabled():
+            variant = find_existing_variant(self._episode_path)
+            if variant is not None:
+                target_path = variant
+                merged_into_existing = True
+                logger.info(
+                    "[TrackMerge] %s -> muxing into existing %s",
+                    self.selected_language, target_path.name,
+                )
+
+        check = check_downloaded(target_path)
 
         headers = PROVIDER_HEADERS_D.get(_effective_provider(self), {})
         input_kwargs = {
@@ -1144,11 +1209,40 @@ def download(self, cancel_event=None):
         else:
             need_video = False
 
+        # Every wanted track is already in the file. Before booking this as
+        # "already present", offer the quality check a look: the copy on disk may
+        # be a 720p from months ago while the hoster now serves 1080p. Skipped
+        # for a merge target, because replacing a file that belongs to another
+        # language job would throw away tracks this job never had.
+        replace_existing = False
         if not need_audio and not need_video:
-            logger.debug(f"[SKIPPED] {self._file_name}")
-            return False
+            if merged_into_existing or not quality_upgrade_enabled():
+                logger.debug(f"[SKIPPED] {self._file_name}")
+                return False
 
-        os.makedirs(self._folder_path, exist_ok=True)
+            existing_q = {
+                "height": check.get("height"),
+                "width": check.get("width"),
+                "bitrate": check.get("bitrate"),
+            }
+            # ffprobe on the hoster URL: reads the stream header only, no
+            # payload, so a "not better" answer costs a request instead of a
+            # full download.
+            candidate_q = probe_remote_quality(self.stream_url, headers)
+            better, reason = is_better_quality(existing_q, candidate_q)
+            if not better:
+                logger.debug(f"[SKIPPED] {self._file_name} ({reason})")
+                return False
+
+            logger.info("[QUALITY UPGRADE] %s: %s", self._file_name, reason)
+            need_audio = True
+            need_video = True
+            replace_existing = True
+
+        # target_path.parent, not self._folder_path: when merging into another
+        # language's file the destination folder is that file's, and creating
+        # this job's own folder would leave an empty directory behind.
+        os.makedirs(target_path.parent, exist_ok=True)
 
         # Label for CLI progress bar (e.g. "Title S01E001")
         ep_label = os.path.splitext(self._file_name)[0] if self._file_name else ""
@@ -1202,9 +1296,12 @@ def download(self, cancel_event=None):
             if raw_full.exists():
                 raw_full.unlink()
 
-            if self._episode_path.exists():
+            # replace_existing means the quality check decided the file on disk
+            # is worse than what the hoster now serves — the new stream replaces
+            # it outright instead of being muxed alongside the old tracks.
+            if target_path.exists() and not replace_existing:
                 inputs = [
-                    ffmpeg.input(str(self._episode_path)),
+                    ffmpeg.input(str(target_path)),
                     ffmpeg.input(str(temp_full)),
                 ]
                 output_path = _MEDIAFORGE_TEMP_DIR / f"{_stem}.new.mkv"
@@ -1213,13 +1310,18 @@ def download(self, cancel_event=None):
                     cancel_event=cancel_event,
                 )
                 _to_move1 = _maybe_upscale_before_move(output_path, ep_label, cancel_event)
-                _move_with_progress(_to_move1, self._episode_path, label=ep_label, cancel_event=cancel_event)
+                _move_with_progress(_to_move1, target_path, label=ep_label, cancel_event=cancel_event)
             else:
                 _to_move2 = _maybe_upscale_before_move(temp_full, ep_label, cancel_event)
-                _move_with_progress(_to_move2, self._episode_path, label=ep_label, cancel_event=cancel_event)
+                _replace_destination(target_path, replace_existing)
+                _move_with_progress(_to_move2, target_path, label=ep_label, cancel_event=cancel_event)
 
             if temp_full.exists():
                 temp_full.unlink()
+            # Tell the queue worker where the file really landed — with a track
+            # merge that is not self._episode_path, and the size / NFO /
+            # post-encode hooks all key off this.
+            self._last_output_path = target_path
             return True
 
         def _dl_audio(cancel_event=None, process_ref=None):
@@ -1332,8 +1434,8 @@ def download(self, cancel_event=None):
 
         logger.debug("[MUXING] combining streams")
         inputs = (
-            [ffmpeg.input(str(self._episode_path))]
-            if self._episode_path.exists()
+            [ffmpeg.input(str(target_path))]
+            if target_path.exists()
             else []
         )
 
@@ -1348,12 +1450,15 @@ def download(self, cancel_event=None):
             cancel_event=cancel_event,
         )
         _to_move = _maybe_upscale_before_move(output_path, ep_label, cancel_event)
-        _move_with_progress(_to_move, self._episode_path, label=ep_label, cancel_event=cancel_event)
+        _move_with_progress(_to_move, target_path, label=ep_label, cancel_event=cancel_event)
 
         for f in (temp_audio, temp_video):
             if f.exists():
                 f.unlink()
 
+        # See the note at the other success return: the merge path writes into
+        # another language's file, so the nominal episode path may not exist.
+        self._last_output_path = target_path
         return True
 
     except Exception as e:

@@ -5459,3 +5459,30 @@ msgstr "Entwickler-Doku"
 #: src/mediaforge/web/templates/extensions.html
 msgid "Publish on the developer portal"
 msgstr "Im Entwicklerportal veröffentlichen"
+
+#: templates/_stats_body.html
+msgid "The most recent finished downloads and how fast they ran"
+msgstr "Die zuletzt abgeschlossenen Downloads und wie schnell sie liefen"
+
+#: templates/_stats_body.html
+msgid "Gaps detected in your library — ignore the ones you do not want to fill"
+msgstr "Lücken in deiner Mediathek — ignoriere die, die du nicht füllen möchtest"
+
+#: templates/_stats_body.html
+msgid "The same episode or movie stored more than once"
+msgstr "Dieselbe Episode oder derselbe Film mehr als einmal gespeichert"
+
+msgid "Duplicate Handling"
+msgstr "Umgang mit Duplikaten"
+
+msgid "Replace with better quality"
+msgstr "Bei besserer Qualität ersetzen"
+
+msgid "If the episode already exists, the source is checked first. A higher resolution (or a clearly higher bitrate at the same resolution) is downloaded and replaces the old file."
+msgstr "Ist die Episode bereits vorhanden, wird zuerst die Quelle geprüft. Eine höhere Auflösung (oder eine deutlich höhere Bitrate bei gleicher Auflösung) wird geladen und ersetzt die alte Datei."
+
+msgid "Merge additional languages into the existing file"
+msgstr "Weitere Sprachen in die vorhandene Datei übernehmen"
+
+msgid "An episode already downloaded as German Dub gets a new English Dub added as a second audio track instead of being saved a second time."
+msgstr "Eine bereits als German Dub geladene Episode erhält einen neuen English Dub als zweite Tonspur, statt ein zweites Mal gespeichert zu werden."

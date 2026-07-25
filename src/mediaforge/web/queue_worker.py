@@ -94,6 +94,31 @@ def _resolve_episode_language(ep_url, chain):
     return chosen
 
 
+def _episode_output_path(episode):
+    """Path the episode was actually written to, or None if nothing is there.
+
+    Usually ``episode._episode_path``. The audio-track merge
+    (``models/common/dupecheck.py``) can write the new track into an existing
+    file belonging to a *different* language instead, and records that
+    destination as ``_last_output_path``. Keying the size / NFO / post-encode
+    hooks off the nominal path alone would silently skip all three for a file
+    that was in fact produced.
+    """
+    from pathlib import Path as _Path
+
+    for attr in ("_last_output_path", "_episode_path"):
+        candidate = getattr(episode, attr, None)
+        if candidate is None:
+            continue
+        try:
+            candidate = _Path(candidate)
+            if candidate.exists():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
 def _delete_replaced_files(old_paths, new_path, ep_url):
     """Delete the previous, worse-language copies of an episode.
 
@@ -853,19 +878,27 @@ def _queue_worker():
                         # ── end watchdog ─────────────────────────────────────
                         last_error = None
 
+                        # Resolved once: with an audio-track merge the file lives
+                        # at another language's path, not at episode._episode_path.
+                        _out_path = None
+                        try:
+                            _out_path = _episode_output_path(episode)
+                        except Exception:
+                            pass
+
                         # Track size
                         try:
-                            if hasattr(episode, "_episode_path") and episode._episode_path.exists():
-                                _ep_size_bytes = os.path.getsize(episode._episode_path)
+                            if _out_path is not None:
+                                _ep_size_bytes = os.path.getsize(_out_path)
                                 total_bytes_before += _ep_size_bytes
-                                _ep_path = str(episode._episode_path)
+                                _ep_path = str(_out_path)
                         except Exception:
                             pass
 
                         # Collect path for batch after_download upscaling
                         try:
-                            if hasattr(episode, "_episode_path") and episode._episode_path.exists():
-                                _upscale_after_paths.append(str(episode._episode_path))
+                            if _out_path is not None:
+                                _upscale_after_paths.append(str(_out_path))
                         except Exception:
                             pass
 
@@ -876,8 +909,8 @@ def _queue_worker():
                         # worker only processes one item at a time, so if it's already
                         # busy this episode's entry simply waits its turn in the queue.
                         try:
-                            if hasattr(episode, "_episode_path") and episode._episode_path.exists():
-                                _trigger_after_download_encode([str(episode._episode_path)], item.get("title", ""))
+                            if _out_path is not None:
+                                _trigger_after_download_encode([str(_out_path)], item.get("title", ""))
                         except Exception as _ee:
                             logger.warning(f"[Encoding] Trigger Fehler: {_ee}")
 

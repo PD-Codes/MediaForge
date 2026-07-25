@@ -874,7 +874,54 @@ markup underneath each one; the table below is the quick-reference version.
 | Settings row layout | `.settings-section` (card) / `.settings-row` / `-left`/`-right`/`-label`/`-desc` | `settings_rows.css` (needs its own `<link>`) | The label-left/control-right row every Settings page is built from |
 | Empty state | `.empty-state` / `-icon` / `-title` / `-desc` | `feedback.css` | Centered icon+title+description for "nothing here yet" |
 | Progress bar | `.progress-wrap` (track) / `.progress-bar` (fill, inline `style="width:N%"`) | `tabs-badges.css` | Prefix your own bar class instead of styling `.progress-bar` directly if several bars exist on one page at once |
+| KPI card | `.stat-card` / `.stat-value` / `.stat-label` / `.stat-sub` (+ inline `style="--kpi-color:#7c3aed"` for the accent strip) | `stats.css` (needs its own `<link>`) | The metric tile the Statistics page is built from. `--kpi-color` drives the strip along the top edge and the icon tint; add `.hero-card` for the larger variant with an icon/sparkline header row (`.hero-head` / `.hero-icon`) and `.is-clickable` when the card opens something — render a clickable card as a real `<button>` so it stays keyboard reachable |
+| Charts | `MFCharts` (JS) + `.mfc-chart` container | `mf-charts.js` + `mf-charts.css` (both need their own `<link>`/`<script>`) | Dependency-free inline-SVG charts — no CDN, no bundler, CSP-friendly, and painted from the `variables.css` theme tokens so theme packs restyle them for free. See "Charts (MFCharts)" below |
 | Icons | *(convention, not a class)* | — | Inline `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` — no sprite sheet, `stroke="currentColor"` is what makes it follow theme/text color automatically |
+
+### Charts (MFCharts)
+
+`web/static/mf-charts.js` + `mf-charts.css` are MediaForge's own chart
+primitives. They are **not** loaded globally by `base.html`, so link them
+yourself on any page that draws a chart — `mf-charts.css` in your
+`{% block styles %}` and `mf-charts.js` in `{% block scripts %}` *before*
+your own script. `example_ui_components/` has a live gallery of every
+chart type with copyable code.
+
+Why hand-rolled rather than Chart.js: MediaForge ships offline-capable and
+CSP-friendly (no CDN), and the charts paint with `var(--...)` tokens, so a
+user's [theme pack] restyles them without any work on your side.
+
+```js
+MFCharts.render("myChart", {
+  type: "area",              // area | line | bars | donut | gauge | heatmap
+  height: 220,
+  labels: ["Mon", "Tue", "Wed"],
+  series: [{ name: "Downloads", values: [3, 7, 5], color: "#7c3aed" }],
+  valueFmt: function (v) { return v.toFixed(0); },
+  empty: "No data",          // shown instead of an empty plot
+});
+```
+
+| Call | What it does |
+|---|---|
+| `MFCharts.render(elOrId, spec)` | Mounts a chart and re-renders it at the new pixel width whenever the container resizes (so stroke widths and labels stay constant across breakpoints instead of being scaled) |
+| `MFCharts.place(id, spec)` | Returns a placeholder `<div>` and remembers the spec — use this when you build your page as one HTML string |
+| `MFCharts.renderAll(root)` | Mounts every placeholder created by `place()` in one pass, after you assign `innerHTML` |
+| `MFCharts.sparkline(values, {color, width, height})` | Returns a tiny standalone SVG string for a KPI card — no mounting, no observer |
+| `MFCharts.destroy(elOrId)` | Detaches the resize observer (call it if you tear a chart's container down yourself) |
+| `MFCharts.palette` | The default categorical color array, if you want your own series to match the built-in pages |
+
+Notes:
+
+- **Bars can be horizontal** (`horizontal: true`), which renders as HTML
+  rather than SVG so long category labels truncate with normal CSS.
+- **Tooltips are delegated globally** — one listener for the whole page,
+  driven by a `data-mfc-tip` attribute, so a 500-bar chart still costs one
+  handler. Anything you pass through `valueFmt`/labels is escaped.
+- **`empty:`** is the text shown when a series has no data. Always set it;
+  the fallback is a bare dashed box.
+- **Touch:** hover-only affordances are neutralised under
+  `@media (hover: none)`, and every bar/slice/cell is its own tap target.
 
 ## Mobile / responsive design
 

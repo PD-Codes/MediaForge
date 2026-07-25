@@ -1,18 +1,55 @@
+{# Statistics page body.
+   Split out of stats.html so the Monitoring section can embed the same
+   markup. Everything below #statsContent is rendered by static/stats.js;
+   the three modals are static shells whose bodies are filled by the same
+   script. Charts come from static/mf-charts.js (MFCharts). #}
 <div class="page-container">
-  <div class="page-header" style="margin-bottom:28px;">
-    <h1 class="page-title">{{ _('Statistics') }}</h1>
-    <p class="page-subtitle">{{ _('Overview of your download activity') }}</p>
+  <div class="page-header stats-page-header">
+    <div>
+      <h1 class="page-title">{{ _('Statistics') }}</h1>
+      <p class="page-subtitle">{{ _('Overview of your download activity') }}</p>
+    </div>
+    <div class="stats-toolbar">
+      <div class="stats-range" id="statsRange" role="group" aria-label="{{ _('Time range') }}">
+        <button type="button" class="stats-range-btn" data-days="7" onclick="setStatsRange(7)">7 d</button>
+        <button type="button" class="stats-range-btn active" data-days="30" onclick="setStatsRange(30)">30 d</button>
+        <button type="button" class="stats-range-btn" data-days="90" onclick="setStatsRange(90)">90 d</button>
+        <button type="button" class="stats-range-btn" data-days="365" onclick="setStatsRange(365)">365 d</button>
+      </div>
+      <button type="button" class="stats-refresh-btn" id="statsRefreshBtn" onclick="refreshStats()"
+        title="{{ _('Refresh') }}" aria-label="{{ _('Refresh') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <polyline points="21 3 21 9 15 9" />
+        </svg>
+      </button>
+    </div>
   </div>
+
   <div id="statsContent" class="stats-grid">
     <div class="stats-loading">{{ _('Loading statistics…') }}</div>
   </div>
 
-  <!-- Speed Details Modal -->
-  <div class="modal-overlay" id="speedModal" style="display:none" onclick="if(event.target===this)closeSpeedModal();">
-    <div class="card speed-modal-card loaded">
-      <div class="card-header">
-        <h2 class="card-title">{{ _('Download speed details') }}</h2>
-        <button class="modal-close" onclick="closeSpeedModal()">
+  {# --- Modals. Shared shell markup; bodies are filled by stats.js. --- #}
+  <div class="modal-overlay stats-modal-overlay" id="speedModal" style="display:none"
+    onclick="if(event.target===this)closeSpeedModal();" role="dialog" aria-modal="true"
+    aria-labelledby="speedModalTitle">
+    <div class="card stats-modal-card loaded">
+      <div class="card-header stats-modal-header">
+        <div class="stats-modal-heading">
+          <span class="stats-modal-icon" style="--icon-color:#06b6d4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+            </svg>
+          </span>
+          <div>
+            <h2 class="card-title" id="speedModalTitle">{{ _('Download speed details') }}</h2>
+            <p class="stats-modal-sub">{{ _('The most recent finished downloads and how fast they ran') }}</p>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeSpeedModal()" aria-label="{{ _('Close') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
             stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -20,18 +57,32 @@
           </svg>
         </button>
       </div>
-      <div id="speedModalContent">
+      <div class="stats-modal-body" id="speedModalContent">
         <p class="stat-sub">{{ _('Download performance details will be shown here.') }}</p>
       </div>
     </div>
   </div>
 
-  <!-- Incomplete Series Modal -->
-  <div class="modal-overlay" id="incompleteModal" style="display:none" onclick="if(event.target===this)closeIncompleteModal();">
-    <div class="card speed-modal-card loaded">
-      <div class="card-header">
-        <h2 class="card-title">{{ _('Incomplete series') }}</h2>
-        <button class="modal-close" onclick="closeIncompleteModal()">
+  <div class="modal-overlay stats-modal-overlay" id="incompleteModal" style="display:none"
+    onclick="if(event.target===this)closeIncompleteModal();" role="dialog" aria-modal="true"
+    aria-labelledby="incompleteModalTitle">
+    <div class="card stats-modal-card stats-modal-wide loaded">
+      <div class="card-header stats-modal-header">
+        <div class="stats-modal-heading">
+          <span class="stats-modal-icon" style="--icon-color:#f59e0b">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </span>
+          <div>
+            <h2 class="card-title" id="incompleteModalTitle">{{ _('Incomplete series') }}</h2>
+            <p class="stats-modal-sub">{{ _('Gaps detected in your library — ignore the ones you do not want to fill') }}</p>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeIncompleteModal()" aria-label="{{ _('Close') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
             stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -39,18 +90,31 @@
           </svg>
         </button>
       </div>
-      <div id="incompleteModalContent">
+      <div class="stats-modal-body" id="incompleteModalContent">
         <p class="stat-sub">{{ _('Series with missing episodes will be listed here.') }}</p>
       </div>
     </div>
   </div>
 
-  <!-- Duplicate Media Modal -->
-  <div class="modal-overlay" id="duplicatesModal" style="display:none" onclick="if(event.target===this)closeDuplicatesModal();">
-    <div class="card speed-modal-card loaded">
-      <div class="card-header">
-        <h2 class="card-title">{{ _('Duplicate media') }}</h2>
-        <button class="modal-close" onclick="closeDuplicatesModal()">
+  <div class="modal-overlay stats-modal-overlay" id="duplicatesModal" style="display:none"
+    onclick="if(event.target===this)closeDuplicatesModal();" role="dialog" aria-modal="true"
+    aria-labelledby="duplicatesModalTitle">
+    <div class="card stats-modal-card stats-modal-wide loaded">
+      <div class="card-header stats-modal-header">
+        <div class="stats-modal-heading">
+          <span class="stats-modal-icon" style="--icon-color:#f472b6">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          </span>
+          <div>
+            <h2 class="card-title" id="duplicatesModalTitle">{{ _('Duplicate media') }}</h2>
+            <p class="stats-modal-sub">{{ _('The same episode or movie stored more than once') }}</p>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeDuplicatesModal()" aria-label="{{ _('Close') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
             stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -58,7 +122,7 @@
           </svg>
         </button>
       </div>
-      <div id="duplicatesModalContent">
+      <div class="stats-modal-body" id="duplicatesModalContent">
         <p class="stat-sub">{{ _('Media that exists more than once will be listed here.') }}</p>
       </div>
     </div>

@@ -190,6 +190,11 @@ def register_settings_routes(app):
         download_provider    = get_setting("download_provider")    or os.environ.get("MEDIAFORGE_PROVIDER", "VOE")
         naming_template      = get_setting("naming_template")      or os.environ.get("MEDIAFORGE_NAMING_TEMPLATE", "{title} ({year}) [imdbid-{imdbid}]/Season {season}/{title} S{season}E{episode}.mkv")
         download_rate_limit  = int(get_setting("download_rate_limit") or os.environ.get("MEDIAFORGE_DOWNLOAD_RATE_LIMIT", "0"))
+        # Duplicate handling (models/common/dupecheck.py). Both default to "0":
+        # an existing install keeps the old "already on disk -> skip" behaviour
+        # until the user opts in.
+        dl_quality_upgrade   = get_setting("dl_quality_upgrade")   or os.environ.get("MEDIAFORGE_DL_QUALITY_UPGRADE", "0")
+        dl_audio_track_merge = get_setting("dl_audio_track_merge") or os.environ.get("MEDIAFORGE_DL_AUDIO_TRACK_MERGE", "0")
         download_window_enabled = get_setting("download_window_enabled") or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_ENABLED", "0")
         download_window_start   = get_setting("download_window_start")   or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_START", "22:00")
         download_window_end     = get_setting("download_window_end")     or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_END", "06:00")
@@ -252,6 +257,8 @@ def register_settings_routes(app):
                 "download_provider":         download_provider,
                 "naming_template":           naming_template,
                 "download_rate_limit":       download_rate_limit,
+                "dl_quality_upgrade":        dl_quality_upgrade,
+                "dl_audio_track_merge":      dl_audio_track_merge,
                 "download_window_enabled":   download_window_enabled,
                 "download_window_start":     download_window_start,
                 "download_window_end":       download_window_end,
@@ -919,6 +926,17 @@ def register_settings_routes(app):
             val = str(data["naming_template"]).strip()
             set_setting("naming_template", val)
             os.environ["MEDIAFORGE_NAMING_TEMPLATE"] = val
+        # Mirrored into os.environ like every other download setting: the queue
+        # worker runs in a thread that reads the value through dupecheck's
+        # get_setting fallback, and the CLI has no DB session at all.
+        if "dl_quality_upgrade" in data:
+            val = "1" if data["dl_quality_upgrade"] else "0"
+            set_setting("dl_quality_upgrade", val)
+            os.environ["MEDIAFORGE_DL_QUALITY_UPGRADE"] = val
+        if "dl_audio_track_merge" in data:
+            val = "1" if data["dl_audio_track_merge"] else "0"
+            set_setting("dl_audio_track_merge", val)
+            os.environ["MEDIAFORGE_DL_AUDIO_TRACK_MERGE"] = val
         if "download_rate_limit" in data:
             try:
                 rate = int(data["download_rate_limit"])

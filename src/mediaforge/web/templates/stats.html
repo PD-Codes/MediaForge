@@ -1,11 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Statistics') }} — MediaForge{% endblock %}
-{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='mf-charts.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">
+{% endblock %}
 
 {% block content %}
 {% include "_stats_body.html" %}
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='mf-charts.js') }}"></script>
 <script src="{{ url_for('static', filename='stats.js') }}"></script>
 {% endblock %}

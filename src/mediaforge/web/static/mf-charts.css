@@ -1,0 +1,327 @@
+/* ===================================================================
+   MediaForge - MFCharts stylesheet
+   Paired with static/mf-charts.js. Everything is expressed with theme
+   tokens from variables.css, so theme packs restyle the charts too.
+   Load this on any page that renders charts (Statistics does; third-
+   party modules can link it the same way).
+   =================================================================== */
+
+.mfc-chart {
+  width: 100%;
+  min-width: 0;           /* allow the chart to shrink inside grid/flex parents */
+  line-height: 0;         /* kill the inline-SVG descender gap */
+}
+
+.mfc-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* ----- axes & grid ------------------------------------------------ */
+
+.mfc-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.mfc-axis-label {
+  fill: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* ----- line / area ------------------------------------------------ */
+
+.mfc-line {
+  fill: none;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mfc-area {
+  stroke: none;
+}
+
+.mfc-dot {
+  opacity: 0;
+  transition: opacity var(--transition);
+  pointer-events: none;
+}
+
+.mfc-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.mfc-hit:hover {
+  fill: var(--text-primary);
+  fill-opacity: 0.04;
+}
+
+/* Data points stay hidden until the user hovers the chart, so the plain
+   state reads as a clean trend line. */
+.mfc-svg:hover .mfc-dot {
+  opacity: 0.9;
+}
+
+/* ----- bars -------------------------------------------------------- */
+
+.mfc-bar {
+  transition: opacity var(--transition);
+  cursor: pointer;
+}
+
+.mfc-svg:hover .mfc-bar {
+  opacity: 0.45;
+}
+
+.mfc-svg .mfc-bar:hover {
+  opacity: 1;
+}
+
+/* ----- horizontal bars (HTML, not SVG) ----------------------------- */
+
+.mfc-hbars {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.mfc-hbar-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 30%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.3;
+}
+
+.mfc-hbar-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mfc-hbar-track {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  overflow: hidden;
+  display: block;
+}
+
+.mfc-hbar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width var(--transition-slow);
+}
+
+.mfc-hbar-value {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 46px;
+  text-align: right;
+}
+
+/* ----- donut / gauge ----------------------------------------------- */
+
+.mfc-slice {
+  transition: opacity var(--transition);
+  cursor: pointer;
+}
+
+.mfc-svg:hover .mfc-slice {
+  opacity: 0.5;
+}
+
+.mfc-svg .mfc-slice:hover {
+  opacity: 1;
+}
+
+.mfc-donut-value {
+  fill: var(--text-primary);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.mfc-donut-label {
+  fill: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.mfc-gauge-track {
+  fill: none;
+  stroke: var(--bg-hover);
+}
+
+.mfc-gauge-fill {
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dasharray var(--transition-slow);
+}
+
+/* ----- heatmap ------------------------------------------------------ */
+
+.mfc-cell {
+  transition: stroke var(--transition);
+  stroke: transparent;
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.mfc-cell:hover {
+  stroke: var(--text-primary);
+}
+
+/* ----- legend -------------------------------------------------------- */
+
+.mfc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 12px;
+  line-height: 1.4;
+}
+
+.mfc-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.mfc-legend-item i,
+.mfc-tip-row i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+  display: inline-block;
+}
+
+/* ----- tooltip -------------------------------------------------------- */
+
+.mfc-tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 4000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 8px 11px;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  max-width: 260px;
+  line-height: 1.45;
+}
+
+.mfc-tooltip.visible {
+  opacity: 1;
+}
+
+.mfc-tip-title {
+  display: block;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+
+.mfc-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mfc-tip-row b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ----- sparkline / empty --------------------------------------------- */
+
+.mfc-spark {
+  display: block;
+  overflow: visible;
+}
+
+.mfc-spark-line {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mfc-spark-empty {
+  display: inline-block;
+}
+
+.mfc-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+/* Touch devices have no hover, so the dim-siblings effect would leave
+   everything faded after a tap. */
+@media (hover: none) {
+  .mfc-svg:hover .mfc-bar,
+  .mfc-svg:hover .mfc-slice {
+    opacity: 1;
+  }
+
+  .mfc-tooltip {
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 540px) {
+  .mfc-axis-label {
+    font-size: 9.5px;
+  }
+
+  .mfc-hbar-row {
+    grid-template-columns: minmax(60px, 38%) 1fr auto;
+    gap: 8px;
+  }
+
+  .mfc-donut-value {
+    font-size: 1.15rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .mfc-hbar-fill,
+  .mfc-gauge-fill,
+  .mfc-bar,
+  .mfc-slice,
+  .mfc-dot {
+    transition: none;
+  }
+}

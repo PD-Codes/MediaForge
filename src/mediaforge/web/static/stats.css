@@ -1,145 +1,772 @@
 /* ===================================================================
-   MediaForge — Stat-card component + Stats page
-   The .stat-card/.stat-value/.stat-label/.stat-sub primitive is a
-   small reusable "KPI card" originally built for the Stats page but
-   also reused by Library's own summary widget (via .stat-sub), so
-   this file is linked from both pages. The stats-prefixed
-   classes (layout grid, section headers), the "speed test" result
-   modal, and the "ignore incomplete series" chip UI are Stats-page
-   only but live here too since they're small.
+   MediaForge — Stat-card component + Statistics page
+   The .stat-card/.stat-value/.stat-label/.stat-sub primitive is a small
+   reusable "KPI card" originally built for the Stats page but also reused
+   by Library's own summary widget (via .stat-sub), so this file is linked
+   from both pages. Everything stats-prefixed (page layout, chart cards,
+   modals, the "ignore incomplete series" chip UI) is Stats-page only.
+
+   Charts themselves are styled in mf-charts.css — link that file too on
+   any page that renders MFCharts.
+
    Used by: templates/stats.html + static/stats.js (primary),
             templates/library.html + static/library.js (stat-sub only).
-   Note: templates/autosync.html also links this stylesheet, but its summary
-   widget currently renders its own sync-stat-label/sync-stat-value classes
-   (see autosync.css) — no .stat-card/.stat-value/.stat-label usage was found
-   there, so that link looks stale rather than an active third consumer.
    =================================================================== */
+
+/* ===== Page layout ===== */
 
 .stats-grid {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-}.stats-kpi-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
-}.stats-kpi-main .stat-card {
-  padding: 22px 24px;
-}.stats-kpi-main .stat-value {
-  font-size: 2.2rem;
-}.stats-section {
+  gap: 34px;
+}
+
+/* Dim the page while a range switch is in flight instead of flashing the
+   skeletons back in — the layout does not change, only the numbers do. */
+.stats-grid.is-updating {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+
+.stats-page-header {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-}.stats-section-title {
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.stats-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stats-range {
+  display: inline-flex;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.stats-range-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+
+.stats-range-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.stats-range-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.stats-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.stats-refresh-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.stats-refresh-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+.stats-refresh-btn.spinning svg {
+  animation: stats-spin 0.9s linear infinite;
+}
+
+@keyframes stats-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.stats-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: -6px;
+}
+
+.stats-section-title {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
   margin: 0;
-}.stat-card {
+}
+
+.stats-section-sub {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.stats-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.stats-loading {
+  color: var(--text-muted);
+  padding: 40px 0;
+  text-align: center;
+}
+
+/* ===== KPI cards ===== */
+
+.stats-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.stats-kpi-main {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.stat-card {
+  position: relative;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  /* --kpi-color is set inline per-card by stats.js's statCard() helper to color-code
-     each metric; falls back to the default border color when no color is passed */
-  border-top: 3px solid var(--kpi-color, var(--border));
+  /* --kpi-color is set inline per-card by stats.js's heroCard() helper to
+     color-code each metric; falls back to the default border color. */
   border-radius: var(--radius-lg);
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  transition: box-shadow var(--transition);
-}.stat-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-}.stat-value {
+  overflow: hidden;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: box-shadow var(--transition), border-color var(--transition), transform var(--transition);
+}
+
+/* Accent strip along the top edge, drawn as a pseudo-element so the card
+   keeps a uniform 1px border (a thick border-top shifted the content). */
+.stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--kpi-color, var(--border));
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.hero-card.is-clickable {
+  cursor: pointer;
+}
+
+.hero-card.is-clickable:hover {
+  border-color: var(--kpi-color, var(--border-focus));
+  transform: translateY(-2px);
+}
+
+.hero-card.is-clickable:focus-visible {
+  outline: 2px solid var(--kpi-color, var(--accent));
+  outline-offset: 2px;
+}
+
+.hero-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+  min-height: 28px;
+}
+
+.hero-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  color: var(--kpi-color, var(--accent));
+  background: color-mix(in srgb, var(--kpi-color, var(--accent)) 14%, transparent);
+  flex: 0 0 auto;
+}
+
+.hero-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.stats-kpi-main .stat-card {
+  padding: 20px 22px;
+}
+
+.stats-kpi-main .stat-value {
   font-size: 2rem;
+}
+
+.stat-value {
+  font-size: 1.75rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.03em;
-  line-height: 1.1;
-}.stat-label {
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+
+.stat-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-secondary);
-}.stat-sub {
+}
+
+.stat-sub {
   font-size: 0.73rem;
   color: var(--text-muted);
   line-height: 1.4;
   margin-top: 2px;
-}/* No consumer found for stat-card-label/value/sub in templates/*.html or
-   static/*.js — looks like an unused alternate naming for the .stat-value/
-   .stat-label/.stat-sub trio above rather than something to delete outright. */
-.stat-card-label {
-  font-size: 0.78rem;
-  font-weight: 500;
+}
+
+.stat-delta {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-delta.up {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.stat-delta.down {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.14);
+}
+
+.stat-delta.flat {
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}.stat-card-value {
-  font-size: 2rem;
+  background: var(--bg-hover);
+}
+
+.stat-card.skeleton {
+  height: 118px;
+  min-height: 118px;
+}
+
+.hero-skeleton {
+  height: 138px;
+  min-height: 138px;
+}
+
+.chart-skeleton {
+  height: 280px;
+  min-height: 280px;
+}
+
+/* ===== Chart cards ===== */
+
+.stats-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* Full-width cards inside the auto-fit grid. On a single-column layout the
+   media query below neutralises this so nothing overflows. */
+.stats-charts-grid .span-2 {
+  grid-column: 1 / -1;
+}
+
+/* Rendered as <details>/<summary> so the charts can collapse on phones.
+   `display: block` (not flex) because a flex <details> hides its own
+   content box in some engines. */
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px 16px;
+  display: block;
+  min-width: 0;
+}
+
+.chart-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+  cursor: default;
+}
+
+/* Both are needed to drop the native disclosure triangle cross-browser. */
+.chart-card-head::-webkit-details-marker {
+  display: none;
+}
+
+.chart-card-head::marker {
+  content: "";
+}
+
+.chart-card-chevron {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  transition: transform var(--transition), color var(--transition);
+}
+
+.chart-card-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.chart-card[open] > .chart-card-head .chart-card-chevron {
+  transform: rotate(180deg);
+}
+
+.chart-card > .chart-card-body {
+  margin-top: 14px;
+}
+
+.chart-card-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.chart-card-sub {
+  margin: 3px 0 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.chart-card-body {
+  min-width: 0;
+}
+
+/* Desktop: the card is always open and the header is not a control, so it
+   reads and behaves exactly like the plain card it replaced. */
+@media (min-width: 641px) {
+  .chart-card > .chart-card-head {
+    pointer-events: none;
+  }
+}
+
+.stats-inline-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.stats-inline-facts span {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.stats-inline-facts b {
+  font-size: 0.86rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ===== All-time fact strip ===== */
+
+.stats-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.stats-fact {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.stats-fact-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+}
+
+.stats-fact-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.stats-fact-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stats-fact-body b {
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.03em;
-  line-height: 1;
-}.stat-card-sub {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}.speed-modal-card {
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-fact-body span {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== Modals ===== */
+
+/* Scroll lock while a stats modal is open, so scrolling a long modal table
+   does not scroll the page behind it. Set by stats.js's _openModal(). */
+body.modal-open {
+  overflow: hidden;
+}
+
+.stats-modal-card {
   width: 100%;
-  max-width: 680px;
-  max-height: 85vh;
-  overflow-y: auto;
+  max-width: 760px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
   margin: 0 auto;
-}.speed-modal-table {
+  padding: 0;
+  overflow: hidden;
+}
+
+.stats-modal-wide {
+  max-width: 1080px;
+}
+
+.stats-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.stats-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stats-modal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  color: var(--icon-color, var(--accent));
+  background: color-mix(in srgb, var(--icon-color, var(--accent)) 14%, transparent);
+  flex: 0 0 auto;
+}
+
+.stats-modal-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.stats-modal-sub {
+  margin: 3px 0 0;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.stats-modal-body {
+  padding: 18px 22px 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.stats-modal-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.stats-modal-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 11px 13px;
+}
+
+.sms-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.sms-label {
+  font-size: 0.71rem;
+  color: var(--text-muted);
+}
+
+.stats-modal-tools {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stats-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 220px;
+}
+
+.stats-search svg {
+  position: absolute;
+  left: 11px;
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* Specificity note: forms.css styles `input[type="search"]` (element +
+   attribute = higher than a bare class), so `.stats-search-input` alone lost
+   the cascade and its left padding was replaced by the generic 14px — the
+   placeholder then sat underneath the magnifier icon. The descendant form
+   below outranks it without resorting to !important. */
+.stats-search input.stats-search-input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.83rem;
+  padding: 9px 12px;
+  padding-left: 32px;
+  transition: border-color var(--transition);
+}
+
+.stats-search input.stats-search-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.stats-table-wrap {
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.stats-modal-table {
   width: 100%;
   table-layout: fixed;
-}/* Fixed column widths for the 3-column speed-test result table
-   (Title / Size / Speed, built in stats.js) so long titles truncate
-   instead of pushing the Size/Speed columns around */
+}
+
+.stats-empty-state {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px 12px;
+  font-size: 0.86rem;
+}
+
+.stats-empty-emoji {
+  display: block;
+  font-size: 1.9rem;
+  margin-bottom: 8px;
+}
+
+.miss-count {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--warning, #f59e0b);
+  background: rgba(245, 158, 11, 0.13);
+  border-radius: 999px;
+  padding: 1px 7px;
+  vertical-align: middle;
+}
+
+/* Speed table: a relative bar behind the number makes slow outliers pop. */
+.speed-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-bar {
+  flex: 1 1 auto;
+  min-width: 30px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.speed-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.speed-cell b {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.speed-modal-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
 .speed-modal-table th:nth-child(1),
 .speed-modal-table td:nth-child(1) {
-  width: 55%;
-}.speed-modal-table th:nth-child(2),
+  width: 38%;
+}
+
+.speed-modal-table th:nth-child(2),
 .speed-modal-table td:nth-child(2) {
-  width: 22%;
-}.speed-modal-table th:nth-child(3),
+  width: 20%;
+}
+
+.speed-modal-table th:nth-child(3),
 .speed-modal-table td:nth-child(3) {
-  width: 23%;
-}.speed-modal-title {
+  width: 16%;
+}
+
+.speed-modal-table th:nth-child(4),
+.speed-modal-table td:nth-child(4) {
+  width: 26%;
+}
+
+.speed-modal-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 0;
-}/* "Ignore incomplete series" chip UI (Stats-page only). Unlike the rest of
-   this file, these rules carry literal-color fallbacks for the var()s
-   (e.g. var(--bg-surface, #222)) — kept as originally written; harmless
-   since the real theme variables are always defined in variables.css. */
+}
+
+/* ===== "Ignore incomplete series" chip UI ===== */
+
 .ignore-tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 14px;
   flex-wrap: wrap;
-}.ignore-tab {
-  background: var(--bg-surface, #222);
-  border: 1px solid var(--border, #333);
-  color: var(--text-secondary, #aaa);
+}
+
+.ignore-tab {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
   padding: 6px 14px;
   border-radius: 999px;
   font-size: 0.82rem;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}.ignore-tab.active {
-  background: var(--accent, #7c3aed);
-  border-color: var(--accent, #7c3aed);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.ignore-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.ignore-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
-}.ignore-slot-wrap {
+}
+
+.ignore-slot-wrap {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}.ignore-slot-chip {
+}
+
+.ignore-slot-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -151,81 +778,74 @@
   font-size: 0.78rem;
   cursor: default;
   user-select: none;
-}.ignore-slot-chip input[type="checkbox"] {
+  white-space: nowrap;
+}
+
+.ignore-slot-chip.is-selectable {
   cursor: pointer;
-}.ignore-all-chip {
+}
+
+.ignore-slot-chip.is-selectable:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.ignore-slot-chip input[type="checkbox"] {
+  cursor: pointer;
+}
+
+/* The largest copy in a duplicate group — the one worth keeping. */
+.ignore-slot-chip.is-best {
+  background: rgba(34, 197, 94, 0.13);
+  border-color: rgba(34, 197, 94, 0.32);
+  color: var(--success, #22c55e);
+}
+
+.ignore-all-chip {
   background: rgba(124, 58, 237, 0.14);
   border-color: rgba(124, 58, 237, 0.35);
   color: var(--accent, #a78bfa);
-}.ignore-remove-x {
+}
+
+.ignore-remove-x {
   color: inherit;
   text-decoration: none;
   font-weight: 700;
   line-height: 1;
   opacity: 0.7;
-}.ignore-remove-x:hover {
-  opacity: 1;
-}.ignore-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-}.ignore-restore-btn {
-  font-size: 0.78rem;
-  padding: 4px 12px;
-}@media (max-width: 540px) {.speed-modal-card {
-    max-height: 90vh;
-    border-radius: var(--radius-md);
-  }
-
-  .speed-modal-table th,
-  .speed-modal-table td {
-    padding: 8px 10px;
-    font-size: 0.78rem;
-  }
-
-  .speed-modal-table th:nth-child(1),
-  .speed-modal-table td:nth-child(1) {
-    width: 50%;
-  }
-
-  .speed-modal-table th:nth-child(2),
-  .speed-modal-table td:nth-child(2) {
-    width: 25%;
-  }
-
-  .speed-modal-table th:nth-child(3),
-  .speed-modal-table td:nth-child(3) {
-    width: 25%;
-  }
-}/* No consumer found for .stat-item's children here either — the base .stat-item
-   rule lives in utilities.css but nothing in templates/*.html or static/*.js
-   currently renders a .stat-item with .stat-label/.stat-value inside it. */
-.stat-item .stat-label {
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}.stat-item .stat-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.03em;
-  line-height: 1;
-}.stat-card.skeleton {
-  height: 100px;
-  min-height: 100px;
 }
 
-/* Duplicate-media modal: version chips and their file paths are rendered as
-   stacked rows so each resolution lines up with its path in the next column. */
+.ignore-remove-x:hover {
+  opacity: 1;
+}
+
+.ignore-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ignore-restore-btn {
+  font-size: 0.78rem;
+  padding: 4px 12px;
+}
+
+/* ===== Duplicate table ===== */
+
 .dup-version-row,
 .dup-path-row {
   min-height: 26px;
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 2px 0;
 }
+
+.dup-size {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Fixed layout so the five columns keep their assigned widths — otherwise the
    long file paths let the browser collapse the path column to a single
    character wide and stack the text vertically. */
@@ -233,37 +853,357 @@
   table-layout: fixed;
   width: 100%;
 }
+
 .dup-table th,
 .dup-table td {
   vertical-align: top;
 }
+
 .dup-path-cell {
   font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
   font-size: 0.78rem;
   color: var(--text-muted);
 }
+
 .dup-path-row {
-  overflow-wrap: anywhere;   /* wrap long paths, preferring the <wbr> breaks */
+  overflow-wrap: anywhere;
+  /* wrap long paths, preferring the <wbr> breaks */
   line-height: 1.3;
 }
 
-/* Mobile: five columns don't fit a phone width, so give the table a minimum
-   width and let .user-table-wrapper scroll horizontally (the app-wide pattern),
-   rather than squashing the columns. */
+/* ===== Legacy aliases =====
+   No consumer found for .stat-card-label/value/sub or .stat-item's children
+   in templates/*.html or static/*.js — kept as an alternate naming rather
+   than deleted outright, since third-party modules may rely on them. */
+.stat-card-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-card-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.stat-card-sub {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.stat-item .stat-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-item .stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+/* ===== Responsive ===== */
+
+@media (max-width: 900px) {
+  .stats-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .stats-toolbar {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .stats-range {
+    flex: 1 1 auto;
+    justify-content: space-between;
+  }
+}
+
 @media (max-width: 640px) {
+  .stats-grid {
+    gap: 26px;
+  }
+
+  .stats-kpi-row,
+  .stats-kpi-main {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+
+  .stats-charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card,
+  .stats-kpi-main .stat-card {
+    padding: 14px 15px;
+  }
+
+  .stat-value,
+  .stats-kpi-main .stat-value {
+    font-size: 1.5rem;
+  }
+
+  .chart-card {
+    padding: 15px 15px 13px;
+  }
+
+  .stats-modal-card {
+    max-height: 92vh;
+    border-radius: var(--radius-md);
+  }
+
+  .stats-modal-header {
+    padding: 15px 16px 13px;
+  }
+
+  .stats-modal-body {
+    padding: 14px 16px 18px;
+  }
+
+  /* Fixed 2x2 rather than auto-fit: with four summary tiles, auto-fit lands
+     on 3+1 at typical phone widths, which reads as an accident. */
+  .stats-modal-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .sms-value {
+    font-size: 1rem;
+  }
+
+  .stats-table-wrap {
+    max-height: 52vh;
+  }
+
+  .stats-facts {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+
+  /* Keep the range switcher and the refresh button on one row: the pills
+     share the remaining width equally instead of each keeping its natural
+     size, which otherwise pushed the round button onto a second line. */
+  .stats-toolbar {
+    flex-wrap: nowrap;
+  }
+
+  .stats-range {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .stats-range-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 4px;
+    font-size: 0.76rem;
+    text-align: center;
+  }
+
+  .stats-refresh-btn {
+    flex: 0 0 auto;
+  }
+
+  /* Charts collapse into their <summary> on phones (see chartCard() in
+     stats.js) — a stack of full-height charts otherwise buries the tables. */
+  .chart-card {
+    padding: 0;
+  }
+
+  .chart-card > .chart-card-head {
+    padding: 14px 15px;
+    cursor: pointer;
+    align-items: center;
+  }
+
+  .chart-card > .chart-card-body {
+    margin-top: 0;
+    padding: 0 15px 15px;
+  }
+
+  .chart-card-chevron {
+    display: inline-flex;
+  }
+
+  .chart-card > .chart-card-head:hover .chart-card-chevron {
+    color: var(--text-primary);
+  }
+
+  /* ---------------------------------------------------------------
+     Modal tables -> one card per row.
+     Four to five columns cannot be squashed into a phone width without the
+     headers colliding, and a horizontally scrolling table hides half the
+     data behind a gesture nobody discovers. Each row becomes a labelled
+     card instead; the labels come from the data-label attributes stats.js
+     writes on every <td>.
+     --------------------------------------------------------------- */
+  .stats-table-wrap {
+    max-height: 58vh;
+    overflow-x: hidden;
+  }
+
+  .stats-modal-table,
+  .speed-modal-table,
   .dup-table {
-    min-width: 640px;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    table-layout: auto;
+    border-collapse: separate;
   }
-  .dup-table th,
-  .dup-table td {
-    padding: 8px 10px;
-    font-size: 0.8rem;
+
+  .stats-modal-table thead,
+  .speed-modal-table thead,
+  .dup-table thead {
+    /* Visually hidden, not display:none — the column names still need to
+       reach a screen reader. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
-  .dup-table .dup-path-cell {
-    font-size: 0.72rem;
+
+  .stats-modal-table tbody,
+  .speed-modal-table tbody,
+  .dup-table tbody {
+    display: block;
   }
+
+  .stats-modal-table tbody tr,
+  .speed-modal-table tbody tr,
+  .dup-table tbody tr {
+    display: block;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+
+  .stats-modal-table tbody td,
+  .speed-modal-table tbody td,
+  .dup-table tbody td {
+    display: block;
+    width: auto !important;
+    max-width: none;
+    border: 0;
+    padding: 5px 0;
+    font-size: 0.82rem;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    vertical-align: baseline;
+  }
+
+  .stats-modal-table tbody td::before,
+  .speed-modal-table tbody td::before,
+  .dup-table tbody td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+  }
+
+  /* Cells that carry no label (the row checkbox, the restore button) render
+     the control on its own without an empty caption line above it. */
+  .stats-modal-table tbody td[data-label=""]::before,
+  .dup-table tbody td[data-label=""]::before {
+    display: none;
+  }
+
+  /* The title cell is the card heading. */
+  .stats-modal-table tbody td.speed-modal-title,
+  .speed-modal-table tbody td.speed-modal-title,
+  .dup-table tbody td.speed-modal-title {
+    font-size: 0.92rem;
+    font-weight: 650;
+    color: var(--text-primary);
+    padding-top: 0;
+  }
+
+  /* The bare "select whole series" checkbox needs a visible caption once the
+     column header is gone. */
+  .stats-modal-table tbody td.td-check {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding-bottom: 9px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .td-check-label {
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+  }
+
+  .dup-path-cell {
+    font-size: 0.7rem;
+  }
+
   .dup-version-row,
   .dup-path-row {
-    min-height: 22px;
+    min-height: 0;
+    padding: 1px 0;
+  }
+
+  .speed-cell {
+    gap: 10px;
+  }
+}
+
+/* The td-check caption is a mobile-only affordance; on desktop the column
+   header already says what the checkbox does. */
+@media (min-width: 641px) {
+  .td-check-label {
+    display: none;
+  }
+}
+
+/* The floating side-menu FAB (Monitoring/Settings drawer) sits above the
+   page but must not float on top of an open modal. */
+body.modal-open .floating-menu-fab {
+  display: none !important;
+}
+
+/* On mobile that same FAB is fixed at top-right (shell.css: right:14px,
+   top: topbar + 12px) — exactly where the Statistics toolbar's refresh button
+   lands when the page is embedded in Monitoring. Reserve the space so the two
+   never overlap. Scoped to .has-floating-menu, since the standalone /stats
+   page has no FAB. */
+@media (max-width: 640px) {
+  .has-floating-menu .stats-page-header {
+    padding-right: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .stat-card,
+  .hero-card.is-clickable:hover {
+    transition: none;
+    transform: none;
+  }
+
+  .stats-refresh-btn.spinning svg {
+    animation: none;
   }
 }

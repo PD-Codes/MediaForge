@@ -8,6 +8,9 @@
    stepper) comes from CSS base.html already loads on every page, so
    nothing else needs a <link> here. #}
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
+{# mf-charts.css/js are not global either -- link them on any page that draws
+   MFCharts charts (the Statistics page does the same). #}
+<link rel="stylesheet" href="{{ url_for('static', filename='mf-charts.css') }}">
 <link rel="stylesheet" href="{{ url_for('example_ui_components.static', filename='example_ui_components.css') }}">
 {% endblock %}
 {% block content %}
@@ -358,8 +361,73 @@
 &lt;/div&gt;</pre>
     </div>
   </div>
+
+  <!-- ─── Charts (MFCharts) ───────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Charts (MFCharts)') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/mf-charts.js + mf-charts.css — dependency-free inline-SVG charts (no CDN, no bundler, CSP-friendly). They paint with the theme tokens from variables.css, so theme packs restyle them automatically. Link both files in your page\'s styles/scripts blocks, then call MFCharts.render(elementOrId, spec).') }}</div>
+
+      <div class="uic-chart-grid">
+        <div>
+          <div class="uic-hint">{{ _('Area / line') }}</div>
+          <div class="mfc-chart" id="uicAreaChart"></div>
+        </div>
+        <div>
+          <div class="uic-hint">{{ _('Bars') }}</div>
+          <div class="mfc-chart" id="uicBarsChart"></div>
+        </div>
+        <div>
+          <div class="uic-hint">{{ _('Donut') }}</div>
+          <div class="mfc-chart" id="uicDonutChart"></div>
+        </div>
+        <div>
+          <div class="uic-hint">{{ _('Gauge') }}</div>
+          <div class="mfc-chart" id="uicGaugeChart"></div>
+        </div>
+        <div>
+          <div class="uic-hint">{{ _('Horizontal bars') }}</div>
+          <div class="mfc-chart" id="uicHBarsChart"></div>
+        </div>
+        <div>
+          <div class="uic-hint">{{ _('Heatmap') }}</div>
+          <div class="mfc-chart" id="uicHeatChart"></div>
+        </div>
+      </div>
+
+      <div class="uic-hint" style="margin-top:14px;">{{ _('Sparkline (returns a plain SVG string — drop it straight into a KPI card):') }}</div>
+      <div id="uicSparkline"></div>
+
+      <pre class="uic-snippet">&lt;!-- styles block --&gt;
+&lt;link rel="stylesheet" href="{{ '{{' }} url_for('static', filename='mf-charts.css') {{ '}}' }}"&gt;
+&lt;!-- scripts block, before your own script --&gt;
+&lt;script src="{{ '{{' }} url_for('static', filename='mf-charts.js') {{ '}}' }}"&gt;&lt;/script&gt;
+
+&lt;div class="mfc-chart" id="myChart"&gt;&lt;/div&gt;
+
+MFCharts.render("myChart", {
+  type: "area",              // area | line | bars | donut | gauge | heatmap
+  height: 220,
+  labels: ["Mon", "Tue", "Wed"],
+  series: [{ name: "Downloads", values: [3, 7, 5], color: "#7c3aed" }],
+  valueFmt: function (v) { return v.toFixed(0); },
+  empty: "No data",
+});
+
+// Building your page as one HTML string? Queue specs, then mount in one pass:
+html += MFCharts.place("myChart", { type: "donut", data: [...] });
+container.innerHTML = html;
+MFCharts.renderAll(container);
+
+// Tiny inline trend line for a KPI card:
+card.innerHTML = MFCharts.sparkline([1, 4, 2, 8], { color: "#22c55e" });</pre>
+    </div>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='mf-charts.js') }}"></script>
 <script src="{{ url_for('example_ui_components.static', filename='example_ui_components.js') }}"></script>
 {% endblock %}

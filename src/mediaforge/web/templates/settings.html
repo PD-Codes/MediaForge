@@ -679,6 +679,21 @@
         </label>
         <div class="settings-hint">{{ _('Each movie gets its own subfolder — recommended for Jellyfin.') }}</div>
       </div>
+
+      <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Duplicate Handling') }}</h3>
+      <div>
+        <label class="settings-checkbox-row" for="dlQualityUpgrade">
+          <input type="checkbox" class="chb-main" id="dlQualityUpgrade" onchange="saveDlQualityUpgrade()" />
+          <span>{{ _('Replace with better quality') }}</span>
+        </label>
+        <div class="settings-hint">{{ _('If the episode already exists, the source is checked first. A higher resolution (or a clearly higher bitrate at the same resolution) is downloaded and replaces the old file.') }}</div>
+
+        <label class="settings-checkbox-row" for="dlAudioTrackMerge" style="margin-top:10px;">
+          <input type="checkbox" class="chb-main" id="dlAudioTrackMerge" onchange="saveDlAudioTrackMerge()" />
+          <span>{{ _('Merge additional languages into the existing file') }}</span>
+        </label>
+        <div class="settings-hint">{{ _('An episode already downloaded as German Dub gets a new English Dub added as a second audio track instead of being saved a second time.') }}</div>
+      </div>
     </div>
 
     <div class="settings-section">

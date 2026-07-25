@@ -10,6 +10,7 @@ from ..db import get_general_stats
 from ..db import get_media_ignores
 from ..db import get_queue_stats
 from ..db import get_setting
+from ..db import get_stats_trends
 from ..db import get_sync_stats
 from ..db import remove_media_ignore
 from ..runtime_state import SYNC_SCHEDULE_MAP
@@ -171,6 +172,14 @@ def _compute_media_stats(cache=None):
     # Merge titles across all locations / language folders by folder name.
     series = {}  # folder -> {"seasons": {skey: set(eps)}, "episodes": int, "location": str}
     movie_folders = set()
+    # Technical distribution of the files on disk, for the Statistics charts.
+    # Counted per physical file (not per merged logical episode) because that
+    # is what actually occupies the disk.
+    resolutions = {}
+    codecs = {}
+    by_location = {}
+    total_size_mb = 0.0
+    files_total = 0
 
     for path_key, entry in cache.items():
         data = entry.get("data") or {}
@@ -185,18 +194,38 @@ def _compute_media_stats(cache=None):
                 folder = t.get("folder")
                 if not folder:
                     continue
-                if t.get("is_movie"):
+                is_movie = bool(t.get("is_movie"))
+                agg = None
+                if not is_movie:
+                    agg = series.setdefault(
+                        folder.lower(),
+                        {"title": folder, "seasons": {}, "location": location, "size_mb": 0.0},
+                    )
+                else:
                     movie_folders.add(folder.lower())
-                    continue
-                agg = series.setdefault(
-                    folder.lower(),
-                    {"title": folder, "seasons": {}, "location": location},
-                )
                 for skey, eps in (t.get("seasons") or {}).items():
-                    bucket = agg["seasons"].setdefault(skey, set())
+                    bucket = agg["seasons"].setdefault(skey, set()) if agg is not None else None
                     for e in eps:
-                        if e.get("episode") is not None and e.get("is_video", True):
-                            bucket.add(e.get("episode"))
+                        if not e.get("is_video", True):
+                            continue
+                        # --- technical distribution (per file on disk) ---
+                        files_total += 1
+                        res = (e.get("resolution") or "").strip() or "?"
+                        resolutions[res] = resolutions.get(res, 0) + 1
+                        codec = (e.get("video_codec") or "").strip() or "?"
+                        codecs[codec] = codecs.get(codec, 0) + 1
+                        try:
+                            # Library entries store bytes; fall back to 0 on
+                            # anything non-numeric rather than failing the page.
+                            size_mb = float(e.get("size") or 0) / (1024.0 * 1024.0)
+                        except (TypeError, ValueError):
+                            size_mb = 0.0
+                        total_size_mb += size_mb
+                        by_location[location] = by_location.get(location, 0.0) + size_mb
+                        if agg is not None:
+                            agg["size_mb"] += size_mb
+                            if e.get("episode") is not None:
+                                bucket.add(e.get("episode"))
 
     movies_total = len(movie_folders)
     series_total = len(series)
@@ -245,12 +274,35 @@ def _compute_media_stats(cache=None):
     ]
     ignored_list.sort(key=lambda x: x["title"].lower())
 
+    def _top(d, limit=10):
+        """Sort a {name: value} map into a descending [{name, value}] list."""
+        return [
+            {"name": k, "value": round(v, 2) if isinstance(v, float) else v}
+            for k, v in sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+        ]
+
+    largest_series = sorted(
+        (
+            {"title": a["title"], "size_mb": round(a["size_mb"], 2),
+             "episodes": sum(len(e) for k, e in a["seasons"].items() if k != "movies")}
+            for a in series.values()
+        ),
+        key=lambda x: x["size_mb"],
+        reverse=True,
+    )[:10]
+
     return {
         "movies_total": movies_total,
         "series_total": series_total,
         "series_complete": complete,
         "series_incomplete": len(incomplete_list),
         "episodes_total": episodes_total,
+        "files_total": files_total,
+        "total_size_mb": round(total_size_mb, 2),
+        "resolutions": _top(resolutions, 12),
+        "codecs": _top(codecs, 12),
+        "by_location": _top(by_location, 12),
+        "largest_series": largest_series,
         "incomplete": incomplete_list,
         "ignored": ignored_list,
         "scanning": any_scanning,
@@ -290,6 +342,11 @@ def register_stats_routes(app):
             "general": get_general_stats(),
             "queue": get_queue_stats(),
             "sync": get_sync_stats(),
+            # Chart series for the reworked Statistics page. The window is
+            # user-selectable; get_stats_trends() clamps it to 1..365 days so a
+            # crafted ?days= value can neither scan an unbounded range nor blow
+            # up the response size.
+            "trends": get_stats_trends(request.args.get("days")),
         }
         media_enabled = (get_setting("media_stats_enabled")
                          or os.environ.get("MEDIAFORGE_MEDIA_STATS_ENABLED", "0")) == "1"
@@ -366,6 +423,15 @@ def register_stats_routes(app):
             except Exception:
                 pass
         return jsonify(stats)
+    @app.route("/api/stats/trends")
+    def api_stats_trends():
+        """Return only the chart series for a given window.
+        GET /api/stats/trends?days=30.
+
+        Called from static/stats.js's `setStatsRange()` so switching the
+        7/30/90/365-day selector does not re-run the (much more expensive)
+        library-cache scan that the full /api/stats payload triggers."""
+        return jsonify(get_stats_trends(request.args.get("days")))
     @app.route("/api/stats/queue")
     def api_stats_queue():
         """Return queue stats only. GET /api/stats/queue. No confirmed

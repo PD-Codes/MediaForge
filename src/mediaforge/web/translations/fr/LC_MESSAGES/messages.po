@@ -5040,3 +5040,18 @@ msgstr ""
 #: src/mediaforge/web/templates/extensions.html
 msgid "Publish on the developer portal"
 msgstr ""
+
+msgid "Duplicate Handling"
+msgstr "Gestion des doublons"
+
+msgid "Replace with better quality"
+msgstr "Remplacer si la qualité est meilleure"
+
+msgid "If the episode already exists, the source is checked first. A higher resolution (or a clearly higher bitrate at the same resolution) is downloaded and replaces the old file."
+msgstr "Si l’épisode existe déjà, la source est vérifiée au préalable. Une résolution supérieure (ou un débit nettement plus élevé à résolution égale) est téléchargée et remplace l’ancien fichier."
+
+msgid "Merge additional languages into the existing file"
+msgstr "Intégrer d’autres langues au fichier existant"
+
+msgid "An episode already downloaded as German Dub gets a new English Dub added as a second audio track instead of being saved a second time."
+msgstr "Un épisode déjà téléchargé en German Dub reçoit un nouvel English Dub comme deuxième piste audio au lieu d’être enregistré une seconde fois."

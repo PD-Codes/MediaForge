@@ -66,6 +66,8 @@ const downloadPathInput = document.getElementById("downloadPath");
 const langSeparationCb = document.getElementById("langSeparation");
 const disableEnglishSubCb = document.getElementById("disableEnglishSub");
 const filmpalastSubfolderCb = document.getElementById("filmpalastSubfolder");
+const dlQualityUpgradeCb = document.getElementById("dlQualityUpgrade");
+const dlAudioTrackMergeCb = document.getElementById("dlAudioTrackMerge");
 const syncScheduleSelect         = document.getElementById("syncSchedule");
 const syncLanguageSelect         = document.getElementById("syncLanguage");
 const syncProviderSelect         = document.getElementById("syncProvider");
@@ -89,6 +91,8 @@ async function loadSettings() {
     if (langSeparationCb) langSeparationCb.checked = data.lang_separation === "1";
     if (disableEnglishSubCb) disableEnglishSubCb.checked = data.disable_english_sub === "1";
     if (filmpalastSubfolderCb) filmpalastSubfolderCb.checked = data.movie_subfolder === "1" || data.filmpalast_movie_subfolder === "1";
+    if (dlQualityUpgradeCb) dlQualityUpgradeCb.checked = data.dl_quality_upgrade === "1";
+    if (dlAudioTrackMergeCb) dlAudioTrackMergeCb.checked = data.dl_audio_track_merge === "1";
 
     // Before any language dropdown gets its stored value: a saved default may
     // BE a fallback group, and a select silently ignores a value it has no
@@ -342,6 +346,42 @@ async function saveMovieSubfolder() {
   }
 }
 window.saveFilmpalastSubfolder = saveMovieSubfolder;
+
+// ─── Duplicate handling ─────────────────────────────────────────────────────
+// Two independent checks that only run when an episode is already on disk:
+// a quality comparison (replace the file when the source now serves better)
+// and an audio-track merge (add a new language to the existing file).
+
+async function saveDlQualityUpgrade() {
+  const checked = dlQualityUpgradeCb ? dlQualityUpgradeCb.checked : false;
+  await _saveDupeSetting({ dl_quality_upgrade: checked },
+    checked ? t("Qualitätsprüfung aktiviert", "Quality check activated")
+            : t("Qualitätsprüfung deaktiviert", "Quality check deactivated"));
+}
+window.saveDlQualityUpgrade = saveDlQualityUpgrade;
+
+async function saveDlAudioTrackMerge() {
+  const checked = dlAudioTrackMergeCb ? dlAudioTrackMergeCb.checked : false;
+  await _saveDupeSetting({ dl_audio_track_merge: checked },
+    checked ? t("Tonspur-Zusammenführung aktiviert", "Audio track merging activated")
+            : t("Tonspur-Zusammenführung deaktiviert", "Audio track merging deactivated"));
+}
+window.saveDlAudioTrackMerge = saveDlAudioTrackMerge;
+
+async function _saveDupeSetting(payload, okMessage) {
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(okMessage);
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
 
 async function saveDownloadPath() {
   const download_path = downloadPathInput ? downloadPathInput.value.trim() : "";
