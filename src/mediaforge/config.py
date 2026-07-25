@@ -19,7 +19,7 @@ import fake_useragent
 from niquests import RequestException, Session
 from packaging.version import parse as parse_version
 
-from .env import merge_env
+from .env import prepare_env
 from .logger import get_logger
 
 VERSION = None
@@ -54,11 +54,10 @@ def is_newest_version() -> bool:
 # the AniWorld Downloader -> MediaForge rename; see legacy_import.py).
 MEDIAFORGE_CONFIG_DIR = Path.home() / ".mediaforge"
 
-# Load .env file whenever config is imported
-merge_env(
-    Path(__file__).resolve().parent / ".env.example",
-    MEDIAFORGE_CONFIG_DIR / ".env",
-)
+# Mirror legacy ANIWORLD_* variables, and load a not-yet-imported .env once,
+# whenever config is imported. Configuration itself lives in the app_settings
+# DB table -- see web/settings_migration.py.
+prepare_env(MEDIAFORGE_CONFIG_DIR / ".env")
 
 logger = get_logger(__name__)
 

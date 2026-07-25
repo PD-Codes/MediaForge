@@ -11,7 +11,6 @@ It always starts the WebUI directly -- the standalone CLI was removed (see
 
 import sys
 import warnings
-from pathlib import Path
 
 # authlib internally uses its deprecated jose module -- suppress until they fix it
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="authlib")
@@ -24,13 +23,10 @@ except ImportError:
 from .arguments import parse_args
 from .autodeps import ensure_patchright_chromium
 from .config import MEDIAFORGE_CONFIG_DIR, VERSION
-from .env import merge_env
+from .env import prepare_env
 from .logger import get_logger
 
-merge_env(
-    Path(__file__).resolve().parent / ".env.example",
-    MEDIAFORGE_CONFIG_DIR / ".env",
-)
+prepare_env(MEDIAFORGE_CONFIG_DIR / ".env")
 
 logger = get_logger(__name__)
 

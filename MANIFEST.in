@@ -1,4 +1,3 @@
-include src/mediaforge/.env.example
 recursive-include src/mediaforge/web/templates *.html
 recursive-include src/mediaforge/web/static *.css *.js
 recursive-include src/mediaforge/web/translations *.po *.mo
