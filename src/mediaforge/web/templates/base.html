@@ -115,6 +115,41 @@
     document.documentElement.setAttribute('data-page-loading', '');
   </script>
   <script>
+    // ===== Global body scroll lock =====
+    // Used by the off-canvas menus (mobile sidebar, floating side-menu
+    // drawer) so the page behind an open menu cannot be scrolled. Plain
+    // `overflow: hidden` on <body> is not enough on mobile browsers: touch
+    // scrolling still chains to the document, which moves the page behind the
+    // overlay and makes the URL/toolbar collapse, causing layout glitches.
+    // Locking with `position: fixed` plus a preserved scroll offset stops
+    // that reliably and restores the exact position on unlock.
+    // Reference counted so nested locks (menu + modal) behave correctly.
+    window.MFScrollLock = (function () {
+      var depth = 0;
+      var savedY = 0;
+      function lock() {
+        if (depth++ > 0) return;
+        savedY = window.scrollY || document.documentElement.scrollTop || 0;
+        document.body.style.top = (-savedY) + 'px';
+        document.body.classList.add('mf-scroll-locked');
+      }
+      function unlock(force) {
+        if (depth === 0) return;
+        depth = force ? 0 : depth - 1;
+        if (depth > 0) return;
+        document.body.classList.remove('mf-scroll-locked');
+        document.body.style.top = '';
+        window.scrollTo(0, savedY);
+      }
+      return {
+        lock: lock,
+        unlock: function () { unlock(false); },
+        reset: function () { unlock(true); },
+        get locked() { return depth > 0; }
+      };
+    })();
+  </script>
+  <script>
     // Provider-pill extension registry shim — defined here, as early as
     // possible, so a registered extension's provider_pill_script (see
     // web/thirdparties/registry.py) can always call registerProviderPill()
@@ -880,12 +915,20 @@
   {% block scripts %}{% endblock %}
   <script>
     // ===== Sidebar =====
+    var _sidebarScrollLocked = false;
+    // Keep the page behind the open mobile sidebar from scrolling.
+    function _setSidebarScrollLock(on) {
+      if (on === _sidebarScrollLocked) return;
+      _sidebarScrollLocked = on;
+      on ? window.MFScrollLock.lock() : window.MFScrollLock.unlock();
+    }
     function toggleSidebar() {
       var sidebar = document.getElementById('sidebar');
       var backdrop = document.getElementById('sidebarBackdrop');
       var open = sidebar.classList.toggle('open');
       backdrop.classList.toggle('visible', open);
       document.getElementById('hamburgerBtn').classList.toggle('open', open);
+      _setSidebarScrollLock(open);
     }
     function closeSidebar() {
       document.getElementById('sidebar').classList.remove('open');
@@ -893,7 +936,14 @@
       document.getElementById('hamburgerBtn').classList.remove('open');
       var popup = document.getElementById('appearancePopup');
       if (popup) popup.classList.remove('open');
+      _setSidebarScrollLock(false);
     }
+    // The sidebar is only off-canvas below 769px; if the viewport grows (or the
+    // device is rotated) while it is open, drop the lock so the desktop layout
+    // scrolls normally again.
+    window.addEventListener('resize', function () {
+      if (_sidebarScrollLocked && window.innerWidth > 768) closeSidebar();
+    });
 
     // Collapse/expand the desktop sidebar (mini rail). State is stored on
     // <html> as .sidebar-mini and persisted so it survives navigation; it is
@@ -1280,8 +1330,21 @@
       backdrop.className = 'floating-menu-backdrop';
       document.body.appendChild(backdrop);
       document.body.appendChild(fab);
-      function close() { menu.classList.remove('mobile-open'); backdrop.classList.remove('show'); }
-      function open() { menu.classList.add('mobile-open'); backdrop.classList.add('show'); }
+      var locked = false;
+      // Same scroll lock as the main sidebar: the page behind the drawer must
+      // stay put while it is open.
+      function setLock(on) {
+        if (on === locked) return;
+        locked = on;
+        on ? window.MFScrollLock.lock() : window.MFScrollLock.unlock();
+      }
+      function close() { menu.classList.remove('mobile-open'); backdrop.classList.remove('show'); setLock(false); }
+      function open() { menu.classList.add('mobile-open'); backdrop.classList.add('show'); setLock(true); }
+      // The drawer only exists below 861px — release the lock when the layout
+      // switches back to the docked desktop menu.
+      window.addEventListener('resize', function () {
+        if (locked && window.innerWidth > 860) close();
+      });
       fab.addEventListener('click', function () { menu.classList.contains('mobile-open') ? close() : open(); });
       backdrop.addEventListener('click', close);
       // Close after picking an entry (links navigate; switchTab buttons stay).

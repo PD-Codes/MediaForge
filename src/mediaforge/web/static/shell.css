@@ -1201,3 +1201,20 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
 }
 /* Keep the mini-rail hover flyout fully visible despite the animation base. */
 .sidebar-sub.flyout-open { opacity: 1; }
+
+
+/* ===================================================================
+   Body scroll lock (see window.MFScrollLock in base.html)
+   Applied while an off-canvas menu is open so the page behind it cannot
+   be scrolled or rubber-banded. position:fixed is required on mobile:
+   overflow:hidden alone does not stop touch scroll chaining, which would
+   move the page behind the overlay and collapse the browser URL bar.
+   =================================================================== */
+body.mf-scroll-locked {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
