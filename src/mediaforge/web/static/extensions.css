@@ -109,4 +109,17 @@
   .extensions-page #extStoreRefreshBtn {
     margin-left: 0 !important;
   }
+
+  /* "Build your own module or theme" card: four link buttons in one row fits
+     a desktop header and nothing else. On phones they become a full-width
+     stack so the card cannot push the page sideways, and each button stays a
+     comfortable tap target instead of a 60px sliver. */
+  .extensions-page .ext-author-links {
+    width: 100%;
+  }
+
+  .extensions-page .ext-author-links .btn {
+    flex: 1 1 100%;
+    text-align: center;
+  }
 }

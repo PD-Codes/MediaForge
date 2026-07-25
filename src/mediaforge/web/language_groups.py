@@ -19,37 +19,21 @@ reaches ``lang_folder_for()`` or an episode's ``selected_language``.
 import json
 import os
 
+from ..languages import LANG_PAIR_TO_LABEL as _LANG_PAIR_TO_LABEL
+from ..languages import SELECTABLE_LANGUAGES as _SELECTABLE_LANGUAGES
+from ..languages import labels_for_provider_data
 from ..logger import get_logger
 
 logger = get_logger(__name__)
 
 GROUP_PREFIX = "group:"
 
-# (Audio.value, Subtitles.value) -> language label.
-#
-# AniWorld (config.py) and s.to (models/s_to/episode.py) define their own
-# Audio/Subtitles enum classes with identical *values* but distinct types, so a
-# pair of raw strings is the only key that works for both — the same reason
-# autosync_worker compares `(k[0].value, k[1].value)` instead of the enums.
-LANG_PAIR_TO_LABEL = {
-    ("German", "None"): "German Dub",
-    ("Japanese", "English"): "English Sub",
-    ("Japanese", "German"): "German Sub",
-    ("English", "None"): "English Dub",
-    # s.to only: English audio with German subtitles.
-    ("English", "German"): "English Dub (German Sub)",
-}
-
-# Languages a group may be built from. Deliberately the same set the language
-# dropdowns offer; "Japanese Dub" (hanime) has no alternative to fall back to
-# and "All Languages" is not a language but its own download mode.
-SELECTABLE_LANGUAGES = [
-    "German Dub",
-    "English Sub",
-    "German Sub",
-    "English Dub",
-    "English Dub (German Sub)",
-]
+# Language labels and their (Audio.value, Subtitles.value) pairs live in
+# mediaforge.languages -- the single source of truth shared by the site models
+# and the web layer. Re-exported here because these two names are imported from
+# this module all over the web layer.
+LANG_PAIR_TO_LABEL = _LANG_PAIR_TO_LABEL
+SELECTABLE_LANGUAGES = _SELECTABLE_LANGUAGES
 
 
 def lang_separation_enabled():
@@ -158,23 +142,14 @@ def labels_from_provider_data(pd_data):
 
     Accepts the raw dict keyed by (Audio, Subtitles) enum pairs, as produced by
     every episode model. Returns an empty set when the data is missing or has a
-    shape this mapping doesn't cover (hanime's single burned-in track, movie
-    providers) — callers treat that as "can't tell" and fall back.
+    shape the shared mapping doesn't cover (hanime's single burned-in track,
+    movie providers) -- callers treat that as "can't tell" and fall back.
     """
-    labels = set()
-    if not pd_data:
-        return labels
     try:
-        for key in pd_data:
-            label = LANG_PAIR_TO_LABEL.get(
-                (getattr(key[0], "value", key[0]), getattr(key[1], "value", key[1]))
-            )
-            if label:
-                labels.add(label)
+        return labels_for_provider_data(pd_data)
     except Exception as exc:
         logger.debug("[LangGroup] Unreadable provider data: %s", exc)
         return set()
-    return labels
 
 
 def pick_language(chain, available):

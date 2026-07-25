@@ -231,3 +231,6 @@ _backups/
 
 # Standalone Dev Info admin server (separate app, holds admin credentials/DB — never public)
 /devinfo_server/
+
+# Deletion Folder where files will be moved at first instance if we are sure to remove them finally
+_to_delete/

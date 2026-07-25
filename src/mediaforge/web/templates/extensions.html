@@ -465,6 +465,60 @@
        opt-in on top of that. -->
   <div id="extStoreView" style="display:none;">
 
+  <!-- Card 0: "anyone can build one". The store reads like a catalog somebody else
+       fills, which hides the actual situation: web/thirdparties/ and web/themes/ are
+       a documented public API, and a third party's module is a first-class citizen
+       here (see the "Additional repositories" row below -- a stranger's repository is
+       an ordinary store). So the three things a would-be author needs are stated at
+       the point where they realise they want one: worked examples with their own
+       READMEs, the reference docs, and where to actually submit the result.
+       Placed above the settings card because it is an invitation, not configuration,
+       and an invitation buried under a trust-key table is not one.
+       flex-wrap + the .ext-author-links helper (extensions.css) so the link row
+       stacks on phones instead of pushing the card sideways. -->
+  <div class="settings-section" id="extStoreAuthorCard">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Build your own module or theme') }}</span>
+      <span class="integ-subsection-badge badge-version">{{ _('Open to everyone') }}</span>
+    </div>
+    <div style="padding:0 20px 16px;">
+      <div class="settings-row" style="border-bottom:none;flex-wrap:wrap;gap:12px;">
+        <div class="settings-row-left">
+          <div class="settings-row-desc">
+            {{ _('The store is not ours alone: anyone can write a MediaForge module or theme pack and publish it here. Modules add providers, hosters, notification channels, pages and settings through a documented API; theme packs are plain CSS, no Python at all.') }}
+          </div>
+          <div class="settings-row-desc">
+            {{ _('Start from the ready-made examples — each folder is a working module with its own README explaining what it registers and why.') }}
+          </div>
+        </div>
+        <div class="settings-row-right ext-author-links"
+             style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <a class="btn btn-secondary" target="_blank" rel="noopener noreferrer"
+             href="https://github.com/PD-Codes/MediaForge/tree/main/.examples/thirdparties">
+            {{ _('Module examples') }}
+          </a>
+          <a class="btn btn-secondary" target="_blank" rel="noopener noreferrer"
+             href="https://github.com/PD-Codes/MediaForge/tree/main/.examples/themes">
+            {{ _('Theme examples') }}
+          </a>
+          <a class="btn btn-secondary" target="_blank" rel="noopener noreferrer"
+             href="https://github.com/PD-Codes/MediaForge/wiki/Modules">
+            {{ _('Developer docs') }}
+          </a>
+          <!-- The submission side of the same store this page reads from. Primary,
+               because it is the step that turns a finished folder into an entry in
+               the catalog below; a new submission starts out unreviewed, which is
+               exactly the state the "Allow unverified and unreviewed modules"
+               toggle further down decides whether to show. -->
+          <a class="btn btn-primary" target="_blank" rel="noopener noreferrer"
+             href="https://mediaforge.softarchiv.com">
+            {{ _('Publish on the developer portal') }}
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Card 1: where the modules come from and what this install is willing to run.
        Settings, not merchandise — kept apart from the catalog below, because reading a
        list of available modules and deciding which repositories to trust are two

@@ -11,6 +11,13 @@ from ...config import (
     logger,
 )
 from ...extractors import provider_functions
+from ...languages import (
+    ENGLISH_DUB,
+    ENGLISH_DUB_GERMAN_SUB,
+    GERMAN_DUB,
+    LABEL_TO_LANG_PAIR,
+    normalize_label,
+)
 from ..common import check_downloaded
 from ..common.common import (
     download as episode_download,
@@ -56,12 +63,10 @@ class Subtitles(Enum):
     GERMAN = "German"
 
 
-# Map UI labels to enum tuples (s.to labels)
-LANG_LABEL_TO_ENUM = {
-    "Deutsch": (Audio.GERMAN, Subtitles.NONE),
-    "Englisch": (Audio.ENGLISH, Subtitles.NONE),
-    "Deutsche Untertitel": (Audio.ENGLISH, Subtitles.GERMAN),
-}
+# Languages serienstream.to actually offers. Anything outside this set is
+# rejected by _normalize_language() even when mediaforge.languages knows the
+# label -- s.to has no Japanese track and no English-subtitled variant.
+SUPPORTED_LANGUAGES = (GERMAN_DUB, ENGLISH_DUB, ENGLISH_DUB_GERMAN_SUB)
 
 # ISO language codes for media players (IINA/mpv)
 LANG_CODE_MAP = {
@@ -504,18 +509,15 @@ class SerienstreamEpisode:
         provider_data = {}
 
         for play_url, provider_name, language_label in matches:
-            lbl_lower = language_label.lower()
-            if lbl_lower == "deutsch":
-                key = (Audio.GERMAN, Subtitles.NONE)
-            elif lbl_lower == "englisch":
-                key = (Audio.ENGLISH, Subtitles.NONE)
-            elif "deutsch" in lbl_lower and ("untertitel" in lbl_lower or "ut" in lbl_lower or "sub" in lbl_lower):
-                key = (Audio.ENGLISH, Subtitles.GERMAN)
-            elif "german" in lbl_lower and ("sub" in lbl_lower or "ut" in lbl_lower):
-                key = (Audio.ENGLISH, Subtitles.GERMAN)
-            elif "ger" in lbl_lower and "sub" in lbl_lower:
-                key = (Audio.ENGLISH, Subtitles.GERMAN)
-            else:
+            # The site writes its own labels ("Deutsch", "Englisch",
+            # "Ger-Sub", ...); normalize_label() knows all of them.
+            try:
+                key = self._normalize_language(language_label)
+            except ValueError:
+                logger.debug(
+                    "s.to: unknown language label %r on %s — entry skipped",
+                    language_label, self.url,
+                )
                 continue
 
             provider_data.setdefault(key, {})[provider_name] = (
@@ -530,14 +532,21 @@ class SerienstreamEpisode:
         """
         if isinstance(language, tuple) and len(language) == 2:
             return language
-        if language in ["German Dub", "German", "Deutsch"]:
-            return (Audio.GERMAN, Subtitles.NONE)
-        if language in ["English Dub", "English", "Englisch"]:
-            return (Audio.ENGLISH, Subtitles.NONE)
-        if language in ["German Sub", "Deutsche Untertitel", "English Dub (German Sub)"]:
-            return (Audio.ENGLISH, Subtitles.GERMAN)
+
+        # Spelling aliases and the label -> (audio, subtitles) mapping both come
+        # from mediaforge.languages, the single source of truth. Only the
+        # translation back into *this module's* enum classes happens here --
+        # s.to's Audio/Subtitles are deliberately distinct types from
+        # config.Audio/Subtitles, so the shared module can only speak in the
+        # raw enum values.
+        label = normalize_label(language)
+        pair = LABEL_TO_LANG_PAIR.get(label) if label else None
+        if pair and label in SUPPORTED_LANGUAGES:
+            return (Audio(pair[0]), Subtitles(pair[1]))
+
         raise ValueError(
-            f"Only 'Deutsch'/'German Dub', 'Englisch'/'English Dub' and 'German Sub'/'Deutsche Untertitel'/'English Dub (German Sub)' are supported for serienstream.to (got: {language})"
+            f"Only {', '.join(repr(l) for l in SUPPORTED_LANGUAGES)} are "
+            f"supported for serienstream.to (got: {language})"
         )
 
     def provider_link(self, language=None, provider=None):

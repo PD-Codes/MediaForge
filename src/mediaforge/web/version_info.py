@@ -48,32 +48,54 @@ def _get_dev_install_info():
         return False, None
 
 
-def _is_editable_install():
+def _is_source_build():
     """
-    True when mediaforge is installed in "editable" mode from a local
-    checkout (``pip install -e .`` / ``uv sync`` against a cloned repo),
-    as opposed to a normal wheel/sdist install from PyPI, a git ref, or a
-    PyInstaller build.
+    True when mediaforge was installed from a local directory that is
+    itself a git checkout -- covers both an editable install (``uv sync`` /
+    ``pip install -e .`` run directly against a cloned repo, e.g. this
+    project's own dev workflow) *and* a plain, non-editable
+    ``pip install /path/to/checkout`` of a freshly ``git clone``d repo
+    (e.g. a custom Docker/Portainer stack that clones ``main`` and pip
+    installs it into the container on every start, instead of using the
+    official ghcr.io image or a PyPI release).
 
-    This is intentionally separate from ``_get_dev_install_info()`` above:
-    that one only fires for ``pip install git+...@branch`` installs and
-    drives the self-update "dev channel" logic (it needs a real commit SHA
-    to compare against). A local editable install has no ``vcs_info`` at
-    all -- pip's ``direct_url.json`` instead carries a ``dir_info.editable``
-    flag -- so it's invisible to that check even though it's obviously "not
-    the packaged release". Kept as its own helper, used only for the
-    version string shown in the UI, so it can't affect update-check behavior.
+    pip writes a ``direct_url.json`` with a ``file://`` URL for *any* local
+    directory install, editable or not -- that alone doesn't distinguish
+    "source checkout" from "some other local folder", so this additionally
+    resolves the URL back to a path and checks for a ``.git`` subdirectory,
+    which only a real repo clone has.
+
+    Deliberately does NOT shell out to ``git rev-parse`` for a commit hash --
+    the git binary isn't guaranteed to be present in every environment this
+    might run in (e.g. a minimal container image), and the UI only needs a
+    plain "this is a source build, not a release" flag here. (See
+    ``_get_dev_install_info()`` above for the git-branch-VCS-install case,
+    which already provides a real commit hash when pip itself did the clone.)
+
+    The official Docker image is unaffected by this check: its Dockerfile
+    ``COPY``s only ``src/`` into the image, and ``.dockerignore`` excludes
+    ``.git`` from the build context -- so ``/app`` has no ``.git`` directory
+    there even though the package is, under the hood, still installed via
+    ``uv sync`` (editable, from a local ``file://`` path) just like a dev
+    checkout is.
     """
     try:
         import importlib.metadata as _meta
         import json as _json
+        from pathlib import Path as _Path
+        from urllib.parse import urlparse as _urlparse
+        from urllib.request import url2pathname as _url2pathname
 
         dist = _meta.distribution("mediaforge")
         direct_url_text = dist.read_text("direct_url.json")
         if not direct_url_text:
             return False
         data = _json.loads(direct_url_text)
-        return bool(data.get("dir_info", {}).get("editable"))
+        url = data.get("url", "")
+        if not url.startswith("file://"):
+            return False
+        source_dir = _Path(_url2pathname(_urlparse(url).path))
+        return (source_dir / ".git").is_dir()
     except Exception:
         return False
 
@@ -84,8 +106,9 @@ def _get_display_version():
 
     - Release install (``@v2.1.6``):        ``"2.1.6"``
     - Dev install    (``@main``):            ``"2.1.6-dev+abc1234"``
-    - Local editable install (``uv sync`` / ``pip install -e .`` on a
-      checked-out repo, e.g. this project's own dev setup): ``"2.1.6 DEV"``
+    - Source build (local git checkout, editable or not -- e.g. this
+      project's own dev setup, or a Docker/Portainer stack that clones the
+      repo and pip installs it at container start): ``"2.1.6 DEV"``
     """
     base = _get_version()
     if not base:
@@ -93,7 +116,7 @@ def _get_display_version():
     is_dev, commit_hash = _get_dev_install_info()
     if is_dev and commit_hash:
         return f"{base}-dev+{commit_hash[:7]}"
-    if _is_editable_install():
+    if _is_source_build():
         return f"{base} DEV"
     return base
 

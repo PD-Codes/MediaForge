@@ -4,7 +4,6 @@ Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 """
 
-from ...config import LANG_KEY_MAP
 from ...config import LANG_LABELS
 from ...config import MEDIAFORGE_CONFIG_DIR
 from ...config import check_redirect_available
@@ -20,6 +19,7 @@ from .browse import _browse_cache
 from .browse import _prefetch_cycle
 from ..db import get_custom_paths
 from ..db import get_setting
+from ...languages import label_for_pair
 from ..lang_folders import LANG_FOLDERS
 from ..queue_worker import _hanime_enabled
 from ..queue_worker import _is_filmpalast_url
@@ -1500,27 +1500,24 @@ def register_search_routes(app):
                     if p.get("name") and p.get("url")
                 }
             elif hasattr(pd, "_data"):
-                # AniWorld: ProviderData object
-                lang_tuple_to_label = {
-                    (audio.value, subtitles.value): LANG_LABELS.get(key)
-                    for key, (audio, subtitles) in LANG_KEY_MAP.items()
-                    if LANG_LABELS.get(key)
-                }
-                for (audio, subtitles), providers in pd._data.items():
-                    label = lang_tuple_to_label.get((audio.value, subtitles.value))
+                # AniWorld: ProviderData object wrapping the same
+                # (Audio, Subtitles) -> providers dict.
+                for key, providers in pd._data.items():
+                    label = label_for_pair(key)
                     if not label or (disable_eng_sub and label == "English Sub"):
                         continue
                     raw_by_label[label] = dict(providers)
             else:
-                # s.to: plain dict with (Audio, Subtitles) enum tuple keys
-                sto_label_map = {
-                    ("German", "None"): "German Dub",
-                    ("English", "None"): "English Dub",
-                }
-                for (audio, subtitles), providers in pd.items():
-                    label = sto_label_map.get((audio.value, subtitles.value))
-                    if label:
-                        raw_by_label[label] = dict(providers)
+                # s.to: plain dict with (Audio, Subtitles) enum tuple keys.
+                # label_for_pair() is the shared mapping from
+                # mediaforge.languages -- never re-declare a local copy here,
+                # that is exactly how "English Dub (German Sub)" once went
+                # missing and left the dropdown empty for Ger-Sub episodes.
+                for key, providers in pd.items():
+                    label = label_for_pair(key)
+                    if not label or (disable_eng_sub and label == "English Sub"):
+                        continue
+                    raw_by_label[label] = dict(providers)
 
             # Single unified live-availability check + mirror de-dup for every
             # label / site, movies and series alike (previously movies-only).

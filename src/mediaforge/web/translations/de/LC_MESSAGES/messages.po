@@ -5427,3 +5427,35 @@ msgstr ""
 
 msgid "Choose theme"
 msgstr "Theme auswählen"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Build your own module or theme"
+msgstr "Baue dein eigenes Modul oder Theme"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Open to everyone"
+msgstr "Offen für alle"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "The store is not ours alone: anyone can write a MediaForge module or theme pack and publish it here. Modules add providers, hosters, notification channels, pages and settings through a documented API; theme packs are plain CSS, no Python at all."
+msgstr "Der Store gehört nicht nur uns: Jeder kann ein MediaForge-Modul oder ein Theme Pack schreiben und hier veröffentlichen. Module ergänzen Provider, Hoster, Benachrichtigungskanäle, Seiten und Einstellungen über eine dokumentierte API; Theme Packs sind reines CSS, ganz ohne Python."
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Start from the ready-made examples — each folder is a working module with its own README explaining what it registers and why."
+msgstr "Am einfachsten geht es mit den fertigen Beispielen — jeder Ordner ist ein funktionierendes Modul mit eigener README, die erklärt, was es registriert und warum."
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Module examples"
+msgstr "Modul-Beispiele"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Theme examples"
+msgstr "Theme-Beispiele"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Developer docs"
+msgstr "Entwickler-Doku"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Publish on the developer portal"
+msgstr "Im Entwicklerportal veröffentlichen"

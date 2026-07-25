@@ -5008,3 +5008,35 @@ msgstr ""
 #: src/mediaforge/web/templates/extensions.html
 msgid "This build trusts no signing keys — nothing can be official."
 msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Build your own module or theme"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Open to everyone"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "The store is not ours alone: anyone can write a MediaForge module or theme pack and publish it here. Modules add providers, hosters, notification channels, pages and settings through a documented API; theme packs are plain CSS, no Python at all."
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Start from the ready-made examples — each folder is a working module with its own README explaining what it registers and why."
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Module examples"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Theme examples"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Developer docs"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Publish on the developer portal"
+msgstr ""

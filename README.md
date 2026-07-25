@@ -57,7 +57,7 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **Notifications** via Web Push, Telegram, Pushover, Discord or WhatsApp
 - **Encoding** (Stream Copy / H.264 / H.265, with NVENC, VAAPI, VideoToolbox) and **Anime4K** upscaling
 - **Full & Selective Backup** — export/import settings and user data as a password-protected file to back up or migrate a MediaForge install (admin only)
-- **Modules & Theme Packs** — extend MediaForge with store-installable modules, and reskin the whole UI (fonts, animations, checkboxes, inputs, calendar, images) with CSS-only theme packs from the same store; the theme, dark/light mode and accent colour are saved per account and follow the user to every browser and device
+- **Modules & Theme Packs** — extend MediaForge with store-installable modules, and reskin the whole UI (fonts, animations, checkboxes, inputs, calendar, images) with CSS-only theme packs from the same store; the theme, dark/light mode and accent colour are saved per account and follow the user to every browser and device. **Anyone can build one:** start from the worked examples in [`.examples/thirdparties/`](.examples/thirdparties) and [`.examples/themes/`](.examples/themes) (each with its own README), read the [Modules](https://github.com/PD-Codes/MediaForge/wiki/Modules) wiki page, and publish the result on the [developer portal](https://mediaforge.softarchiv.com) — the Module Store page links to all three
 - **Multi-user auth & OIDC SSO**, a full **REST API**, **Docker**-ready, and a UI in **English & German**
 
 → Full feature tour in the **[Wiki](https://github.com/PD-Codes/MediaForge/wiki/Web-UI)**.
