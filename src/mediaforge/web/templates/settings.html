@@ -315,6 +315,42 @@
         </label>
       </div>
       <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Adds a Media category to the statistics page with movie, series and episode counts based on your media library.') }}</div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Automatic library rescan') }}</div>
+          <div class="settings-row-desc">{{ _('A location is rescanned once its cached scan is older than this.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <select id="libraryRescanHours" class="mf-token-input" onchange="saveLibraryRescanHours()">
+            <option value="0">{{ _('Off') }}</option>
+            <option value="6">{{ _('Every 6 hours') }}</option>
+            <option value="12">{{ _('Every 12 hours') }}</option>
+            <option value="24">{{ _('Every 24 hours') }}</option>
+            <option value="48">{{ _('Every 2 days') }}</option>
+            <option value="168">{{ _('Every 7 days') }}</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Scan intensity') }}</div>
+          <div class="settings-row-desc">{{ _('Parallel ffprobe workers used to read resolution and codec from files whose name does not reveal them.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <select id="libraryProbeWorkers" class="mf-token-input" onchange="saveLibraryProbeWorkers()">
+            <option value="0">{{ _('Automatic (based on CPU cores)') }}</option>
+            <option value="2">2 — {{ _('gentle (network share)') }}</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="12">12</option>
+            <option value="16">16</option>
+            <option value="24">24</option>
+            <option value="32">32 — {{ _('fast NVMe') }}</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('More workers finish a scan sooner on fast local storage and will push the drive hard while it runs; on a network share they mostly multiply the timeouts. A scan always stops after two minutes of probing regardless, and continues where it left off a few minutes later.') }}</div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('MediaForge no longer rescans everything on every start — on a large library that costs minutes for a result that is almost always identical. While it runs, the file watcher picks up changes live; this interval covers what the watcher cannot, such as files added while MediaForge was closed. Locations that have never been scanned are always read in, and the refresh button on the Library page rescans on demand.') }}</div>
     </div>
 
 

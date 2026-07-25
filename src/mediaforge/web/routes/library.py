@@ -21,6 +21,7 @@ from flask import request
 import os
 import re
 import threading
+import time as _time
 from ...logger import get_logger
 
 
@@ -47,7 +48,54 @@ _LIB_EP_RE = re.compile(r"S(\d{1,4})E(\d{1,4})(?!\d)", re.IGNORECASE)
 # Season-less fallback ("... E013 ..."). Deliberately still requires at least
 # two digits: a bare "E1" appears inside far too many real titles.
 _LIB_FALLBACK_EP_RE = re.compile(r"\bE(\d{2,4})(?!\d)\b", re.IGNORECASE)
+# Serialises full scans -- see _lib_do_scan(). Declared here since the
+# original code, where it was defined and then never used.
 _lib_scan_lock = threading.Lock()
+
+# Probing bounds (see _lib_scan_base step 3).
+#
+# The *time* budget is the guarantee that a scan always returns; it holds
+# whether a probe takes 20 ms on an NVMe or runs into the timeout on a stalled
+# network share. A second cap on the number of files was tried and removed: it
+# bound long before the budget on fast storage and turned the first scan of a
+# large library into a many-day drip (45k files at 3000 per pass = 15 passes),
+# while adding nothing the budget does not already cover.
+_LIB_PROBE_TIMEOUT = 8            # seconds per file (30 is for remote streams)
+_LIB_PROBE_TIME_BUDGET = 120      # seconds spent probing per scan pass
+# Sanity ceiling only, so a pathological library cannot make the executor
+# iterate millions of no-op tasks after the budget is spent.
+_LIB_PROBE_MAX_PER_SCAN = 100000
+
+# ffprobe processes in flight. 0 = derive from the CPU count. ffprobe is short
+# and I/O bound, so more workers genuinely help on fast local storage; on a
+# network share they mostly multiply the timeouts, which is why this is
+# configurable rather than a fixed number.
+_LIB_PROBE_WORKERS_AUTO = 0
+_LIB_PROBE_WORKER_CHOICES = (0, 2, 4, 8, 12, 16, 24, 32)
+
+
+def _lib_probe_workers():
+    """Number of parallel ffprobe workers, from the setting or derived."""
+    raw = get_setting("library_probe_workers", str(_LIB_PROBE_WORKERS_AUTO))
+    try:
+        workers = int(raw)
+    except (TypeError, ValueError):
+        workers = _LIB_PROBE_WORKERS_AUTO
+    if workers not in _LIB_PROBE_WORKER_CHOICES:
+        workers = _LIB_PROBE_WORKERS_AUTO
+    if workers:
+        return workers
+    # Auto: ffprobe spends most of its life waiting on I/O, so oversubscribing
+    # the cores pays off — but not without limit, since each worker is a real
+    # process.
+    cores = os.cpu_count() or 4
+    return max(4, min(16, cores * 2))
+
+
+# path_keys whose last scan ran out of probe budget. The auto-rescan loop
+# treats them as due, so a large first scan converges in 15-minute steps
+# instead of waiting a full rescan interval between passes.
+_LIB_PROBE_PENDING = set()
 
 
 def _lib_get_resolution(file_path):
@@ -105,7 +153,7 @@ def _lib_resolve_base():
     return dl_base
 
 
-def _lib_scan_base(base, old_cache_lookup=None):
+def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None, only_loose=False):
     """Walk one library root and build its title/season/episode structure.
 
     Collects video files (top-level "loose movie" files plus per-title
@@ -113,7 +161,14 @@ def _lib_scan_base(base, old_cache_lookup=None):
     resolution/codec info (reusing `old_cache_lookup` or a fast filename
     match where possible, otherwise probing in parallel via ffprobe), and
     returns a sorted list of title dicts ready to be cached/served by
-    /api/library."""
+    /api/library.
+
+    Partial modes (used by the file-system watcher so a single new download
+    does not re-walk a 90k-file library):
+      * only_folder -- read just that one title folder below `base`.
+      * only_loose  -- read just the top-level "loose movie" files.
+    Both skip everything else, so the caller must merge the result into the
+    existing cache instead of replacing it."""
     from pathlib import Path
     from concurrent.futures import ThreadPoolExecutor
     lang_folder_set = set(_LIB_LANG_FOLDERS)
@@ -133,15 +188,25 @@ def _lib_scan_base(base, old_cache_lookup=None):
     # 1. Collect all video files
     all_videos = []
     
-    # Zero-th pass candidates
-    for f in base.iterdir():
-        if is_video_file(f):
-            if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
-                continue
-            all_videos.append(f)
+    # Zero-th pass candidates (skipped when only one title folder is wanted)
+    if not only_folder:
+        for f in base.iterdir():
+            if is_video_file(f):
+                if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
+                    continue
+                all_videos.append(f)
 
     # First and Second pass candidates
-    for folder in base.iterdir():
+    def title_folders():
+        """Top-level folders to look at -- narrowed down in partial mode."""
+        if only_loose:
+            return []
+        if only_folder:
+            one = base / only_folder
+            return [one] if one.is_dir() else []
+        return base.iterdir()
+
+    for folder in title_folders():
         if not folder.is_dir():
             continue
         name = folder.name
@@ -175,12 +240,19 @@ def _lib_scan_base(base, old_cache_lookup=None):
         except OSError:
             fsize = 0
         
-        # Check old cache lookup
+        # Reuse what the previous scan already worked out for this exact file.
+        #
+        # The condition used to require a video_codec, which meant every file
+        # whose probe had come back empty was probed again on *every* scan --
+        # on a large library that is thousands of ffprobe calls per scan, for
+        # a result that is already known to be nothing. "probed" marks a file
+        # as done regardless of whether anything useful came out.
         cached = old_cache_lookup.get((str(f), fsize)) if old_cache_lookup else None
-        if cached and cached.get("video_codec"):
+        if cached and (cached.get("video_codec") or cached.get("resolution") or cached.get("probed")):
             resolved_media_data[f] = cached
             continue
-            
+
+
         # Check filename keywords/regex
         fname = f.name.lower()
         res_fast = None
@@ -208,14 +280,30 @@ def _lib_scan_base(base, old_cache_lookup=None):
         else:
             probe_candidates.append(f)
 
-    # 3. Probe candidates in parallel
+    # 3. Probe candidates in parallel — bounded in both count and wall-clock.
+    #
+    # Probing is the only unbounded part of a scan: a file whose name carries
+    # no resolution has to be opened with ffprobe. On a large library on a slow
+    # or flaky network share that is tens of thousands of calls, each of which
+    # could sit at the ffprobe timeout, which is what made a scan look like it
+    # had hung. It is now capped per scan and given a total time budget; what
+    # does not fit is simply resolved by the next scan, and because results are
+    # sticky (see "probed" above) every scan makes real progress.
     if probe_candidates:
-        logger.info("[LibraryScan] Probing %d files in parallel...", len(probe_candidates))
-        
+        if len(probe_candidates) > _LIB_PROBE_MAX_PER_SCAN:
+            probe_candidates = probe_candidates[:_LIB_PROBE_MAX_PER_SCAN]
+        workers = _lib_probe_workers()
+        logger.info("[LibraryScan] Probing %d file(s) with %d worker(s)...",
+                    len(probe_candidates), workers)
+        deadline = _time.monotonic() + _LIB_PROBE_TIME_BUDGET
+        started = _time.monotonic()
+
         def probe_one(file_path):
+            if _time.monotonic() > deadline:
+                return None          # budget spent — leave it for the next scan
             try:
                 from ..transcoder import probe_file
-                info = probe_file(file_path)
+                info = probe_file(file_path, timeout=_LIB_PROBE_TIMEOUT)
                 if info:
                     res = None
                     if info.get("height"):
@@ -245,15 +333,36 @@ def _lib_scan_base(base, old_cache_lookup=None):
                 pass
             return None
 
-        with ThreadPoolExecutor(max_workers=16) as executor:
+        probed_ok = 0
+        with ThreadPoolExecutor(max_workers=workers) as executor:
             results = executor.map(probe_one, probe_candidates)
             for f, res_dict in zip(probe_candidates, results):
                 if res_dict:
-                    resolved_media_data[f] = res_dict
+                    resolved_media_data[f] = dict(res_dict, probed=True)
+                    probed_ok += 1
+                elif _time.monotonic() <= deadline:
+                    # Genuinely nothing to learn from this file (corrupt, or
+                    # ffprobe cannot read it). Remember that, so it is not
+                    # retried on every future scan. Files skipped because the
+                    # budget ran out are deliberately *not* marked.
+                    resolved_media_data[f] = {
+                        "resolution": None, "video_codec": None,
+                        "audio_codec": None, "probed": True,
+                    }
+        if _time.monotonic() > deadline:
+            if progress is not None:
+                progress["probe_incomplete"] = True
+            logger.warning(
+                "[LibraryScan] Probe time budget of %ds exhausted after %d file(s); "
+                "the remainder is picked up by the follow-up scan",
+                _LIB_PROBE_TIME_BUDGET, probed_ok)
+        else:
+            logger.info("[LibraryScan] Probed %d file(s) in %.1fs",
+                        probed_ok, _time.monotonic() - started)
 
     # 4. Perform the actual build of titles/seasons structure using pre-resolved resolutions
     # Zero-th pass: video files sitting DIRECTLY in base (no title subfolder).
-    for f in base.iterdir():
+    for f in (base.iterdir() if not only_folder else []):
         if not is_video_file(f):
             continue
         if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
@@ -280,7 +389,7 @@ def _lib_scan_base(base, old_cache_lookup=None):
             entry["total_size"] += fsize
             entry["is_movie"] = True
 
-    for folder in base.iterdir():
+    for folder in title_folders():
         if not folder.is_dir():
             continue
         name = folder.name
@@ -377,6 +486,224 @@ def _lib_active_path_keys():
     return {_lib_path_key(cp_id) for (_label, cp_id, _base) in _lib_build_scan_targets()}
 
 
+# Automatic rescan interval, in hours. 0 disables it entirely; anything else
+# means "rescan a location whose cache is older than this". Read live from the
+# DB on every check, so changing it in Settings takes effect without a restart.
+_LIB_RESCAN_DEFAULT_HOURS = 24
+_LIB_RESCAN_CHOICES = (0, 6, 12, 24, 48, 168)
+# How often the background loop asks "is anything stale?". Cheap (one DB read),
+# and well below the smallest selectable interval.
+_LIB_RESCAN_CHECK_SECONDS = 15 * 60
+
+
+def _lib_rescan_hours():
+    """The configured rescan interval in hours, clamped to a known choice."""
+    raw = get_setting("library_rescan_hours", str(_LIB_RESCAN_DEFAULT_HOURS))
+    try:
+        hours = int(raw)
+    except (TypeError, ValueError):
+        return _LIB_RESCAN_DEFAULT_HOURS
+    return hours if hours in _LIB_RESCAN_CHOICES else _LIB_RESCAN_DEFAULT_HOURS
+
+
+def _lib_stale_targets(targets, hours=None):
+    """Targets that need scanning: never scanned, or their cache is too old.
+
+    A location with no cache at all is *always* returned, whatever the
+    interval — otherwise a fresh install or a newly added custom path would
+    show an empty Library page until the user pressed refresh.
+    """
+    if hours is None:
+        hours = _lib_rescan_hours()
+    try:
+        cached = get_all_library_cache()
+    except Exception:
+        logger.exception("[LibraryScan] Could not read the library cache")
+        return list(targets)
+
+    cutoff = _time.time() - hours * 3600 if hours else None
+    stale = []
+    for (label, cp_id, base_path) in targets:
+        path_key = _lib_path_key(cp_id)
+        entry = cached.get(path_key) or {}
+        if not entry.get("data"):
+            stale.append((label, cp_id, base_path))
+            continue
+        if path_key in _LIB_PROBE_PENDING:
+            # Last pass ran out of probe budget — finish the job now instead of
+            # dripping through a huge library one rescan interval at a time.
+            stale.append((label, cp_id, base_path))
+            continue
+        if cutoff is None:
+            continue                      # interval disabled: only fill gaps
+        try:
+            scanned_at = float(entry.get("scanned_at") or 0)
+        except (TypeError, ValueError):
+            scanned_at = 0
+        if scanned_at < cutoff:
+            stale.append((label, cp_id, base_path))
+    return stale
+
+
+def _lib_start_auto_rescan(build_targets, lang_sep_getter):
+    """Start the background loop that rescans locations as their cache ages.
+
+    Replaces the unconditional full scan that used to run at every startup:
+    that cost minutes on a large library for a result that is almost always
+    identical, while the file watcher already catches changes live. What this
+    loop covers is what the watcher cannot -- files that appeared while
+    MediaForge was not running, or on a network share whose events never reach
+    the watcher at all.
+
+    Returns the thread (daemon, so it never keeps the process alive).
+    """
+    def _loop():
+        while True:
+            try:
+                targets = build_targets()
+                stale = _lib_stale_targets(targets)
+                if stale:
+                    logger.info("[LibraryScan] Auto-rescan: %d location(s) due", len(stale))
+                    _lib_do_scan(stale, lang_sep_getter())
+            except Exception:
+                # Never let a bad scan kill the loop -- the next tick retries.
+                logger.exception("[LibraryScan] Auto-rescan tick failed")
+            _time.sleep(_LIB_RESCAN_CHECK_SECONDS)
+
+    t = threading.Thread(target=_loop, daemon=True, name="library-auto-rescan")
+    t.start()
+    return t
+
+
+def _lib_title_folders_for(base, changed_paths):
+    """Map changed file paths to the title folders they belong to.
+
+    A library root holds one folder per title, plus loose files directly in the
+    root. For a change inside "…/Serie X/Staffel 1/ep.mkv" the affected unit is
+    "Serie X"; for a loose file it is the file itself. Returns
+    ``(folder_names, loose_files, outside)`` where `outside` is True when a path
+    could not be attributed and the caller should fall back to a full scan.
+    """
+    from pathlib import Path
+    base = Path(base).resolve()
+    folders, loose = set(), set()
+    outside = False
+    for raw in changed_paths or ():
+        try:
+            rel = Path(raw).resolve().relative_to(base)
+        except (ValueError, OSError):
+            outside = True
+            continue
+        parts = rel.parts
+        if not parts:
+            continue
+        if len(parts) == 1:
+            loose.add(parts[0])          # video file sitting directly in the root
+        else:
+            folders.add(parts[0])
+    return folders, loose, outside
+
+
+def _lib_scan_title_folder(base, folder_name, old_cache_lookup=None, progress=None):
+    """Scan exactly one title folder and return its title dict, or None.
+
+    Reuses `_lib_scan_base` against a throwaway root containing just that one
+    folder -- rather than duplicating the season/episode logic, which is the
+    part most likely to drift out of sync.
+    """
+    from pathlib import Path
+    target = Path(base) / folder_name
+    if not target.is_dir():
+        return None
+    titles = _lib_scan_base(Path(base), old_cache_lookup, progress, only_folder=folder_name)
+    for t in titles:
+        if t.get("folder") == folder_name:
+            return t
+    return None
+
+
+def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
+    """Update only the parts of a cached scan that actually changed.
+
+    This is what the file watcher calls. Before it existed, a single finished
+    download re-walked the whole library root -- `iterdir` + `rglob` + `stat`
+    over every file, repeated after every download, which on a large library
+    kept the disk busy for no reason at all.
+
+    Returns True when the cache was updated, False when the caller should fall
+    back to a full scan (nothing attributable, language separation, or no
+    usable cache yet).
+    """
+    from pathlib import Path
+    if lang_sep:
+        # With language separation a file's title folder sits under a language
+        # folder, and a title can exist in several of them. Not worth the extra
+        # bookkeeping for the rarer setup -- fall back to a full scan.
+        return False
+
+    cache = get_all_library_cache().get(path_key) or {}
+    data = cache.get("data") or {}
+    if data.get("lang_folders") or not isinstance(data.get("titles"), list):
+        return False
+
+    folders, loose, outside = _lib_title_folders_for(base, changed_paths)
+    if outside or (not folders and not loose):
+        return False
+
+    # Loose files in the root are keyed by file stem, so the whole root's
+    # top level has to be re-read for those; that is cheap (one iterdir).
+    if loose:
+        folders = folders | {None}
+
+    old_cache_lookup = {}
+    for t in data["titles"]:
+        for eps in (t.get("seasons") or {}).values():
+            for ep in eps:
+                if ep.get("path"):
+                    old_cache_lookup[(ep["path"], ep.get("size"))] = {
+                        "resolution": ep.get("resolution"),
+                        "video_codec": ep.get("video_codec"),
+                        "audio_codec": ep.get("audio_codec"),
+                        "probed": True,
+                    }
+
+    by_folder = {t.get("folder"): t for t in data["titles"]}
+    progress = {}
+    touched = 0
+
+    for folder_name in sorted(f for f in folders if f is not None):
+        fresh = _lib_scan_title_folder(base, folder_name, old_cache_lookup, progress)
+        if fresh is None:
+            by_folder.pop(folder_name, None)      # folder gone -> drop the title
+        else:
+            by_folder[folder_name] = fresh
+        touched += 1
+
+    if None in folders:
+        # Re-read the loose top-level files and replace exactly those titles.
+        loose_titles = _lib_scan_base(Path(base), old_cache_lookup, progress, only_loose=True)
+        loose_names = {t["folder"] for t in loose_titles}
+        for name, t in list(by_folder.items()):
+            # A loose title is a single movie file; drop the stale ones whose
+            # file has disappeared.
+            if t.get("is_movie") and name not in loose_names and name in loose:
+                by_folder.pop(name, None)
+        for t in loose_titles:
+            by_folder[t["folder"]] = t
+        touched += 1
+
+    titles = sorted(by_folder.values(), key=lambda x: (x.get("folder") or "").lower())
+    set_library_cache(path_key, {
+        "label": label, "custom_path_id": cp_id,
+        "lang_folders": None, "titles": titles,
+    })
+    if progress.get("probe_incomplete"):
+        _LIB_PROBE_PENDING.add(path_key)
+    logger.info("[LibraryScan] Partial update of %s: %d folder(s), %d title(s) cached",
+                label, touched, len(titles))
+    return True
+
+
 def _lib_build_scan_targets():
     """Build the list of (label, custom_path_id, base_path) scan targets:
     the default download root plus every configured custom path."""
@@ -392,7 +719,33 @@ def _lib_build_scan_targets():
 
 
 def _lib_do_scan(targets, lang_sep):
-    """Perform a full scan and store results in the cache. Runs in background thread."""
+    """Perform a full scan and store results in the cache. Runs in background thread.
+
+    Serialised by `_lib_scan_lock`. That lock existed but was never acquired,
+    so a startup scan, the file watcher, POST /api/library/refresh and the
+    Statistics page's initial trigger could all walk the same tree at the same
+    time, each spawning its own pool of ffprobe processes. On a small library
+    that is merely wasteful; on a large one it is a thread and I/O storm that
+    looks exactly like a hang.
+
+    A scan that arrives while another is running is *skipped*, not queued: it
+    would have produced the same result as the one already in flight, and
+    queueing them is how a burst of watcher events turns into a scan backlog
+    that never drains.
+    """
+    from pathlib import Path
+
+    if not _lib_scan_lock.acquire(blocking=False):
+        logger.info("[LibraryScan] A scan is already running — skipping this request")
+        return
+    try:
+        _lib_do_scan_locked(targets, lang_sep)
+    finally:
+        _lib_scan_lock.release()
+
+
+def _lib_do_scan_locked(targets, lang_sep):
+    """The actual scan. Only ever called with `_lib_scan_lock` held."""
     from pathlib import Path
     
     # Build lookup from old cache to optimize scans
@@ -423,12 +776,30 @@ def _lib_do_scan(targets, lang_sep):
 
     for (label, cp_id, base_path) in targets:
         path_key = "default" if cp_id is None else str(cp_id)
+
+        # An unreachable location must not overwrite its cache with "empty".
+        # _lib_scan_base() returns [] for a path it cannot read, and caching
+        # that would (a) blank the Library page for a NAS that happened to be
+        # offline at startup and (b) refresh scanned_at, so the auto-rescan
+        # would not look at it again for a whole interval. Leaving both alone
+        # keeps the last good scan visible and has the next tick retry.
+        try:
+            reachable = Path(base_path).is_dir()
+        except OSError:
+            reachable = False
+        if not reachable:
+            logger.warning("[LibraryScan] %s (%s) is not reachable — keeping the previous scan",
+                           base_path, label)
+            set_library_scanning(path_key, False)
+            continue
+
         set_library_scanning(path_key, True)
+        progress = {}
         try:
             if lang_sep:
                 loc_lang_folders = []
                 for lf in _LIB_LANG_FOLDERS:
-                    lf_titles = _lib_scan_base(base_path / lf, old_cache_lookup)
+                    lf_titles = _lib_scan_base(base_path / lf, old_cache_lookup, progress)
                     if lf_titles:
                         loc_lang_folders.append({"name": lf, "titles": lf_titles})
                 set_library_cache(path_key, {
@@ -436,23 +807,33 @@ def _lib_do_scan(targets, lang_sep):
                     "lang_folders": loc_lang_folders, "titles": None,
                 })
             else:
-                loc_titles = _lib_scan_base(base_path, old_cache_lookup)
+                loc_titles = _lib_scan_base(base_path, old_cache_lookup, progress)
                 set_library_cache(path_key, {
                     "label": label, "custom_path_id": cp_id,
                     "lang_folders": None, "titles": loc_titles,
                 })
         except Exception:
+            logger.exception("[LibraryScan] Scan of %s (%s) failed", base_path, label)
             set_library_scanning(path_key, False)
         else:
-            # is_scanning is already set to 0 by set_library_cache
-            pass
+            # is_scanning is already set to 0 by set_library_cache.
+            # Remember whether this location still has files left to probe, so
+            # the auto-rescan loop comes back in minutes rather than waiting a
+            # whole rescan interval for the next pass.
+            if progress.get("probe_incomplete"):
+                _LIB_PROBE_PENDING.add(path_key)
+            else:
+                _LIB_PROBE_PENDING.discard(path_key)
 
     # Drop cache rows for targets that no longer exist. Without this a deleted
     # custom path keeps its last scan forever, and every consumer that reads
     # the whole cache (Statistics, duplicate check) counts those files a
     # second time -- which shows up as "everything is a duplicate".
     try:
-        removed = prune_library_cache({_lib_path_key(cp_id) for (_l, cp_id, _b) in targets})
+        # Keyed off the *configured* targets, not the ones just scanned: an
+        # unreachable location is still configured and must keep its cache.
+        removed = prune_library_cache({_lib_path_key(cp_id)
+                                       for (_l, cp_id, _b) in _lib_build_scan_targets()})
         if removed:
             logger.info("[LibraryScan] Removed %d stale library cache entr%s",
                         removed, "y" if removed == 1 else "ies")
@@ -473,16 +854,29 @@ def _get_lib_watcher():
     return get_watcher()
 
 
-def _lib_watcher_scan_callback(path_key: str):
-    """Called by watchdog when files change in a watched folder."""
-    # Find the matching target and rescan only that one
+def _lib_watcher_scan_callback(path_key: str, changed_paths=None):
+    """Called by watchdog when files change in a watched folder.
+
+    Tries a partial update first -- only the title folders the changed paths
+    belong to are re-read. A full re-walk of the root happens only when the
+    change cannot be attributed (see `_lib_apply_partial`), which keeps a
+    single finished download from touching every file in the library.
+    """
     targets = _lib_build_scan_targets()
     lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
     for (label, cp_id, base_path) in targets:
         pk = "default" if cp_id is None else str(cp_id)
-        if pk == path_key:
-            _lib_do_scan([(label, cp_id, base_path)], lang_sep)
-            break
+        if pk != path_key:
+            continue
+        if changed_paths:
+            try:
+                if _lib_apply_partial(path_key, label, cp_id, base_path,
+                                      changed_paths, lang_sep):
+                    return
+            except Exception:
+                logger.exception("[LibraryScan] Partial update failed, falling back")
+        _lib_do_scan([(label, cp_id, base_path)], lang_sep)
+        return
 
 
 def _lib_assert_within_root(path, root):

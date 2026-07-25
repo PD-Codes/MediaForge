@@ -35,15 +35,23 @@ _VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".webm", ".flv", ".mov", ".wmv", ".m4v", 
 if WATCHDOG_AVAILABLE:
 
     class _LibraryEventHandler(FileSystemEventHandler):
-        """Debounces rapid burst events and calls scan_callback(path_key)."""
+        """Debounces rapid burst events and calls scan_callback(path_key, changed_paths)."""
 
-        def __init__(self, path_key: str, scan_callback: Callable[[str], None], debounce: float = 4.0):
+        def __init__(self, path_key: str, scan_callback: Callable[[str, set], None],
+                     debounce: float = 4.0):
             super().__init__()
             self.path_key = path_key
             self.scan_callback = scan_callback
             self.debounce = debounce
             self._timer: Optional[threading.Timer] = None
             self._lock = threading.Lock()
+            # Paths seen since the last fire. They used to be thrown away, so
+            # the callback only knew *that* something changed and had to
+            # re-walk the entire library root -- on a large library that is
+            # tens of thousands of stat() calls for one new episode, repeated
+            # after every finished download. Collecting them lets the callback
+            # rescan just the affected title folders.
+            self._pending: set = set()
 
         def _is_relevant(self, path: str) -> bool:
             p = Path(path)
@@ -57,8 +65,11 @@ if WATCHDOG_AVAILABLE:
                     return False
             return True
 
-        def _schedule_scan(self) -> None:
+        def _schedule_scan(self, *paths: str) -> None:
             with self._lock:
+                for p in paths:
+                    if p:
+                        self._pending.add(p)
                 if self._timer and self._timer.is_alive():
                     self._timer.cancel()
                 self._timer = threading.Timer(self.debounce, self._fire)
@@ -66,8 +77,10 @@ if WATCHDOG_AVAILABLE:
                 self._timer.start()
 
         def _fire(self) -> None:
+            with self._lock:
+                changed, self._pending = self._pending, set()
             try:
-                self.scan_callback(self.path_key)
+                self.scan_callback(self.path_key, changed)
             except Exception:
                 logger.exception("Library scan callback failed for path_key=%s", self.path_key)
 
@@ -75,17 +88,17 @@ if WATCHDOG_AVAILABLE:
         def on_created(self, event):
             if not event.is_directory and self._is_relevant(event.src_path):
                 logger.debug("Library: new file detected: %s", event.src_path)
-                self._schedule_scan()
+                self._schedule_scan(event.src_path)
 
         def on_deleted(self, event):
             if self._is_relevant(event.src_path):
                 logger.debug("Library: file deleted: %s", event.src_path)
-                self._schedule_scan()
+                self._schedule_scan(event.src_path)
 
         def on_moved(self, event):
             if self._is_relevant(event.src_path) or self._is_relevant(event.dest_path):
                 logger.debug("Library: file moved: %s -> %s", event.src_path, event.dest_path)
-                self._schedule_scan()
+                self._schedule_scan(event.src_path, event.dest_path)
 
 
 # ------------------------------------------------------------------ #
@@ -95,6 +108,10 @@ if WATCHDOG_AVAILABLE:
 class LibraryWatcher:
     """
     Watches one or more base directories and triggers targeted rescans.
+
+    The callback receives ``(path_key, changed_paths)``; `changed_paths` is the
+    set of files seen during the debounce window, so the caller can rescan only
+    the title folders those files live in.
 
     Usage::
 
@@ -112,10 +129,11 @@ class LibraryWatcher:
 
     # ---- public API ----
 
-    def start(self, targets: list[tuple], scan_callback: Callable[[str], None]) -> None:
+    def start(self, targets: list[tuple], scan_callback: Callable[[str, set], None]) -> None:
         """
         targets: list of (label, custom_path_id, base_path) — same format as _lib_build_scan_targets()
-        scan_callback(path_key): called when a change is detected for path_key
+        scan_callback(path_key, changed_paths): called when a change is detected;
+            changed_paths holds the files seen during the debounce window
         """
         if not WATCHDOG_AVAILABLE:
             return
@@ -149,7 +167,7 @@ class LibraryWatcher:
         with self._lock:
             self._stop_observer()
 
-    def restart(self, targets: list[tuple], scan_callback: Callable[[str], None]) -> None:
+    def restart(self, targets: list[tuple], scan_callback: Callable[[str, set], None]) -> None:
         """Stop and restart with updated targets (e.g., after settings change)."""
         self.stop()
         self.start(targets, scan_callback)

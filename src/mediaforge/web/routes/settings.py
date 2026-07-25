@@ -271,6 +271,8 @@ def register_settings_routes(app):
                 "debug_mode":                debug_mode,
                 "debug_forced":              debug_forced,
                 "media_stats_enabled":       media_stats_enabled,
+                "library_rescan_hours":      get_setting("library_rescan_hours", "24"),
+                "library_probe_workers":     get_setting("library_probe_workers", "0"),
                 "web_console":               web_console,
                 "tray_mode":                 tray_mode,
                 "autostart_enabled":         autostart_enabled,
@@ -1016,6 +1018,28 @@ def register_settings_routes(app):
         if "media_stats_enabled" in data:
             val = "1" if str(data["media_stats_enabled"]).lower() in ("true", "1") else "0"
             set_setting("media_stats_enabled", val)
+        if "library_rescan_hours" in data:
+            # Whitelisted: the value drives a background loop, so an arbitrary
+            # number here would be a foot-gun (0.001 hours = a permanent scan).
+            from .library import _LIB_RESCAN_CHOICES, _LIB_RESCAN_DEFAULT_HOURS
+            try:
+                hours = int(data["library_rescan_hours"])
+            except (TypeError, ValueError):
+                hours = _LIB_RESCAN_DEFAULT_HOURS
+            if hours not in _LIB_RESCAN_CHOICES:
+                hours = _LIB_RESCAN_DEFAULT_HOURS
+            set_setting("library_rescan_hours", str(hours))
+        if "library_probe_workers" in data:
+            # Whitelisted for the same reason as the interval: the value sizes
+            # a thread pool that spawns one ffprobe process per worker.
+            from .library import _LIB_PROBE_WORKER_CHOICES, _LIB_PROBE_WORKERS_AUTO
+            try:
+                workers = int(data["library_probe_workers"])
+            except (TypeError, ValueError):
+                workers = _LIB_PROBE_WORKERS_AUTO
+            if workers not in _LIB_PROBE_WORKER_CHOICES:
+                workers = _LIB_PROBE_WORKERS_AUTO
+            set_setting("library_probe_workers", str(workers))
             os.environ["MEDIAFORGE_MEDIA_STATS_ENABLED"] = val
         if "web_console" in data:
             val = "1" if str(data["web_console"]).lower() in ("true", "1") else "0"

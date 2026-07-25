@@ -10,6 +10,8 @@ from ..db import delete_download_history_entries
 from ..db import delete_download_history_entry
 from ..db import get_download_history
 from ..db import get_download_history_entry
+from ..db import get_download_history_facets
+from ..db import get_download_history_summary
 from ..language_groups import language_display
 from ..queue_worker import _ensure_queue_worker
 from flask import jsonify
@@ -29,12 +31,17 @@ def _history_since_from_range(rng):
 
 
 def _history_filters():
-    """Read the shared search/status/source/range query params used by the history list and export/clear endpoints."""
-    search = (request.args.get("search") or "").strip() or None
-    status = (request.args.get("status") or "all").strip()
-    source = (request.args.get("source") or "all").strip()
-    since = _history_since_from_range(request.args.get("range"))
-    return search, status, source, since
+    """Read the shared filter query params used by the list, summary,
+    export and clear endpoints. Returns a kwargs dict so adding a filter
+    never means touching four call sites again."""
+    return {
+        "search": (request.args.get("search") or "").strip() or None,
+        "status": (request.args.get("status") or "all").strip(),
+        "source": (request.args.get("source") or "all").strip(),
+        "provider": (request.args.get("provider") or "all").strip(),
+        "language": (request.args.get("language") or "all").strip(),
+        "since": _history_since_from_range(request.args.get("range")),
+    }
 
 
 def register_history_routes(app):
@@ -61,17 +68,53 @@ def register_history_routes(app):
             offset = max(0, int(request.args.get("offset", 0)))
         except (TypeError, ValueError):
             offset = 0
-        search, status, source, since = _history_filters()
+        sort = (request.args.get("sort") or "date").strip()
+        direction = (request.args.get("dir") or "desc").strip()
         entries, total = get_download_history(
             username=None if is_admin else username,
-            search=search, status=status, source=source, since=since,
-            limit=limit, offset=offset,
+            limit=limit, offset=offset, sort=sort, direction=direction,
+            **_history_filters(),
         )
         # Entries whose episode never got a resolved language (a cancelled
         # remainder, say) still hold the "group:<id>" reference the retry needs.
         for entry in entries:
             entry["language_label"] = language_display(entry.get("language"))
-        return jsonify({"entries": entries, "total": total, "limit": limit, "offset": offset})
+        return jsonify({
+            "entries": entries, "total": total, "limit": limit, "offset": offset,
+            "sort": sort, "dir": "asc" if direction.lower() == "asc" else "desc",
+            "pages": max(1, -(-total // limit)),
+            "page": (offset // limit) + 1,
+        })
+    @app.route("/api/history/summary")
+    def api_history_summary():
+        """Return aggregate figures + chart series for the active filters.
+
+        GET /api/history/summary. Called from history.js's loadSummary().
+        Separate from the list endpoint so paging through the table does not
+        recompute the aggregates, and so the summary describes the whole
+        filtered set rather than the visible page."""
+        username, is_admin = _get_current_user_info()
+        try:
+            days = int(request.args.get("days", 30))
+        except (TypeError, ValueError):
+            days = 30
+        summary = get_download_history_summary(
+            username=None if is_admin else username, days=days, **_history_filters()
+        )
+        for row in summary.get("by_language", []):
+            row["label"] = language_display(row.get("name")) or row.get("name")
+        return jsonify(summary)
+    @app.route("/api/history/facets")
+    def api_history_facets():
+        """Providers and languages that actually occur in the history, for the
+        filter dropdowns. GET /api/history/facets. Called once on page load
+        from history.js's loadFacets()."""
+        username, is_admin = _get_current_user_info()
+        facets = get_download_history_facets(username=None if is_admin else username)
+        facets["language_labels"] = {
+            code: (language_display(code) or code) for code in facets.get("languages", [])
+        }
+        return jsonify(facets)
     @app.route("/api/history/<int:entry_id>/retry", methods=["POST"])
     def api_history_retry(entry_id):
         """Re-queue a single failed or cancelled history entry's episode.
@@ -126,12 +169,10 @@ def register_history_routes(app):
         """
         import csv as _csv, io as _io
         username, is_admin = _get_current_user_info()
-        search, status, source, since = _history_filters()
         fmt = (request.args.get("format") or "csv").strip().lower()
         entries, _ = get_download_history(
             username=None if is_admin else username,
-            search=search, status=status, source=source, since=since,
-            limit=1000000, offset=0,
+            limit=1000000, offset=0, **_history_filters(),
         )
         from flask import Response
         if fmt == "json":
@@ -187,12 +228,13 @@ def register_history_routes(app):
         # Honour active filters so the user can clear just the current view
         # (e.g. only failed, or only the last 7 days). No filters = clear all.
         data = request.get_json(silent=True) or {}
-        search = (data.get("search") or "").strip() or None
-        status = (data.get("status") or "all").strip()
-        source = (data.get("source") or "all").strip()
-        since = _history_since_from_range(data.get("range"))
         deleted = clear_download_history(
             username=None if is_admin else username,
-            search=search, status=status, source=source, since=since,
+            search=(data.get("search") or "").strip() or None,
+            status=(data.get("status") or "all").strip(),
+            source=(data.get("source") or "all").strip(),
+            provider=(data.get("provider") or "all").strip(),
+            language=(data.get("language") or "all").strip(),
+            since=_history_since_from_range(data.get("range")),
         )
         return jsonify({"ok": True, "deleted": deleted})

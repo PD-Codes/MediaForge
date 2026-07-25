@@ -1938,8 +1938,9 @@ def get_download_history_meta_for_path(target_path: str):
         conn.close()
 
 
-def _history_where(username=None, search=None, status=None, source=None, since=None):
-    """Build a (where_sql, params) pair shared by list/export/clear."""
+def _history_where(username=None, search=None, status=None, source=None, since=None,
+                   provider=None, language=None):
+    """Build a (where_sql, params) pair shared by list/summary/export/clear."""
     where = []
     params = []
     if username:
@@ -1954,28 +1955,177 @@ def _history_where(username=None, search=None, status=None, source=None, since=N
     if since:
         where.append("COALESCE(finished_at, created_at) >= ?")
         params.append(since)
+    if provider and provider != "all":
+        where.append("provider = ?")
+        params.append(provider)
+    if language and language != "all":
+        where.append("language = ?")
+        params.append(language)
     if search:
-        where.append("title LIKE ?")
-        params.append("%" + search + "%")
+        # Escape the LIKE wildcards so a title containing % or _ searches for
+        # those characters instead of matching everything.
+        esc = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        where.append("title LIKE ? ESCAPE '\\'")
+        params.append("%" + esc + "%")
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     return where_sql, params
 
 
+# Sort key -> ORDER BY expression. A whitelist, never string interpolation of
+# the raw parameter: the value comes straight from a query string.
+HISTORY_SORT_COLUMNS = {
+    "date": "COALESCE(finished_at, created_at)",
+    "title": "title COLLATE NOCASE",
+    "size": "COALESCE(size_mb, -1)",
+    "duration": "COALESCE(duration_sec, -1)",
+    "speed": "COALESCE(avg_speed_mbps, -1)",
+    "status": "status",
+}
+
+
 def get_download_history(username=None, search=None, status=None, source=None,
-                         since=None, limit=50, offset=0):
+                         since=None, limit=50, offset=0,
+                         provider=None, language=None, sort="date", direction="desc"):
     """Return (entries, total). If *username* is given, scope to that user."""
     conn = get_db()
     try:
-        where_sql, params = _history_where(username, search, status, source, since)
+        where_sql, params = _history_where(username, search, status, source, since,
+                                           provider, language)
         total = conn.execute(
             "SELECT COUNT(*) AS cnt FROM download_history" + where_sql, params
         ).fetchone()["cnt"]
+        order_expr = HISTORY_SORT_COLUMNS.get(sort, HISTORY_SORT_COLUMNS["date"])
+        order_dir = "ASC" if str(direction).lower() == "asc" else "DESC"
         rows = conn.execute(
             "SELECT * FROM download_history" + where_sql +
-            " ORDER BY COALESCE(finished_at, created_at) DESC, id DESC LIMIT ? OFFSET ?",
+            f" ORDER BY {order_expr} {order_dir}, id DESC LIMIT ? OFFSET ?",
             params + [int(limit), int(offset)],
         ).fetchall()
         return [dict(r) for r in rows], total
+    finally:
+        conn.close()
+
+
+def get_download_history_summary(username=None, search=None, status=None, source=None,
+                                 since=None, provider=None, language=None, days=30):
+    """Aggregate the *filtered* history into chart-ready figures.
+
+    Everything is grouped in SQLite rather than in Python, so the cost tracks
+    the number of result rows, not the size of the history table (which the
+    Statistics rework showed can be six figures).
+
+    Returns totals, a per-day series over the last `days` days, and the
+    breakdown by status / provider / source / language.
+    """
+    days = max(1, min(365, int(days or 30)))
+    conn = get_db()
+    try:
+        where_sql, params = _history_where(username, search, status, source, since,
+                                           provider, language)
+
+        tot = conn.execute(
+            "SELECT COUNT(*) AS cnt, "
+            "       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS ok_cnt, "
+            "       SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_cnt, "
+            "       SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_cnt, "
+            "       SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) AS skipped_cnt, "
+            "       COALESCE(SUM(size_mb), 0) AS size_mb, "
+            "       AVG(avg_speed_mbps) AS spd, MAX(avg_speed_mbps) AS max_spd, "
+            "       COALESCE(SUM(duration_sec), 0) AS dur, "
+            "       COUNT(DISTINCT title) AS titles "
+            "FROM download_history" + where_sql, params
+        ).fetchone()
+        cnt = tot["cnt"] or 0
+        ok = tot["ok_cnt"] or 0
+
+        # Per-day series. localtime() so "per day" matches the user's calendar.
+        day_where = where_sql + (" AND " if where_sql else " WHERE ") + \
+            "COALESCE(finished_at, created_at) IS NOT NULL " \
+            "AND date(COALESCE(finished_at, created_at), 'localtime') >= date('now', 'localtime', ?)"
+        day_rows = conn.execute(
+            "SELECT date(COALESCE(finished_at, created_at), 'localtime') AS d, "
+            "       COUNT(*) AS cnt, "
+            "       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS ok_cnt, "
+            "       SUM(CASE WHEN status <> 'completed' THEN 1 ELSE 0 END) AS bad_cnt, "
+            "       COALESCE(SUM(size_mb), 0) AS size_mb "
+            "FROM download_history" + day_where + " GROUP BY d ORDER BY d",
+            params + [f"-{days - 1} days"],
+        ).fetchall()
+        by_day = {r["d"]: r for r in day_rows}
+        today = _dt.datetime.now().date()
+        daily = []
+        for i in range(days - 1, -1, -1):
+            key = (today - _dt.timedelta(days=i)).isoformat()
+            r = by_day.get(key)
+            daily.append({
+                "date": key,
+                "downloads": r["cnt"] if r else 0,
+                "completed": (r["ok_cnt"] or 0) if r else 0,
+                "failed": (r["bad_cnt"] or 0) if r else 0,
+                "size_mb": round(r["size_mb"] or 0.0, 2) if r else 0.0,
+            })
+
+        def _group(column):
+            # Column names are literals from this function only, never input.
+            return [
+                {"name": r["k"] or "", "count": r["cnt"],
+                 "size_mb": round(r["size_mb"] or 0.0, 2)}
+                for r in conn.execute(
+                    f"SELECT COALESCE({column}, '') AS k, COUNT(*) AS cnt, "
+                    "COALESCE(SUM(size_mb), 0) AS size_mb "
+                    "FROM download_history" + where_sql +
+                    " GROUP BY k ORDER BY cnt DESC LIMIT 12", params
+                ).fetchall()
+            ]
+
+        return {
+            "totals": {
+                "entries": cnt,
+                "completed": ok,
+                "failed": tot["failed_cnt"] or 0,
+                "cancelled": tot["cancelled_cnt"] or 0,
+                "skipped": tot["skipped_cnt"] or 0,
+                "titles": tot["titles"] or 0,
+                "size_mb": round(tot["size_mb"] or 0.0, 2),
+                "avg_speed_mbps": round(tot["spd"], 3) if tot["spd"] else None,
+                "max_speed_mbps": round(tot["max_spd"], 3) if tot["max_spd"] else None,
+                "duration_sec": round(tot["dur"] or 0.0, 1),
+                "success_rate": round(ok / cnt * 100) if cnt else 0,
+            },
+            "days": days,
+            "daily": daily,
+            "by_status": _group("status"),
+            "by_provider": _group("provider"),
+            "by_source": _group("source"),
+            "by_language": _group("language"),
+        }
+    finally:
+        conn.close()
+
+
+def get_download_history_facets(username=None):
+    """Distinct providers and languages present in the history.
+
+    Feeds the filter dropdowns, so they only ever offer values that actually
+    occur -- an empty option list is a better hint than a filter that always
+    returns nothing.
+    """
+    conn = get_db()
+    try:
+        where_sql, params = _history_where(username)
+        providers = [
+            r["k"] for r in conn.execute(
+                "SELECT DISTINCT COALESCE(provider, '') AS k FROM download_history" +
+                where_sql + " ORDER BY k COLLATE NOCASE", params
+            ).fetchall() if r["k"]
+        ]
+        languages = [
+            r["k"] for r in conn.execute(
+                "SELECT DISTINCT COALESCE(language, '') AS k FROM download_history" +
+                where_sql + " ORDER BY k COLLATE NOCASE", params
+            ).fetchall() if r["k"]
+        ]
+        return {"providers": providers, "languages": languages}
     finally:
         conn.close()
 
@@ -2021,12 +2171,14 @@ def delete_download_history_entries(ids, username=None):
         conn.close()
 
 
-def clear_download_history(username=None, search=None, status=None, source=None, since=None):
+def clear_download_history(username=None, search=None, status=None, source=None, since=None,
+                           provider=None, language=None):
     """Delete history rows, optionally limited to the given filters. Returns the
     number of rows deleted."""
     conn = get_db()
     try:
-        where_sql, params = _history_where(username, search, status, source, since)
+        where_sql, params = _history_where(username, search, status, source, since,
+                                           provider, language)
         cur = conn.execute("DELETE FROM download_history" + where_sql, params)
         conn.commit()
         return cur.rowcount

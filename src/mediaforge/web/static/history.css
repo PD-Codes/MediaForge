@@ -1,169 +1,240 @@
-/* ===== Download History ===== */
+/* ===================================================================
+   MediaForge — Download history page
+   Pairs with templates/_history_body.html + static/history.js.
+
+   Shares a lot with the Statistics page on purpose: history.html links
+   mf-charts.css (the charts) and stats.css (KPI cards, the modal shell,
+   the .mf-pagination spacing), so the two pages read as one system and
+   those components live in exactly one place.
+   =================================================================== */
+
 .hist-page-container {
-  max-width: 1200px;
+  padding: 24px 28px 40px;
+  max-width: 1500px;
   margin: 0 auto;
-  padding: 28px 24px 60px;
 }
 
 .hist-header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.hist-header-actions {
+  display: flex;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.hist-clear-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+.hist-header-actions .btn svg {
+  width: 15px;
+  height: 15px;
 }
 
-/* ── Toolbar ── */
+.hist-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.hist-summary:empty {
+  display: none;
+}
+
+/* ===== Toolbar ===== */
+
 .hist-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .hist-search-wrap {
   position: relative;
-  flex: 1;
-  min-width: 220px;
-  max-width: 420px;
+  display: flex;
+  align-items: center;
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 380px;
 }
 
 .hist-search-icon {
   position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 16px;
-  height: 16px;
+  left: 11px;
+  width: 15px;
+  height: 15px;
   color: var(--text-muted);
   pointer-events: none;
 }
 
-.hist-search {
+/* Specificity note: forms.css styles `input[type="search"]` (element +
+   attribute), which outranks a bare class — the old rule lost the cascade and
+   had to be rescued with an inline `padding-left: … !important` in the
+   template. The descendant selector wins on its own. */
+.hist-search-wrap input.hist-search {
   width: 100%;
-  padding: 10px 12px 10px 36px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
-  font-size: 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 9px 12px;
+  padding-left: 32px;
+  transition: border-color var(--transition);
 }
 
-.hist-search:focus {
+.hist-search-wrap input.hist-search:focus {
   outline: none;
   border-color: var(--border-focus);
 }
 
 .hist-filter-tabs {
   display: inline-flex;
-  flex-wrap: wrap;
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: 999px;
   padding: 3px;
   gap: 2px;
 }
 
 .hist-filter-tab {
-  border: none;
+  border: 0;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font: inherit;
+  font-size: 0.8rem;
   font-weight: 600;
-  padding: 7px 14px;
-  border-radius: calc(var(--radius-md) - 4px);
+  padding: 6px 14px;
+  border-radius: 999px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition);
 }
 
-.hist-filter-tab:hover { color: var(--text-primary); }
+.hist-filter-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 
 .hist-filter-tab.active {
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 2px 8px var(--accent-glow);
 }
 
-.hist-perpage {
-  display: inline-flex;
+.hist-filter-group {
+  display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
+  flex-wrap: wrap;
 }
 
-.hist-perpage-label {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.hist-perpage-select {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
+.hist-filter-select {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 8px 10px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 8px 30px 8px 12px;
   cursor: pointer;
+  max-width: 190px;
 }
 
-.hist-perpage-select:focus {
+.hist-filter-select:focus {
   outline: none;
   border-color: var(--border-focus);
 }
 
-@media (max-width: 720px) {
-  .hist-perpage { margin-left: 0; }
+.hist-reset-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
 }
 
-/* ── Loading / Empty ── */
+.hist-reset-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+/* ===== Bulk bar ===== */
+
+.hist-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 0.84rem;
+  color: var(--text-primary);
+  flex-wrap: wrap;
+}
+
+/* ===== Loading / empty ===== */
+
 .hist-loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 70px 0;
-  color: var(--text-secondary);
-  font-weight: 500;
+  gap: 10px;
+  padding: 48px 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 .hist-spinner {
-  width: 22px;
-  height: 22px;
-  border: 3px solid var(--border);
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: hist-spin 0.75s linear infinite;
+  animation: hist-spin 0.8s linear infinite;
 }
 
-@keyframes hist-spin { to { transform: rotate(360deg); } }
+@keyframes hist-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .hist-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 70px 24px;
+  gap: 12px;
+  padding: 56px 20px;
+  color: var(--text-muted);
   text-align: center;
-  color: var(--text-secondary);
 }
 
-.hist-empty-state svg { width: 48px; height: 48px; color: var(--text-muted); }
-.hist-empty-state p { margin: 0; font-size: 0.95rem; }
+.hist-empty-state svg {
+  width: 48px;
+  height: 48px;
+  color: var(--text-muted);
+}
 
-/* ── Table ── */
+.hist-empty-state p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* ===== Table ===== */
+
 .hist-table-wrap {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -171,250 +242,429 @@
   overflow: hidden;
 }
 
+.hist-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.hist-selectall {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.hist-count {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .hist-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  table-layout: fixed;
 }
 
-.hist-table thead th {
+.hist-table th {
   text-align: left;
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.7rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--text-muted);
-  padding: 12px 16px;
-  background: var(--bg-surface);
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
-.hist-table tbody tr {
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-
-.hist-table tbody tr:last-child { border-bottom: none; }
-.hist-table tbody tr:hover { background: var(--bg-hover); }
-
 .hist-table td {
-  padding: 11px 16px;
+  padding: 11px 14px;
+  font-size: 0.84rem;
   color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
 
+.hist-table tbody tr[data-id] {
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.hist-table tbody tr[data-id]:hover {
+  background: var(--bg-hover);
+}
+
+.hist-table tbody tr[data-id]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.hist-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Sortable headers */
+.hist-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.hist-sortable:hover {
+  color: var(--text-primary);
+}
+
+/* The arrow is always in the DOM but invisible until the column is active, so
+   the header text never shifts sideways when the sort changes. */
+.hist-sortable::after {
+  content: "▾";
+  display: inline-block;
+  margin-left: 5px;
+  opacity: 0;
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.hist-sortable.is-sorted {
+  color: var(--text-primary);
+}
+
+.hist-sortable.is-sorted::after {
+  opacity: 1;
+}
+
+.hist-sortable.is-sorted.is-asc::after {
+  transform: rotate(180deg);
+}
+
+/* Day separator rows */
+.hist-day-row td {
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 14px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.hist-col-cb { width: 42px; }
+.hist-col-ep { width: 92px; }
+.hist-col-time { width: 150px; }
+.hist-col-dur { width: 100px; }
+.hist-col-size { width: 110px; }
+/* Wide enough for the longest status label — the German "Fehlgeschlagen" is
+   ~150px at this size, and a nowrap badge in a narrower column spills into
+   the next one. */
+.hist-col-status { width: 168px; }
+
 .hist-cell-title {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hist-title-text {
+  display: block;
   color: var(--text-primary);
   font-weight: 600;
-  max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.hist-ep-badge {
-  display: inline-block;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: 999px;
-  padding: 2px 9px;
+.hist-title-meta {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hist-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hist-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hist-ep-badge {
+  display: inline-block;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-variant-numeric: tabular-nums;
+}
 
 .hist-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 600;
   border-radius: 999px;
   padding: 3px 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .hist-status-completed { color: var(--success); background: rgba(34, 197, 94, 0.12); }
 .hist-status-failed { color: var(--error); background: rgba(239, 68, 68, 0.12); }
-.hist-status-cancelled { color: #e0993a; background: rgba(224, 153, 58, 0.14); }
-.hist-status-skipped { color: var(--text-muted); background: rgba(148, 163, 184, 0.14); }
+.hist-status-cancelled { color: #a78bfa; background: rgba(167, 139, 250, 0.14); }
+.hist-status-skipped { color: var(--warning); background: rgba(245, 158, 11, 0.14); }
 
-/* ── Top header bar: count (left) + pagination (right) ── */
-.hist-table-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-surface);
+#histPagination:not(:empty) {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
 }
 
-.hist-count { font-size: 0.8rem; color: var(--text-muted); }
+/* ===== Detail modal ===== */
 
-.hist-pagination {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.hist-detail-section + .hist-detail-section {
+  margin-top: 6px;
 }
 
-.hist-page-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-}
-
-.hist-page-btn svg { width: 16px; height: 16px; }
-
-.hist-page-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.hist-page-indicator {
-  font-size: 0.85rem;
+.hist-detail-section-title {
+  margin: 0 0 8px;
+  font-size: 0.7rem;
   font-weight: 600;
-  color: var(--text-primary);
-  min-width: 92px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Detail modal ── */
-.hist-detail-modal {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
-  width: min(560px, 94vw);
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 22px;
-}
-
-.hist-detail-body {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 2px;
-  margin-top: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 
 .hist-detail-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 10px 4px;
+  display: grid;
+  grid-template-columns: minmax(120px, 32%) 1fr;
+  gap: 12px;
+  padding: 7px 0;
   border-bottom: 1px solid var(--border);
+  font-size: 0.83rem;
 }
 
-.hist-detail-row:last-child { border-bottom: none; }
+.hist-detail-row:last-child {
+  border-bottom: 0;
+}
 
 .hist-detail-key {
-  flex: 0 0 150px;
-  font-size: 0.82rem;
-  font-weight: 600;
   color: var(--text-muted);
 }
 
 .hist-detail-val {
-  flex: 1;
-  font-size: 0.88rem;
   color: var(--text-primary);
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
-.hist-detail-val.hist-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.8rem; }
+.hist-mono {
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
 
-/* Failure reason — highlighted, scrollable for long messages */
-.hist-detail-error-row .hist-detail-key { color: var(--error); }
-.hist-detail-val.hist-detail-error {
-  color: var(--error);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.8rem;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+.hist-copy-btn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  max-height: 180px;
-  overflow-y: auto;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  line-height: 0;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.hist-copy-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.hist-copy-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+.hist-detail-note {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-md);
+  padding: 11px 13px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.hist-detail-note.is-error {
+  border-left-color: var(--error);
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.07);
 }
 
 .hist-detail-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 18px;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+  flex: 0 0 auto;
 }
 
-/* ── Responsive ── */
-@media (max-width: 720px) {
-  .hist-page-container { padding: 18px 12px 50px; }
-  .hist-col-time, .hist-col-dur { display: none; }
-  .hist-cell-title { max-width: 150px; }
-  .hist-detail-key { flex-basis: 110px; }
+/* ===== Responsive ===== */
+
+@media (max-width: 900px) {
+  .hist-page-container {
+    padding: 18px 16px 32px;
+  }
+
+  .hist-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
-
-
-/* ── Header actions (export + clear) ── */
-.hist-header-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
-
-/* ── Filter selects (source / time range) ── */
-.hist-filter-select {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 8px 10px;
-  cursor: pointer;
-}
-.hist-filter-select:focus { outline: none; border-color: var(--border-focus); }
-
-/* ── Bulk selection bar ── */
-.hist-bulk-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 14px;
-  margin-bottom: 14px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: 0.86rem;
-  color: var(--text-secondary);
-}
-
-/* ── Checkbox + size columns ── */
-.hist-col-cb { width: 36px; text-align: center; }
-.hist-col-cb input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent, #6c8ef7); }
-.hist-col-size { width: 90px; white-space: nowrap; }
 
 @media (max-width: 640px) {
-  /* Stack the toolbar so nothing is clipped on phones */
-  /* Title on its own full-width line, buttons full-width below — keeps the
-     "Download History" heading from being squeezed/broken by the buttons. */
-  .hist-header { flex-direction: column; align-items: stretch; gap: 12px; }
-  .hist-header-actions { width: 100%; }
-  .hist-header-actions .hist-clear-btn { flex: 1 1 0; justify-content: center; }
+  .hist-search-wrap {
+    flex-basis: 100%;
+    max-width: none;
+  }
 
-  .hist-search-wrap { flex-basis: 100%; min-width: 0; max-width: none; }
-  .hist-filter-tabs { width: 100%; justify-content: flex-start; }
-  .hist-filter-select { flex: 1 1 140px; }
-  .hist-perpage { width: 100%; justify-content: space-between; margin-left: 0; }
+  .hist-filter-tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
 
-  .hist-bulk-bar { gap: 8px; }
-  .hist-bulk-bar .btn { flex: 1 1 auto; }
+  .hist-filter-group {
+    width: 100%;
+  }
 
-  .hist-col-size { display: none; }
+  .hist-filter-select {
+    flex: 1 1 140px;
+    max-width: none;
+  }
+
+  /* One labelled card per row instead of eight squashed columns — the same
+     pattern the Statistics modals use. Labels come from the data-label
+     attributes history.js writes on every cell. */
+  .hist-table,
+  .hist-table tbody {
+    display: block;
+  }
+
+  .hist-table thead {
+    /* Visually hidden, not removed: the column names still have to reach a
+       screen reader. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .hist-table tbody tr[data-id] {
+    display: block;
+    position: relative;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 14px 12px 44px;
+  }
+
+  .hist-table tbody td {
+    display: block;
+    width: auto;
+    padding: 3px 0;
+    border: 0;
+  }
+
+  .hist-table tbody td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .hist-table tbody td[data-label=""]::before {
+    display: none;
+  }
+
+  /* Checkbox pinned to the left gutter the row padding reserves for it. */
+  .hist-table tbody td.hist-col-cb {
+    position: absolute;
+    left: 12px;
+    top: 14px;
+    padding: 0;
+    width: auto;
+  }
+
+  .hist-table tbody td.hist-cell-title {
+    padding-top: 0;
+  }
+
+  .hist-table tbody td.hist-cell-title::before {
+    display: none;
+  }
+
+  .hist-title-text {
+    white-space: normal;
+    font-size: 0.92rem;
+  }
+
+  /* The day separator needs display:block too. The card layout above only
+     converts `tr[data-id]`, so the separator row stayed a table-row inside a
+     block tbody — the browser then wraps it in an anonymous table box, which
+     shrinks to its content and escapes the card's rounded edge. Its sticky
+     positioning also has nothing to stick to here. */
+  .hist-table tbody tr.hist-day-row {
+    display: block;
+    width: 100%;
+  }
+
+  .hist-day-row td {
+    display: block;
+    position: static;
+    width: 100%;
+    padding: 10px 14px;
+  }
+
+  .hist-day-row td::before {
+    display: none;
+  }
+
+  .hist-detail-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .hist-detail-actions {
+    padding: 12px 16px;
+  }
+
+  .hist-detail-actions .btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hist-spinner {
+    animation: none;
+  }
+
+  .hist-table tbody tr[data-id],
+  .hist-sortable::after {
+    transition: none;
+  }
 }

@@ -205,6 +205,10 @@ async function loadSettings() {
     }
     const mediaStatsEl = document.getElementById("mediaStatsEnabled");
     if (mediaStatsEl) mediaStatsEl.checked = data.media_stats_enabled === "1";
+    const rescanEl = document.getElementById("libraryRescanHours");
+    if (rescanEl && data.library_rescan_hours != null) rescanEl.value = String(data.library_rescan_hours);
+    const probeEl = document.getElementById("libraryProbeWorkers");
+    if (probeEl && data.library_probe_workers != null) probeEl.value = String(data.library_probe_workers);
 
     const webConsoleEl = document.getElementById("webConsole");
     if (webConsoleEl) {
@@ -832,6 +836,45 @@ async function saveWebBaseUrl() {
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
     showToast(t("Basis-URL gespeichert — Neustart erforderlich","Base URL saved — restart required"));
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+async function saveLibraryRescanHours() {
+  const el = document.getElementById("libraryRescanHours");
+  if (!el) return;
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ library_rescan_hours: el.value }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    const label = el.options[el.selectedIndex].textContent.trim();
+    showToast(el.value === "0"
+      ? t("Automatischer Neu-Scan deaktiviert", "Automatic rescan disabled")
+      : t("Automatischer Neu-Scan: ", "Automatic rescan: ") + label);
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+async function saveLibraryProbeWorkers() {
+  const el = document.getElementById("libraryProbeWorkers");
+  if (!el) return;
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ library_probe_workers: el.value }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(el.value === "0"
+      ? t("Scan-Intensität: automatisch", "Scan intensity: automatic")
+      : t("Scan-Intensität: ", "Scan intensity: ") + el.value);
   } catch (e) {
     showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
   }

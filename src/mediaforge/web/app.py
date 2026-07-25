@@ -546,29 +546,41 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # visible window, timeout, ...).  DNS routing stays hard-wired, not here.
     _apply_captcha_env()
 
-    from .routes.library import _lib_build_scan_targets, _lib_do_scan
+    from .routes.library import (
+        _lib_build_scan_targets, _lib_do_scan, _lib_stale_targets, _lib_start_auto_rescan,
+        _lib_watcher_scan_callback,
+    )
     # Start library file watcher (watchdog-based, event-driven rescans)
     from .library_watcher import get_watcher as _get_lib_watcher
     _lib_watcher = _get_lib_watcher()
 
-    def _lib_watcher_scan_callback(path_key: str):
-        """Called by watchdog when files change in a watched folder."""
-        import time as _t
-        # Find the matching target and rescan only that one
-        targets = _lib_build_scan_targets()
-        lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
-        for (label, cp_id, base_path) in targets:
-            pk = "default" if cp_id is None else str(cp_id)
-            if pk == path_key:
-                _lib_do_scan([(label, cp_id, base_path)], lang_sep)
-                break
 
     def _start_lib_watcher():
+        """Start the file watcher, scan what is due, then keep it fresh.
+
+        MediaForge used to run an unconditional full scan of every location on
+        every start. On a large library that is minutes of disk I/O for a
+        result that is almost always identical to the cache.
+
+        Instead, a location is scanned when its cache is missing (fresh
+        install, newly added custom path) or older than the configured rescan
+        interval -- and a background loop keeps applying that same rule while
+        the app runs. Between those, the file watcher picks up changes live.
+        The refresh button on the Library page still forces a scan on demand.
+        """
         targets = _lib_build_scan_targets()
         _lib_watcher.start(targets, _lib_watcher_scan_callback)
-        # Trigger a full scan on startup so the cache is always fresh
         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
-        _lib_do_scan(targets, lang_sep)
+
+        due = _lib_stale_targets(targets)
+        if due:
+            logger.info("[LibraryScan] Startup scan for %d location(s) due", len(due))
+            _lib_do_scan(due, lang_sep)
+
+        _lib_start_auto_rescan(
+            _lib_build_scan_targets,
+            lambda: os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1",
+        )
 
     # Defer watcher start slightly so Flask is fully up first
     import threading as _threading

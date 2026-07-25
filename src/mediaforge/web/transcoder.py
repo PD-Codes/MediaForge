@@ -199,11 +199,14 @@ def get_best_encoder() -> tuple:
 
 # ── ffprobe ────────────────────────────────────────────────────────────────
 
-def probe_file(file_path: str, headers: dict | None = None) -> dict | None:
+def probe_file(file_path: str, headers: dict | None = None, timeout: int = 30) -> dict | None:
     """Return media info dict or None on failure.
 
     ``headers`` lets us probe a remote (provider) URL that needs Referer /
-    User-Agent set.
+    User-Agent set. ``timeout`` is the per-call ffprobe budget: 30 s is right
+    for a remote stream, but far too generous for a local library scan, where
+    thousands of files on an unresponsive network share would otherwise add up
+    to hours (see routes/library.py::_lib_scan_base).
     """
     try:
         cmd = [_ffprobe_bin(), "-v", "quiet", "-print_format", "json"]
@@ -217,7 +220,7 @@ def probe_file(file_path: str, headers: dict | None = None) -> dict | None:
         cmd += ["-show_format", "-show_streams", str(file_path)]
         r = subprocess.run(
             cmd,
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
         )
         if r.returncode != 0:
             return None

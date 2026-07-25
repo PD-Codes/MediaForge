@@ -29,6 +29,7 @@ import os
 import os.path
 import re
 import threading
+import time as _time
 
 
 # Memoised media results.
@@ -40,8 +41,15 @@ import threading
 # scan has finished, so the result is cached against a fingerprint of the
 # cache rows (path_key + scanned_at + is_scanning) and recomputed only when
 # that changes.
-_MEDIA_MEMO = {"fp": None, "stats": None, "duplicates": None}
+_MEDIA_MEMO = {"fp": None, "stats": None, "duplicates": None, "at": 0.0}
 _MEDIA_MEMO_LOCK = threading.Lock()
+
+# Minimum distance between two full recomputations. Statistics over a large
+# library are expensive, and a library that is actively downloading changes its
+# fingerprint constantly -- without this, every page load (and every modal
+# page) would re-walk everything. Slightly stale numbers are fine here; the
+# next request past the interval picks the change up.
+_MEDIA_MEMO_MIN_INTERVAL = 60.0
 
 
 def _cache_fingerprint(cache):
@@ -62,16 +70,21 @@ def _media_results(cache=None):
         cache = get_all_library_cache()
     cache = _active_library_cache(cache)
     fp = _cache_fingerprint(cache)
+    now = _time.monotonic()
     with _MEDIA_MEMO_LOCK:
-        if _MEDIA_MEMO["fp"] == fp and _MEDIA_MEMO["stats"] is not None:
-            return _MEDIA_MEMO["stats"], _MEDIA_MEMO["duplicates"]
+        if _MEDIA_MEMO["stats"] is not None:
+            # Unchanged cache -> serve the memo. Changed cache -> still serve
+            # it while the throttle window is open (see above).
+            if _MEDIA_MEMO["fp"] == fp or (now - _MEDIA_MEMO["at"]) < _MEDIA_MEMO_MIN_INTERVAL:
+                return _MEDIA_MEMO["stats"], _MEDIA_MEMO["duplicates"]
     # Computed outside the lock: it is pure and side-effect free, so a rare
     # duplicate computation on a cold start is cheaper than serialising every
     # request behind one mutex.
     stats = _compute_media_stats(cache)
     dups = _compute_media_duplicates(cache)
     with _MEDIA_MEMO_LOCK:
-        _MEDIA_MEMO.update({"fp": fp, "stats": stats, "duplicates": dups})
+        _MEDIA_MEMO.update({"fp": fp, "stats": stats, "duplicates": dups,
+                            "at": _time.monotonic()})
     return stats, dups
 
 

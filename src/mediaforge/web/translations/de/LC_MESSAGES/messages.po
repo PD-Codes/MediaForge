@@ -5495,3 +5495,86 @@ msgstr "Untertitel mitladen"
 
 msgid "Every subtitle track the source offers is downloaded and muxed into the video file as a selectable track. Only affects sources that provide real subtitle tracks — burned-in subtitles are part of the picture."
 msgstr "Jede Untertitelspur, die die Quelle anbietet, wird geladen und als auswählbare Spur in die Videodatei eingebettet. Betrifft nur Quellen mit echten Untertitelspuren — eingebrannte Untertitel sind Teil des Bildes."
+
+#: templates/_history_body.html
+msgid "All providers"
+msgstr "Alle Provider"
+
+#: templates/_history_body.html
+msgid "All languages"
+msgstr "Alle Sprachen"
+
+#: templates/_history_body.html
+msgid "Reset filters"
+msgstr "Filter zurücksetzen"
+
+#: templates/_history_body.html
+msgid "Finished"
+msgstr "Beendet"
+
+msgid ""
+"Off by default: a full rescan of a large library takes minutes and almost always produces the same result. Changes are picked up live by the file watcher while MediaForge runs, folders that have never been scanned are scanned automatically, and the refresh button on the Library page rescans on demand."
+msgstr ""
+"Standardmäßig aus: Ein vollständiger Scan einer großen Mediathek dauert Minuten und liefert fast immer dasselbe Ergebnis. Änderungen erkennt der Datei-Watcher im laufenden Betrieb, nie gescannte Ordner werden automatisch eingelesen, und der Aktualisieren-Knopf auf der Bibliotheks-Seite scannt bei Bedarf neu."
+
+#: templates/settings.html
+msgid "Automatic library rescan"
+msgstr "Automatischer Bibliotheks-Scan"
+
+#: templates/settings.html
+msgid "A location is rescanned once its cached scan is older than this."
+msgstr "Ein Speicherort wird neu gescannt, sobald sein zwischengespeicherter Scan älter ist als das."
+
+#: templates/settings.html
+msgid "Every 6 hours"
+msgstr "Alle 6 Stunden"
+
+#: templates/settings.html
+msgid "Every 12 hours"
+msgstr "Alle 12 Stunden"
+
+#: templates/settings.html
+msgid "Every 24 hours"
+msgstr "Alle 24 Stunden"
+
+#: templates/settings.html
+msgid "Every 2 days"
+msgstr "Alle 2 Tage"
+
+#: templates/settings.html
+msgid "Every 7 days"
+msgstr "Alle 7 Tage"
+
+#: templates/settings.html
+msgid ""
+"MediaForge no longer rescans everything on every start — on a large library that costs minutes for a result that is almost always identical. While it runs, the file watcher picks up changes live; this interval covers what the watcher cannot, such as files added while MediaForge was closed. Locations that have never been scanned are always read in, and the refresh button on the Library page rescans on demand."
+msgstr ""
+"MediaForge scannt nicht mehr bei jedem Start alles neu — bei einer großen Mediathek kostet das Minuten für ein Ergebnis, das fast immer identisch ist. Im laufenden Betrieb erkennt der Datei-Watcher Änderungen sofort; dieses Intervall deckt ab, was der Watcher nicht sehen kann, etwa Dateien, die hinzugekommen sind während MediaForge geschlossen war. Nie gescannte Speicherorte werden immer eingelesen, und der Aktualisieren-Knopf auf der Bibliotheks-Seite scannt bei Bedarf neu."
+
+#: templates/settings.html
+msgid "Scan intensity"
+msgstr "Scan-Intensität"
+
+#: templates/settings.html
+msgid ""
+"Parallel ffprobe workers used to read resolution and codec from files whose name does not reveal them."
+msgstr ""
+"Parallele ffprobe-Prozesse, die Auflösung und Codec aus Dateien lesen, deren Name das nicht verrät."
+
+#: templates/settings.html
+msgid "Automatic (based on CPU cores)"
+msgstr "Automatisch (nach CPU-Kernen)"
+
+#: templates/settings.html
+msgid "gentle (network share)"
+msgstr "schonend (Netzlaufwerk)"
+
+#: templates/settings.html
+msgid "fast NVMe"
+msgstr "schnelle NVMe"
+
+#: templates/settings.html
+msgid ""
+"More workers finish a scan sooner on fast local storage and will push the drive hard while it runs; on a network share they mostly multiply the timeouts. A scan always stops after two minutes of probing regardless, and continues where it left off a few minutes later."
+msgstr ""
+"Mehr Prozesse machen den Scan auf schnellem lokalem Speicher deutlich kürzer und lasten das Laufwerk währenddessen stark aus; auf einem Netzlaufwerk vervielfachen sie vor allem die Zeitüberschreitungen. Ein Scan hört in jedem Fall nach zwei Minuten Prüfzeit auf und macht wenige Minuten später dort weiter, wo er aufgehört hat."
