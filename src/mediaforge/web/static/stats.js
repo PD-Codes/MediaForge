@@ -419,8 +419,140 @@ function modalSearch(id, placeholder, handler) {
 }
 
 // ---------------------------------------------------------------
+// Modal pagination
+//
+// All three modals can hold thousands of rows (a large library easily
+// produces hundreds of duplicate groups), which made them slow to render and
+// impossible to scan. Each one keeps its full data set in memory and renders
+// one page at a time.
+//
+// Layout contract: the modal shell (summary, chart, search box) is rendered
+// once; only the element with id `<key>TableHost` is re-rendered on a filter
+// or page change. That is what keeps the focus and caret in the search box
+// while typing.
+// ---------------------------------------------------------------
+
+var MODAL_PAGE_SIZE = 20;
+
+// Per-modal view state. Reset to page 1 whenever the filter changes, and
+// clamped in _pageSlice() so deleting rows can never strand the user on a
+// page that no longer exists.
+var _modalView = {
+  speed: { page: 1, q: "" },
+  incomplete: { page: 1, q: "" },
+  ignored: { page: 1, q: "" },
+  duplicates: { page: 1, q: "" },
+};
+
+/** Case-insensitive title match against the modal's search box. */
+function _modalFilter(list, key, titleOf) {
+  var needle = String(_modalView[key].q || "").toLowerCase().trim();
+  if (!needle) return list;
+  return list.filter(function (x) {
+    return String(titleOf(x) || "").toLowerCase().indexOf(needle) !== -1;
+  });
+}
+
+function _pageSlice(list, key) {
+  var total = Math.max(1, Math.ceil(list.length / MODAL_PAGE_SIZE));
+  var page = Math.min(Math.max(1, _modalView[key].page), total);
+  _modalView[key].page = page;
+  var start = (page - 1) * MODAL_PAGE_SIZE;
+  return {
+    items: list.slice(start, start + MODAL_PAGE_SIZE),
+    page: page, total: total, start: start, count: list.length,
+  };
+}
+
+/**
+ * Page numbers with ellipses: 1 … 4 5 [6] 7 8 … 20.
+ * Mirrors the Advanced Search pager so both read the same.
+ */
+function _pageNumbers(current, total) {
+  if (total <= 7) {
+    return Array.from({ length: total }, function (_, i) { return i + 1; });
+  }
+  var out = [1];
+  var from = Math.max(2, current - 1);
+  var to = Math.min(total - 1, current + 1);
+  if (from > 2) out.push("…");
+  for (var i = from; i <= to; i++) out.push(i);
+  if (to < total - 1) out.push("…");
+  out.push(total);
+  return out;
+}
+
+/**
+ * Pager markup using the app-wide .mf-pagination component (forms.css, which
+ * base.html loads globally). Returns just the "x-y of z" line when everything
+ * fits on one page -- a pager with a single disabled page is noise.
+ */
+function _paginationHtml(key, info) {
+  var from = info.count ? info.start + 1 : 0;
+  var to = info.start + info.items.length;
+  var range = '<div class="stats-page-info">' +
+    escHtml(t("Zeige " + fmtInt(from) + "–" + fmtInt(to) + " von " + fmtInt(info.count),
+      "Showing " + fmtInt(from) + "–" + fmtInt(to) + " of " + fmtInt(info.count))) + "</div>";
+  if (info.total <= 1) return range;
+
+  var btn = function (page, label, disabled, title) {
+    return '<button type="button" class="mf-pagination-btn" data-page="' + page + '"' +
+      (disabled ? " disabled" : "") + ' title="' + escHtml(title) + '" onclick="statsGoToPage(\'' +
+      key + '\',' + page + ')">' + label + "</button>";
+  };
+  var html = range + '<div class="mf-pagination">';
+  html += btn(1, "&laquo;", info.page === 1, t("Erste Seite", "First page"));
+  html += btn(info.page - 1, "&lsaquo;", info.page === 1, t("Zurück", "Back"));
+  _pageNumbers(info.page, info.total).forEach(function (entry) {
+    if (entry === "…") {
+      html += '<span class="mf-pagination-ellipsis">…</span>';
+      return;
+    }
+    html += '<button type="button" class="mf-pagination-page' + (entry === info.page ? " active" : "") +
+      '" data-page="' + entry + '"' + (entry === info.page ? " disabled" : "") +
+      ' onclick="statsGoToPage(\'' + key + '\',' + entry + ')">' + entry + "</button>";
+  });
+  html += btn(info.page + 1, "&rsaquo;", info.page === info.total, t("Weiter", "Next"));
+  html += btn(info.total, "&raquo;", info.page === info.total, t("Letzte Seite", "Last page"));
+  html += "</div>";
+  return html;
+}
+
+/** Re-render just the table host of one modal. */
+var _MODAL_RENDERERS = {
+  speed: function () { _renderSpeedTable(); },
+  incomplete: function () { _renderIncompleteTable(); },
+  ignored: function () { _renderIncompleteTable(); },
+  duplicates: function () { _renderDuplicatesTable(); },
+};
+
+function statsGoToPage(key, page) {
+  if (!_modalView[key]) return;
+  _modalView[key].page = Math.max(1, parseInt(page, 10) || 1);
+  _MODAL_RENDERERS[key]();
+  // Jump back to the top of the list, otherwise page 2 opens mid-table.
+  // Measured via getBoundingClientRect rather than offsetTop, which is
+  // relative to the offsetParent and does not have to be the scroller.
+  var host = document.getElementById(key + "TableHost");
+  var scroller = host && host.closest(".stats-modal-body");
+  if (scroller && host) {
+    scroller.scrollTop += host.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 8;
+  }
+}
+
+function statsFilter(key, value) {
+  if (!_modalView[key]) return;
+  _modalView[key].q = value;
+  _modalView[key].page = 1;   // a filtered list has different pages
+  _MODAL_RENDERERS[key]();
+}
+
+// ---------------------------------------------------------------
 // Speed modal
 // ---------------------------------------------------------------
+
+/** Rows currently in the speed modal, newest first. Set by _renderSpeedModal. */
+var _speedRows = [];
 
 function _renderSpeedModal() {
   var el = document.getElementById("speedModalContent");
@@ -438,6 +570,7 @@ function _renderSpeedModal() {
   }
 
   if (!series.length) {
+    _speedRows = [];
     el.innerHTML = '<p class="stat-sub">' +
       t("Noch keine Geschwindigkeitsdaten vorhanden.", "No speed data recorded yet.") + "</p>";
     return;
@@ -448,6 +581,10 @@ function _renderSpeedModal() {
   var max = Math.max.apply(null, speeds);
   var min = Math.min.apply(null, speeds);
   var totalSize = series.reduce(function (a, x) { return a + (Number(x.size_mb) || 0); }, 0);
+
+  // The chart runs oldest -> newest; the table reads newest first.
+  _speedRows = series.slice().reverse();
+  window._speedMaxSpeed = max;
 
   var html = modalSummary([
     { label: t("Ø Geschwindigkeit", "Avg. speed"), value: fmtSpeed(avg), color: "#06b6d4" },
@@ -471,20 +608,38 @@ function _renderSpeedModal() {
     }),
   });
 
-  html += modalSearch("speedSearch", t("Titel suchen…", "Search title…"), "filterSpeedTable(this.value)");
-  html += '<div class="user-table-wrapper stats-table-wrap"><table class="user-table speed-modal-table">' +
+  html += modalSearch("speedSearch", t("Titel suchen…", "Search title…"), "statsFilter('speed', this.value)");
+  html += '<div id="speedTableHost"></div>';
+  el.innerHTML = html;
+  _renderSpeedTable();
+  mountCharts(el);
+}
+
+function _renderSpeedTable() {
+  var host = document.getElementById("speedTableHost");
+  if (!host) return;
+  var filtered = _modalFilter(_speedRows, "speed", function (x) { return x.title; });
+  var info = _pageSlice(filtered, "speed");
+  var max = window._speedMaxSpeed || 0;
+
+  if (!info.count) {
+    host.innerHTML = '<div class="stats-empty-state"><p>' +
+      t("Kein Treffer für diese Suche.", "No match for this search.") + "</p></div>";
+    return;
+  }
+
+  var html = '<div class="user-table-wrapper stats-table-wrap"><table class="user-table speed-modal-table">' +
     "<thead><tr>" +
     "<th>" + t("Titel", "Title") + "</th>" +
     "<th>" + t("Abgeschlossen", "Finished") + "</th>" +
     "<th>" + t("Größe", "Size") + "</th>" +
     "<th>" + t("Geschwindigkeit", "Speed") + "</th>" +
     '</tr></thead><tbody id="speedTableBody">';
-  // Newest first in the table, even though the chart runs oldest -> newest.
-  series.slice().reverse().forEach(function (x) {
+  info.items.forEach(function (x) {
     var rel = max ? (Number(x.speed) || 0) / max * 100 : 0;
     // data-label feeds the mobile stacked-card layout (stats.css) — below
     // 640px the table collapses to one card per row, labelled from these.
-    html += '<tr data-title="' + escHtml(String(x.title || "").toLowerCase()) + '">' +
+    html += "<tr>" +
       '<td class="speed-modal-title" data-label="' + escHtml(t("Titel", "Title")) + '" title="' +
       escHtml(x.title) + '">' + escHtml(x.title) + "</td>" +
       '<td data-label="' + escHtml(t("Abgeschlossen", "Finished")) + '">' + escHtml(fmtDateTime(x.finished_at)) + "</td>" +
@@ -493,83 +648,165 @@ function _renderSpeedModal() {
       rel.toFixed(1) + '%"></span></span><b>' + escHtml(fmtSpeed(x.speed)) + "</b></div></td></tr>";
   });
   html += "</tbody></table></div>";
-  el.innerHTML = html;
-  mountCharts(el);
-}
-
-function filterSpeedTable(q) {
-  var needle = String(q || "").toLowerCase().trim();
-  document.querySelectorAll("#speedTableBody tr").forEach(function (tr) {
-    tr.style.display = !needle || tr.dataset.title.indexOf(needle) !== -1 ? "" : "none";
-  });
+  html += _paginationHtml("speed", info);
+  host.innerHTML = html;
 }
 
 // ---------------------------------------------------------------
 // Incomplete-series modal
 // ---------------------------------------------------------------
 
-function _incompleteTableHtml(incomplete) {
-  if (!incomplete || !incomplete.length) {
+/**
+ * Ignore-selection state, kept outside the DOM.
+ *
+ * With pagination the checkboxes of other pages simply do not exist, so
+ * reading the selection off the DOM at submit time would silently drop
+ * everything the user ticked on a page they have since left. The state is
+ * keyed by folder and survives paging, filtering and tab switches.
+ */
+var _ignSel = { series: {}, slots: {} };
+
+function _ignHasSelection() {
+  return Object.keys(_ignSel.series).length > 0 ||
+    Object.keys(_ignSel.slots).some(function (f) { return (_ignSel.slots[f] || []).length; });
+}
+
+function _ignSelectionCount() {
+  var n = Object.keys(_ignSel.series).length;
+  Object.keys(_ignSel.slots).forEach(function (f) {
+    if (_ignSel.series[f]) return;   // whole series already covers its slots
+    n += (_ignSel.slots[f] || []).length;
+  });
+  return n;
+}
+
+function statsIgnToggleSeries(folderEnc, checked) {
+  var folder = decodeURIComponent(folderEnc);
+  if (checked) _ignSel.series[folder] = true;
+  else delete _ignSel.series[folder];
+  _updateIgnActions();
+}
+
+function statsIgnToggleSlot(folderEnc, slotEnc, checked) {
+  var folder = decodeURIComponent(folderEnc);
+  var slot = decodeURIComponent(slotEnc);
+  var list = _ignSel.slots[folder] || (_ignSel.slots[folder] = []);
+  var at = list.indexOf(slot);
+  if (checked && at === -1) list.push(slot);
+  if (!checked && at !== -1) list.splice(at, 1);
+  _updateIgnActions();
+}
+
+function statsIgnClearSelection() {
+  _ignSel = { series: {}, slots: {} };
+  _renderIncompleteTable();
+}
+
+/** Keep the action bar's counter/disabled state in sync without a re-render. */
+function _updateIgnActions() {
+  var btn = document.getElementById("ignApplyBtn");
+  var info = document.getElementById("ignSelInfo");
+  var n = _ignSelectionCount();
+  if (btn) btn.disabled = !n;
+  if (info) {
+    info.textContent = n
+      ? t(n + " ausgewählt", n + " selected")
+      : t("Nichts ausgewählt", "Nothing selected");
+  }
+}
+
+function toggleAllIncomplete(cb) {
+  // Applies to the current page only — that is what the user can see, and
+  // silently selecting hundreds of off-screen series would be a trap.
+  document.querySelectorAll("#incompleteBody tr[data-folder]").forEach(function (tr) {
+    var folder = tr.dataset.folder;
+    if (cb.checked) _ignSel.series[folder] = true;
+    else delete _ignSel.series[folder];
+    var box = tr.querySelector(".ign-series");
+    if (box) box.checked = cb.checked;
+  });
+  _updateIgnActions();
+}
+
+function _incompleteTableHtml() {
+  var m = window._mediaStats || {};
+  var all = m.incomplete || [];
+  if (!all.length) {
     return '<div class="stats-empty-state"><span class="stats-empty-emoji">🎉</span><p>' +
       t("Alle Serien sind vollständig.", "All series are complete.") + "</p></div>";
   }
-  var mh = modalSearch("incompleteSearch", t("Serie suchen…", "Search series…"),
-    "filterRows('incompleteBody', this.value)");
-  mh += '<div class="user-table-wrapper stats-table-wrap"><table class="user-table stats-modal-table"><thead><tr>' +
+  var filtered = _modalFilter(all, "incomplete", function (x) { return x.title; });
+  var info = _pageSlice(filtered, "incomplete");
+  if (!info.count) {
+    return '<div class="stats-empty-state"><p>' +
+      t("Kein Treffer für diese Suche.", "No match for this search.") + "</p></div>";
+  }
+
+  var mh = '<div class="user-table-wrapper stats-table-wrap"><table class="user-table stats-modal-table"><thead><tr>' +
     '<th class="td-check" style="width:36px"><input type="checkbox" class="chb-main" onchange="toggleAllIncomplete(this)" title="' +
-    escHtml(t("Alle auswählen", "Select all")) + '"></th>' +
+    escHtml(t("Alle auf dieser Seite auswählen", "Select all on this page")) + '"></th>' +
     '<th style="width:36%">' + t("Serie", "Series") + "</th>" +
     '<th style="width:16%">' + t("Speicherort", "Location") + "</th>" +
     '<th style="width:auto">' + t("Fehlende Episoden", "Missing episodes") + "</th>" +
     '</tr></thead><tbody id="incompleteBody">';
-  incomplete.forEach(function (item, idx) {
+  info.items.forEach(function (item) {
     var miss = item.missing || [];
-    var chips = miss.map(function (s) {
-      return '<label class="ignore-slot-chip is-selectable"><input type="checkbox" class="ign-slot chb-main" data-idx="' +
-        idx + '" data-slot="' + escHtml(s) + '"> ' + escHtml(s) + "</label>";
+    var folderEnc = encodeURIComponent(item.folder);
+    var seriesChecked = !!_ignSel.series[item.folder];
+    var picked = _ignSel.slots[item.folder] || [];
+    var chips = miss.map(function (sl) {
+      var on = picked.indexOf(sl) !== -1 ? " checked" : "";
+      return '<label class="ignore-slot-chip is-selectable"><input type="checkbox" class="ign-slot chb-main"' +
+        on + ' onchange="statsIgnToggleSlot(\'' + folderEnc + "','" + encodeURIComponent(sl) +
+        '\', this.checked)"> ' + escHtml(sl) + "</label>";
     }).join(" ");
-    mh += '<tr data-title="' + escHtml(String(item.title || "").toLowerCase()) + '">' +
-      '<td class="td-check" data-label=""><input type="checkbox" class="ign-series chb-main" data-idx="' + idx +
-      '" title="' + escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) + '"><span class="td-check-label">' +
+    mh += '<tr data-folder="' + escHtml(item.folder) + '">' +
+      '<td class="td-check" data-label=""><input type="checkbox" class="ign-series chb-main"' +
+      (seriesChecked ? " checked" : "") + ' onchange="statsIgnToggleSeries(\'' + folderEnc +
+      '\', this.checked)" title="' + escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) +
+      '"><span class="td-check-label">' +
       escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) + "</span></td>" +
-      '<td class="speed-modal-title" data-label="' + escHtml(t("Serie", "Series")) + '" title="' +
-      escHtml(item.title) + '">' + escHtml(item.title) +
+      // Same structure as the duplicates title cell: the name truncates inside
+      // its own span, the badge sits below it. An inline-flex badge inside a
+      // cell that truncates with text-overflow: ellipsis escapes the ellipsis
+      // and overlaps the next column.
+      '<td class="dup-title-cell" data-label="' + escHtml(t("Serie", "Series")) + '" title="' +
+      escHtml(item.title) + '"><span class="dup-title-text">' + escHtml(item.title) + "</span>" +
       '<span class="miss-count">' + miss.length + " " + escHtml(t("fehlend", "missing")) + "</span></td>" +
       '<td data-label="' + escHtml(t("Speicherort", "Location")) + '">' + escHtml(item.location) + "</td>" +
       '<td data-label="' + escHtml(t("Fehlende Episoden", "Missing episodes")) +
       '"><div class="ignore-slot-wrap">' + chips + "</div></td></tr>";
   });
   mh += "</tbody></table></div>";
-  mh += '<div class="ignore-actions"><button class="btn-download-selected" onclick="mediaIgnoreSelected()">' +
-    t("Auswahl ignorieren", "Ignore selected") + "</button></div>";
+  mh += _paginationHtml("incomplete", info);
+  mh += '<div class="ignore-actions">' +
+    '<span class="ign-sel-info" id="ignSelInfo"></span>' +
+    '<button type="button" class="btn btn-ghost ignore-restore-btn" onclick="statsIgnClearSelection()">' +
+    escHtml(t("Auswahl leeren", "Clear selection")) + "</button>" +
+    '<button type="button" class="btn-download-selected" id="ignApplyBtn" onclick="mediaIgnoreSelected()">' +
+    escHtml(t("Auswahl ignorieren", "Ignore selected")) + "</button></div>";
   return mh;
 }
 
-function toggleAllIncomplete(cb) {
-  document.querySelectorAll("#incompleteBody tr").forEach(function (tr) {
-    if (tr.style.display === "none") return; // respect the active search filter
-    var box = tr.querySelector(".ign-series");
-    if (box) box.checked = cb.checked;
-  });
-}
-
-function filterRows(bodyId, q) {
-  var needle = String(q || "").toLowerCase().trim();
-  document.querySelectorAll("#" + bodyId + " tr").forEach(function (tr) {
-    tr.style.display = !needle || (tr.dataset.title || "").indexOf(needle) !== -1 ? "" : "none";
-  });
-}
-
-function _ignoredTableHtml(ignored) {
-  if (!ignored || !ignored.length) {
+function _ignoredTableHtml() {
+  var m = window._mediaStats || {};
+  var all = m.ignored || [];
+  if (!all.length) {
     return '<div class="stats-empty-state"><p>' +
       t("Keine ignorierten Einträge.", "No ignored entries.") + "</p></div>";
   }
+  var filtered = _modalFilter(all, "ignored", function (x) { return x.title; });
+  var info = _pageSlice(filtered, "ignored");
+  if (!info.count) {
+    return '<div class="stats-empty-state"><p>' +
+      t("Kein Treffer für diese Suche.", "No match for this search.") + "</p></div>";
+  }
+
   var mh = '<div class="user-table-wrapper stats-table-wrap"><table class="user-table stats-modal-table"><thead><tr>' +
     '<th style="width:42%">' + t("Serie", "Series") + "</th>" +
     '<th style="width:auto">' + t("Ignoriert", "Ignored") + "</th>" +
-    '<th style="width:90px"></th></tr></thead><tbody>';
-  ignored.forEach(function (item) {
+    '<th style="width:150px"></th></tr></thead><tbody>';
+  info.items.forEach(function (item) {
     var slots = item.slots || [];
     var isAll = slots.indexOf("__all__") !== -1;
     var folderEnc = encodeURIComponent(item.folder);
@@ -578,22 +815,32 @@ function _ignoredTableHtml(ignored) {
       slotHtml = '<span class="ignore-slot-chip ignore-all-chip">' +
         escHtml(t("Ganze Serie", "Whole series")) + "</span>";
     } else {
-      slotHtml = slots.map(function (s) {
-        return '<span class="ignore-slot-chip">' + escHtml(s) +
+      slotHtml = slots.map(function (sl) {
+        return '<span class="ignore-slot-chip">' + escHtml(sl) +
           ' <a href="#" class="ignore-remove-x" onclick="mediaUnignore(\'' + folderEnc + "','" +
-          encodeURIComponent(s) + '\');return false;" title="' +
+          encodeURIComponent(sl) + '\');return false;" title="' +
           escHtml(t("Wiederherstellen", "Restore")) + '">×</a></span>';
       }).join(" ");
     }
-    mh += '<tr data-title="' + escHtml(String(item.title || "").toLowerCase()) +
-      '"><td class="speed-modal-title" data-label="' + escHtml(t("Serie", "Series")) + '" title="' +
+    mh += "<tr>" +
+      '<td class="speed-modal-title" data-label="' + escHtml(t("Serie", "Series")) + '" title="' +
       escHtml(item.title) + '">' + escHtml(item.title) + "</td>" +
       '<td data-label="' + escHtml(t("Ignoriert", "Ignored")) + '"><div class="ignore-slot-wrap">' + slotHtml + "</div></td>" +
       '<td data-label=""><button class="btn btn-ghost ignore-restore-btn" onclick="mediaUnignore(\'' + folderEnc +
       '\',null)">' + escHtml(t("Alle wiederherstellen", "Restore all")) + "</button></td></tr>";
   });
   mh += "</tbody></table></div>";
+  mh += _paginationHtml("ignored", info);
   return mh;
+}
+
+/** Re-render only the table host of whichever tab is showing. */
+function _renderIncompleteTable() {
+  var host = document.getElementById("incompleteTableHost");
+  if (!host) return;
+  var view = window._incompleteView || "incomplete";
+  host.innerHTML = view === "ignored" ? _ignoredTableHtml() : _incompleteTableHtml();
+  if (view === "incomplete") _updateIgnActions();
 }
 
 function _renderIncompleteModal() {
@@ -618,12 +865,18 @@ function _renderIncompleteModal() {
     '<button class="ignore-tab' + (view === "ignored" ? " active" : "") +
     '" onclick="switchIncompleteView(\'ignored\')">' + escHtml(t("Ignoriert", "Ignored")) +
     " (" + ignoredCount + ")</button></div>";
-  html += view === "ignored" ? _ignoredTableHtml(m.ignored) : _incompleteTableHtml(incomplete);
+  // One search box per tab, so switching tabs does not carry a stale filter.
+  html += modalSearch(view === "ignored" ? "ignoredSearch" : "incompleteSearch",
+    t("Serie suchen…", "Search series…"),
+    "statsFilter('" + (view === "ignored" ? "ignored" : "incomplete") + "', this.value)");
+  html += '<div id="incompleteTableHost"></div>';
   el.innerHTML = html;
+  _renderIncompleteTable();
 }
 
 function switchIncompleteView(view) {
   window._incompleteView = view;
+  _modalView[view === "ignored" ? "ignored" : "incomplete"].page = 1;
   _renderIncompleteModal();
 }
 
@@ -692,47 +945,80 @@ function _renderDuplicatesModal() {
     });
   }
 
-  html += modalSearch("dupSearch", t("Titel suchen…", "Search title…"), "filterRows('dupBody', this.value)");
-  html += '<div class="user-table-wrapper stats-table-wrap"><table class="user-table dup-table"><thead><tr>' +
+  html += modalSearch("dupSearch", t("Titel suchen…", "Search title…"), "statsFilter('duplicates', this.value)");
+  html += '<div id="duplicatesTableHost"></div>';
+  el.innerHTML = html;
+  _renderDuplicatesTable();
+  mountCharts(el);
+}
+
+function _renderDuplicatesTable() {
+  var host = document.getElementById("duplicatesTableHost");
+  if (!host) return;
+  var all = (window._mediaStats || {}).duplicates || [];
+  var filtered = _modalFilter(all, "duplicates", function (x) { return x.title; });
+  var info = _pageSlice(filtered, "duplicates");
+
+  if (!info.count) {
+    host.innerHTML = '<div class="stats-empty-state"><p>' +
+      t("Kein Treffer für diese Suche.", "No match for this search.") + "</p></div>";
+    return;
+  }
+
+  var html = '<div class="user-table-wrapper stats-table-wrap"><table class="user-table dup-table"><thead><tr>' +
     '<th style="width:24%">' + t("Serie / Film", "Series / Movie") + "</th>" +
     '<th style="width:9%">' + t("Episode", "Episode") + "</th>" +
     '<th style="width:13%">' + t("Speicherort", "Location") + "</th>" +
-    '<th style="width:18%">' + t("Vorhandene Versionen", "Existing versions") + "</th>" +
-    '<th style="width:36%">' + t("Pfad", "Path") + "</th>" +
+    '<th style="width:54%">' + t("Vorhandene Versionen", "Existing versions") + "</th>" +
     '</tr></thead><tbody id="dupBody">';
-  dups.forEach(function (item) {
+  info.items.forEach(function (item) {
     var files = item.files || [];
-    var langBadge = item.language ? ' <span class="ignore-slot-chip">' + escHtml(item.language) + "</span>" : "";
-    var biggest = Math.max.apply(null, files.map(function (f) { return Number(f.size) || 0; }));
-    var versionChips = files.map(function (f) {
+    // The badge goes on its own line below the title. Inline, it sat inside a
+    // cell that truncates with text-overflow: ellipsis — and an inline-flex
+    // chip ignores that, so it simply stuck out over the next column.
+    var langBadge = item.language
+      ? '<span class="dup-lang-badge ignore-slot-chip">' + escHtml(item.language) + "</span>" : "";
+    // Only highlight a "keep this one" copy when the largest is unambiguous.
+    // Two copies of the exact same size (a plain duplicate rather than a
+    // quality difference) would otherwise both be marked green, which tells
+    // the user nothing about which to delete.
+    var sizes = files.map(function (f) { return Number(f.size) || 0; });
+    var biggest = Math.max.apply(null, sizes);
+    var biggestIsUnique = biggest > 0 &&
+      sizes.filter(function (v) { return v === biggest; }).length === 1;
+    // One block per copy: badge + size on the first line, path underneath.
+    // These used to be two separate table columns kept in sync by a fixed
+    // row height, which broke as soon as a badge or size was wider than its
+    // column -- the size then bled into the path column. One column per file
+    // cannot get out of alignment and gives the path the full width.
+    var fileRows = files.map(function (f) {
       var res = f.resolution || t("unbekannt", "unknown");
       var codec = f.video_codec ? " · " + escHtml(f.video_codec) : "";
       var ext = f.file && f.file.indexOf(".") !== -1 ? f.file.split(".").pop().toUpperCase() : "";
       var cont = ext ? " · " + escHtml(ext) : "";
-      // Mark the largest copy so it's obvious which one to keep.
-      var best = (Number(f.size) || 0) === biggest && biggest > 0 ? " is-best" : "";
+      var best = biggestIsUnique && (Number(f.size) || 0) === biggest ? " is-best" : "";
       var sz = f.size ? '<span class="dup-size">' + escHtml(fmtSize(Number(f.size) / (1024 * 1024))) + "</span>" : "";
-      return '<div class="dup-version-row"><span class="ignore-slot-chip' + best + '">' +
-        escHtml(res) + codec + cont + "</span>" + sz + "</div>";
+      var path = f.path || f.file || "";
+      // Zero-width break opportunities after separators, so a long path wraps
+      // at folder boundaries instead of one character per line.
+      var pretty = escHtml(path).replace(/([\\/])/g, "$1<wbr>");
+      return '<div class="dup-file">' +
+        '<div class="dup-file-head"><span class="ignore-slot-chip' + best + '">' +
+        escHtml(res) + codec + cont + "</span>" + sz + "</div>" +
+        '<div class="dup-path-row" title="' + escHtml(path) + '">' + pretty + "</div></div>";
     }).join("");
-    var pathRows = files.map(function (f) {
-      var p = f.path || f.file || "";
-      var pretty = escHtml(p).replace(/([\\/])/g, "$1<wbr>");
-      return '<div class="dup-path-row" title="' + escHtml(p) + '">' + pretty + "</div>";
-    }).join("");
-    var mhRow = '<tr data-title="' + escHtml(String(item.title || "").toLowerCase()) + '">' +
-      '<td class="speed-modal-title" data-label="' + escHtml(t("Serie / Film", "Series / Movie")) +
-      '" title="' + escHtml(item.title) + '">' + escHtml(item.title) + langBadge + "</td>" +
+    html += "<tr>" +
+      '<td class="dup-title-cell" data-label="' + escHtml(t("Serie / Film", "Series / Movie")) +
+      '" title="' + escHtml(item.title) + '"><span class="dup-title-text">' +
+      escHtml(item.title) + "</span>" + langBadge + "</td>" +
       '<td data-label="' + escHtml(t("Episode", "Episode")) + '">' + escHtml(_dupSlotLabel(item)) + "</td>" +
       '<td data-label="' + escHtml(t("Speicherort", "Location")) + '">' + escHtml(item.location) + "</td>" +
-      '<td class="dup-version-cell" data-label="' + escHtml(t("Vorhandene Versionen", "Existing versions")) +
-      '">' + versionChips + "</td>" +
-      '<td class="dup-path-cell" data-label="' + escHtml(t("Pfad", "Path")) + '">' + pathRows + "</td></tr>";
-    html += mhRow;
+      '<td class="dup-file-cell" data-label="' + escHtml(t("Vorhandene Versionen", "Existing versions")) +
+      '">' + fileRows + "</td></tr>";
   });
   html += "</tbody></table></div>";
-  el.innerHTML = html;
-  mountCharts(el);
+  html += _paginationHtml("duplicates", info);
+  host.innerHTML = html;
 }
 
 // ---------------------------------------------------------------
@@ -740,19 +1026,27 @@ function _renderDuplicatesModal() {
 // ---------------------------------------------------------------
 
 function mediaIgnoreSelected() {
-  var data = (window._mediaStats && window._mediaStats.incomplete) || [];
+  // Read from _ignSel, not the DOM: with pagination the checkboxes of every
+  // other page do not exist, so a DOM scan would drop those selections.
+  var byFolder = {};
+  (window._mediaStats && window._mediaStats.incomplete || []).forEach(function (x) {
+    byFolder[x.folder] = x;
+  });
+
   var items = {};
-  document.querySelectorAll("#incompleteModalContent .ign-series:checked").forEach(function (cb) {
-    var s = data[cb.dataset.idx];
-    if (s) items[s.folder] = { folder: s.folder, title: s.title, all: true };
+  Object.keys(_ignSel.series).forEach(function (folder) {
+    var s = byFolder[folder];
+    if (s) items[folder] = { folder: folder, title: s.title, all: true };
   });
-  document.querySelectorAll("#incompleteModalContent .ign-slot:checked").forEach(function (cb) {
-    var s = data[cb.dataset.idx];
+  Object.keys(_ignSel.slots).forEach(function (folder) {
+    var slots = _ignSel.slots[folder] || [];
+    if (!slots.length) return;
+    if (items[folder] && items[folder].all) return;  // whole series covers it
+    var s = byFolder[folder];
     if (!s) return;
-    if (items[s.folder] && items[s.folder].all) return; // whole series already covers it
-    var e = items[s.folder] || (items[s.folder] = { folder: s.folder, title: s.title, slots: [] });
-    if (e.slots) e.slots.push(cb.dataset.slot);
+    items[folder] = { folder: folder, title: s.title, slots: slots.slice() };
   });
+
   var payload = Object.values(items).filter(function (x) { return x.all || (x.slots && x.slots.length); });
   if (!payload.length) {
     if (typeof showToast === "function") showToast(t("Nichts ausgewählt.", "Nothing selected."));
@@ -762,8 +1056,10 @@ function mediaIgnoreSelected() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ items: payload }),
-  }).then(function (r) { return r.json(); }).then(function () { loadStats(false); })
-    .catch(function () { if (typeof showToast === "function") showToast(t("Fehler.", "Error.")); });
+  }).then(function (r) { return r.json(); }).then(function () {
+    _ignSel = { series: {}, slots: {} };   // applied — start fresh
+    loadStats(false);
+  }).catch(function () { if (typeof showToast === "function") showToast(t("Fehler.", "Error.")); });
 }
 
 function mediaUnignore(folderEnc, slotEnc) {

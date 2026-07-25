@@ -68,6 +68,7 @@ const disableEnglishSubCb = document.getElementById("disableEnglishSub");
 const filmpalastSubfolderCb = document.getElementById("filmpalastSubfolder");
 const dlQualityUpgradeCb = document.getElementById("dlQualityUpgrade");
 const dlAudioTrackMergeCb = document.getElementById("dlAudioTrackMerge");
+const dlSubtitlesCb = document.getElementById("dlSubtitles");
 const syncScheduleSelect         = document.getElementById("syncSchedule");
 const syncLanguageSelect         = document.getElementById("syncLanguage");
 const syncProviderSelect         = document.getElementById("syncProvider");
@@ -93,6 +94,8 @@ async function loadSettings() {
     if (filmpalastSubfolderCb) filmpalastSubfolderCb.checked = data.movie_subfolder === "1" || data.filmpalast_movie_subfolder === "1";
     if (dlQualityUpgradeCb) dlQualityUpgradeCb.checked = data.dl_quality_upgrade === "1";
     if (dlAudioTrackMergeCb) dlAudioTrackMergeCb.checked = data.dl_audio_track_merge === "1";
+    // Defaults to on, so treat a missing value as enabled rather than unchecked.
+    if (dlSubtitlesCb) dlSubtitlesCb.checked = data.dl_subtitles === undefined || data.dl_subtitles === "1";
 
     // Before any language dropdown gets its stored value: a saved default may
     // BE a fallback group, and a select silently ignores a value it has no
@@ -367,6 +370,14 @@ async function saveDlAudioTrackMerge() {
             : t("Tonspur-Zusammenführung deaktiviert", "Audio track merging deactivated"));
 }
 window.saveDlAudioTrackMerge = saveDlAudioTrackMerge;
+
+async function saveDlSubtitles() {
+  const checked = dlSubtitlesCb ? dlSubtitlesCb.checked : false;
+  await _saveDupeSetting({ dl_subtitles: checked },
+    checked ? t("Untertitel-Download aktiviert", "Subtitle download activated")
+            : t("Untertitel-Download deaktiviert", "Subtitle download deactivated"));
+}
+window.saveDlSubtitles = saveDlSubtitles;
 
 async function _saveDupeSetting(payload, okMessage) {
   try {

@@ -195,6 +195,10 @@ def register_settings_routes(app):
         # until the user opts in.
         dl_quality_upgrade   = get_setting("dl_quality_upgrade")   or os.environ.get("MEDIAFORGE_DL_QUALITY_UPGRADE", "0")
         dl_audio_track_merge = get_setting("dl_audio_track_merge") or os.environ.get("MEDIAFORGE_DL_AUDIO_TRACK_MERGE", "0")
+        # Subtitles default to ON: this only ever adds tracks to a file that is
+        # being written anyway. `or` would swallow a stored "0", so read the
+        # stored value explicitly and fall back only when nothing is stored.
+        dl_subtitles         = get_setting("dl_subtitles", os.environ.get("MEDIAFORGE_DL_SUBTITLES", "1"))
         download_window_enabled = get_setting("download_window_enabled") or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_ENABLED", "0")
         download_window_start   = get_setting("download_window_start")   or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_START", "22:00")
         download_window_end     = get_setting("download_window_end")     or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_END", "06:00")
@@ -259,6 +263,7 @@ def register_settings_routes(app):
                 "download_rate_limit":       download_rate_limit,
                 "dl_quality_upgrade":        dl_quality_upgrade,
                 "dl_audio_track_merge":      dl_audio_track_merge,
+                "dl_subtitles":              dl_subtitles,
                 "download_window_enabled":   download_window_enabled,
                 "download_window_start":     download_window_start,
                 "download_window_end":       download_window_end,
@@ -937,6 +942,10 @@ def register_settings_routes(app):
             val = "1" if data["dl_audio_track_merge"] else "0"
             set_setting("dl_audio_track_merge", val)
             os.environ["MEDIAFORGE_DL_AUDIO_TRACK_MERGE"] = val
+        if "dl_subtitles" in data:
+            val = "1" if data["dl_subtitles"] else "0"
+            set_setting("dl_subtitles", val)
+            os.environ["MEDIAFORGE_DL_SUBTITLES"] = val
         if "download_rate_limit" in data:
             try:
                 rate = int(data["download_rate_limit"])

@@ -680,6 +680,15 @@
         <div class="settings-hint">{{ _('Each movie gets its own subfolder — recommended for Jellyfin.') }}</div>
       </div>
 
+      <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Subtitles') }}</h3>
+      <div>
+        <label class="settings-checkbox-row" for="dlSubtitles">
+          <input type="checkbox" class="chb-main" id="dlSubtitles" onchange="saveDlSubtitles()" />
+          <span>{{ _('Download subtitles') }}</span>
+        </label>
+        <div class="settings-hint">{{ _('Every subtitle track the source offers is downloaded and muxed into the video file as a selectable track. Only affects sources that provide real subtitle tracks — burned-in subtitles are part of the picture.') }}</div>
+      </div>
+
       <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Duplicate Handling') }}</h3>
       <div>
         <label class="settings-checkbox-row" for="dlQualityUpgrade">

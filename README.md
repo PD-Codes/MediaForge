@@ -52,6 +52,7 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **AutoSync** — keep series up to date automatically on an **interval or weekly schedule**, with per-job **season/episode filters** and a separate path for movies/specials
 - **Download queue & history** — a real-time queue plus a searchable, filterable **history** (failed/cancelled/skipped, retry, bulk delete, export, auto-retention)
 - **Media library, favourites & statistics** built in
+- **Subtitles** — the subtitles a source offers are downloaded and muxed into the finished file as switchable soft-sub tracks that Jellyfin/Plex list by language (on by default)
 - **Duplicate handling** — optionally replace an already downloaded episode when the hoster offers better quality, or merge an additional language into the existing file as a new audio track instead of creating a near-duplicate (both off by default)
 - **Advanced search** — TMDB Discover with genres (include/exclude), rating & vote-count thresholds, year and runtime ranges, keywords, original language, series status, networks and streaming providers, grouped in a floating filter menu with quick presets
 - **CineInfo (TMDB)** metadata, a **Calendar** of upcoming episodes, plus **Jellyfin/Plex** and **Jellyseerr/Overseerr** integration

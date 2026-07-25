@@ -79,6 +79,23 @@ except ImportError:
         quality_upgrade_enabled,
     )
 
+try:
+    from .subtitles import (
+        cleanup_subtitle_files,
+        collect_subtitle_files,
+        is_subtitle_file,
+        subtitles_enabled,
+        ytdlp_subtitle_opts,
+    )
+except ImportError:
+    from mediaforge.models.common.subtitles import (
+        cleanup_subtitle_files,
+        collect_subtitle_files,
+        is_subtitle_file,
+        subtitles_enabled,
+        ytdlp_subtitle_opts,
+    )
+
 
 # Precompile regex for forbidden filename characters
 FORBIDDEN_CHARS = re.compile(r'[<>:"/\\|?*]')
@@ -800,7 +817,7 @@ def _cleanup_partial_downloads(output_path, reason="cancelled"):
 cleanup_partial_downloads = _cleanup_partial_downloads
 
 
-def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=None, impersonate=None, audio_lang=None, format_override=None):
+def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=None, impersonate=None, audio_lang=None, format_override=None, want_subtitles=False):
     """Download an HLS stream using yt-dlp with concurrent fragment downloads.
 
     Significantly faster than ffmpeg for HLS/m3u8 streams because yt-dlp fetches
@@ -820,6 +837,10 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
                       default yt-dlp picks "bestaudio" by bitrate and can grab the
                       wrong language (thanks for nothing).  When set we constrain the format selector to
                       that language (with a fallback to bestaudio if no match).
+        want_subtitles: When True, every subtitle rendition the source offers is
+                      written as a sidecar next to output_path (see
+                      models/common/subtitles.py). The caller collects and muxes
+                      them; nothing here embeds anything.
         format_override: Optional literal yt-dlp format selector (e.g. "303+bestaudio")
                       that takes precedence over the audio_lang-based selector below.
                       Used by the Direct Link feature (models/direct_link/episode.py),
@@ -929,6 +950,9 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
         },
     }
 
+    if want_subtitles:
+        ydl_opts.update(ytdlp_subtitle_opts())
+
     # Optional global bandwidth throttle (KB/s; 0 / unset = unlimited).
     # yt-dlp's `ratelimit` (bytes/sec) is enforced *per concurrent fragment
     # connection*, so with N parallel fragments the aggregate speed is N×ratelimit.
@@ -982,7 +1006,12 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
                     break
             else:
                 # Last-resort: find any file with this stem
-                matches = sorted(output_path.parent.glob(output_path.stem + ".*"))
+                # Subtitle sidecars share this stem ("<stem>.de.vtt"). Renaming
+                # one to .mkv would hand the caller a text file as the video.
+                matches = [
+                    m for m in sorted(output_path.parent.glob(output_path.stem + ".*"))
+                    if not is_subtitle_file(m)
+                ]
                 if matches:
                     matches[0].rename(expected)
                     logger.debug(f"[yt-dlp] Renamed {matches[0].name} → {expected.name}")
@@ -1022,6 +1051,63 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
                 active=_ffmpeg_active_count > 0,
                 phase="" if _ffmpeg_active_count == 0 else "download",
             )
+
+
+def _embed_subtitles(video_path, subs, label="", cancel_event=None):
+    """Mux subtitle sidecars into *video_path* as tagged soft-sub tracks.
+
+    Rewrites the file in place (temp file + replace) so callers keep using the
+    path they already hold and nothing downstream needs to know this ran.
+
+    Runs as the last step before the finished file is moved to its destination,
+    deliberately *after* any upscale pass: upscaling re-encodes through its own
+    ffmpeg invocation that maps video only, so subtitles added earlier would be
+    dropped again.
+
+    Never raises. A failed subtitle mux leaves the original file untouched and
+    logs a warning — losing a subtitle track is not worth failing a download
+    that has already fetched several gigabytes.
+    """
+    video_path = Path(video_path)
+    if not subs or not video_path.exists():
+        cleanup_subtitle_files(subs)
+        return video_path
+
+    out_path = video_path.with_name(video_path.stem + ".subbed.mkv")
+    try:
+        inputs = [ffmpeg.input(str(video_path))]
+        kwargs = {"c": "copy", "c:s": "srt"}
+        for idx, (sub_path, lang) in enumerate(subs):
+            inputs.append(ffmpeg.input(str(sub_path)))
+            kwargs[f"metadata:s:s:{idx}"] = f"language={lang}"
+
+        # ffmpeg-python emits "-map 0 -map 1 …" for multiple inputs, i.e. every
+        # stream of the video plus each subtitle file — the same pattern the
+        # existing track mux relies on.
+        _run_ffmpeg_with_progress(
+            ffmpeg.output(*inputs, str(out_path), **kwargs),
+            label=(label + " [subs]") if label else "",
+            cancel_event=cancel_event,
+        )
+        if not out_path.exists() or out_path.stat().st_size <= 0:
+            raise RuntimeError("subtitle mux produced no output")
+
+        out_path.replace(video_path)
+        logger.info(
+            "[Subtitles] %d track(s) muxed in: %s",
+            len(subs), ", ".join(lang for _, lang in subs),
+        )
+    except Exception as exc:
+        logger.warning("[Subtitles] could not mux subtitles, keeping video as-is: %s", exc)
+        try:
+            if out_path.exists():
+                out_path.unlink()
+        except OSError:
+            pass
+    finally:
+        cleanup_subtitle_files(subs)
+
+    return video_path
 
 
 def _replace_destination(dst, replace_existing):
@@ -1290,6 +1376,12 @@ def download(self, cancel_event=None):
 
         _impersonate = None
 
+        # Subtitle sidecars yt-dlp writes during whichever download branch runs.
+        # Collected here and muxed in once, right before the finished file is
+        # moved — see _embed_subtitles for why it has to be that late.
+        _want_subs = subtitles_enabled()
+        _subtitle_files = []
+
         if full_stream_needed:
             logger.debug("[DOWNLOADING] full stream via yt-dlp (concurrent HLS)")
 
@@ -1297,8 +1389,10 @@ def download(self, cancel_event=None):
             _run_ytdlp_download(
                 _stream_url(), raw_full, headers=headers, label=ep_label,
                 cancel_event=cancel_event, impersonate=_impersonate,
-                audio_lang=audio_code,
+                audio_lang=audio_code, want_subtitles=_want_subs,
             )
+            if _want_subs:
+                _subtitle_files = collect_subtitle_files(raw_full)
 
             # 2. Apply codec + language metadata via ffmpeg (local file → fast)
             stream_metadata = {"metadata:s:a:0": f"language={audio_code}"}
@@ -1337,9 +1431,11 @@ def download(self, cancel_event=None):
                     cancel_event=cancel_event,
                 )
                 _to_move1 = _maybe_upscale_before_move(output_path, ep_label, cancel_event)
+                _to_move1 = _embed_subtitles(_to_move1, _subtitle_files, ep_label, cancel_event)
                 _move_with_progress(_to_move1, target_path, label=ep_label, cancel_event=cancel_event)
             else:
                 _to_move2 = _maybe_upscale_before_move(temp_full, ep_label, cancel_event)
+                _to_move2 = _embed_subtitles(_to_move2, _subtitle_files, ep_label, cancel_event)
                 _replace_destination(target_path, replace_existing)
                 _move_with_progress(_to_move2, target_path, label=ep_label, cancel_event=cancel_event)
 
@@ -1358,7 +1454,10 @@ def download(self, cancel_event=None):
                 _stream_url(), raw_audio, headers=headers,
                 label=ep_label + " [A]", cancel_event=cancel_event,
                 impersonate=_impersonate, audio_lang=audio_code,
+                want_subtitles=_want_subs,
             )
+            if _want_subs:
+                _subtitle_files.extend(collect_subtitle_files(raw_audio))
             # 2. Extract audio + apply language tag via ffmpeg (local → fast copy)
             _enc_vcodec_a, _enc_acodec_a, _enc_vopts_a, _enc_global_a = _get_ffmpeg_codec_opts_for_download()
             _run_ffmpeg_with_progress(
@@ -1380,8 +1479,10 @@ def download(self, cancel_event=None):
             _run_ytdlp_download(
                 _stream_url(), raw_video, headers=headers,
                 label=ep_label + " [V]", cancel_event=cancel_event,
-                impersonate=_impersonate,
+                impersonate=_impersonate, want_subtitles=_want_subs,
             )
+            if _want_subs:
+                _subtitle_files.extend(collect_subtitle_files(raw_video))
             # 2. Extract video + apply language tag via ffmpeg (local → fast copy)
             _enc_vcodec_v, _enc_acodec_v, _enc_vopts_v, _enc_global_v = _get_ffmpeg_codec_opts_for_download()
             _enc_node_v = ffmpeg.input(str(raw_video)).output(
@@ -1477,6 +1578,7 @@ def download(self, cancel_event=None):
             cancel_event=cancel_event,
         )
         _to_move = _maybe_upscale_before_move(output_path, ep_label, cancel_event)
+        _to_move = _embed_subtitles(_to_move, _subtitle_files, ep_label, cancel_event)
         _move_with_progress(_to_move, target_path, label=ep_label, cancel_event=cancel_event)
 
         for f in (temp_audio, temp_video):
@@ -1511,6 +1613,18 @@ def download(self, cancel_event=None):
             _cleanup_partial_downloads(
                 _MEDIAFORGE_TEMP_DIR / f"{_stem_exc}{_raw}.mkv", reason="failed attempt"
             )
+            # Subtitle sidecars sit next to those raw files under the same stem
+            # and survive the suffix sweep above, which only knows about .mkv.
+            cleanup_subtitle_files(
+                collect_subtitle_files(_MEDIAFORGE_TEMP_DIR / f"{_stem_exc}{_raw}.mkv")
+            )
+        # _embed_subtitles names its temp after whichever intermediate it was
+        # handed (".temp_full.subbed.mkv", ".new.subbed.mkv", …), so match by glob.
+        for _subbed in _MEDIAFORGE_TEMP_DIR.glob(f"{_stem_exc}*.subbed.mkv"):
+            try:
+                _subbed.unlink()
+            except OSError:
+                pass
 
         _remove_empty_dirs(self._folder_path, self._base_folder)
         raise

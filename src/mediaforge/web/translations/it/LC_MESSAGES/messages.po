@@ -5055,3 +5055,12 @@ msgstr "Unisci altre lingue nel file esistente"
 
 msgid "An episode already downloaded as German Dub gets a new English Dub added as a second audio track instead of being saved a second time."
 msgstr "Un episodio già scaricato come German Dub riceve un nuovo English Dub come seconda traccia audio invece di essere salvato una seconda volta."
+
+msgid "Subtitles"
+msgstr "Sottotitoli"
+
+msgid "Download subtitles"
+msgstr "Scarica i sottotitoli"
+
+msgid "Every subtitle track the source offers is downloaded and muxed into the video file as a selectable track. Only affects sources that provide real subtitle tracks — burned-in subtitles are part of the picture."
+msgstr "Ogni traccia di sottotitoli offerta dalla sorgente viene scaricata e integrata nel file video come traccia selezionabile. Riguarda solo le sorgenti con vere tracce di sottotitoli: i sottotitoli impressi fanno parte dell’immagine."

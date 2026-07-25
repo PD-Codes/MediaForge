@@ -658,7 +658,8 @@ body.modal-open {
 
 .miss-count {
   display: inline-block;
-  margin-left: 8px;
+  margin-top: 5px;
+  max-width: 100%;
   font-size: 0.68rem;
   font-weight: 600;
   color: var(--warning, #f59e0b);
@@ -820,7 +821,39 @@ body.modal-open {
 
 .ignore-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ign-sel-info {
+  margin-right: auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-download-selected:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ===== Modal pagination =====
+   Uses the app-wide .mf-pagination component from forms.css (loaded globally
+   by base.html); only the surrounding spacing and the range caption are
+   Stats-specific. */
+
+.stats-page-info {
+  margin-top: 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-page-info + .mf-pagination {
+  margin-top: 8px;
 }
 
 .ignore-restore-btn {
@@ -828,15 +861,55 @@ body.modal-open {
   padding: 4px 12px;
 }
 
-/* ===== Duplicate table ===== */
+/* ===== Duplicate table =====
+   One cell per duplicate group holding one .dup-file block per copy. The
+   badge/size and the path used to be two separate columns aligned by a shared
+   row height; a badge or size wider than its column then spilled into the path
+   column. Stacking them per file removes the alignment contract entirely. */
 
-.dup-version-row,
-.dup-path-row {
-  min-height: 26px;
+/* Title cell (duplicates *and* incomplete-series tables): the name truncates,
+   the badge below it. Truncation lives on the inner span because a cell that
+   both truncates and contains a chip lets the chip escape the ellipsis and
+   overlap the next column. */
+.dup-title-cell {
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.dup-title-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dup-lang-badge {
+  margin-top: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+}
+
+.dup-file {
+  padding: 6px 0;
+  min-width: 0;
+}
+
+.dup-file + .dup-file {
+  border-top: 1px dashed var(--border);
+}
+
+.dup-file-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 0;
+  flex-wrap: wrap;
+  /* min-width:0 lets the flex children shrink instead of forcing the cell
+     wider than its column, which is what pushed content into the next one. */
+  min-width: 0;
+  margin-bottom: 3px;
 }
 
 .dup-size {
@@ -846,9 +919,9 @@ body.modal-open {
   white-space: nowrap;
 }
 
-/* Fixed layout so the five columns keep their assigned widths — otherwise the
-   long file paths let the browser collapse the path column to a single
-   character wide and stack the text vertically. */
+/* Fixed layout so the columns keep their assigned widths — otherwise the long
+   file paths let the browser collapse the path column to a single character
+   wide and stack the text vertically. */
 .dup-table {
   table-layout: fixed;
   width: 100%;
@@ -859,16 +932,18 @@ body.modal-open {
   vertical-align: top;
 }
 
-.dup-path-cell {
-  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
-  font-size: 0.78rem;
-  color: var(--text-muted);
+.dup-file-cell {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dup-path-row {
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
+  font-size: 0.76rem;
+  color: var(--text-muted);
   overflow-wrap: anywhere;
   /* wrap long paths, preferring the <wbr> breaks */
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 /* ===== Legacy aliases =====
@@ -1130,9 +1205,17 @@ body.modal-open {
   }
 
   /* The title cell is the card heading. */
+  .stats-modal-table tbody td.dup-title-cell .dup-title-text,
+  .dup-table tbody td.dup-title-cell .dup-title-text {
+    white-space: normal;
+    overflow: visible;
+  }
+
   .stats-modal-table tbody td.speed-modal-title,
   .speed-modal-table tbody td.speed-modal-title,
-  .dup-table tbody td.speed-modal-title {
+  .dup-table tbody td.speed-modal-title,
+  .dup-table tbody td.dup-title-cell,
+  .stats-modal-table tbody td.dup-title-cell {
     font-size: 0.92rem;
     font-weight: 650;
     color: var(--text-primary);
@@ -1155,18 +1238,45 @@ body.modal-open {
     color: var(--text-secondary);
   }
 
-  .dup-path-cell {
+  .dup-path-row {
     font-size: 0.7rem;
   }
 
-  .dup-version-row,
-  .dup-path-row {
-    min-height: 0;
-    padding: 1px 0;
+  .dup-file {
+    padding: 5px 0;
   }
 
   .speed-cell {
     gap: 10px;
+  }
+
+  /* The pager's first/last buttons and the numbers do not all fit a phone
+     row; let them wrap and keep the action bar readable underneath. */
+  .mf-pagination {
+    gap: 4px;
+  }
+
+  .mf-pagination-btn,
+  .mf-pagination-page {
+    min-width: 34px;
+    height: 34px;
+    padding: 0 6px;
+    font-size: 0.8rem;
+  }
+
+  .ignore-actions {
+    justify-content: stretch;
+  }
+
+  .ign-sel-info {
+    width: 100%;
+    margin-right: 0;
+    text-align: center;
+  }
+
+  .ignore-actions .btn-download-selected,
+  .ignore-actions .ignore-restore-btn {
+    flex: 1 1 auto;
   }
 }
 
