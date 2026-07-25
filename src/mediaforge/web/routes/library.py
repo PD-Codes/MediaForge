@@ -29,8 +29,24 @@ logger = get_logger(__name__)
 
 _LIB_LANG_FOLDERS = LANG_FOLDERS
 _LIB_VIDEO_EXTS = {".mkv", ".mp4", ".ts"}
-_LIB_EP_RE = re.compile(r"S(\d{2})E(\d{2,3})", re.IGNORECASE)
-_LIB_FALLBACK_EP_RE = re.compile(r"\bE(\d{2,3})\b", re.IGNORECASE)
+# SxxExx episode marker.
+#
+# The digit counts matter more than they look. The previous pattern was
+# S(\d{2})E(\d{2,3}), which silently *truncated* longer numbers: "S02E0013"
+# matched as season 2 episode 001 because the episode group stopped after
+# three digits and the trailing "3" was simply left over. Episode 13 was
+# therefore indexed as episode 1 -- identical to the real S02E001, which made
+# the two files look like the same episode (a false duplicate) and corrupted
+# the missing-episode detection at the same time.
+#
+# (?!\d) is what fixes it: the group has to consume the whole number or not
+# match at all, so a number that is too long is left to the fallback rather
+# than being cut short. The season is accepted with 1-4 digits too, so the
+# common "S1E1" spelling is finally recognised.
+_LIB_EP_RE = re.compile(r"S(\d{1,4})E(\d{1,4})(?!\d)", re.IGNORECASE)
+# Season-less fallback ("... E013 ..."). Deliberately still requires at least
+# two digits: a bare "E1" appears inside far too many real titles.
+_LIB_FALLBACK_EP_RE = re.compile(r"\bE(\d{2,4})(?!\d)\b", re.IGNORECASE)
 _lib_scan_lock = threading.Lock()
 
 

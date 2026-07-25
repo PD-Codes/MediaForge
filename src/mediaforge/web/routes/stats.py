@@ -12,6 +12,11 @@ from ..db import get_queue_stats
 from ..db import get_setting
 from ..db import get_stats_trends
 from ..db import get_sync_stats
+from ...languages import ENGLISH_DUB
+from ...languages import GERMAN_DUB
+from ...languages import JAPANESE_DUB
+from ...languages import LANG_FOLDER_MAP
+from ...languages import LANG_PAIR_TO_LABEL
 from ..db import remove_media_ignore
 from ..runtime_state import SYNC_SCHEDULE_MAP
 from .library import _lib_active_path_keys
@@ -148,6 +153,107 @@ def _active_library_cache(cache):
     return {k: v for k, v in (cache or {}).items() if k in active}
 
 
+# ---------------------------------------------------------------------------
+# Language detection for duplicate identity
+#
+# With MEDIAFORGE_LANG_SEPARATION off, the language is not a folder the scanner
+# knows about -- it ends up inside the file name (and often a season folder)
+# via the {language} placeholder of the naming template. The library cache
+# therefore reports language=None for those files, so "… (German Dub) …" and
+# "… (English Dub) …" of the same episode collapsed into one identity and were
+# reported as duplicates of each other.
+#
+# Labels come from mediaforge/languages.py so this never drifts from the rest
+# of the app.
+# ---------------------------------------------------------------------------
+
+def _lang_norm(text):
+    """Lower-case, with separators flattened to single spaces.
+
+    Makes "German.Dub", "german-dub" and "(German Dub)" all compare equal.
+    """
+    return re.sub(r"[\s._\-\[\]()]+", " ", str(text or "")).strip().lower()
+
+
+def _build_lang_patterns():
+    """[(normalised needle, canonical label)], longest needle first.
+
+    Longest-first matters: "english dub german sub" contains both
+    "english dub" and "german sub", and must win over either.
+    """
+    pairs = {}
+    for label in LANG_PAIR_TO_LABEL.values():
+        pairs[_lang_norm(label)] = label
+    for label, folder in LANG_FOLDER_MAP.items():
+        pairs[_lang_norm(folder)] = label
+    return sorted(pairs.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+
+_LANG_PATTERNS = _build_lang_patterns()
+
+# Single words that only carry a language when they stand alone in a *folder*
+# name -- "Staffel 2 Deutsch" next to "Staffel 2 Englisch". Deliberately not
+# applied to file names: a series called "The English Patient" would otherwise
+# be tagged as English Dub.
+_LANG_WORDS = {
+    "deutsch": GERMAN_DUB, "german": GERMAN_DUB,
+    "englisch": ENGLISH_DUB, "english": ENGLISH_DUB,
+    "japanisch": JAPANESE_DUB, "japanese": JAPANESE_DUB,
+}
+
+
+def _has_token(haystack, needle):
+    """Whole-token match: "german dub" hits, "germany" does not."""
+    return re.search(r"(?<![a-z0-9])" + re.escape(needle) + r"(?![a-z0-9])", haystack) is not None
+
+
+def _match_lang(haystack, allow_bare_words=False):
+    """Find a language label in an already-normalised string, or None.
+
+    `allow_bare_words` additionally accepts a lone "Deutsch"/"English"/… and
+    is only ever enabled for directory names. On a file name it produced
+    false positives on ordinary titles -- "The English Patient" was read as
+    English Dub.
+    """
+    if not haystack:
+        return None
+    for needle, label in _LANG_PATTERNS:
+        if _has_token(haystack, needle):
+            return label
+    if allow_bare_words:
+        for word, label in _LANG_WORDS.items():
+            if _has_token(haystack, word):
+                return label
+    return None
+
+
+def _detect_language(entry, explicit=None):
+    """Language of one library entry, or "" when it cannot be determined.
+
+    `explicit` is the language-separation folder the scanner already knows
+    about and always wins. Otherwise the file name is checked (that is where
+    {language} lands), then the directory names from the file upwards.
+
+    Returning "" for "unknown" is deliberate: two files that both carry no
+    language marker still belong to the same identity, so a plain
+    1080p-vs-720p duplicate keeps being detected.
+    """
+    if explicit:
+        return explicit
+    hit = _match_lang(_lang_norm(entry.get("file") or ""))
+    if hit:
+        return hit
+    path = entry.get("path") or ""
+    if path:
+        # Nearest folder first: "Staffel 2 Deutsch" is more specific than the
+        # library root, which might sit under a "German" share.
+        for part in reversed(re.split(r"[\\/]+", str(path))[:-1]):
+            hit = _match_lang(_lang_norm(part), allow_bare_words=True)
+            if hit:
+                return hit
+    return ""
+
+
 def _norm_path(p):
     """Normalised absolute path for identity comparison, or None.
 
@@ -225,16 +331,23 @@ def _compute_media_duplicates(cache=None):
                     for e in eps:
                         if not e.get("is_video", True):
                             continue
+                        # Language is part of the identity. Without language
+                        # separation it is not a folder the scanner reports,
+                        # but sits in the file name via {language} -- so it has
+                        # to be read back off the entry, or the German and the
+                        # English copy of an episode look like duplicates of
+                        # each other.
+                        ep_lang = _detect_language(e, language)
                         if is_movie or skey == "movies":
                             norm = _dup_norm_movie_key(e.get("file") or "")
-                            key = (folder.lower(), "movie", norm, language or "")
+                            key = (folder.lower(), "movie", norm, ep_lang)
                             kind = "movie"
                             display_slot = "movie"  # frontend localizes the label
                         else:
                             ep = e.get("episode")
                             if ep is None:
                                 continue
-                            key = (folder.lower(), skey, ep, language or "")
+                            key = (folder.lower(), skey, ep, ep_lang)
                             kind = "series"
                             display_slot = f"S{skey}E{ep}"
                         # A copy is only a copy if it is a *different file*.
@@ -258,7 +371,7 @@ def _compute_media_duplicates(cache=None):
                             "location": location,
                             "kind": kind,
                             "slot": display_slot,
-                            "language": language,
+                            "language": ep_lang or None,
                             "files": [],
                         })
                         g["files"].append({
