@@ -251,11 +251,6 @@
   white-space: nowrap;
 }
 
-.path-site-chip input {
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
 .path-site-chip input:disabled {
   cursor: not-allowed;
 }

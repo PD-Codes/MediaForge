@@ -1398,7 +1398,7 @@ function renderCustomPaths(paths) {
     const siteChips = customPathSiteOptions.map(function ({ key, label }) {
       const checked = active.includes(key) ? "checked" : "";
       const disabled = (typeof settingsCanEdit !== "undefined" && !settingsCanEdit) ? "disabled" : "";
-      return '<label class="path-site-chip"><input data-custom-path-id="' + p.id + '" type="checkbox" ' + checked + " " + disabled +
+      return '<label class="path-site-chip"><input class="chb-main" data-custom-path-id="' + p.id + '" type="checkbox" ' + checked + " " + disabled +
         " onchange=\"togglePathSite(" + p.id + ",'" + key + "',this.checked)\"> " + esc(label) + "</label>";
     }).join("");
     const tr = document.createElement("tr");
