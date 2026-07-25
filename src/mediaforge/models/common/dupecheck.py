@@ -6,12 +6,17 @@ old "already there -> skip" behaviour until the user asks for more.
 
 1. ``dl_quality_upgrade`` -- the file exists and already carries every track the
    job wanted, so the old code returned "skipped". With the toggle on, the
-   remote stream is probed first (``ffprobe`` on the hoster URL, no payload
+   source's formats are enumerated first (yt-dlp, metadata only, no payload
    downloaded) and compared against the file on disk. Only a strictly higher
    video height, or a meaningfully higher bitrate at the same height, counts as
    better; anything unknown counts as *not* better. Being conservative here is
    deliberate -- a false positive re-downloads a multi-GB file and overwrites a
    good copy, a false negative merely keeps the status quo.
+
+   The enumeration deliberately goes through yt-dlp rather than ffprobe: the
+   resolved stream URL is usually an HLS *master* playlist, and ffprobe reports
+   the variant that playlist defaults to while the download itself takes
+   ``bestvideo+bestaudio/best``. See ``_probe_remote_with_ytdlp``.
 
 2. ``dl_audio_track_merge`` -- the episode was downloaded in another language
    (German Dub) and the current job is a different one (English Dub, German
@@ -141,10 +146,15 @@ def _as_int(value, default=0):
 def quality_from_probe(probe: dict) -> dict:
     """Normalise an ffprobe result into ``{height, width, bitrate}``.
 
-    ``bitrate`` is the video stream's own bitrate when the container reports it
-    and falls back to the format bitrate (audio included, a few hundred kbit/s
-    of noise) otherwise. That mix is fine because the comparison only ever comes
-    into play at equal resolution and behind a 20 % margin.
+    ``bitrate`` is the *total* bitrate (video + audio) in bit/s, taken from the
+    container's format entry. That unit and that scope are load-bearing: the
+    remote side reports yt-dlp's ``tbr``, which is also a total, and comparing a
+    video-only figure against a total would understate the local file by the
+    size of its audio track and trigger a bogus "better quality" verdict.
+
+    Matroska stores no per-track bitrate, so the format entry is the only thing
+    that is reliably there anyway; size/duration is the last resort for
+    containers that report neither.
     """
     out = {"height": 0, "width": 0, "bitrate": 0}
     if not probe:
@@ -153,9 +163,19 @@ def quality_from_probe(probe: dict) -> dict:
     if stream:
         out["height"] = _as_int(stream.get("height"))
         out["width"] = _as_int(stream.get("width"))
-        out["bitrate"] = _as_int(stream.get("bit_rate"))
+
+    fmt = probe.get("format") or {}
+    out["bitrate"] = _as_int(fmt.get("bit_rate"))
     if not out["bitrate"]:
-        out["bitrate"] = _as_int((probe.get("format") or {}).get("bit_rate"))
+        try:
+            duration = float(fmt.get("duration") or 0)
+            size = float(fmt.get("size") or 0)
+            if duration > 0 and size > 0:
+                out["bitrate"] = int(size * 8 / duration)
+        except (TypeError, ValueError):
+            pass
+    if not out["bitrate"] and stream:
+        out["bitrate"] = _as_int(stream.get("bit_rate"))
     return out
 
 
@@ -221,6 +241,81 @@ def probe_local_quality(path) -> dict | None:
     return quality if quality.get("height") else None
 
 
+def _probe_remote_with_ytdlp(stream_url: str, headers: dict | None = None):
+    """Best format yt-dlp would pick for *stream_url*, as ``{height, width, bitrate}``.
+
+    This has to be yt-dlp and not ffprobe. ``episode.stream_url`` is normally an
+    HLS *master* playlist (see the docstrings on the ``stream_url`` properties in
+    models/aniworld_to, models/megakino_to, models/filmpalast_to), which lists
+    several variants. ffprobe on a master playlist opens whichever variant the
+    playlist defaults to -- often the lowest -- while the download that follows
+    runs ``_run_ytdlp_download`` with ``bestvideo+bestaudio/best`` and fetches the
+    *highest*. Comparing the default variant against the file on disk therefore
+    compared the wrong stream and reported "lower resolution" for sources that
+    were in fact an upgrade, so the check never fired.
+
+    Enumerating the formats the same way the downloader selects them makes the
+    comparison apples-to-apples. Mirrors the options in
+    ``models/direct_link/probe.py::probe_direct_link_formats``.
+    """
+    try:
+        import yt_dlp
+    except ImportError:
+        return None
+
+    class _QuietLogger:
+        def debug(self, msg): pass
+        def info(self, msg): pass
+        def warning(self, msg): pass
+        def error(self, msg): pass
+
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "logger": _QuietLogger(),
+        "skip_download": True,
+        "http_headers": headers or {},
+        "socket_timeout": 20,
+        "nocheckcertificate": True,
+        "noplaylist": True,
+        "js_runtimes": {"node": {}, "deno": {}},
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(stream_url, download=False)
+    except Exception as exc:
+        logger.debug("[QualityCheck] yt-dlp probe failed: %s", exc)
+        return None
+    if not info:
+        return None
+    if info.get("entries"):
+        entries = [e for e in info["entries"] if e]
+        if not entries:
+            return None
+        info = entries[0]
+
+    best = None
+    for fmt in info.get("formats") or [info]:
+        if fmt.get("vcodec") in (None, "none"):
+            continue
+        height = _as_int(fmt.get("height"))
+        if not height:
+            continue
+        # tbr is kbit/s in yt-dlp; the local side is bit/s.
+        tbr = fmt.get("tbr") or fmt.get("vbr") or 0
+        try:
+            bitrate = int(float(tbr) * 1000)
+        except (TypeError, ValueError):
+            bitrate = 0
+        # Same selection order as "bestvideo+bestaudio/best": highest resolution
+        # wins, bitrate only breaks ties between variants of the same height.
+        key = (height, bitrate)
+        if best is None or key > (best["height"], best["bitrate"]):
+            best = {"height": height, "width": _as_int(fmt.get("width")), "bitrate": bitrate}
+    return best
+
+
 def probe_remote_quality(stream_url: str, headers: dict | None = None) -> dict | None:
     """Probe a hoster stream for resolution/bitrate without downloading it.
 
@@ -229,6 +324,13 @@ def probe_remote_quality(stream_url: str, headers: dict | None = None) -> dict |
     """
     if not stream_url:
         return None
+
+    quality = _probe_remote_with_ytdlp(stream_url, headers)
+    if quality and quality.get("height"):
+        return quality
+
+    # Fallback for the hosters that hand back a plain .mp4 rather than an HLS
+    # playlist: no variants to choose between, so ffprobe is exact and cheaper.
     quality = quality_from_probe(_run_ffprobe(stream_url, headers=headers or None))
     return quality if quality.get("height") else None
 
@@ -358,3 +460,49 @@ def find_existing_variant(episode_path: Path):
             logger.info("[TrackMerge] existing copy found: %s", hit)
             return hit
     return None
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+def explain(existing_file, source_url, headers=None):
+    """Run the full comparison for one file/source pair and return the details.
+
+    Exists so a "why did it not upgrade?" question can be answered without
+    reproducing a whole queue run: it uses the same probes and the same verdict
+    function the download path uses.
+    """
+    existing = probe_local_quality(existing_file)
+    candidate = probe_remote_quality(source_url, headers)
+    better, reason = is_better_quality(existing, candidate)
+    return {
+        "existing": existing,
+        "candidate": candidate,
+        "better": better,
+        "reason": reason,
+    }
+
+
+if __name__ == "__main__":
+    # python -m mediaforge.models.common.dupecheck <file> <stream-url>
+    #
+    # Note: <stream-url> must be the RESOLVED stream (usually a master .m3u8),
+    # not the hoster's embed page -- that is what download() compares against.
+    import argparse
+    import json as _json
+
+    parser = argparse.ArgumentParser(description="Explain a MediaForge quality-upgrade decision.")
+    parser.add_argument("file", help="existing media file on disk")
+    parser.add_argument("url", help="resolved stream URL of the new source")
+    parser.add_argument("--referer", default=None, help="Referer header for the source")
+    parser.add_argument("--user-agent", default=None, help="User-Agent header for the source")
+    args = parser.parse_args()
+
+    _headers = {}
+    if args.referer:
+        _headers["Referer"] = args.referer
+    if args.user_agent:
+        _headers["User-Agent"] = args.user_agent
+
+    print(_json.dumps(explain(args.file, args.url, _headers or None), indent=2))

@@ -1161,6 +1161,21 @@ def download(self, cancel_event=None):
         check = check_downloaded(target_path)
 
         headers = PROVIDER_HEADERS_D.get(_effective_provider(self), {})
+
+        # episode.stream_url is a plain property, not a cached one: every read
+        # re-runs the hoster extractor, which is a fresh HTTP round trip and, on
+        # VOE, a fresh captcha risk. It also hands back a *different*, freshly
+        # signed URL each time, so the quality probe and the download that
+        # follows would otherwise be looking at two different tokens. Resolve
+        # once per download() and reuse -- lazily, because an episode that is
+        # skipped must not pay for (or fail on) an extractor run at all.
+        _stream_url_memo = []
+
+        def _stream_url():
+            if not _stream_url_memo:
+                _stream_url_memo.append(self.stream_url)
+            return _stream_url_memo[0]
+
         input_kwargs = {
             "reconnect": 1,
             "reconnect_streamed": 1,
@@ -1225,16 +1240,28 @@ def download(self, cancel_event=None):
                 "width": check.get("width"),
                 "bitrate": check.get("bitrate"),
             }
-            # ffprobe on the hoster URL: reads the stream header only, no
-            # payload, so a "not better" answer costs a request instead of a
-            # full download.
-            candidate_q = probe_remote_quality(self.stream_url, headers)
+            # Enumerates the source's formats without fetching payload, so a
+            # "not better" answer costs one request instead of a full download.
+            candidate_q = probe_remote_quality(_stream_url(), headers)
             better, reason = is_better_quality(existing_q, candidate_q)
+
+            # INFO, not DEBUG: this decides whether a multi-GB re-download
+            # happens, and at DEBUG the default log level swallowed it entirely
+            # -- leaving no way to tell a working check that found nothing
+            # better from a check that failed to probe the source at all.
+            logger.info(
+                "[QualityCheck] %s — on disk: %sp / %s kbit/s, source: %s — %s",
+                self._file_name,
+                existing_q.get("height") or "?",
+                round((existing_q.get("bitrate") or 0) / 1000) or "?",
+                (f"{candidate_q['height']}p / "
+                 f"{round(candidate_q['bitrate'] / 1000) or '?'} kbit/s")
+                if candidate_q else "could not be probed",
+                "upgrading" if better else f"keeping ({reason})",
+            )
             if not better:
-                logger.debug(f"[SKIPPED] {self._file_name} ({reason})")
                 return False
 
-            logger.info("[QUALITY UPGRADE] %s: %s", self._file_name, reason)
             need_audio = True
             need_video = True
             replace_existing = True
@@ -1268,7 +1295,7 @@ def download(self, cancel_event=None):
 
             # 1. Fast HLS download with yt-dlp (parallel segments)
             _run_ytdlp_download(
-                self.stream_url, raw_full, headers=headers, label=ep_label,
+                _stream_url(), raw_full, headers=headers, label=ep_label,
                 cancel_event=cancel_event, impersonate=_impersonate,
                 audio_lang=audio_code,
             )
@@ -1328,7 +1355,7 @@ def download(self, cancel_event=None):
             logger.debug("[DOWNLOADING] audio stream via yt-dlp (concurrent HLS)")
             # 1. Download full HLS stream with yt-dlp (fast parallel segments)
             _run_ytdlp_download(
-                self.stream_url, raw_audio, headers=headers,
+                _stream_url(), raw_audio, headers=headers,
                 label=ep_label + " [A]", cancel_event=cancel_event,
                 impersonate=_impersonate, audio_lang=audio_code,
             )
@@ -1351,7 +1378,7 @@ def download(self, cancel_event=None):
             logger.debug("[DOWNLOADING] video stream via yt-dlp (concurrent HLS)")
             # 1. Download full HLS stream with yt-dlp (fast parallel segments)
             _run_ytdlp_download(
-                self.stream_url, raw_video, headers=headers,
+                _stream_url(), raw_video, headers=headers,
                 label=ep_label + " [V]", cancel_event=cancel_event,
                 impersonate=_impersonate,
             )
