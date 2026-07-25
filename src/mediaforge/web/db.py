@@ -4123,6 +4123,7 @@ def get_calendar_media_titles() -> list:
 _CREATE_UPSCALE_QUEUE_TABLE = """
 CREATE TABLE IF NOT EXISTS upscale_queue (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    queue_item_id    INTEGER,
     title            TEXT    NOT NULL,
     file_path        TEXT    NOT NULL,
     output_path      TEXT,
@@ -4152,6 +4153,7 @@ def init_upscale_queue_db():
             ("total_files",      "INTEGER NOT NULL DEFAULT 1"),
             ("current_file_idx", "INTEGER NOT NULL DEFAULT 0"),
             ("position",         "INTEGER NOT NULL DEFAULT 0"),
+            ("queue_item_id",    "INTEGER"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE upscale_queue ADD COLUMN {col} {definition}")
@@ -4159,15 +4161,27 @@ def init_upscale_queue_db():
                 pass  # column already exists
         # Backfill position = id for rows that still have 0
         conn.execute("UPDATE upscale_queue SET position = id WHERE position = 0")
+        # Lookup for append_download_upscale_file(): one row per download job.
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_upscale_queue_item "
+                "ON upscale_queue (queue_item_id, status)"
+            )
+        except Exception:
+            pass
         conn.commit()
     finally:
         conn.close()
 
 
-def add_to_upscale_queue(title, file_path, output_path=None, source="manual", files=None):
+def add_to_upscale_queue(title, file_path, output_path=None, source="manual",
+                         files=None, queue_item_id=None):
     """Add one upscale job.
     files: list of {file_path, output_path} for multi-file (batch) jobs.
     When files is set, file_path/output_path are taken from files[0].
+    queue_item_id: download queue row this job belongs to, so later episodes
+    of the same download can be appended to it (see
+    append_download_upscale_file).
     """
     import json as _json
     conn = get_db()
@@ -4183,13 +4197,179 @@ def add_to_upscale_queue(title, file_path, output_path=None, source="manual", fi
             files_json = None
             total = 1
         cur = conn.execute(
-            "INSERT INTO upscale_queue (title, file_path, output_path, files, total_files, source) VALUES (?, ?, ?, ?, ?, ?)",
-            (title, fp, out, files_json, total, source),
+            "INSERT INTO upscale_queue (title, file_path, output_path, files, total_files, source, queue_item_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (title, fp, out, files_json, total, source, queue_item_id),
         )
         new_id = cur.lastrowid
         conn.execute("UPDATE upscale_queue SET position = ? WHERE id = ?", (new_id, new_id))
         conn.commit()
         return new_id
+    finally:
+        conn.close()
+
+
+def _upscale_files_of(row):
+    """File list of an upscale row: the JSON column, or the single-file pair."""
+    import json as _json
+
+    raw = row["files"] if "files" in row.keys() else None
+    if raw:
+        try:
+            parsed = _json.loads(raw)
+            if isinstance(parsed, list) and parsed:
+                return parsed
+        except Exception:
+            pass
+    fp = row["file_path"]
+    return [{"file_path": fp, "output_path": row["output_path"] or fp}]
+
+
+def append_download_upscale_file(queue_item_id, title, file_path, output_path):
+    """Attach ONE finished episode to the open upscale job of a download.
+
+    A season download gets a single upscale queue entry that grows episode by
+    episode: the first finished episode creates it, every later one is
+    appended. That way upscaling starts while the rest of the season is still
+    downloading, and no job is ever queued for files that don't exist yet.
+
+    The whole read-modify-write runs in one BEGIN IMMEDIATE transaction, so two
+    episodes finishing at the same moment can't clobber each other's append.
+    An entry is only reused while it is still 'queued' or 'running' AND the
+    worker hasn't passed the end of the current list yet (current_file_idx <
+    total_files); otherwise a fresh entry is created, because appending to a
+    job the worker is about to finalize would silently drop the file.
+
+    Returns (upscale_id, created) — created=True when a new entry was made,
+    (None, False) when the user cancelled this download's upscale job (that
+    decision applies to the rest of the season as well).
+
+    Used by: web/upscale_worker.py (_trigger_episode_after_download_upscale).
+    """
+    import json as _json
+
+    fp  = str(file_path)
+    out = str(output_path) if output_path else fp
+    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = None
+        if queue_item_id is not None:
+            row = conn.execute(
+                "SELECT * FROM upscale_queue "
+                "WHERE queue_item_id = ? AND status IN ('queued','running') "
+                "  AND current_file_idx < total_files "
+                "ORDER BY id DESC LIMIT 1",
+                (queue_item_id,),
+            ).fetchone()
+
+        if row is not None:
+            files = _upscale_files_of(row)
+            if any(f.get("file_path") == fp for f in files):
+                conn.execute("ROLLBACK")
+                return row["id"], False
+            files.append({"file_path": fp, "output_path": out})
+            conn.execute(
+                "UPDATE upscale_queue SET files = ?, total_files = ? WHERE id = ?",
+                (_json.dumps(files), len(files), row["id"]),
+            )
+            conn.execute("COMMIT")
+            return row["id"], False
+
+        if queue_item_id is not None:
+            # The user cancelled this download's upscale job -> that decision
+            # covers the rest of the season too, no new entry.
+            cancelled = conn.execute(
+                "SELECT 1 FROM upscale_queue WHERE queue_item_id = ? AND status = 'cancelled' LIMIT 1",
+                (queue_item_id,),
+            ).fetchone()
+            if cancelled:
+                conn.execute("ROLLBACK")
+                return None, False
+
+        cur = conn.execute(
+            "INSERT INTO upscale_queue (title, file_path, output_path, files, total_files, source, queue_item_id) "
+            "VALUES (?, ?, ?, ?, ?, 'download', ?)",
+            (title, fp, out, _json.dumps([{"file_path": fp, "output_path": out}]), 1, queue_item_id),
+        )
+        new_id = cur.lastrowid
+        conn.execute("UPDATE upscale_queue SET position = ? WHERE id = ?", (new_id, new_id))
+        conn.execute("COMMIT")
+        return new_id, True
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+
+def get_upscale_files(item_id):
+    """Current file list of an upscale job (re-read while it runs).
+
+    The worker calls this before every file because a download can append
+    further episodes to a job that is already running.
+
+    Used by: web/upscale_worker.py.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT * FROM upscale_queue WHERE id = ?", (item_id,)
+        ).fetchone()
+        if row is None:
+            return []
+        return _upscale_files_of(row)
+    finally:
+        conn.close()
+
+
+def finalize_upscale_item(item_id, processed_count):
+    """Close a finished upscale job — unless new files were appended meanwhile.
+
+    Marks the job as done by setting current_file_idx = total_files inside a
+    BEGIN IMMEDIATE transaction, which is the same lock
+    append_download_upscale_file() takes. Either the append wins (and this
+    returns False, so the worker keeps going) or this wins (and the append
+    creates its own new entry). Without that handshake the last episode of a
+    season could land in a job the worker had already walked past.
+
+    Returns True when the job is really done.
+
+    Used by: web/upscale_worker.py.
+    """
+    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT total_files FROM upscale_queue WHERE id = ?", (item_id,)
+        ).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            return True
+        if int(row["total_files"] or 0) > int(processed_count):
+            conn.execute("ROLLBACK")
+            return False
+        conn.execute(
+            "UPDATE upscale_queue SET current_file_idx = total_files WHERE id = ?",
+            (item_id,),
+        )
+        conn.execute("COMMIT")
+        return True
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
     finally:
         conn.close()
 

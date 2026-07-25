@@ -36,7 +36,7 @@ from .runtime_state import (
     get_provider_fallback_chain,
     is_queue_paused,
 )
-from .upscale_worker import _trigger_batch_after_download_upscale
+from .upscale_worker import _trigger_episode_after_download_upscale
 from .encoding_worker import _trigger_after_download_encode
 
 logger = get_logger(__name__)
@@ -657,7 +657,6 @@ def _queue_worker():
                 return f"Nicht verfügbar in: {label}"
 
             total_bytes_before = 0
-            _upscale_after_paths = []  # collect for batch after_download upscaling
             download_start_time = time.time()
 
             downloaded_count = 0
@@ -895,12 +894,23 @@ def _queue_worker():
                         except Exception:
                             pass
 
-                        # Collect path for batch after_download upscaling
+                        # Hand THIS episode to the upscale queue right away
+                        # (same idea as the encoding trigger below): the first
+                        # episode of the download creates the upscale job, the
+                        # following ones are appended to that same job. Waiting
+                        # for the whole season only delayed the upscaling, and
+                        # a job could never be queued for a file that wasn't
+                        # written yet.
                         try:
                             if _out_path is not None:
-                                _upscale_after_paths.append(str(_out_path))
-                        except Exception:
-                            pass
+                                _trigger_episode_after_download_upscale(
+                                    str(_out_path),
+                                    item.get("title", ""),
+                                    item["id"],
+                                    upscale=bool(item.get("upscale", 0)),
+                                )
+                        except Exception as _ue:
+                            logger.warning(f"[Upscale] Trigger Fehler: {_ue}")
 
                         # Trigger after_download encoding for THIS episode right away
                         # (not batched at the end of the whole queue item) so encoding
@@ -1082,13 +1092,6 @@ def _queue_worker():
                     if _item_cancel.is_set():
                         break
                     time.sleep(2)
-
-            # Batch-trigger after_download upscaling for all collected episode paths
-            if _upscale_after_paths and not is_queue_cancelled(item["id"]):
-                try:
-                    _trigger_batch_after_download_upscale(_upscale_after_paths, item.get("title", ""), upscale=bool(item.get("upscale", 0)))
-                except Exception as _ue:
-                    logger.warning(f"[Upscale] Batch-Trigger Fehler: {_ue}")
 
             # Only set final status if not already cancelled
             if not is_queue_cancelled(item["id"]):

@@ -198,7 +198,7 @@ function _renderUpscaleQueue(items, progress) {
       // File label
       let fileLabel;
       if (totalFiles > 1) {
-        fileLabel = (curFileIdx + (isRunning ? 1 : 0)) + "/" + totalFiles + " Dateien";
+        fileLabel = (curFileIdx + (isRunning ? 1 : 0)) + "/" + totalFiles + " " + t("Dateien", "files");
       } else {
         fileLabel = _uFilename(isRunning && progress.file ? progress.file : item.file_path);
       }

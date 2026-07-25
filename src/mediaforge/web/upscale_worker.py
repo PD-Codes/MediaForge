@@ -19,9 +19,12 @@ import time
 from ..logger import get_logger
 from .db import (
     add_to_upscale_queue,
+    append_download_upscale_file,
     claim_next_upscale_queued,
+    finalize_upscale_item,
     is_upscale_cancelled,
     get_setting,
+    get_upscale_files,
     reset_running_upscale_items,
     set_upscale_error,
     set_upscale_status,
@@ -104,25 +107,52 @@ def _upscale_worker():
             import json as _wjson
             from pathlib import Path as _WPath
 
-            # Build file list: multi-file entries store JSON in .files column
-            _raw_files = item.get("files")
-            if _raw_files:
+            # Build file list: multi-file entries store JSON in .files column.
+            # It is re-read before every file because an "after download" job
+            # for a season grows while it runs — the download worker appends
+            # each episode as soon as that episode is on disk.
+            def _current_files():
                 try:
-                    _file_list = _wjson.loads(_raw_files)
-                except Exception:
-                    _file_list = [{"file_path": item["file_path"],
-                                   "output_path": item.get("output_path") or item["file_path"]}]
-            else:
-                _file_list = [{"file_path": item["file_path"],
-                               "output_path": item.get("output_path") or item["file_path"]}]
+                    files = get_upscale_files(item["id"])
+                except Exception as _le:
+                    logger.warning(f"[Upscale] Dateiliste konnte nicht neu gelesen werden: {_le}")
+                    files = []
+                if files:
+                    return files
+                _raw_files = item.get("files")
+                if _raw_files:
+                    try:
+                        return _wjson.loads(_raw_files)
+                    except Exception:
+                        pass
+                return [{"file_path": item["file_path"],
+                         "output_path": item.get("output_path") or item["file_path"]}]
 
+            _file_list = _current_files()
             _total_files = max(len(_file_list), 1)
             _overall_failed = 0
+            _fi = 0
 
-            for _fi, _fentry in enumerate(_file_list):
+            while True:
                 if is_upscale_cancelled(item["id"]):
                     break
 
+                _file_list = _current_files()
+                _total_files = max(len(_file_list), 1)
+                if _fi >= len(_file_list):
+                    # Nothing left in the list. finalize_upscale_item() takes
+                    # the same DB lock as the append, so a file added in this
+                    # very moment is not lost: it makes this return False and
+                    # the loop picks the new entry up on the next round.
+                    try:
+                        if finalize_upscale_item(item["id"], _fi):
+                            break
+                    except Exception as _fex:
+                        logger.warning(f"[Upscale] Abschluss-Check fehlgeschlagen: {_fex}")
+                        break
+                    continue
+
+                _fentry = _file_list[_fi]
                 file_path   = _fentry["file_path"]
                 output_path = _fentry.get("output_path") or file_path
 
@@ -134,13 +164,19 @@ def _upscale_worker():
                 temp_output = str(MEDIAFORGE_TEMP_DIR / f"{_WPath(file_path).stem}_{uuid.uuid4().hex[:8]}_upscale_tmp.mkv")
                 actual_output = output_path
 
-                # Track current file index (poller reads this)
+                # Track current file index / list length (poller reads both)
                 item["_runtime_file_idx"] = _fi
+                item["total_files"] = _total_files
                 update_upscale_progress(item["id"],
                     round(_fi / _total_files * 100, 1),
                     current_file_idx=_fi)
 
                 try:
+                    # The source can be gone by now (deleted in the library,
+                    # replaced by an after-download encode). Say so plainly
+                    # instead of letting ffmpeg fail with an opaque error.
+                    if not _WPath(file_path).exists():
+                        raise FileNotFoundError(f"Datei nicht gefunden: {file_path}")
                     upscale_file(
                         input_path=file_path,
                         output_path=temp_output,
@@ -162,18 +198,22 @@ def _upscale_worker():
                     # Continue with next file unless cancelled
                     if is_upscale_cancelled(item["id"]):
                         break
+                finally:
+                    _fi += 1
 
-            # Final status
+            # Final status. Counts refer to what was actually processed (_fi),
+            # not to the list length at claim time — the list can have grown.
+            _done_files = max(_fi, 1)
             if not is_upscale_cancelled(item["id"]):
-                update_upscale_progress(item["id"], 100.0, current_file_idx=_total_files)
+                update_upscale_progress(item["id"], 100.0, current_file_idx=_done_files)
                 if _overall_failed == 0:
                     set_upscale_status(item["id"], "completed")
-                elif _overall_failed < _total_files:
+                elif _overall_failed < _done_files:
                     set_upscale_status(item["id"], "completed")
-                    set_upscale_error(item["id"], f"{_overall_failed}/{_total_files} Datei(en) fehlgeschlagen")
+                    set_upscale_error(item["id"], f"{_overall_failed}/{_done_files} Datei(en) fehlgeschlagen")
                 else:
                     set_upscale_status(item["id"], "failed")
-                    set_upscale_error(item["id"], f"Alle {_total_files} Datei(en) fehlgeschlagen")
+                    set_upscale_error(item["id"], f"Alle {_done_files} Datei(en) fehlgeschlagen")
                 _final_status_set = True
 
             _poll_stop.set()
@@ -213,13 +253,76 @@ def _ensure_upscale_worker():
     thread.start()
 
 
-def _trigger_batch_after_download_upscale(episode_paths, title, upscale=False):
-    """Add ALL downloaded episodes as ONE upscale queue entry.
+def _after_download_upscale_target(episode_path):
+    """(file_path, output_path) for one finished episode, or None.
+
+    None means "don't upscale this": the mode is off, or the file isn't on
+    disk (yet). Keeping that check here is what stops a job from ever being
+    queued for a file that doesn't exist.
+    """
+    from pathlib import Path as _Path
+
+    if get_setting("upscaling_mode", "disabled") != "after_download":
+        return None
+    ep = _Path(episode_path)
+    try:
+        if not ep.exists():
+            return None
+    except OSError:
+        return None
+    replace = get_setting("upscaling_replace_original", "1") == "1"
+    out = str(ep) if replace else str(ep.with_name(ep.stem + " (upscale).mkv"))
+    return str(ep), out
+
+
+def _trigger_episode_after_download_upscale(episode_path, title, queue_item_id, upscale=False):
+    """Add ONE finished episode to the download's upscale job.
+
+    Called right after each episode is on disk (mirrors
+    encoding_worker._trigger_after_download_encode). The first episode of a
+    download creates the queue entry, every later one is appended to that same
+    entry, so a season stays one job in the UI while upscaling can already
+    start on episode 1 instead of waiting for the whole season.
 
     Only enqueues when the "upscale after download" mode is active and the
     caller requested upscaling for this download; silently no-ops otherwise.
 
-    Used by: web/queue_worker.py (called after a download batch completes).
+    Used by: web/queue_worker.py (per episode).
+    """
+    try:
+        if not upscale:
+            return
+        target = _after_download_upscale_target(episode_path)
+        if target is None:
+            return
+        file_path, output_path = target
+        _uid, _created = append_download_upscale_file(
+            queue_item_id=queue_item_id,
+            title=title,
+            file_path=file_path,
+            output_path=output_path,
+        )
+        if _uid is None:
+            logger.info(f"[Upscale] Auftrag abgebrochen — Folge übersprungen: {file_path}")
+            return
+        logger.info(
+            "[Upscale] %s: %s (Job #%s)",
+            "Neuer Auftrag" if _created else "Folge angehängt",
+            file_path, _uid,
+        )
+    except Exception as exc:
+        logger.warning(f"[Upscale] Episoden-Trigger Fehler: {exc}")
+
+
+def _trigger_batch_after_download_upscale(episode_paths, title, upscale=False):
+    """Add several finished episodes as ONE upscale queue entry.
+
+    Legacy entry point, kept for third-party modules: the download queue no
+    longer waits for a whole season, it appends each episode through
+    _trigger_episode_after_download_upscale() instead. Only enqueues when the
+    "upscale after download" mode is active and the caller requested
+    upscaling; silently no-ops otherwise, and files that aren't on disk are
+    dropped rather than queued.
     """
     try:
         mode = get_setting("upscaling_mode", "disabled")
