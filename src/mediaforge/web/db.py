@@ -2746,6 +2746,42 @@ def set_library_scanning(path_key, is_scanning: bool):
         conn.close()
 
 
+def prune_library_cache(valid_keys):
+    """Delete library_cache rows whose path_key is no longer a scan target.
+
+    Rows are keyed by path_key ("default" or a custom path's id). Nothing used
+    to remove them: deleting a custom path dropped its custom_paths row but
+    left the cached scan behind forever, and since a re-created path gets a
+    fresh autoincrement id, the old row could never be overwritten either.
+
+    That stale row still contained a full title/season/episode tree, and
+    get_all_library_cache() hands out every row — so the Statistics media
+    counts and, much more visibly, the duplicate check saw the same episode
+    twice (once from the live scan, once from the orphan) and reported the
+    entire library as duplicated.
+
+    Returns the number of rows deleted.
+
+    Used by: routes/library.py::_lib_do_scan(), after a full scan, with the
+    path_keys it just refreshed.
+    """
+    keys = [str(k) for k in (valid_keys or [])]
+    conn = get_db()
+    try:
+        if not keys:
+            # Defensive: an empty target list means "we know nothing", not
+            # "delete everything" -- never wipe the cache on a bad call.
+            return 0
+        placeholders = ",".join("?" for _ in keys)
+        cur = conn.execute(
+            f"DELETE FROM library_cache WHERE path_key NOT IN ({placeholders})", keys
+        )
+        conn.commit()
+        return cur.rowcount or 0
+    finally:
+        conn.close()
+
+
 def invalidate_library_cache():
     """Mark all cache entries as stale (scanned_at=0) so next call triggers a rescan."""
     conn = get_db()

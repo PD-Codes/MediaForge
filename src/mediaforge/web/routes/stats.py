@@ -14,13 +14,152 @@ from ..db import get_stats_trends
 from ..db import get_sync_stats
 from ..db import remove_media_ignore
 from ..runtime_state import SYNC_SCHEDULE_MAP
+from .library import _lib_active_path_keys
 from .library import _lib_build_scan_targets
 from .library import _lib_trigger_scan_async
 from flask import jsonify
 from flask import render_template
 from flask import request
 import os
+import os.path
 import re
+import threading
+
+
+# Memoised media results.
+#
+# Walking the library cache costs ~400 ms on a 90k-file library, and both
+# helpers were re-run on every /api/stats call -- including the background
+# re-polls that fire every few seconds while a scan is running, and once per
+# page of the duplicates modal. The walk only produces something new when a
+# scan has finished, so the result is cached against a fingerprint of the
+# cache rows (path_key + scanned_at + is_scanning) and recomputed only when
+# that changes.
+_MEDIA_MEMO = {"fp": None, "stats": None, "duplicates": None}
+_MEDIA_MEMO_LOCK = threading.Lock()
+
+
+def _cache_fingerprint(cache):
+    """Cheap identity of the library cache: changes exactly when a scan does."""
+    return tuple(sorted(
+        (k, v.get("scanned_at"), bool(v.get("is_scanning")))
+        for k, v in (cache or {}).items()
+    ))
+
+
+def _media_results(cache=None):
+    """Return (media_stats, duplicates) for the current library cache.
+
+    Both are computed together and memoised, so a page of the duplicates
+    modal costs a dict lookup instead of a full re-walk.
+    """
+    if cache is None:
+        cache = get_all_library_cache()
+    cache = _active_library_cache(cache)
+    fp = _cache_fingerprint(cache)
+    with _MEDIA_MEMO_LOCK:
+        if _MEDIA_MEMO["fp"] == fp and _MEDIA_MEMO["stats"] is not None:
+            return _MEDIA_MEMO["stats"], _MEDIA_MEMO["duplicates"]
+    # Computed outside the lock: it is pure and side-effect free, so a rare
+    # duplicate computation on a cold start is cheaper than serialising every
+    # request behind one mutex.
+    stats = _compute_media_stats(cache)
+    dups = _compute_media_duplicates(cache)
+    with _MEDIA_MEMO_LOCK:
+        _MEDIA_MEMO.update({"fp": fp, "stats": stats, "duplicates": dups})
+    return stats, dups
+
+
+def _paginate(items, args):
+    """Slice `items` for ?page=/?per_page= and return the envelope.
+
+    per_page is clamped to 1..100 and page into range, so a crafted query can
+    neither request the whole list in one response nor land out of bounds.
+    """
+    try:
+        per_page = int(args.get("per_page", 20))
+    except (TypeError, ValueError):
+        per_page = 20
+    per_page = max(1, min(100, per_page))
+    try:
+        page = int(args.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    total_pages = max(1, -(-len(items) // per_page))     # ceil
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    return {
+        "items": items[start:start + per_page],
+        "page": page,
+        "per_page": per_page,
+        "total": len(items),
+        "total_pages": total_pages,
+    }
+
+
+def _dup_summary(dups):
+    """Aggregate figures for the duplicates modal header.
+
+    Computed server-side because they need the whole result set, which is
+    exactly what is no longer sent to the browser.
+    """
+    files = 0
+    movies = 0
+    waste_bytes = 0
+    res_mix = {}
+    for g in dups:
+        gf = g.get("files") or []
+        files += len(gf)
+        if g.get("kind") == "movie":
+            movies += 1
+        sizes = [int(f.get("size") or 0) for f in gf]
+        if len(sizes) > 1:
+            waste_bytes += sum(sizes) - max(sizes)
+        for f in gf:
+            r = (f.get("resolution") or "").strip() or "?"
+            res_mix[r] = res_mix.get(r, 0) + 1
+    return {
+        "groups": len(dups),
+        "files": files,
+        "movies": movies,
+        "series": len(dups) - movies,
+        "reclaimable_mb": round(waste_bytes / (1024.0 * 1024.0), 2),
+        "resolutions": [
+            {"name": k, "value": v}
+            for k, v in sorted(res_mix.items(), key=lambda kv: kv[1], reverse=True)
+        ],
+    }
+
+
+def _active_library_cache(cache):
+    """Drop library_cache rows that are not a configured scan target.
+
+    Rows are keyed by path_key and were never deleted before this guard
+    existed, so a deleted custom path (or a pre-rename install carried over by
+    legacy_import) leaves a full, frozen copy of its scan behind. Since the
+    duplicate key is deliberately location-independent, that copy made every
+    single episode look like it existed twice.
+
+    The scan itself prunes those rows now; this is the second line of defence
+    for the window before the next scan runs, and for a cache written by an
+    older version.
+    """
+    active = _lib_active_path_keys()
+    return {k: v for k, v in (cache or {}).items() if k in active}
+
+
+def _norm_path(p):
+    """Normalised absolute path for identity comparison, or None.
+
+    normcase() matters on Windows, where the same file legitimately appears as
+    both "G:\\Anime" and "g:\\anime" depending on how the path was configured.
+    """
+    if not p:
+        return None
+    try:
+        return os.path.normcase(os.path.normpath(str(p)))
+    except (TypeError, ValueError):
+        return None
 
 
 # Quality / resolution / codec / source tokens that describe *how* a file was
@@ -64,7 +203,9 @@ def _compute_media_duplicates(cache=None):
     duplicate groups (each with its individual files) sorted by title."""
     if cache is None:
         cache = get_all_library_cache()
+    cache = _active_library_cache(cache)
     groups = {}  # identity key tuple -> group dict
+    seen_paths = {}  # identity key -> set of normalised paths already counted
 
     for path_key, entry in cache.items():
         data = entry.get("data") or {}
@@ -96,6 +237,22 @@ def _compute_media_duplicates(cache=None):
                             key = (folder.lower(), skey, ep, language or "")
                             kind = "series"
                             display_slot = f"S{skey}E{ep}"
+                        # A copy is only a copy if it is a *different file*.
+                        # Without this, one physical file reached through two
+                        # overlapping scan targets (or listed twice in the
+                        # cache) counted as a duplicate of itself.
+                        npath = _norm_path(e.get("path"))
+                        if npath is None:
+                            # No path recorded — written by a version older
+                            # than the current scanner. It cannot be told
+                            # apart from any other copy, so counting it would
+                            # only ever produce false positives.
+                            continue
+                        already = seen_paths.setdefault(key, set())
+                        if npath in already:
+                            continue
+                        already.add(npath)
+
                         g = groups.setdefault(key, {
                             "title": folder,
                             "location": location,
@@ -166,8 +323,12 @@ def _compute_media_stats(cache=None):
     so an episode present in any language counts as present."""
     if cache is None:
         cache = get_all_library_cache()
+    cache = _active_library_cache(cache)
     any_scanning = any(e.get("is_scanning") for e in cache.values())
     ignores = get_media_ignores()
+    # Physical files already counted, so a file reachable through two
+    # overlapping scan targets is not counted (or sized) twice.
+    counted_paths = set()
 
     # Merge titles across all locations / language folders by folder name.
     series = {}  # folder -> {"seasons": {skey: set(eps)}, "episodes": int, "location": str}
@@ -208,6 +369,16 @@ def _compute_media_stats(cache=None):
                     for e in eps:
                         if not e.get("is_video", True):
                             continue
+                        npath = _norm_path(e.get("path"))
+                        if npath is not None:
+                            if npath in counted_paths:
+                                # Same file seen through another location —
+                                # count it once, or the disk-usage total ends
+                                # up as a multiple of the real figure.
+                                if agg is not None and e.get("episode") is not None:
+                                    bucket.add(e.get("episode"))
+                                continue
+                            counted_paths.add(npath)
                         # --- technical distribution (per file on disk) ---
                         files_total += 1
                         res = (e.get("resolution") or "").strip() or "?"
@@ -360,10 +531,68 @@ def register_stats_routes(app):
             if not cache:
                 lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
                 _lib_trigger_scan_async(_lib_build_scan_targets(), lang_sep)
-            media = _compute_media_stats(cache)
-            media["duplicates"] = _compute_media_duplicates(cache)
+            media, dups = _media_results(cache)
+            # Only the count travels with the page payload. The rows themselves
+            # are fetched per page from /api/media/duplicates: a 90k-file
+            # library produces ~43k groups, which serialised to ~28 MB of JSON
+            # on *every* stats load -- by far the largest cost on the page,
+            # and the reason it took forever to appear.
+            media = dict(media)
+            media["duplicates_count"] = len(dups)
+            # Same for the gappy-series list: it grows with the library and was
+            # shipped on every load even though it is only ever read by the
+            # modal. Counts stay, rows move to /api/media/incomplete.
+            media["incomplete_count"] = len(media.get("incomplete") or [])
+            media["ignored_count"] = len(media.get("ignored") or [])
+            media.pop("incomplete", None)
+            media.pop("ignored", None)
             payload["media"] = media
         return jsonify(payload)
+    @app.route("/api/media/duplicates")
+    def api_media_duplicates():
+        """Return one page of duplicate groups plus the aggregate summary.
+        GET /api/media/duplicates?page=1&per_page=20&q=<title filter>.
+
+        Called from static/stats.js's `_loadDuplicatesPage()`. Exists so the
+        stats page never has to carry the full group list (see api_stats)."""
+        _stats, dups = _media_results()
+
+        q = (request.args.get("q") or "").strip().lower()
+        items = [d for d in dups if q in (d.get("title") or "").lower()] if q else dups
+
+        out = _paginate(items, request.args)
+        out["filtered"] = bool(q)
+        # The summary always describes the *unfiltered* set, so the header
+        # figures do not jump around while the user types in the search box.
+        out["summary"] = _dup_summary(dups)
+        return jsonify(out)
+
+    @app.route("/api/media/incomplete")
+    def api_media_incomplete():
+        """Return one page of incomplete (or ignored) series.
+        GET /api/media/incomplete?view=incomplete|ignored&page=&per_page=&q=.
+
+        Called from static/stats.js's `_loadIncompletePage()`. Same reasoning
+        as api_media_duplicates: a library with hundreds of gappy series
+        produced a payload that grew without bound, and it was carried on
+        every stats page load whether the modal was opened or not."""
+        media, _dups = _media_results()
+        view = "ignored" if request.args.get("view") == "ignored" else "incomplete"
+        source = media.get("ignored" if view == "ignored" else "incomplete") or []
+
+        q = (request.args.get("q") or "").strip().lower()
+        items = [x for x in source if q in (x.get("title") or "").lower()] if q else source
+
+        out = _paginate(items, request.args)
+        out["view"] = view
+        out["filtered"] = bool(q)
+        out["summary"] = {
+            "incomplete": len(media.get("incomplete") or []),
+            "ignored": len(media.get("ignored") or []),
+            "complete": media.get("series_complete", 0),
+            "missing_slots": sum(len(x.get("missing") or []) for x in (media.get("incomplete") or [])),
+        }
+        return jsonify(out)
     @app.route("/api/media/ignore", methods=["POST"])
     def api_media_ignore():
         """Ignore missing slots (or whole series) in the Incomplete-series view.

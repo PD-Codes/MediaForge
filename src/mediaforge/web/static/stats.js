@@ -387,9 +387,19 @@ function _renderModals() {
 
 function openSpeedModal() { _openModal("speedModal"); mountCharts(document.getElementById("speedModalContent")); }
 function closeSpeedModal() { _closeModal("speedModal"); }
-function openIncompleteModal() { _openModal("incompleteModal"); }
+function openIncompleteModal() {
+  _openModal("incompleteModal");
+  // Rows are fetched lazily — opening the modal is what triggers the request.
+  if (!_incState.loaded && !_incState.loading) _loadIncompletePage();
+}
 function closeIncompleteModal() { _closeModal("incompleteModal"); }
-function openDuplicatesModal() { _openModal("duplicatesModal"); mountCharts(document.getElementById("duplicatesModalContent")); }
+function openDuplicatesModal() {
+  _openModal("duplicatesModal");
+  // The rows are fetched lazily, so opening the modal is what triggers the
+  // first request — the stats page itself never carries them.
+  if (!_dupState.loaded && !_dupState.loading) _loadDuplicatesPage();
+  else mountCharts(document.getElementById("duplicatesModalContent"));
+}
 function closeDuplicatesModal() { _closeModal("duplicatesModal"); }
 
 document.addEventListener("keydown", function (e) {
@@ -523,7 +533,7 @@ var _MODAL_RENDERERS = {
   speed: function () { _renderSpeedTable(); },
   incomplete: function () { _renderIncompleteTable(); },
   ignored: function () { _renderIncompleteTable(); },
-  duplicates: function () { _renderDuplicatesTable(); },
+  duplicates: function () { _loadDuplicatesPage(); },
 };
 
 function statsGoToPage(key, page) {
@@ -540,11 +550,21 @@ function statsGoToPage(key, page) {
   }
 }
 
+var _filterTimers = {};
+
 function statsFilter(key, value) {
   if (!_modalView[key]) return;
   _modalView[key].q = value;
   _modalView[key].page = 1;   // a filtered list has different pages
-  _MODAL_RENDERERS[key]();
+  // The duplicates modal filters on the server, so debounce it — otherwise
+  // every keystroke fires a request. The other two filter in memory and can
+  // update immediately.
+  if (key === "speed") {
+    _MODAL_RENDERERS[key]();
+    return;
+  }
+  clearTimeout(_filterTimers[key]);
+  _filterTimers[key] = setTimeout(function () { _MODAL_RENDERERS[key](); }, 250);
 }
 
 // ---------------------------------------------------------------
@@ -664,7 +684,7 @@ function _renderSpeedTable() {
  * everything the user ticked on a page they have since left. The state is
  * keyed by folder and survives paging, filtering and tab switches.
  */
-var _ignSel = { series: {}, slots: {} };
+var _ignSel = { series: {}, slots: {}, titles: {} };
 
 function _ignHasSelection() {
   return Object.keys(_ignSel.series).length > 0 ||
@@ -680,16 +700,23 @@ function _ignSelectionCount() {
   return n;
 }
 
-function statsIgnToggleSeries(folderEnc, checked) {
+function statsIgnToggleSeries(folderEnc, checked, titleEnc) {
   var folder = decodeURIComponent(folderEnc);
-  if (checked) _ignSel.series[folder] = true;
-  else delete _ignSel.series[folder];
+  if (checked) {
+    _ignSel.series[folder] = true;
+    // Remember the title with the selection: the full series list no longer
+    // lives in the browser, so it cannot be looked up at submit time.
+    if (titleEnc) _ignSel.titles[folder] = decodeURIComponent(titleEnc);
+  } else {
+    delete _ignSel.series[folder];
+  }
   _updateIgnActions();
 }
 
-function statsIgnToggleSlot(folderEnc, slotEnc, checked) {
+function statsIgnToggleSlot(folderEnc, slotEnc, checked, titleEnc) {
   var folder = decodeURIComponent(folderEnc);
   var slot = decodeURIComponent(slotEnc);
+  if (titleEnc) _ignSel.titles[folder] = decodeURIComponent(titleEnc);
   var list = _ignSel.slots[folder] || (_ignSel.slots[folder] = []);
   var at = list.indexOf(slot);
   if (checked && at === -1) list.push(slot);
@@ -698,7 +725,7 @@ function statsIgnToggleSlot(folderEnc, slotEnc, checked) {
 }
 
 function statsIgnClearSelection() {
-  _ignSel = { series: {}, slots: {} };
+  _ignSel = { series: {}, slots: {}, titles: {} };
   _renderIncompleteTable();
 }
 
@@ -720,26 +747,34 @@ function toggleAllIncomplete(cb) {
   // silently selecting hundreds of off-screen series would be a trap.
   document.querySelectorAll("#incompleteBody tr[data-folder]").forEach(function (tr) {
     var folder = tr.dataset.folder;
-    if (cb.checked) _ignSel.series[folder] = true;
-    else delete _ignSel.series[folder];
+    if (cb.checked) {
+      _ignSel.series[folder] = true;
+      _ignSel.titles[folder] = tr.dataset.title || folder;
+    } else {
+      delete _ignSel.series[folder];
+    }
     var box = tr.querySelector(".ign-series");
     if (box) box.checked = cb.checked;
   });
   _updateIgnActions();
 }
 
-function _incompleteTableHtml() {
-  var m = window._mediaStats || {};
-  var all = m.incomplete || [];
-  if (!all.length) {
-    return '<div class="stats-empty-state"><span class="stats-empty-emoji">🎉</span><p>' +
-      t("Alle Serien sind vollständig.", "All series are complete.") + "</p></div>";
-  }
-  var filtered = _modalFilter(all, "incomplete", function (x) { return x.title; });
-  var info = _pageSlice(filtered, "incomplete");
+/**
+ * Incomplete-series modal state. Server-paginated for the same reason as the
+ * duplicates modal: the gappy-series list grows with the library (875 of them
+ * on a large install is ~620 KB of JSON) and was carried on every stats load
+ * whether or not the modal was ever opened.
+ */
+var _incState = { loaded: false, loading: false, summary: null, seq: 0 };
+
+function _incompleteTableHtml(info) {
   if (!info.count) {
-    return '<div class="stats-empty-state"><p>' +
-      t("Kein Treffer für diese Suche.", "No match for this search.") + "</p></div>";
+    var empty = _modalView.incomplete.q
+      ? t("Kein Treffer für diese Suche.", "No match for this search.")
+      : t("Alle Serien sind vollständig.", "All series are complete.");
+    return '<div class="stats-empty-state">' +
+      (_modalView.incomplete.q ? "" : '<span class="stats-empty-emoji">🎉</span>') +
+      "<p>" + empty + "</p></div>";
   }
 
   var mh = '<div class="user-table-wrapper stats-table-wrap"><table class="user-table stats-modal-table"><thead><tr>' +
@@ -752,24 +787,21 @@ function _incompleteTableHtml() {
   info.items.forEach(function (item) {
     var miss = item.missing || [];
     var folderEnc = encodeURIComponent(item.folder);
+    var titleEnc = encodeURIComponent(item.title || item.folder);
     var seriesChecked = !!_ignSel.series[item.folder];
     var picked = _ignSel.slots[item.folder] || [];
     var chips = miss.map(function (sl) {
       var on = picked.indexOf(sl) !== -1 ? " checked" : "";
       return '<label class="ignore-slot-chip is-selectable"><input type="checkbox" class="ign-slot chb-main"' +
         on + ' onchange="statsIgnToggleSlot(\'' + folderEnc + "','" + encodeURIComponent(sl) +
-        '\', this.checked)"> ' + escHtml(sl) + "</label>";
+        '\', this.checked, \'' + titleEnc + '\')"> ' + escHtml(sl) + "</label>";
     }).join(" ");
-    mh += '<tr data-folder="' + escHtml(item.folder) + '">' +
+    mh += '<tr data-folder="' + escHtml(item.folder) + '" data-title="' + escHtml(item.title || "") + '">' +
       '<td class="td-check" data-label=""><input type="checkbox" class="ign-series chb-main"' +
       (seriesChecked ? " checked" : "") + ' onchange="statsIgnToggleSeries(\'' + folderEnc +
-      '\', this.checked)" title="' + escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) +
-      '"><span class="td-check-label">' +
+      '\', this.checked, \'' + titleEnc + '\')" title="' +
+      escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) + '"><span class="td-check-label">' +
       escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) + "</span></td>" +
-      // Same structure as the duplicates title cell: the name truncates inside
-      // its own span, the badge sits below it. An inline-flex badge inside a
-      // cell that truncates with text-overflow: ellipsis escapes the ellipsis
-      // and overlaps the next column.
       '<td class="dup-title-cell" data-label="' + escHtml(t("Serie", "Series")) + '" title="' +
       escHtml(item.title) + '"><span class="dup-title-text">' + escHtml(item.title) + "</span>" +
       '<span class="miss-count">' + miss.length + " " + escHtml(t("fehlend", "missing")) + "</span></td>" +
@@ -788,20 +820,13 @@ function _incompleteTableHtml() {
   return mh;
 }
 
-function _ignoredTableHtml() {
-  var m = window._mediaStats || {};
-  var all = m.ignored || [];
-  if (!all.length) {
-    return '<div class="stats-empty-state"><p>' +
-      t("Keine ignorierten Einträge.", "No ignored entries.") + "</p></div>";
-  }
-  var filtered = _modalFilter(all, "ignored", function (x) { return x.title; });
-  var info = _pageSlice(filtered, "ignored");
+function _ignoredTableHtml(info) {
   if (!info.count) {
     return '<div class="stats-empty-state"><p>' +
-      t("Kein Treffer für diese Suche.", "No match for this search.") + "</p></div>";
+      (_modalView.ignored.q
+        ? t("Kein Treffer für diese Suche.", "No match for this search.")
+        : t("Keine ignorierten Einträge.", "No ignored entries.")) + "</p></div>";
   }
-
   var mh = '<div class="user-table-wrapper stats-table-wrap"><table class="user-table stats-modal-table"><thead><tr>' +
     '<th style="width:42%">' + t("Serie", "Series") + "</th>" +
     '<th style="width:auto">' + t("Ignoriert", "Ignored") + "</th>" +
@@ -834,13 +859,67 @@ function _ignoredTableHtml() {
   return mh;
 }
 
-/** Re-render only the table host of whichever tab is showing. */
-function _renderIncompleteTable() {
+/** Fetch and render the active tab's current page. */
+async function _loadIncompletePage() {
   var host = document.getElementById("incompleteTableHost");
   if (!host) return;
   var view = window._incompleteView || "incomplete";
-  host.innerHTML = view === "ignored" ? _ignoredTableHtml() : _incompleteTableHtml();
-  if (view === "incomplete") _updateIgnActions();
+  var key = view === "ignored" ? "ignored" : "incomplete";
+  var st = _modalView[key];
+  var seq = ++_incState.seq;
+  _incState.loading = true;
+
+  try {
+    var url = "/api/media/incomplete?view=" + key + "&page=" + encodeURIComponent(st.page) +
+      "&per_page=" + MODAL_PAGE_SIZE + (st.q ? "&q=" + encodeURIComponent(st.q) : "");
+    var resp = await fetch(url);
+    var data = await resp.json();
+    if (seq !== _incState.seq) return;   // superseded by a newer request
+
+    _incState.loaded = true;
+    _incState.summary = data.summary || _incState.summary;
+    st.page = data.page || 1;
+    var info = {
+      items: data.items || [],
+      page: data.page || 1,
+      total: data.total_pages || 1,
+      start: ((data.page || 1) - 1) * (data.per_page || MODAL_PAGE_SIZE),
+      count: data.total || 0,
+    };
+    host.innerHTML = key === "ignored" ? _ignoredTableHtml(info) : _incompleteTableHtml(info);
+    if (key === "incomplete") _updateIgnActions();
+    _renderIncompleteSummary();
+  } catch (e) {
+    if (seq !== _incState.seq) return;
+    host.innerHTML = '<div class="stats-empty-state"><p>' +
+      t("Serien konnten nicht geladen werden.", "Could not load series.") + "</p></div>";
+    console.log(e);
+  } finally {
+    if (seq === _incState.seq) _incState.loading = false;
+  }
+}
+
+function _renderIncompleteSummary() {
+  var host = document.getElementById("incSummaryHost");
+  var sum = _incState.summary;
+  if (!host || !sum) return;
+  host.innerHTML = modalSummary([
+    { label: t("Unvollständige Serien", "Incomplete series"), value: fmtInt(sum.incomplete), color: "#f59e0b" },
+    { label: t("Fehlende Slots", "Missing slots"), value: fmtInt(sum.missing_slots), color: "#f87171" },
+    { label: t("Vollständig", "Complete"), value: fmtInt(sum.complete), color: "#22c55e" },
+    { label: t("Ignoriert", "Ignored"), value: fmtInt(sum.ignored) },
+  ]);
+  // Tab labels carry the counts too — keep them in step with the summary.
+  var tabs = document.querySelectorAll("#incompleteModalContent .ignore-tab");
+  if (tabs.length === 2) {
+    tabs[0].textContent = t("Unvollständig", "Incomplete") + " (" + sum.incomplete + ")";
+    tabs[1].textContent = t("Ignoriert", "Ignored") + " (" + sum.ignored + ")";
+  }
+}
+
+/** Kept for the shared pager/filter plumbing (_MODAL_RENDERERS). */
+function _renderIncompleteTable() {
+  _loadIncompletePage();
 }
 
 function _renderIncompleteModal() {
@@ -848,36 +927,32 @@ function _renderIncompleteModal() {
   var el = document.getElementById("incompleteModalContent");
   if (!el) return;
   var view = window._incompleteView || "incomplete";
-  var incomplete = m.incomplete || [];
-  var ignoredCount = (m.ignored || []).length;
-  var missingTotal = incomplete.reduce(function (a, x) { return a + (x.missing || []).length; }, 0);
+  // Data changed underneath us — the next open refetches.
+  _incState.loaded = false;
+  _incState.summary = null;
 
-  var html = modalSummary([
-    { label: t("Unvollständige Serien", "Incomplete series"), value: fmtInt(incomplete.length), color: "#f59e0b" },
-    { label: t("Fehlende Slots", "Missing slots"), value: fmtInt(missingTotal), color: "#f87171" },
-    { label: t("Vollständig", "Complete"), value: fmtInt(m.series_complete || 0), color: "#22c55e" },
-    { label: t("Ignoriert", "Ignored"), value: fmtInt(ignoredCount) },
-  ]);
+  var html = '<div id="incSummaryHost"></div>';
   html += '<div class="ignore-tabs">' +
     '<button class="ignore-tab' + (view === "incomplete" ? " active" : "") +
     '" onclick="switchIncompleteView(\'incomplete\')">' + escHtml(t("Unvollständig", "Incomplete")) +
-    " (" + incomplete.length + ")</button>" +
+    " (" + fmtInt(m.incomplete_count || 0) + ")</button>" +
     '<button class="ignore-tab' + (view === "ignored" ? " active" : "") +
     '" onclick="switchIncompleteView(\'ignored\')">' + escHtml(t("Ignoriert", "Ignored")) +
-    " (" + ignoredCount + ")</button></div>";
+    " (" + fmtInt(m.ignored_count || 0) + ")</button></div>";
   // One search box per tab, so switching tabs does not carry a stale filter.
   html += modalSearch(view === "ignored" ? "ignoredSearch" : "incompleteSearch",
     t("Serie suchen…", "Search series…"),
     "statsFilter('" + (view === "ignored" ? "ignored" : "incomplete") + "', this.value)");
-  html += '<div id="incompleteTableHost"></div>';
+  html += '<div id="incompleteTableHost"><div class="stats-loading">' +
+    t("Lade Serien…", "Loading series…") + "</div></div>";
   el.innerHTML = html;
-  _renderIncompleteTable();
 }
 
 function switchIncompleteView(view) {
   window._incompleteView = view;
   _modalView[view === "ignored" ? "ignored" : "incomplete"].page = 1;
   _renderIncompleteModal();
+  _loadIncompletePage();
 }
 
 // ---------------------------------------------------------------
@@ -890,74 +965,111 @@ function _dupSlotLabel(item) {
   return item.slot;
 }
 
-/** Bytes that could be reclaimed by keeping only the largest copy per group. */
-function _dupWastedMb(duplicates) {
-  var waste = 0;
-  (duplicates || []).forEach(function (g) {
-    var sizes = (g.files || []).map(function (f) { return Number(f.size) || 0; });
-    if (sizes.length < 2) return;
-    var keep = Math.max.apply(null, sizes);
-    var sum = sizes.reduce(function (a, b) { return a + b; }, 0);
-    waste += sum - keep;
-  });
-  return waste / (1024 * 1024);
-}
+/**
+ * Duplicates modal state.
+ *
+ * Unlike the other two modals this one is paginated *server-side*: a large
+ * library produces tens of thousands of groups, and shipping them all with
+ * the stats payload cost ~28 MB of JSON per page load. Only the count travels
+ * with /api/stats; the rows come from /api/media/duplicates one page at a
+ * time, and the summary figures are aggregated server-side because they need
+ * the whole set.
+ */
+var _dupState = { loaded: false, loading: false, summary: null, seq: 0 };
 
 function _renderDuplicatesModal() {
   var m = window._mediaStats || {};
   var el = document.getElementById("duplicatesModalContent");
   if (!el) return;
-  var dups = m.duplicates || [];
-  if (!dups.length) {
+  // Data changed underneath us — the next open refetches.
+  _dupState.loaded = false;
+  _dupState.summary = null;
+  _modalView.duplicates.page = 1;
+
+  if (!(m.duplicates_count || 0)) {
     el.innerHTML = '<div class="stats-empty-state"><span class="stats-empty-emoji">🎉</span><p>' +
       t("Keine Duplikate gefunden.", "No duplicates found.") + "</p></div>";
     return;
   }
 
-  var fileCount = dups.reduce(function (a, g) { return a + (g.files || []).length; }, 0);
-  var movies = dups.filter(function (g) { return g.kind === "movie"; }).length;
+  el.innerHTML = '<div id="dupSummaryHost"></div>' +
+    modalSearch("dupSearch", t("Titel suchen…", "Search title…"), "statsFilter('duplicates', this.value)") +
+    '<div id="duplicatesTableHost"><div class="stats-loading">' +
+    t("Lade Duplikate…", "Loading duplicates…") + "</div></div>";
+}
 
+function _renderDupSummary() {
+  var host = document.getElementById("dupSummaryHost");
+  var sum = _dupState.summary;
+  if (!host || !sum) return;
   var html = modalSummary([
-    { label: t("Gruppen", "Groups"), value: fmtInt(dups.length), color: "#f472b6" },
-    { label: t("Dateien", "Files"), value: fmtInt(fileCount) },
-    { label: t("Filme / Serien", "Movies / Series"), value: fmtInt(movies) + " / " + fmtInt(dups.length - movies) },
-    { label: t("Freigebbar", "Reclaimable"), value: fmtSize(_dupWastedMb(dups)), color: "#f59e0b" },
+    { label: t("Gruppen", "Groups"), value: fmtInt(sum.groups), color: "#f472b6" },
+    { label: t("Dateien", "Files"), value: fmtInt(sum.files) },
+    { label: t("Filme / Serien", "Movies / Series"), value: fmtInt(sum.movies) + " / " + fmtInt(sum.series) },
+    { label: t("Freigebbar", "Reclaimable"), value: fmtSize(sum.reclaimable_mb), color: "#f59e0b" },
   ]);
-
-  // Resolution mix across all duplicate copies - shows at a glance whether
-  // the duplicates are a quality-upgrade leftover or true redundancy.
-  var resMix = {};
-  dups.forEach(function (g) {
-    (g.files || []).forEach(function (f) {
-      var r = (f.resolution || t("unbekannt", "unknown")) + "";
-      resMix[r] = (resMix[r] || 0) + 1;
-    });
-  });
-  var resData = Object.keys(resMix).map(function (k) { return { label: k, value: resMix[k] }; })
-    .sort(function (a, b) { return b.value - a.value; });
-  if (resData.length > 1) {
+  var res = (sum.resolutions || []).filter(function (x) { return x.name && x.name !== "?"; });
+  if (res.length > 1) {
     html += chartCard({
       title: t("Auflösungen der Duplikate", "Resolutions among duplicates"),
       body: MFCharts.place("dupResChart", {
-        type: "donut", height: 190, data: resData,
+        type: "donut", height: 190,
+        data: res.map(function (x) { return { label: x.name, value: x.value }; }),
         valueFmt: function (v) { return fmtInt(v); },
       }),
     });
   }
-
-  html += modalSearch("dupSearch", t("Titel suchen…", "Search title…"), "statsFilter('duplicates', this.value)");
-  html += '<div id="duplicatesTableHost"></div>';
-  el.innerHTML = html;
-  _renderDuplicatesTable();
-  mountCharts(el);
+  host.innerHTML = html;
+  mountCharts(host);
 }
 
-function _renderDuplicatesTable() {
+async function _loadDuplicatesPage() {
   var host = document.getElementById("duplicatesTableHost");
   if (!host) return;
-  var all = (window._mediaStats || {}).duplicates || [];
-  var filtered = _modalFilter(all, "duplicates", function (x) { return x.title; });
-  var info = _pageSlice(filtered, "duplicates");
+  var view = _modalView.duplicates;
+  // Guard against out-of-order responses: fast typing can leave an older
+  // request landing after a newer one.
+  var seq = ++_dupState.seq;
+  _dupState.loading = true;
+  host.setAttribute("aria-busy", "true");
+
+  try {
+    var url = "/api/media/duplicates?page=" + encodeURIComponent(view.page) +
+      "&per_page=" + MODAL_PAGE_SIZE +
+      (view.q ? "&q=" + encodeURIComponent(view.q) : "");
+    var resp = await fetch(url);
+    var data = await resp.json();
+    if (seq !== _dupState.seq) return;   // superseded
+
+    _dupState.loaded = true;
+    if (!_dupState.summary && data.summary) {
+      _dupState.summary = data.summary;
+      _renderDupSummary();
+    }
+    view.page = data.page || 1;
+    _renderDuplicatesTable({
+      items: data.items || [],
+      page: data.page || 1,
+      total: data.total_pages || 1,
+      start: ((data.page || 1) - 1) * (data.per_page || MODAL_PAGE_SIZE),
+      count: data.total || 0,
+    });
+  } catch (e) {
+    if (seq !== _dupState.seq) return;
+    host.innerHTML = '<div class="stats-empty-state"><p>' +
+      t("Duplikate konnten nicht geladen werden.", "Could not load duplicates.") + "</p></div>";
+    console.log(e);
+  } finally {
+    if (seq === _dupState.seq) {
+      _dupState.loading = false;
+      host.removeAttribute("aria-busy");
+    }
+  }
+}
+
+function _renderDuplicatesTable(info) {
+  var host = document.getElementById("duplicatesTableHost");
+  if (!host) return;
 
   if (!info.count) {
     host.innerHTML = '<div class="stats-empty-state"><p>' +
@@ -989,8 +1101,7 @@ function _renderDuplicatesTable() {
     // One block per copy: badge + size on the first line, path underneath.
     // These used to be two separate table columns kept in sync by a fixed
     // row height, which broke as soon as a badge or size was wider than its
-    // column -- the size then bled into the path column. One column per file
-    // cannot get out of alignment and gives the path the full width.
+    // column -- the size then bled into the path column.
     var fileRows = files.map(function (f) {
       var res = f.resolution || t("unbekannt", "unknown");
       var codec = f.video_codec ? " · " + escHtml(f.video_codec) : "";
@@ -1028,23 +1139,15 @@ function _renderDuplicatesTable() {
 function mediaIgnoreSelected() {
   // Read from _ignSel, not the DOM: with pagination the checkboxes of every
   // other page do not exist, so a DOM scan would drop those selections.
-  var byFolder = {};
-  (window._mediaStats && window._mediaStats.incomplete || []).forEach(function (x) {
-    byFolder[x.folder] = x;
-  });
-
   var items = {};
   Object.keys(_ignSel.series).forEach(function (folder) {
-    var s = byFolder[folder];
-    if (s) items[folder] = { folder: folder, title: s.title, all: true };
+    items[folder] = { folder: folder, title: _ignSel.titles[folder] || folder, all: true };
   });
   Object.keys(_ignSel.slots).forEach(function (folder) {
     var slots = _ignSel.slots[folder] || [];
     if (!slots.length) return;
     if (items[folder] && items[folder].all) return;  // whole series covers it
-    var s = byFolder[folder];
-    if (!s) return;
-    items[folder] = { folder: folder, title: s.title, slots: slots.slice() };
+    items[folder] = { folder: folder, title: _ignSel.titles[folder] || folder, slots: slots.slice() };
   });
 
   var payload = Object.values(items).filter(function (x) { return x.all || (x.slots && x.slots.length); });
@@ -1057,7 +1160,7 @@ function mediaIgnoreSelected() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ items: payload }),
   }).then(function (r) { return r.json(); }).then(function () {
-    _ignSel = { series: {}, slots: {} };   // applied — start fresh
+    _ignSel = { series: {}, slots: {}, titles: {} };   // applied — start fresh
     loadStats(false);
   }).catch(function () { if (typeof showToast === "function") showToast(t("Fehler.", "Error.")); });
 }
@@ -1371,7 +1474,7 @@ function renderMediaSection(m) {
     fmtInt(m.files_total || 0) + " " + t("Dateien", "files"), "#22c55e");
   html += statCard(t("Unvollständig", "Incomplete"), fmtInt(m.series_incomplete || 0),
     t("Klicken für Details", "Click for details"), "#f59e0b", "openIncompleteModal()");
-  html += statCard(t("Duplikate", "Duplicates"), fmtInt((m.duplicates || []).length),
+  html += statCard(t("Duplikate", "Duplicates"), fmtInt(m.duplicates_count || 0),
     t("Klicken für Details", "Click for details"), "#f472b6", "openDuplicatesModal()");
   html += "</div>";
 

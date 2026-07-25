@@ -10,6 +10,7 @@ from ..db import get_custom_paths
 from ..db import get_setting
 from ..lang_folders import LANG_FOLDERS
 from ..db import invalidate_library_cache
+from ..db import prune_library_cache
 from ..db import set_library_cache
 from ..db import set_library_scanning
 from ..runtime_state import _move_jobs
@@ -345,6 +346,21 @@ def _lib_scan_base(base, old_cache_lookup=None):
     return result
 
 
+def _lib_path_key(cp_id):
+    """The library_cache key for a scan target: "default" or the custom path id."""
+    return "default" if cp_id is None else str(cp_id)
+
+
+def _lib_active_path_keys():
+    """path_keys of the targets that are currently configured.
+
+    Anything else in library_cache is a leftover (a deleted custom path, or a
+    pre-rename install imported by legacy_import). Consumers that iterate the
+    whole cache must filter against this -- see routes/stats.py.
+    """
+    return {_lib_path_key(cp_id) for (_label, cp_id, _base) in _lib_build_scan_targets()}
+
+
 def _lib_build_scan_targets():
     """Build the list of (label, custom_path_id, base_path) scan targets:
     the default download root plus every configured custom path."""
@@ -414,6 +430,18 @@ def _lib_do_scan(targets, lang_sep):
         else:
             # is_scanning is already set to 0 by set_library_cache
             pass
+
+    # Drop cache rows for targets that no longer exist. Without this a deleted
+    # custom path keeps its last scan forever, and every consumer that reads
+    # the whole cache (Statistics, duplicate check) counts those files a
+    # second time -- which shows up as "everything is a duplicate".
+    try:
+        removed = prune_library_cache({_lib_path_key(cp_id) for (_l, cp_id, _b) in targets})
+        if removed:
+            logger.info("[LibraryScan] Removed %d stale library cache entr%s",
+                        removed, "y" if removed == 1 else "ies")
+    except Exception:
+        logger.exception("[LibraryScan] Could not prune stale library cache entries")
 
 
 def _lib_trigger_scan_async(targets, lang_sep):
