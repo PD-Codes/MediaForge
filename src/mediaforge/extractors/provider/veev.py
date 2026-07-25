@@ -38,6 +38,12 @@ _PREVIEW_PATTERN = re.compile(
 )
 _CDN_PATTERN = re.compile(r"https?://[a-z0-9\-]+\.(veev\.to|veevcdn\.co)/")
 
+# No get_subtitles_from_veev(): unlike the other hosters, VeeV's player_api
+# response is only observable from inside the Playwright session below, so
+# harvesting subtitle tracks would mean launching a headless browser purely
+# for captions. Its one .vtt (vtt_timeslide_url) is the scrubber-thumbnail
+# strip anyway, not a caption track.
+
 # Cache: embed_url -> cdn_url (so get_direct_link_from_veev is cheap on repeat calls)
 _cdn_cache_lock = threading.Lock()
 _cdn_cache: dict[str, str] = {}

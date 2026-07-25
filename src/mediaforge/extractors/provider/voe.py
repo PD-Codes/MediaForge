@@ -32,9 +32,11 @@ logger = logging.getLogger(__name__)
 try:
     from ...config import DEFAULT_USER_AGENT, GLOBAL_SESSION, PROVIDER_HEADERS_D, is_source_unavailable
     from ...playwright.captcha import is_captcha_page, solve_captcha
+    from ..subtitle_parse import absolutize, tracks_from_config, tracks_from_text
 except ImportError:
     from mediaforge.config import DEFAULT_USER_AGENT, GLOBAL_SESSION, PROVIDER_HEADERS_D, is_source_unavailable
     from mediaforge.playwright.captcha import is_captcha_page, solve_captcha
+    from mediaforge.extractors.subtitle_parse import absolutize, tracks_from_config, tracks_from_text
 
 # -----------------------------
 # Precompiled regex patterns
@@ -117,31 +119,39 @@ def decode_voe_string(encoded):
         raise ValueError(f"Failed to decode VOE string: {err}") from err
 
 
+def iter_voe_configs(html):
+    """Yield every decoded VOE player-config dict found in the page.
+
+    Split out of extract_voe_source_from_html() because that config carries
+    more than the stream URL: the subtitle tracks live there too, and nowhere
+    else (VOE does not list them in the HLS master playlist). Decoding is the
+    expensive, fragile part, so both readers share it.
+    """
+    script_blocks = re.findall(
+        r'<script\s+type=["\']application/json["\']>(.*?)</script>', html, re.DOTALL
+    )
+    for script_block in script_blocks:
+        encoded_text = script_block.strip()
+        if encoded_text.startswith('"') and encoded_text.endswith('"'):
+            encoded_text = encoded_text[1:-1]
+
+        encoded_text = encoded_text.encode().decode("unicode_escape")
+
+        try:
+            yield decode_voe_string(encoded_text)
+        except ValueError:
+            continue
+
+
 def extract_voe_source_from_html(html):
     """Find each ``<script type="application/json">`` block in the page and
     try to decode it via decode_voe_string() until one yields a "source" URL.
     """
     try:
-        script_blocks = re.findall(
-            r'<script\s+type=["\']application/json["\']>(.*?)</script>', html, re.DOTALL
-        )
-        if not script_blocks:
-            return None
-
-        for script_block in script_blocks:
-            encoded_text = script_block.strip()
-            if encoded_text.startswith('"') and encoded_text.endswith('"'):
-                encoded_text = encoded_text[1:-1]
-
-            encoded_text = encoded_text.encode().decode("unicode_escape")
-
-            try:
-                decoded = decode_voe_string(encoded_text)
-                source = decoded.get("source")
-                if source:
-                    return source
-            except ValueError:
-                continue
+        for decoded in iter_voe_configs(html):
+            source = decoded.get("source")
+            if source:
+                return source
 
         return None
     except Exception:
@@ -251,6 +261,72 @@ def get_direct_link_from_voe(embeded_voe_link, headers=None, max_retries=3, time
             continue
     
     raise ValueError("Unexpected error in get_direct_link_from_voe")
+
+
+def get_subtitles_from_voe(embeded_voe_link, headers=None, timeout=30):
+    """Return the subtitle tracks VOE's player offers, as ``[{"url","lang","label"}]``.
+
+    VOE keeps captions out of the HLS master playlist and only ships them in
+    the obfuscated player config, so we re-fetch the embed page and read the
+    part get_direct_link_from_voe() discards. The raw HTML is parsed as a
+    fallback for pages whose config decodes but carries no track list.
+
+    Returns [] on any failure -- subtitles must never break a download.
+    """
+    try:
+        if headers is None:
+            headers = PROVIDER_HEADERS_D.get("VOE", {"User-Agent": DEFAULT_USER_AGENT})
+
+        resp = GLOBAL_SESSION.get(embeded_voe_link, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        html = resp.text
+
+        if is_captcha_page(html, resp.status_code):
+            solve_captcha(embeded_voe_link)
+            resp = GLOBAL_SESSION.get(embeded_voe_link, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            html = resp.text
+
+        page_url = embeded_voe_link
+        tracks = _voe_tracks_from_html(html)
+
+        # The embed page often only redirects to the CDN host that holds the
+        # real config -- same fallback the direct-link path takes.
+        if not tracks:
+            redirect_match = REDIRECT_PATTERN.search(html)
+            if redirect_match:
+                redirect_url = redirect_match.group(0)
+                resp = GLOBAL_SESSION.get(redirect_url, headers=headers, timeout=timeout)
+                resp.raise_for_status()
+                html = resp.text
+                if is_captcha_page(html, resp.status_code):
+                    solve_captcha(redirect_url)
+                    resp = GLOBAL_SESSION.get(redirect_url, headers=headers, timeout=timeout)
+                    resp.raise_for_status()
+                    html = resp.text
+                page_url = redirect_url
+                tracks = _voe_tracks_from_html(html)
+
+        return absolutize(tracks, page_url)
+    except Exception as err:
+        logger.debug("VOE subtitle extraction failed: %s", err)
+        return []
+
+
+def _voe_tracks_from_html(html):
+    """Subtitle tracks from a VOE page: decoded configs first, raw HTML second."""
+    tracks, seen = [], set()
+    try:
+        for decoded in iter_voe_configs(html):
+            for track in tracks_from_config(decoded):
+                if track["url"] not in seen:
+                    seen.add(track["url"])
+                    tracks.append(track)
+    except Exception:
+        pass
+    if not tracks:
+        tracks = tracks_from_text(html)
+    return tracks
 
 
 def get_preview_image_link_from_voe(embeded_voe_link, headers=None):

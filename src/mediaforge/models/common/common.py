@@ -83,6 +83,7 @@ try:
     from .subtitles import (
         cleanup_subtitle_files,
         collect_subtitle_files,
+        fetch_hoster_subtitles,
         is_subtitle_file,
         subtitles_enabled,
         ytdlp_subtitle_opts,
@@ -91,6 +92,7 @@ except ImportError:
     from mediaforge.models.common.subtitles import (
         cleanup_subtitle_files,
         collect_subtitle_files,
+        fetch_hoster_subtitles,
         is_subtitle_file,
         subtitles_enabled,
         ytdlp_subtitle_opts,
@@ -1053,6 +1055,65 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
             )
 
 
+def _hoster_subtitle_fallback(episode, raw_path, headers):
+    """Fetch subtitles from the hoster's player config when yt-dlp found none.
+
+    These hosters do not list subtitle renditions in the HLS master playlist —
+    their player loads them separately from its own config — so yt-dlp, which
+    only ever sees the manifest, reports "no subtitles" even for a source whose
+    web player shows a working CC menu. The extractors already parse that
+    config to get the stream URL; ``extractors.get_subtitles_for`` re-reads it
+    for the track list.
+
+    Written as sidecars using yt-dlp's own naming so the existing collect/mux
+    path picks them up without knowing the difference. Returns [] on any
+    failure — this is a best-effort second attempt, not a required step.
+    """
+    try:
+        try:
+            from ...extractors import get_subtitles_for
+        except ImportError:
+            from mediaforge.extractors import get_subtitles_for
+
+        tracks = get_subtitles_for(
+            episode.provider_url,
+            getattr(episode, "selected_provider", None),
+            headers=headers or None,
+        )
+        if not tracks:
+            return []
+        logger.info(
+            "[Subtitles] hoster offers %d track(s) outside the stream manifest: %s",
+            len(tracks), ", ".join(t.get("lang", "und") for t in tracks),
+        )
+        fetch_hoster_subtitles(tracks, raw_path, headers=headers or None)
+        return collect_subtitle_files(raw_path)
+    except Exception as exc:
+        logger.debug("[Subtitles] hoster fallback failed: %s", exc)
+        return []
+
+
+def _log_subtitle_result(file_name, subs):
+    """Say what the subtitle fetch produced — including when it produced nothing.
+
+    A source that simply carries no selectable subtitle renditions is the normal
+    case on these sites (their "German Sub" variants have the text burned into
+    the picture), and silence there is indistinguishable from a broken feature.
+    Logged at INFO for the same reason the quality check is.
+    """
+    if subs:
+        logger.info(
+            "[Subtitles] %s — found %d track(s): %s",
+            file_name, len(subs), ", ".join(lang for _, lang in subs),
+        )
+    else:
+        logger.info(
+            "[Subtitles] %s — source offers no selectable subtitle tracks "
+            "(burned-in subtitles cannot be extracted)",
+            file_name,
+        )
+
+
 def _embed_subtitles(video_path, subs, label="", cancel_event=None):
     """Mux subtitle sidecars into *video_path* as tagged soft-sub tracks.
 
@@ -1393,6 +1454,9 @@ def download(self, cancel_event=None):
             )
             if _want_subs:
                 _subtitle_files = collect_subtitle_files(raw_full)
+                if not _subtitle_files:
+                    _subtitle_files = _hoster_subtitle_fallback(self, raw_full, headers)
+                _log_subtitle_result(self._file_name, _subtitle_files)
 
             # 2. Apply codec + language metadata via ffmpeg (local file → fast)
             stream_metadata = {"metadata:s:a:0": f"language={audio_code}"}
@@ -1457,7 +1521,11 @@ def download(self, cancel_event=None):
                 want_subtitles=_want_subs,
             )
             if _want_subs:
-                _subtitle_files.extend(collect_subtitle_files(raw_audio))
+                _found = collect_subtitle_files(raw_audio)
+                if not _found:
+                    _found = _hoster_subtitle_fallback(self, raw_audio, headers)
+                _subtitle_files.extend(_found)
+                _log_subtitle_result(self._file_name, _found)
             # 2. Extract audio + apply language tag via ffmpeg (local → fast copy)
             _enc_vcodec_a, _enc_acodec_a, _enc_vopts_a, _enc_global_a = _get_ffmpeg_codec_opts_for_download()
             _run_ffmpeg_with_progress(
@@ -1482,7 +1550,11 @@ def download(self, cancel_event=None):
                 impersonate=_impersonate, want_subtitles=_want_subs,
             )
             if _want_subs:
-                _subtitle_files.extend(collect_subtitle_files(raw_video))
+                _found = collect_subtitle_files(raw_video)
+                if not _found:
+                    _found = _hoster_subtitle_fallback(self, raw_video, headers)
+                _subtitle_files.extend(_found)
+                _log_subtitle_result(self._file_name, _found)
             # 2. Extract video + apply language tag via ffmpeg (local → fast copy)
             _enc_vcodec_v, _enc_acodec_v, _enc_vopts_v, _enc_global_v = _get_ffmpeg_codec_opts_for_download()
             _enc_node_v = ffmpeg.input(str(raw_video)).output(

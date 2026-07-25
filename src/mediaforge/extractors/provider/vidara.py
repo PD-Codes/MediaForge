@@ -20,8 +20,10 @@ import re
 
 try:
     from ...config import GLOBAL_SESSION, DEFAULT_USER_AGENT
+    from ..subtitle_parse import absolutize, tracks_from_config
 except ImportError:
     from mediaforge.config import GLOBAL_SESSION, DEFAULT_USER_AGENT
+    from mediaforge.extractors.subtitle_parse import absolutize, tracks_from_config
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,24 @@ def get_direct_link_from_vidara(embed_url, headers=None, timeout=20):
     url = _stream_from_data(data, embed_url, "VIDARA")
     logger.debug("VIDARA stream URL extracted: %s…", url[:60])
     return url
+
+
+def get_subtitles_from_vidara(embed_url, headers=None, timeout=20):
+    """Return VIDARA's subtitle tracks as ``[{"url","lang","label"}]``.
+
+    The /api/stream response has carried a "subtitles" field all along;
+    get_direct_link_from_vidara() reads only "streaming_url" and drops the
+    rest. Reading it here is the only way to get these tracks -- the HLS
+    master playlist VIDARA hands out does not list them.
+
+    Returns [] on any failure -- subtitles must never break a download.
+    """
+    try:
+        data = get_stream_data(embed_url, headers=headers, timeout=timeout)
+        return absolutize(tracks_from_config(data), embed_url)
+    except Exception as exc:
+        logger.debug("VIDARA subtitle extraction failed for %s: %s", embed_url, exc)
+        return []
 
 
 def get_preview_image_link_from_vidara(embed_url, headers=None, timeout=20):

@@ -10,14 +10,19 @@ Used by: dispatched generically via extractors.provider_functions (key
 models/megakino_to/scraper.py (("vidoza", "Vidoza")) and the generic
 provider dispatch in models/megakino_to/{episode,movie}.py.
 """
+import logging
 import re
 
 import niquests
 
 try:
     from ...config import DEFAULT_USER_AGENT, GLOBAL_SESSION, is_source_unavailable
+    from ..subtitle_parse import absolutize, tracks_from_text
 except ImportError:
     from mediaforge.config import DEFAULT_USER_AGENT, GLOBAL_SESSION, is_source_unavailable
+    from mediaforge.extractors.subtitle_parse import absolutize, tracks_from_text
+
+logger = logging.getLogger(__name__)
 
 
 # Compile regex pattern once for better performance
@@ -44,6 +49,27 @@ def get_direct_link_from_vidoza(embeded_vidoza_link):
 
     except niquests.RequestException as err:
         raise ValueError(f"Failed to fetch Vidoza page: {err}") from err
+
+
+def get_subtitles_from_vidoza(embeded_vidoza_link, headers=None):
+    """Return Vidoza's subtitle tracks as ``[{"url","lang","label"}]``.
+
+    The captions sit next to the ``src:``/``poster:`` entries in the same
+    inline JW-Player config the direct-link path regexes one value out of;
+    nothing about them reaches the stream manifest. Re-fetch the page and let
+    the generic parser read the whole thing.
+
+    Returns [] on any failure -- subtitles must never break a download.
+    """
+    try:
+        resp = GLOBAL_SESSION.get(
+            embeded_vidoza_link, headers=headers or {"User-Agent": DEFAULT_USER_AGENT}
+        )
+        resp.raise_for_status()
+        return absolutize(tracks_from_text(resp.text), embeded_vidoza_link)
+    except Exception as exc:
+        logger.debug("Vidoza subtitle extraction failed for %s: %s", embeded_vidoza_link, exc)
+        return []
 
 
 def get_preview_image_link_from_vidoza(embeded_vidoza_link):

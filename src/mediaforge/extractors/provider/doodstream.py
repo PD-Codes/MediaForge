@@ -23,8 +23,10 @@ from urllib3.exceptions import InsecureRequestWarning
 
 try:
     from ...config import DEFAULT_USER_AGENT, is_source_unavailable
+    from ..subtitle_parse import absolutize, tracks_from_text
 except ImportError:
     from mediaforge.config import DEFAULT_USER_AGENT, is_source_unavailable
+    from mediaforge.extractors.subtitle_parse import absolutize, tracks_from_text
 
 warnings.simplefilter("ignore", InsecureRequestWarning)
 
@@ -127,6 +129,25 @@ def get_direct_link_from_doodstream(embed_url):
 
     logging.info("Successfully extracted Doodstream direct link")
     return direct_link
+
+
+def get_subtitles_from_doodstream(embed_url, headers=None):
+    """Return Doodstream's subtitle tracks as ``[{"url","lang","label"}]``.
+
+    Doodstream's direct link is a signed CDN URL with no manifest listing
+    caption files at all; any tracks the player shows come from the embed
+    page's inline JS. So we re-fetch that page and scan it generically.
+
+    Returns [] on any failure -- subtitles must never break a download.
+    """
+    try:
+        if not embed_url:
+            return []
+        embed_html = _get_embed_page(embed_url, headers or _get_headers(embed_url))
+        return absolutize(tracks_from_text(embed_html), embed_url)
+    except Exception as exc:
+        logging.debug("Doodstream subtitle extraction failed for %s: %s", embed_url, exc)
+        return []
 
 
 def get_preview_image_link_from_doodstream(embed_url):

@@ -33,8 +33,10 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 try:
     from ...config import DEFAULT_USER_AGENT, GLOBAL_SESSION, PROVIDER_HEADERS_D, is_source_unavailable
+    from ..subtitle_parse import absolutize, tracks_from_config, tracks_from_text
 except ImportError:
     from mediaforge.config import DEFAULT_USER_AGENT, GLOBAL_SESSION, PROVIDER_HEADERS_D, is_source_unavailable
+    from mediaforge.extractors.subtitle_parse import absolutize, tracks_from_config, tracks_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +319,69 @@ def get_direct_link_from_filemoon(embeded_filemoon_link, headers=None):
 
     except niquests.RequestException as err:
         raise ValueError(f"Failed to fetch Filemoon page: {err}") from err
+
+
+def get_subtitles_from_filemoon(embeded_filemoon_link, headers=None):
+    """Return Filemoon/Byse subtitle tracks as ``[{"url","lang","label"}]``.
+
+    Filemoon publishes no captions in the HLS manifest; they are part of the
+    player payload that get_direct_link_from_filemoon() decrypts (or unpacks)
+    purely to pull one source URL out of. Both strategies are re-run here and
+    their full payloads handed to the generic parser: the decrypted Byse JSON
+    as a config object, the unpacked legacy JS as raw text.
+
+    Returns [] on any failure -- subtitles must never break a download.
+    """
+    try:
+        if headers is None:
+            headers = PROVIDER_HEADERS_D.get(
+                "Filemoon", {"User-Agent": DEFAULT_USER_AGENT}
+            )
+
+        tracks, seen = [], set()
+
+        def _add(found):
+            for track in found or []:
+                if track["url"] not in seen:
+                    seen.add(track["url"])
+                    tracks.append(track)
+
+        # Strategy 1: the decrypted Byse API payload.
+        file_code = _extract_file_code(embeded_filemoon_link)
+        if file_code:
+            try:
+                parsed = urlparse(embeded_filemoon_link)
+                api_url = f"{parsed.scheme}://{parsed.netloc}/api/videos/{file_code}"
+                resp = GLOBAL_SESSION.get(api_url, headers=headers)
+                if resp.status_code == 200:
+                    playback = (resp.json() or {}).get("playback")
+                    if playback:
+                        decrypted = _decrypt_playback_data(playback)
+                        if decrypted is not None:
+                            _add(tracks_from_config(decrypted))
+            except Exception as err:
+                logger.debug("Filemoon subtitle API lookup failed: %s", err)
+
+        # Strategy 2: the legacy page, with its packed JS unpacked first.
+        if not tracks:
+            resp = GLOBAL_SESSION.get(embeded_filemoon_link, headers=headers)
+            resp.raise_for_status()
+            html = resp.text
+
+            match = PACKED_JS_PATTERN.search(html)
+            if match:
+                unpacked = _unpack_js(
+                    match.group("p"), int(match.group("a")), 0, match.group("k").split("|")
+                )
+                if unpacked:
+                    _add(tracks_from_text(unpacked))
+            if not tracks:
+                _add(tracks_from_text(html))
+
+        return absolutize(tracks, embeded_filemoon_link)
+    except Exception as err:
+        logger.debug("Filemoon subtitle extraction failed: %s", err)
+        return []
 
 
 def get_preview_image_link_from_filemoon(embeded_filemoon_link, headers=None):

@@ -14,12 +14,17 @@ models/megakino_to/scraper.py (("vidmoly", "Vidmoly")) and the generic
 provider dispatch used by models/megakino_to/{episode,movie}.py and
 models/aniworld_to/episode.py.
 """
+import logging
 import re
 
 try:
     from ...config import GLOBAL_SESSION, is_source_unavailable
+    from ..subtitle_parse import absolutize, tracks_from_text
 except ImportError:
     from mediaforge.config import GLOBAL_SESSION, is_source_unavailable
+    from mediaforge.extractors.subtitle_parse import absolutize, tracks_from_text
+
+logger = logging.getLogger(__name__)
 
 # -----------------------------
 # Constants
@@ -93,6 +98,35 @@ def get_direct_link_from_vidmoly(embed_url):
     return _extract_regex(
         FILE_LINK_PATTERN, script_content, "Direct video URL", embed_url
     )
+
+
+def get_subtitles_from_vidmoly(embed_url, headers=None):
+    """Return Vidmoly's subtitle tracks as ``[{"url","lang","label"}]``.
+
+    Vidmoly's player config is plain inline JS, and its JW-Player
+    ``tracks:`` array is the only place the caption files are named -- the
+    m3u8 the direct-link path returns does not reference them. So we re-fetch
+    the embed page and hand the same concatenated script text to the generic
+    parser.
+
+    Returns [] on any failure -- subtitles must never break a download.
+    """
+    try:
+        if not embed_url:
+            return []
+        embed_url = _normalize_embed_url(embed_url)
+        resp = GLOBAL_SESSION.get(embed_url, headers=headers or _get_headers())
+        resp.raise_for_status()
+        html = resp.text
+
+        script_content = _extract_script_content(html)
+        tracks = tracks_from_text(script_content)
+        if not tracks:
+            tracks = tracks_from_text(html)
+        return absolutize(tracks, embed_url)
+    except Exception as exc:
+        logger.debug("Vidmoly subtitle extraction failed for %s: %s", embed_url, exc)
+        return []
 
 
 def get_preview_image_link_from_vidmoly(embed_url):

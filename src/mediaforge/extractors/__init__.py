@@ -2,7 +2,8 @@
 
 Every module under ``extractors/provider/`` implements one hoster (VOE,
 Filemoon, Vidoza, ...) and exposes plain functions named
-``get_direct_link_from_<provider>`` and/or ``get_preview_image_link_from_<provider>``.
+``get_direct_link_from_<provider>``, ``get_preview_image_link_from_<provider>``
+and/or ``get_subtitles_from_<provider>``.
 On import, this package scans all modules in ``provider/`` and collects every
 such function into the ``provider_functions`` dict, keyed by function name.
 
@@ -41,7 +42,11 @@ for _, module_name, _ in pkgutil.iter_modules([str(provider_path)]):
     try:
         mod = importlib.import_module(f".provider.{module_name}", __name__)
         for name, obj in inspect.getmembers(mod, inspect.isfunction):
-            if name.startswith(("get_direct_link_from_", "get_preview_image_link_from_")):
+            if name.startswith((
+                    "get_direct_link_from_",
+                    "get_preview_image_link_from_",
+                    "get_subtitles_from_",
+            )):
                 provider_functions[name] = obj
     except Exception as e:
         logger.warning(f"Failed to load provider module '{module_name}': {e}")
@@ -111,6 +116,36 @@ def get_direct_link_for(url, fallback_provider=None):
     return fn(url)
 
 
+def get_subtitles_for(url, fallback_provider=None, headers=None):
+    """Subtitle tracks the hoster's player offers for *url*, as
+    ``[{"url", "lang", "label"}]``.
+
+    Same provider dispatch as get_direct_link_for. Returns an empty list for a
+    provider that has no subtitle support, an unknown host, or any failure --
+    subtitles are a convenience and must never break a download.
+
+    These tracks are not in the HLS master playlist (which is why yt-dlp alone
+    reports none): the hosters load them out-of-band from the player config,
+    so each extractor re-reads that config and hands the discarded part to
+    extractors.subtitle_parse.
+    """
+    provider = provider_for_url(url) or (fallback_provider or "").lower()
+    fn = provider_functions.get(f"get_subtitles_from_{provider}")
+    if fn is None:
+        return []
+    try:
+        # Some extractors take a headers kwarg, others do not -- a provider
+        # without one must not turn into a TypeError that loses the tracks.
+        try:
+            tracks = fn(url, headers=headers) if headers is not None else fn(url)
+        except TypeError:
+            tracks = fn(url)
+        return list(tracks) if tracks else []
+    except Exception as exc:
+        logger.debug("[Extractors] Subtitle lookup failed for provider '%s': %s", provider, exc)
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Third-party hosters
 # ---------------------------------------------------------------------------
@@ -122,6 +157,7 @@ def register_hoster(
     name,
     get_direct_link=None,
     get_preview_image=None,
+    get_subtitles=None,
     headers=None,
     host_patterns=(),
 ) -> None:
@@ -141,6 +177,13 @@ def register_hoster(
       disallowed).
     - ``get_preview_image(url) -> str | None``: optional, same contract as
       ``get_preview_image_link_from_<provider>``.
+    - ``get_subtitles(url) -> list``: optional, same contract as
+      ``get_subtitles_from_<provider>`` -- returns the subtitle tracks the
+      hoster's player offers as ``[{"url", "lang", "label"}]``. Hosters keep
+      these out of the HLS manifest and only expose them in the player
+      config, so a hoster that serves subtitles has to report them here for
+      them to be muxed in. Should return ``[]`` rather than raise on failure;
+      :func:`get_subtitles_for` swallows exceptions either way.
     - ``headers``: optional dict merged into both ``config.PROVIDER_HEADERS_D``
       and ``config.PROVIDER_HEADERS_W`` under ``name`` (only if not already
       present -- never overwrites a built-in hoster's headers).
@@ -159,8 +202,11 @@ def register_hoster(
     ``web/runtime_state.py``, which itself imports ``provider_functions`` from
     here).
     """
-    if get_direct_link is None and get_preview_image is None:
-        raise ValueError("register_hoster: need at least one of get_direct_link/get_preview_image")
+    if get_direct_link is None and get_preview_image is None and get_subtitles is None:
+        raise ValueError(
+            "register_hoster: need at least one of "
+            "get_direct_link/get_preview_image/get_subtitles"
+        )
     key = name.lower()
     from .. import config as _config
 
@@ -172,6 +218,8 @@ def register_hoster(
         provider_functions[f"get_direct_link_from_{key}"] = get_direct_link
     if get_preview_image is not None:
         provider_functions[f"get_preview_image_link_from_{key}"] = get_preview_image
+    if get_subtitles is not None:
+        provider_functions[f"get_subtitles_from_{key}"] = get_subtitles
     for host in host_patterns:
         HOST_PROVIDER_MAP[host.lower()] = key
     if headers:
@@ -202,6 +250,7 @@ def unregister_hoster(item_id) -> None:
         return
     provider_functions.pop(f"get_direct_link_from_{key}", None)
     provider_functions.pop(f"get_preview_image_link_from_{key}", None)
+    provider_functions.pop(f"get_subtitles_from_{key}", None)
     try:
         from ..web import runtime_state as _runtime_state
         _runtime_state.refresh_working_providers()

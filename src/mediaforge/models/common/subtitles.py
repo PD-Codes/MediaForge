@@ -207,3 +207,160 @@ def cleanup_subtitle_files(subs):
                 path.unlink()
         except OSError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Out-of-band subtitles (hoster player config)
+# ---------------------------------------------------------------------------
+
+def fetch_hoster_subtitles(tracks, output_path, headers=None):
+    """Download hoster-provided subtitle tracks as sidecars next to *output_path*.
+
+    Exists because these hosters do not list subtitle renditions in the HLS
+    master playlist -- their web player loads them separately from its config --
+    so yt-dlp's ``writesubtitles`` finds nothing even when the player shows a
+    working CC menu. ``extractors/subtitle_parse.py`` digs the track URLs out of
+    that config; this fetches them.
+
+    Files are written with the exact naming yt-dlp would have used
+    (``<stem>.<lang>.<ext>``) so ``collect_subtitle_files`` and the mux path pick
+    them up without knowing where they came from.
+
+    Returns the list of written paths. Never raises.
+    """
+    if not tracks:
+        return []
+
+    try:
+        import requests
+    except ImportError:
+        logger.debug("[Subtitles] requests unavailable — skipping hoster subtitles")
+        return []
+
+    output_path = Path(output_path)
+    stem = output_path.with_suffix("").name
+    written = []
+
+    for track in tracks[:MAX_SUBTITLE_TRACKS]:
+        url = (track or {}).get("url")
+        if not url:
+            continue
+        lang = (track or {}).get("lang") or "und"
+        ext = ".vtt"
+        for suffix in SUBTITLE_SUFFIXES:
+            if url.split("?")[0].lower().endswith(suffix):
+                ext = suffix
+                break
+        dest = output_path.parent / f"{stem}.{lang}{ext}"
+        if dest.exists():
+            continue
+        try:
+            # Subtitle files are kilobytes; a short timeout and a size cap keep
+            # a misbehaving CDN from stalling the queue worker or filling the
+            # temp drive with something that is not a subtitle.
+            resp = requests.get(
+                url, headers=headers or None, timeout=20, stream=True
+            )
+            resp.raise_for_status()
+            payload = b""
+            for chunk in resp.iter_content(65536):
+                payload += chunk
+                if len(payload) > 8 * 1024 * 1024:
+                    raise ValueError("subtitle exceeds 8 MB — refusing")
+            if not payload.strip():
+                continue
+            dest.write_bytes(payload)
+            written.append(dest)
+            logger.debug("[Subtitles] fetched %s (%s, %d bytes)", dest.name, lang, len(payload))
+        except Exception as exc:
+            logger.warning("[Subtitles] could not fetch %s track: %s", lang, exc)
+
+    return written
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+def list_available_subtitles(url, headers=None):
+    """Subtitle renditions a source advertises, without downloading anything.
+
+    Returns ``{"subtitles": {lang: [ext, …]}, "automatic": [lang, …],
+    "error": str | None}``.
+
+    Answers the question the download path cannot: whether "no subtitles" means
+    the feature failed or the source genuinely has none. These sites usually
+    burn their subtitles into the picture (that is what the "German Sub"
+    language option selects), in which case there is nothing to extract and an
+    empty result here is the correct, expected answer.
+    """
+    result = {"subtitles": {}, "automatic": [], "error": None}
+    try:
+        import yt_dlp
+    except ImportError:
+        result["error"] = "yt-dlp is not installed"
+        return result
+
+    class _QuietLogger:
+        def debug(self, msg): pass
+        def info(self, msg): pass
+        def warning(self, msg): pass
+        def error(self, msg): pass
+
+    opts = {
+        "quiet": True, "no_warnings": True, "noprogress": True,
+        "logger": _QuietLogger(), "skip_download": True,
+        "http_headers": headers or {}, "socket_timeout": 20,
+        "nocheckcertificate": True, "noplaylist": True,
+        "js_runtimes": {"node": {}, "deno": {}},
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+    if not info:
+        result["error"] = "no info returned"
+        return result
+    if info.get("entries"):
+        entries = [e for e in info["entries"] if e]
+        if entries:
+            info = entries[0]
+
+    for lang, tracks in (info.get("subtitles") or {}).items():
+        result["subtitles"][lang] = sorted(
+            {t.get("ext") for t in tracks if t.get("ext")}
+        )
+    result["automatic"] = sorted((info.get("automatic_captions") or {}).keys())
+    return result
+
+
+if __name__ == "__main__":
+    # python -m mediaforge.models.common.subtitles <resolved-stream-url>
+    #
+    # <resolved-stream-url> must be the RESOLVED stream (usually a master
+    # .m3u8), not the hoster's embed page -- that is what the download sees.
+    import argparse
+    import json as _json
+
+    parser = argparse.ArgumentParser(
+        description="List the subtitle tracks a source offers."
+    )
+    parser.add_argument("url", help="resolved stream URL")
+    parser.add_argument("--referer", default=None)
+    parser.add_argument("--user-agent", default=None)
+    args = parser.parse_args()
+
+    _headers = {}
+    if args.referer:
+        _headers["Referer"] = args.referer
+    if args.user_agent:
+        _headers["User-Agent"] = args.user_agent
+
+    _res = list_available_subtitles(args.url, _headers or None)
+    print(_json.dumps(_res, indent=2))
+    if not _res["subtitles"] and not _res["error"]:
+        print("\nNo selectable subtitle tracks. If the source shows subtitles "
+              "during playback they are burned into the video and cannot be "
+              "extracted as a separate track.")
