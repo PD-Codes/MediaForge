@@ -199,6 +199,16 @@ def check_app_compatibility(min_app_version=None, max_app_version=None):
     not be able to keep that module (or, worse, its dependents) from loading
     on an otherwise fine app. The mismatch is still visible in the log via
     the caller.
+
+    The MIN bound is skipped entirely on a dev/source build (see
+    ``version_info.is_dev_or_source_build``): ``app_version()`` reads the
+    base package version, which on such a build stays pinned at the last
+    release tag until the next one is cut, so it would otherwise always look
+    "too old" for a MODULE_MIN_APP_VERSION written against that upcoming
+    release -- a checkout tracking main/a dev branch already carries
+    whatever that release will contain. MAX stays enforced regardless: it is
+    a ceiling ("not tested past X"), and a dev/source checkout that has
+    fallen behind main is exactly the case it exists to catch.
     """
     if not min_app_version and not max_app_version:
         return None
@@ -213,8 +223,11 @@ def check_app_compatibility(min_app_version=None, max_app_version=None):
     except InvalidVersion:
         return None
 
+    from ..version_info import is_dev_or_source_build
+    skip_min = bool(min_app_version) and is_dev_or_source_build()
+
     try:
-        if min_app_version and current < Version(str(min_app_version)):
+        if min_app_version and not skip_min and current < Version(str(min_app_version)):
             return (f"requires MediaForge >= {min_app_version} "
                     f"(running {current_raw})")
         if max_app_version and current > Version(str(max_app_version)):

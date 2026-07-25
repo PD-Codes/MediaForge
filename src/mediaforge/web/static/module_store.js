@@ -673,7 +673,28 @@
 
   if (toggleBtn && storeView) {
     toggleBtn.addEventListener("click", () => setView(storeView.style.display === "none"));
-    if (window.location.hash === "#store") setView(true);
+  }
+
+  // Restoring the "#store" view on a fresh page load (e.g. exactly the reload that
+  // follows an install — see the install-button handler above) calls setView(true),
+  // which calls t() to set the toggle button's label. Same problem as loadCatalog()
+  // below: this <script> tag runs BEFORE base.html's later inline script block defines
+  // the global t(). Calling setView(true) directly and unconditionally here used to
+  // throw "t is not defined" the instant a page loaded with #store in the URL — and
+  // because nothing caught it, the exception killed the rest of this IIFE's synchronous
+  // body, including the loadCatalog()/renderThemeHint() deferrals further down, which
+  // then never even got registered. That is the actual reason an install's reload
+  // (which always lands back on #store) showed no /api/store/catalog request at all
+  // and sat on "Lade Store…" forever: the script died on this line before it reached
+  // the code that would have fetched anything. Deferred to DOMContentLoaded, same as
+  // the other two t()-calling initializers below.
+  function restoreStoreViewFromHash() {
+    if (toggleBtn && storeView && window.location.hash === "#store") setView(true);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", restoreStoreViewFromHash);
+  } else {
+    restoreStoreViewFromHash();
   }
 
   // Note this checks the catalog box's own display, not the store view's: the view

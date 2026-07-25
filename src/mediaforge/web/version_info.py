@@ -100,6 +100,28 @@ def _is_source_build():
         return False
 
 
+def is_dev_or_source_build():
+    """True when this MediaForge is a dev/source install rather than a tagged
+    release -- a git-branch pip install (``@main``, see
+    ``_get_dev_install_info``) or a plain local checkout with a ``.git``
+    directory (``_is_source_build``).
+
+    Used by the module store's compatibility gate (registry.py's
+    ``check_app_compatibility``): ``app_version()`` deliberately reads the
+    *base* package version, which for a dev/source checkout stays pinned at
+    whatever the last release tag was until the next one is actually cut --
+    but a ``MODULE_MIN_APP_VERSION`` a module author writes is aimed at that
+    next release, not the last one, and a tracked dev/source checkout already
+    carries whatever that release will contain. Refusing installs on that
+    basis would mean every module bump immediately locks out dev/source
+    installs until a release exists that doesn't yet. Same reasoning
+    ``app_version()``'s own docstring already applies to the API-version
+    check, extended here to the min-version one.
+    """
+    is_dev, _ = _get_dev_install_info()
+    return is_dev or _is_source_build()
+
+
 def _get_display_version():
     """
     Return the version string shown in the UI.
