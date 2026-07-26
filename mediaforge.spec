@@ -4,7 +4,6 @@ from PyInstaller.utils.hooks import collect_data_files
 datas = [
     ("src/mediaforge/web/templates", "mediaforge/web/templates"),
     ("src/mediaforge/web/static",    "mediaforge/web/static"),
-    ("src/mediaforge/.env.example",  "mediaforge"),
 ]
 
 # Pull in non-Python assets from third-party packages
