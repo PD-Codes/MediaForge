@@ -674,3 +674,24 @@ body.player-open #playerOverlay * {
 .season-body.expanded {
   display: block;
 }
+
+/* Origin label on a browse card — used by the home feed, where a row mixes
+   several sources and the heading no longer says which one a poster is from.
+   Lives here next to .browse-card so module widgets that render browse cards
+   can use the same label. */
+.browse-src-pill {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  z-index: 2;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(13, 13, 20, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  pointer-events: none;
+}

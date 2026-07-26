@@ -8,11 +8,14 @@ Extracted from create_app as a plain route-registration function
 """
 
 from ..db import delete_calendar_episodes_except
+from ..db import get_all_library_cache
 from ..db import get_autosync_jobs
 from ..db import get_cached_calendar_media
 from ..db import get_calendar_episodes_from_db
+from ..db import get_media_ignores
 from ..db import get_mediascan_series
 from ..db import get_setting
+from ..db import get_tmdb_cache_bulk
 from ..db import save_calendar_episode
 from ..db import save_calendar_media
 from datetime import datetime
@@ -46,6 +49,14 @@ _cr_targets_built_at: float = 0.0
 _CR_TARGETS_TTL = 900
 _CR_CAL_PAST_DAYS = 60
 _CAL_A_BATCH = 25
+# How many local-library folder names may cost a real TMDB title lookup per
+# watcher cycle. See _library_tv_ids().
+_LIB_RESOLVE_BATCH = 10
+# Language used to resolve a *title* to a TMDB id. The id is the same in
+# every language, so the watcher and the request path must agree on one
+# value -- otherwise they write and read different lookup-cache keys and the
+# cache-only resolution in _library_tv_ids() never finds anything.
+_TITLE_RESOLVE_LANG = "de"
 
 
 def _seerr_requested_media():
@@ -89,6 +100,105 @@ def _seerr_requested_media():
     except Exception as exc:
         logger.debug("[Calendar] Seerr request fetch failed: %s", exc)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Local MediaForge library as a calendar source
+# ---------------------------------------------------------------------------
+# Not to be confused with the MediaScan source: get_mediascan_series() reads
+# mediascan_cache, i.e. the inventory comparison against Jellyfin/Plex, so it
+# stays empty without that integration. The *local* library lives in
+# library_cache (written by the library watcher) and carries no TMDB id at all
+# -- only the folder name -- so its titles have to be resolved through TMDB the
+# same way the AutoSync source does it.
+
+def _library_series_titles():
+    """Series folder names from the local library cache, deduplicated.
+
+    Merged by lower-cased folder name exactly like _compute_media_stats() in
+    routes/stats.py, so a series split across language folders or reachable
+    through two scan targets is one entry. Movies are skipped -- they have no
+    next episode. Series whose gaps the user muted completely ("__all__"
+    ignore) are skipped too: that is the explicit "stop tracking episodes of
+    this one" switch, and it would be odd to keep announcing them.
+    """
+    try:
+        # Local import: routes.stats owns the "is this row still a configured
+        # scan target" guard, and importing it at module level would couple two
+        # route modules for one helper.
+        from .stats import _active_library_cache
+        cache = _active_library_cache(get_all_library_cache())
+        ignores = get_media_ignores()
+    except Exception as exc:
+        logger.debug("[Calendar] Library cache read failed: %s", exc)
+        return []
+
+    out = {}
+    for entry in (cache or {}).values():
+        data = entry.get("data") or {}
+        lang_folders = data.get("lang_folders") or []
+        title_lists = ([lf.get("titles") or [] for lf in lang_folders]
+                       if lang_folders else [data.get("titles") or []])
+        for titles in title_lists:
+            for item in titles:
+                folder = (item.get("folder") or "").strip()
+                if not folder or item.get("is_movie"):
+                    continue
+                key = folder.lower()
+                ig = ignores.get(key)
+                if ig and "__all__" in (ig.get("slots") or ()):
+                    continue
+                out.setdefault(key, folder)
+    return list(out.values())
+
+
+def _library_tv_ids(api_key, country, live_budget=0):
+    """Resolve local-library folder names to TMDB tv ids, cache first.
+
+    A library with a few thousand folders means a few thousand title lookups,
+    so the SQLite lookup cache is read in ONE bulk query and `live_budget`
+    caps how many misses may cost a real API call:
+
+      * the request path passes 0 -- rendering the calendar never waits on
+        TMDB, it shows whatever is resolved already;
+      * the watcher passes a small batch per cycle, so a large library
+        converges over a few minutes instead of hammering the rate limiter
+        every 10 seconds.
+
+    _tmdb_lookup_cached() caches misses as well, so a folder name TMDB does
+    not recognise is not retried until that entry's TTL expires.
+    """
+    titles = _library_series_titles()
+    if not titles:
+        return []
+    # Exactly the cache-key layout _tmdb_lookup_cached() writes for a title.
+    keys = [t + "|||" + country + "|||" + _TITLE_RESOLVE_LANG for t in titles]
+    try:
+        hits = get_tmdb_cache_bulk(keys)
+    except Exception as exc:
+        logger.debug("[Calendar] Bulk TMDB cache read failed: %s", exc)
+        hits = {}
+
+    ids = []
+    spent = 0
+    for title, key in zip(titles, keys):
+        info = hits.get(key)
+        if info is None and spent < live_budget:
+            spent += 1
+            try:
+                info = _tmdb_lookup_cached(title, None, api_key, country,
+                                           _TITLE_RESOLVE_LANG)
+            except Exception as exc:
+                logger.debug("[Calendar] TMDB lookup failed for library folder "
+                             "%s: %s", title, exc)
+                continue
+        if not info or not info.get("found") or info.get("media_type") != "tv":
+            continue
+        try:
+            ids.append(int(info.get("tmdb_id")))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(ids))
 
 
 def _resolve_cr_titles(api_key, country, ui_lang):
@@ -290,8 +400,9 @@ def _sync_calendar_item(tmdb_id, media_type, api_key):
 def _calendar_watcher_loop():
     """Background thread loop (started once via ensure_calendar_watcher_started):
     every 0.5-10s, figure out which TMDB tv/movie ids the calendar needs
-    (AutoSync jobs, optional Seerr requests, optional Media Library series,
-    optional Crunchyroll simulcast/watchlist/lists), sync any that are
+    (AutoSync jobs, optional Seerr requests, optional MediaScan series,
+    optional local-library series, optional Crunchyroll simulcast/watchlist/
+    lists), sync any that are
     missing from the cache in priority order, and refresh stale cached
     entries once the missing-item backlog has been empty for 15 minutes."""
     import time as _t
@@ -377,7 +488,22 @@ def _calendar_watcher_loop():
             priority_set = {tid for tid, mt in priority_media_targets}
             mediathek_media_targets = [item for item in mediathek_media_targets if item[0] not in priority_set]
 
-            # Non-priority 2.4: Crunchyroll simulcast / watchlist / lists.
+            # Non-priority 2.4: local MediaForge library (library_cache).
+            #    Same low priority as MediaScan: a big library must not eat the
+            #    TMDB rate limit the AutoSync jobs need. Resolution is
+            #    cache-first with a small live budget per cycle.
+            if get_setting("cineinfo_calendar_library", "0") == "1":
+                _seen_lib = {tid for tid, _mt in mediathek_media_targets}
+                try:
+                    for _lid in _library_tv_ids(api_key, country, _LIB_RESOLVE_BATCH):
+                        if _lid in priority_set or _lid in _seen_lib:
+                            continue
+                        mediathek_media_targets.append((_lid, "tv"))
+                        _seen_lib.add(_lid)
+                except Exception as exc:
+                    logger.debug("[Calendar Watcher] Library targets failed: %s", exc)
+
+            # Non-priority 2.5: Crunchyroll simulcast / watchlist / lists.
             #    Resolve CR titles -> TMDB ids (throttled; cached in globals
             #    for the request path) and sync their episodes like Mediathek
             #    so the calendar fills in progressively in the background.
@@ -471,9 +597,512 @@ def ensure_calendar_watcher_started():
         threading.Thread(target=_calendar_watcher_loop, daemon=True, name="calendar-watcher").start()
 
 
+# ---------------------------------------------------------------------------
+# Event aggregation
+# ---------------------------------------------------------------------------
+# Lifted out of the api_calendar view so the ICS feed (/api/calendar/feed.ics)
+# can build the exact same event list. The feed is fetched by an external
+# calendar client with no Flask session, so nothing in here may read `session`
+# -- ui_lang and the user identity are passed in by the caller instead.
+
+def collect_calendar_events(api_key, country, ui_lang, username, is_admin):
+    """Aggregate upcoming air/release dates for one user.
+
+    Sources: their AutoSync jobs, plus -- when enabled in Settings -- Seerr
+    requests, MediaScan series (the Jellyfin/Plex inventory comparison), the
+    local MediaForge library, and Crunchyroll simulcast/watchlist/lists.
+    Reads the cached calendar tables; only Seerr and Crunchyroll items missing
+    from the cache are synced on demand (both bounded).
+
+    Returns (events, meta).
+    """
+    _is_en = ui_lang == "en"
+
+    # The calendar cache stores titles/episode names bilingually; pick the
+    # column that matches the current UI language (fall back to the primary).
+    def _disp_title(ep):
+        return (ep["title_en"] or ep["title"]) if _is_en else ep["title"]
+
+    def _disp_name(ep):
+        return (ep["name_en"] or ep["name"]) if _is_en else ep["name"]
+
+    def _cr_norm(t):
+        return "".join(c for c in (t or "").lower() if c.isalnum())
+
+    def _crunchyroll_calendar_events():
+        """Crunchyroll calendar events. The background watcher resolves CR
+        titles -> TMDB and syncs episodes; this normally just reads the cached
+        ids/meta + DB. If the watcher cache is still cold, it lazily resolves
+        the ids here and on-demand syncs a *bounded* batch so the calendar is
+        never empty and fills in progressively across the frontend's polls."""
+        try:
+            from .. import crunchyroll_service as _crs
+            if not (_crs.is_enabled() or _crs.has_account()):
+                return []
+            ids = list(_cr_calendar_ids)
+            if not ids:
+                # Watcher cache cold -> resolve once here (throttled; the call
+                # caches into the module globals for subsequent fast reads).
+                try:
+                    ids = _cr_calendar_targets(api_key, country, ui_lang, time.time())
+                except Exception as _e:
+                    logger.debug("[Calendar] CR lazy resolve failed: %s", _e)
+                    ids = []
+            if not ids:
+                return []
+            meta = _cr_calendar_meta
+            # On-demand sync a bounded number of not-yet-cached ids so the
+            # request stays responsive; the watcher fills in the rest.
+            cached = get_cached_calendar_media(ids)
+            synced = 0
+            for tid in ids:
+                if tid in cached:
+                    continue
+                try:
+                    _sync_calendar_item(tid, "tv", api_key)
+                except Exception as _e:
+                    logger.debug("[Calendar] CR on-demand sync %s failed: %s", tid, _e)
+                synced += 1
+                if synced >= _CAL_A_BATCH:
+                    break
+            out = []
+            cutoff = (datetime.now() - timedelta(days=_CR_CAL_PAST_DAYS)).strftime("%Y-%m-%d")
+            for ep in get_calendar_episodes_from_db(ids):
+                # Trim the long tail of past episodes (a large watchlist has
+                # thousands); keep a rolling 60-day window + future.
+                if ep["air_date"] and ep["air_date"] < cutoff:
+                    continue
+                tid = ep["tmdb_id"]
+                m = meta.get(tid, {})
+                out.append({
+                    "job_id": None,
+                    "title": m.get("title") or _disp_title(ep),
+                    "tmdb_id": tid,
+                    "media_type": "tv",
+                    "is_movie": False,
+                    "season": ep["season"],
+                    "episode": ep["episode"],
+                    "name": _disp_name(ep),
+                    "air_date": ep["air_date"],
+                    "poster": ep["poster_path"],
+                    "still": ep["still_path"],
+                    "source": "crunchyroll",
+                    "cr_in_watchlist": m.get("in_wl", False),
+                    "cr_in_list": m.get("in_list", False),
+                    "cr_lists": sorted(m.get("lists", set())),
+                    "cr_kind": ("watchlist" if m.get("in_wl")
+                                else "list" if m.get("in_list")
+                                else "simulcast"),
+                })
+            return out
+        except Exception as _exc:
+            logger.debug("[Calendar] Crunchyroll read failed: %s", _exc)
+            return []
+
+    events = []
+    seen = set()
+
+    # 1. AutoSync jobs for this user
+    jobs = get_autosync_jobs(username=None if is_admin else username)
+
+    autosync_tmdb_ids = []
+    job_id_by_tmdb_id = {}
+    title_by_tmdb_id = {}
+    for job in jobs:
+        if job.get("enabled") != 1:
+            continue
+        title = (job.get("title") or "").strip()
+        if not title:
+            continue
+        try:
+            info = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
+            if info and info.get("found") and info.get("media_type") == "tv":
+                tid = info.get("tmdb_id")
+                if tid:
+                    tid_int = int(tid)
+                    autosync_tmdb_ids.append(tid_int)
+                    job_id_by_tmdb_id[tid_int] = job.get("id")
+                    title_by_tmdb_id[tid_int] = info.get("title") or title
+        except Exception:
+            continue
+
+    if autosync_tmdb_ids:
+        for ep in get_calendar_episodes_from_db(autosync_tmdb_ids):
+            tid = ep["tmdb_id"]
+            key = (tid, ep["season"], ep["episode"])
+            if key in seen:
+                continue
+            seen.add(key)
+            events.append({
+                "job_id":     job_id_by_tmdb_id.get(tid),
+                "title":      title_by_tmdb_id.get(tid) or _disp_title(ep),
+                "tmdb_id":    tid,
+                "media_type": "tv",
+                "is_movie":   False,
+                "season":     ep["season"],
+                "episode":    ep["episode"],
+                "name":       _disp_name(ep),
+                "air_date":   ep["air_date"],
+                "poster":     ep["poster_path"],
+                "still":      ep["still_path"],
+                "source":     "autosync",
+            })
+
+    # 2. Seerr requests (optional overlay).
+    #    Independent of the Media Library option AND of the watcher: Seerr
+    #    requests are dynamic and few, so any item that isn't cached yet is
+    #    synced on demand here. This guarantees Seerr works immediately even
+    #    if the watcher hasn't reached it (or isn't running at all).
+    seerr_active = get_setting("cineinfo_calendar_seerr", "0") == "1"
+    seerr_count = 0
+    if seerr_active:
+        seerr_media = _seerr_requested_media()
+        seerr_tv_ids = []
+        seerr_movie_ids = []
+        for m in seerr_media:
+            tid = m.get("tmdb_id")
+            if not tid:
+                continue
+            if m["media_type"] == "tv":
+                seerr_tv_ids.append(int(tid))
+            else:
+                seerr_movie_ids.append(int(tid))
+        seerr_count = len(seerr_tv_ids) + len(seerr_movie_ids)
+
+        # On-demand sync for any Seerr items missing from the cache.
+        seerr_targets = ([(tid, "tv") for tid in seerr_tv_ids]
+                         + [(tid, "movie") for tid in seerr_movie_ids])
+        if seerr_targets:
+            seerr_cached = get_cached_calendar_media([tid for tid, _ in seerr_targets])
+            for tid, mt in seerr_targets:
+                if tid not in seerr_cached:
+                    try:
+                        _sync_calendar_item(tid, mt, api_key)
+                    except Exception as _exc:
+                        logger.debug("[Calendar] On-demand Seerr sync failed for %s: %s", tid, _exc)
+
+        if seerr_tv_ids:
+            for ep in get_calendar_episodes_from_db(seerr_tv_ids):
+                tid = ep["tmdb_id"]
+                key = (tid, ep["season"], ep["episode"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                events.append({
+                    "job_id":     None,
+                    "title":      _disp_title(ep),
+                    "tmdb_id":    tid,
+                    "media_type": "tv",
+                    "is_movie":   False,
+                    "season":     ep["season"],
+                    "episode":    ep["episode"],
+                    "name":       _disp_name(ep),
+                    "air_date":   ep["air_date"],
+                    "poster":     ep["poster_path"],
+                    "still":      ep["still_path"],
+                    "source":     "seerr",
+                })
+        if seerr_movie_ids:
+            for ep in get_calendar_episodes_from_db(seerr_movie_ids):
+                tid = ep["tmdb_id"]
+                key = ("movie", tid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                events.append({
+                    "job_id":     None,
+                    "title":      _disp_title(ep),
+                    "tmdb_id":    tid,
+                    "media_type": "movie",
+                    "is_movie":   True,
+                    "season":     None,
+                    "episode":    None,
+                    "name":       "",
+                    "air_date":   ep["air_date"],
+                    "poster":     ep["poster_path"],
+                    "still":      None,
+                    "source":     "seerr",
+                })
+
+    # 3. Media Library series (optional overlay)
+    if get_setting("cineinfo_calendar_mediathek", "0") == "1":
+        mediathek_tv_ids = []
+        for item in get_mediascan_series():
+            tid = item.get("tmdb_id")
+            if tid:
+                try:
+                    mediathek_tv_ids.append(int(tid))
+                except ValueError:
+                    pass
+            elif item.get("title"):
+                title = item.get("title").strip()
+                try:
+                    info = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
+                    if info and info.get("found") and info.get("media_type") == "tv":
+                        tid = info.get("tmdb_id")
+                        if tid:
+                            mediathek_tv_ids.append(int(tid))
+                except Exception:
+                    continue
+
+        if mediathek_tv_ids:
+            for ep in get_calendar_episodes_from_db(mediathek_tv_ids):
+                tid = ep["tmdb_id"]
+                key = (tid, ep["season"], ep["episode"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                events.append({
+                    "job_id":     None,
+                    "title":      _disp_title(ep),
+                    "tmdb_id":    tid,
+                    "media_type": "tv",
+                    "is_movie":   False,
+                    "season":     ep["season"],
+                    "episode":    ep["episode"],
+                    "name":       _disp_name(ep),
+                    "air_date":   ep["air_date"],
+                    "poster":     ep["poster_path"],
+                    "still":      ep["still_path"],
+                    "source":     "mediathek",
+                })
+
+    # 4. Local MediaForge library (optional overlay).
+    #    Cache-only TMDB resolution -- the watcher does the legwork, so a fresh
+    #    setup fills in over the next few minutes instead of blocking the page.
+    if get_setting("cineinfo_calendar_library", "0") == "1":
+        library_tv_ids = _library_tv_ids(api_key, country)
+        if library_tv_ids:
+            for ep in get_calendar_episodes_from_db(library_tv_ids):
+                tid = ep["tmdb_id"]
+                key = (tid, ep["season"], ep["episode"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                events.append({
+                    "job_id":     None,
+                    "title":      _disp_title(ep),
+                    "tmdb_id":    tid,
+                    "media_type": "tv",
+                    "is_movie":   False,
+                    "season":     ep["season"],
+                    "episode":    ep["episode"],
+                    "name":       _disp_name(ep),
+                    "air_date":   ep["air_date"],
+                    "poster":     ep["poster_path"],
+                    "still":      ep["still_path"],
+                    "source":     "library",
+                })
+
+    # 5. Crunchyroll simulcast / watchlist / lists. If a CR episode is already
+    #    shown via another source (e.g. a Seerr request), keep that event but
+    #    attach the CR membership so the Crunchyroll/watchlist badge also shows.
+    ev_by_key = {(e.get("tmdb_id"), e.get("season"), e.get("episode")): e for e in events}
+    for ev in _crunchyroll_calendar_events():
+        ev["cr_member"] = True
+        key = (ev.get("tmdb_id"), ev.get("season"), ev.get("episode"))
+        existing = ev_by_key.get(key)
+        if existing is not None:
+            existing["cr_member"] = True
+            existing["cr_in_watchlist"] = ev.get("cr_in_watchlist", False)
+            existing["cr_in_list"] = ev.get("cr_in_list", False)
+            existing["cr_lists"] = ev.get("cr_lists", [])
+            existing["cr_kind"] = ev.get("cr_kind")
+            continue
+        seen.add(key)
+        events.append(ev)
+        ev_by_key[key] = ev
+
+    # Title fallback: tag events from other sources (e.g. Seerr) whose title
+    # matches a CR title but whose TMDB id differs from the CR-resolved one,
+    # so they still get the Crunchyroll/watchlist badge.
+    if _cr_calendar_titles:
+        for ev in events:
+            if ev.get("cr_member"):
+                continue
+            tm = _cr_calendar_titles.get(_cr_norm(ev.get("title") or ""))
+            if tm:
+                ev["cr_member"] = True
+                ev["cr_in_watchlist"] = tm["in_wl"]
+                ev["cr_in_list"] = tm["in_list"]
+                ev["cr_lists"] = sorted(tm["lists"])
+                ev["cr_kind"] = ("watchlist" if tm["in_wl"]
+                                 else "list" if tm["in_list"] else "simulcast")
+
+    events.sort(key=lambda e: (e.get("air_date") or ""))
+    return events, {"seerr_active": seerr_active, "seerr_count": seerr_count}
+
+
+# ---------------------------------------------------------------------------
+# iCalendar (ICS) subscription feed
+# ---------------------------------------------------------------------------
+# A calendar client (Google/Apple/Thunderbird/DAVx5) polls the feed URL with no
+# cookies, so session auth is impossible: the feed carries a per-user bearer
+# token in the query string instead. The token is a 32-byte urlsafe secret, is
+# never derived from the user id, and can be rotated from the calendar page.
+#
+# Tokens live in one settings row as {token: user_id}. That keeps the reverse
+# lookup a single read and makes rotation an atomic replace.
+
+_ICS_TOKENS_SETTING = "calendar_ics_tokens"
+_ICS_TOKEN_BYTES = 32
+# How far back the feed reaches. Calendar clients keep history themselves, so
+# there is no reason to ship years of aired episodes on every poll.
+_ICS_PAST_DAYS = 30
+_ICS_MAX_EVENTS = 2000
+
+_ics_lock = threading.Lock()
+
+
+def _ics_tokens():
+    """Return the {token: user_id} map (empty dict when unset/corrupt)."""
+    try:
+        raw = get_setting(_ICS_TOKENS_SETTING, "") or ""
+        data = json.loads(raw) if raw else {}
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        logger.warning("[Calendar] ICS token map unreadable, treating as empty")
+        return {}
+
+
+def _ics_token_for(user_id, rotate=False):
+    """Return this user's feed token, creating (or rotating) it if needed."""
+    import secrets
+    from ..db import set_setting
+
+    with _ics_lock:
+        tokens = _ics_tokens()
+        if not rotate:
+            for token, uid in tokens.items():
+                if uid == user_id:
+                    return token
+        # Drop any existing token for this user before issuing a new one, so a
+        # rotated token really stops working.
+        tokens = {tok: uid for tok, uid in tokens.items() if uid != user_id}
+        token = secrets.token_urlsafe(_ICS_TOKEN_BYTES)
+        tokens[token] = user_id
+        set_setting(_ICS_TOKENS_SETTING, json.dumps(tokens))
+        return token
+
+
+def _ics_user_for_token(token):
+    """Resolve a feed token to a user id, or None.
+
+    The dict lookup is exact, and the follow-up compare_digest keeps the
+    confirmation itself constant-time.
+    """
+    import hmac
+    if not token:
+        return None
+    for known, uid in _ics_tokens().items():
+        if hmac.compare_digest(str(known), str(token)):
+            return uid
+    return None
+
+
+def _ics_escape(text):
+    """Escape a value for an iCalendar TEXT property (RFC 5545 3.3.11)."""
+    return (str(text or "")
+            .replace("\\", "\\\\")
+            .replace(";", "\\;")
+            .replace(",", "\\,")
+            .replace("\r\n", "\\n")
+            .replace("\n", "\\n")
+            .replace("\r", "\\n"))
+
+
+def _ics_fold(line):
+    """Fold a content line to 75 octets (RFC 5545 3.1), splitting on UTF-8
+    character boundaries so multi-byte titles survive the fold."""
+    raw = line.encode("utf-8")
+    if len(raw) <= 75:
+        return line
+    out = []
+    chunk = bytearray()
+    limit = 75
+    for ch in line:
+        enc = ch.encode("utf-8")
+        if len(chunk) + len(enc) > limit:
+            out.append(bytes(chunk).decode("utf-8"))
+            chunk = bytearray()
+            limit = 74          # continuation lines start with one space
+        chunk += enc
+    if chunk:
+        out.append(bytes(chunk).decode("utf-8"))
+    return "\r\n ".join(out)
+
+
+def build_ics(events, calendar_name):
+    """Render calendar events as an iCalendar document.
+
+    Air dates are plain calendar days with no time-of-day information (and, as
+    the calendar page itself warns, they are in the country of origin), so each
+    event is written as an all-day VEVENT via VALUE=DATE rather than being
+    pinned to a made-up clock time in some timezone.
+    """
+    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//MediaForge//Calendar//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "X-WR-CALNAME:" + _ics_escape(calendar_name),
+        # 6 hours: the feed is cheap to build, but clients should not hammer it.
+        "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
+        "X-PUBLISHED-TTL:PT6H",
+    ]
+
+    for ev in events:
+        air = (ev.get("air_date") or "").replace("-", "")
+        if len(air) != 8 or not air.isdigit():
+            continue
+        try:
+            end = (datetime.strptime(air, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
+        except ValueError:
+            continue
+
+        title = ev.get("title") or ""
+        if ev.get("is_movie") or ev.get("season") is None:
+            summary = title
+            uid_part = "movie"
+        else:
+            summary = "%s S%02dE%02d" % (title, ev.get("season") or 0, ev.get("episode") or 0)
+            uid_part = "s%se%s" % (ev.get("season") or 0, ev.get("episode") or 0)
+            if ev.get("name"):
+                summary += " — " + ev["name"]
+
+        description = []
+        if ev.get("name"):
+            description.append(ev["name"])
+        if ev.get("source"):
+            description.append("Source: " + str(ev["source"]))
+        if ev.get("cr_member"):
+            description.append("Crunchyroll")
+
+        lines += [
+            "BEGIN:VEVENT",
+            # Stable per (tmdb id, episode, source): re-subscribing or a feed
+            # refresh updates the existing entry instead of duplicating it.
+            "UID:mf-%s-%s-%s@mediaforge" % (ev.get("source") or "mf", ev.get("tmdb_id") or 0, uid_part),
+            "DTSTAMP:" + stamp,
+            "DTSTART;VALUE=DATE:" + air,
+            "DTEND;VALUE=DATE:" + end,
+            "SUMMARY:" + _ics_escape(summary),
+            "TRANSP:TRANSPARENT",
+        ]
+        if description:
+            lines.append("DESCRIPTION:" + _ics_escape("\n".join(description)))
+        lines.append("END:VEVENT")
+
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(_ics_fold(line) for line in lines) + "\r\n"
+
+
 def register_calendar_routes(app):
-    """Register the calendar page route and the calendar-events API route
-    on the Flask app."""
+    """Register the calendar page, the calendar-events API, and the ICS
+    subscription feed on the Flask app."""
+
     @app.route("/calendar")
     def calendar_page():
         """Serve GET /calendar: render the calendar page, or redirect home
@@ -483,6 +1112,7 @@ def register_calendar_routes(app):
             from flask import redirect, url_for
             return redirect(url_for("index"))
         return render_template("calendar.html")
+
     @app.route("/api/calendar")
     def api_calendar():
         """Serve GET /api/calendar: aggregate upcoming episode air dates for
@@ -497,302 +1127,111 @@ def register_calendar_routes(app):
         api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
         if not api_key:
             return jsonify({"error": "no_key", "events": []})
+
         country = get_setting("cineinfo_country", "DE")
         ui_lang = session.get("ui_language", "en")
-        _is_en = ui_lang == "en"
-
-        # The calendar cache stores titles/episode names bilingually; pick the
-        # column that matches the current UI language (fall back to the primary).
-        def _disp_title(ep):
-            return (ep["title_en"] or ep["title"]) if _is_en else ep["title"]
-
-        def _disp_name(ep):
-            return (ep["name_en"] or ep["name"]) if _is_en else ep["name"]
-
-        def _cr_norm(t):
-            return "".join(c for c in (t or "").lower() if c.isalnum())
-
-        def _crunchyroll_calendar_events():
-            """Crunchyroll calendar events. The background watcher resolves CR
-            titles -> TMDB and syncs episodes; this normally just reads the cached
-            ids/meta + DB. If the watcher cache is still cold, it lazily resolves
-            the ids here and on-demand syncs a *bounded* batch so the calendar is
-            never empty and fills in progressively across the frontend's 10s polls."""
-            try:
-                from .. import crunchyroll_service as _crs
-                if not (_crs.is_enabled() or _crs.has_account()):
-                    return []
-                ids = list(_cr_calendar_ids)
-                if not ids:
-                    # Watcher cache cold -> resolve once here (throttled; the call
-                    # caches into the module globals for subsequent fast reads).
-                    try:
-                        ids = _cr_calendar_targets(api_key, country, ui_lang, time.time())
-                    except Exception as _e:
-                        logger.debug("[Calendar] CR lazy resolve failed: %s", _e)
-                        ids = []
-                if not ids:
-                    return []
-                meta = _cr_calendar_meta
-                # On-demand sync a bounded number of not-yet-cached ids so the
-                # request stays responsive; the watcher fills in the rest.
-                cached = get_cached_calendar_media(ids)
-                synced = 0
-                for tid in ids:
-                    if tid in cached:
-                        continue
-                    try:
-                        _sync_calendar_item(tid, "tv", api_key)
-                    except Exception as _e:
-                        logger.debug("[Calendar] CR on-demand sync %s failed: %s", tid, _e)
-                    synced += 1
-                    if synced >= _CAL_A_BATCH:
-                        break
-                out = []
-                cutoff = (datetime.now() - timedelta(days=_CR_CAL_PAST_DAYS)).strftime("%Y-%m-%d")
-                for ep in get_calendar_episodes_from_db(ids):
-                    # Trim the long tail of past episodes (a large watchlist
-                    # has thousands); keep a rolling 60-day window + future.
-                    if ep["air_date"] and ep["air_date"] < cutoff:
-                        continue
-                    tid = ep["tmdb_id"]
-                    m = meta.get(tid, {})
-                    out.append({
-                        "job_id": None,
-                        "title": m.get("title") or _disp_title(ep),
-                        "tmdb_id": tid,
-                        "season": ep["season"],
-                        "episode": ep["episode"],
-                        "name": _disp_name(ep),
-                        "air_date": ep["air_date"],
-                        "poster": ep["poster_path"],
-                        "still": ep["still_path"],
-                        "source": "crunchyroll",
-                        "cr_in_watchlist": m.get("in_wl", False),
-                        "cr_in_list": m.get("in_list", False),
-                        "cr_lists": sorted(m.get("lists", set())),
-                        "cr_kind": ("watchlist" if m.get("in_wl")
-                                    else "list" if m.get("in_list")
-                                    else "simulcast"),
-                    })
-                return out
-            except Exception as _exc:
-                logger.debug("[Calendar] Crunchyroll read failed: %s", _exc)
-                return []
-
-        events = []
-        seen = set()
-
-        # 1. AutoSync jobs for this user
         username, is_admin = _get_current_user_info()
-        jobs = get_autosync_jobs(username=None if is_admin else username)
 
-        autosync_tmdb_ids = []
-        job_id_by_tmdb_id = {}
-        title_by_tmdb_id = {}
-        for job in jobs:
-            if job.get("enabled") != 1:
-                continue
-            title = (job.get("title") or "").strip()
-            if not title:
-                continue
-            try:
-                info = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
-                if info and info.get("found") and info.get("media_type") == "tv":
-                    tid = info.get("tmdb_id")
-                    if tid:
-                        tid_int = int(tid)
-                        autosync_tmdb_ids.append(tid_int)
-                        job_id_by_tmdb_id[tid_int] = job.get("id")
-                        title_by_tmdb_id[tid_int] = info.get("title") or title
-            except Exception:
-                continue
-
-        if autosync_tmdb_ids:
-            db_eps = get_calendar_episodes_from_db(autosync_tmdb_ids)
-            for ep in db_eps:
-                tid = ep["tmdb_id"]
-                key = (tid, ep["season"], ep["episode"])
-                if key in seen:
-                    continue
-                seen.add(key)
-                events.append({
-                    "job_id":   job_id_by_tmdb_id.get(tid),
-                    "title":    title_by_tmdb_id.get(tid) or _disp_title(ep),
-                    "tmdb_id":  tid,
-                    "season":   ep["season"],
-                    "episode":  ep["episode"],
-                    "name":     _disp_name(ep),
-                    "air_date": ep["air_date"],
-                    "poster":   ep["poster_path"],
-                    "still":    ep["still_path"],
-                    "source":   "autosync",
-                })
-
-        # 2. Seerr requests (optional overlay).
-        #    Independent of the Media Library option AND of the watcher: Seerr
-        #    requests are dynamic and few, so any item that isn't cached yet is
-        #    synced on demand here. This guarantees Seerr works immediately even
-        #    if the watcher hasn't reached it (or isn't running at all).
-        seerr_active = get_setting("cineinfo_calendar_seerr", "0") == "1"
-        seerr_count = 0
-        if seerr_active:
-            seerr_media = _seerr_requested_media()
-            seerr_tv_ids = []
-            seerr_movie_ids = []
-            for m in seerr_media:
-                tid = m.get("tmdb_id")
-                if not tid:
-                    continue
-                if m["media_type"] == "tv":
-                    seerr_tv_ids.append(int(tid))
-                else:
-                    seerr_movie_ids.append(int(tid))
-            seerr_count = len(seerr_tv_ids) + len(seerr_movie_ids)
-
-            # On-demand sync for any Seerr items missing from the cache.
-            seerr_targets = ([(tid, "tv") for tid in seerr_tv_ids]
-                             + [(tid, "movie") for tid in seerr_movie_ids])
-            if seerr_targets:
-                seerr_cached = get_cached_calendar_media([tid for tid, _ in seerr_targets])
-                for tid, mt in seerr_targets:
-                    if tid not in seerr_cached:
-                        try:
-                            _sync_calendar_item(tid, mt, api_key)
-                        except Exception as _exc:
-                            logger.debug("[Calendar] On-demand Seerr sync failed for %s: %s", tid, _exc)
-
-            if seerr_tv_ids:
-                db_eps = get_calendar_episodes_from_db(seerr_tv_ids)
-                for ep in db_eps:
-                    tid = ep["tmdb_id"]
-                    key = (tid, ep["season"], ep["episode"])
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    events.append({
-                        "job_id":   None,
-                        "title":    _disp_title(ep),
-                        "tmdb_id":  tid,
-                        "season":   ep["season"],
-                        "episode":  ep["episode"],
-                        "name":     _disp_name(ep),
-                        "air_date": ep["air_date"],
-                        "poster":   ep["poster_path"],
-                        "still":    ep["still_path"],
-                        "source":   "seerr",
-                    })
-            if seerr_movie_ids:
-                db_eps = get_calendar_episodes_from_db(seerr_movie_ids)
-                for ep in db_eps:
-                    tid = ep["tmdb_id"]
-                    key = ("movie", tid)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    events.append({
-                        "job_id":   None,
-                        "title":    _disp_title(ep),
-                        "tmdb_id":  tid,
-                        "season":   None,
-                        "episode":  None,
-                        "name":     "",
-                        "air_date": ep["air_date"],
-                        "poster":   ep["poster_path"],
-                        "still":    None,
-                        "source":   "seerr",
-                        "is_movie": True,
-                    })
-
-        # 3. Media Library series (optional overlay)
-        if get_setting("cineinfo_calendar_mediathek", "0") == "1":
-            mediathek_series = get_mediascan_series()
-            mediathek_tv_ids = []
-            for item in mediathek_series:
-                tid = item.get("tmdb_id")
-                if tid:
-                    try:
-                        mediathek_tv_ids.append(int(tid))
-                    except ValueError:
-                        pass
-                elif item.get("title"):
-                    title = item.get("title").strip()
-                    try:
-                        info = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
-                        if info and info.get("found") and info.get("media_type") == "tv":
-                            tid = info.get("tmdb_id")
-                            if tid:
-                                mediathek_tv_ids.append(int(tid))
-                    except Exception:
-                        continue
-
-            if mediathek_tv_ids:
-                db_eps = get_calendar_episodes_from_db(mediathek_tv_ids)
-                for ep in db_eps:
-                    tid = ep["tmdb_id"]
-                    key = (tid, ep["season"], ep["episode"])
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    events.append({
-                        "job_id":   None,
-                        "title":    _disp_title(ep),
-                        "tmdb_id":  tid,
-                        "season":   ep["season"],
-                        "episode":  ep["episode"],
-                        "name":     _disp_name(ep),
-                        "air_date": ep["air_date"],
-                        "poster":   ep["poster_path"],
-                        "still":    ep["still_path"],
-                        "source":   "mediathek",
-                    })
-
-        # 4. Crunchyroll simulcast / watchlist / lists. If a CR episode is already
-        #    shown via another source (e.g. a Seerr request), keep that event but
-        #    attach the CR membership so the Crunchyroll/watchlist badge also shows.
-        ev_by_key = {(e.get("tmdb_id"), e.get("season"), e.get("episode")): e
-                     for e in events}
-        for ev in _crunchyroll_calendar_events():
-            ev["cr_member"] = True
-            key = (ev.get("tmdb_id"), ev.get("season"), ev.get("episode"))
-            existing = ev_by_key.get(key)
-            if existing is not None:
-                existing["cr_member"] = True
-                existing["cr_in_watchlist"] = ev.get("cr_in_watchlist", False)
-                existing["cr_in_list"] = ev.get("cr_in_list", False)
-                existing["cr_lists"] = ev.get("cr_lists", [])
-                existing["cr_kind"] = ev.get("cr_kind")
-                continue
-            seen.add(key)
-            events.append(ev)
-            ev_by_key[key] = ev
-
-        # Title fallback: tag events from other sources (e.g. Seerr) whose
-        # title matches a CR title but whose TMDB id differs from the
-        # CR-resolved one, so they still get the Crunchyroll/watchlist badge.
-        if _cr_calendar_titles:
-            for ev in events:
-                if ev.get("cr_member"):
-                    continue
-                tm = _cr_calendar_titles.get(_cr_norm(ev.get("title") or ""))
-                if tm:
-                    ev["cr_member"] = True
-                    ev["cr_in_watchlist"] = tm["in_wl"]
-                    ev["cr_in_list"] = tm["in_list"]
-                    ev["cr_lists"] = sorted(tm["lists"])
-                    ev["cr_kind"] = ("watchlist" if tm["in_wl"]
-                                     else "list" if tm["in_list"] else "simulcast")
-
-        events.sort(key=lambda e: (e.get("air_date") or ""))
+        events, meta = collect_calendar_events(api_key, country, ui_lang, username, is_admin)
         return jsonify({
             "events": events,
             "watcher": {
                 "active": _calendar_watcher_active,
                 "is_scanning": _calendar_watcher_scanning,
-                "last_sync": _calendar_watcher_last_sync
+                "last_sync": _calendar_watcher_last_sync,
             },
-            "meta": {
-                "seerr_active": seerr_active,
-                "seerr_count": seerr_count,
-            }
+            "meta": meta,
         })
+
+    @app.route("/api/calendar/feed")
+    def api_calendar_feed():
+        """Return this user's ICS subscription URL, creating a token on first
+        call. Route: GET /api/calendar/feed. Called from static/calendar.js.
+
+        The URL is built from the incoming request so it already carries the
+        scheme/host the user reached MediaForge on (behind a reverse proxy that
+        is whatever the proxy forwards) -- but a calendar client outside the
+        LAN still needs MediaForge to be reachable at that address.
+        """
+        from flask import request as _rq
+        uid = session.get("user_id", 0)
+        token = _ics_token_for(uid)
+        return jsonify({
+            "url": _rq.url_root.rstrip("/") + "/api/calendar/feed.ics?token=" + token,
+        })
+
+    @app.route("/api/calendar/feed/regenerate", methods=["POST"])
+    def api_calendar_feed_regenerate():
+        """Rotate this user's ICS token, invalidating the previous feed URL.
+        Route: POST /api/calendar/feed/regenerate."""
+        from flask import request as _rq
+        uid = session.get("user_id", 0)
+        token = _ics_token_for(uid, rotate=True)
+        return jsonify({
+            "url": _rq.url_root.rstrip("/") + "/api/calendar/feed.ics?token=" + token,
+        })
+
+    @app.route("/api/calendar/feed.ics")
+    def api_calendar_ics():
+        """Serve the ICS subscription feed. Route: GET /api/calendar/feed.ics.
+
+        Authenticated by the `token` query parameter, NOT by session -- calendar
+        clients send no cookies. The endpoint is therefore listed in create_app's
+        `_exempt` set; the token check below is the only gate, so it must stay
+        strict: an unknown token is a flat 403 with no body detail, and the
+        response is marked private/no-store so a shared proxy cannot cache one
+        user's feed and hand it to another.
+        """
+        from flask import Response, request as _rq
+        from ..db import get_setting
+
+        uid = _ics_user_for_token(_rq.args.get("token", ""))
+        if uid is None:
+            return Response("Forbidden", status=403, mimetype="text/plain")
+
+        if get_setting("cineinfo_calendar", "0") != "1":
+            return Response("Calendar disabled", status=404, mimetype="text/plain")
+        api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
+        if not api_key:
+            return Response("Calendar not configured", status=503, mimetype="text/plain")
+
+        # No Flask session here, so the feed owner's identity and language come
+        # straight from the users table. uid 0 means auth is disabled: a single
+        # implicit admin, exactly as get_current_user_info() reports it.
+        username, is_admin, ui_lang = None, uid == 0, "en"
+        if uid:
+            try:
+                from ..db import get_db, get_user_language
+                conn = get_db()
+                try:
+                    row = conn.execute(
+                        "SELECT username, role FROM users WHERE id = ?", (uid,)
+                    ).fetchone()
+                finally:
+                    conn.close()
+                if row is None:
+                    # The token outlived the account it was issued to.
+                    return Response("Forbidden", status=403, mimetype="text/plain")
+                username = row["username"]
+                is_admin = row["role"] == "admin"
+                ui_lang = get_user_language(uid)
+            except Exception:
+                logger.warning("[Calendar] ICS feed could not resolve user %s", uid, exc_info=True)
+                return Response("Temporarily unavailable", status=503, mimetype="text/plain")
+
+        country = get_setting("cineinfo_country", "DE")
+        try:
+            events, _meta = collect_calendar_events(api_key, country, ui_lang, username, is_admin)
+        except Exception:
+            logger.warning("[Calendar] ICS feed build failed", exc_info=True)
+            return Response("Temporarily unavailable", status=503, mimetype="text/plain")
+
+        cutoff = (datetime.now() - timedelta(days=_ICS_PAST_DAYS)).strftime("%Y-%m-%d")
+        events = [e for e in events if (e.get("air_date") or "") >= cutoff][:_ICS_MAX_EVENTS]
+
+        body = build_ics(events, "MediaForge")
+        resp = Response(body, mimetype="text/calendar; charset=utf-8")
+        resp.headers["Content-Disposition"] = 'attachment; filename="mediaforge.ics"'
+        # The feed is per-user and token-scoped: never let a shared cache keep it.
+        resp.headers["Cache-Control"] = "private, no-store"
+        return resp

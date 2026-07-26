@@ -1,0 +1,22 @@
+{# Modulmanager floating side menu — client-side tab switching (switchExtTab in
+   extension_cards.js), same markup and behaviour as the Settings / Integrations /
+   Monitoring menus, and the mobile drawer in base.html picks it up for free
+   because it is a direct child of a .has-floating-menu element.
+
+   Modules and theme packs used to be one long scroll: two different lifecycles
+   (a module is code and may need a restart, a theme is inert CSS and never
+   does), two different sets of questions. The module *store* stays the
+   header button's job — it is a third place, not a third tab, and it has its
+   own restart banner to keep an eye on. #}
+<div class="settings-tabs floating-side-menu" id="extensionsMenu">
+  <button type="button" class="settings-tab active" data-exttab="modules"
+          onclick="switchExtTab('modules')">
+    {{ _('Modules') }}
+    <span class="sidebar-module-pill">{{ extensions | length }}</span>
+  </button>
+  <button type="button" class="settings-tab" data-exttab="themes"
+          onclick="switchExtTab('themes')">
+    {{ _('Theme Packs') }}
+    <span class="sidebar-module-pill">{{ theme_packs | length }}</span>
+  </button>
+</div>

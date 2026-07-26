@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ _('Setup locked') }} — MediaForge</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    {# No webfont link: this screen renders before an instance has any
+       network guarantees, and a Google Fonts request used to be the first
+       thing to time out. base.css falls back to the system stack. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='variables.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}" />
@@ -20,21 +20,64 @@
     </script>
   </head>
   <body>
-    <div class="auth-container">
-      <div style="margin-bottom:8px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px;display:block;margin:0 auto;">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-        </svg>
-      </div>
-      <h1>MediaForge</h1>
-      <h2>{{ _('Setup locked') }}</h2>
-      <p class="auth-info" style="margin-bottom:16px;">
-        {{ _('The setup link is invalid or expired.') }}<br>
-        {{ _('Restart the application to get a new token.') }}
-      </p>
+    <div class="auth-split">
+
+      <!-- Same brand panel as setup.html/login.html, for visual consistency
+           across every screen a fresh instance can show. -->
+      <aside class="auth-hero" aria-hidden="true">
+        <div class="auth-brand">
+            <div style="margin-bottom:8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px;display:block;margin:0 auto;">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+          <span class="auth-brand-name">MediaForge</span>
+        </div>
+
+        <div class="auth-hero-body">
+          <h2 class="auth-hero-claim">{{ _('Your media, your disk, your place') }}</h2>
+          <p class="auth-hero-sub">{{ _('Media management, transcoding, upscaling, calendar. The private server built around your own media management.') }}</p>
+          <div class="auth-hero-shelf">
+            <span class="auth-hero-poster auth-hero-poster-1"></span>
+            <span class="auth-hero-poster auth-hero-poster-2"></span>
+            <span class="auth-hero-poster auth-hero-poster-3"></span>
+            <span class="auth-hero-poster auth-hero-poster-4"></span>
+          </div>
+        </div>
+
+        <div class="auth-hero-foot">{{ _('Version') }} {{ app_version }}</div>
+      </aside>
+
+      <main class="auth-form-side">
+        <div class="auth-form-inner">
+
+          <div class="auth-brand auth-brand-compact">
+            <span class="auth-brand-mark">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </span>
+            <span class="auth-brand-name">MediaForge</span>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:38px;height:38px;">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+
+          <h1 class="auth-title">{{ _('Setup locked') }}</h1>
+          <p class="auth-subtitle">
+            {{ _('The setup token has expired.') }}
+          </p>
+
+          <div class="auth-error">
+            {{ _('Restart the application to get a new setup token — it stays valid for 30 minutes after each start.') }}
+          </div>
+
+          <div class="auth-form-foot">MediaForge {{ app_version }}</div>
+        </div>
+      </main>
+
     </div>
   </body>
 </html>
-
-  

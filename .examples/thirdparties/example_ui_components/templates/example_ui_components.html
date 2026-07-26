@@ -11,6 +11,13 @@
 {# mf-charts.css/js are not global either -- link them on any page that draws
    MFCharts charts (the Statistics page does the same). #}
 <link rel="stylesheet" href="{{ url_for('static', filename='mf-charts.css') }}">
+{# mf_detail_modal.css/js are not global either -- link them on any page that
+   opens the shared TMDB detail modal (the Calendar page does the same). #}
+<link rel="stylesheet" href="{{ url_for('static', filename='mf_detail_modal.css') }}">
+{# mf_components.css is not global either -- link it on any page that uses the
+   mf-* layout blocks (search, toolbar, poster grid, timeline, progress);
+   the Calendar and Seerr pages do the same. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='mf_components.css') }}">
 <link rel="stylesheet" href="{{ url_for('example_ui_components.static', filename='example_ui_components.css') }}">
 {% endblock %}
 {% block content %}
@@ -311,6 +318,41 @@
     </div>
   </div>
 
+  <!-- ─── TMDB detail modal ───────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('TMDB detail modal') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/mf_detail_modal.js + .css — a ready-made detail view for anything you can name by TMDB id: poster, date, synopsis, metadata chips and a "Search streams" button. Include the partial once, then call MFDetailModal.open(). Needs a TMDB API key for the synopsis/chips; without one it still shows what you passed in.') }}</div>
+      <div class="uic-row">
+        <button type="button" class="btn btn-secondary btn-sm" id="uicDetailSeries">{{ _('Open a series') }}</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="uicDetailMovie">{{ _('Open a movie') }}</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="uicDetailNoId">{{ _('Open without a TMDB id') }}</button>
+      </div>
+      <pre class="uic-snippet">&lt;!-- styles block --&gt;
+&lt;link rel="stylesheet" href="{{ '{{' }} url_for('static', filename='mf_detail_modal.css') {{ '}}' }}"&gt;
+&lt;!-- content block, once --&gt;
+{{ '{%' }} include "mf_detail_modal.html" {{ '%}' }}
+&lt;!-- scripts block, before your own script --&gt;
+&lt;script src="{{ '{{' }} url_for('static', filename='mf_detail_modal.js') {{ '}}' }}"&gt;&lt;/script&gt;
+
+MFDetailModal.open({
+  tmdbId: 1396,           // omit to skip the TMDB fetch entirely
+  mediaType: "tv",        // "tv" | "movie" (default "tv")
+  title: "Breaking Bad",
+  subtitle: "S01E01",     // small badge next to the date
+  caption: "Pilot",       // episode name / one-liner
+  date: "2008-01-20",     // ISO day, rendered in the user's locale
+  image: "/poster.jpg",   // already proxied if it is remote
+});
+MFDetailModal.close();
+
+// Close / Escape / backdrop-click are wired by the component itself.
+// Everything you pass is escaped and image URLs are scheme-checked.</pre>
+    </div>
+  </div>
+
   <!-- ─── Pagination ──────────────────────────────────────────────────── -->
   <div class="settings-section">
     <div class="integ-subsection-header" style="padding:14px 20px !important;">
@@ -325,6 +367,48 @@
   &lt;span class="mf-pagination-ellipsis"&gt;…&lt;/span&gt;
   &lt;button class="mf-pagination-btn" data-page="12"&gt;»&lt;/button&gt;
   &lt;span class="mf-pagination-jump"&gt;&lt;label&gt;Page&lt;/label&gt;&lt;input type="text" /&gt;&lt;span&gt;of 12&lt;/span&gt;&lt;/span&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Pagination bar ─────────────────────────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Pagination bar') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/mf_components.css — the row a .mf-pagination pager usually sits in: a running count (Showing X-Y of Z), the pager itself, and a results-per-page select. Stacks to one centered column below 480px. See libRenderPagination() in library.js for a full client-side reference implementation.') }}</div>
+      <div class="mf-pagination-bar">
+        <span class="mf-pagination-count">Showing 21–40 of 214</span>
+        <div class="mf-pagination">
+          <button class="mf-pagination-btn" disabled>«</button>
+          <button class="mf-pagination-btn">‹</button>
+          <button class="mf-pagination-page">1</button>
+          <span class="mf-pagination-ellipsis">…</span>
+          <button class="mf-pagination-page active" disabled>2</button>
+          <button class="mf-pagination-page">3</button>
+          <span class="mf-pagination-ellipsis">…</span>
+          <button class="mf-pagination-page">11</button>
+          <button class="mf-pagination-btn">›</button>
+          <button class="mf-pagination-btn">»</button>
+        </div>
+        <label class="mf-pagination-perpage">
+          <span>{{ _('Results per page') }}</span>
+          <select>
+            <option>10</option>
+            <option selected>20</option>
+            <option>50</option>
+            <option>100</option>
+          </select>
+        </label>
+      </div>
+      <pre class="uic-snippet">&lt;div class="mf-pagination-bar"&gt;
+  &lt;span class="mf-pagination-count"&gt;Showing 21–40 of 214&lt;/span&gt;
+  &lt;div class="mf-pagination"&gt;…&lt;/div&gt;
+  &lt;label class="mf-pagination-perpage"&gt;
+    &lt;span&gt;Results per page&lt;/span&gt;
+    &lt;select&gt;&lt;option&gt;10&lt;/option&gt;&lt;option selected&gt;20&lt;/option&gt;&lt;option&gt;50&lt;/option&gt;&lt;option&gt;100&lt;/option&gt;&lt;/select&gt;
+  &lt;/label&gt;
 &lt;/div&gt;</pre>
     </div>
   </div>
@@ -358,6 +442,249 @@
   &lt;svg class="empty-state-icon" ...&gt;...&lt;/svg&gt;
   &lt;div class="empty-state-title"&gt;Nothing here yet&lt;/div&gt;
   &lt;div class="empty-state-desc"&gt;...&lt;/div&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </div>
+
+  <!-- ─── Layout blocks (mf_components.css) ──────────────────────────── -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Layout blocks (mf_components.css)') }}</span>
+    </div>
+    <div class="integ-collapsible-body" style="padding:0 20px 16px;">
+      <div class="integ-subsection-hint">{{ _('web/static/mf_components.css — the building blocks of the July 2026 redesign. Division of labour: forms.css holds the form-control vocabulary (checkboxes, segmented buttons, token fields — everything above), mf_components.css holds the layout and content vocabulary (search, toolbar, poster grid, timeline, progress). It is NOT loaded globally, so link it in your page\'s styles block.') }}</div>
+      <div class="integ-subsection-hint">{{ _('One trap worth knowing: forms.css styles inputs via input[type="search"] (specificity 0,1,1), which beats any bare class (0,1,0) — a plain .my-input rule is silently ignored. That is why the selector below is input.mf-search-input, qualified with the element. Do the same whenever you restyle an input.') }}</div>
+
+      <!-- Search field -->
+      <div class="uic-hint" style="margin-top:14px;">{{ _('Search field — .mf-search') }}</div>
+      <div class="mf-search" style="max-width:340px;">
+        <svg class="mf-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" class="mf-search-input" id="uicSearchInput"
+               placeholder="{{ _('Search…') }}" aria-label="{{ _('Search…') }}" autocomplete="off">
+        <button type="button" class="mf-search-clear" id="uicSearchClear"
+                aria-label="{{ _('Clear search') }}" hidden>&times;</button>
+      </div>
+      <pre class="uic-snippet">&lt;div class="mf-search"&gt;
+  &lt;svg class="mf-search-icon" ...&gt;...&lt;/svg&gt;
+  &lt;input type="search" class="mf-search-input" placeholder="Search…"&gt;
+  &lt;button type="button" class="mf-search-clear" aria-label="Clear search" hidden&gt;&amp;times;&lt;/button&gt;
+&lt;/div&gt;
+
+// The clear button is markup only -- wire it yourself (2 lines):
+input.addEventListener("input", function () { clear.hidden = !input.value; });
+clear.addEventListener("click", function () { input.value = ""; clear.hidden = true; input.focus(); });</pre>
+
+      <!-- Toolbar -->
+      <div class="uic-hint" style="margin-top:18px;">{{ _('Toolbar — .mf-toolbar with one row per job') }}</div>
+      <div class="integ-subsection-hint">{{ _('Row 1 finds (search, navigation), row 2 shapes the view (filters left, view options right, pushed there by .mf-toolbar-gap). A single row with five equal control groups is what made the old toolbars read as noise.') }}</div>
+      <div class="mf-toolbar">
+        <div class="mf-toolbar-row">
+          <button type="button" class="mf-icon-btn" title="{{ _('Back') }}" aria-label="{{ _('Back') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm">{{ _('Today') }}</button>
+          <button type="button" class="mf-icon-btn" title="{{ _('Next') }}" aria-label="{{ _('Next') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+        <div class="mf-toolbar-row">
+          <div class="mf-segmented" role="group" aria-label="{{ _('Example filter') }}">
+            <button type="button" class="mf-segmented-btn active" aria-pressed="true">
+              {{ _('All') }}<span class="mf-facet">42</span>
+            </button>
+            <button type="button" class="mf-segmented-btn" aria-pressed="false">
+              {{ _('Open') }}<span class="mf-facet">7</span>
+            </button>
+          </div>
+          <span class="mf-toolbar-sep" aria-hidden="true"></span>
+          <span class="uic-hint">{{ _('Filters live on the left') }}</span>
+          <div class="mf-toolbar-gap"></div>
+          <button type="button" class="mf-icon-btn active" title="{{ _('Grid') }}" aria-label="{{ _('Grid') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </button>
+          <button type="button" class="mf-icon-btn" title="{{ _('List') }}" aria-label="{{ _('List') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+              <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
+              <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <pre class="uic-snippet">&lt;div class="mf-toolbar"&gt;
+  &lt;div class="mf-toolbar-row"&gt;  &lt;!-- finds: search / navigation --&gt;
+    &lt;button class="mf-icon-btn"&gt;&lt;svg .../&gt;&lt;/button&gt;
+  &lt;/div&gt;
+  &lt;div class="mf-toolbar-row"&gt;  &lt;!-- shapes the view --&gt;
+    &lt;div class="mf-segmented"&gt;…&lt;button class="mf-segmented-btn active"&gt;All&lt;span class="mf-facet"&gt;42&lt;/span&gt;&lt;/button&gt;…&lt;/div&gt;
+    &lt;span class="mf-toolbar-sep"&gt;&lt;/span&gt;
+    &lt;div class="mf-toolbar-gap"&gt;&lt;/div&gt;   &lt;!-- everything after this goes right --&gt;
+    &lt;button class="mf-icon-btn active"&gt;&lt;svg .../&gt;&lt;/button&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</pre>
+
+      <!-- Poster grid -->
+      <div class="uic-hint" style="margin-top:18px;">{{ _('Poster grid — .mf-poster-grid / .mf-poster-card') }}</div>
+      <div class="integ-subsection-hint">{{ _('Status goes in the corner flag instead of yet another pill, and attribution sits in the foot — permanently visible, never behind a hover, because on touch there is no hover and "who asked for this" is what people scan the page for. The action overlay is secondary and, under @media (hover:none), folds out below the card instead.') }}</div>
+      <div class="mf-poster-grid" style="max-width:520px;">
+        <article class="mf-poster-card" tabindex="0">
+          <div class="mf-poster-art">
+            <span class="mf-poster-flag mf-poster-flag--pending">{{ _('Pending') }}</span>
+            <div class="mf-poster-scrim">
+              <div>
+                <div class="mf-poster-meta">2026 · Series</div>
+                <h3 class="mf-poster-title">An Example Title</h3>
+              </div>
+            </div>
+            <div class="mf-poster-actions">
+              <button type="button" class="btn btn-primary btn-sm">{{ _('Approve') }}</button>
+            </div>
+          </div>
+          <div class="mf-poster-foot">
+            <span class="mf-avatar mf-avatar--sm" aria-hidden="true">AB</span>
+            <span class="mf-poster-who">{{ _('by') }} <b>Alex B.</b></span>
+            <span class="mf-poster-when">{{ _('2 days ago') }}</span>
+          </div>
+        </article>
+        <article class="mf-poster-card" tabindex="0">
+          <div class="mf-poster-art">
+            <span class="mf-poster-flag mf-poster-flag--done">{{ _('Done') }}</span>
+            <div class="mf-poster-scrim">
+              <div>
+                <div class="mf-poster-meta">2025 · Movie</div>
+                <h3 class="mf-poster-title">Another Example</h3>
+              </div>
+            </div>
+          </div>
+          <div class="mf-poster-foot">
+            <span class="mf-avatar mf-avatar--sm" aria-hidden="true">CD</span>
+            <span class="mf-poster-who">{{ _('by') }} <b>Chris D.</b></span>
+          </div>
+        </article>
+      </div>
+      <pre class="uic-snippet">&lt;div class="mf-poster-grid"&gt;
+  &lt;article class="mf-poster-card" tabindex="0"&gt;
+    &lt;div class="mf-poster-art"&gt;
+      &lt;span class="mf-poster-flag mf-poster-flag--pending"&gt;Pending&lt;/span&gt;
+      &lt;img src="…" alt="" loading="lazy"&gt;
+      &lt;div class="mf-poster-scrim"&gt;&lt;div&gt;
+        &lt;div class="mf-poster-meta"&gt;2026 · Series&lt;/div&gt;
+        &lt;h3 class="mf-poster-title"&gt;An Example Title&lt;/h3&gt;
+      &lt;/div&gt;&lt;/div&gt;
+      &lt;div class="mf-poster-actions"&gt;&lt;button class="btn btn-primary btn-sm"&gt;Approve&lt;/button&gt;&lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class="mf-poster-foot"&gt;
+      &lt;span class="mf-avatar mf-avatar--sm"&gt;AB&lt;/span&gt;
+      &lt;span class="mf-poster-who"&gt;by &lt;b&gt;Alex B.&lt;/b&gt;&lt;/span&gt;
+      &lt;span class="mf-poster-when"&gt;2 days ago&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/article&gt;
+&lt;/div&gt;
+
+Flag modifiers: --pending --approved --partial --done
+Selection: add .is-selected on the card, put your .chb-main in .mf-poster-select</pre>
+
+      <!-- Progress track -->
+      <div class="uic-hint" style="margin-top:18px;">{{ _('Progress track — .mf-progress') }}</div>
+      <div class="integ-subsection-hint">{{ _('A few named stages of one item (requested → approved → downloaded), not a percentage — for that use .progress-wrap above. Hide it below ~1000px: three labels turn into three stumps.') }}</div>
+      <span class="mf-progress" style="max-width:360px;">
+        <span class="mf-progress-step is-done"><span class="mf-progress-bar"></span><span class="mf-progress-label">{{ _('Requested') }}</span></span>
+        <span class="mf-progress-step is-done"><span class="mf-progress-bar"></span><span class="mf-progress-label">{{ _('Approved') }}</span></span>
+        <span class="mf-progress-step is-active"><span class="mf-progress-bar"></span><span class="mf-progress-label">{{ _('Downloading') }}</span></span>
+      </span>
+      <pre class="uic-snippet">&lt;span class="mf-progress"&gt;
+  &lt;span class="mf-progress-step is-done"&gt;&lt;span class="mf-progress-bar"&gt;&lt;/span&gt;&lt;span class="mf-progress-label"&gt;Requested&lt;/span&gt;&lt;/span&gt;
+  &lt;span class="mf-progress-step is-active"&gt;…&lt;/span&gt;   &lt;!-- no class = still pending --&gt;
+&lt;/span&gt;</pre>
+
+      <!-- Timeline -->
+      <div class="uic-hint" style="margin-top:18px;">{{ _('Timeline — .mf-timeline / .mf-stop') }}</div>
+      <div class="integ-subsection-hint">{{ _('One continuous rail with a glowing "now" dot (.is-now), and named gaps instead of two rows sitting next to each other: a fortnight with nothing scheduled should read as a fortnight with nothing scheduled. The source of an entry is a 3px coloured spine (.mf-stop-source), not another coloured word competing with the title.') }}</div>
+      <div class="mf-timeline">
+        <div class="mf-stop is-now">
+          <span class="mf-stop-dot" aria-hidden="true"></span>
+          <div class="mf-stop-when">
+            <span class="mf-stop-rel">{{ _('Today') }}</span>
+            <span class="mf-stop-day">26</span>
+            <span class="mf-stop-mon">Jul</span>
+          </div>
+          <div class="mf-stop-item" tabindex="0">
+            <span class="mf-stop-source" style="background:var(--accent);" aria-hidden="true"></span>
+            <span class="mf-stop-thumb" aria-hidden="true"></span>
+            <span class="mf-stop-text">
+              <span class="mf-stop-title">An Example Title</span>
+              <span class="mf-stop-sub">The episode name</span>
+            </span>
+            <span class="mf-stop-badge">S01E04</span>
+          </div>
+        </div>
+        <div class="mf-timeline-gap">{{ _('3 days with nothing') }}</div>
+        <div class="mf-stop">
+          <span class="mf-stop-dot" aria-hidden="true"></span>
+          <div class="mf-stop-when">
+            <span class="mf-stop-rel">{{ _('in 4 days') }}</span>
+            <span class="mf-stop-day">30</span>
+            <span class="mf-stop-mon">Jul</span>
+          </div>
+          <div class="mf-stop-item" tabindex="0">
+            <span class="mf-stop-source" style="background:#0ea5e9;" aria-hidden="true"></span>
+            <span class="mf-stop-thumb" aria-hidden="true"></span>
+            <span class="mf-stop-text">
+              <span class="mf-stop-title">Another Example</span>
+            </span>
+            <span class="mf-stop-badge">{{ _('Movie') }}</span>
+          </div>
+        </div>
+      </div>
+      <pre class="uic-snippet">&lt;div class="mf-timeline"&gt;
+  &lt;div class="mf-stop is-now"&gt;            &lt;!-- .is-now = the glowing dot --&gt;
+    &lt;span class="mf-stop-dot"&gt;&lt;/span&gt;
+    &lt;div class="mf-stop-when"&gt;
+      &lt;span class="mf-stop-rel"&gt;Today&lt;/span&gt;
+      &lt;span class="mf-stop-day"&gt;26&lt;/span&gt;&lt;span class="mf-stop-mon"&gt;Jul&lt;/span&gt;
+    &lt;/div&gt;
+    &lt;div class="mf-stop-item" tabindex="0"&gt;
+      &lt;span class="mf-stop-source" style="background:var(--accent)"&gt;&lt;/span&gt;
+      &lt;img class="mf-stop-thumb" src="…" alt=""&gt;
+      &lt;span class="mf-stop-text"&gt;
+        &lt;span class="mf-stop-title"&gt;An Example Title&lt;/span&gt;
+        &lt;span class="mf-stop-sub"&gt;The episode name&lt;/span&gt;
+      &lt;/span&gt;
+      &lt;span class="mf-stop-badge"&gt;S01E04&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="mf-timeline-gap"&gt;3 days with nothing&lt;/div&gt;
+&lt;/div&gt;
+
+Too many entries for one day? .mf-stop-count is the "+7 more" line.</pre>
+
+      <!-- Empty state (mf-empty) -->
+      <div class="uic-hint" style="margin-top:18px;">{{ _('Empty state — .mf-empty') }}</div>
+      <div class="integ-subsection-hint">{{ _('The inline variant for "your filters match nothing" inside a view that is otherwise working — as opposed to .empty-state above, which is the big centred block for a page with no data at all. Add .is-error to turn it red.') }}</div>
+      <div class="mf-empty">
+        <svg class="mf-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <p>{{ _('Nothing matches these filters') }}</p>
+        <p class="mf-empty-hint">{{ _('Keep the difference visible: "nothing matches your filters" is a different message than "there is nothing scheduled", and only one of them deserves a reset button.') }}</p>
+        <button type="button" class="btn btn-secondary btn-sm">{{ _('Reset filters') }}</button>
+      </div>
+      <pre class="uic-snippet">&lt;div class="mf-empty"&gt;            &lt;!-- + .is-error for a failure --&gt;
+  &lt;svg class="mf-empty-icon" ...&gt;&lt;/svg&gt;
+  &lt;p&gt;Nothing matches these filters&lt;/p&gt;
+  &lt;p class="mf-empty-hint"&gt;…&lt;/p&gt;
+  &lt;button class="btn btn-secondary btn-sm"&gt;Reset filters&lt;/button&gt;
 &lt;/div&gt;</pre>
     </div>
   </div>
@@ -426,8 +753,12 @@ card.innerHTML = MFCharts.sparkline([1, 4, 2, 8], { color: "#22c55e" });</pre>
     </div>
   </div>
 </div>
+
+{# The shared TMDB detail modal's markup -- include it once per page. #}
+{% include "mf_detail_modal.html" %}
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='mf-charts.js') }}"></script>
+<script src="{{ url_for('static', filename='mf_detail_modal.js') }}"></script>
 <script src="{{ url_for('example_ui_components.static', filename='example_ui_components.js') }}"></script>
 {% endblock %}

@@ -4,9 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ _('Sign in') }} — MediaForge</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    {# No webfont link here on purpose. This is the first screen an instance
+       ever renders, and an install without outbound internet used to wait on a
+       Google Fonts request before falling back. base.css already declares the
+       system font stack after "Inter". #}
     <link rel="stylesheet" href="{{ url_for('static', filename='variables.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}" />
@@ -20,33 +21,104 @@
     </script>
   </head>
   <body>
-    <div class="auth-container">
-      <div style="margin-bottom:8px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px;display:block;margin:0 auto;">
-          <polygon points="5 3 19 12 5 21 5 3"/>
-        </svg>
-      </div>
-      <h1>MediaForge</h1>
-      <h2>{{ _('Sign in') }}</h2>
-      {% if error %}
-      <div class="auth-error">{{ error }}</div>
-      {% endif %}
-      {% if not force_sso %}
-      <form method="post" action="{{ url_for('auth.login') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        <input type="text" name="username" placeholder="{{ _('Username') }}" required autofocus />
-        <input type="password" name="password" placeholder="{{ _('Password') }}" required />
-        <button type="submit">{{ _('Sign in') }}</button>
-      </form>
-      {% endif %}
-      {% if oidc_enabled and not force_sso %}
-      <div class="auth-divider"><span>{{ _('or') }}</span></div>
-      {% endif %}
-      {% if oidc_enabled %}
-      <a href="{{ url_for('auth.oidc_login') }}" class="sso-button">
-        {{ _('Sign in with') }} {{ oidc_display_name }}
-      </a>
-      {% endif %}
+    <div class="auth-split">
+
+      <!-- Brand panel. Purely decorative and the first thing to go when the
+           viewport gets narrow -- the form is what matters on a phone. -->
+      <aside class="auth-hero" aria-hidden="true">
+        <div class="auth-brand">
+            <div style="margin-bottom:8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px;display:block;margin:0 auto;">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+          <span class="auth-brand-name">MediaForge</span>
+        </div>
+
+        <div class="auth-hero-body">
+          <h2 class="auth-hero-claim">{{ _('Your media, your disk, your place') }}</h2>
+          <p class="auth-hero-sub">{{ _('Media management, transcoding, upscaling, calendar. The private server built around your own media management.') }}</p>
+          <div class="auth-hero-shelf">
+            <span class="auth-hero-poster auth-hero-poster-1"></span>
+            <span class="auth-hero-poster auth-hero-poster-2"></span>
+            <span class="auth-hero-poster auth-hero-poster-3"></span>
+            <span class="auth-hero-poster auth-hero-poster-4"></span>
+          </div>
+        </div>
+
+        <div class="auth-hero-foot">{{ _('Version') }} {{ app_version }}</div>
+      </aside>
+
+      <!-- Form panel -->
+      <main class="auth-form-side">
+        <div class="auth-form-inner">
+
+          <!-- Repeated here because the brand panel is hidden on small screens. -->
+          <div class="auth-brand auth-brand-compact">
+            <span class="auth-brand-mark">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </span>
+            <span class="auth-brand-name">MediaForge</span>
+          </div>
+
+          <h1 class="auth-title">{{ _('Sign in') }}</h1>
+          <p class="auth-subtitle">{{ _('Continue to your instance') }}</p>
+
+          {% if error %}
+          <div class="auth-error">{{ error }}</div>
+          {% endif %}
+
+          {% if not force_sso %}
+          <form method="post" action="{{ url_for('auth.login') }}" class="auth-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+            <div class="auth-field">
+              <label for="authUser">{{ _('Username') }}</label>
+              <div class="auth-input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+                <input type="text" id="authUser" name="username" required autofocus
+                       autocomplete="username" autocapitalize="none" spellcheck="false" />
+              </div>
+            </div>
+
+            <div class="auth-field">
+              <label for="authPass">{{ _('Password') }}</label>
+              <div class="auth-input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <input type="password" id="authPass" name="password" required
+                       autocomplete="current-password" />
+              </div>
+            </div>
+
+            <button type="submit">{{ _('Sign in') }}</button>
+          </form>
+          {% endif %}
+
+          {# The "or" only exists when there is a second way in. As a plain line
+             of text, not a rule across the panel -- it separates two options,
+             it is not a section heading. #}
+          {% if oidc_enabled and not force_sso %}
+          <p class="auth-or">{{ _('or') }}</p>
+          {% endif %}
+
+          {% if oidc_enabled %}
+          <a href="{{ url_for('auth.oidc_login') }}" class="sso-button">
+            {{ _('Sign in with') }} {{ oidc_display_name }}
+          </a>
+          {% endif %}
+
+          <!-- Also visible when the brand panel is hidden, so a support request
+               can always name the version. -->
+          <div class="auth-form-foot">MediaForge {{ app_version }}</div>
+        </div>
+      </main>
+
     </div>
   </body>
 </html>

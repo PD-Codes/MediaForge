@@ -55,7 +55,8 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **Subtitles** — the subtitles a source offers are downloaded and muxed into the finished file as switchable soft-sub tracks that Jellyfin/Plex list by language (on by default)
 - **Duplicate handling** — optionally replace an already downloaded episode when the hoster offers better quality, or merge an additional language into the existing file as a new audio track instead of creating a near-duplicate (both off by default)
 - **Advanced search** — TMDB Discover with genres (include/exclude), rating & vote-count thresholds, year and runtime ranges, keywords, original language, series status, networks and streaming providers, grouped in a floating filter menu with quick presets
-- **CineInfo (TMDB)** metadata, a **Calendar** of upcoming episodes, plus **Jellyfin/Plex** and **Jellyseerr/Overseerr** integration
+- **CineInfo (TMDB)** metadata and a **Calendar** of upcoming episodes and releases — month, week and agenda views, search and media-type filters, a detail modal on every entry, and an **iCal subscription feed** you can add to Google/Apple Calendar, Thunderbird or DAVx5
+- **Jellyfin/Plex** and **Jellyseerr/Overseerr** integration — the Seerr requests page filters, searches and sorts the whole request set server-side and can approve, decline or hide requests in bulk
 - **Notifications** via Web Push, Telegram, Pushover, Discord or WhatsApp
 - **Encoding** (Stream Copy / H.264 / H.265, with NVENC, VAAPI, VideoToolbox) and **Anime4K** upscaling
 - **Full & Selective Backup** — export/import settings and user data as a password-protected file to back up or migrate a MediaForge install (admin only)
@@ -113,6 +114,7 @@ Actively in development — current work in progress:
 - [x] AutoSync Schedule — run on a fixed interval or a weekly plan (weekdays + times)
 - [x] Provider Fallback Order — automatically try the next provider if the primary one fails
 - [x] Calendar View — show upcoming episode air dates for AutoSync jobs based on TMDB data
+- [x] Calendar Subscription (iCal/ICS) — token-authenticated feed for external calendar apps
 - [x] Bandwidth Limit / Download Time Window — throttle speed or restrict downloads to specific hours
 - [x] Download History — searchable log of all completed downloads with date, size and duration
 - [ ] Generic Outgoing Webhook — send a configurable POST request on download completion (Home Assistant, n8n, etc.)

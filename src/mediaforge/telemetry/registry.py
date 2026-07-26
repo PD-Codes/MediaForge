@@ -8,6 +8,18 @@ it is rendered *verbatim* in the Settings confirmation dialog (see
 is deliberately no second, separately-maintained copy of this wording
 anywhere in the frontend.
 
+``title``/``description``/``label``/``explain`` values below are
+``{"de": ..., "en": ...}`` dicts rather than plain strings: this registry is
+serialized straight to JSON for the frontend (``registry_export()``), never
+routed through a Jinja template, so it falls outside ``babel.cfg``'s
+``[jinja2: ...]``-only extraction mapping (see that file's own comment on why
+``.py`` sources aren't scanned) and thus outside the normal
+``pybabel extract`` / ``.po``/``.mo`` catalog workflow entirely. Keeping both
+languages inline here -- picked by ``registry_export(lang=...)`` using the
+same session-based locale ``web/app.py``'s ``get_locale()`` already resolves
+-- keeps this the single place that ever needs updating, instead of a second
+hand-copied English set living in ``static/telemetry.js``.
+
 Also home to the small set of constants that tie the client to the devInfo
 server: the ingest/request endpoints and the shared "project key" anti-spam
 header value.
@@ -57,40 +69,69 @@ TELEMETRY_PROJECT_KEY = "mediaforge-telemetry-v1"
 
 STAGE_META = {
     0: {
-        "title": "Aus",
-        "description": "Keine Verbindung zum devInfo-Server, überhaupt keine Daten verlassen dieses Gerät.",
+        "title": {"de": "Aus", "en": "Off"},
+        "description": {
+            "de": "Keine Verbindung zum devInfo-Server, überhaupt keine Daten verlassen dieses Gerät.",
+            "en": "No connection to the devInfo server at all -- no data leaves this device.",
+        },
     },
     1: {
-        "title": "Absturz & System",
-        "description": (
-            "Technische Fehlerprotokolle und Basis-Systeminfo, nur nach ausdrücklicher "
-            "Zustimmung im Erstkonsens-Dialog. Kein Opt-out-Default -- siehe PRIVACY.md."
-        ),
+        "title": {"de": "Absturz & System", "en": "Crash & System"},
+        "description": {
+            "de": (
+                "Technische Fehlerprotokolle und Basis-Systeminfo, nur nach ausdrücklicher "
+                "Zustimmung im Erstkonsens-Dialog. Kein Opt-out-Default -- siehe PRIVACY.md."
+            ),
+            "en": (
+                "Technical error logs and basic system info, only after explicit consent in the "
+                "first-run dialog. No opt-out default -- see PRIVACY.md."
+            ),
+        },
     },
     2: {
-        "title": "Feature-Flags",
-        "description": "Reine Ja/Nein- bzw. Zähler-Ebene pro Feature -- keine Titel, keine Inhalte.",
+        "title": {"de": "Feature-Flags", "en": "Feature flags"},
+        "description": {
+            "de": "Reine Ja/Nein- bzw. Zähler-Ebene pro Feature -- keine Titel, keine Inhalte.",
+            "en": "Plain yes/no or counter level per feature -- no titles, no content.",
+        },
     },
     3: {
-        "title": "Feature-Details & Fehler",
-        "description": "Mehr Kontext zu denselben Features (Laufzeiten, Fehlerzahlen), weiterhin ohne Titel/Inhalte.",
+        "title": {"de": "Feature-Details & Fehler", "en": "Feature details & errors"},
+        "description": {
+            "de": "Mehr Kontext zu denselben Features (Laufzeiten, Fehlerzahlen), weiterhin ohne Titel/Inhalte.",
+            "en": "More context on the same features (run times, error counts), still without titles/content.",
+        },
     },
     4: {
-        "title": "Download-Inhalte",
-        "description": "Welche Serien/Filme heruntergeladen wurden, inkl. Provider und Erfolg/Fehlschlag.",
+        "title": {"de": "Download-Inhalte", "en": "Download content"},
+        "description": {
+            "de": "Welche Serien/Filme heruntergeladen wurden, inkl. Provider und Erfolg/Fehlschlag.",
+            "en": "Which shows/movies were downloaded, incl. provider and success/failure.",
+        },
     },
     5: {
-        "title": "Wiedergabe-Kontext",
-        "description": "Welcher Titel gerade gestartet wird -- noch ohne Watchtime.",
+        "title": {"de": "Wiedergabe-Kontext", "en": "Playback context"},
+        "description": {
+            "de": "Welcher Titel gerade gestartet wird -- noch ohne Watchtime.",
+            "en": "Which title is being started -- still without watchtime.",
+        },
     },
     6: {
-        "title": "Sehverhalten / Watchtime",
-        "description": (
-            "Wiedergabefortschritt, Watchtime-Summen und Abschlussquote. In Kombination mit der "
-            "install_id und den Titel-Daten aus Stufe 4/5 ein echtes Verhaltensprofil -- deutlich "
-            "näher an klassischer Streaming-Analytics als an Crash-Reporting. Nicht Teil von "
-            "'alles aktivieren', Default für alle drei Punkte: aus."
-        ),
+        "title": {"de": "Sehverhalten / Watchtime", "en": "Watch behaviour / watchtime"},
+        "description": {
+            "de": (
+                "Wiedergabefortschritt, Watchtime-Summen und Abschlussquote. In Kombination mit der "
+                "install_id und den Titel-Daten aus Stufe 4/5 ein echtes Verhaltensprofil -- deutlich "
+                "näher an klassischer Streaming-Analytics als an Crash-Reporting. Nicht Teil von "
+                "'alles aktivieren', Default für alle drei Punkte: aus."
+            ),
+            "en": (
+                "Playback progress, watchtime totals and completion rate. Combined with the "
+                "install_id and the title data from stage 4/5, a real behaviour profile -- much "
+                "closer to classic streaming analytics than to crash reporting. Not part of "
+                "'enable everything', default for all three points: off."
+            ),
+        },
     },
 }
 
@@ -107,218 +148,423 @@ STAGE_META = {
 DATA_REGISTRY = {
     # ---- Stage 1: Crash & System --------------------------------------
     "install_id": {
-        "stage": 1, "group": "system", "label": "Installations-ID",
+        "stage": 1, "group": "system",
+        "label": {"de": "Installations-ID", "en": "Installation ID"},
         "always_on": True,
-        "explain": (
-            "Eine zufällige, auf diesem Gerät einmalig erzeugte Kennung (UUID). Sie wird nur "
-            "zusammen mit anderen von dir aktivierten Datenpunkten verschickt, niemals allein, "
-            "und ist die technische Voraussetzung dafür, dass Absturzberichte überhaupt einem "
-            "wiederkehrenden Gerät zugeordnet werden können. Du kannst sie in den Einstellungen "
-            "jederzeit einsehen und per Klick neu generieren (\"Identität zurücksetzen\")."
-        ),
+        "explain": {
+            "de": (
+                "Eine zufällige, auf diesem Gerät einmalig erzeugte Kennung (UUID). Sie wird nur "
+                "zusammen mit anderen von dir aktivierten Datenpunkten verschickt, niemals allein, "
+                "und ist die technische Voraussetzung dafür, dass Absturzberichte überhaupt einem "
+                "wiederkehrenden Gerät zugeordnet werden können. Du kannst sie in den Einstellungen "
+                "jederzeit einsehen und per Klick neu generieren (\"Identität zurücksetzen\")."
+            ),
+            "en": (
+                "A random identifier (UUID) generated once for this device. It is only ever sent "
+                "together with other data points you've enabled, never alone, and is the technical "
+                "prerequisite for crash reports being attributable to a recurring device at all. You "
+                "can view it in Settings at any time and regenerate it with one click "
+                "(\"Reset identity\")."
+            ),
+        },
     },
     "crash_reports": {
-        "stage": 1, "group": "system", "label": "Absturzberichte",
-        "explain": (
-            "Technischer Fehlerbericht (Programmzeile, Dateiname, Fehlertyp), wenn MediaForge "
-            "unerwartet abstürzt oder eine interne Ausnahme auftritt. Enthält niemals Passwörter, "
-            "Zugangsdaten, Variableninhalte oder komplette URLs mit Tokens -- nur den bereinigten "
-            "technischen Ablauf, der zum Fehler geführt hat. Zusätzlich wird eine kleine "
-            "Momentaufnahme des Gerätezustands im Fehlermoment angehängt (freier Arbeitsspeicher "
-            "und dessen Auslastung, freier Speicherplatz auf dem Download-Ziel, Systemlast sowie "
-            "Anzahl aktiver Threads/Dateihandles), damit erkennbar ist, ob z. B. der Speicher voll "
-            "war -- keine Titel, Pfade oder Inhalte."
-        ),
+        "stage": 1, "group": "system",
+        "label": {"de": "Absturzberichte", "en": "Crash reports"},
+        "explain": {
+            "de": (
+                "Technischer Fehlerbericht (Programmzeile, Dateiname, Fehlertyp), wenn MediaForge "
+                "unerwartet abstürzt oder eine interne Ausnahme auftritt. Enthält niemals Passwörter, "
+                "Zugangsdaten, Variableninhalte oder komplette URLs mit Tokens -- nur den bereinigten "
+                "technischen Ablauf, der zum Fehler geführt hat. Zusätzlich wird eine kleine "
+                "Momentaufnahme des Gerätezustands im Fehlermoment angehängt (freier Arbeitsspeicher "
+                "und dessen Auslastung, freier Speicherplatz auf dem Download-Ziel, Systemlast sowie "
+                "Anzahl aktiver Threads/Dateihandles), damit erkennbar ist, ob z. B. der Speicher voll "
+                "war -- keine Titel, Pfade oder Inhalte."
+            ),
+            "en": (
+                "Technical error report (source line, file name, error type) when MediaForge crashes "
+                "unexpectedly or an internal exception occurs. Never includes passwords, credentials, "
+                "variable contents or complete URLs with tokens -- only the sanitized technical "
+                "sequence that led to the error. A small snapshot of device state at the moment of "
+                "the error is attached as well (free memory and its usage, free disk space on the "
+                "download target, system load and number of active threads/file handles), so it's "
+                "clear whether e.g. memory was full -- no titles, paths or content."
+            ),
+        },
     },
     "system_info": {
-        "stage": 1, "group": "system", "label": "System-Info",
-        "explain": (
-            "Technische Eckdaten dieser Installation, um Absturz- und Fehlerberichte richtig "
-            "einordnen zu können (z. B. ein Fehler, der nur unter Windows, nur im Docker-Container "
-            "oder nur ohne Hardware-Beschleunigung auftritt): App-Version, Betriebssystem und "
-            "-Version, ob MediaForge in einem Container läuft (Docker/Podman/Kubernetes) und wie es "
-            "installiert wurde (Docker/pip/pipx/PyInstaller), ob mit Administrator-/Root-Rechten und "
-            "auf einem schreibgeschützten Dateisystem, ob ein VPN-Netzwerk erkannt wurde, Zeitzone; "
-            "unter Linux zusätzlich Distribution, C-Bibliothek und Kernel; Python-Version und "
-            "-Variante, Oberflächensprache, Prozessorarchitektur, CPU-Modell und Kernanzahl, "
-            "Arbeitsspeicher-Gesamtgröße, erkannte Grafikkarte(n) samt Treiberversion, die von "
-            "ffmpeg unterstützten sowie die tatsächlich funktionierenden Hardware-Beschleunigungen, "
-            "und die Versionen zentraler Komponenten (ffmpeg, yt-dlp, mpv, Captcha-Browser). Enthält "
-            "keinen Geräte- oder Benutzernamen, keine IP-Adresse und keine Dateipfade."
-        ),
+        "stage": 1, "group": "system",
+        "label": {"de": "System-Info", "en": "System info"},
+        "explain": {
+            "de": (
+                "Technische Eckdaten dieser Installation, um Absturz- und Fehlerberichte richtig "
+                "einordnen zu können (z. B. ein Fehler, der nur unter Windows, nur im Docker-Container "
+                "oder nur ohne Hardware-Beschleunigung auftritt): App-Version, Betriebssystem und "
+                "-Version, ob MediaForge in einem Container läuft (Docker/Podman/Kubernetes) und wie es "
+                "installiert wurde (Docker/pip/pipx/PyInstaller), ob mit Administrator-/Root-Rechten und "
+                "auf einem schreibgeschützten Dateisystem, ob ein VPN-Netzwerk erkannt wurde, Zeitzone; "
+                "unter Linux zusätzlich Distribution, C-Bibliothek und Kernel; Python-Version und "
+                "-Variante, Oberflächensprache, Prozessorarchitektur, CPU-Modell und Kernanzahl, "
+                "Arbeitsspeicher-Gesamtgröße, erkannte Grafikkarte(n) samt Treiberversion, die von "
+                "ffmpeg unterstützten sowie die tatsächlich funktionierenden Hardware-Beschleunigungen, "
+                "und die Versionen zentraler Komponenten (ffmpeg, yt-dlp, mpv, Captcha-Browser). Enthält "
+                "keinen Geräte- oder Benutzernamen, keine IP-Adresse und keine Dateipfade."
+            ),
+            "en": (
+                "Technical baseline data of this installation, to correctly classify crash and error "
+                "reports (e.g. an error that only occurs on Windows, only inside a Docker container, "
+                "or only without hardware acceleration): app version, OS and version, whether "
+                "MediaForge runs in a container (Docker/Podman/Kubernetes) and how it was installed "
+                "(Docker/pip/pipx/PyInstaller), whether run with administrator/root rights and on a "
+                "read-only filesystem, whether a VPN network was detected, timezone; on Linux "
+                "additionally distribution, C library and kernel; Python version and variant, UI "
+                "language, processor architecture, CPU model and core count, total memory size, "
+                "detected graphics card(s) with driver version, the hardware accelerations ffmpeg "
+                "supports as well as the ones that actually work, and the versions of core "
+                "components (ffmpeg, yt-dlp, mpv, captcha browser). Never includes a device or user "
+                "name, IP address or file paths."
+            ),
+        },
     },
     # ---- Stage 2: Feature flags (usage yes/no + counter) --------------
     "flag.autosync": {
-        "stage": 2, "group": "autosync", "label": "AutoSync genutzt",
-        "explain": "Nur, dass die AutoSync-Funktion genutzt wird und wie oft -- keine Serientitel.",
+        "stage": 2, "group": "autosync",
+        "label": {"de": "AutoSync genutzt", "en": "AutoSync used"},
+        "explain": {
+            "de": "Nur, dass die AutoSync-Funktion genutzt wird und wie oft -- keine Serientitel.",
+            "en": "Only that the AutoSync feature is used and how often -- no show titles.",
+        },
     },
     "flag.syncplay": {
-        "stage": 2, "group": "syncplay", "label": "SyncPlay genutzt",
-        "explain": "Nur, dass gemeinsame SyncPlay-Wiedergabesitzungen genutzt werden und wie oft -- kein Rauminhalt.",
+        "stage": 2, "group": "syncplay",
+        "label": {"de": "SyncPlay genutzt", "en": "SyncPlay used"},
+        "explain": {
+            "de": "Nur, dass gemeinsame SyncPlay-Wiedergabesitzungen genutzt werden und wie oft -- kein Rauminhalt.",
+            "en": "Only that shared SyncPlay playback sessions are used and how often -- no room content.",
+        },
     },
     "flag.upscale": {
-        "stage": 2, "group": "upscale", "label": "Upscaling genutzt",
-        "explain": "Nur, dass die KI-Videoupscaling-Funktion genutzt wird und wie oft.",
+        "stage": 2, "group": "upscale",
+        "label": {"de": "Upscaling genutzt", "en": "Upscaling used"},
+        "explain": {
+            "de": "Nur, dass die KI-Videoupscaling-Funktion genutzt wird und wie oft.",
+            "en": "Only that the AI video-upscaling feature is used and how often.",
+        },
     },
     "flag.transcoding": {
-        "stage": 2, "group": "transcoding", "label": "Transcoding genutzt",
-        "explain": "Nur, dass Video-Transcoding (Codec-Umwandlung) genutzt wird und wie oft.",
+        "stage": 2, "group": "transcoding",
+        "label": {"de": "Transcoding genutzt", "en": "Transcoding used"},
+        "explain": {
+            "de": "Nur, dass Video-Transcoding (Codec-Umwandlung) genutzt wird und wie oft.",
+            "en": "Only that video transcoding (codec conversion) is used and how often.",
+        },
     },
     "flag.library_scan": {
-        "stage": 2, "group": "library_scan", "label": "Bibliotheks-Scan genutzt",
-        "explain": "Nur, dass ein Bibliotheks-Scan (Mediathek-Abgleich) durchgeführt wurde und wie oft.",
+        "stage": 2, "group": "library_scan",
+        "label": {"de": "Bibliotheks-Scan genutzt", "en": "Library scan used"},
+        "explain": {
+            "de": "Nur, dass ein Bibliotheks-Scan (Mediathek-Abgleich) durchgeführt wurde und wie oft.",
+            "en": "Only that a library scan (media library sync) was run and how often.",
+        },
     },
     "flag.calendar": {
-        "stage": 2, "group": "calendar", "label": "Kalender genutzt",
-        "explain": "Nur, dass die Erscheinungskalender-Funktion geöffnet/genutzt wird und wie oft.",
+        "stage": 2, "group": "calendar",
+        "label": {"de": "Kalender genutzt", "en": "Calendar used"},
+        "explain": {
+            "de": "Nur, dass die Erscheinungskalender-Funktion geöffnet/genutzt wird und wie oft.",
+            "en": "Only that the release calendar feature is opened/used and how often.",
+        },
     },
     "flag.integrations.crunchyroll": {
-        "stage": 2, "group": "integrations", "label": "Crunchyroll-Integration genutzt",
-        "explain": "Nur, dass die Crunchyroll-Integration aktiv verbunden ist und genutzt wird.",
+        "stage": 2, "group": "integrations",
+        "label": {"de": "Crunchyroll-Integration genutzt", "en": "Crunchyroll integration used"},
+        "explain": {
+            "de": "Nur, dass die Crunchyroll-Integration aktiv verbunden ist und genutzt wird.",
+            "en": "Only that the Crunchyroll integration is actively connected and used.",
+        },
     },
     "flag.integrations.fernsehserien": {
-        "stage": 2, "group": "integrations", "label": "Fernsehserien-Integration genutzt",
-        "explain": "Nur, dass die Fernsehserien.de-Integration aktiv verbunden ist und genutzt wird.",
+        "stage": 2, "group": "integrations",
+        "label": {"de": "Fernsehserien-Integration genutzt", "en": "Fernsehserien integration used"},
+        "explain": {
+            "de": "Nur, dass die Fernsehserien.de-Integration aktiv verbunden ist und genutzt wird.",
+            "en": "Only that the Fernsehserien.de integration is actively connected and used.",
+        },
     },
     "flag.integrations.seerr": {
-        "stage": 2, "group": "integrations", "label": "Jellyseerr/Overseerr-Integration genutzt",
-        "explain": "Nur, dass eine Jellyseerr/Overseerr-Integration aktiv verbunden ist und genutzt wird.",
+        "stage": 2, "group": "integrations",
+        "label": {"de": "Jellyseerr/Overseerr-Integration genutzt", "en": "Jellyseerr/Overseerr integration used"},
+        "explain": {
+            "de": "Nur, dass eine Jellyseerr/Overseerr-Integration aktiv verbunden ist und genutzt wird.",
+            "en": "Only that a Jellyseerr/Overseerr integration is actively connected and used.",
+        },
     },
     "flag.integrations.mediascan": {
-        "stage": 2, "group": "integrations", "label": "MediaScan-Integration genutzt",
-        "explain": "Nur, dass die MediaScan (Jellyfin/Plex-Abgleich)-Integration aktiv verbunden ist.",
+        "stage": 2, "group": "integrations",
+        "label": {"de": "MediaScan-Integration genutzt", "en": "MediaScan integration used"},
+        "explain": {
+            "de": "Nur, dass die MediaScan (Jellyfin/Plex-Abgleich)-Integration aktiv verbunden ist.",
+            "en": "Only that the MediaScan (Jellyfin/Plex sync) integration is actively connected.",
+        },
     },
     "flag.push_notifications": {
-        "stage": 2, "group": "push_notifications", "label": "Push-Benachrichtigungen genutzt",
-        "explain": "Nur, dass Push-Benachrichtigungen (Telegram/Discord/Pushover/ntfy/...) eingerichtet sind und ausgelöst wurden.",
+        "stage": 2, "group": "push_notifications",
+        "label": {"de": "Push-Benachrichtigungen genutzt", "en": "Push notifications used"},
+        "explain": {
+            "de": "Nur, dass Push-Benachrichtigungen (Telegram/Discord/Pushover/ntfy/...) eingerichtet sind und ausgelöst wurden.",
+            "en": "Only that push notifications (Telegram/Discord/Pushover/ntfy/...) are configured and were triggered.",
+        },
     },
     "flag.uptime_monitor": {
-        "stage": 2, "group": "uptime_monitor", "label": "UpTime-Monitoring genutzt",
-        "explain": "Nur, dass das eingebaute UpTime-Monitoring der Quellen aktiv ist.",
+        "stage": 2, "group": "uptime_monitor",
+        "label": {"de": "UpTime-Monitoring genutzt", "en": "UpTime monitoring used"},
+        "explain": {
+            "de": "Nur, dass das eingebaute UpTime-Monitoring der Quellen aktiv ist.",
+            "en": "Only that the built-in uptime monitoring of sources is active.",
+        },
     },
     "flag.extensions": {
-        "stage": 2, "group": "extensions", "label": "Erweiterungen genutzt",
-        "explain": "Nur, dass mindestens eine Drittanbieter-Erweiterung (Modul) geladen ist und wie viele.",
+        "stage": 2, "group": "extensions",
+        "label": {"de": "Erweiterungen genutzt", "en": "Extensions used"},
+        "explain": {
+            "de": "Nur, dass mindestens eine Drittanbieter-Erweiterung (Modul) geladen ist und wie viele.",
+            "en": "Only that at least one third-party extension (module) is loaded, and how many.",
+        },
     },
     "flag.self_update": {
-        "stage": 2, "group": "self_update", "label": "Selbst-Update genutzt",
-        "explain": "Nur, dass die Selbst-Update-Funktion ausgeführt wurde und wie oft.",
+        "stage": 2, "group": "self_update",
+        "label": {"de": "Selbst-Update genutzt", "en": "Self-update used"},
+        "explain": {
+            "de": "Nur, dass die Selbst-Update-Funktion ausgeführt wurde und wie oft.",
+            "en": "Only that the self-update feature was run and how often.",
+        },
     },
     "flag.direct_link": {
-        "stage": 2, "group": "direct_link", "label": "Direct-Link genutzt",
-        "explain": "Nur, dass die Direct-Link-Download-Funktion genutzt wird und wie oft -- ohne die verwendeten URLs.",
+        "stage": 2, "group": "direct_link",
+        "label": {"de": "Direct-Link genutzt", "en": "Direct link used"},
+        "explain": {
+            "de": "Nur, dass die Direct-Link-Download-Funktion genutzt wird und wie oft -- ohne die verwendeten URLs.",
+            "en": "Only that the direct-link download feature is used and how often -- without the URLs used.",
+        },
     },
     "flag.captcha": {
-        "stage": 2, "group": "captcha", "label": "Captcha-Lösung genutzt",
-        "explain": "Nur, dass die automatische Captcha-Lösung ausgelöst wurde und wie oft.",
+        "stage": 2, "group": "captcha",
+        "label": {"de": "Captcha-Lösung genutzt", "en": "Captcha solving used"},
+        "explain": {
+            "de": "Nur, dass die automatische Captcha-Lösung ausgelöst wurde und wie oft.",
+            "en": "Only that automatic captcha solving was triggered and how often.",
+        },
     },
     "flag.v1_api": {
-        "stage": 2, "group": "v1_api", "label": "Externe REST-API genutzt",
-        "explain": "Nur, dass die externe REST-API (z. B. für Home Assistant) angesprochen wird und wie oft.",
+        "stage": 2, "group": "v1_api",
+        "label": {"de": "Externe REST-API genutzt", "en": "External REST API used"},
+        "explain": {
+            "de": "Nur, dass die externe REST-API (z. B. für Home Assistant) angesprochen wird und wie oft.",
+            "en": "Only that the external REST API (e.g. for Home Assistant) is called and how often.",
+        },
     },
     "flag.hanime_tv": {
-        "stage": 2, "group": "hanime_tv", "label": "hanime.tv genutzt (18+)",
-        "explain": (
-            "Nur ein reiner Nutzungszähler (\"wird genutzt: ja/nein\", wie oft) für den "
-            "altersgegateten 18+-Anbieter hanime.tv. Das ist der EINZIGE Telemetrie-Datenpunkt, "
-            "der für diesen Anbieter jemals erhoben wird -- keine Titel, keine Fehlermeldungen, "
-            "keine Wiedergabezeiten, keine Fortschritts- oder Abschlussdaten, unabhängig davon, "
-            "welche anderen Stufen du sonst aktiviert hast. Diese Ausnahme ist fest im Programmcode "
-            "verankert (siehe sanitize.is_adult_provider()), keine Einstellung, die versehentlich "
-            "hochgestuft werden könnte."
-        ),
+        "stage": 2, "group": "hanime_tv",
+        "label": {"de": "hanime.tv genutzt (18+)", "en": "hanime.tv used (18+)"},
+        "explain": {
+            "de": (
+                "Nur ein reiner Nutzungszähler (\"wird genutzt: ja/nein\", wie oft) für den "
+                "altersgegateten 18+-Anbieter hanime.tv. Das ist der EINZIGE Telemetrie-Datenpunkt, "
+                "der für diesen Anbieter jemals erhoben wird -- keine Titel, keine Fehlermeldungen, "
+                "keine Wiedergabezeiten, keine Fortschritts- oder Abschlussdaten, unabhängig davon, "
+                "welche anderen Stufen du sonst aktiviert hast. Diese Ausnahme ist fest im Programmcode "
+                "verankert (siehe sanitize.is_adult_provider()), keine Einstellung, die versehentlich "
+                "hochgestuft werden könnte."
+            ),
+            "en": (
+                "Only a plain usage counter (\"used: yes/no\", how often) for the age-gated 18+ "
+                "provider hanime.tv. This is the ONLY telemetry data point ever collected for this "
+                "provider -- no titles, no error messages, no playback times, no progress or "
+                "completion data, regardless of which other stages you've otherwise enabled. This "
+                "exception is hard-coded in the program (see sanitize.is_adult_provider()), not a "
+                "setting that could accidentally be raised."
+            ),
+        },
     },
     # ---- Stage 3: Feature details & errors -----------------------------
     "detail.autosync": {
-        "stage": 3, "group": "autosync", "label": "AutoSync-Statistik",
-        "explain": "Lauf-Statistik von AutoSync: Anzahl Läufe, Dauer, Fehleranzahl -- weiterhin ohne Serientitel.",
+        "stage": 3, "group": "autosync",
+        "label": {"de": "AutoSync-Statistik", "en": "AutoSync statistics"},
+        "explain": {
+            "de": "Lauf-Statistik von AutoSync: Anzahl Läufe, Dauer, Fehleranzahl -- weiterhin ohne Serientitel.",
+            "en": "AutoSync run statistics: number of runs, duration, error count -- still without show titles.",
+        },
     },
     "detail.syncplay": {
-        "stage": 3, "group": "syncplay", "label": "SyncPlay-Sitzungsstatistik",
-        "explain": "Anzahl SyncPlay-Sitzungen und grobe Teilnehmerzahl-Kategorie -- ohne Rauminhalt/Titel.",
+        "stage": 3, "group": "syncplay",
+        "label": {"de": "SyncPlay-Sitzungsstatistik", "en": "SyncPlay session statistics"},
+        "explain": {
+            "de": "Anzahl SyncPlay-Sitzungen und grobe Teilnehmerzahl-Kategorie -- ohne Rauminhalt/Titel.",
+            "en": "Number of SyncPlay sessions and a rough participant-count bracket -- without room content/titles.",
+        },
     },
     "detail.upscale": {
-        "stage": 3, "group": "upscale", "label": "Upscaling-Details",
-        "explain": "Welches Upscaling-Preset verwendet wurde und ob der Vorgang erfolgreich war.",
+        "stage": 3, "group": "upscale",
+        "label": {"de": "Upscaling-Details", "en": "Upscaling details"},
+        "explain": {
+            "de": "Welches Upscaling-Preset verwendet wurde und ob der Vorgang erfolgreich war.",
+            "en": "Which upscaling preset was used and whether the operation succeeded.",
+        },
     },
     "detail.transcoding": {
-        "stage": 3, "group": "transcoding", "label": "Transcoding-Fehler",
-        "explain": "Fehlermeldungen, wenn ein Transcoding-Vorgang (Codec-Umwandlung) fehlschlägt.",
+        "stage": 3, "group": "transcoding",
+        "label": {"de": "Transcoding-Fehler", "en": "Transcoding errors"},
+        "explain": {
+            "de": "Fehlermeldungen, wenn ein Transcoding-Vorgang (Codec-Umwandlung) fehlschlägt.",
+            "en": "Error messages when a transcoding operation (codec conversion) fails.",
+        },
     },
     "detail.library_scan": {
-        "stage": 3, "group": "library_scan", "label": "Bibliotheks-Scan-Details",
-        "explain": "Scan-Dauer, Anzahl neu gefundener Titel und aufgetretene Fehler bei einem Bibliotheks-Scan.",
+        "stage": 3, "group": "library_scan",
+        "label": {"de": "Bibliotheks-Scan-Details", "en": "Library scan details"},
+        "explain": {
+            "de": "Scan-Dauer, Anzahl neu gefundener Titel und aufgetretene Fehler bei einem Bibliotheks-Scan.",
+            "en": "Scan duration, number of newly found titles and errors encountered during a library scan.",
+        },
     },
     "detail.integrations": {
-        "stage": 3, "group": "integrations", "label": "Integrations-Verbindungsfehler",
-        "explain": "Verbindungsfehler pro Integration (z. B. \"Crunchyroll-Login fehlgeschlagen\") -- niemals Zugangsdaten.",
+        "stage": 3, "group": "integrations",
+        "label": {"de": "Integrations-Verbindungsfehler", "en": "Integration connection errors"},
+        "explain": {
+            "de": "Verbindungsfehler pro Integration (z. B. \"Crunchyroll-Login fehlgeschlagen\") -- niemals Zugangsdaten.",
+            "en": "Connection errors per integration (e.g. \"Crunchyroll login failed\") -- never credentials.",
+        },
     },
     "detail.extensions": {
-        "stage": 3, "group": "extensions", "label": "Namen geladener Erweiterungen",
-        "explain": "Die Namen der geladenen Drittanbieter-Erweiterungsordner (nicht deren Inhalt).",
+        "stage": 3, "group": "extensions",
+        "label": {"de": "Namen geladener Erweiterungen", "en": "Names of loaded extensions"},
+        "explain": {
+            "de": "Die Namen der geladenen Drittanbieter-Erweiterungsordner (nicht deren Inhalt).",
+            "en": "The names of the loaded third-party extension folders (not their content).",
+        },
     },
     "detail.self_update": {
-        "stage": 3, "group": "self_update", "label": "Selbst-Update-Ergebnis",
-        "explain": "Ob ein Selbst-Update erfolgreich war oder fehlgeschlagen ist.",
+        "stage": 3, "group": "self_update",
+        "label": {"de": "Selbst-Update-Ergebnis", "en": "Self-update result"},
+        "explain": {
+            "de": "Ob ein Selbst-Update erfolgreich war oder fehlgeschlagen ist.",
+            "en": "Whether a self-update succeeded or failed.",
+        },
     },
     "detail.captcha": {
-        "stage": 3, "group": "captcha", "label": "Captcha-Lösestatistik",
-        "explain": "Erfolgsquote und Häufigkeit der automatischen Captcha-Lösung.",
+        "stage": 3, "group": "captcha",
+        "label": {"de": "Captcha-Lösestatistik", "en": "Captcha solving statistics"},
+        "explain": {
+            "de": "Erfolgsquote und Häufigkeit der automatischen Captcha-Lösung.",
+            "en": "Success rate and frequency of automatic captcha solving.",
+        },
     },
     "detail.v1_api": {
-        "stage": 3, "group": "v1_api", "label": "API-Nutzungshäufigkeit",
-        "explain": "Wie oft die externe REST-API angesprochen wird (welcher Endpunkt, keine übertragenen Inhalte).",
+        "stage": 3, "group": "v1_api",
+        "label": {"de": "API-Nutzungshäufigkeit", "en": "API usage frequency"},
+        "explain": {
+            "de": "Wie oft die externe REST-API angesprochen wird (welcher Endpunkt, keine übertragenen Inhalte).",
+            "en": "How often the external REST API is called (which endpoint, no transferred content).",
+        },
     },
     # ---- Stage 4: Download content --------------------------------------
     "downloads.titles": {
-        "stage": 4, "group": "downloads", "label": "Download-Titel",
-        "explain": (
-            "Welche Serie/welcher Film heruntergeladen wurde, inklusive Anbieter, Staffel/Episode "
-            "und Erfolg/Fehlschlag (z. B. \"Serie X, Staffel 2, Episode 4, Anbieter VOE, "
-            "erfolgreich\")."
-        ),
+        "stage": 4, "group": "downloads",
+        "label": {"de": "Download-Titel", "en": "Download titles"},
+        "explain": {
+            "de": (
+                "Welche Serie/welcher Film heruntergeladen wurde, inklusive Anbieter, Staffel/Episode "
+                "und Erfolg/Fehlschlag (z. B. \"Serie X, Staffel 2, Episode 4, Anbieter VOE, "
+                "erfolgreich\")."
+            ),
+            "en": (
+                "Which show/movie was downloaded, including provider, season/episode and "
+                "success/failure (e.g. \"Show X, season 2, episode 4, provider VOE, successful\")."
+            ),
+        },
     },
     "downloads.errors": {
-        "stage": 4, "group": "downloads", "label": "Download-Fehlermeldungen",
-        "explain": (
-            "Die Fehlermeldung zu einer einzelnen fehlgeschlagenen Download-Datei (z. B. "
-            "\"Episode 4 konnte nicht heruntergeladen werden: Verbindungsfehler\")."
-        ),
+        "stage": 4, "group": "downloads",
+        "label": {"de": "Download-Fehlermeldungen", "en": "Download error messages"},
+        "explain": {
+            "de": (
+                "Die Fehlermeldung zu einer einzelnen fehlgeschlagenen Download-Datei (z. B. "
+                "\"Episode 4 konnte nicht heruntergeladen werden: Verbindungsfehler\")."
+            ),
+            "en": (
+                "The error message for a single failed download file (e.g. \"Episode 4 could not "
+                "be downloaded: connection error\")."
+            ),
+        },
     },
     "direct_link.urls": {
-        "stage": 4, "group": "direct_link", "label": "Direct-Link-URLs",
-        "explain": "Die über die Direct-Link-Funktion verwendeten URLs (ohne Zugangs-Tokens/Query-Parameter).",
+        "stage": 4, "group": "direct_link",
+        "label": {"de": "Direct-Link-URLs", "en": "Direct link URLs"},
+        "explain": {
+            "de": "Die über die Direct-Link-Funktion verwendeten URLs (ohne Zugangs-Tokens/Query-Parameter).",
+            "en": "The URLs used via the direct-link feature (without access tokens/query parameters).",
+        },
     },
     # ---- Stage 5: Playback context --------------------------------------
     "stream.play_events": {
-        "stage": 5, "group": "stream", "label": "Play-Events",
-        "explain": (
-            "Welcher Titel/welche Episode gestartet wurde und wann -- ohne wie lange geschaut "
-            "wurde (das ist erst Stufe 6)."
-        ),
+        "stage": 5, "group": "stream",
+        "label": {"de": "Play-Events", "en": "Play events"},
+        "explain": {
+            "de": (
+                "Welcher Titel/welche Episode gestartet wurde und wann -- ohne wie lange geschaut "
+                "wurde (das ist erst Stufe 6)."
+            ),
+            "en": (
+                "Which title/episode was started and when -- without how long it was watched "
+                "(that's stage 6 only)."
+            ),
+        },
     },
     "syncplay.room_content": {
-        "stage": 5, "group": "syncplay", "label": "SyncPlay-Rauminhalt",
-        "explain": (
-            "Welcher Titel in einer SyncPlay-Sitzung läuft (Stufe 3 kennt nur die Sitzung an sich "
-            "-- Anzahl/Teilnehmer -- hier kommt der tatsächliche Inhalt/Titel dazu)."
-        ),
+        "stage": 5, "group": "syncplay",
+        "label": {"de": "SyncPlay-Rauminhalt", "en": "SyncPlay room content"},
+        "explain": {
+            "de": (
+                "Welcher Titel in einer SyncPlay-Sitzung läuft (Stufe 3 kennt nur die Sitzung an sich "
+                "-- Anzahl/Teilnehmer -- hier kommt der tatsächliche Inhalt/Titel dazu)."
+            ),
+            "en": (
+                "Which title is playing in a SyncPlay session (stage 3 only knows the session "
+                "itself -- count/participants -- here the actual content/title is added)."
+            ),
+        },
     },
     # ---- Stage 6: Watch behaviour -----------------------------------------
     "watch.progress": {
-        "stage": 6, "group": "watch", "label": "Wiedergabefortschritt",
-        "explain": (
-            "Der Wiedergabefortschritt (in Prozent) pro Episode/Film -- zusammen mit Titel-Daten "
-            "aus Stufe 4/5 ein echtes Nutzungsprofil, was genau du wie weit geschaut hast."
-        ),
+        "stage": 6, "group": "watch",
+        "label": {"de": "Wiedergabefortschritt", "en": "Playback progress"},
+        "explain": {
+            "de": (
+                "Der Wiedergabefortschritt (in Prozent) pro Episode/Film -- zusammen mit Titel-Daten "
+                "aus Stufe 4/5 ein echtes Nutzungsprofil, was genau du wie weit geschaut hast."
+            ),
+            "en": (
+                "The playback progress (in percent) per episode/movie -- combined with the title "
+                "data from stage 4/5, a real usage profile of exactly what you watched and how far."
+            ),
+        },
     },
     "watch.duration": {
-        "stage": 6, "group": "watch", "label": "Watchtime-Summen",
-        "explain": "Wie viele Sekunden/Minuten eines Titels tatsächlich angesehen wurden, aufsummiert.",
+        "stage": 6, "group": "watch",
+        "label": {"de": "Watchtime-Summen", "en": "Watchtime totals"},
+        "explain": {
+            "de": "Wie viele Sekunden/Minuten eines Titels tatsächlich angesehen wurden, aufsummiert.",
+            "en": "How many seconds/minutes of a title were actually watched, summed up.",
+        },
     },
     "watch.completion": {
-        "stage": 6, "group": "watch", "label": "Abschlussquote",
-        "explain": "Ob eine Episode/ein Film bis zum Ende angesehen wurde (Abschlussquote).",
+        "stage": 6, "group": "watch",
+        "label": {"de": "Abschlussquote", "en": "Completion rate"},
+        "explain": {
+            "de": "Ob eine Episode/ein Film bis zum Ende angesehen wurde (Abschlussquote).",
+            "en": "Whether an episode/movie was watched through to the end (completion rate).",
+        },
     },
 }
 
@@ -334,17 +580,37 @@ def all_togglable_keys():
     return sorted(k for k, v in DATA_REGISTRY.items() if not v.get("always_on"))
 
 
-def registry_export():
+def _pick(value, lang):
+    """Resolve one of this registry's ``{"de": ..., "en": ...}`` text fields
+    to a plain string for ``lang``. Falls back to German (the field always
+    has that key) so a typo'd/unsupported lang code degrades gracefully
+    instead of raising."""
+    if isinstance(value, dict):
+        return value.get(lang) or value.get("de") or next(iter(value.values()))
+    return value  # already a plain string -- defensive, not expected to hit
+
+
+def registry_export(lang="de"):
     """JSON-serializable snapshot of the registry + stage metadata, handed to
     the frontend once per settings-page load (see routes/settings.py's
     api_settings_telemetry_get()) so the confirmation dialog's explain texts
     come from this single source, never a second hand-copied string in a
-    template."""
+    template. ``lang`` picks which of each field's ``{"de", "en"}`` values to
+    serialize -- callers pass the request's current UI locale (see
+    ``web/app.py``'s ``get_locale()``) so the frontend never has to
+    translate this content on its own."""
+    lang = lang if lang in ("de", "en") else "de"
     return {
-        "stages": STAGE_META,
+        "stages": {
+            stage: {
+                "title": _pick(meta["title"], lang),
+                "description": _pick(meta["description"], lang),
+            }
+            for stage, meta in STAGE_META.items()
+        },
         "data_points": {
-            k: {"stage": v["stage"], "group": v["group"], "label": v["label"],
-                "explain": v["explain"], "always_on": bool(v.get("always_on"))}
+            k: {"stage": v["stage"], "group": v["group"], "label": _pick(v["label"], lang),
+                "explain": _pick(v["explain"], lang), "always_on": bool(v.get("always_on"))}
             for k, v in DATA_REGISTRY.items()
         },
     }

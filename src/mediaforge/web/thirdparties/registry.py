@@ -59,6 +59,7 @@ Extensions overview page (:func:`resolve_extensions_overview`,
 """
 
 import logging
+from importlib import import_module
 import threading
 from pathlib import Path
 
@@ -818,6 +819,87 @@ def unregister_module(name):
     return sorted(blueprints)
 
 
+# ---------------------------------------------------------------------------
+# What a module actually registered
+# ---------------------------------------------------------------------------
+# The Modulmanager used to show a module's *identity* (version, author,
+# signature) but never what it does to the app. That is the more useful
+# question for anything you did not write yourself: a sidebar entry is
+# harmless, an event hook runs on every download.
+#
+# Ownership is read the same way unregister_module() cleans up: every
+# secondary registry (providers, search sources, hosters, mirrors, uptime
+# monitors, notification channels, event hooks, background workers) is keyed
+# by the module's own item_id, which is the documented convention. A module
+# that registers a provider under an id it never passed to
+# register_thirdparty() is invisible here for the same reason it is invisible
+# to the cleanup -- see the module README's "Content sources" section.
+#
+# `hot` marks the capabilities that reach into MediaForge's own work rather
+# than just adding UI: those are the ones worth seeing on an unsigned module.
+
+def module_capabilities(name) -> list:
+    """[{kind, count, hot}] describing what thirdparties/<name>/ registered."""
+    entry = _MODULES.get(name) or {}
+    ids = [i for i in (entry.get("item_ids") or ())]
+    if not ids:
+        return []
+    id_set = set(ids)
+
+    menus = cards = widgets = pills = 0
+    for item in _ITEMS:
+        if item["id"] not in id_set:
+            continue
+        if item.get("endpoint"):
+            menus += 1
+        if item.get("settings_host") or item.get("extra_settings"):
+            cards += 1
+        if item.get("dashboard_widget_template"):
+            widgets += 1
+        if item.get("provider_pill_script"):
+            pills += 1
+
+    workers = sum(1 for i in ids if i in _WORKERS)
+    channels = sum(1 for i in ids if i in _NOTIFICATION_CHANNELS)
+    hooks = sum(1 for handlers in _EVENT_HOOKS.values() for i in ids if i in handlers)
+
+    # Lazy + individually guarded: a core <- web import at module load time
+    # would be a cycle, and one unavailable registry must not blank the whole
+    # line on the page.
+    def _count(modpath, func):
+        try:
+            mod = import_module(modpath, __package__)
+            return sum(1 for i in ids if i in getattr(mod, func)())
+        except Exception:
+            logger.debug("[Registry] capability count via %s.%s failed", modpath, func)
+            return 0
+
+    providers = _count("...providers", "thirdparty_provider_ids")
+    searches = _count("...search", "thirdparty_search_source_ids")
+    hosters = _count("...extractors", "thirdparty_hoster_ids")
+    mirrors = _count("...mirrors", "thirdparty_mirror_ids")
+    monitors = _count("..uptime_monitor", "thirdparty_monitor_ids")
+
+    out = []
+    for kind, count, hot in (
+        ("menu", menus, False),
+        ("settings_card", cards, False),
+        ("dashboard_widget", widgets, False),
+        ("provider_pill", pills, False),
+        ("provider", providers, True),
+        ("search_source", searches, True),
+        ("hoster", hosters, True),
+        ("mirrors", mirrors, False),
+        ("monitor", monitors, False),
+        ("notification_channel", channels, True),
+        ("event_hook", hooks, True),
+        ("background_worker", workers, True),
+    ):
+        if count:
+            out.append({"kind": kind, "count": count, "hot": hot})
+    return out
+
+
 def item_ids():
     """Current snapshot of registered item ids. Used by
     web/thirdparties/__init__.py's discover_and_register() to diff
@@ -1051,6 +1133,8 @@ def resolve_extensions_overview():
                 mod["min_app_version"], mod["max_app_version"]),
             "module_id": mod["module_id"],
             "homepage": mod["homepage"],
+            # What this module hung into the app (see module_capabilities).
+            "capabilities": module_capabilities(name),
             "license": mod["license"],
             "api_version": mod["api_version"] or REGISTRY_API_VERSION,
             "requirements": tuple(mod["requirements"] or ()),
@@ -1073,7 +1157,60 @@ def resolve_extensions_overview():
             # return the dict method, not this list).
             "registered_items": registered_items,
         })
+
+    # One state per module, decided here rather than re-derived in the template:
+    # the Modulmanager uses it for the state column, the tally, the filter
+    # buttons *and* the sort order, and four copies of the same if-chain is how
+    # they drift apart.
+    for ext in out:
+        ext["state"] = _module_state(ext)
+    # Problems first. A module manager's job is "what is not working" -- the
+    # healthy ones are the ones you do not need to look at. Alphabetical within
+    # each group, which is the order they arrived in.
+    out.sort(key=lambda e: (_STATE_RANK.get(e["state"], 9), e["name"]))
     return out
+
+
+# Worst first: an unusable module outranks a merely skipped one, which outranks
+# anything that is actually doing its job.
+_STATE_RANK = {"error": 0, "skipped": 1, "ok": 2, "off": 3}
+
+
+def _module_state(ext) -> str:
+    """"error" | "skipped" | "ok" | "off" for one resolve_extensions_overview() row.
+
+    Deliberately coarse. The old header carried up to eight badges that mixed
+    three different questions (is it loaded? is it on? who signed it?), and the
+    answer people actually scan for is one of these four:
+
+      error    -- it cannot run at all: the import itself failed, a signature
+                  that does not check out, or a missing pip dependency.
+      skipped  -- it could run, but was not registered this start: unmet
+                  DEPENDS_ON, an incompatible registry API, or an app-version
+                  range this build is outside of.
+
+    Note what is deliberately NOT part of the error test: a non-empty ``error``
+    on its own. discover_and_register() records a *skip reason* in that same
+    field ("unmet DEPENDS_ON: anime_seasons"), so treating any error string as
+    a failure would report every waiting module as broken.
+      ok       -- registered *and* at least one of its items switched on.
+      off      -- registered and available, but nothing of it is switched on.
+
+    A module with no registered items at all (a background-job-only module, or
+    one whose register(app) did nothing) counts as "ok" once it registered
+    without error -- there is no toggle for it to be off.
+    """
+    sig = ext.get("signature") or {}
+    if (ext.get("imported") is False
+            or (sig.get("signed") and not sig.get("valid"))
+            or ext.get("missing_requirements")):
+        return "error"
+    if ext.get("registered") is False or ext.get("incompatible_reason"):
+        return "skipped"
+    items = ext.get("registered_items") or ()
+    if items and not any(i.get("enabled") for i in items):
+        return "off"
+    return "ok"
 
 
 def _deps_installable() -> bool:

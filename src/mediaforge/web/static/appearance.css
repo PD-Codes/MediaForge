@@ -641,9 +641,10 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="integrations"]:h
   animation: small-forward-backward-samePosition 1s ease-in-out infinite;
 }
 
+/* #sidebarEncodingBtn is gone with the Queues sub-menu (one entry, one window);
+   the Encoding *settings* page keeps this animation. */
 body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="seerr"]:hover svg,
-body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="encoding"]:hover svg,
-body.icon-move #sidebarEncodingBtn:hover svg {
+body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="encoding"]:hover svg {
   animation: screen-breathe 2s ease-in-out infinite;
 }
 
@@ -761,6 +762,11 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hov
     font-size: 1.1rem;
     gap: 10px;
     border-radius: var(--radius-lg);
+    width: 100%;
+  }
+
+  a.btn.btn-secondary, .settings-row button {
+    width: 100%;
   }
 }
 

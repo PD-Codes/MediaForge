@@ -430,6 +430,24 @@ label {
   min-height: 34px;
 }
 
+/* Icon-only segmented buttons (grid/list switches and the like). An inline
+   <svg> carrying only a viewBox and no width/height attribute resolves to
+   0x0 here, which turned an active icon button into a bare accent-coloured
+   block. Flex centring plus an explicit size fixes it for every caller,
+   third-party modules included. */
+.mf-segmented-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.mf-segmented-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
 .mf-segmented-btn:hover { color: var(--text-primary); }
 
 .mf-segmented-btn.active {

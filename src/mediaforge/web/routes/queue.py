@@ -31,6 +31,51 @@ from flask import request
 import os
 
 
+def _attach_cached_posters(items):
+    """Add a poster URL to queue rows — from the cache only, never live.
+
+    download_queue has no poster column and /api/queue is polled every two
+    seconds, so a lookup that could reach out to TMDB is out of the question.
+    This reads the TMDB cache the browse/search pages already fill and leaves
+    ``poster`` unset when there is no hit; the queue hub then falls back to
+    its gradient placeholder. The URL handed to the client is the
+    /api/img proxy, never image.tmdb.org directly (same rule as everywhere
+    else — see routes/image_proxy.py).
+    """
+    try:
+        from ..db import get_setting
+        from ..db import get_tmdb_cache_bulk
+        from flask import session
+        import urllib.parse as _up
+
+        if not get_setting("cineinfo_tmdb_api_key", ""):
+            return
+        country = get_setting("cineinfo_country", "DE") or "DE"
+        ui_lang = session.get("ui_language", "de")
+
+        keys = {}
+        for it in items:
+            title = it.get("title")
+            if title:
+                keys[title] = title + "|||" + country + "|||" + ui_lang
+        if not keys:
+            return
+
+        hits = get_tmdb_cache_bulk(list(keys.values()))
+        for it in items:
+            cached = hits.get(keys.get(it.get("title"), ""))
+            if not isinstance(cached, dict):
+                continue
+            details = cached.get("raw_details")
+            path = details.get("poster_path") if isinstance(details, dict) else None
+            if path:
+                raw = "https://image.tmdb.org/t/p/w154" + path
+                it["poster"] = "/api/img?url=" + _up.quote(raw, safe="")
+    except Exception:
+        # A missing poster must never cost the queue its response.
+        pass
+
+
 def register_queue_routes(app):
     """Register the download queue CRUD, pause/resume and per-item control endpoints."""
     @app.route("/api/download", methods=["POST"])
@@ -118,6 +163,7 @@ def register_queue_routes(app):
         # queue rows show the group's name instead.
         for _it in items:
             _it["language_label"] = language_display(_it.get("language"))
+        _attach_cached_posters(items)
 
         return jsonify({
             "items": items,

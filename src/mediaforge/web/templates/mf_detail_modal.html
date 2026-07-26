@@ -1,0 +1,62 @@
+{# ===================================================================
+   MediaForge — shared TMDB detail modal (reusable component)
+   -------------------------------------------------------------------
+   A lightweight, self-contained "what is this title" modal: poster,
+   headline, air/release date, TMDB overview and metadata chips, plus a
+   "search streams" action.
+
+   Deliberately independent of app.js and shared_modals.html: the big
+   series modal in shared_modals.html starts from a *provider URL* and
+   pulls in all of app.js. This one starts from a TMDB id, so pages and
+   third-party modules that only know a TMDB id (the Calendar, module
+   dashboards, …) can offer a detail view without that dependency.
+
+   Usage from a template:
+       include the partial mf_detail_modal.html in your content block
+       <link rel="stylesheet" href="{{ url_for('static', filename='mf_detail_modal.css') }}">
+       <script src="{{ url_for('static', filename='mf_detail_modal.js') }}"></script>
+
+   Usage from JS:
+       MFDetailModal.open({
+         tmdbId: 1396, mediaType: "tv",
+         title: "Breaking Bad", subtitle: "S01E01",
+         caption: "Pilot", date: "2008-01-20",
+         image: "/static/poster.jpg",
+         searchTitle: "Breaking Bad",   // optional, defaults to title
+       });
+
+   Requires GET /api/tmdb/details (routes/search.py) and a configured
+   TMDB API key; without one the modal still shows whatever the caller
+   passed in and simply reports that no further details are available.
+   =================================================================== #}
+<div class="overlay mf-detail-overlay" id="mfDetailOverlay" style="display:none"
+     role="dialog" aria-modal="true" aria-labelledby="mfDetailTitle">
+  <div class="modal mf-detail-modal">
+    <button type="button" class="close" id="mfDetailClose" aria-label="{{ _('Close') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+
+    <div class="mf-detail-body">
+      <div class="mf-detail-poster" id="mfDetailPoster" aria-hidden="true"></div>
+
+      <div class="mf-detail-info">
+        <h2 class="mf-detail-title" id="mfDetailTitle"></h2>
+        <div class="mf-detail-subline">
+          <span class="mf-detail-badge" id="mfDetailSubtitle" hidden></span>
+          <span class="mf-detail-date" id="mfDetailDate"></span>
+        </div>
+        <p class="mf-detail-caption" id="mfDetailCaption" hidden></p>
+        <div class="mf-detail-chips" id="mfDetailMeta"></div>
+        <p class="mf-detail-overview" id="mfDetailOverview"></p>
+      </div>
+    </div>
+
+    <div class="mf-detail-actions">
+      <button type="button" class="btn btn-secondary" id="mfDetailCloseBtn">{{ _('Close') }}</button>
+      <button type="button" class="btn btn-primary" id="mfDetailSearchBtn">{{ _('Search streams') }}</button>
+    </div>
+  </div>
+</div>

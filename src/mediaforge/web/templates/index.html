@@ -5,26 +5,8 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='hanime.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='devinfo_banner.css') }}">
 <style>
-  #directLinkBtn {
-    height: 46px;
-    padding: 0 20px;
-    border-radius: var(--radius-md);
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    border: 1.5px solid var(--border);
-    transition: background var(--transition), color var(--transition), border-color var(--transition);
-    white-space: nowrap;
-  }
-
-  #directLinkBtn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    border-color: var(--accent);
-  }
+  /* #directLinkBtn and the search bar's mobile layout now live in
+     index.css, next to the rest of the home styling. */
 
   .directlink-modal {
     position: relative;
@@ -147,26 +129,6 @@
     }
   }
 
-  /* Mobile: search bar wraps — input full width, buttons below */
-  @media (max-width: 540px) {
-    .search-bar {
-      flex-wrap: wrap;
-    }
-
-    .search-bar input {
-      flex: 1 1 100%;
-      width: 100%;
-    }
-
-    .search-bar #searchBtn {
-      flex: 1;
-    }
-
-    #directLinkBtn {
-      flex: 1;
-    }
-  }
-
   /* ── Source offline banner (UpTime) ─────────────────────────────────── */
   #sourceStatusBanner:empty { display: none; }
   .src-alert {
@@ -240,15 +202,39 @@
 </div>
 {% endif %}
 <div class="container">
-  <div class="site-hero">
-    <h1 id="pageHeading">MediaForge</h1>
-    <p class="hero-sub" id="pageSubtitle">{{ _('Download anime & series directly') }}</p>
+  <div class="site-hero home-hero">
+    <h1 id="pageHeading">{{ _('What do you want to download?') }}</h1>
+    <p class="hero-sub" id="pageSubtitle">{{ _('One title is enough — MediaForge asks every active source at once.') }}</p>
   </div>
-  <div class="search-bar">
-    <input type="text" id="searchInput" placeholder="{{ _('Search anime & series…') }}" autofocus />
+  {# The Seerr modal reuses .search-bar, so the home-only pill styling hangs off
+     the extra .home-searchbar class instead of touching .search-bar itself. #}
+  <div class="search-bar home-searchbar">
+    <div class="home-search-field">
+      <span class="home-search-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      </span>
+      <input type="text" id="searchInput" placeholder="{{ _('Search anime & series…') }}" autofocus />
+    </div>
+    {# Direct Link is the quieter alternative to searching, so it reads as a
+       ghost button and the accent pill anchors the right end of the field. #}
+    <button id="directLinkBtn" onclick="openDirectLinkModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/>
+        <line x1="8" y1="12" x2="16" y2="12"/>
+      </svg><span>{{ _('Direct Link') }}</span>
+    </button>
     <button id="searchBtn" onclick="doSearch()">{{ _('Search') }}</button>
-    <button id="directLinkBtn" onclick="openDirectLinkModal()">{{ _('Direct Link') }}</button>
   </div>
+  {# Which sources a search actually hits. Filled by renderSourceChips() in
+     app.js once /api/settings answered; empty (and invisible) until then. #}
+  <div class="home-chips" id="homeSourceChips"></div>
+  {# Only rendered while something is downloading -- see renderHomeRunStrip(),
+     fed by the queue poll that runs anyway. #}
+  <div class="home-run" id="homeRunStrip" style="display:none"></div>
   <div class="spinner" id="searchSpinner">{{ _('Searching...') }}</div>
   <div class="results" id="results"></div>
   <div id="sourceStatusBanner"></div>
@@ -267,6 +253,29 @@
     {% include widget.template ignore missing %}
   </div>
   {% endfor %}
+  {# Settings -> General -> "Use the new home page": one row per question,
+     every enabled source mixed into it, instead of one block per source. The
+     classic block below stays the default and is what modules extend. #}
+  {% if new_home %}
+  <div id="homeFeed" class="home-feed">
+    <div class="feed-filters" id="feedFilters"></div>
+    <div class="browse-section feed-section" data-feed-row="new">
+      <h2 class="browse-heading">{{ _('New this week') }}</h2>
+      <div class="browse-grid" id="feedNewGrid"></div>
+    </div>
+    <div class="browse-section feed-section" data-feed-row="popular">
+      <h2 class="browse-heading">{{ _('Popular right now') }}</h2>
+      <div class="browse-grid" id="feedPopularGrid"></div>
+    </div>
+    <div class="browse-section feed-section" data-feed-row="movies">
+      <h2 class="browse-heading">{{ _('Movies') }}</h2>
+      <div class="browse-grid" id="feedMoviesGrid"></div>
+    </div>
+    <div class="mf-empty" id="feedEmpty" style="display:none">
+      {{ _('Nothing to show with these filters.') }}
+    </div>
+  </div>
+  {% else %}
   <div id="browse">
     <div class="browse-provider-block" data-provider="aniworld">
       <div class="browse-provider-header browse-provider-aniworld">AniWorld</div>
@@ -328,9 +337,11 @@
       </div>
     </div>
   </div>
+  {% endif %}
 </div>
 {% include "shared_modals.html" %}
 {% endblock %} {% block scripts %}
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+{% if new_home %}<script src="{{ url_for('static', filename='home_feed.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='devinfo_banner.js') }}"></script>
 {% endblock %}

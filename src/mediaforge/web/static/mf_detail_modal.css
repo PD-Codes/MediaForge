@@ -1,0 +1,149 @@
+/* ===================================================================
+   MediaForge — shared TMDB detail modal
+   Companion stylesheet for templates/mf_detail_modal.html +
+   static/mf_detail_modal.js.
+
+   .overlay / .modal / .close come from modals.css (loaded globally by
+   base.html); only the modal's own layout lives here, so a page that
+   embeds the component needs exactly this one extra stylesheet.
+   =================================================================== */
+
+.mf-detail-modal {
+  max-width: 620px;
+}
+
+.mf-detail-body {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.mf-detail-poster {
+  width: 132px;
+  min-width: 132px;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+.mf-detail-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mf-detail-poster.is-empty {
+  background: var(--bg-elevated) center / 40% no-repeat url("/static/placeholder.svg");
+}
+
+.mf-detail-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mf-detail-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-primary);
+  /* Clear the absolutely positioned close button in the corner. */
+  padding-right: 36px;
+}
+
+.mf-detail-subline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.mf-detail-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft, rgba(124, 58, 237, 0.15));
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.mf-detail-badge[hidden],
+.mf-detail-caption[hidden] { display: none; }
+
+.mf-detail-caption {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.mf-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mf-detail-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.mf-detail-overview {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.mf-detail-overview.is-loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.mf-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 560px) {
+  .mf-detail-body {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .mf-detail-poster {
+    width: 116px;
+    min-width: 116px;
+  }
+
+  .mf-detail-title { padding-right: 0; }
+  .mf-detail-subline,
+  .mf-detail-chips { justify-content: center; }
+  .mf-detail-overview { text-align: left; }
+  .mf-detail-actions .btn { flex: 1; }
+}

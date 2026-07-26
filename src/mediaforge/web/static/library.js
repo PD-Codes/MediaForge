@@ -1,6 +1,16 @@
 // ============================================================
 // Mediathek — File Explorer
 // ============================================================
+// Render architecture (2026-07 modernization): every title, across every
+// location/lang-folder, is flattened into one list of
+// {title, cpId, cpLabel, langFolder} items and painted as a single
+// mf-poster-grid (or list) instead of nested location/lang-folder shells.
+// Clicking a card/row expands its detail INLINE, directly below it in DOM
+// order (grid-column: 1 / -1), instead of opening a panel elsewhere on the
+// page. Only one item is open at a time. Season/episode rendering, the
+// kebab menu system, and every mutating action (rename/delete/move/
+// upscale/auto-sync) are unchanged from the previous implementation —
+// only how titles are grouped and painted changed.
 
 var libLangSep       = false;
 var libLocations     = [];
@@ -13,15 +23,30 @@ var _libSearchTimer  = null;  // debounce timer for search input
 var libSortKey       = "name"; // "name" | "size" | "episodes"
 var libSortAsc       = true;   // ascending = true
 var libFilterMode    = "all";  // "all" | "series" | "movies"
+var libViewMode      = "grid"; // "grid" | "list"
 
-// Persistent open-state — updated by libToggle on every expand/collapse so
-// re-renders triggered by the idle poll / watcher never collapse open items.
-var _libOpenState = {
-  locs:    new Set(),   // location body IDs  (positional: "libLocBody0")
-  lf:      new Set(),   // lang-folder body IDs ("libLFBody0_1")
-  titles:  new Set(),   // "folder|cpId|langFolder"
-  seasons: new Set(),   // "folder|cpId|langFolder|sN"
-};
+// Pagination — purely client-side: the whole filtered/sorted item list is
+// already in memory (libFlattenTitles/libFilterTitles/libSortTitles), so
+// paging is just a slice, no extra network round-trip. Mirrors the
+// .mf-pagination usage pattern from history.js (numbered pager + a
+// 10/20/50/100 "results per page" <select>, persisted in localStorage).
+var LIB_PER_PAGE_OPTIONS = [10, 20, 50, 100];
+function _libInitialPerPage() {
+  try {
+    var saved = parseInt(localStorage.getItem("mf-lib-perpage"), 10);
+    if (LIB_PER_PAGE_OPTIONS.indexOf(saved) !== -1) return saved;
+  } catch (e) { /* private mode */ }
+  return 20;
+}
+var libPerPage = _libInitialPerPage();
+var libPage    = 0; // 0-based
+
+// Single-open accordion state — which flattened item (by stable key) is
+// currently expanded, and which of its seasons are expanded. Survives
+// re-renders triggered by the idle poll / watcher so a background refresh
+// never silently collapses what the user has open.
+var _libOpenKey     = null;        // _libTitleKey() of the open item, or null
+var _libOpenSeasons = new Set();   // "sN" keys open within the current item
 
 // ---- Boot ----
 
@@ -46,8 +71,7 @@ async function libFetch() {
     // Track when we last rendered so the idle poll can detect watcher updates
     libLastUpdated = data.last_updated || 0;
 
-    // Use persistent open-state (maintained by libToggle) — no DOM capture needed
-    libRender(libLocations, _libOpenState);
+    libRender(libLocations);
     libUpdateWatcherStatus(data.watcher || {});
     libUpdateTotalSize(libLocations);
 
@@ -70,8 +94,15 @@ async function libFetch() {
       libIdlePollTimer = setInterval(libIdlePoll, 8000);
     }
   } catch (e) {
-    document.getElementById("libList").innerHTML =
-      '<div class="lib-empty">Bibliothek konnte nicht geladen werden.</div>';
+    var gridEl = document.getElementById("libGridView");
+    var listEl = document.getElementById("libListView");
+    var emptyEl = document.getElementById("libEmptyState");
+    if (gridEl) gridEl.hidden = true;
+    if (listEl) listEl.hidden = true;
+    if (emptyEl) {
+      emptyEl.hidden = false;
+      emptyEl.innerHTML = '<p>' + t("Bibliothek konnte nicht geladen werden.", "Could not load the library.") + '</p>';
+    }
   }
 }
 
@@ -109,7 +140,7 @@ async function libPollScan() {
         return { label: loc.label, custom_path_id: loc.custom_path_id };
       });
       libLastUpdated = data.last_updated || 0;
-      libRender(libLocations, _libOpenState);
+      libRender(libLocations);
       libUpdateTotalSize(libLocations);
       libShowScanBadge(false);
       clearInterval(libScanPollTimer);
@@ -189,7 +220,7 @@ function libUpdateTotalSize(locations) {
   }
 }
 
-// ---- Sort ----
+// ---- Sort / Filter ----
 
 function libSetSort(key) {
   if (libSortKey === key) {
@@ -211,7 +242,8 @@ function libSetSort(key) {
         : (libSortAsc ? t("Aufsteigend", "Ascending") : t("Absteigend", "Descending"));
     }
   });
-  libRender(libLocations, _libOpenState);
+  libPage = 0; // sort order changed — start back on page 1
+  libRender(libLocations);
 }
 
 function libSetFilter(mode) {
@@ -220,22 +252,24 @@ function libSetFilter(mode) {
     var btn = document.getElementById("libFilter-" + k);
     if (btn) btn.classList.toggle("active", k === mode);
   });
-  libRender(libLocations, _libOpenState);
+  libPage = 0; // result set changed — start back on page 1
+  libRender(libLocations);
 }
 
-function libFilterTitles(titles) {
-  if (libFilterMode === "all") return titles;
-  return titles.filter(function(t) {
-    return libFilterMode === "movies" ? !!t.is_movie : !t.is_movie;
+// Filter/sort operate on flattened {title, cpId, cpLabel, langFolder} items.
+function libFilterTitles(items) {
+  if (libFilterMode === "all") return items;
+  return items.filter(function(it) {
+    return libFilterMode === "movies" ? !!it.title.is_movie : !it.title.is_movie;
   });
 }
 
-function libSortTitles(titles) {
-  return titles.slice().sort(function(a, b) {
+function libSortTitles(items) {
+  return items.slice().sort(function(a, b) {
     var v;
-    if (libSortKey === "size")     v = (a.total_size || 0) - (b.total_size || 0);
-    else if (libSortKey === "episodes") v = (a.total_episodes || 0) - (b.total_episodes || 0);
-    else v = (a.folder || "").localeCompare(b.folder || "", "de", { sensitivity: "base" });
+    if (libSortKey === "size") v = (a.title.total_size || 0) - (b.title.total_size || 0);
+    else if (libSortKey === "episodes") v = (a.title.total_episodes || 0) - (b.title.total_episodes || 0);
+    else v = (a.title.folder || "").localeCompare(b.title.folder || "", "de", { sensitivity: "base" });
     return libSortAsc ? v : -v;
   });
 }
@@ -246,91 +280,57 @@ function libOnSearch(value) {
   if (_libSearchTimer) clearTimeout(_libSearchTimer);
   _libSearchTimer = setTimeout(function() {
     libSearchQuery = value.trim();
-    // When clearing search, restore open-state; during search results stay collapsed
-    var restoreState = libSearchQuery ? null : _libOpenState;
-    requestAnimationFrame(function() {
-      libRender(libLocations, restoreState);
-    });
+    var clearBtn = document.getElementById("libSearchClear");
+    if (clearBtn) clearBtn.hidden = !libSearchQuery;
+    libPage = 0; // result set changed — start back on page 1
+    requestAnimationFrame(function() { libRender(libLocations); });
   }, 200);
 }
 
-// ---- Render ----
-// Lazy strategy: title bodies are rendered empty and filled on first expand.
-// This makes the initial paint near-instant regardless of library size.
-//
-// State preservation: before every re-render we snapshot which locations,
-// lang-folders, titles and seasons were expanded (keyed by stable names, not
-// DOM IDs so they survive data changes). After render we restore that state.
-
-var _libLazy = {};
-var _libUpscaleTitles = {};  // stores title objects for upscale button // bodyId → render params
-
-// --- State snapshot helpers ---
-
-function libCaptureState() {
-  var state = {
-    locs:    new Set(),   // location body IDs  (positional — stable unless paths change)
-    lf:      new Set(),   // lang-folder body IDs (positional)
-    titles:  new Set(),   // "folder|cpId|langFolder"
-    seasons: new Set(),   // "folder|cpId|langFolder|sN"
-  };
-
-  // Location bodies
-  document.querySelectorAll('[id^="libLocBody"]').forEach(function(el) {
-    if (el.classList.contains("lib-expanded")) state.locs.add(el.id);
-  });
-
-  // Lang-folder bodies
-  document.querySelectorAll('[id^="libLFBody"]').forEach(function(el) {
-    if (el.classList.contains("lib-expanded")) state.lf.add(el.id);
-  });
-
-  // Title bodies — matched by name, not position
-  Object.keys(_libLazy).forEach(function(bodyId) {
-    var el = document.getElementById(bodyId);
-    if (!el || !el.classList.contains("lib-expanded")) return;
-    var p   = _libLazy[bodyId];
-    var key = _libTitleKey(p);
-    state.titles.add(key);
-
-    // Seasons inside this title body
-    el.querySelectorAll('[id$="Body"]').forEach(function(sb) {
-      var m = sb.id.match(/_s(\d+)Body$/);
-      if (m && sb.classList.contains("lib-expanded")) {
-        state.seasons.add(key + "|s" + m[1]);
-      }
-    });
-  });
-
-  return state;
+function libClearSearch() {
+  var input = document.getElementById("libSearchInput");
+  if (input) { input.value = ""; input.focus(); }
+  libSearchQuery = "";
+  var clearBtn = document.getElementById("libSearchClear");
+  if (clearBtn) clearBtn.hidden = true;
+  libPage = 0; // result set changed — start back on page 1
+  libRender(libLocations);
 }
 
-function libRestoreState(state) {
-  if (!state) return;
+function libSetView(mode) {
+  if (mode !== "grid" && mode !== "list") return;
+  libViewMode = mode;
+  var gBtn = document.getElementById("libViewGrid");
+  var lBtn = document.getElementById("libViewList");
+  if (gBtn) { gBtn.classList.toggle("active", mode === "grid"); gBtn.setAttribute("aria-pressed", mode === "grid"); }
+  if (lBtn) { lBtn.classList.toggle("active", mode === "list"); lBtn.setAttribute("aria-pressed", mode === "list"); }
+  libRender(libLocations);
+}
 
-  // Location bodies
-  state.locs.forEach(function(id) { _libExpandEl(document.getElementById(id)); });
+// ---- Flatten ----
+// Every title across every location/lang-folder becomes one flat item, so
+// the whole library paints as a single poster grid / list regardless of
+// how many volumes (custom paths) or language folders it spans.
 
-  // Lang-folder bodies
-  state.lf.forEach(function(id) { _libExpandEl(document.getElementById(id)); });
+var _libLazy = {};          // bodyId → {title, cpId, langFolder, pfx, ...} for the lazy detail fill
+var _libUpscaleTitles = {}; // upscaleKey → title object (read by libUpscaleTitle)
 
-  // Title bodies — match by name
-  Object.keys(_libLazy).forEach(function(bodyId) {
-    var p   = _libLazy[bodyId];
-    var key = _libTitleKey(p);
-    if (!state.titles.has(key)) return;
-
-    var el = document.getElementById(bodyId);
-    if (!el) return;
-    if (el.classList.contains("lib-lazy-body")) libFillTitleBody(el, p);
-    _libExpandEl(el);
-
-    // Restore seasons
-    el.querySelectorAll('[id$="Body"]').forEach(function(sb) {
-      var m = sb.id.match(/_s(\d+)Body$/);
-      if (m && state.seasons.has(key + "|s" + m[1])) _libExpandEl(sb);
-    });
+function libFlattenTitles(locations) {
+  var items = [];
+  locations.forEach(function(loc) {
+    if (libLangSep && loc.lang_folders) {
+      loc.lang_folders.forEach(function(lf) {
+        (lf.titles || []).forEach(function(title) {
+          items.push({ title: title, cpId: loc.custom_path_id, cpLabel: loc.label, langFolder: lf.name });
+        });
+      });
+    } else if (loc.titles) {
+      loc.titles.forEach(function(title) {
+        items.push({ title: title, cpId: loc.custom_path_id, cpLabel: loc.label, langFolder: null });
+      });
+    }
   });
+  return items;
 }
 
 function _libTitleKey(p) {
@@ -349,190 +349,360 @@ function _libExpandEl(el) {
   }
 }
 
-// ---
-
-function libRender(locations, savedState) {
-  var container = document.getElementById("libList");
-  if (!locations.length) {
-    container.innerHTML = '<div class="lib-empty">Keine heruntergeladenen Inhalte gefunden.<br>Downloads werden hier automatisch angezeigt.</div>';
-    return;
-  }
-
-  // Search mode: collect matching titles across all locations and render flat
-  if (libSearchQuery) {
-    libRenderSearchResults(locations, libSearchQuery);
-    return;
-  }
-
-  _libLazy = {};
-  var html = [];
-  locations.forEach(function(loc, li) {
-    html.push(libRenderLocation(loc, li));
-  });
-  container.innerHTML = html.join("");
-
-  // Restore previously expanded nodes (no-op on first load when savedState is empty)
-  if (savedState) libRestoreState(savedState);
-}
-
-function libRenderSearchResults(locations, query) {
-  var q = query.toLowerCase();
-  var container = document.getElementById("libList");
-  _libLazy = {};
-  var matches = [];
-
-  locations.forEach(function(loc, li) {
-    var titles = [];
-    if (libLangSep && loc.lang_folders) {
-      loc.lang_folders.forEach(function(lf) {
-        lf.titles.forEach(function(t) {
-          if (libTitleMatchesQuery(t, q)) titles.push({ title: t, cpId: loc.custom_path_id, langFolder: lf.name });
-        });
-      });
-    } else if (loc.titles) {
-      loc.titles.forEach(function(t) {
-        if (libTitleMatchesQuery(t, q)) titles.push({ title: t, cpId: loc.custom_path_id, langFolder: null });
-      });
-    }
-    if (titles.length) matches.push({ loc: loc, titles: titles });
-  });
-
-  if (!matches.length) {
-    container.innerHTML = '<div class="lib-empty">Keine Ergebnisse für „' + libEsc(query) + '".</div>';
-    return;
-  }
-
-  var html = [];
-  var globalTi = 0;
-  matches.forEach(function(m) {
-    // Location label as non-clickable header
-    html.push('<div class="lib-search-loc-label">' + libEsc(m.loc.label) + '</div>');
-    m.titles.forEach(function(entry) {
-      if (entry.title.is_movie) {
-        html.push(libRenderMovieFlat(entry.title, 0, entry.langFolder, null, entry.cpId));
-      } else {
-        var shell = libRenderTitleShell(entry.title, 0, entry.langFolder, null, globalTi++, entry.cpId);
-        html.push(shell);
-      }
-    });
-  });
-
-  container.innerHTML = html.join("");
-  // Restore any titles/seasons the user had open before the re-render
-  libRestoreState(_libOpenState);
-}
-
 function libTitleMatchesQuery(title, q) {
-  // Match against folder name, or individual file names
+  // Match against the folder name or any episode/movie file name.
   if ((title.folder || "").toLowerCase().includes(q)) return true;
   if (title.seasons) {
-    for (var si = 0; si < title.seasons.length; si++) {
-      var s = title.seasons[si];
-      if (s.files) {
-        for (var fi = 0; fi < s.files.length; fi++) {
-          if ((s.files[fi].name || "").toLowerCase().includes(q)) return true;
-        }
+    var seasonKeys = Object.keys(title.seasons);
+    for (var si = 0; si < seasonKeys.length; si++) {
+      var eps = title.seasons[seasonKeys[si]] || [];
+      for (var fi = 0; fi < eps.length; fi++) {
+        if ((eps[fi].file || "").toLowerCase().includes(q)) return true;
       }
-    }
-  }
-  if (title.files) {
-    for (var fi2 = 0; fi2 < title.files.length; fi2++) {
-      if ((title.files[fi2].name || "").toLowerCase().includes(q)) return true;
     }
   }
   return false;
 }
 
-function libRenderLocation(loc, li) {
-  var totalEps = 0, totalSize = 0;
-  if (libLangSep && loc.lang_folders) {
-    loc.lang_folders.forEach(function(lf) {
-      lf.titles.forEach(function(t) { totalEps += t.total_episodes; totalSize += t.total_size; });
-    });
-  } else if (loc.titles) {
-    loc.titles.forEach(function(t) { totalEps += t.total_episodes; totalSize += t.total_size; });
-  }
+// ---- Render ----
 
-  var seriesEps = 0, movieCount = 0;
-  if (libLangSep && loc.lang_folders) {
-    loc.lang_folders.forEach(function(lf) {
-      lf.titles.forEach(function(t) { t.is_movie ? movieCount++ : (seriesEps += t.total_episodes); });
-    });
-  } else if (loc.titles) {
-    loc.titles.forEach(function(t) { t.is_movie ? movieCount++ : (seriesEps += t.total_episodes); });
-  }
-
-  var h = [];
-  h.push('<div class="lib-location" id="libLoc' + li + '">');
-  h.push('<div class="lib-location-header" onclick="libToggle(\'libLocBody' + li + '\',this)">');
-  h.push('<div class="lib-row-left">');
-  h.push('<svg class="lib-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>');
-  h.push('<svg class="lib-icon lib-icon-folder-root" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>');
-  h.push('<span class="lib-location-name">' + libEsc(loc.label) + '</span>');
-  h.push('</div>');
-  h.push('<div class="lib-row-right">');
-  if (seriesEps > 0) h.push('<span class="lib-badge">' + seriesEps + ' Ep.</span>');
-  if (movieCount > 0) h.push('<span class="lib-badge lib-badge-film">' + movieCount + t(' Film',' Movie') + t(movieCount !== 1 ? 'e' : '','s') + '</span>');
-  h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(totalSize) + '</span>');
-  h.push('</div>');
-  h.push('</div>'); // header
-
-  // Location body is always rendered (it only contains title rows, not episode detail)
-  h.push('<div class="lib-body" id="libLocBody' + li + '">');
-  if (libLangSep && loc.lang_folders) {
-    loc.lang_folders.forEach(function(lf, lfi) {
-      h.push(libRenderLangFolder(lf, li, lfi, loc.custom_path_id));
-    });
-  } else if (loc.titles) {
-    libSortTitles(libFilterTitles(loc.titles)).forEach(function(title, ti) {
-      if (title.is_movie) {
-        h.push(libRenderMovieFlat(title, li, null, null, loc.custom_path_id));
-      } else {
-        h.push(libRenderTitleShell(title, li, null, null, ti, loc.custom_path_id));
-      }
-    });
-  }
-  h.push('</div>'); // body
-  h.push('</div>'); // location
-  return h.join("");
+function libRender(locations) {
+  if (libSearchQuery) { libRenderSearchResults(libSearchQuery); return; }
+  var items = libSortTitles(libFilterTitles(libFlattenTitles(locations)));
+  libPaintItems(items);
 }
 
-function libRenderLangFolder(lf, li, lfi, cpId) {
-  var totalEps = 0, totalSize = 0;
-  lf.titles.forEach(function(t) { totalEps += t.total_episodes; totalSize += t.total_size; });
-  var seriesEps = 0, movieCount = 0;
-  lf.titles.forEach(function(t) { t.is_movie ? movieCount++ : (seriesEps += t.total_episodes); });
-  var bodyId = "libLFBody" + li + "_" + lfi;
-  var h = [];
-  h.push('<div class="lib-lang-section">');
-  h.push('<div class="lib-lang-header" onclick="libToggle(\'' + bodyId + '\',this)">');
-  h.push('<div class="lib-row-left">');
-  h.push('<svg class="lib-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>');
-  h.push('<svg class="lib-icon" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>');
-  h.push('<span class="lib-lang-name">' + libEsc(lf.name) + '</span>');
-  h.push('</div>');
-  h.push('<div class="lib-row-right">');
-  if (seriesEps > 0) h.push('<span class="lib-badge">' + seriesEps + ' Ep.</span>');
-  if (movieCount > 0) h.push('<span class="lib-badge">' + movieCount + ' Film' + (movieCount !== 1 ? 'e' : '') + '</span>');
-  h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(totalSize) + '</span>');
-  h.push('</div>');
-  h.push('</div>');
-  // Lang folder body = title shells (still lazy inside)
-  h.push('<div class="lib-body" id="' + bodyId + '">');
-  libSortTitles(libFilterTitles(lf.titles)).forEach(function(title, ti) {
-    if (title.is_movie) {
-      h.push(libRenderMovieFlat(title, li, lf.name, lfi, cpId));
-    } else {
-      h.push(libRenderTitleShell(title, li, lf.name, lfi, ti, cpId));
+function libRenderSearchResults(query) {
+  var q = query.toLowerCase();
+  var matches = libFlattenTitles(libLocations).filter(function(it) {
+    return libTitleMatchesQuery(it.title, q);
+  });
+  libPaintItems(matches);
+}
+
+// Re-paint using the data already in memory (no network round-trip) —
+// used when opening/closing a card or switching filter/sort/view locally
+// would otherwise require duplicating the fetch-then-render flow.
+function libRepaint() {
+  libRender(libLocations);
+}
+
+function libPaintItems(items) {
+  var gridEl  = document.getElementById("libGridView");
+  var listEl  = document.getElementById("libListView");
+  var emptyEl = document.getElementById("libEmptyState");
+  if (!gridEl || !listEl) return;
+
+  if (!items.length) {
+    gridEl.hidden = true;
+    listEl.hidden = true;
+    if (emptyEl) emptyEl.hidden = false;
+    libRenderPagination(0);
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+
+  var isGrid = libViewMode === "grid";
+  gridEl.hidden = !isGrid;
+  listEl.hidden = isGrid;
+  var target = isGrid ? gridEl : listEl;
+
+  // Slice to the current page. Clamp first in case a filter/sort/search
+  // change (or a background refresh) shrank the list out from under the
+  // previously selected page.
+  var totalP = libTotalPages(items.length);
+  if (libPage >= totalP) libPage = totalP - 1;
+  if (libPage < 0) libPage = 0;
+  var pageStart = libPage * libPerPage;
+  var pageItems = items.slice(pageStart, pageStart + libPerPage);
+
+  _libLazy = {};
+  var html = [];
+  var openItem = null, openPfx = null;
+  pageItems.forEach(function(it, idx) {
+    var pfx = "libCard" + idx;
+    _libLazy[pfx + "Body"] = { title: it.title, li: 0, langFolder: it.langFolder, lfi: null, ti: 0, cpId: it.cpId, pfx: pfx };
+    html.push(isGrid ? libRenderCard(it, pfx) : libRenderRow(it, pfx));
+    if (_libOpenKey && _libTitleKey(it) === _libOpenKey) {
+      html.push(libRenderDetailShell(it, pfx));
+      openItem = it;
+      openPfx = pfx;
     }
   });
-  h.push('</div>');
+  target.innerHTML = html.join("");
+
+  if (openItem) {
+    var bodyEl = document.getElementById(openPfx + "Body");
+    if (bodyEl) {
+      libRenderDetailBody(bodyEl, openItem, openPfx);
+      _libOpenSeasons.forEach(function(sKey) {
+        var sBody = document.getElementById(openPfx + "_" + sKey + "Body");
+        if (sBody) _libExpandEl(sBody);
+      });
+    }
+  }
+  libRenderPagination(items.length);
+  _libScheduleProgressFlush();
+}
+
+// ---- Pagination ----
+
+function libTotalPages(total) {
+  return Math.max(1, Math.ceil(total / libPerPage));
+}
+
+function libPageNumbers(current, total) {
+  if (total <= 7) return Array.from({ length: total }, function (_, i) { return i + 1; });
+  var out = [1];
+  var from = Math.max(2, current - 1), to = Math.min(total - 1, current + 1);
+  if (from > 2) out.push("…");
+  for (var i = from; i <= to; i++) out.push(i);
+  if (to < total - 1) out.push("…");
+  out.push(total);
+  return out;
+}
+
+// Rebuilds the pager + "Showing X–Y of Z" text + per-page <select> every
+// time it's called (cheap — the pager is a handful of buttons), same
+// convention as history.js's renderPagination(). Clicks are delegated via
+// data-page since the whole pager is replaced on every page change.
+function libRenderPagination(totalItems) {
+  var row    = document.getElementById("libPaginationRow");
+  var host   = document.getElementById("libPagination");
+  var cnt    = document.getElementById("libPageCount");
+  var perSel = document.getElementById("libPerPageSelect");
+
+  if (perSel && perSel.value !== String(libPerPage)) perSel.value = String(libPerPage);
+  if (row) row.hidden = totalItems === 0;
+
+  if (cnt) {
+    var from = totalItems ? libPage * libPerPage + 1 : 0;
+    var to = Math.min(totalItems, (libPage + 1) * libPerPage);
+    cnt.textContent = t("Zeige " + from + "–" + to + " von " + totalItems,
+      "Showing " + from + "–" + to + " of " + totalItems);
+  }
+  if (!host) return;
+
+  var totalP = libTotalPages(totalItems);
+  var current = libPage + 1;
+  if (totalP <= 1) { host.innerHTML = ""; return; }
+
+  var btn = function (page, label, disabled, title) {
+    return '<button type="button" class="mf-pagination-btn" data-page="' + page + '"' +
+      (disabled ? " disabled" : "") + ' title="' + libEscAttr(title) + '">' + label + "</button>";
+  };
+  var html = '<div class="mf-pagination">';
+  html += btn(1, "&laquo;", current === 1, t("Erste Seite", "First page"));
+  html += btn(current - 1, "&lsaquo;", current === 1, t("Zurück", "Back"));
+  libPageNumbers(current, totalP).forEach(function (entry) {
+    if (entry === "…") { html += '<span class="mf-pagination-ellipsis">…</span>'; return; }
+    html += '<button type="button" class="mf-pagination-page' + (entry === current ? " active" : "") +
+      '" data-page="' + entry + '"' + (entry === current ? " disabled" : "") + ">" + entry + "</button>";
+  });
+  html += btn(current + 1, "&rsaquo;", current === totalP, t("Weiter", "Next"));
+  html += btn(totalP, "&raquo;", current === totalP, t("Letzte Seite", "Last page"));
+  html += "</div>";
+  host.innerHTML = html;
+  host.querySelectorAll("[data-page]").forEach(function (b) {
+    b.addEventListener("click", function () { libGoToPage(parseInt(b.getAttribute("data-page"), 10) - 1); });
+  });
+}
+
+function libGoToPage(n) {
+  n = Math.max(0, n);
+  if (n === libPage) return;
+  libPage = n;
+  libRepaint();
+  var toolbar = document.getElementById("libToolbar");
+  if (toolbar && toolbar.scrollIntoView) toolbar.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function libSetPerPage(value) {
+  var n = parseInt(value, 10);
+  if (LIB_PER_PAGE_OPTIONS.indexOf(n) === -1) n = 20;
+  libPerPage = n;
+  try { localStorage.setItem("mf-lib-perpage", String(n)); } catch (e) { /* private mode */ }
+  libPage = 0;
+  libRepaint();
+}
+
+// ---- Shared card/row/detail markup helpers ----
+
+function typePillHtml(isMovie) {
+  return '<span class="mf-type-pill' + (isMovie ? ' mf-type-pill--movie' : ' mf-type-pill--series') + '">' +
+    (isMovie ? t('Film', 'Movie') : t('Serie', 'Series')) + '</span>';
+}
+
+function volTagHtml(cpLabel) {
+  if (!cpLabel) return '';
+  return '<span class="mf-vol-tag" title="' + libEscAttr(cpLabel) + '">' +
+    '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>' +
+    '<span>' + libEsc(cpLabel) + '</span></span>';
+}
+
+// "Neu" flag: title was written to disk within the last N days.
+// Backed by title.added_at (Unix seconds), populated server-side in
+// _lib_scan_base() from the newest st_mtime among the title's files.
+var LIB_NEW_DAYS = 14;
+function isNewTitle(title) {
+  if (!title.added_at) return false;
+  return (Date.now() / 1000 - title.added_at) < (LIB_NEW_DAYS * 86400);
+}
+
+function _libFauxArt(name) {
+  var hash = 0;
+  for (var i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  var hue1 = hash % 360, hue2 = (hue1 + 48) % 360;
+  var style = 'background:linear-gradient(155deg,hsl(' + hue1 + ',55%,22%),hsl(' + hue2 + ',55%,14%))';
+  return '<div class="lib-fauxart" style="' + style + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></div>';
+}
+
+// Primary/first file of a title — used for the card-level "Details" menu
+// item (movies) and the eager card-level watch-progress prefetch.
+function _libFirstFile(title) {
+  if (title.seasons && title.seasons.movies && title.seasons.movies.length) return title.seasons.movies[0];
+  return null;
+}
+
+// Queue an eager, card-level progress lookup for a movie's primary file so
+// the "watched" badge / progress bar can show up without the user having
+// to expand the card first. Series intentionally do NOT do this — their
+// episodes are only fetched on first expand to keep large libraries
+// (thousands of episodes) fast to paint.
+function _libQueueCardProgress(it, pfx) {
+  if (!it.title.is_movie) return;
+  var f = _libFirstFile(it.title);
+  if (!f || !f.path) return;
+  _libPendingProgress.push({ rowId: pfx, path: f.path, kind: 'card' });
+}
+
+function _libCardMenuKey(it, pfx) {
+  var upscaleKey = "usc_" + pfx;
+  _libUpscaleTitles[upscaleKey] = it.title;
+  var firstFile = it.title.is_movie ? _libFirstFile(it.title) : null;
+  return libRegMenuCtx({
+    type: it.title.is_movie ? 'movie' : 'title',
+    folder: it.title.folder, cpId: it.cpId, lf: it.langFolder,
+    pfx: pfx, upscaleKey: upscaleKey, isMovie: !!it.title.is_movie,
+    epPath: it.title.is_movie ? (firstFile ? firstFile.path : '') : undefined
+  });
+}
+
+function libRenderCard(it, pfx) {
+  var title = it.title;
+  var isOpen = _libOpenKey === _libTitleKey(it);
+  var menuKey = _libCardMenuKey(it, pfx);
+  _libQueueCardProgress(it, pfx);
+
+  var h = [];
+  h.push('<div class="mf-poster-card' + (isOpen ? ' is-open' : '') + '" id="' + pfx + '">');
+  h.push('<div class="mf-poster-art" onclick="libOpenTitle(\'' + pfx + '\')">');
+  h.push(_libFauxArt(title.folder));
+  if (isNewTitle(title)) h.push('<span class="mf-poster-flag mf-poster-flag--new">' + t('Neu', 'New') + '</span>');
+  h.push('<div class="mf-poster-scrim">');
+  h.push('<div class="mf-poster-meta">' + typePillHtml(title.is_movie) + volTagHtml(it.cpLabel) + '</div>');
+  h.push('<p class="mf-poster-title" id="' + pfx + 'Name">' + libEsc(title.folder) + '</p>');
+  h.push('</div>'); // scrim
+  h.push('<div class="mf-poster-progress"><div class="mf-poster-progress-fill" style="width:0%"></div></div>');
+  h.push('</div>'); // art
+  h.push('<div class="mf-poster-foot">');
+  h.push('<span class="lib-badge">' + title.total_episodes + (title.is_movie ? ' Film' : ' Ep.') + '</span>');
+  h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(title.total_size) + '</span>');
+  h.push('<button class="mf-icon-btn lib-kebab-btn mf-poster-kebab" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="' + t('Mehr Optionen', 'More Options') + '"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
+  h.push('</div>'); // foot
+  h.push('</div>'); // card
+  return h.join("");
+}
+
+function libRenderRow(it, pfx) {
+  var title = it.title;
+  var isOpen = _libOpenKey === _libTitleKey(it);
+  var menuKey = _libCardMenuKey(it, pfx);
+  _libQueueCardProgress(it, pfx);
+
+  var h = [];
+  h.push('<div class="lib-title-row lib-hoverable' + (isOpen ? ' is-open' : '') + '" id="' + pfx + '" onclick="libOpenTitle(\'' + pfx + '\')">');
+  h.push('<div class="lib-row-left">');
+  // Title line and pills are split into their own wrappers so mobile CSS
+  // can stack the pills below the title (see .lib-row-title-line /
+  // .lib-row-pills in library.css) — on desktop both sit side by side,
+  // same as before.
+  h.push('<div class="lib-row-title-line">');
+  h.push('<svg class="lib-arrow' + (isOpen ? ' lib-arrow-open' : '') + '" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>');
+  h.push('<svg class="lib-icon lib-icon-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>');
+  h.push('<span class="lib-title-name" id="' + pfx + 'Name">' + libEsc(title.folder) + '</span>');
+  h.push('</div>'); // row-title-line
+  h.push('<div class="lib-row-pills">');
+  h.push(typePillHtml(title.is_movie));
+  h.push(volTagHtml(it.cpLabel));
+  if (isNewTitle(title)) h.push('<span class="mf-poster-flag mf-poster-flag--new lib-row-new-flag">' + t('Neu', 'New') + '</span>');
+  h.push('</div>'); // row-pills
+  h.push('</div>'); // row-left
+  h.push('<div class="lib-row-right">');
+  h.push('<span class="lib-badge">' + title.total_episodes + (title.is_movie ? ' Film' : ' Ep.') + '</span>');
+  h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(title.total_size) + '</span>');
+  h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="' + t('Mehr Optionen', 'More Options') + '"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
+  h.push('</div>'); // row-right
+  h.push('</div>'); // row
+  return h.join("");
+}
+
+function libDetailHeaderHtml(it) {
+  var title = it.title;
+  var h = [];
+  h.push('<div class="lib-detail-header">');
+  h.push('<span class="lib-detail-title">' + libEsc(title.folder) + '</span>');
+  h.push(typePillHtml(title.is_movie));
+  h.push(volTagHtml(it.cpLabel));
+  h.push('<button class="mf-icon-btn lib-detail-close" onclick="libCloseTitle()" title="' + t('Schließen', 'Close') + '">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>');
   h.push('</div>');
   return h.join("");
 }
 
-// Renders a movie as a flat, non-expandable row directly in the location/langfolder body.
-// No intermediate "title folder" shell — the file is immediately visible.
+function libRenderDetailShell(it, pfx) {
+  return '<div class="lib-detail-row">' + libDetailHeaderHtml(it) +
+    '<div class="lib-body lib-expanded" id="' + pfx + 'Body"></div></div>';
+}
+
+// Fills the (already inserted, empty) detail body for the currently open
+// item. Movies reuse libRenderMovieFlat's own self-contained file rows
+// (same per-file kebab/rename/delete semantics movies have always had —
+// libFillTitleBody's is_movie branch is intentionally NOT used here since
+// its libRenderEpisode()-based rows wire per-episode rename/delete to the
+// backend with season="movies", which /api/library/{rename,delete} cannot
+// parse as an int and would 500). Series use the unchanged season/episode
+// pipeline via libFillTitleBody.
+function libRenderDetailBody(bodyEl, item, pfx) {
+  var title = item.title;
+  if (title.is_movie) {
+    bodyEl.innerHTML = libRenderMovieFlat(title, 0, item.langFolder, null, item.cpId);
+    bodyEl.classList.remove("lib-lazy-body");
+    _libScheduleProgressFlush();
+  } else {
+    libFillTitleBody(bodyEl, { title: title, li: 0, langFolder: item.langFolder, lfi: null, ti: 0, cpId: item.cpId, pfx: pfx });
+  }
+}
+
+function libOpenTitle(pfx) {
+  var params = _libLazy[pfx + "Body"];
+  if (!params) return;
+  var key = _libTitleKey(params);
+  if (_libOpenKey === key) { libCloseTitle(); return; }
+  _libOpenKey = key;
+  _libOpenSeasons = new Set();
+  libRepaint();
+}
+
+function libCloseTitle() {
+  _libOpenKey = null;
+  _libOpenSeasons = new Set();
+  libRepaint();
+}
+
+// Renders a movie as one or more flat, non-expandable file rows — used
+// both for direct rendering (kept for API compatibility) and as the
+// detail-body content of an opened movie card/row.
 var _libMovieFlatIdx = 0;
 function libRenderMovieFlat(title, li, langFolder, lfi, cpId) {
   var pfx     = "libMFlat" + (_libMovieFlatIdx++);
@@ -581,46 +751,7 @@ function libRenderMovieFlat(title, li, langFolder, lfi, cpId) {
   return h.join("");
 }
 
-// Renders only the title header row + an EMPTY body div (lazy).
-// Season/episode content is injected on first expand.
-function libRenderTitleShell(title, li, langFolder, lfi, ti, cpId) {
-  var pfx    = "libT" + li + (lfi !== null ? "_lf" + lfi : "") + "_t" + ti;
-  var bodyId = pfx + "Body";
-  var cpIdStr = cpId !== null && cpId !== undefined ? String(cpId) : '';
-  var lfStr   = langFolder || '';
-
-  // Store params so libToggle can fill the body on demand
-  _libLazy[bodyId] = { title: title, li: li, langFolder: langFolder, lfi: lfi, ti: ti, cpId: cpId, pfx: pfx };
-
-  var _upscaleKey = "usc_" + pfx;
-  _libUpscaleTitles[_upscaleKey] = title;
-
-  var menuKey = libRegMenuCtx({ type:'title', folder:title.folder, cpId:cpId, lf:langFolder, pfx:pfx, upscaleKey:_upscaleKey, isMovie:title.is_movie });
-
-  var h = [];
-  h.push('<div class="lib-title-section" id="' + pfx + '">');
-  h.push('<div class="lib-title-row lib-hoverable" onclick="libToggle(\'' + bodyId + '\',this)">');
-  h.push('<div class="lib-row-left">');
-  h.push('<svg class="lib-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>');
-  h.push('<svg class="lib-icon lib-icon-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>');
-  h.push('<span class="lib-title-name" id="' + pfx + 'Name">' + libEsc(title.folder) + '</span>');
-  if (title.is_movie) h.push('<span class="lib-movie-pill">Film</span>');
-  h.push('</div>');
-  h.push('<div class="lib-row-right">');
-  h.push('<span class="lib-badge">' + title.total_episodes + (title.is_movie ? ' Film' : ' Ep.') + '</span>');
-  h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(title.total_size) + '</span>');
-  h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="Mehr Optionen"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
-  h.push('</div>'); // row-right
-  h.push('</div>'); // title-row
-
-  // Empty body — filled lazily on first expand
-  h.push('<div class="lib-body lib-lazy-body" id="' + bodyId + '">');
-  h.push('</div>');
-  h.push('</div>'); // title-section
-  return h.join("");
-}
-
-// Called lazily from libToggle to populate a title body
+// Called lazily from libRenderDetailBody to populate a series' detail body.
 function libFillTitleBody(bodyEl, params) {
   var title = params.title, pfx = params.pfx;
   var li = params.li, langFolder = params.langFolder, lfi = params.lfi, ti = params.ti, cpId = params.cpId;
@@ -715,7 +846,7 @@ function libGetResolution(filename) {
   if (f.includes("720p") || f.includes("1280x720")) return "720p";
   if (f.includes("480p") || f.includes("854x480") || f.includes("640x480")) return "480p";
   if (f.includes("360p") || f.includes("640x360")) return "360p";
-  
+
   var m = f.match(/\b(2160|1440|1080|720|480|360|240)p?\b/);
   if (m) {
     var val = m[1];
@@ -923,20 +1054,11 @@ function libOpenMenu(btn) {
   _libMenuEl.style.visibility = '';
 }
 
-// ---- Toggle ----
-
-// On first open of a lazy title body: fill its content, then expand.
-
+// ---- Toggle (season expand/collapse within an open detail) ----
 
 function libToggle(bodyId, headerEl) {
   var body = document.getElementById(bodyId);
   if (!body) return;
-
-  // Lazy fill: if this is a title body not yet rendered, fill it now
-  if (body.classList.contains("lib-lazy-body") && !body.classList.contains("lib-expanded")) {
-    var params = _libLazy[bodyId];
-    if (params) libFillTitleBody(body, params);
-  }
 
   var expanded = body.classList.toggle("lib-expanded");
   if (headerEl) {
@@ -944,44 +1066,12 @@ function libToggle(bodyId, headerEl) {
     if (arrow) arrow.classList.toggle("lib-arrow-open", expanded);
   }
 
-  // ---- Maintain persistent open-state ----
-  // Location body: "libLocBodyN"
-  if (/^libLocBody\d+$/.test(bodyId)) {
-    if (expanded) _libOpenState.locs.add(bodyId);
-    else _libOpenState.locs.delete(bodyId);
-    return;
-  }
-  // Lang-folder body: "libLFBodyN_M"
-  if (/^libLFBody\d+_\d+$/.test(bodyId)) {
-    if (expanded) _libOpenState.lf.add(bodyId);
-    else _libOpenState.lf.delete(bodyId);
-    return;
-  }
-  // Title body: present in _libLazy
-  if (_libLazy[bodyId]) {
-    var key = _libTitleKey(_libLazy[bodyId]);
-    if (expanded) {
-      _libOpenState.titles.add(key);
-    } else {
-      _libOpenState.titles.delete(key);
-      // Also remove all seasons belonging to this title
-      var toRemove = [];
-      _libOpenState.seasons.forEach(function(sk) {
-        if (sk.startsWith(key + "|s")) toRemove.push(sk);
-      });
-      toRemove.forEach(function(sk) { _libOpenState.seasons.delete(sk); });
-    }
-    return;
-  }
-  // Season body: "_sNBody" suffix — find parent title body
+  // Season body: "..._sNBody" suffix
   var m = bodyId.match(/_s(\d+)Body$/);
   if (m) {
-    var titleBodyId = bodyId.replace(/_s\d+Body$/, "Body");
-    if (_libLazy[titleBodyId]) {
-      var seasonKey = _libTitleKey(_libLazy[titleBodyId]) + "|s" + m[1];
-      if (expanded) _libOpenState.seasons.add(seasonKey);
-      else _libOpenState.seasons.delete(seasonKey);
-    }
+    var sKey = "s" + m[1];
+    if (expanded) _libOpenSeasons.add(sKey);
+    else _libOpenSeasons.delete(sKey);
   }
 }
 
@@ -1423,7 +1513,7 @@ async function libUpscaleEpisode(event, filePath, fileTitle) {
 // ── Watch Progress ───────────────────────────────────────────────────────
 // Batch-load progress for all episodes rendered in the current view.
 
-var _libPendingProgress = [];  // populated by libRenderEpisode
+var _libPendingProgress = [];  // populated by libRenderEpisode / libRenderMovieFlat / card prefetch
 var _libProgressCache   = {};  // path → {percent, watched, position}
 var _libProgressFlush   = null;
 
@@ -1454,11 +1544,13 @@ async function _libFlushProgress() {
     var data = await resp.json();
     // Cache results
     Object.assign(_libProgressCache, data);
-    // Apply to DOM
+    // Apply to DOM — episode/movie-file rows use the row renderer, card-level
+    // (eager movie) prefetches use the poster-card renderer.
     batch.forEach(function(b) {
       var prog = data[b.path];
       if (!prog) return;
-      _libApplyProgressToRow(b.rowId, prog);
+      if (b.kind === 'card') _libApplyProgressToCard(b.rowId, prog);
+      else _libApplyProgressToRow(b.rowId, prog);
     });
   } catch(e) { /* ignore */ }
 }
@@ -1511,6 +1603,36 @@ function _libApplyProgressToRow(rowId, prog) {
       };
       insertTarget.parentNode.insertBefore(pill, insertTarget.nextSibling);
     }
+  }
+}
+
+// Card-level counterpart of _libApplyProgressToRow — applies a movie's
+// eagerly-fetched progress to its (still collapsed) poster card / list row
+// instead of an episode row. Handles both markups: the grid card has a
+// .mf-poster-art host for the watched badge, the list row falls back to
+// appending next to the title text.
+function _libApplyProgressToCard(pfx, prog) {
+  var el = document.getElementById(pfx);
+  if (!el) return;
+  var pct = prog.percent || 0;
+  var bar = el.querySelector('.mf-poster-progress-fill');
+
+  if (prog.watched) {
+    el.classList.add('is-watched');
+    if (bar) bar.style.width = '100%';
+    if (!el.querySelector('.mf-poster-watched')) {
+      var host = el.querySelector('.mf-poster-art') || document.getElementById(pfx + 'Name');
+      if (host) {
+        var dot = document.createElement('span');
+        dot.className = 'mf-poster-watched';
+        dot.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
+        dot.title = t('Gesehen', 'Watched');
+        host.appendChild(dot);
+      }
+    }
+  } else if (pct > 3) {
+    if (bar) bar.style.width = pct + '%';
+    el.classList.add('is-progress');
   }
 }
 
@@ -1580,10 +1702,10 @@ async function libOpenMediaInfo(path, title) {
 
     // Basic Info Grid
     h.push('<div class="lib-media-info-grid">');
-    
+
     h.push('<div class="lib-media-info-label">' + t('Dateiname', 'Filename') + ':</div>');
     h.push('<div class="lib-media-info-value">' + libEsc(data.filename) + '</div>');
-    
+
     h.push('<div class="lib-media-info-label">' + t('Pfad', 'Path') + ':</div>');
     h.push('<div class="lib-media-info-value" style="display:flex;align-items:center;gap:6px;">' +
            '<span>' + libEsc(data.path) + '</span>' +
@@ -1591,13 +1713,13 @@ async function libOpenMediaInfo(path, title) {
            '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>' +
            '</button>' +
            '</div>');
-           
+
     h.push('<div class="lib-media-info-label">' + t('Größe', 'Size') + ':</div>');
     h.push('<div class="lib-media-info-value">' + libFmtSize(data.size_bytes) + ' (' + data.size_bytes.toLocaleString() + ' Bytes)</div>');
-    
+
     h.push('<div class="lib-media-info-label">' + t('Container', 'Container') + ':</div>');
     h.push('<div class="lib-media-info-value">' + libEsc(data.container).toUpperCase() + '</div>');
-    
+
     h.push('</div>');
 
     // Video / Audio details sections
@@ -1611,46 +1733,46 @@ async function libOpenMediaInfo(path, title) {
            '</div>');
     if (data.video) {
       h.push('<div class="lib-media-info-sec-grid">');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Codec', 'Codec') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.codec) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Profil', 'Profile') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.profile) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Level', 'Level') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.level) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Auflösung', 'Resolution') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.resolution) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Format', 'Format') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.aspect_ratio) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Framerate', 'Framerate') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + (data.video.framerate ? libEsc(data.video.framerate) + ' fps' : '—') + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Farbtiefe', 'Bit Depth') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.bit_depth) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Bereich', 'Range') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.video_range) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Pixelformat', 'Pixel Format') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.pixel_format) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Bitrate', 'Bitrate') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + (data.video.bitrate ? libEsc(data.video.bitrate) : '—') + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('AVC', 'AVC') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.video.avc) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Ref Frames', 'Ref Frames') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + (data.video.refs ? libEsc(data.video.refs) : '—') + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('NAL', 'NAL') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + (data.video.nal ? libEsc(data.video.nal) : '—') + '</div>');
-      
+
       h.push('</div>');
     } else {
       h.push('<div style="color:var(--text-muted);font-size:0.85rem">' + t('Kein Video-Stream gefunden', 'No video stream found') + '</div>');
@@ -1665,34 +1787,34 @@ async function libOpenMediaInfo(path, title) {
            '</div>');
     if (data.audio) {
       h.push('<div class="lib-media-info-sec-grid">');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Codec', 'Codec') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.audio.codec) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Profil', 'Profile') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.audio.profile) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Kanäle', 'Channels') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.audio.channels) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Layout', 'Layout') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + (data.audio.layout ? libEsc(data.audio.layout) : '—') + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Sprache', 'Language') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.audio.language).toUpperCase() + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Bitrate', 'Bitrate') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + (data.audio.bitrate ? libEsc(data.audio.bitrate) : '—') + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Sample Rate', 'Sample Rate') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.audio.sample_rate) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Default', 'Default') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.audio.default) + '</div>');
-      
+
       h.push('<div class="lib-media-info-sec-label">' + t('Forced', 'Forced') + ':</div>');
       h.push('<div class="lib-media-info-sec-val">' + libEsc(data.audio.forced) + '</div>');
-      
+
       h.push('</div>');
     } else {
       h.push('<div style="color:var(--text-muted);font-size:0.85rem">' + t('Kein Audio-Stream gefunden', 'No audio stream found') + '</div>');

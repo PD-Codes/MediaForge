@@ -166,7 +166,7 @@
     return p;
   }
 
-  // ── Summary (KPI cards + charts) ─────────────────────────────────
+  // ── Summary (breakdown charts) ─────────────────────────────────
 
   function loadSummary() {
     var host = document.getElementById("histSummary");
@@ -180,26 +180,6 @@
       })
       .catch(function () { host.innerHTML = ""; });
   }
-
-  function kpiCard(o) {
-    return '<div class="stat-card hero-card" style="--kpi-color:' + esc(o.color) + '">' +
-      '<span class="hero-head"><span class="hero-icon">' + o.icon + "</span>" +
-      (o.spark || "") + "</span>" +
-      '<span class="stat-value">' + o.value + "</span>" +
-      '<span class="stat-label">' + esc(o.label) + "</span>" +
-      (o.sub ? '<span class="stat-sub">' + esc(o.sub) + "</span>" : "") + "</div>";
-  }
-  function icon(pathHtml) {
-    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + pathHtml + "</svg>";
-  }
-  var ICONS = {
-    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
-    check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
-    disk: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/>',
-    bolt: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
-    clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
-  };
 
   function chartCard(o) {
     // <details> so the charts collapse on phones — same behaviour as the
@@ -225,50 +205,20 @@
     var tot = data.totals || {};
     if (!tot.entries) { host.innerHTML = ""; return; }
 
-    var daily = data.daily || [];
     var hasCharts = typeof MFCharts !== "undefined";
-    var spark = function (vals, color) {
-      return hasCharts ? MFCharts.sparkline(vals, { color: color }) : "";
-    };
 
-    var html = '<div class="stats-kpi-row stats-kpi-main">';
-    html += kpiCard({
-      label: t("Einträge", "Entries"), value: fmtInt(tot.entries),
-      sub: fmtInt(tot.titles) + " " + t("Titel", "titles"),
-      color: "#7c3aed", icon: icon(ICONS.download),
-      spark: spark(daily.map(function (d) { return d.downloads; }), "#7c3aed"),
-    });
-    html += kpiCard({
-      label: t("Erfolgsquote", "Success rate"), value: (tot.success_rate || 0) + "%",
-      sub: fmtInt(tot.failed) + " " + t("fehlgeschlagen", "failed") + " · " +
-        fmtInt(tot.cancelled) + " " + t("abgebrochen", "cancelled"),
-      color: (tot.success_rate || 0) >= 90 ? "#22c55e" : (tot.success_rate || 0) >= 70 ? "#f59e0b" : "#f87171",
-      icon: icon(ICONS.check),
-    });
-    html += kpiCard({
-      label: t("Datenvolumen", "Data volume"), value: fmtSize(tot.size_mb),
-      color: "#e8914a", icon: icon(ICONS.disk),
-      spark: spark(daily.map(function (d) { return d.size_mb; }), "#e8914a"),
-    });
-    html += kpiCard({
-      label: t("Ø Geschwindigkeit", "Avg. speed"), value: fmtSpeed(tot.avg_speed_mbps),
-      sub: tot.max_speed_mbps ? t("Spitze", "Peak") + ": " + fmtSpeed(tot.max_speed_mbps) : "",
-      color: "#06b6d4", icon: icon(ICONS.bolt),
-    });
-    html += kpiCard({
-      label: t("Ladezeit gesamt", "Total time"), value: fmtDuration(tot.duration_sec),
-      color: "#a78bfa", icon: icon(ICONS.clock),
-    });
-    html += "</div>";
+    // The KPI card row (Entries / Success rate / Data volume / Avg. speed /
+    // Total time) has been removed on request — this section now only
+    // renders the breakdown charts below.
+    var html = "";
 
     // No daily-trend chart here on purpose: the Statistics page already plots
     // downloads per day over a selectable range, and repeating it pushed the
-    // actual list of downloads far below the fold. The per-day shape is still
-    // present as the sparklines on the KPI cards above.
+    // actual list of downloads far below the fold.
     //
     // The guard is `hasCharts` alone — the remaining charts are breakdowns of
     // the whole filtered set, so they must still appear when every entry is
-    // older than the 30-day window and `daily` is therefore all zeroes.
+    // older than the 30-day window.
     if (hasCharts) {
       var specs = {};
       html += '<div class="stats-charts-grid">';

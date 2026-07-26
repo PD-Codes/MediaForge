@@ -540,15 +540,30 @@
         </div>
       </div>
 
-      <!-- Mediathek im Kalender (Unterpunkt) -->
+      <!-- MediaScan-Serien im Kalender (Unterpunkt) -->
       <div class="settings-row" id="cineinfoCalendarMediathekRow" style="padding-left:44px;">
         <div class="settings-row-left">
-          <div class="settings-row-label" style="font-size:0.9rem;">{{ _('↳ Show Media Library series in calendar') }}</div>
-          <div class="settings-row-desc">{{ _('Adds series from your Media Library to the calendar.') }}</div>
+          <div class="settings-row-label" style="font-size:0.9rem;">{{ _('↳ Show MediaScan series in calendar') }}</div>
+          <div class="settings-row-desc">{{ _('Adds series from the MediaScan inventory comparison (Jellyfin/Plex) to the calendar.') }}</div>
         </div>
         <div class="settings-row-right">
           <label class="toggle">
             <input type="checkbox" id="cineinfoCalendarMediathek" onchange="saveCineinfoDisplayOptions()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Lokale Mediathek im Kalender (Unterpunkt) -->
+      <div class="settings-row" id="cineinfoCalendarLibraryRow" style="padding-left:44px;">
+        <div class="settings-row-left">
+          <div class="settings-row-label" style="font-size:0.9rem;">{{ _('↳ Show your own library in calendar') }}</div>
+          <div class="settings-row-desc">{{ _('Takes the series from your MediaForge library and adds their upcoming episodes to the calendar. Works without Jellyfin/Plex.') }}</div>
+          <div class="settings-row-desc">{{ _('Large libraries fill in gradually: the titles have to be matched against TMDB in the background first.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" id="cineinfoCalendarLibrary" onchange="saveCineinfoDisplayOptions()" />
             <span class="toggle-slider"></span>
           </label>
         </div>

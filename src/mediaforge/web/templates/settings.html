@@ -66,6 +66,30 @@
         <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
       </div>
 
+      {% if is_admin %}
+      <div class="settings-overview-card" onclick="switchTab('encoding')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Encoding') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Configure FFmpeg encoding, hardware acceleration and upscaling profiles') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+      {% endif %}
+
+      <div class="settings-overview-card" onclick="switchTab('library')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 4h7a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z"/><path d="M22 4h-7a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h8z"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Library') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Media library scanning schedule, scan performance and statistics visibility') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
       <div class="settings-overview-card" onclick="switchTab('design')">
         <div class="settings-overview-card-header">
           <div class="settings-overview-icon">
@@ -78,17 +102,6 @@
       </div>
 
       {% if is_admin %}
-      <div class="settings-overview-card" onclick="switchTab('encoding')">
-        <div class="settings-overview-card-header">
-          <div class="settings-overview-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-          </div>
-          <div class="settings-overview-title">{{ _('Encoding') }}</div>
-        </div>
-        <div class="settings-overview-desc">{{ _('Configure FFmpeg encoding, hardware acceleration and upscaling profiles') }}</div>
-        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
-      </div>
-
       <div class="settings-overview-card" onclick="switchTab('sources')">
         <div class="settings-overview-card-header">
           <div class="settings-overview-icon">
@@ -128,7 +141,7 @@
           <div class="settings-overview-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
           </div>
-          <div class="settings-overview-title">{{ _('Network') }}</div>
+          <div class="settings-overview-title">{{ _('Network & Access') }}</div>
         </div>
         <div class="settings-overview-desc">{{ _('DNS server configuration, Captcha solver behavior and reverse proxy base URL') }}</div>
         <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
@@ -306,55 +319,18 @@
     </div>
 
 
+    {% if is_admin %}
     <div class="settings-section">
-      <h2>{{ _('Media Statistics') }}</h2>
+      <h2>{{ _('Home page') }}</h2>
       <div class="settings-row">
-        <label class="settings-checkbox-row" for="mediaStatsEnabled">
-          <input type="checkbox" class="chb-main" id="mediaStatsEnabled" onchange="saveMediaStatsEnabled()" />
-          <span>{{ _('Show Media category on the statistics page') }}</span>
+        <label class="settings-checkbox-row" for="newHomeEnabled">
+          <input type="checkbox" class="chb-main" id="newHomeEnabled" onchange="saveNewHomeEnabled()" />
+          <span>{{ _('Use the new home page') }}</span>
         </label>
       </div>
-      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Adds a Media category to the statistics page with movie, series and episode counts based on your media library.') }}</div>
-      <div class="settings-row">
-        <div class="settings-row-left">
-          <div class="settings-row-label">{{ _('Automatic library rescan') }}</div>
-          <div class="settings-row-desc">{{ _('A location is rescanned once its cached scan is older than this.') }}</div>
-        </div>
-        <div class="settings-row-right">
-          <select id="libraryRescanHours" class="mf-token-input" onchange="saveLibraryRescanHours()">
-            <option value="0">{{ _('Off') }}</option>
-            <option value="6">{{ _('Every 6 hours') }}</option>
-            <option value="12">{{ _('Every 12 hours') }}</option>
-            <option value="24">{{ _('Every 24 hours') }}</option>
-            <option value="48">{{ _('Every 2 days') }}</option>
-            <option value="168">{{ _('Every 7 days') }}</option>
-          </select>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-left">
-          <div class="settings-row-label">{{ _('Scan intensity') }}</div>
-          <div class="settings-row-desc">{{ _('Parallel ffprobe workers used to read resolution and codec from files whose name does not reveal them.') }}</div>
-        </div>
-        <div class="settings-row-right">
-          <select id="libraryProbeWorkers" class="mf-token-input" onchange="saveLibraryProbeWorkers()">
-            <option value="0">{{ _('Automatic (based on CPU cores)') }}</option>
-            <option value="2">2 — {{ _('gentle (network share)') }}</option>
-            <option value="4">4</option>
-            <option value="8">8</option>
-            <option value="12">12</option>
-            <option value="16">16</option>
-            <option value="24">24</option>
-            <option value="32">32 — {{ _('fast NVMe') }}</option>
-          </select>
-        </div>
-      </div>
-      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('More workers finish a scan sooner on fast local storage and will push the drive hard while it runs; on a network share they mostly multiply the timeouts. A scan always stops after two minutes of probing regardless, and continues where it left off a few minutes later.') }}</div>
-      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('MediaForge no longer rescans everything on every start — on a large library that costs minutes for a result that is almost always identical. While it runs, the file watcher picks up changes live; this interval covers what the watcher cannot, such as files added while MediaForge was closed. Locations that have never been scanned are always read in, and the refresh button on the Library page rescans on demand.') }}</div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Groups the discovery rows by question instead of by source: "New this week" and "Popular right now" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this.') }}</div>
     </div>
 
-
-    {% if is_admin %}
     <div class="settings-section">
       <h2>{{ _('Startup & Tray') }}</h2>
       <div id="startupTrayOptions">
@@ -430,6 +406,63 @@
 
     {% endif %}
   </div><!-- /tab-general -->
+
+  <!-- ══════════════════════════════════════════════════════
+       Tab: Bibliothek / Library
+  ══════════════════════════════════════════════════════ -->
+  <div class="settings-tab-panel" id="tab-library">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Library and Statistics') }}</h1>
+      <p class="page-subtitle">{{ _('Media library scanning schedule, scan performance and statistics visibility') }}</p>
+    </div>
+    <div class="settings-section">
+      <h2>{{ _('Media Statistics') }}</h2>
+      <div class="settings-row">
+        <label class="settings-checkbox-row" for="mediaStatsEnabled">
+          <input type="checkbox" class="chb-main" id="mediaStatsEnabled" onchange="saveMediaStatsEnabled()" />
+          <span>{{ _('Show Media category on the statistics page') }}</span>
+        </label>
+      </div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Adds a Media category to the statistics page with movie, series and episode counts based on your media library.') }}</div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Automatic library rescan') }}</div>
+          <div class="settings-row-desc">{{ _('A location is rescanned once its cached scan is older than this.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <select id="libraryRescanHours" class="mf-token-input" onchange="saveLibraryRescanHours()">
+            <option value="0">{{ _('Off') }}</option>
+            <option value="6">{{ _('Every 6 hours') }}</option>
+            <option value="12">{{ _('Every 12 hours') }}</option>
+            <option value="24">{{ _('Every 24 hours') }}</option>
+            <option value="48">{{ _('Every 2 days') }}</option>
+            <option value="168">{{ _('Every 7 days') }}</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Scan intensity') }}</div>
+          <div class="settings-row-desc">{{ _('Parallel ffprobe workers used to read resolution and codec from files whose name does not reveal them.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <select id="libraryProbeWorkers" class="mf-token-input" onchange="saveLibraryProbeWorkers()">
+            <option value="0">{{ _('Automatic (based on CPU cores)') }}</option>
+            <option value="2">2 — {{ _('gentle (network share)') }}</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="12">12</option>
+            <option value="16">16</option>
+            <option value="24">24</option>
+            <option value="32">32 — {{ _('fast NVMe') }}</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('More workers finish a scan sooner on fast local storage and will push the drive hard while it runs; on a network share they mostly multiply the timeouts. A scan always stops after two minutes of probing regardless, and continues where it left off a few minutes later.') }}</div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('MediaForge no longer rescans everything on every start — on a large library that costs minutes for a result that is almost always identical. While it runs, the file watcher picks up changes live; this interval covers what the watcher cannot, such as files added while MediaForge was closed. Locations that have never been scanned are always read in, and the refresh button on the Library page rescans on demand.') }}</div>
+    </div>
+  </div><!-- /tab-library -->
+
   <!-- ══════════════════════════════════════════════════════
        Tab: Design
   ══════════════════════════════════════════════════════ -->
@@ -560,13 +593,6 @@
       </label>
       <div class="settings-hint">{{ _('Icons animate on hover in menus') }}</div>
     </div>
-    {% if is_admin %}
-    <div class="settings-section">
-      <h2>{{ _('Source order') }}</h2>
-      <div class="settings-hint">{{ _('Set the order in which sources appear on the start page. Drag the rows or use the arrows. For each source you can also choose whether new or popular items are shown first.') }}</div>
-      <div class="source-order-list" id="sourceOrderList"></div>
-    </div>
-    {% endif %}
   </div>
 
   {% if is_admin %}
@@ -603,6 +629,11 @@
         <span>hanime <span class="browse-provider-18">18+</span></span>
       </label>
       <div class="settings-hint">{{ _('hanime.tv is an adult source (18+) for sexually explicit animated content (hentai). Disabled by default; enabling requires an age confirmation.') }}</div>
+    </div>
+    <div class="settings-section">
+      <h2>{{ _('Source order') }}</h2>
+      <div class="settings-hint">{{ _('Set the order in which sources appear on the start page. Drag the rows or use the arrows. For each source you can also choose whether new or popular items are shown first.') }}</div>
+      <div class="source-order-list" id="sourceOrderList"></div>
     </div>
     <div class="settings-section">
       <h2>{{ _('Search') }}</h2>
@@ -1034,7 +1065,7 @@
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-network">
     <div class="page-header" style="margin-bottom:20px;">
-      <h1 class="page-title">{{ _('Network') }}</h1>
+      <h1 class="page-title">{{ _('Network & Access') }}</h1>
       <p class="page-subtitle">{{ _('DNS server configuration, Captcha solver behavior and reverse proxy base URL') }}</p>
     </div>
     {# module cards moved to the Module Settings page #}

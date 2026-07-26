@@ -186,21 +186,46 @@
           esc(t("Ungeprüft", "Unreviewed"))}</span>`
       : "";
 
+    // A card, not a settings row: the catalog is for *browsing* (several entries
+    // in view, one glance each), while a settings row is for operating one thing
+    // at a time. The action buttons keep their classes and data-ids -- the single
+    // delegated click handler further down matches on those, not on the layout.
+    //
+    // An available update is a badge at the FRONT of the badge row plus a
+    // coloured card edge, not a corner ribbon: a ribbon and a long module name
+    // fight over the same pixels, and the name always wins that argument.
+    const updateBadge = m.update_available
+      ? `<span class="mod-card-update">${esc(t("↑ v", "↑ v") + m.version)}</span>`
+      : "";
+    // Catalog entries carry no icon of their own, so the glyph says which *kind*
+    // of thing this is -- a palette for a skin, a puzzle piece for code.
+    const icon = m.type === "theme"
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/>
+           <path d="M12 3a9 9 0 0 0 0 18"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2"/>
+           <path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"/></svg>`;
+
     return `
-      <div class="settings-row">
-        <div class="settings-row-left">
-          <div class="settings-row-label">
-            ${esc(m.name)}
-            <span class="integ-subsection-badge badge-version">v${esc(m.version)}</span>
-            ${typeBadge}
-            <span class="integ-subsection-badge ${trust.cls}">${esc(t(trust.de, trust.en))}</span>
-            ${unreviewed}
-          </div>
-          ${desc ? `<div class="settings-row-desc">${esc(desc)}</div>` : ""}
-          <div class="settings-row-desc" style="opacity:.7;">${meta.join(" · ")}</div>
+      <article class="mod-card${m.update_available ? " has-update" : ""}${m.type === "theme" ? " is-theme" : ""}">
+        <div class="mod-card-top">
+          <span class="mod-card-icon" aria-hidden="true">${icon}</span>
+          <span class="mod-card-ident">
+            <span class="mod-card-name" title="${esc(m.name)}">${esc(m.name)}</span>
+            <span class="mod-card-by">${esc(m.author || t("unbekannt", "unknown"))} · v${esc(m.version)}</span>
+          </span>
         </div>
-        <div class="settings-row-right" style="display:flex;gap:8px;align-items:center;">${action}</div>
-      </div>`;
+        ${desc ? `<p class="mod-card-desc">${esc(desc)}</p>` : ""}
+        <div class="mod-card-badges">
+          ${updateBadge}
+          ${typeBadge}
+          <span class="integ-subsection-badge ${trust.cls}">${esc(t(trust.de, trust.en))}</span>
+          ${unreviewed}
+        </div>
+        <div class="mod-card-meta">${meta.join(" · ")}</div>
+        <div class="mod-card-foot">${action}</div>
+      </article>`;
   }
 
   // "Loading store…" is a promise the client has to keep. A fetch with no timeout has no
@@ -216,14 +241,33 @@
   // never refetches.
   let _catalogModules = [];
   let _typeFilter = "";
+  // Free-text filter over the catalog. Client-side on purpose: the whole
+  // catalog is already in memory, so typing must not cost a request.
+  let _query = "";
+
+  function _matchesQuery(m) {
+    if (!_query) return true;
+    const desc = (m.description && (m.description[window.__LANG] || m.description.en)) || "";
+    return [m.name, m.author, m.category, m.id, desc].some(function (v) {
+      return String(v || "").toLowerCase().indexOf(_query) !== -1;
+    });
+  }
 
   function renderCatalogList() {
     const list = $("extStoreList");
     if (!list) return;
-    const mods = _typeFilter
-      ? _catalogModules.filter((m) => (m.type || "module") === _typeFilter)
-      : _catalogModules;
-    list.innerHTML = mods.map(moduleRow).join("");
+    const mods = _catalogModules.filter(function (m) {
+      if (_typeFilter && (m.type || "module") !== _typeFilter) return false;
+      return _matchesQuery(m);
+    });
+    // Say when a filter is the reason nothing is here -- an empty grid on its own
+    // reads as a broken store.
+    list.innerHTML = mods.length
+      ? '<div class="mod-card-grid">' + mods.map(moduleRow).join("") + "</div>"
+      : '<div class="mf-empty mod-card-empty">' +
+          "<p>" + esc(_query || _typeFilter
+            ? t("Nichts passt zu diesem Filter", "Nothing matches this filter")
+            : t("Der Store ist leer", "The store is empty")) + "</p></div>";
     const count = $("extStoreCount");
     if (count) {
       count.textContent = mods.length + " " + t("Einträge", "entries");
@@ -434,9 +478,18 @@
                     `${data.folder} v${data.version} installed and running.`));
             setTimeout(() => window.location.reload(), 800);
           } else {
-            // An upgrade of an already-loaded module: unavoidable restart.
-            toast(t(`${data.folder} v${data.version} vorgemerkt — das Update wird beim nächsten Start aktiv.`,
-                    `${data.folder} v${data.version} staged — the update goes live on the next start.`));
+            // Still staged. Since upgrade_module_live() exists this is the
+            // exception, not the rule: either another loaded module DEPENDS_ON
+            // this one, or the new version would not register and was rolled
+            // back. The server says which in reasons[folder] — worth showing,
+            // because "needs a restart" and "your update is broken" are very
+            // different messages.
+            const why = (data.reasons || {})[data.folder];
+            toast(why
+              ? t(`${data.folder} v${data.version} vorgemerkt — ${why}`,
+                  `${data.folder} v${data.version} staged — ${why}`)
+              : t(`${data.folder} v${data.version} vorgemerkt — das Update wird beim nächsten Start aktiv.`,
+                  `${data.folder} v${data.version} staged — the update goes live on the next start.`));
             loadCatalog(false);
           }
         } else {
@@ -565,6 +618,28 @@
       // the wrong answer. Getting the same list back after toggling is exactly how a
       // setting earns a reputation for not working.
       loadCatalog(true);
+    });
+  }
+
+  // Free-text search over the catalog. Two listeners, no config object --
+  // .mf-search ships markup, not behaviour.
+  const searchBox = $("extStoreSearch");
+  const searchClear = $("extStoreSearchClear");
+  if (searchBox) {
+    searchBox.addEventListener("input", () => {
+      _query = searchBox.value.trim().toLowerCase();
+      if (searchClear) searchClear.hidden = !searchBox.value;
+      renderCatalogList();
+    });
+  }
+  if (searchClear) {
+    searchClear.addEventListener("click", () => {
+      if (!searchBox) return;
+      searchBox.value = "";
+      _query = "";
+      searchClear.hidden = true;
+      searchBox.focus();
+      renderCatalogList();
     });
   }
 

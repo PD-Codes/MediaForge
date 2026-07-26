@@ -5578,3 +5578,266 @@ msgid ""
 "More workers finish a scan sooner on fast local storage and will push the drive hard while it runs; on a network share they mostly multiply the timeouts. A scan always stops after two minutes of probing regardless, and continues where it left off a few minutes later."
 msgstr ""
 "Mehr Prozesse machen den Scan auf schnellem lokalem Speicher deutlich kürzer und lasten das Laufwerk währenddessen stark aus; auf einem Netzlaufwerk vervielfachen sie vor allem die Zeitüberschreitungen. Ein Scan hört in jedem Fall nach zwei Minuten Prüfzeit auf und macht wenige Minuten später dort weiter, wo er aufgehört hat."
+
+# ──────────────────────────────────────────────────────────────────────────
+# Calendar rework (July 2026) — agenda view, filters, ICS subscription
+# ──────────────────────────────────────────────────────────────────────────
+
+#: templates/calendar.html
+msgid "Agenda"
+msgstr "Agenda"
+
+#: templates/calendar.html
+msgid "View range"
+msgstr "Zeitraum"
+
+#: templates/calendar.html
+msgid "Filter titles…"
+msgstr "Titel filtern…"
+
+#: templates/calendar.html
+msgid "No entry matches your filters."
+msgstr "Kein Eintrag passt zu den Filtern."
+
+#: templates/calendar.html
+msgid "Subscribe"
+msgstr "Abonnieren"
+
+#: templates/calendar.html
+msgid "Calendar subscription"
+msgstr "Kalender-Abo"
+
+#: templates/calendar.html
+msgid "Add this URL to Google Calendar, Apple Calendar, Thunderbird or any other app that supports iCal subscriptions. It updates automatically."
+msgstr "Füge diese Adresse in Google Kalender, Apple Kalender, Thunderbird oder eine andere App mit iCal-Abo ein. Sie aktualisiert sich automatisch."
+
+#: templates/calendar.html
+msgid "Subscription URL"
+msgstr "Abo-Adresse"
+
+#: templates/calendar.html
+msgid "Anyone who has this URL can read your calendar — treat it like a password. Generate a new one if it leaks."
+msgstr "Wer diese Adresse kennt, kann deinen Kalender lesen — behandle sie wie ein Passwort. Erzeuge eine neue, falls sie abhandenkommt."
+
+#: templates/calendar.html
+msgid "Generate new URL"
+msgstr "Neue Adresse erzeugen"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Seerr rework (July 2026) — search/filter/sort toolbar, bulk actions
+# ──────────────────────────────────────────────────────────────────────────
+
+#: templates/seerr.html
+msgid "Search requests…"
+msgstr "Anfragen durchsuchen…"
+
+#: templates/seerr.html
+msgid "Filter by status"
+msgstr "Nach Status filtern"
+
+#: templates/seerr.html
+msgid "Filter by media type"
+msgstr "Nach Medientyp filtern"
+
+#: templates/seerr.html
+msgid "Approved"
+msgstr "Angenommen"
+
+#: templates/seerr.html
+msgid "Request date"
+msgstr "Anfragedatum"
+
+#: templates/seerr.html
+msgid "Toggle sort direction"
+msgstr "Sortierrichtung umschalten"
+
+#: templates/seerr.html
+msgid "Select multiple"
+msgstr "Mehrfachauswahl"
+
+#: templates/seerr.html
+msgid "Bulk actions"
+msgstr "Sammelaktionen"
+
+#: templates/seerr.html
+msgid "Select all loaded requests"
+msgstr "Alle geladenen Anfragen auswählen"
+
+#: templates/seerr.html
+msgid "Approve"
+msgstr "Annehmen"
+
+#: templates/seerr.html
+msgid "Only the first 50 are processed."
+msgstr "Es werden nur die ersten 50 verarbeitet."
+
+#: templates/seerr.html
+msgid "Search covered only the newest 400 requests."
+msgstr "Die Suche hat nur die neuesten 400 Anfragen erfasst."
+
+#: templates/integrations.html
+msgid ""
+"↳ Show MediaScan series in calendar"
+msgstr ""
+"↳ MediaScan-Serien im Kalender anzeigen"
+
+#: templates/integrations.html
+msgid ""
+"Adds series from the MediaScan inventory comparison (Jellyfin/Plex) to the calendar."
+msgstr ""
+"Fügt Serien aus dem MediaScan-Bestandsabgleich (Jellyfin/Plex) zum Kalender hinzu."
+
+#: templates/integrations.html
+msgid ""
+"↳ Show your own library in calendar"
+msgstr ""
+"↳ Eigene Mediathek im Kalender anzeigen"
+
+#: templates/integrations.html
+msgid ""
+"Takes the series from your MediaForge library and adds their upcoming episodes to the calendar. Works without Jellyfin/Plex."
+msgstr ""
+"Nimmt die Serien aus deiner MediaForge-Mediathek und trägt deren kommende Episoden in den Kalender ein. Funktioniert ohne Jellyfin/Plex."
+
+#: templates/integrations.html
+msgid ""
+"Large libraries fill in gradually: the titles have to be matched against TMDB in the background first."
+msgstr ""
+"Große Mediatheken füllen sich nach und nach: die Titel müssen erst im Hintergrund mit TMDB abgeglichen werden."
+
+#: templates/seerr.html
+msgid ""
+"Poster view"
+msgstr ""
+"Posteransicht"
+
+#: templates/extensions.html
+msgid ""
+"Built into MediaForge and not configurable. A module is \"Official\" because one of these keys signed it — neither a store nor a setting can decide that."
+msgstr ""
+"In MediaForge eingebaut und nicht konfigurierbar. Ein Modul ist „Official“, weil einer dieser Schlüssel es signiert hat — das entscheidet weder ein Store noch eine Einstellung."
+
+#: templates/login.html
+msgid ""
+"Your media, your disk, your pace"
+msgstr ""
+"Deine Medien, deine Platte, dein Tempo"
+
+#: templates/login.html
+msgid ""
+"Media management, transcoding, upscaling, calendar. The private server built around your own media management."
+msgstr ""
+"Medienverwaltung, umwandeln, upscalen, Kalender. Der private Server rund um das eigene Medien Management"
+
+#: templates/login.html
+msgid ""
+"Continue to your instance"
+msgstr ""
+"Weiter zu deiner Instanz"
+
+#: templates/login.html
+msgid ""
+"Version"
+msgstr ""
+"Version"
+
+#: templates/index.html
+msgid ""
+"What do you want to download?"
+msgstr ""
+"Was willst du laden?"
+
+#: templates/index.html
+msgid ""
+"One title is enough — MediaForge asks every active source at once."
+msgstr ""
+"Ein Titel reicht — MediaForge fragt alle aktiven Quellen gleichzeitig."
+
+#: templates/extensions.html
+msgid ""
+"Search modules and themes…"
+msgstr ""
+"Module und Themes suchen…"
+
+#: templates/base.html
+msgid "Everything"
+msgstr "Alles"
+
+#: templates/base.html
+msgid "Clear finished"
+msgstr "Fertige aufräumen"
+
+#: templates/base.html
+msgid "Pause all"
+msgstr "Alles pausieren"
+
+# ── settings.html: Settings reorg (July 2026) — new Library tab, Network rename
+#: templates/settings.html
+msgid "Media library scanning schedule, scan performance and statistics visibility"
+msgstr "Zeitplan für den Bibliotheks-Scan, Scan-Leistung und Sichtbarkeit der Statistiken"
+
+#: templates/_settings_menu.html
+msgid "Network & Access"
+msgstr "Netzwerk & Zugriff"
+
+# ── login.html / setup.html / setup_locked.html: setup page modernization (July 2026)
+#: templates/login.html templates/setup.html templates/setup_locked.html
+msgid "Your media, your disk, your place"
+msgstr "Deine Medien, deine Festplatte, dein Zuhause"
+
+#: templates/setup.html
+msgid "Create the first admin account to get started."
+msgstr "Lege das erste Admin-Konto an, um loszulegen."
+
+#: templates/setup.html
+msgid "Setup token"
+msgstr "Setup-Token"
+
+#: templates/setup.html
+msgid "Paste the token here"
+msgstr "Token hier einfügen"
+
+#: templates/setup.html
+msgid "You can find the token in your server console or Docker container logs. It stays valid for 30 minutes — after that, restart the instance to get a new one."
+msgstr "Den Token findest du in der Server-Konsole bzw. im Docker-Container-Log. Er ist 30 Minuten gültig — danach musst du die Instanz neu starten, um einen neuen zu erhalten."
+
+#: templates/setup.html
+msgid "Min. 8 characters"
+msgstr "Min. 8 Zeichen"
+
+#: templates/setup_locked.html
+msgid "The setup token has expired."
+msgstr "Der Setup-Token ist abgelaufen."
+
+#: templates/setup_locked.html
+msgid "Restart the application to get a new setup token — it stays valid for 30 minutes after each start."
+msgstr "Starte die Anwendung neu, um einen neuen Setup-Token zu erhalten — er ist nach jedem Start 30 Minuten gültig."
+
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Library and Statistics"
+msgstr "Bibliothek und Statistiken"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Home page"
+msgstr "Startseite"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Use the new home page"
+msgstr "Neue Startseite verwenden"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Groups the discovery rows by question instead of by source: \"New this week\" and \"Popular right now\" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this."
+msgstr "Gruppiert die Entdecken-Reihen nach Frage statt nach Quelle: \"Neu diese Woche\" und \"Gerade beliebt\" mischen alle aktiven Quellen, und jedes Poster nennt seine Herkunft. Das klassische Layout behält pro Quelle einen Block mit eigenen Reihen. Startseite nach dem Umschalten neu laden."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "New this week"
+msgstr "Neu diese Woche"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Popular right now"
+msgstr "Gerade beliebt"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Nothing to show with these filters."
+msgstr "Mit diesen Filtern gibt es nichts zu zeigen."

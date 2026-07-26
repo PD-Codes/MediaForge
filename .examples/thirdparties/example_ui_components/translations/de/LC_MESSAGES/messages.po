@@ -152,3 +152,361 @@ msgstr "Noch nichts hier"
 
 msgid "This is where a short explanation and maybe a call-to-action button would go."
 msgstr "Hier würde eine kurze Erklärung und vielleicht ein Call-to-Action-Button stehen."
+
+# ────────────────────────────────────────────────────────────
+# Shared TMDB detail modal (MFDetailModal)
+# ────────────────────────────────────────────────────────────
+
+msgid "TMDB detail modal"
+msgstr "TMDB-Detail-Modal"
+
+msgid "web/static/mf_detail_modal.js + .css — a ready-made detail view for anything you can name by TMDB id: poster, date, synopsis, metadata chips and a \"Search streams\" button. Include the partial once, then call MFDetailModal.open(). Needs a TMDB API key for the synopsis/chips; without one it still shows what you passed in."
+msgstr "web/static/mf_detail_modal.js + .css — eine fertige Detailansicht für alles, was sich über eine TMDB-ID benennen lässt: Poster, Datum, Inhaltsangabe, Metadaten-Chips und ein „Streams suchen“-Button. Das Partial einmal einbinden, dann MFDetailModal.open() aufrufen. Für Inhaltsangabe/Chips wird ein TMDB-API-Key gebraucht; ohne einen zeigt es weiterhin das, was du übergeben hast."
+
+msgid "Open a series"
+msgstr "Serie öffnen"
+
+msgid "Open a movie"
+msgstr "Film öffnen"
+
+msgid "Open without a TMDB id"
+msgstr "Ohne TMDB-ID öffnen"
+
+# ────────────────────────────────────────────────────────────
+# Shared .mf-* components + MFCharts gallery — these sections were
+# added to the template without catalogue entries, so they rendered
+# in English even in the German UI.
+# ────────────────────────────────────────────────────────────
+
+msgid "Segmented buttons"
+msgstr "Segmented Buttons"
+
+msgid "web/static/forms.css — two to four mutually exclusive modes in one pill group (the Series/Movies switch on the Advanced Search). More than four options belong in a <select>; switching whole panels belongs in the floating side menu instead."
+msgstr "web/static/forms.css — zwei bis vier sich gegenseitig ausschließende Modi in einer Pill-Gruppe (der Serien/Filme-Umschalter der Erweiterten Suche). Mehr als vier Optionen gehören in ein <select>; ganze Panels umzuschalten gehört stattdessen ins schwebende Seitenmenü."
+
+msgid "Series"
+msgstr "Serien"
+
+msgid "Movies"
+msgstr "Filme"
+
+msgid "Multi-select dropdown"
+msgstr "Multi-Select-Dropdown"
+
+msgid "web/static/forms.css — a trigger showing a summary, opening a .chb-main checkbox list. Toggle .is-open on the root yourself and listen for change on the dropdown; wrap every option in a <label class=\"mf-multiselect-item\"> so the whole row is clickable."
+msgstr "web/static/forms.css — ein Trigger mit Zusammenfassung, der eine .chb-main-Checkbox-Liste öffnet. Das .is-open am Wurzelelement setzt du selbst und lauschst auf change am Dropdown; jede Option in ein <label class=\"mf-multiselect-item\"> wickeln, damit die ganze Zeile klickbar ist."
+
+msgid "Nothing selected"
+msgstr "Nichts ausgewählt"
+
+msgid "Token field (autocomplete + tags)"
+msgstr "Token-Feld (Autovervollständigung + Tags)"
+
+msgid "web/static/forms.css — text input with a suggestion list and removable tokens below (the Keywords / Providers / Network filters). Delegate the remove click on .mf-token-list and read the id off the button — never build an inline onclick. .mf-token-input on its own is also the plain themed text input and <select> style."
+msgstr "web/static/forms.css — Texteingabe mit Vorschlagsliste und entfernbaren Tokens darunter (die Filter Keywords / Provider / Sender). Den Entfernen-Klick auf .mf-token-list delegieren und die ID vom Button lesen — niemals ein Inline-onclick bauen. .mf-token-input allein ist außerdem der schlichte gestylte Text-Input- und <select>-Stil."
+
+msgid "Type a, b or c..."
+msgstr "a, b oder c eingeben …"
+
+msgid "Selected: a"
+msgstr "Ausgewählt: a"
+
+msgid "Range slider"
+msgstr "Schieberegler"
+
+msgid "web/static/forms.css — the themed track and thumb for any <input type=\"range\">, with an optional label/value header above it."
+msgstr "web/static/forms.css — die gestylte Schiene samt Regler für jedes <input type=\"range\">, mit optionaler Label-/Wert-Zeile darüber."
+
+msgid "Min Rating"
+msgstr "Mind. Bewertung"
+
+msgid "Filter chips"
+msgstr "Filter-Chips"
+
+msgid "web/static/forms.css — the \"active filter\" pills above a result list. Add .mf-chip-static for a chip that cannot be removed; delegate the ✕ click on the container."
+msgstr "web/static/forms.css — die „aktiver Filter“-Pills über einer Ergebnisliste. .mf-chip-static ergänzen für ein Chip, das sich nicht entfernen lässt; den ✕-Klick auf dem Container delegieren."
+
+msgid "Type: Series"
+msgstr "Typ: Serien"
+
+msgid "Remove filter"
+msgstr "Filter entfernen"
+
+msgid "Pagination"
+msgstr "Seitennavigation"
+
+msgid "web/static/forms.css — first/prev, numbered pages with ellipses, next/last and a jump box. Put data-page on everything clickable and delegate the click on the container, because the pager is rebuilt on every page change."
+msgstr "web/static/forms.css — Erste/Zurück, nummerierte Seiten mit Auslassungen, Weiter/Letzte und ein Sprungfeld. An alles Klickbare ein data-page hängen und den Klick auf dem Container delegieren, denn die Seitennavigation wird bei jedem Seitenwechsel neu aufgebaut."
+
+msgid "Charts (MFCharts)"
+msgstr "Diagramme (MFCharts)"
+
+msgid "web/static/mf-charts.js + mf-charts.css — dependency-free inline-SVG charts (no CDN, no bundler, CSP-friendly). They paint with the theme tokens from variables.css, so theme packs restyle them automatically. Link both files in your page's styles/scripts blocks, then call MFCharts.render(elementOrId, spec)."
+msgstr "web/static/mf-charts.js + mf-charts.css — abhängigkeitsfreie Inline-SVG-Diagramme (kein CDN, kein Bundler, CSP-tauglich). Sie zeichnen mit den Theme-Tokens aus variables.css, Theme-Packs stylen sie also automatisch um. Beide Dateien in den styles-/scripts-Blöcken deiner Seite einbinden, dann MFCharts.render(elementOrId, spec) aufrufen."
+
+msgid "Area / line"
+msgstr "Fläche / Linie"
+
+msgid "Bars"
+msgstr "Balken"
+
+msgid "Horizontal bars"
+msgstr "Horizontale Balken"
+
+msgid "Donut"
+msgstr "Donut"
+
+msgid "Gauge"
+msgstr "Tacho"
+
+msgid "Heatmap"
+msgstr "Heatmap"
+
+msgid "Sparkline (returns a plain SVG string — drop it straight into a KPI card):"
+msgstr "Sparkline (liefert einen reinen SVG-String — direkt in eine KPI-Karte einsetzen):"
+
+#: templates/example_ui_components.html
+msgid ""
+"2 days ago"
+msgstr ""
+"vor 2 Tagen"
+
+#: templates/example_ui_components.html
+msgid ""
+"3 days with nothing"
+msgstr ""
+"3 Tage ohne Termin"
+
+#: templates/example_ui_components.html
+msgid ""
+"A few named stages of one item (requested → approved → downloaded), not a percentage — for that use .progress-wrap above. Hide it below ~1000px: three labels turn into three stumps."
+msgstr ""
+"Ein paar benannte Stufen eines Vorgangs (angefragt → angenommen → geladen), kein Prozentwert — dafür ist .progress-wrap oben da. Unter ca. 1000px ausblenden: aus drei Labels werden sonst drei Stummel."
+
+#: templates/example_ui_components.html
+msgid ""
+"All"
+msgstr ""
+"Alle"
+
+#: templates/example_ui_components.html
+msgid ""
+"Approve"
+msgstr ""
+"Annehmen"
+
+#: templates/example_ui_components.html
+msgid ""
+"Approved"
+msgstr ""
+"Angenommen"
+
+#: templates/example_ui_components.html
+msgid ""
+"Back"
+msgstr ""
+"Zurück"
+
+#: templates/example_ui_components.html
+msgid ""
+"Clear search"
+msgstr ""
+"Suche löschen"
+
+#: templates/example_ui_components.html
+msgid ""
+"Done"
+msgstr ""
+"Fertig"
+
+#: templates/example_ui_components.html
+msgid ""
+"Downloading"
+msgstr ""
+"Wird geladen"
+
+#: templates/example_ui_components.html
+msgid ""
+"Empty state — .mf-empty"
+msgstr ""
+"Leerzustand — .mf-empty"
+
+#: templates/example_ui_components.html
+msgid ""
+"Example filter"
+msgstr ""
+"Beispiel-Filter"
+
+#: templates/example_ui_components.html
+msgid ""
+"Filters live on the left"
+msgstr ""
+"Filter stehen links"
+
+#: templates/example_ui_components.html
+msgid ""
+"Grid"
+msgstr ""
+"Raster"
+
+#: templates/example_ui_components.html
+msgid ""
+"Keep the difference visible: \"nothing matches your filters\" is a different message than \"there is nothing scheduled\", and only one of them deserves a reset button."
+msgstr ""
+"Den Unterschied sichtbar halten: „nichts passt zu deinen Filtern\" ist eine andere Aussage als „es steht nichts an\" — und nur eine davon verdient einen Reset-Button."
+
+#: templates/example_ui_components.html
+msgid ""
+"Layout blocks (mf_components.css)"
+msgstr ""
+"Layout-Bausteine (mf_components.css)"
+
+#: templates/example_ui_components.html
+msgid ""
+"List"
+msgstr ""
+"Liste"
+
+#: templates/example_ui_components.html
+msgid ""
+"Movie"
+msgstr ""
+"Film"
+
+#: templates/example_ui_components.html
+msgid ""
+"Next"
+msgstr ""
+"Weiter"
+
+#: templates/example_ui_components.html
+msgid ""
+"Nothing matches these filters"
+msgstr ""
+"Nichts passt zu diesen Filtern"
+
+#: templates/example_ui_components.html
+msgid ""
+"One continuous rail with a glowing \"now\" dot (.is-now), and named gaps instead of two rows sitting next to each other: a fortnight with nothing scheduled should read as a fortnight with nothing scheduled. The source of an entry is a 3px coloured spine (.mf-stop-source), not another coloured word competing with the title."
+msgstr ""
+"Eine durchgehende Schiene mit leuchtendem „Jetzt\"-Punkt (.is-now) und benannten Lücken statt zwei Zeilen direkt untereinander: zwei Wochen ohne Termin sollen sich auch wie zwei Wochen ohne Termin lesen. Die Quelle eines Eintrags ist eine 3px-Farbkante (.mf-stop-source) und kein weiteres farbiges Wort, das mit dem Titel konkurriert."
+
+#: templates/example_ui_components.html
+msgid ""
+"One trap worth knowing: forms.css styles inputs via input[type=\"search\"] (specificity 0,1,1), which beats any bare class (0,1,0) — a plain .my-input rule is silently ignored. That is why the selector below is input.mf-search-input, qualified with the element. Do the same whenever you restyle an input."
+msgstr ""
+"Eine Falle, die man kennen sollte: forms.css stylt Inputs über input[type=\"search\"] (Spezifität 0,1,1) und schlägt damit jede reine Klasse (0,1,0) — eine schlichte .my-input-Regel wird stillschweigend ignoriert. Deshalb heißt der Selektor unten input.mf-search-input, also mit dem Element qualifiziert. Mach das genauso, wenn du ein Input umstylst."
+
+#: templates/example_ui_components.html
+msgid ""
+"Open"
+msgstr ""
+"Offen"
+
+#: templates/example_ui_components.html
+msgid ""
+"Pending"
+msgstr ""
+"Ausstehend"
+
+#: templates/example_ui_components.html
+msgid ""
+"Poster grid — .mf-poster-grid / .mf-poster-card"
+msgstr ""
+"Posterraster — .mf-poster-grid / .mf-poster-card"
+
+#: templates/example_ui_components.html
+msgid ""
+"Progress track — .mf-progress"
+msgstr ""
+"Fortschrittsbahn — .mf-progress"
+
+#: templates/example_ui_components.html
+msgid ""
+"Requested"
+msgstr ""
+"Angefragt"
+
+#: templates/example_ui_components.html
+msgid ""
+"Reset filters"
+msgstr ""
+"Filter zurücksetzen"
+
+#: templates/example_ui_components.html
+msgid ""
+"Row 1 finds (search, navigation), row 2 shapes the view (filters left, view options right, pushed there by .mf-toolbar-gap). A single row with five equal control groups is what made the old toolbars read as noise."
+msgstr ""
+"Zeile 1 findet (Suche, Navigation), Zeile 2 formt die Ansicht (Filter links, Ansichtsoptionen rechts, dorthin geschoben von .mf-toolbar-gap). Eine einzelne Zeile mit fünf gleichwertigen Kontrollgruppen war der Grund, warum die alten Toolbars als Rauschen gelesen haben."
+
+#: templates/example_ui_components.html
+msgid ""
+"Search field — .mf-search"
+msgstr ""
+"Suchfeld — .mf-search"
+
+#: templates/example_ui_components.html
+msgid ""
+"Search…"
+msgstr ""
+"Suchen…"
+
+#: templates/example_ui_components.html
+msgid ""
+"Status goes in the corner flag instead of yet another pill, and attribution sits in the foot — permanently visible, never behind a hover, because on touch there is no hover and \"who asked for this\" is what people scan the page for. The action overlay is secondary and, under @media (hover:none), folds out below the card instead."
+msgstr ""
+"Der Status steht im Eckband statt in noch einer Pille, und die Attribution sitzt in der Fußzeile — dauerhaft sichtbar, nie hinter einem Hover, denn auf Touch gibt es kein Hover und „wer hat das angefragt\" ist genau das, wonach man die Seite scannt. Die Aktions-Überlagerung ist nachrangig und klappt unter @media (hover:none) stattdessen unter der Karte auf."
+
+#: templates/example_ui_components.html
+msgid ""
+"The inline variant for \"your filters match nothing\" inside a view that is otherwise working — as opposed to .empty-state above, which is the big centred block for a page with no data at all. Add .is-error to turn it red."
+msgstr ""
+"Die Inline-Variante für „deine Filter treffen nichts\" in einer ansonsten funktionierenden Ansicht — im Gegensatz zu .empty-state oben, dem großen zentrierten Block für eine Seite ganz ohne Daten. Mit .is-error wird sie rot."
+
+#: templates/example_ui_components.html
+msgid ""
+"Timeline — .mf-timeline / .mf-stop"
+msgstr ""
+"Zeitschiene — .mf-timeline / .mf-stop"
+
+#: templates/example_ui_components.html
+msgid ""
+"Today"
+msgstr ""
+"Heute"
+
+#: templates/example_ui_components.html
+msgid ""
+"Toolbar — .mf-toolbar with one row per job"
+msgstr ""
+"Toolbar — .mf-toolbar mit einer Zeile pro Aufgabe"
+
+#: templates/example_ui_components.html
+msgid ""
+"by"
+msgstr ""
+"von"
+
+#: templates/example_ui_components.html
+msgid ""
+"in 4 days"
+msgstr ""
+"in 4 Tagen"
+
+#: templates/example_ui_components.html
+msgid ""
+"web/static/mf_components.css — the building blocks of the July 2026 redesign. Division of labour: forms.css holds the form-control vocabulary (checkboxes, segmented buttons, token fields — everything above), mf_components.css holds the layout and content vocabulary (search, toolbar, poster grid, timeline, progress). It is NOT loaded globally, so link it in your page's styles block."
+msgstr ""
+"web/static/mf_components.css — die Bausteine des Relaunches vom Juli 2026. Arbeitsteilung: forms.css hält das Formular-Vokabular (Checkboxen, Segmented Buttons, Token-Felder — alles weiter oben), mf_components.css das Layout- und Inhalts-Vokabular (Suche, Toolbar, Posterraster, Zeitschiene, Fortschritt). Die Datei wird nicht global geladen — verlinke sie im styles-Block deiner Seite."
+
+#: templates/example_ui_components.html
+msgid "Pagination bar"
+msgstr "Seitennavigationsleiste"
+
+#: templates/example_ui_components.html
+msgid "web/static/mf_components.css — the row a .mf-pagination pager usually sits in: a running count (Showing X-Y of Z), the pager itself, and a results-per-page select. Stacks to one centered column below 480px. See libRenderPagination() in library.js for a full client-side reference implementation."
+msgstr "web/static/mf_components.css — die Zeile, in der ein .mf-pagination-Pager normalerweise sitzt: eine laufende Zählung (Zeige X-Y von Z), der Pager selbst und eine Auswahl für Ergebnisse pro Seite. Bricht unterhalb von 480px auf eine zentrierte Spalte um. Eine vollständige clientseitige Referenzimplementierung siehe libRenderPagination() in library.js."
+
+#: templates/example_ui_components.html
+msgid "Results per page"
+msgstr "Ergebnisse pro Seite"

@@ -1,599 +1,1361 @@
-// ===== Seerr requests page =====
+/* ===================================================================
+   MediaForge — Seerr (Jellyseerr/Overseerr) requests page
+   -------------------------------------------------------------------
+   Rewritten as a single IIFE module: no globals beyond the small
+   `window.Seerr` surface the template and app.js need, no inline
+   onclick handlers (everything is event delegation), and every value
+   that reaches the DOM goes through esc() / escAttr() / safeUrl().
 
-const SEERR_PAGE_SIZE = 20;
+   Filtering, searching and sorting are done SERVER-side
+   (/api/seerr/requests) so they cover the whole request set rather
+   than only the pages infinite scroll happens to have loaded.
 
-// NOTE: CineInfo/TMDB enrichment (provider pills, rating badge, FSK badge)
-// used to be duplicated here for the old Seerr-only series modal. That modal
-// is gone (see openSeriesFromSeerr() in app.js) — the standard modal's own
-// enrichModalWithTmdb() in app.js now covers this for the Seerr page too.
+   Talks to:
+     GET  /api/seerr/requests?take&skip&q&status&type&sort&dir
+     POST /api/seerr/requests/batch          {action, ids, items}
+     POST /api/seerr/requests/<id>/hide|unhide|decline
+     GET  /api/seerr/hidden
+     POST /api/search                        (search modal)
+     GET  /api/series?url=...                (search-result posters)
 
-let _seerrAutosyncJobsPromise = null;
+   The series/movie detail modal itself is the shared implementation
+   from templates/shared_modals.html — opened via app.js's
+   openSeriesFromSeerr(). Nothing modal-related lives in this file.
+   =================================================================== */
+(function () {
+  "use strict";
 
-async function checkAutosyncTitle(searchString) {
-    if (!searchString) return false;
-    if (!_seerrAutosyncJobsPromise) {
-        _seerrAutosyncJobsPromise = (async () => {
-            try {
-                const response = await fetch("/api/autosync");
-                if (!response.ok) {
-                    throw new Error(t("HTTP-Fehler! Status: ${response.status}", "HTTP error! Status: ${response.status}"));
-                }
-                const data = await response.json();
-                return data.jobs || [];
-            } catch (error) {
-                console.error(t("Fehler bei der API-Abfrage:", "Error checking autosync:"), error);
-                return [];
-            }
-        })();
-    }
-    
+  var PAGE_SIZE = 20;
+  var SEARCH_DEBOUNCE_MS = 320;
+  var MAX_BATCH = 50;   // must match MAX_BATCH_IDS in routes/seerr.py
+
+  // ── State ────────────────────────────────────────────────────────
+  var S = {
+    q: "",
+    status: "all",           // all | pending | approved
+    type: "all",             // all | tv | movie
+    sort: "added",           // added | title | status
+    dir: "desc",             // asc | desc
+    layout: "grid",          // grid (poster) | list (compact row)
+    skip: 0,
+    total: null,
+    facets: {},
+    loading: false,
+    seq: 0,                  // generation counter: stale responses are dropped
+    searchSeq: 0,
+    observer: null,
+    items: {},               // id -> request payload (for batch metadata)
+    selected: {},            // id -> true
+    selectMode: false,
+    truncated: false,
+    // Context carried into the shared series/movie modal (app.js).
+    ctxReqId: null,
+    ctxStatus: null,
+    ctxIsMovie: false,
+  };
+
+  var PREF_KEY = "mf-seerr-prefs-v1";
+
+  function loadPrefs() {
     try {
-        const jobs = await _seerrAutosyncJobsPromise;
-        const lowerSearch = searchString.toLowerCase();
-        for (let job of jobs) {
-            const title = job.title || "";
-            if (title.toLowerCase().includes(lowerSearch)) {
-                return true; 
-            }
-        }
-    } catch (error) {
-        console.error(t("Fehler beim Prüfen von Autosync:", "Error checking autosync:"), error);
-    }
+      var raw = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
+      ["status", "type", "sort", "dir", "layout"].forEach(function (k) {
+        if (typeof raw[k] === "string") S[k] = raw[k];
+      });
+    } catch (e) { /* corrupt prefs are not worth a broken page */ }
+  }
 
-    return false;
-}
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREF_KEY, JSON.stringify({
+        status: S.status, type: S.type, sort: S.sort, dir: S.dir, layout: S.layout,
+      }));
+    } catch (e) { /* private mode / quota — filters just do not persist */ }
+  }
 
-let _seerrSkip = 0;
-let _seerrTotal = null;
-let _seerrLoading = false;
-let _seerrObserver = null;
+  // ── Escaping ─────────────────────────────────────────────────────
+  // Single quotes included: attributes in this file are written with
+  // either quote character, and an escaper covering only one of them is
+  // a trap for whoever copies it next.
+  function esc(s) {
+    return (s == null ? "" : String(s)).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c];
+    });
+  }
+  var escAttr = esc;
 
-// State for the search modal / series modal context. The series modal
-// itself now lives in shared_modals.html (see openSeriesFromSeerr() in
-// app.js) -- these three fields carry the Seerr request context into it.
-let _seerrIsMovie = false;
-let _seerrCurrentReqId = null;   // Seerr request id when a series/movie was opened from a request
-let _seerrCurrentStatus = null;  // 1=pending, 2=approved
+  // Only same-origin/relative and http(s) URLs may reach a src= or a CSS
+  // url(). Everything else (javascript:, data:, vbscript:) is dropped.
+  function safeUrl(u) {
+    var s = String(u == null ? "" : u).trim();
+    if (!s) return "";
+    if (/^(https?:)?\/\//i.test(s) || s.charAt(0) === "/") return s;
+    return "";
+  }
 
-// ---------------------------------------------------------------
-// Card list + lazy loading
-// ---------------------------------------------------------------
+  // A CSS url() lives inside a style attribute, so it needs BOTH the CSS
+  // string escape (quote / backslash / parenthesis) and the HTML attribute
+  // escape that esc() applies.
+  function cssUrl(u) {
+    var s = safeUrl(u);
+    if (!s) return "";
+    return escAttr("url('" + s.replace(/[\\'"()]/g, "\\$&").replace(/[\r\n]/g, "") + "')");
+  }
 
-async function seerrLoad() {
-  _seerrAutosyncJobsPromise = null;
-  _seerrSkip = 0;
-  _seerrTotal = null;
-  _seerrLoading = false;
-  if (_seerrObserver) { _seerrObserver.disconnect(); _seerrObserver = null; }
+  function $(id) { return document.getElementById(id); }
 
-  const list = document.getElementById("seerrList");
-  list.innerHTML = '<div class="queue-empty" style="padding:40px 0">' + t('Lade Anfragen…', 'Loading requests…') + '</div>';
-  seerrSetStatus("loading");
-  await seerrFetchPage(true);
-}
+  // Attribute-selector-safe id (older browsers without CSS.escape fall back
+  // to a numeric-only guard — request ids are integers server-side).
+  function cssId(v) {
+    var s = String(v);
+    if (window.CSS && typeof CSS.escape === "function") return CSS.escape(s);
+    return s.replace(/[^\w-]/g, "");
+  }
 
-async function seerrFetchPage(isFirst) {
-  if (_seerrLoading) return;
-  if (_seerrTotal !== null && _seerrSkip >= _seerrTotal) return;
-  _seerrLoading = true;
-
-  const list = document.getElementById("seerrList");
-  const oldSentinel = document.getElementById("seerrSentinel");
-  if (oldSentinel) oldSentinel.remove();
-
-  try {
-    const resp = await fetch(`/api/seerr/requests?take=${SEERR_PAGE_SIZE}&skip=${_seerrSkip}`);
-    const data = await resp.json();
-
-    if (data.error) {
-      if (isFirst) {
-        list.innerHTML = data.error.includes("nicht konfiguriert")
-          ? t('<div class="queue-empty">Seerr ist noch nicht konfiguriert. Bitte trage URL und API-Key unter <a href="/integrations" style="color:var(--accent)">Integrationen</a> ein.</div>', '<div class="queue-empty">Seerr is not yet configured. Please enter the URL and API key under <a href="/integrations" style="color:var(--accent)">Integrations</a>.</div>')
-          : `<div class="queue-empty" style="color:var(--error)">${escS(data.error)}</div>`;
-        seerrSetStatus("error");
-      }
-      _seerrLoading = false;
-      return;
-    }
-
-    const requests = data.requests || [];
-    _seerrTotal = data.total ?? requests.length;
-    _seerrSkip += requests.length;
-
-    if (isFirst) {
-      if (!requests.length) {
-        list.innerHTML = '<div class="queue-empty">' + t('Keine ausstehenden oder angenommenen Serien-Anfragen.', 'No pending or approved series requests.') + '</div>';
-        seerrSetStatus("ok", "0 " + t("Anfragen", "requests"));
-        _seerrLoading = false;
-        return;
-      }
-      list.innerHTML = '<div class="seerr-grid" id="seerrGrid"></div>';
-      seerrSetStatus("ok", `${_seerrTotal} ${t("Anfragen", "requests")}`);
-      const badge = document.getElementById("seerrBadge");
-      if (badge) { badge.textContent = _seerrTotal; badge.style.display = _seerrTotal > 0 ? "" : "none"; }
-    }
-
-    const grid = document.getElementById("seerrGrid");
-    requests.forEach(req => grid.insertAdjacentHTML("beforeend", seerrRenderCard(req)));
-
-    if (_seerrSkip < _seerrTotal) {
-      const sentinel = document.createElement("div");
-      sentinel.id = "seerrSentinel";
-      sentinel.className = "seerr-sentinel";
-      sentinel.innerHTML = '<span class="lib-scan-spinner" style="display:inline-block"></span>';
-      list.appendChild(sentinel);
-      if (!_seerrObserver) {
-        _seerrObserver = new IntersectionObserver(
-          entries => { if (entries[0].isIntersecting) seerrFetchPage(false); },
-          { rootMargin: "200px" }
-        );
-      }
-      _seerrObserver.observe(sentinel);
-    }
-  } catch (e) {
-    if (isFirst) {
-      list.innerHTML = `<div class="queue-empty" style="color:var(--error)">${t('Fehler', 'Error')}: ${escS(e.message)}</div>`;
-      seerrSetStatus("error");
+  // ── Error codes → messages ───────────────────────────────────────
+  // The backend never returns upstream text (it echoes the Seerr URL and
+  // sometimes the API key); it returns these stable codes instead.
+  function errorMessage(code) {
+    switch (code) {
+      case "not_configured":
+        return t("Seerr ist noch nicht konfiguriert.", "Seerr is not configured yet.");
+      case "unreachable":
+        return t("Seerr ist nicht erreichbar.", "Seerr is unreachable.");
+      case "upstream_error":
+        return t("Seerr hat die Aktion abgelehnt.", "Seerr rejected the action.");
+      case "forbidden":
+        return t("Dafür fehlen dir die Rechte (nur Admins).", "You are not allowed to do that (admins only).");
+      case "bad_action":
+      case "bad_ids":
+        return t("Ungültige Anfrage.", "Invalid request.");
+      default:
+        return t("Unbekannter Fehler.", "Unknown error.");
     }
   }
-  _seerrLoading = false;
-}
 
-function seerrRenderCard(req) {
-  const poster = req.posterUrl
-    ? `<img class="seerr-card-poster" src="${req.posterUrl}" alt="" loading="lazy">`
-    : `<div class="seerr-card-poster seerr-card-poster-placeholder"><img src="/static/placeholder.svg" style="width: 100%;object-fit: cover;object-position: center;height: 120%;min-width: 100%;min-height: 120%;"/></div>`;
+  function toast(msg) {
+    if (typeof showToast === "function") showToast(msg);
+    else console.warn("[Seerr]", msg);
+  }
 
-  const year = req.firstAirDate || "";
+  // ── Dates ────────────────────────────────────────────────────────
+  var LOCALE = window.__LANG === "de" ? "de-DE" : "en-US";
 
-  const release = req.releaseDate || "";
+  function formatCreated(iso) {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleDateString(LOCALE, {
+        day: "2-digit", month: "2-digit", year: "numeric",
+      });
+    } catch (e) { return ""; }
+  }
 
-  function _formatDate(dateString) {
-  if (!dateString) return "";
-  
-  const monate = [
-    t("Januar", "January"), 
-    t("Februar", "February"), 
-    t("März", "March"), 
-    t("April", "April"), 
-    t("Mai", "May"), 
-    t("Juni", "June"), 
-    t("Juli", "July"), 
-    t("August", "August"), 
-    t("September", "September"), 
-    t("Oktober", "October"), 
-    t("November", "November"), 
-    t("Dezember", "December")
-  ];
-  
-  const [year, month, day] = dateString.split("-");
-  
-  const monatsName = monate[parseInt(month, 10) - 1];
-  
-  return `${parseInt(day, 10)}. ${monatsName} ${year}`;
-}
+  // Release dates arrive as a plain "YYYY-MM-DD" (no time, no zone). Feeding
+  // that to new Date() would shift it by the local UTC offset and show the
+  // previous day west of Greenwich, so anchor it in UTC and format in UTC.
+  function formatRelease(ymd) {
+    if (!ymd) return "";
+    var p = String(ymd).split("-");
+    if (p.length < 3) return String(ymd);
+    try {
+      var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+      return new Intl.DateTimeFormat(LOCALE, {
+        day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
+      }).format(d);
+    } catch (e) { return String(ymd); }
+  }
 
-  // Season badges
-  let seasonBadges = "";
-  if (!req.isMovie) {
-    const reqSeasons = Array.isArray(req.requestedSeasons) && req.requestedSeasons.length
-      ? req.requestedSeasons : [];
-    if (reqSeasons.length) {
-      seasonBadges = `<div class="seerr-season-badges">
-        <span class="seerr-season-label">${t('Staffel', 'Season')}${window.__LANG === 'de' && reqSeasons.length !== 1 ? 'n' : ''}</span>
-        ${reqSeasons.map(n => `<span class="seerr-season-badge">${n}</span>`).join("")}
-      </div>`;
+  // ── AutoSync "in sync" lookup ────────────────────────────────────
+  // One /api/autosync call per page load, shared by every card. The old
+  // implementation issued the fetch inside the card renderer and then
+  // poked the DOM from a setTimeout(0) — one promise per card.
+  var _autosyncTitles = null;
+
+  function autosyncTitles() {
+    if (!_autosyncTitles) {
+      _autosyncTitles = fetch("/api/autosync")
+        .then(function (r) { return r.ok ? r.json() : { jobs: [] }; })
+        .then(function (d) {
+          return (d.jobs || [])
+            .map(function (j) { return String(j.title || "").toLowerCase(); })
+            .filter(Boolean);
+        })
+        .catch(function () { return []; });
+    }
+    return _autosyncTitles;
+  }
+
+  function markAutosyncPills(requests) {
+    var series = requests.filter(function (r) { return !r.isMovie && r.title; });
+    if (!series.length) return;
+    autosyncTitles().then(function (titles) {
+      if (!titles.length) return;
+      series.forEach(function (req) {
+        var needle = String(req.title).toLowerCase();
+        var hit = titles.some(function (jt) {
+          return jt.indexOf(needle) !== -1 || needle.indexOf(jt) !== -1;
+        });
+        if (!hit) return;
+        var pill = document.querySelector('.seerr-sync-pill[data-req-id="' + cssId(req.id) + '"]');
+        if (!pill) return;
+        pill.textContent = t("In Sync", "In sync");
+        pill.classList.add("seerr-status-available");
+        pill.hidden = false;
+      });
+    });
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────
+
+  // The corner flag answers "where does this stand" in one word. Download
+  // progress wins over request status when there is any, because a request
+  // that is already downloading has clearly been approved.
+  function statusMeta(req) {
+    if (req.downloadStatus === 4) {
+      return { label: t("Teilweise", "Partial"), flag: "partial" };
+    }
+    if (req.downloadStatus === 5) {
+      return { label: t("Geladen", "Downloaded"), flag: "done" };
+    }
+    if (req.status === 2) return { label: t("Angenommen", "Approved"), flag: "approved" };
+    if (req.status === 1) return { label: t("Ausstehend", "Pending"), flag: "pending" };
+    return { label: "", flag: "" };
+  }
+
+  // Request -> requested -> approved -> downloaded, as a track. Two status
+  // pills side by side never said which of them comes first.
+  function progressHtml(req) {
+    var steps = [
+      { label: t("Angefragt", "Requested"), state: "is-done" },
+      {
+        label: t("Angenommen", "Approved"),
+        state: req.status === 2 ? "is-done" : "is-active",
+      },
+      {
+        label: t("Geladen", "Downloaded"),
+        state: req.downloadStatus === 5 ? "is-done"
+             : req.downloadStatus === 4 ? "is-active" : "",
+      },
+    ];
+    return '<span class="mf-progress">' + steps.map(function (s) {
+      return '<span class="mf-progress-step ' + s.state + '">' +
+        '<span class="mf-progress-bar"></span>' +
+        '<span class="mf-progress-label">' + esc(s.label) + "</span></span>";
+    }).join("") + "</span>";
+  }
+
+  function initials(name) {
+    var parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2);
+    return parts[0][0] + parts[parts.length - 1][0];
+  }
+
+  // "3 days ago" reads faster than a date when you are scanning a backlog.
+  function relTime(iso) {
+    if (!iso) return "";
+    var then = new Date(iso).getTime();
+    if (isNaN(then)) return "";
+    var days = Math.floor((Date.now() - then) / 86400000);
+    if (days <= 0) return t("heute", "today");
+    if (days === 1) return t("gestern", "yesterday");
+    if (days < 30) return t("vor " + days + " Tagen", days + "d ago");
+    var months = Math.round(days / 30);
+    return months === 1
+      ? t("vor 1 Monat", "1mo ago")
+      : t("vor " + months + " Monaten", months + "mo ago");
+  }
+
+  function badgesHtml(req) {
+    if (req.isMovie) {
+      return '<span class="seerr-type-badge seerr-type-movie">' + esc(t("Film", "Movie")) + "</span>";
+    }
+    var out = '<span class="seerr-type-badge seerr-type-series">' + esc(t("Serie", "Series")) + "</span>";
+    var seasons = Array.isArray(req.requestedSeasons) ? req.requestedSeasons : [];
+    if (seasons.length) {
+      out += '<span class="seerr-season-label">' + esc(t("Staffel", "Season")) +
+        (window.__LANG === "de" && seasons.length !== 1 ? "n" : "") + "</span>";
+      out += seasons.map(function (n) {
+        return '<span class="seerr-season-badge">' + esc(n) + "</span>";
+      }).join("");
     } else if (req.numberOfSeasons) {
-      seasonBadges = `<div class="seerr-season-badges"><span class="seerr-season-label">${req.numberOfSeasons} ${t('Staffel', 'Season')}${window.__LANG === 'de' && req.numberOfSeasons !== 1 ? 'n' : ''}</span></div>`;
+      out += '<span class="seerr-season-label">' + esc(req.numberOfSeasons) + " " +
+        esc(t("Staffel", "Season")) +
+        (window.__LANG === "de"
+          ? (req.numberOfSeasons !== 1 ? "n" : "")
+          : (req.numberOfSeasons !== 1 ? "s" : "")) + "</span>";
     }
-  } else {
-    seasonBadges = `<div class="seerr-season-badges"><span class="seerr-season-label">${t('Film', 'Movie')}</span></div>`;
+    return out;
   }
 
-  const STATUS_LABEL = { 1: t("Ausstehend", "Pending"), 2: t("Angenommen", "Approved") };
-  const STATUS_DOWN  = { 3: t("Nicht geladen", "Not loaded"), 4: t("Teilweise", "Partial") };
-  const STATUS_CLASS = { 1: "seerr-status-pending", 2: "seerr-status-approved", 3: "seerr-status-notavailable", 4: "seerr-status-partial" };
+  function gridClass() {
+    return S.layout === "list" ? "seerr-rows" : "mf-poster-grid";
+  }
 
-  const statusLabel     = STATUS_LABEL[req.status] || "";
-  const statusClass     = STATUS_CLASS[req.status] || "";
-  const statusLabelDown = STATUS_DOWN[req.downloadStatus] || "";
-  const statusClassDown = STATUS_CLASS[req.downloadStatus] || "";
+  function cardHtml(req) {
+    return S.layout === "list" ? rowHtml(req) : posterHtml(req);
+  }
 
-  const activePill  = statusLabelDown || statusLabel;
-  const activeClass = statusLabelDown ? statusClassDown : statusClass;
+  function selectBox(id, cls) {
+    return '<label class="' + cls + '" title="' + escAttr(t("Auswählen", "Select")) + '">' +
+      '<input type="checkbox" class="chb-main seerr-card-checkbox" data-req-id="' + escAttr(id) + '"' +
+      (S.selected[id] ? " checked" : "") +
+      ' aria-label="' + escAttr(t("Anfrage auswählen", "Select request")) + '">' +
+      "</label>";
+  }
 
-  const reqBy = req.requestedBy ? escS(req.requestedBy) : "";
-  const date  = req.createdAt ? formatSeerrDate(req.createdAt) : "";
-  const overview = req.overview ? escS(req.overview) : "";
+  function hideBtn(id) {
+    return '<button type="button" class="seerr-hide-btn" data-action="hide" data-req-id="' + escAttr(id) + '"' +
+      ' title="' + escAttr(t("Verstecken", "Hide")) + '"' +
+      ' aria-label="' + escAttr(t("Anfrage verstecken", "Hide request")) + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true">' +
+        '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>' +
+        '<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>' +
+        '<line x1="1" y1="1" x2="23" y2="23"/>' +
+      "</svg></button>";
+  }
 
-  let syncStatus = "";
-  if (!req.isMovie) {
-    const uniqueId = `autosync-pill-${req.id}`;
-    
-    syncStatus = `<span id="${uniqueId}" class="seerr-status-pill" style="display: none;"></span>`;
+  function actionButtons(req, size) {
+    var cls = "btn btn-sm" + (size === "block" ? "" : "");
+    var out = '<button type="button" class="btn btn-primary btn-sm" data-action="search" data-req-id="' +
+      escAttr(req.id) + '">' + esc(t("Suchen", "Search")) + "</button>";
+    if (window.seerrCanDecline && req.status !== 2) {
+      out += '<button type="button" class="' + cls + ' btn-reject" data-action="decline" data-req-id="' +
+        escAttr(req.id) + '">' + esc(t("Ablehnen", "Decline")) + "</button>";
+    }
+    return out;
+  }
 
-    checkAutosyncTitle(req.title).then(isInSync => {
-      setTimeout(() => {
-        const pillElement = document.getElementById(uniqueId);
-        
-        if (!pillElement) {
-          console.warn(t("[Autosync] Element mit ID ${uniqueId} wurde noch nicht im DOM gefunden!", "[Autosync] Element with ID ${uniqueId} was not found in the DOM!"));
+  // Facts line over the artwork: type, season count, rating. Short enough
+  // to stay on one line at the narrowest grid column.
+  function factsLine(req) {
+    var bits = [];
+    bits.push(req.isMovie ? t("Film", "Movie") : t("Serie", "Series"));
+    var seasons = Array.isArray(req.requestedSeasons) ? req.requestedSeasons : [];
+    if (!req.isMovie) {
+      if (seasons.length) {
+        bits.push(seasons.length === 1
+          ? t("Staffel " + seasons[0], "Season " + seasons[0])
+          : t(seasons.length + " Staffeln", seasons.length + " seasons"));
+      } else if (req.numberOfSeasons) {
+        bits.push(req.numberOfSeasons === 1
+          ? t("1 Staffel", "1 season")
+          : t(req.numberOfSeasons + " Staffeln", req.numberOfSeasons + " seasons"));
+      }
+    }
+    if (req.voteAverage) bits.push("★ " + Number(req.voteAverage).toFixed(1));
+    return bits.join(" · ");
+  }
+
+  // Attribution stays in the card foot, outside the hover overlay: knowing
+  // who asked is the thing you scan this page for, and touch has no hover.
+  function footHtml(req) {
+    if (!req.requestedBy && !req.createdAt) return "";
+    var who = req.requestedBy
+      ? '<span class="mf-avatar mf-avatar--sm" aria-hidden="true">' + esc(initials(req.requestedBy)) + "</span>" +
+        '<span class="mf-poster-who">' + esc(t("von", "by")) + " <b>" + esc(req.requestedBy) + "</b></span>"
+      : '<span class="mf-poster-who">' + esc(t("Angefragt", "Requested")) + "</span>";
+    var when = req.createdAt
+      ? '<span class="mf-poster-when">' + esc(relTime(req.createdAt)) + "</span>"
+      : "";
+    return '<div class="mf-poster-foot">' + who + when + "</div>";
+  }
+
+  // Air/release date, short enough for a poster column. Series get the
+  // first-air date, movies their release date; the backend already picks
+  // the right one and hands it over as `releaseDate`.
+  function releaseLine(req) {
+    if (!req.releaseDate) return "";
+    var p = String(req.releaseDate).split("-");
+    if (p.length < 3) return String(req.releaseDate);
+    try {
+      var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+      var text = new Intl.DateTimeFormat(LOCALE, {
+        day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+      }).format(d);
+      // Say what the date means — a bare date on a request card is ambiguous.
+      var upcoming = d.getTime() > Date.now();
+      var label = req.isMovie
+        ? (upcoming ? t("Start", "Releases") : t("Start", "Released"))
+        : (upcoming ? t("Start", "Premieres") : t("seit", "since"));
+      return label + " " + text;
+    } catch (e) { return String(req.releaseDate); }
+  }
+
+  function posterHtml(req) {
+    var id = req.id;
+    var st = statusMeta(req);
+    var poster = safeUrl(req.posterUrl);
+    var release = releaseLine(req);
+
+    return '<article class="seerr-card mf-poster-card' + (S.selected[id] ? " is-selected" : "") +
+      '" data-req-id="' + escAttr(id) + '" tabindex="0">' +
+
+      '<div class="mf-poster-art">' +
+        (st.flag
+          ? '<span class="mf-poster-flag mf-poster-flag--' + escAttr(st.flag) + '">' +
+            esc(st.label) + "</span>"
+          : "") +
+        selectBox(id, "mf-poster-select") +
+        (poster
+          ? '<img src="' + escAttr(poster) + '" alt="" loading="lazy" decoding="async">'
+          : "") +
+        '<div class="mf-poster-scrim">' +
+          "<div>" +
+            (release
+              ? '<div class="seerr-poster-release">' + esc(release) + "</div>"
+              : "") +
+            '<div class="mf-poster-meta">' + esc(factsLine(req)) + "</div>" +
+            '<h3 class="mf-poster-title">' + esc(req.title) + "</h3>" +
+          "</div>" +
+        "</div>" +
+        '<div class="mf-poster-actions">' +
+          (req.overview
+            ? '<p class="seerr-poster-overview">' + esc(req.overview) + "</p>"
+            : "") +
+          actionButtons(req) +
+        "</div>" +
+        hideBtn(id) +
+      "</div>" +
+
+      footHtml(req) +
+      '<span class="seerr-sync-pill" data-req-id="' + escAttr(id) + '" hidden></span>' +
+    "</article>";
+  }
+
+  // Compact row: same data, ordered for scanning rather than browsing.
+  function rowHtml(req) {
+    var id = req.id;
+    var st = statusMeta(req);
+    var poster = safeUrl(req.posterUrl);
+
+    return '<article class="seerr-card seerr-row' + (S.selected[id] ? " is-selected" : "") +
+      '" data-req-id="' + escAttr(id) + '" tabindex="0">' +
+      selectBox(id, "seerr-row-select") +
+      (poster
+        ? '<img class="seerr-row-art" src="' + escAttr(poster) + '" alt="" loading="lazy" decoding="async">'
+        : '<span class="seerr-row-art" aria-hidden="true"></span>') +
+      '<div class="seerr-row-main">' +
+        '<h3 class="seerr-row-title">' + esc(req.title) +
+          (st.flag
+            ? '<span class="seerr-row-flag seerr-row-flag--' + escAttr(st.flag) + '">' +
+              esc(st.label) + "</span>"
+            : "") +
+        "</h3>" +
+        '<div class="seerr-row-meta">' + esc(factsLine(req)) +
+          (releaseLine(req) ? " · " + esc(releaseLine(req)) : "") +
+          (req.requestedBy
+            ? " · " + esc(t("von", "by")) + " " + esc(req.requestedBy)
+            : "") +
+          (req.createdAt ? " · " + esc(relTime(req.createdAt)) : "") +
+          '<span class="seerr-sync-pill" data-req-id="' + escAttr(id) + '" hidden></span>' +
+        "</div>" +
+      "</div>" +
+      '<div class="seerr-row-progress">' + progressHtml(req) + "</div>" +
+      '<div class="seerr-row-actions">' + actionButtons(req) + hideBtn(id) + "</div>" +
+    "</article>";
+  }
+
+  function emptyHtml(kind, detail) {
+    var icon = '<svg class="seerr-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 2v4M16 2v4"/></svg>';
+    var title = "";
+    var hintHtml = "";
+    if (kind === "not_configured") {
+      title = t("Seerr ist noch nicht konfiguriert.", "Seerr is not configured yet.");
+      // The only interpolated markup here is a fixed literal link.
+      hintHtml = t('Trage URL und API-Key unter <a href="/integrations#seerr">Integrationen</a> ein.',
+                   'Add the URL and API key under <a href="/integrations#seerr">Integrations</a>.');
+    } else if (kind === "error") {
+      title = detail || t("Fehler beim Laden.", "Failed to load.");
+    } else if (kind === "filtered") {
+      title = t("Keine Anfrage passt zu den Filtern.", "No request matches your filters.");
+      hintHtml = esc(t("Setze Suche und Filter zurück, um alles zu sehen.",
+                       "Reset the search and filters to see everything."));
+    } else {
+      title = t("Keine ausstehenden oder angenommenen Anfragen.",
+                "No pending or approved requests.");
+    }
+    return '<div class="seerr-empty' + (kind === "error" ? " seerr-empty-error" : "") + '">' +
+      icon +
+      "<p>" + esc(title) + "</p>" +
+      (hintHtml ? '<p class="seerr-empty-hint">' + hintHtml + "</p>" : "") +
+      (kind === "filtered"
+        ? '<button type="button" class="btn btn-secondary btn-sm" data-action="reset-filters">' +
+          esc(t("Filter zurücksetzen", "Reset filters")) + "</button>"
+        : "") +
+      "</div>";
+  }
+
+  function skeletonHtml(n) {
+    var out = "";
+    for (var i = 0; i < n; i++) {
+      out += S.layout === "list"
+        ? '<div class="seerr-card seerr-row seerr-skeleton" aria-hidden="true">' +
+            '<span class="seerr-row-art skeleton"></span>' +
+            '<div class="seerr-row-main">' +
+              '<div class="skeleton seerr-skeleton-line" style="width:42%;height:15px"></div>' +
+              '<div class="skeleton seerr-skeleton-line" style="width:66%"></div>' +
+            "</div></div>"
+        : '<div class="mf-poster-card seerr-skeleton" aria-hidden="true">' +
+            '<div class="mf-poster-art skeleton"></div>' +
+            '<div class="mf-poster-foot">' +
+              '<div class="skeleton seerr-skeleton-line" style="width:64%"></div>' +
+            "</div></div>";
+    }
+    return out;
+  }
+
+  // ── Data loading ─────────────────────────────────────────────────
+
+  function buildQuery() {
+    var p = new URLSearchParams();
+    p.set("take", String(PAGE_SIZE));
+    p.set("skip", String(S.skip));
+    if (S.q) p.set("q", S.q);
+    if (S.status !== "all") p.set("status", S.status);
+    if (S.type !== "all") p.set("type", S.type);
+    p.set("sort", S.sort);
+    p.set("dir", S.dir);
+    return p.toString();
+  }
+
+  function reload() {
+    S.skip = 0;
+    S.total = null;
+    S.items = {};
+    S.loading = false;
+    if (S.observer) { S.observer.disconnect(); S.observer = null; }
+    var list = $("seerrList");
+    if (list) list.innerHTML = '<div class="' + gridClass() + '">' + skeletonHtml(S.layout === "list" ? 4 : 8) + "</div>";
+    setStatus("loading");
+    return fetchPage(true);
+  }
+
+  function fetchPage(isFirst) {
+    if (S.loading) return Promise.resolve();
+    if (!isFirst && S.total !== null && S.skip >= S.total) return Promise.resolve();
+    S.loading = true;
+    var seq = ++S.seq;
+
+    var sentinel = $("seerrSentinel");
+    if (sentinel) sentinel.remove();
+
+    return fetch("/api/seerr/requests?" + buildQuery(), { headers: { Accept: "application/json" } })
+      .then(function (r) {
+        return r.json()
+          .catch(function () { return {}; })
+          .then(function (d) { return { ok: r.ok, data: d }; });
+      })
+      .then(function (res) {
+        if (seq !== S.seq) return;             // a newer query already won
+        var list = $("seerrList");
+        if (!list) return;
+        var data = res.data || {};
+
+        if (!res.ok || data.error) {
+          if (isFirst) {
+            var code = data.error || "unreachable";
+            list.innerHTML = code === "not_configured"
+              ? emptyHtml("not_configured")
+              : emptyHtml("error", errorMessage(code));
+            setStatus("error");
+            renderCount(0);
+          }
           return;
         }
 
-        if (isInSync) {
-          console.log(t("[Autosync] Match gefunden für: ${req.title} -> Setze 'In Sync'", "[Autosync] Match found for: ${req.title} -> Set to 'In Sync'"));
-          pillElement.classList.add('seerr-status-available');
-          pillElement.textContent = t("In Sync", "In Sync");
-          pillElement.style.display = '';
-        } else {
-          console.log(t("[Autosync] Kein Match für: ${req.title}", "[Autosync] No match for: ${req.title}"));
-          pillElement.textContent = ''; 
-          pillElement.style.display = 'none';
+        var requests = data.requests || [];
+        S.total = typeof data.total === "number" ? data.total : requests.length;
+        S.facets = data.facets || {};
+        S.truncated = !!data.truncated;
+        S.skip += requests.length;
+
+        if (isFirst) {
+          if (!requests.length) {
+            var filtering = !!S.q || S.status !== "all" || S.type !== "all";
+            list.innerHTML = emptyHtml(filtering ? "filtered" : "empty");
+            setStatus("ok", "0");
+            renderCount(0);
+            renderFacets();
+            return;
+          }
+          list.innerHTML = '<div class="' + gridClass() + '" id="seerrGrid"></div>';
+          setStatus("ok", String(S.total));
         }
-      }, 0);
-    }).catch(err => console.error(t("Fehler beim Updaten der Pill:", "Error updating pill:"), err));
-  }
 
-  const bodyStyle = req.backdropUrl
-    ? `style="--seerr-backdrop:url('${req.backdropUrl}')"`
-    : `style="--seerr-backdrop:url('/static/placeholder.svg')"`;
+        var grid = $("seerrGrid");
+        if (!grid) return;
+        var html = "";
+        requests.forEach(function (req) {
+          S.items[req.id] = req;
+          html += cardHtml(req);
+        });
+        grid.insertAdjacentHTML("beforeend", html);
 
-  return `<div class="seerr-card" data-has-backdrop="1" data-req-id="${req.id}">
+        renderCount(S.total);
+        renderFacets();
+        markAutosyncPills(requests);
+        syncSelectionUi();
 
-    <button class="seerr-hide-btn" title="${t('Verstecken', 'Hide')}" data-req-id="${req.id}" data-title="${escS(req.title)}" data-poster="${escS(req.posterUrl || '')}" onclick="seerrHideCard(this, event)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
-        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-        <line x1="1" y1="1" x2="23" y2="23"/>
-      </svg>
-    </button>
-
-    ${poster}
-
-    <div class="seerr-card-body"${bodyStyle}>
-      <div class="seerr-card-body-inner">
-        ${release ? `<div class="seerr-card-year">${escS(_formatDate(release))}</div>` : ""}
-        <div class="seerr-card-title">${escS(req.title)}</div>
-        ${seasonBadges}
-        ${overview ? `<p class="seerr-card-overview">${overview}</p>` : ""}
-      </div>
-    </div>
-
-    <div class="seerr-card-right">
-      ${activePill ? `<div class="seerr-card-status-row">
-        <span class="seerr-card-status-label">Status</span>
-        <span class="seerr-status-pill ${activeClass}">${activePill}</span>
-        ${syncStatus}
-      </div>` : ""}
-      ${reqBy || date ? `<div class="seerr-card-req-meta">
-        ${t('Angefragt', 'Requested')}${date ? ` ${escS(date)}` : ""}${reqBy ? ` ${t('von', 'by')} <strong>${reqBy}</strong>` : ""}
-      </div>` : ""}
-      <div class="seerr-card-actions">
-        <button class="btn btn-primary btn-sm seerr-search-btn"
-          data-id="${req.id}"
-          data-status="${req.status}"
-          data-title="${escS(req.title)}"
-          data-is-movie="${req.isMovie ? '1' : '0'}">${t('Suchen', 'Search')}</button>
-         ${(typeof seerrCanDecline !== "undefined" && seerrCanDecline && req.status !== 2) ? `
-        <button class="btn btn-sm btn-reject seerr-decline-btn"
-          data-id="${req.id}">${t('Ablehnen', 'Decline')}</button>` : ""}
-      </div>
-    </div>
-
-  </div>`;
-}
-
-// ---------------------------------------------------------------
-// Search modal
-// ---------------------------------------------------------------
-
-function openSeerrSearch(reqId, title, status, isMovie) {
-  _seerrCurrentReqId = reqId;
-  _seerrCurrentStatus = status;
-  _seerrIsMovie = !!isMovie;
-
-  const titleEl = document.getElementById("seerrSearchTitle");
-  if (titleEl) titleEl.textContent = isMovie ? "Film suchen" : "Serie suchen";
-
-  document.getElementById("seerrSearchInput").value = title || "";
-  document.getElementById("seerrSearchResults").innerHTML = "";
-  document.getElementById("seerrSearchOverlay").style.display = "block";
-  document.body.style.overflow = "hidden";
-  document.getElementById("seerrSearchInput").focus();
-
-  // Show decline button only for admins with a request ID
-  const declineBtn = document.getElementById("seerrSearchDeclineBtn");
-  if (declineBtn) declineBtn.style.display = (reqId && (typeof seerrCanDecline !== "undefined" && seerrCanDecline)) ? "" : "none";
-
-  // Auto-search with title
-  if (title) seerrDoSearch();
-}
-
-function closeSeerrSearch() {
-  document.getElementById("seerrSearchOverlay").style.display = "none";
-  document.body.style.overflow = "";
-}
-
-async function seerrDoSearch() {
-  const q = document.getElementById("seerrSearchInput").value.trim();
-  if (!q) return;
-
-  const container = document.getElementById("seerrSearchResults");
-  const isSkeleton = document.body.classList.contains("skeleton-loader");
-
-  if (isSkeleton) {
-    container.innerHTML = "";
-    for (let i = 0; i < 5; i++) {
-      const card = document.createElement("div");
-      card.className = "seerr-search-result";
-      card.style.pointerEvents = "none";
-      card.innerHTML = `
-        <div class="seerr-search-poster skeleton"></div>
-        <div class="skeleton" style="height:14px; width:45%; border-radius:4px"></div>
-      `;
-      container.appendChild(card);
-    }
-  } else {
-    container.innerHTML = '<div class="queue-empty" style="padding:20px 0">' + t('Suche läuft…', 'Searching…') + '</div>';
-  }
-
-  let combined = [];
-
-  if (_seerrIsMovie) {
-    // Movies: search FilmPalast + MegaKino (movies only)
-    const [fpRes, mkRes] = await Promise.allSettled([
-      seerrFetchSearch(q, "filmpalast"),
-      seerrFetchSearch(q, "megakino"),
-    ]);
-    const fpList = (fpRes.status === "fulfilled" ? fpRes.value : []).map(r => Object.assign({}, r, { _source: "FilmPalast" }));
-    const mkList = (mkRes.status === "fulfilled" ? mkRes.value : [])
-      .filter(r => !r.is_series)
-      .map(r => Object.assign({}, r, { _source: "MegaKino" }));
-    combined = fpList.concat(mkList);
-  } else {
-    // Series: search AniWorld + S.TO + MegaKino (+ hanime if enabled), interleave results
-    const [aniRes, stoRes, mkRes, hanRes] = await Promise.allSettled([
-      seerrFetchSearch(q, "aniworld"),
-      seerrFetchSearch(q, "sto"),
-      seerrFetchSearch(q, "megakino"),
-      seerrFetchSearch(q, "hanime"),
-    ]);
-    const aniList = (aniRes.status === "fulfilled" ? aniRes.value : []).map(r => Object.assign({}, r, { _source: "AniWorld" }));
-    const stoList = (stoRes.status === "fulfilled" ? stoRes.value : []).map(r => Object.assign({}, r, { _source: "SerienStream" }));
-    const mkList = (mkRes.status === "fulfilled" ? mkRes.value : [])
-      .filter(r => r.is_series)
-      .map(r => Object.assign({}, r, { _source: "MegaKino" }));
-    const hanList = (hanRes.status === "fulfilled" ? hanRes.value : []).map(r => Object.assign({}, r, { _source: "hanime 18+" }));
-    // Interleave: alternate aniworld/sto so both appear near the top
-    const maxLen = Math.max(aniList.length, stoList.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (i < aniList.length) combined.push(aniList[i]);
-      if (i < stoList.length) combined.push(stoList[i]);
-    }
-    // Append MegaKino series after the interleaved AniWorld/S.TO block
-    combined = combined.concat(mkList);
-    // hanime (adult) last; empty unless the source is enabled server-side.
-    combined = combined.concat(hanList);
-  }
-
-  seerrRenderSearchResults(combined);
-}
-
-async function seerrFetchSearch(q, site) {
-  const resp = await fetch("/api/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ keyword: q, site }),
-  });
-  const data = await resp.json();
-  return data.results || [];
-}
-
-function seerrRenderSearchResults(results) {
-  const container = document.getElementById("seerrSearchResults");
-  if (!results || !results.length) {
-    container.innerHTML = '<div class="queue-empty" style="padding:20px 0">Keine Ergebnisse.</div>';
-    return;
-  }
-  container.innerHTML = results.map((r, i) =>
-    `<div class="seerr-search-result seerr-result-btn" data-url="${escS(r.url)}">
-      <div class="seerr-search-poster seerr-card-poster-placeholder" id="seerrPoster-${i}">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.3">
-          <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-        </svg>
-      </div>
-      <span class="seerr-search-title">${escS(r.title)}</span>
-      ${r._source ? `<span class="seerr-source-pill">${escS(r._source)}</span>` : ""}
-    </div>`
-  ).join("");
-
-  // Fetch posters in background
-  results.forEach((r, i) => {
-    fetch("/api/series?url=" + encodeURIComponent(r.url))
-      .then(res => res.json())
-      .then(data => {
-        if (!data.poster_url) return;
-        const el = document.getElementById("seerrPoster-" + i);
-        if (!el) return;
-        el.innerHTML = `<img src="${escS(proxyImg(data.poster_url))}" style="width:100%;height:100%;object-fit:cover;border-radius:4px" alt="" loading="lazy">`;
-        el.classList.remove("seerr-card-poster-placeholder");
+        if (S.skip < S.total) attachSentinel(list);
       })
-      .catch(() => { });
-  });
-}
-
-// ---------------------------------------------------------------
-// Series modal + download/approve
-// ---------------------------------------------------------------
-// The old Seerr-only series modal (openSeerrSeries, seerrBuildAccordion,
-// seerrUpdateLangDropdown, seerrSetModalActions, seerrStartDownload, the
-// VeeV-check helpers, etc.) has been removed. Series/movies opened from a
-// Seerr request now use the standard modal from shared_modals.html via
-// openSeriesFromSeerr() (app.js) -- see that function and the download hook
-// in _submitDownloadGroups() for the approve-then-download flow, and
-// closeModal() / _updateSeerrModalActions() for teardown and button labels.
-
-// ---------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------
-
-function seerrSetStatus(state, label) {
-  const wrap = document.getElementById("seerrStatus");
-  const dot = document.getElementById("seerrStatusDot");
-  const lbl = document.getElementById("seerrStatusLabel");
-  if (!wrap) return;
-  if (state === "loading") {
-    wrap.style.display = ""; dot.className = "lib-watcher-dot lib-watcher-starting"; lbl.textContent = t("Lädt…", "Loading…");
-  } else if (state === "ok") {
-    wrap.style.display = ""; dot.className = "lib-watcher-dot lib-watcher-on"; lbl.textContent = label || t("Verbunden", "Connected");
-  } else if (state === "error") {
-    wrap.style.display = ""; dot.className = "lib-watcher-dot lib-watcher-off"; lbl.textContent = t("Fehler", "Error");
-  } else {
-    wrap.style.display = "none";
+      .catch(function (e) {
+        if (seq !== S.seq) return;
+        if (isFirst) {
+          var list = $("seerrList");
+          if (list) list.innerHTML = emptyHtml("error", errorMessage("unreachable"));
+          setStatus("error");
+        }
+        console.error("[Seerr] load failed", e);
+      })
+      .then(function () {
+        if (seq === S.seq) S.loading = false;
+      });
   }
-}
 
-function formatSeerrDate(iso) {
-  try { return new Date(iso).toLocaleDateString(window.__LANG === 'de' ? 'de-DE' : 'en-US', { day: "2-digit", month: "2-digit", year: "numeric" }); }
-  catch { return ""; }
-}
+  function attachSentinel(list) {
+    var el = document.createElement("div");
+    el.id = "seerrSentinel";
+    el.className = "seerr-sentinel";
+    el.innerHTML = '<span class="seerr-spinner" aria-hidden="true"></span>' +
+      "<span>" + esc(t("Lade weitere…", "Loading more…")) + "</span>";
+    list.appendChild(el);
+    if (!S.observer) {
+      S.observer = new IntersectionObserver(function (entries) {
+        if (entries[0].isIntersecting) fetchPage(false);
+      }, { rootMargin: "300px" });
+    }
+    S.observer.observe(el);
+  }
 
-function escS(s) {
-  const d = document.createElement("div"); d.textContent = String(s || ""); return d.innerHTML;
-}
-function seerrEsc(s) { return escS(s); }
+  // ── Toolbar / status chrome ──────────────────────────────────────
 
-// ---------------------------------------------------------------
-// Hide / Verstecken
-// ---------------------------------------------------------------
+  function setStatus(state, label) {
+    var wrap = $("seerrStatus");
+    var dot = $("seerrStatusDot");
+    var lbl = $("seerrStatusLabel");
+    if (!wrap || !dot || !lbl) return;
+    wrap.hidden = false;
+    if (state === "loading") {
+      dot.className = "seerr-conn-dot is-starting";
+      lbl.textContent = t("Lädt…", "Loading…");
+    } else if (state === "ok") {
+      dot.className = "seerr-conn-dot is-on";
+      lbl.textContent = t("Verbunden", "Connected") + (label ? " · " + label : "");
+    } else {
+      dot.className = "seerr-conn-dot is-off";
+      lbl.textContent = t("Fehler", "Error");
+    }
+  }
 
-async function seerrHideCard(btn, event) {
-  event.stopPropagation();
-  const reqId = parseInt(btn.dataset.reqId);
-  const title = btn.dataset.title || "";
-  const posterUrl = btn.dataset.poster || "";
-  try {
-    await fetch(`/api/seerr/requests/${reqId}/hide`, {
+  function renderCount(total) {
+    var el = $("seerrCount");
+    if (el) {
+      el.textContent = total
+        ? total + " " + (total === 1 ? t("Anfrage", "request") : t("Anfragen", "requests"))
+        : "";
+    }
+    var warn = $("seerrTruncated");
+    if (warn) warn.hidden = !S.truncated;
+
+    // The sidebar badge mirrors the unfiltered total, not the filtered one.
+    var badge = $("seerrBadge");
+    if (badge) {
+      var all = (S.facets && typeof S.facets.all === "number") ? S.facets.all : total;
+      badge.textContent = all;
+      badge.style.display = all > 0 ? "" : "none";
+    }
+  }
+
+  function renderFacets() {
+    document.querySelectorAll("[data-facet]").forEach(function (el) {
+      var n = S.facets ? S.facets[el.getAttribute("data-facet")] : undefined;
+      el.textContent = typeof n === "number" ? String(n) : "";
+      el.hidden = typeof n !== "number";
+    });
+  }
+
+  function syncSegmented(groupId, attr, value) {
+    var group = $(groupId);
+    if (!group) return;
+    group.querySelectorAll(".mf-segmented-btn").forEach(function (b) {
+      var on = b.getAttribute(attr) === value;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function syncToolbar() {
+    syncSegmented("seerrStatusFilter", "data-status", S.status);
+    syncSegmented("seerrTypeFilter", "data-type", S.type);
+    syncSegmented("seerrLayoutToggle", "data-layout", S.layout);
+
+    var sortSel = $("seerrSort");
+    if (sortSel) sortSel.value = S.sort;
+
+    var dirBtn = $("seerrSortDir");
+    if (dirBtn) {
+      dirBtn.classList.toggle("is-asc", S.dir === "asc");
+      var dirLabel = S.dir === "asc"
+        ? t("Aufsteigend sortiert", "Sorted ascending")
+        : t("Absteigend sortiert", "Sorted descending");
+      dirBtn.setAttribute("aria-label", dirLabel);
+      dirBtn.title = dirLabel;
+    }
+
+    var selBtn = $("seerrSelectToggle");
+    if (selBtn) {
+      selBtn.classList.toggle("active", S.selectMode);
+      selBtn.setAttribute("aria-pressed", S.selectMode ? "true" : "false");
+    }
+    document.body.classList.toggle("mf-select-mode", S.selectMode);
+
+    var clear = $("seerrSearchClear");
+    if (clear) clear.hidden = !S.q;
+  }
+
+  // ── Selection / batch ────────────────────────────────────────────
+
+  function selectedIds() {
+    return Object.keys(S.selected)
+      .filter(function (id) { return S.selected[id]; })
+      .map(Number);
+  }
+
+  function syncSelectionUi() {
+    document.querySelectorAll(".seerr-card-checkbox").forEach(function (cb) {
+      var on = !!S.selected[cb.getAttribute("data-req-id")];
+      cb.checked = on;
+      var card = cb.closest(".seerr-card");
+      if (card) card.classList.toggle("is-selected", on);
+    });
+
+    var ids = selectedIds();
+    var bar = $("seerrBulkBar");
+    if (bar) bar.hidden = ids.length === 0;
+    var info = $("seerrBulkCount");
+    if (info) info.textContent = String(ids.length);
+    var over = $("seerrBulkLimit");
+    if (over) over.hidden = ids.length <= MAX_BATCH;
+
+    var allBox = $("seerrSelectAll");
+    if (allBox) {
+      var boxes = document.querySelectorAll(".seerr-card-checkbox");
+      allBox.checked = boxes.length > 0 && ids.length >= boxes.length;
+      allBox.indeterminate = ids.length > 0 && ids.length < boxes.length;
+    }
+  }
+
+  function setSelected(id, on) {
+    if (on) S.selected[id] = true; else delete S.selected[id];
+    syncSelectionUi();
+  }
+
+  function clearSelection() {
+    S.selected = {};
+    syncSelectionUi();
+  }
+
+  function runBatch(action) {
+    var ids = selectedIds();
+    if (!ids.length) return;
+    // The server caps the batch too; slicing here keeps the confirm text and
+    // the success message honest about what will actually happen.
+    if (ids.length > MAX_BATCH) ids = ids.slice(0, MAX_BATCH);
+
+    if (action === "decline") {
+      var question = t(
+        "Wirklich " + ids.length + " Anfrage(n) ablehnen? Das lässt sich nicht rückgängig machen.",
+        "Really decline " + ids.length + " request(s)? This cannot be undone."
+      );
+      if (!window.confirm(question)) return;
+    }
+
+    var items = {};
+    if (action === "hide") {
+      ids.forEach(function (id) {
+        var req = S.items[id];
+        if (req) items[id] = { title: req.title || "", posterUrl: req.posterUrl || "" };
+      });
+    }
+
+    setBulkBusy(true);
+    fetch("/api/seerr/requests/batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, posterUrl }),
+      body: JSON.stringify({ action: action, ids: ids, items: items }),
+    })
+      .then(function (r) {
+        return r.json()
+          .catch(function () { return {}; })
+          .then(function (d) { return { ok: r.ok, data: d }; });
+      })
+      .then(function (res) {
+        var data = res.data || {};
+        if (!res.ok || data.error) {
+          toast(errorMessage(data.error));
+          return;
+        }
+        var failed = (data.failed || []).length;
+        toast(failed
+          ? t(failed + " von " + ids.length + " fehlgeschlagen.",
+              failed + " of " + ids.length + " failed.")
+          : t("Aktion für " + ids.length + " Anfrage(n) ausgeführt.",
+              "Applied to " + ids.length + " request(s)."));
+        clearSelection();
+        reload();
+      })
+      .catch(function (e) {
+        console.error("[Seerr] batch failed", e);
+        toast(errorMessage("unreachable"));
+      })
+      .then(function () { setBulkBusy(false); });
+  }
+
+  function setBulkBusy(busy) {
+    var bar = $("seerrBulkBar");
+    if (!bar) return;
+    bar.classList.toggle("is-busy", busy);
+    bar.querySelectorAll("button").forEach(function (b) { b.disabled = busy; });
+  }
+
+  // ── Single-request actions ───────────────────────────────────────
+
+  function hideRequest(id) {
+    var req = S.items[id] || {};
+    fetch("/api/seerr/requests/" + encodeURIComponent(id) + "/hide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: req.title || "", posterUrl: req.posterUrl || "" }),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("hide failed");
+        var card = document.querySelector('.seerr-card[data-req-id="' + cssId(id) + '"]');
+        if (card) card.remove();
+        delete S.selected[id];
+        if (S.total !== null) S.total = Math.max(0, S.total - 1);
+        if (S.facets && typeof S.facets.all === "number") {
+          S.facets.all = Math.max(0, S.facets.all - 1);
+        }
+        renderCount(S.total || 0);
+        syncSelectionUi();
+        // Hiding the last visible card would otherwise leave a blank page.
+        if (!document.querySelector(".seerr-card")) reload();
+      })
+      .catch(function () {
+        toast(t("Verstecken fehlgeschlagen.", "Could not hide the request."));
+      });
+  }
+
+  function declineRequest(id) {
+    var question = t("Anfrage wirklich ablehnen? Diese Aktion kann nicht rückgängig gemacht werden.",
+                     "Really decline this request? This action cannot be undone.");
+    if (!window.confirm(question)) return;
+    fetch("/api/seerr/requests/" + encodeURIComponent(id) + "/decline", { method: "POST" })
+      .then(function (r) {
+        return r.json()
+          .catch(function () { return {}; })
+          .then(function (d) { return { ok: r.ok, data: d }; });
+      })
+      .then(function (res) {
+        if (!res.ok || (res.data || {}).error) {
+          toast(errorMessage((res.data || {}).error));
+          return;
+        }
+        closeSearchModal();
+        if (typeof closeModal === "function") closeModal();
+        reload();
+      })
+      .catch(function () { toast(errorMessage("unreachable")); });
+  }
+
+  // ── Search modal (find streams for a request) ────────────────────
+
+  var MOVIE_SOURCES = [
+    { site: "filmpalast", label: "FilmPalast", keep: function () { return true; } },
+    { site: "megakino", label: "MegaKino", keep: function (r) { return !r.is_series; } },
+  ];
+  var SERIES_SOURCES = [
+    { site: "aniworld", label: "AniWorld", keep: function () { return true; } },
+    { site: "sto", label: "SerienStream", keep: function () { return true; } },
+    { site: "megakino", label: "MegaKino", keep: function (r) { return !!r.is_series; } },
+    // hanime (adult) comes last and stays empty unless enabled server-side.
+    { site: "hanime", label: "hanime 18+", keep: function () { return true; } },
+  ];
+
+  function openSearchModal(reqId) {
+    var req = S.items[reqId] || {};
+    S.ctxReqId = reqId;
+    S.ctxStatus = req.status;
+    S.ctxIsMovie = !!req.isMovie;
+
+    var titleEl = $("seerrSearchTitle");
+    if (titleEl) {
+      titleEl.textContent = req.isMovie
+        ? t("Film suchen", "Search for movie")
+        : t("Serie suchen", "Search for series");
+    }
+    var input = $("seerrSearchInput");
+    if (input) input.value = req.title || "";
+    var results = $("seerrSearchResults");
+    if (results) results.innerHTML = "";
+
+    var declineBtn = $("seerrSearchDeclineBtn");
+    if (declineBtn) declineBtn.hidden = !(reqId && window.seerrCanDecline && req.status !== 2);
+
+    openOverlay("seerrSearchOverlay");
+    if (input) input.focus();
+    if (req.title) doSearch();
+  }
+
+  function closeSearchModal() { closeOverlay("seerrSearchOverlay"); }
+
+  function doSearch() {
+    var input = $("seerrSearchInput");
+    var container = $("seerrSearchResults");
+    if (!input || !container) return;
+    var q = input.value.trim();
+    if (!q) return;
+
+    container.innerHTML = '<div class="seerr-search-loading">' +
+      '<span class="seerr-spinner" aria-hidden="true"></span>' +
+      esc(t("Suche läuft…", "Searching…")) + "</div>";
+
+    var sources = S.ctxIsMovie ? MOVIE_SOURCES : SERIES_SOURCES;
+    var mySeq = ++S.searchSeq;
+
+    Promise.all(sources.map(function (src) {
+      return fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keyword: q, site: src.site }),
+      })
+        .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+        .then(function (d) {
+          return (d.results || []).filter(src.keep).map(function (r) {
+            return { url: r.url, title: r.title, source: src.label };
+          });
+        })
+        .catch(function () { return []; });   // one dead source must not kill the search
+    })).then(function (lists) {
+      if (mySeq !== S.searchSeq) return;      // a newer search already won
+      // Interleave the first two sources so both appear near the top, then
+      // append the rest in declared order.
+      var combined = [];
+      var a = lists[0] || [], b = lists[1] || [];
+      for (var i = 0; i < Math.max(a.length, b.length); i++) {
+        if (i < a.length) combined.push(a[i]);
+        if (i < b.length) combined.push(b[i]);
+      }
+      for (var j = 2; j < lists.length; j++) combined = combined.concat(lists[j] || []);
+      renderSearchResults(combined);
     });
-    // Remove card from DOM
-    const card = document.querySelector(`.seerr-card[data-req-id="${reqId}"]`);
-    if (card) card.remove();
-    // Update total count badge
-    if (_seerrTotal !== null) {
-      _seerrTotal = Math.max(0, _seerrTotal - 1);
-      const badge = document.getElementById("seerrBadge");
-      if (badge) { badge.textContent = _seerrTotal; badge.style.display = _seerrTotal > 0 ? "" : "none"; }
-      seerrSetStatus("ok", `${_seerrTotal} ${t("Anfragen", "requests")}`);
-    }
-  } catch (e) {
-    showToast(t("Fehler beim Verstecken: ", "Error hiding: ") + e.message);
   }
-}
 
-async function seerrOpenHiddenModal() {
-  try {
-    const resp = await fetch("/api/seerr/hidden");
-    const data = await resp.json();
-    const items = data.hidden || [];
-    const list = document.getElementById("seerrHiddenList");
-    if (!items.length) {
-      list.innerHTML = `<div class="queue-empty">${t("Keine versteckten Anfragen.", "No hidden requests.")}</div>`;
-    } else {
-      list.innerHTML = items.map(item => `
-        <div class="seerr-hidden-row" data-req-id="${item.seerr_request_id}">
-          ${item.poster_url ? `<img class="seerr-hidden-poster" src="${escS(item.poster_url)}" alt="" loading="lazy">` : `<div class="seerr-hidden-poster seerr-hidden-poster-placeholder"></div>`}
-          <span class="seerr-hidden-title">${escS(item.title) || `#${item.seerr_request_id}`}</span>
-          <button class="btn btn-sm btn-secondary" onclick="seerrUnhide(${item.seerr_request_id})">${t("Einblenden", "Show")}</button>
-        </div>
-      `).join("");
+  function renderSearchResults(results) {
+    var container = $("seerrSearchResults");
+    if (!container) return;
+    if (!results.length) {
+      container.innerHTML = '<div class="seerr-search-empty">' +
+        esc(t("Keine Ergebnisse.", "No results.")) + "</div>";
+      return;
     }
-    document.getElementById("seerrHiddenOverlay").style.display = "block";
+    container.innerHTML = results.map(function (r, i) {
+      return '<button type="button" class="seerr-search-result" data-url="' + escAttr(safeUrl(r.url)) + '">' +
+        '<span class="seerr-search-poster seerr-card-poster-placeholder" data-poster-slot="' + i + '"></span>' +
+        '<span class="seerr-search-title">' + esc(r.title) + "</span>" +
+        (r.source ? '<span class="seerr-source-pill">' + esc(r.source) + "</span>" : "") +
+      "</button>";
+    }).join("");
+
+    // Posters load lazily in the background; a failure just leaves the
+    // placeholder in place.
+    results.forEach(function (r, i) {
+      if (!r.url) return;
+      fetch("/api/series?url=" + encodeURIComponent(r.url))
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) {
+          if (!data || !data.poster_url) return;
+          var slot = container.querySelector('[data-poster-slot="' + i + '"]');
+          if (!slot) return;
+          var src = safeUrl(typeof proxyImg === "function" ? proxyImg(data.poster_url) : data.poster_url);
+          if (!src) return;
+          slot.innerHTML = '<img src="' + escAttr(src) + '" alt="" loading="lazy" decoding="async">';
+          slot.classList.remove("seerr-card-poster-placeholder");
+        })
+        .catch(function () { /* the poster is decoration */ });
+    });
+  }
+
+  // ── Hidden-requests modal ────────────────────────────────────────
+
+  function openHiddenModal() {
+    var list = $("seerrHiddenList");
+    if (list) {
+      list.innerHTML = '<div class="seerr-search-loading">' +
+        '<span class="seerr-spinner" aria-hidden="true"></span>' +
+        esc(t("Lädt…", "Loading…")) + "</div>";
+    }
+    openOverlay("seerrHiddenOverlay");
+
+    fetch("/api/seerr/hidden")
+      .then(function (r) { return r.ok ? r.json() : { hidden: [] }; })
+      .then(function (data) {
+        if (!list) return;
+        var items = data.hidden || [];
+        if (!items.length) {
+          list.innerHTML = '<div class="seerr-search-empty">' +
+            esc(t("Keine versteckten Anfragen.", "No hidden requests.")) + "</div>";
+          return;
+        }
+        list.innerHTML = items.map(function (item) {
+          var poster = safeUrl(item.poster_url);
+          return '<div class="seerr-hidden-row" data-req-id="' + escAttr(item.seerr_request_id) + '">' +
+            (poster
+              ? '<img class="seerr-hidden-poster" src="' + escAttr(poster) + '" alt="" loading="lazy">'
+              : '<div class="seerr-hidden-poster seerr-hidden-poster-placeholder"></div>') +
+            '<span class="seerr-hidden-title">' +
+              esc(item.title || "#" + item.seerr_request_id) + "</span>" +
+            '<button type="button" class="btn btn-sm btn-secondary" data-action="unhide" ' +
+              'data-req-id="' + escAttr(item.seerr_request_id) + '">' +
+              esc(t("Einblenden", "Show")) + "</button>" +
+          "</div>";
+        }).join("");
+      })
+      .catch(function () {
+        if (list) {
+          list.innerHTML = '<div class="seerr-search-empty">' +
+            esc(errorMessage("unreachable")) + "</div>";
+        }
+      });
+  }
+
+  function unhide(id) {
+    fetch("/api/seerr/requests/" + encodeURIComponent(id) + "/unhide", { method: "POST" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("unhide failed");
+        var row = document.querySelector(
+          '#seerrHiddenList .seerr-hidden-row[data-req-id="' + cssId(id) + '"]');
+        if (row) row.remove();
+        var list = $("seerrHiddenList");
+        if (list && !list.querySelector(".seerr-hidden-row")) {
+          list.innerHTML = '<div class="seerr-search-empty">' +
+            esc(t("Keine versteckten Anfragen.", "No hidden requests.")) + "</div>";
+        }
+        reload();
+      })
+      .catch(function () {
+        toast(t("Einblenden fehlgeschlagen.", "Could not restore the request."));
+      });
+  }
+
+  // ── Overlay helpers ──────────────────────────────────────────────
+  // NOTE: modals.css makes an overlay visible via `.overlay[style*="block"]`,
+  // i.e. it matches on the literal inline style string. Setting anything else
+  // (flex, grid) leaves the overlay at `display:none` and the modal silently
+  // never appears -- so "block" here is load-bearing, not a style choice.
+  //
+  // Body scroll is only released once NO overlay is open any more: closing the
+  // search modal used to unlock the page while the shared series modal it had
+  // just opened was still on screen.
+  function openOverlay(id) {
+    var el = $(id);
+    if (!el) return;
+    el.style.display = "block";
     document.body.style.overflow = "hidden";
-  } catch (e) {
-    showToast(t("Fehler: ", "Error: ") + e.message);
   }
-}
 
-async function seerrUnhide(reqId) {
-  try {
-    await fetch(`/api/seerr/requests/${reqId}/unhide`, { method: "POST" });
-    const row = document.querySelector(`#seerrHiddenList .seerr-hidden-row[data-req-id="${reqId}"]`);
-    if (row) row.remove();
-    const list = document.getElementById("seerrHiddenList");
-    if (!list.querySelector(".seerr-hidden-row")) {
-      list.innerHTML = `<div class="queue-empty">${t("Keine versteckten Anfragen.", "No hidden requests.")}</div>`;
+  function isOpen(id) {
+    var el = $(id);
+    return !!el && !!el.style.display && el.style.display !== "none";
+  }
+
+  function closeOverlay(id) {
+    var el = $(id);
+    if (el) el.style.display = "none";
+    var stillOpen = Array.prototype.some.call(
+      document.querySelectorAll(".overlay"),
+      function (o) { return o.style.display && o.style.display !== "none"; }
+    );
+    if (!stillOpen) document.body.style.overflow = "";
+  }
+
+  // ── Wiring ───────────────────────────────────────────────────────
+
+  var searchTimer = null;
+
+  function applyFilterChange() {
+    savePrefs();
+    syncToolbar();
+    clearSelection();
+    reload();
+  }
+
+  function wireToolbar() {
+    var input = $("seerrQuery");
+    if (input) {
+      input.addEventListener("input", function () {
+        S.q = input.value.trim();
+        var clear = $("seerrSearchClear");
+        if (clear) clear.hidden = !S.q;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function () { clearSelection(); reload(); }, SEARCH_DEBOUNCE_MS);
+      });
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && S.q) {
+          e.preventDefault();
+          input.value = "";
+          S.q = "";
+          clearTimeout(searchTimer);
+          applyFilterChange();
+        }
+      });
     }
-    // Reload main list to show re-enabled card
-    seerrLoad();
-  } catch (e) {
-    showToast(t("Fehler: ", "Error: ") + e.message);
+
+    var clearBtn = $("seerrSearchClear");
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function () {
+        if (input) input.value = "";
+        S.q = "";
+        clearTimeout(searchTimer);
+        applyFilterChange();
+        if (input) input.focus();
+      });
+    }
+
+    var statusGroup = $("seerrStatusFilter");
+    if (statusGroup) {
+      statusGroup.addEventListener("click", function (e) {
+        var b = e.target.closest(".mf-segmented-btn");
+        if (!b) return;
+        S.status = b.getAttribute("data-status");
+        applyFilterChange();
+      });
+    }
+
+    var typeGroup = $("seerrTypeFilter");
+    if (typeGroup) {
+      typeGroup.addEventListener("click", function (e) {
+        var b = e.target.closest(".mf-segmented-btn");
+        if (!b) return;
+        S.type = b.getAttribute("data-type");
+        applyFilterChange();
+      });
+    }
+
+    var layoutGroup = $("seerrLayoutToggle");
+    if (layoutGroup) {
+      layoutGroup.addEventListener("click", function (e) {
+        var b = e.target.closest(".mf-segmented-btn");
+        if (!b) return;
+        S.layout = b.getAttribute("data-layout");
+        savePrefs();
+        syncToolbar();
+        // Poster and row are different markup, not just a different class,
+        // so the list has to be rebuilt. Served from the same query.
+        reload();
+      });
+    }
+
+    var sortSel = $("seerrSort");
+    if (sortSel) {
+      sortSel.addEventListener("change", function () {
+        S.sort = sortSel.value;
+        // A fresh sort field gets the direction that reads naturally for it:
+        // newest-first for dates, A→Z for titles and status.
+        S.dir = S.sort === "added" ? "desc" : "asc";
+        savePrefs();
+        syncToolbar();
+        reload();
+      });
+    }
+
+    var dirBtn = $("seerrSortDir");
+    if (dirBtn) {
+      dirBtn.addEventListener("click", function () {
+        S.dir = S.dir === "asc" ? "desc" : "asc";
+        savePrefs();
+        syncToolbar();
+        reload();
+      });
+    }
+
+    var selBtn = $("seerrSelectToggle");
+    if (selBtn) {
+      selBtn.addEventListener("click", function () {
+        S.selectMode = !S.selectMode;
+        if (!S.selectMode) clearSelection();
+        syncToolbar();
+      });
+    }
+
+    var refreshBtn = $("seerrRefreshBtn");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", function () {
+        _autosyncTitles = null;
+        clearSelection();
+        reload();
+      });
+    }
+
+    var hiddenBtn = $("seerrHiddenBtn");
+    if (hiddenBtn) hiddenBtn.addEventListener("click", openHiddenModal);
+
+    var allBox = $("seerrSelectAll");
+    if (allBox) {
+      allBox.addEventListener("change", function () {
+        if (allBox.checked) {
+          document.querySelectorAll(".seerr-card-checkbox").forEach(function (cb) {
+            S.selected[cb.getAttribute("data-req-id")] = true;
+          });
+        } else {
+          S.selected = {};
+        }
+        syncSelectionUi();
+      });
+    }
   }
-}
 
-function seerrCloseHiddenModal() {
-  document.getElementById("seerrHiddenOverlay").style.display = "none";
-  document.body.style.overflow = "";
-}
-
-// ---------------------------------------------------------------
-// Init
-// ---------------------------------------------------------------
-
-// ---------------------------------------------------------------
-// Decline / Ablehnen
-// ---------------------------------------------------------------
-
-async function seerrDeclineRequest(reqId) {
-  if (!confirm(t("Anfrage wirklich ablehnen? Diese Aktion kann nicht rückgängig gemacht werden.", "Really decline this request? This action cannot be undone."))) return;
-  try {
-    const resp = await fetch(`/api/seerr/requests/${reqId}/decline`, { method: "POST" });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || resp.status);
-    closeSeerrSearch();
-    if (typeof closeModal === "function") closeModal();
-    seerrLoad();
-  } catch (e) {
-    alert(t("Fehler beim Ablehnen: ", "Error declining: ") + e.message);
+  function wireBulkBar() {
+    var bar = $("seerrBulkBar");
+    if (!bar) return;
+    bar.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-bulk]");
+      if (!btn) return;
+      var action = btn.getAttribute("data-bulk");
+      if (action === "clear") clearSelection();
+      else runBatch(action);
+    });
   }
-}
 
-function seerrDeclineFromSearch() {
-  if (_seerrCurrentReqId) seerrDeclineRequest(_seerrCurrentReqId);
-}
+  function wireList() {
+    var list = $("seerrList");
+    if (!list) return;
 
-// Event delegation for search buttons on the card list
-document.getElementById("seerrList").addEventListener("click", function (e) {
-  // Decline button
-  const decBtn = e.target.closest(".seerr-decline-btn");
-  if (decBtn) {
-    seerrDeclineRequest(parseInt(decBtn.dataset.id));
-    return;
+    list.addEventListener("click", function (e) {
+      if (e.target.closest('[data-action="reset-filters"]')) {
+        S.q = "";
+        S.status = "all";
+        S.type = "all";
+        var input = $("seerrQuery");
+        if (input) input.value = "";
+        applyFilterChange();
+        return;
+      }
+      var btn = e.target.closest("[data-action]");
+      if (!btn) return;
+      var id = Number(btn.getAttribute("data-req-id"));
+      switch (btn.getAttribute("data-action")) {
+        case "hide": hideRequest(id); break;
+        case "decline": declineRequest(id); break;
+        case "search": openSearchModal(id); break;
+      }
+    });
+
+    list.addEventListener("change", function (e) {
+      var cb = e.target.closest(".seerr-card-checkbox");
+      if (!cb) return;
+      setSelected(cb.getAttribute("data-req-id"), cb.checked);
+    });
   }
-  // Search button
-  const btn = e.target.closest(".seerr-search-btn");
-  if (!btn) return;
-  openSeerrSearch(
-    parseInt(btn.dataset.id),
-    btn.dataset.title,
-    parseInt(btn.dataset.status),
-    btn.dataset.isMovie === "1"
-  );
-});
 
-// Event delegation for search results → open the standard series/movie
-// modal (shared_modals.html / app.js), carrying the Seerr request context
-// (reqId/pending/isMovie) so it can approve-then-download and offer Decline.
-document.getElementById("seerrSearchResults").addEventListener("click", function (e) {
-  const row = e.target.closest(".seerr-result-btn");
-  if (!row) return;
-  closeSeerrSearch();
-  if (typeof openSeriesFromSeerr === "function") {
-    openSeriesFromSeerr(row.dataset.url, _seerrCurrentReqId, _seerrCurrentStatus === 1, _seerrIsMovie);
+  function wireModals() {
+    var searchOverlay = $("seerrSearchOverlay");
+    if (searchOverlay) {
+      searchOverlay.addEventListener("click", function (e) {
+        if (e.target === searchOverlay) closeSearchModal();
+      });
+    }
+    ["seerrSearchClose", "seerrSearchCancel"].forEach(function (id) {
+      var el = $(id);
+      if (el) el.addEventListener("click", closeSearchModal);
+    });
+
+    var goBtn = $("seerrSearchGo");
+    if (goBtn) goBtn.addEventListener("click", doSearch);
+
+    var modalInput = $("seerrSearchInput");
+    if (modalInput) {
+      modalInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); doSearch(); }
+      });
+    }
+
+    var declineBtn = $("seerrSearchDeclineBtn");
+    if (declineBtn) {
+      declineBtn.addEventListener("click", function () {
+        if (S.ctxReqId) declineRequest(S.ctxReqId);
+      });
+    }
+
+    var results = $("seerrSearchResults");
+    if (results) {
+      results.addEventListener("click", function (e) {
+        var row = e.target.closest(".seerr-search-result");
+        if (!row) return;
+        var url = row.getAttribute("data-url");
+        if (!url) return;
+        closeSearchModal();
+        if (typeof openSeriesFromSeerr === "function") {
+          openSeriesFromSeerr(url, S.ctxReqId, S.ctxStatus === 1, S.ctxIsMovie);
+        } else {
+          console.error("[Seerr] openSeriesFromSeerr() is missing — is app.js loaded before seerr.js?");
+        }
+      });
+    }
+
+    var hiddenOverlay = $("seerrHiddenOverlay");
+    if (hiddenOverlay) {
+      hiddenOverlay.addEventListener("click", function (e) {
+        if (e.target === hiddenOverlay) { closeOverlay("seerrHiddenOverlay"); return; }
+        var btn = e.target.closest('[data-action="unhide"]');
+        if (btn) unhide(Number(btn.getAttribute("data-req-id")));
+      });
+    }
+    ["seerrHiddenClose", "seerrHiddenCloseBtn"].forEach(function (id) {
+      var el = $(id);
+      if (el) el.addEventListener("click", function () { closeOverlay("seerrHiddenOverlay"); });
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      // Topmost first: the hidden-requests modal can be opened over nothing,
+      // but the search modal can have the shared series modal on top of it --
+      // that one closes itself via app.js's own Escape handler.
+      if (isOpen("seerrHiddenOverlay")) { closeOverlay("seerrHiddenOverlay"); return; }
+      if (isOpen("seerrSearchOverlay")) closeSearchModal();
+    });
   }
-});
 
-seerrLoad();
+  function init() {
+    loadPrefs();
+    syncToolbar();
+    wireToolbar();
+    wireBulkBar();
+    wireList();
+    wireModals();
+    reload();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  // Small public surface. app.js's shared-modal Seerr integration calls three
+  // of these by name -- seerrLoad() and closeSeerrSearch() from the download
+  // hook in _submitDownloadGroups(), and seerrDeclineRequest() from
+  // _declineSeerrFromModal() -- so those names stay available as aliases.
+  window.Seerr = {
+    reload: reload,
+    closeSearchModal: closeSearchModal,
+    declineRequest: declineRequest,
+    state: S,
+  };
+  window.seerrLoad = reload;
+  window.closeSeerrSearch = closeSearchModal;
+  window.seerrDeclineRequest = declineRequest;
+})();

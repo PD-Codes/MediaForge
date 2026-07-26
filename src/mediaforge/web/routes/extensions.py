@@ -308,11 +308,14 @@ def register_extensions_routes(app):
         install_staged_live() → rescan_new_modules() → its blueprint, settings
         card, sidebar link and translations are all live on the next request.
 
-        The one case that still needs a restart is an UPGRADE/reinstall of a
-        module that is already loaded: Flask can add a blueprint to a running
-        app but never replace one, so that stays staged and the "restart
-        required" banner appears for it exactly as before. ``restart_required``
-        in the response says which of the two happened.
+        An UPGRADE of an already-loaded module is live too now: blueprints can
+        be deregistered (see deregister_blueprint), so install_staged_live()
+        hands those to upgrade_module_live() -- deregister, swap the folder,
+        register the new version, roll back if it refuses. Two cases still need
+        a restart and say so in ``reasons``: another loaded module DEPENDS_ON
+        this one, or the new version could not be registered and the working one
+        was rolled back. ``restart_required`` in the response says which of the
+        two happened.
         """
         if not module_store.store_enabled():
             return jsonify({"ok": False, "error": "no store configured"}), 400
@@ -333,6 +336,11 @@ def register_extensions_routes(app):
             applied = install_staged_live(app, result.get("folder"))
             result["live"] = result.get("folder") in applied["live"]
             result["restart_required"] = not result["live"]
+            # Why it is still staged, if it is -- "needs a restart" and "your
+            # update was rolled back because it does not register" are very
+            # different messages and the toast says which (module_store.js).
+            if applied.get("reasons"):
+                result["reasons"] = applied["reasons"]
             if applied["failed"]:
                 # Downloaded and verified, but it won't run here (bad code,
                 # unmet DEPENDS_ON, ...). Still "ok" — it IS installed — but the

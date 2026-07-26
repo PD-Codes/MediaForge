@@ -208,6 +208,7 @@ def register_settings_routes(app):
         if debug_forced == "1":
             debug_mode = "1"
         media_stats_enabled  = get_setting("media_stats_enabled")  or os.environ.get("MEDIAFORGE_MEDIA_STATS_ENABLED", "0")
+        new_home_enabled     = get_setting("new_home_enabled")     or os.environ.get("MEDIAFORGE_NEW_HOME_ENABLED", "0")
         web_console          = get_setting("web_console")          or os.environ.get("MEDIAFORGE_WEB_CONSOLE", "0")
         
         # A default may point at a group that has since been deleted (deletion
@@ -271,6 +272,7 @@ def register_settings_routes(app):
                 "debug_mode":                debug_mode,
                 "debug_forced":              debug_forced,
                 "media_stats_enabled":       media_stats_enabled,
+                "new_home_enabled":          new_home_enabled,
                 "library_rescan_hours":      get_setting("library_rescan_hours", "24"),
                 "library_probe_workers":     get_setting("library_probe_workers", "0"),
                 "web_console":               web_console,
@@ -312,6 +314,7 @@ def register_settings_routes(app):
                     "calendar":        get_setting("cineinfo_calendar",        "0"),
                     "calendar_seerr":  get_setting("cineinfo_calendar_seerr",  "0"),
                     "calendar_mediathek": get_setting("cineinfo_calendar_mediathek", "0"),
+                    "calendar_library": get_setting("cineinfo_calendar_library", "0"),
                     "calendar_refresh_interval": get_setting("cineinfo_calendar_refresh_interval", "24"),
                 },
                 "crunchyroll": {
@@ -513,6 +516,7 @@ def register_settings_routes(app):
             "calendar":        get_setting("cineinfo_calendar",        "0"),
             "calendar_seerr":  get_setting("cineinfo_calendar_seerr",  "0"),
             "calendar_mediathek": get_setting("cineinfo_calendar_mediathek", "0"),
+            "calendar_library": get_setting("cineinfo_calendar_library", "0"),
             "calendar_refresh_interval": get_setting("cineinfo_calendar_refresh_interval", "24"),
         })
     @app.route("/api/settings/cineinfo", methods=["PUT"])
@@ -529,7 +533,8 @@ def register_settings_routes(app):
                     "show_genres", "show_fsk", "show_rating", "show_recommendations", "show_trailer",
                     "show_hover_rating", "show_hover_genres", "show_hover_fsk", "advanced_search",
                     "provider_order",
-                    "calendar", "calendar_seerr", "calendar_mediathek", "calendar_refresh_interval"]:
+                    "calendar", "calendar_seerr", "calendar_mediathek", "calendar_library",
+                    "calendar_refresh_interval"]:
             if key in data:
                 set_setting("cineinfo_" + key, str(data[key]))
 
@@ -1018,6 +1023,12 @@ def register_settings_routes(app):
         if "media_stats_enabled" in data:
             val = "1" if str(data["media_stats_enabled"]).lower() in ("true", "1") else "0"
             set_setting("media_stats_enabled", val)
+        if "new_home_enabled" in data:
+            # Which home page layout "/" renders. Read once per request in
+            # index(), so the next page load already shows the other layout --
+            # no restart, and nothing else in the app depends on it.
+            val = "1" if str(data["new_home_enabled"]).lower() in ("true", "1") else "0"
+            set_setting("new_home_enabled", val)
         if "library_rescan_hours" in data:
             # Whitelisted: the value drives a background loop, so an arbitrary
             # number here would be a foot-gun (0.001 hours = a permanent scan).
@@ -1369,15 +1380,25 @@ def register_settings_routes(app):
         so the frontend confirmation dialog never needs a second,
         hand-copied source for what each data_key means. Called from
         static/telemetry.js's loadTelemetrySettings() and from base.html's
-        first-run consent-dialog bootstrap (checks consent_given === null)."""
+        first-run consent-dialog bootstrap (checks consent_given === null).
+
+        The registry's label/explain/title/description text is bilingual
+        (registry.py stores {"de", "en"} per field, since that file is JSON-
+        only and never runs through pybabel extract -- see its module
+        docstring) -- resolved here to the session's current UI language,
+        same session key app.py's own get_locale() reads, so the stage tree
+        telemetry.js renders always matches whatever language the rest of
+        the Settings page is already showing."""
+        from flask import session as _sess
         from ...telemetry import settings as _tel
         from ...telemetry.registry import registry_export
+        ui_lang = _sess.get("ui_language") if _sess.get("ui_language") in ("en", "de") else "en"
         return jsonify({
             "install_id": _tel.get_install_id(),
             "consent_given": _tel.is_consent_given(),
             "consent_at": _tel.get_consent_at(),
             "enabled_keys": sorted(_tel.get_enabled_keys()),
-            "registry": registry_export(),
+            "registry": registry_export(ui_lang),
         })
 
     def _telemetry_kick():

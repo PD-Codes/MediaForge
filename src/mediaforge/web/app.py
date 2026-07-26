@@ -701,12 +701,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             for p in get_devinfo_posts()
             if (p.get("type") or "").strip().lower() == "warning"
         ]
+        # Settings -> General -> "Use the new home page". Read per request so
+        # the switch takes effect on the next load instead of at startup.
+        _new_home = (get_setting("new_home_enabled")
+                     or os.environ.get("MEDIAFORGE_NEW_HOME_ENABLED", "0")) == "1"
         return render_template(
             "index.html",
             lang_labels=LANG_LABELS,
             sto_lang_labels=sto_lang_labels,
             supported_providers=WORKING_PROVIDERS,
             devinfo_warnings=_devinfo_warnings,
+            new_home=_new_home,
         )
 
 
@@ -988,6 +993,14 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_v1_library_series",
             "api_v1_library_movies",
             "api_v1_stats",
+            # Calendar ICS subscription feed — authenticated by a per-user
+            # token in the query string, not by session. A calendar client
+            # (Google/Apple/Thunderbird/DAVx5) sends no cookies, so a login
+            # check here would make the feed unsubscribable. The token check
+            # in routes/calendar_routes.py's api_calendar_ics() is the gate;
+            # only the .ics route is exempt, the two token-management routes
+            # next to it (api_calendar_feed / _regenerate) stay session-gated.
+            "api_calendar_ics",
         }
         # Endpoints that have already been through the pass below. A module
         # installed live (store install, dependency install, Modulmanager

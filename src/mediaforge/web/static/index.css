@@ -10,6 +10,310 @@
 .site-hero {
   text-align: center;
   padding: 40px 0 20px;
+}
+
+/* ===================================================================
+   Search-first home (July 2026)
+   -------------------------------------------------------------------
+   The search field is the point of the page, so it gets the weight: a
+   single pill with the icon inside, the source chips right underneath
+   saying who is being asked, and -- only while something runs -- one
+   strip about the current download instead of a trip to the queue.
+   =================================================================== */
+
+.home-hero { padding: 34px 0 18px; }
+
+.home-hero h1 {
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+}
+
+/* Pill layout. .search-bar keeps its own rules for the Seerr modal; only the
+   home instance carries .home-searchbar. */
+.search-bar.home-searchbar {
+  max-width: 640px;
+  align-items: center;
+  /* Wrapping is width-driven, not breakpoint-driven: the field claims a
+     220px basis, so the moment the two buttons would squeeze it below that,
+     they drop to a line of their own — at any viewport, including the
+     awkward ones between phone and desktop. */
+  flex-wrap: wrap;
+  gap: 6px;
+  row-gap: 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 999px;
+  padding: 4px 6px 4px 14px;
+  margin-bottom: 12px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.search-bar.home-searchbar:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Icon and input travel together: on a phone the bar stacks, and without
+   this wrapper the icon would end up alone on its own line above the field. */
+.home-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.home-search-icon { display: inline-flex; color: var(--text-muted); flex: none; }
+.home-search-icon svg { width: 17px; height: 17px; }
+
+/* The input is now inside the pill, so it drops its own box. */
+.search-bar.home-searchbar input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+.search-bar.home-searchbar input:focus { outline: none; box-shadow: none; }
+
+.search-bar.home-searchbar button,
+.search-bar.home-searchbar #searchBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  flex: none;
+}
+
+/* Direct Link is the quiet alternative, not a second submit: no border, no
+   fill, just the label with a link glyph. It used to be a 46px rounded-rect
+   with a 1.5px border sitting inside a 50px pill next to a 36px pill button —
+   three different shapes in one control, which is what made it look pasted
+   on. Same height and same radius as Search now; only the weight differs. */
+.search-bar.home-searchbar #directLinkBtn {
+  /* height and radius are repeated here on purpose: this is an ID rule, and
+     leaving them to the sibling `.search-bar.home-searchbar button` rule is
+     what let a stray `#directLinkBtn { height: 46px }` elsewhere override
+     them for months. Self-contained, so it cannot happen again. */
+  height: 36px;
+  border-radius: 999px;
+  gap: 7px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.search-bar.home-searchbar #directLinkBtn svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  opacity: 0.9;
+}
+
+.search-bar.home-searchbar #directLinkBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.search-bar.home-searchbar #directLinkBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Source chips ── */
+.home-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin: 0 auto 26px;
+}
+
+.home-chips:empty { display: none; }
+
+.home-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A disabled source is stated, not hidden: knowing that hanime is off is the
+   answer to "why does my search find nothing". */
+.home-chip.is-off { color: var(--text-muted); opacity: 0.55; }
+
+/* Down is different from off -- it is temporary and not your doing. */
+.home-chip.is-down { color: var(--error); border-color: rgba(239, 68, 68, 0.35); }
+
+.home-chip-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+
+/* ── Running strip ── */
+.home-run {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 auto 26px;
+  padding: 11px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.home-run-text { display: block; flex: 1; min-width: 0; }
+
+.home-run-title {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-run-bar {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  overflow: hidden;
+  margin: 6px 0 4px;
+}
+
+.home-run-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  /* background-COLOR, not the shorthand — the shorthand would wipe the stripe
+     image below. Same reasoning as .qhub-hero-fill in queue.css. */
+  background-color: var(--accent);
+  /* The same moving stripes as the queue window, so the two read as one thing:
+     the pattern and the keyframes (queue-progress-stripes) live in queue.css,
+     which base.html loads on every page. */
+  background-image: linear-gradient(45deg,
+      rgba(255, 255, 255, 0.16) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.16) 50%,
+      rgba(255, 255, 255, 0.16) 75%,
+      transparent 75%,
+      transparent);
+  background-size: 1rem 1rem;
+  animation: queue-progress-stripes 1s linear infinite;
+  transition: width 0.4s ease;
+}
+
+/* Paused queue: freeze the stripes instead of pretending something moves. */
+.home-run-bar.is-paused .home-run-fill { animation-play-state: paused; }
+
+@media (prefers-reduced-motion: reduce) {
+  .home-run-fill {
+    animation: none;
+    background-image: none;
+    transition: none;
+  }
+}
+
+.home-run-sub { display: block; font-size: 0.73rem; color: var(--text-secondary); }
+
+.home-run-btn { flex: none; }
+
+/* ===================================================================
+   Phone layout
+   -------------------------------------------------------------------
+   The pill turns into a small card: the field on top, the two actions
+   side by side underneath — same height, same radius, so they read as a
+   pair. Before this they wrapped as-is and ended up 36px next to 46px,
+   a 999px pill next to a 10px box, with the search icon stranded on a
+   line of its own above the input.
+   =================================================================== */
+@media (max-width: 600px) {
+  .home-hero { padding: 22px 0 14px; }
+  .home-hero h1 { font-size: 1.3rem; }
+  .home-hero .hero-sub { font-size: 0.86rem; }
+
+  .search-bar.home-searchbar {
+    border-radius: var(--radius-lg, 14px);
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .home-search-field {
+    flex: 1 1 100%;
+    padding: 0 2px;
+  }
+
+  /* 16px keeps iOS from zooming the page when the field takes focus. */
+  .search-bar.home-searchbar input {
+    height: 38px;
+    font-size: 1rem;
+  }
+
+  .search-bar.home-searchbar #searchBtn,
+  .search-bar.home-searchbar #directLinkBtn {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 44px;
+    padding: 0 12px;
+    font-size: 0.88rem;
+  }
+
+  /* Fallback for a *stale cached template*: app.py sets
+     TEMPLATES_AUTO_RELOAD = False, so index.html only changes when MediaForge
+     restarts, while CSS refreshes on the next reload (?v=<mtime>). Between the
+     two, the old markup has no .home-search-field — the icon is then a direct
+     child of the bar and would be stranded on a line above the input, which
+     keeps its `flex: 1` and shrinks to a stub. Hide the loose icon and let the
+     input take the whole line; with the current template neither rule matches,
+     because the icon is no longer a direct child. */
+  .search-bar.home-searchbar > .home-search-icon { display: none; }
+  .search-bar.home-searchbar > input { flex: 1 1 100%; }
+
+  /* No hover on a touch screen, so the ghost button needs a surface of its
+     own to read as tappable. */
+  .search-bar.home-searchbar #directLinkBtn {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+
+  .home-chips { gap: 5px; margin-bottom: 20px; }
+  .home-chip { font-size: 0.68rem; padding: 3px 9px; }
+
+  .home-run { flex-wrap: wrap; }
+}
+
+/* Very narrow phones: the two labels stop fitting side by side. Stacked, the
+   primary action goes on top — the DOM order puts it last so that on wider
+   screens the accent pill anchors the right end of the field. */
+@media (max-width: 380px) {
+  .search-bar.home-searchbar #searchBtn,
+  .search-bar.home-searchbar #directLinkBtn {
+    flex: 1 1 100%;
+  }
+
+  /* Explicit order for all three: a bare `order: -1` on the button would
+     also lift it above the input field, which shares the same flex line. */
+  .home-search-field { order: 0; }
+  .search-bar.home-searchbar #searchBtn { order: 1; }
+  .search-bar.home-searchbar #directLinkBtn { order: 2; }
 }.site-hero h1 {
   font-size: 2rem;
   margin-bottom: 8px;
@@ -175,3 +479,82 @@
 .browse-provider-megakino::before {
   background: var(--success);
 }
+
+/* ===================================================================
+   Home feed — the opt-in "new home page" (Settings -> General)
+   Rows are grouped by question instead of by source, so the two chip
+   groups above them are what says which sources and which media types
+   feed the rows. The rows themselves reuse .browse-section /
+   .browse-grid / .browse-card, so posters, scroll buttons and badges
+   are the same objects as on the classic home page.
+   =================================================================== */
+
+.home-feed {
+  margin-top: 26px;
+}
+
+.feed-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.feed-chip-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.feed-chip-label--split {
+  margin-left: 8px;
+}
+
+.feed-chip {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.feed-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.feed-chip.is-on {
+  background: var(--accent-soft);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.feed-section {
+  margin-top: 18px;
+}
+
+/* On a phone the pill row would eat half the screen — it scrolls sideways
+   instead of wrapping into four lines. */
+@media (max-width: 640px) {
+  .feed-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    border-radius: var(--radius-md);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .feed-filters::-webkit-scrollbar { display: none; }
+  .feed-chip { flex: none; }
+  .feed-chip-label { flex: none; }
+}
+

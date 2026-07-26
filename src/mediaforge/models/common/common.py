@@ -607,6 +607,15 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
 
     try:
         while True:
+            # Cancellation has to be honoured on EVERY iteration, not only when
+            # the line queue runs dry: ffmpeg prints a progress line about twice
+            # a second, so the queue.Empty branch below was never reached while a
+            # download/encode was actually moving — a cancelled episode kept
+            # running to its end and only then noticed it had been cancelled.
+            if cancel_event is not None and cancel_event.is_set():
+                logger.debug("[FFmpeg] Cancelled by external event. Killing process.")
+                process.kill()
+                break
             try:
                 line_str = line_queue.get(timeout=1.0)
             except queue.Empty:

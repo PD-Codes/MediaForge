@@ -485,14 +485,84 @@ Dropping a folder into `web/thirdparties/` is still all it takes to install a
 module by hand, and the Modulmanager's **Refresh** button picks up a brand-new
 folder without a restart.
 
-Everything *else* is staged and applied at the next start (`_pending/`, see
-`apply_pending_changes()`): updates, uninstalls, and store installs. Not out of
-caution — out of Flask. `app.register_blueprint()` works on a running app; there
-is no supported way to *un*register one, replace one, or re-run an
-already-imported module's top-level code. "Swap the folder while nothing is
-looking" only exists between process start and first request, so that's where it
-happens. The Modulmanager shows a "restart required" banner while anything is
-staged, and lets you discard it.
+A store install downloads into `_pending/` first (that is where the signature
+is verified — a package that fails it never reaches the live folder) and is then
+applied **live**: a folder new to this process is moved into place and registered
+(`install_staged_live()` → `rescan_new_modules()`), and an **update of a module
+that is already loaded** goes through `upgrade_module_live()` — deregister, swap
+the folder, register the new version. Both without a restart.
+
+Two cases still wait for one, and the Modulmanager's "restart required" banner
+says so (it lets you discard the staged folder too):
+
+- **Another loaded module `DEPENDS_ON` the one being upgraded.** Its dependents
+  imported symbols from the old module object and would keep using them; Python
+  cannot rebind that, so pretending otherwise would be worse than waiting.
+- **The new version refused to register.** Then it is not live *and* not
+  installed: `upgrade_module_live()` rolls the working version back and puts the
+  broken download in `_pending/_failed_<folder>/`, so a restart does not silently
+  retry it and you can still look at what was downloaded.
+
+An upgrade deliberately does **not** touch your settings, your data directory or
+your enabled state, and does **not** fire `on_disable` — you are not being
+switched off, your code is being replaced underneath you. `on_upgrade(app, from,
+to)` fires as usual once the new version has registered.
+
+### Uninstall really removes your blueprint
+
+Flask has no `unregister_blueprint()`, so an uninstalled module's routes used to
+merely be *blocked* by a guard on every request — still matched, still in the URL
+map, and a reinstall of the same module could never register its blueprint again
+(Flask refuses a duplicate name). `deregister_blueprint()` in
+`web/thirdparties/__init__.py` now takes it off the app properly: rules, view
+functions, `before_request`/`after_request`/`teardown` hooks, URL preprocessors,
+error handlers, the template folder and the blueprint's static route. The URL map
+is rebuilt from the surviving rules, because Werkzeug's `Map` keeps a
+state-machine matcher that `Map.update()` does *not* prune — dropping entries
+from `Map._rules` alone leaves the routes matchable.
+
+What that means for you as a module author:
+
+- **Uninstall and reinstall now work live**, in the same process. Your
+  `register(app)` may run a second time in one process lifetime, so keep it
+  idempotent: no "assert this only happens once", no module-level state that a
+  second call would double.
+- **Nested blueprints go with the parent** (they register as `parent.child`, and
+  everything matches on that prefix).
+- **Stop your own threads in `on_disable(app)`.** Deregistering a blueprint
+  removes routes, not the work you started; the uninstall path fires
+  `on_disable` *before* the files are deleted for exactly this reason.
+- Blueprints found by `import_name` — not only the ones the registry knows —
+  are removed. A module that registers a Blueprint and then never calls
+  `register_thirdparty()` is covered too.
+- Anything that cannot be removed falls back to the old block list, so its
+  routes 404 either way. The guard is the fallback now, not the mechanism.
+
+## What the Modulmanager says your module does
+
+Every card lists what the module actually hung into the app — "1 × menu entry ·
+2 × event hook · 1 × background worker" — with the capabilities that reach into
+MediaForge's own work (content source, search source, hoster, notification
+channel, event hook, background worker) marked in warning colour. For anything
+an admin did not write themselves that is the more useful question than who
+signed it, so give it an honest answer.
+
+The counts come from `registry.module_capabilities()`, which reads the same
+`item_id` convention `unregister_module()` cleans up by: **register your
+provider, hoster, search source, mirror list, monitor site, notification
+channel, event hook and background worker under the `item_id` you passed to
+`register_thirdparty()`**. Use a different id and your capability is invisible on
+the card *and* survives your own uninstall — the two failure modes have the same
+cause. The read-only accessors behind it are
+`providers.thirdparty_provider_ids()`, `search.thirdparty_search_source_ids()`,
+`extractors.thirdparty_hoster_ids()`, `mirrors.thirdparty_mirror_ids()` and
+`uptime_monitor.thirdparty_monitor_ids()`.
+
+The card header shows exactly one state — Running / Off / Skipped / Error — and
+sorts problems to the top. Note that **an unsigned module gets no badge**: that
+is the normal state of a third-party module, and a warning on the normal case
+only teaches people to ignore warnings. A signature that exists and does *not*
+verify is a different matter and says so in red.
 
 ## Richer settings fields
 
@@ -849,12 +919,18 @@ Two consequences to know about:
 ## Reusable UI components
 
 MediaForge's core CSS is already loaded on every page (`base.html`'s
-`<head>` — everything below except `settings_rows.css` needs no extra
-`<link>` at all) and its class names are stable, so use them instead of
+`<head>`) and its class names are stable, so use them instead of
 inventing new ones — a new integration then looks native for free. Enable
 `example_ui_components/` (section "Management" in the sidebar once
 enabled) for a live, click-through gallery of all of these with the exact
 markup underneath each one; the table below is the quick-reference version.
+The **Defined in** column names the file and flags the few stylesheets that
+are *not* loaded globally — `settings_rows.css`, `stats.css`,
+`mf-charts.css` and `mf_detail_modal.css` need their own `<link>` on your
+page. `mf_components.css` used to be one of them; since the queue hub (one
+window for downloads/encoding/upscaling, in `base.html`) uses `.mf-progress`
+and `.mf-facet` on every page, it is loaded globally now — an extra `<link>`
+in your own page is harmless but no longer needed.
 
 | Component | Classes | Defined in | Notes |
 |---|---|---|---|
@@ -870,13 +946,137 @@ markup underneath each one; the table below is the quick-reference version.
 | Range slider | `.mf-range` (row) / `.mf-range-header` / `.mf-range-value` | `forms.css` | Wraps an `<input type="range">` in the themed track + thumb, with an optional label/value header above it |
 | Filter chip | `.mf-chip` (+ `.mf-chip-static` for one without an ✕) / `.mf-chip-remove` | `forms.css` | The "active filter" pills above a result list. Delegate the click on the container and read an index/id off the button — do not build an inline `onclick` |
 | Pagination | `.mf-pagination` / `-btn` / `-page` (+ `.active`) / `-ellipsis` / `-jump` | `forms.css` | First/prev, numbered pages with ellipses, next/last and a "jump to page" box. Give every clickable element a `data-page` attribute and delegate the click on the container, since the pager is re-rendered on each page change |
+| Pagination bar | `.mf-pagination-bar` (wrapper, supports `[hidden]`) / `.mf-pagination-count` / `.mf-pagination-perpage` | `mf_components.css` | The row a `.mf-pagination` pager usually sits in: a "Showing X–Y of Z" count on one side, the pager in the middle, and a results-per-page `<select>` on the other — stacks to one centered column below 480px. Client-side pagination (slice an already-fetched array, e.g. Library) and server-paged tables (History) both use it; see `libRenderPagination()` in `library.js` for the reference implementation, including a 10/20/50/100 per-page `<select>` persisted to `localStorage` |
 | Buttons | `.btn` + `.btn-primary`/`-secondary`/`-ghost`/`-danger`, `.btn-sm`/`-lg`, `.btn-icon` | `buttons.css` | |
 | Settings row layout | `.settings-section` (card) / `.settings-row` / `-left`/`-right`/`-label`/`-desc` | `settings_rows.css` (needs its own `<link>`) | The label-left/control-right row every Settings page is built from |
 | Empty state | `.empty-state` / `-icon` / `-title` / `-desc` | `feedback.css` | Centered icon+title+description for "nothing here yet" |
 | Progress bar | `.progress-wrap` (track) / `.progress-bar` (fill, inline `style="width:N%"`) | `tabs-badges.css` | Prefix your own bar class instead of styling `.progress-bar` directly if several bars exist on one page at once |
 | KPI card | `.stat-card` / `.stat-value` / `.stat-label` / `.stat-sub` (+ inline `style="--kpi-color:#7c3aed"` for the accent strip) | `stats.css` (needs its own `<link>`) | The metric tile the Statistics page is built from. `--kpi-color` drives the strip along the top edge and the icon tint; add `.hero-card` for the larger variant with an icon/sparkline header row (`.hero-head` / `.hero-icon`) and `.is-clickable` when the card opens something — render a clickable card as a real `<button>` so it stays keyboard reachable |
 | Charts | `MFCharts` (JS) + `.mfc-chart` container | `mf-charts.js` + `mf-charts.css` (both need their own `<link>`/`<script>`) | Dependency-free inline-SVG charts — no CDN, no bundler, CSP-friendly, and painted from the `variables.css` theme tokens so theme packs restyle them for free. See "Charts (MFCharts)" below |
+| Search field | `.mf-search` / `.mf-search-icon` / `input.mf-search-input` / `.mf-search-clear` | `mf_components.css` | Icon + input + clear button. Note the **element-qualified** `input.mf-search-input`: `forms.css` styles inputs via `input[type="search"]` (specificity 0,1,1), which silently beats any bare class (0,1,0). The clear button is markup only — two listeners of your own, see the gallery |
+| Toolbar | `.mf-toolbar` / `-row` / `-gap` / `-sep` / `.mf-icon-btn` / `.mf-facet` | `mf_components.css` | One `-row` per job: row 1 *finds* (search, navigation), row 2 *shapes the view* (filters left, view options after a `-gap`, which pushes them to the right edge). `.mf-facet` is the count badge inside a `.mf-segmented-btn` |
+| Poster grid | `.mf-poster-grid` / `.mf-poster-card` (+ `.is-selected`) / `-art` / `-flag` (+ `--pending`/`--approved`/`--partial`/`--done`) / `-scrim` / `-meta` / `-title` / `-foot` / `-who` / `-when` / `-actions` / `-select` | `mf_components.css` | Responsive 2:3 poster grid. Status lives in the corner **flag** instead of another pill, attribution in the **foot** — outside the hover overlay, because touch has no hover; `@media (hover:none)` folds the actions out below the card |
+| Type pill / volume tag | `.mf-type-pill` (+ `--series`/`--movie`/`--outline`) / `.mf-vol-tag` | `mf_components.css` | A small inline badge for "what kind of item is this" (`.mf-type-pill`) and "which source location did it come from" (`.mf-vol-tag`, folder icon + label, label text hides below 480px). Drop either into a `.mf-poster-meta` line, a list row, or a detail header — not poster-grid specific. Introduced for the Library page's flattened, multi-volume view |
+| Poster progress / watched badge | `.mf-poster-progress` / `-fill` / `.mf-poster-watched` (+ `.mf-poster-card.is-watched`) | `mf_components.css` | A thin playback-progress bar along a poster card's bottom edge plus a small watched checkmark badge, for when a card already knows a single completion percentage without the user opening it (e.g. Library's eager per-movie progress prefetch) |
+| Avatar | `.mf-avatar` (+ `.mf-avatar--sm`) | `mf_components.css` | Initials disc for "who asked for this" |
+| Timeline | `.mf-timeline` / `.mf-stop` (+ `.is-now`) / `-dot` / `-when` / `-rel` / `-day` / `-mon` / `-item` / `-source` / `-thumb` / `-text` / `-title` / `-sub` / `-badge` / `-count` / `.mf-timeline-gap` | `mf_components.css` | Continuous rail with a glowing "now" dot and **named gaps** ("3 days with nothing") rather than two rows sitting next to each other. `-source` is a 3px coloured spine, not another coloured word next to the title. Week and Agenda on the Calendar page are the same renderer |
+| Progress track | `.mf-progress` / `-step` (+ `.is-done`/`.is-active`) / `-bar` / `-label` | `mf_components.css` | A few *named* stages of one item (requested → approved → downloaded). For a percentage use `.progress-wrap` above. Hide it below ~1000px or the labels become stumps |
+| Inline empty state | `.mf-empty` (+ `.is-error`) / `-icon` / `-hint` | `mf_components.css` | "Your filters match nothing" *inside* a working view — as opposed to `.empty-state` above, the big centred block for a page with no data at all. Keep the two messages distinct; only one of them deserves a reset button |
 | Icons | *(convention, not a class)* | — | Inline `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` — no sprite sheet, `stroke="currentColor"` is what makes it follow theme/text color automatically |
+| TMDB detail modal | `MFDetailModal` (JS) + `{% include "mf_detail_modal.html" %}` | `mf_detail_modal.js` + `mf_detail_modal.css` (both need their own `<link>`/`<script>`) | A ready-made "what is this title" modal driven by a TMDB id. See "TMDB detail modal (MFDetailModal)" below |
+
+### TMDB detail modal (MFDetailModal)
+
+`templates/mf_detail_modal.html` + `web/static/mf_detail_modal.js` +
+`mf_detail_modal.css` are a drop-in detail view for anything you can name
+by TMDB id: poster, headline, date, synopsis, metadata chips (rating,
+season count, runtime, genres, status) and a "Search streams" button.
+
+It is deliberately **not** the big series modal from
+`shared_modals.html` — that one starts from a *provider URL* and drags in
+all of `app.js`. This one starts from a TMDB id and has no dependencies
+beyond its own two files, which is exactly the shape a module usually
+needs. The Calendar page uses it for every event.
+
+Include it once in your template and call it from your click handler:
+
+```jinja
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='mf_detail_modal.css') }}">
+{% endblock %}
+
+{% block content %}
+  ...
+  {% include "mf_detail_modal.html" %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='mf_detail_modal.js') }}"></script>
+  <script src="{{ url_for('static', filename='my_module.js') }}"></script>
+{% endblock %}
+```
+
+```js
+MFDetailModal.open({
+  tmdbId: 1396,             // omit to skip the TMDB fetch entirely
+  mediaType: "tv",          // "tv" | "movie" (default "tv")
+  title: "Breaking Bad",
+  subtitle: "S01E01",       // small badge next to the date
+  caption: "Pilot",         // episode name / one-liner
+  date: "2008-01-20",       // ISO day, rendered in the user's locale
+  image: "/poster.jpg",     // already proxied if it is remote
+  searchTitle: "Breaking Bad",   // optional, defaults to title
+});
+MFDetailModal.close();
+```
+
+Notes:
+
+- The synopsis and chips come from `GET /api/tmdb/details`, so a **TMDB
+  API key** must be configured (Integrations → CineInfo). Without one, the
+  modal still shows whatever you passed in and reports that no further
+  details are available — it does not error out.
+- Everything you pass is escaped, and `image` is URL-scheme-checked, so it
+  is safe to hand it values that came from a remote API.
+- Requests are abortable: opening a second entry while the first is still
+  loading cannot let the slower answer overwrite the newer one.
+- The "Search streams" button uses `openAniSearchModal()` when the host
+  page loads `app.js` *and* includes `shared_modals.html`, and otherwise
+  navigates to the home search — so it works either way. The Calendar page
+  links both, which is why its search results open in place; do the same on
+  your own page if you want that flow instead of a page change.
+- Close/Escape/backdrop-click are wired by the component itself. Do not
+  add your own handlers for them.
+
+### Layout blocks (mf_components.css)
+
+`web/static/mf_components.css` holds the building blocks the July 2026
+redesign is made of. The split is worth internalising:
+
+- **`forms.css` = form-control vocabulary** — `.chb-main`, `.mf-segmented`,
+  `.mf-multiselect`, `.mf-token-field`, `.mf-range`, `.mf-chip`,
+  `.mf-pagination`. Loaded globally.
+- **`mf_components.css` = layout and content vocabulary** — `.mf-search`,
+  `.mf-toolbar`, `.mf-poster-grid`, `.mf-type-pill`, `.mf-vol-tag`,
+  `.mf-poster-progress`/`.mf-poster-watched`, `.mf-avatar`, `.mf-timeline`,
+  `.mf-progress`, `.mf-empty`, `.mf-pagination-bar`. Loaded globally since
+  the queue hub landed (July 2026); no `<link>` of your own required.
+
+The Calendar, Seerr and Library pages are built out of these, and
+`example_ui_components/` shows every one of them live with the markup
+underneath. The exact class lists are in the table above; what is worth
+knowing beyond them:
+
+- **`input.mf-search-input` is element-qualified on purpose.** `forms.css`
+  styles inputs via `input[type="search"]` — specificity 0,1,1, which beats
+  any bare class (0,1,0). A plain `.my-input { padding: … }` is therefore
+  **silently ignored**, app-wide. Qualifying your class with the element
+  matches that specificity, and loading later wins. Same trick applies
+  anywhere you restyle an input.
+- **Toolbars get one row per job.** `.mf-toolbar-row` 1 finds, row 2 shapes
+  the view; `.mf-toolbar-gap` is the "everything after me goes right"
+  spacer. Cramming five equal control groups into one row is what made the
+  old toolbars read as noise.
+- **Attribution belongs outside the hover overlay.** `.mf-poster-foot` is
+  always visible for exactly that reason: there is no hover on touch, and
+  "who asked for this" is what people scan a request list for. The
+  `.mf-poster-actions` overlay is secondary and folds out under the card
+  when `@media (hover: none)` applies.
+- **Status goes in the corner flag,** not into yet another pill in a pile
+  of pills — `.mf-poster-flag--pending/--approved/--partial/--done` (and
+  `--new` for "recently added", used by the Library page).
+- **`.mf-poster-scrim` stacks its children in a column,** bottom-anchored —
+  put `.mf-poster-meta` (small caption line; drop a `.mf-type-pill` and/or
+  `.mf-vol-tag` in it) above `.mf-poster-title`, not side by side.
+- **Name your gaps.** `.mf-timeline-gap` exists so a fortnight with nothing
+  scheduled reads as a fortnight with nothing scheduled, instead of two
+  adjacent rows implying the entries are consecutive.
+- **The clear button and the timeline are markup, not behaviour.** These are
+  CSS components: no JS ships with them, so wire your own listeners (the
+  gallery page shows the two-liner for `.mf-search-clear`).
+- Every colour comes from the `variables.css` tokens, so a user's theme
+  pack restyles your page for free — do not hardcode hex values next to
+  them.
 
 ### Charts (MFCharts)
 

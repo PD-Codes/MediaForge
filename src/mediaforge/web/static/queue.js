@@ -1,9 +1,28 @@
+// =====================================================================
+// queue.js — the queue hub
+// ---------------------------------------------------------------------
+// ONE window (#queueOverlay in base.html) for all three queues. This file
+// owns the whole thing: the shell, the merged data model and the single
+// renderer. encoding_queue.js and upscale_queue.js only fetch their queue
+// and hand the result to QHub.put() — they render nothing themselves.
+//
+// Layout of the window:
+//   segment row   Everything | Downloads | Encoding | Upscaling
+//   hero          the one job running right now, large
+//   list          "Needs you" / "Up next" / "Finished today"
+//
+// Deliberately kept: every function name an inline onclick= refers to still
+// exists (openQueueModal, setQueueFilter, moveQueueItem, …), and the three
+// sidebar badges stay separate — window.updateTotalQueueBadge() reads their
+// textContent, so merging them would silently produce 0.
+// =====================================================================
+
 let queueModalOpen = false;
 let queuePollTimer = null;
 let badgePollTimer = null;
 let queueCustomPaths = [];
 let _queueIsPaused = false;
-let _queueFilter = "all";  // "all" | "active" | "completed" | "failed"
+let _queueFilter = "all";   // legacy status filter, see setQueueFilter()
 
 (async function loadQueueCustomPaths() {
   try {
@@ -15,26 +34,138 @@ let _queueFilter = "all";  // "all" | "active" | "completed" | "failed"
   }
 })();
 
-function openQueueModal() {
-  queueModalOpen = true;
-  document.getElementById("queueOverlay").style.display = "block";
-  loadQueue();
-  if (queuePollTimer) clearInterval(queuePollTimer);
-  queuePollTimer = setInterval(loadQueue, 2000);
+// =====================================================================
+// Shell
+// =====================================================================
+
+let queueHubOpen = false;
+window.qhubActivePane = "all";   // "all" | "downloads" | "encoding" | "upscaling"
+
+const _QHUB_PANES = ["all", "downloads", "encoding", "upscaling"];
+
+/** The merged model. Each queue writes its own slice; the renderer reads all. */
+const _qhubModel = {
+  downloads: { items: [], progress: {}, paused: false },
+  encoding: { items: [], progress: {} },
+  upscaling: { items: [], progress: {} },
+};
+
+function _qhubEl(id) { return document.getElementById(id); }
+
+/** True while the hub is open and the given queue is part of the view. */
+function qhubPaneActive(pane) {
+  return queueHubOpen && (window.qhubActivePane === "all" || window.qhubActivePane === pane);
 }
 
-function closeQueueModal() {
-  queueModalOpen = false;
-  document.getElementById("queueOverlay").style.display = "none";
-  if (queuePollTimer) {
-    clearInterval(queuePollTimer);
-    queuePollTimer = null;
-  }
+function openQueueHub(pane) {
+  const overlay = _qhubEl("queueOverlay");
+  if (!overlay) return;
+  const wasOpen = queueHubOpen;
+  queueHubOpen = true;
+  // modals.css reveals overlays via [style*="block"] — never use flex here.
+  overlay.style.display = "block";
+  if (!wasOpen && window.MFScrollLock) window.MFScrollLock.lock();
+  setQueuePane(pane || window.qhubActivePane);
 }
+
+function closeQueueHub() {
+  const overlay = _qhubEl("queueOverlay");
+  if (overlay) overlay.style.display = "none";
+  if (queueHubOpen && window.MFScrollLock) window.MFScrollLock.unlock();
+  queueHubOpen = false;
+  queueModalOpen = false;
+  _qhubStopTimers();
+}
+
+function _qhubStopTimers() {
+  if (queuePollTimer) { clearInterval(queuePollTimer); queuePollTimer = null; }
+  if (window._qhubEncodingTimer) { clearInterval(window._qhubEncodingTimer); window._qhubEncodingTimer = null; }
+  if (window._qhubUpscaleTimer) { clearInterval(window._qhubUpscaleTimer); window._qhubUpscaleTimer = null; }
+}
+
+/**
+ * Switch the visible queue. Only what is on screen polls at 2s — on
+ * "Everything" that is all three, on a single segment just that one. The
+ * other queues keep their slower background badge poll.
+ */
+function setQueuePane(pane) {
+  if (_QHUB_PANES.indexOf(pane) === -1) pane = "all";
+  window.qhubActivePane = pane;
+
+  _QHUB_PANES.forEach(function (p) {
+    const tab = _qhubEl("qhubTab-" + p);
+    if (!tab) return;
+    const on = p === pane;
+    tab.classList.toggle("active", on);
+    tab.setAttribute("aria-selected", on ? "true" : "false");
+  });
+
+  // The two "this queue is switched off" badges only apply to their own view.
+  ["encodingDisabledBadge", "upscaleDisabledBadge"].forEach(function (id) {
+    const el = _qhubEl(id);
+    if (el) el.style.display = "none";
+  });
+
+  _qhubStopTimers();
+  queueModalOpen = pane === "all" || pane === "downloads";
+
+  if (queueModalOpen) {
+    loadQueue();
+    queuePollTimer = setInterval(loadQueue, 2000);
+  }
+  if (pane === "all" || pane === "encoding") {
+    if (typeof _checkEncodingDisabled === "function") _checkEncodingDisabled();
+    if (typeof loadEncodingQueue === "function") {
+      loadEncodingQueue();
+      window._qhubEncodingTimer = setInterval(loadEncodingQueue, 2000);
+    }
+  }
+  if (pane === "all" || pane === "upscaling") {
+    if (typeof _checkUpscaleDisabled === "function") _checkUpscaleDisabled();
+    if (typeof loadUpscaleQueue === "function") {
+      loadUpscaleQueue();
+      window._qhubUpscaleTimer = setInterval(loadUpscaleQueue, 2000);
+    }
+  }
+  renderQueueHub();
+}
+
+/** "Clear finished" acts on whatever the current view shows. */
+function qhubClear() {
+  const pane = window.qhubActivePane;
+  if (pane === "all" || pane === "downloads") clearOldQueueItems();
+  if ((pane === "all" || pane === "encoding") && typeof clearEncodingQueue === "function") clearEncodingQueue();
+  if ((pane === "all" || pane === "upscaling") && typeof clearUpscaleQueue === "function") clearUpscaleQueue();
+}
+
+function qhubSetFacet(pane, n) {
+  const el = _qhubEl("qhubFacet-" + pane);
+  if (!el) return;
+  if (n > 0) { el.textContent = n; el.hidden = false; }
+  else { el.hidden = true; }
+}
+window.qhubSetFacet = qhubSetFacet;
+
+// Legacy entry points — the sidebar, the mobile top bar and app.js's home
+// strip call these by name.
+function openQueueModal() { openQueueHub("downloads"); }
+function closeQueueModal() { closeQueueHub(); }
+function openUpscaleModal() { openQueueHub("upscaling"); }
+function closeUpscaleModal() { closeQueueHub(); }
+function openEncodingQueueModal() { openQueueHub("encoding"); }
+function closeEncodingQueueModal() { closeQueueHub(); }
+
+// Per-queue badge counts, summed into the single sidebar badge by
+// updateTotalQueueBadge() further down. Seeded here because updateBadge() can
+// fire before that assignment is reached.
+window._qBadgeCounts = window._qBadgeCounts || { downloads: 0, encoding: 0, upscaling: 0 };
 
 let lastFfmpegProgress = {};
-let _stickyFfmpegProgress = {};  // last active snapshot — held across phase/episode gaps
-let _stickyUrl = "";             // current_url when snapshot was taken
+// Last active ffmpeg snapshot, kept PER queue item. /api/queue carries one
+// global ffmpeg_progress, but the hub normalises every running (and cancelling)
+// download in the same pass — with a single shared snapshot whichever item came
+// last overwrote it, and the hero's episode bar fell back to 0% on the next poll.
+let _stickyProgressById = {};    // id -> { progress, url }
 
 function formatBandwidth(bwStr) {
   if (!bwStr) return "";
@@ -48,9 +179,128 @@ function formatBandwidth(bwStr) {
   let mbps = value;
   if (unit === "k") mbps = value / 1000;
   else if (unit === "g") mbps = value * 1000;
-  const mbytes = mbps / 8;
-  return mbytes.toFixed(1) + " MB/s";
+  const mbytes = (mbps / 8).toFixed(1);
+  return (window.__LANG === "de" ? mbytes.replace(".", ",") : mbytes) + " MB/s";
 }
+
+// =====================================================================
+// Shared helpers (window.QHub) — also the door the other two queues use
+// =====================================================================
+
+window.QHub = (function () {
+
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = (s === undefined || s === null) ? "" : s;
+    return d.innerHTML;
+  }
+
+  function num(n) {
+    // German writes 8,4 — the queue shows a lot of these
+    return (window.__LANG === "de") ? String(n).replace(".", ",") : String(n);
+  }
+
+  function pct(p) {
+    const v = Math.max(0, Math.min(100, Math.round(p || 0)));
+    return window.__LANG === "de" ? v + " %" : v + "%";
+  }
+
+  function fmtEta(sec) {
+    sec = Math.round(sec || 0);
+    if (sec <= 0) return "";
+    if (sec >= 3600) return Math.floor(sec / 3600) + "h " + Math.floor((sec % 3600) / 60) + "m";
+    if (sec >= 60) return Math.floor(sec / 60) + " min";
+    return sec + "s";
+  }
+
+  function fmtMb(mb) {
+    mb = mb || 0;
+    if (mb >= 1024) return num((mb / 1024).toFixed(1)) + " GB";
+    return num(Math.round(mb)) + " MB";
+  }
+
+  /** completed_at comes from SQLite as UTC "YYYY-MM-DD HH:MM:SS". */
+  function ts(sqlTs) {
+    if (!sqlTs) return null;
+    const d = new Date(String(sqlTs).replace(" ", "T") + "Z");
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function isToday(sqlTs) {
+    const d = ts(sqlTs);
+    if (!d) return false;
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear()
+      && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate();
+  }
+
+  function hhmm(sqlTs) {
+    const d = ts(sqlTs);
+    if (!d) return "";
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
+  /** S02E11 out of a source URL, or "" when it isn't an episode URL. */
+  function episodeCode(url) {
+    if (!url) return "";
+    const m = url.match(/staffel-(\d+)\/episode-(\d+)/i);
+    if (m) return "S" + String(m[1]).padStart(2, "0") + "E" + String(m[2]).padStart(2, "0");
+    const f = url.match(/filme\/film-(\d+)/i);
+    if (f) return t("Film", "Movie");
+    return "";
+  }
+
+  /** S01E19 out of a file name — that is all the other two queues have. */
+  function episodeFromFile(path) {
+    const name = String(path || "").replace(/\\/g, "/").split("/").pop() || "";
+    const m = name.match(/S(\d{1,3})[ ._-]?E(\d{1,4})/i);
+    if (m) return "S" + String(m[1]).padStart(2, "0") + "E" + String(m[2]).padStart(2, "0");
+    return "";
+  }
+
+  /** "AniWorld · VOE" — where it comes from and who hosts it. */
+  function sourceLabel(seriesUrl) {
+    const u = String(seriesUrl || "").toLowerCase();
+    if (u.includes("aniworld.to")) return "AniWorld";
+    if (u.includes("filmpalast.to")) return "FilmPalast";
+    if (u.includes("megakino")) return "MegaKino";
+    if (u.includes("hanime")) return "hanime";
+    if (u.includes("s.to") || u.includes("serienstream")) return "SerienStream";
+    return "";
+  }
+
+  /** The station rail under the hero bar. */
+  function stations(steps) {
+    let html = '<div class="mf-progress qhub-stations">';
+    steps.forEach(function (s) {
+      const cls = s.state === "done" ? " is-done" : (s.state === "active" ? " is-active" : "");
+      html += '<div class="mf-progress-step' + cls + '">'
+        + '<span class="mf-progress-bar"></span>'
+        + '<span class="mf-progress-label">' + esc(s.label) + '</span>'
+        + '</div>';
+    });
+    return html + '</div>';
+  }
+
+  /** Called by encoding_queue.js / upscale_queue.js after each fetch. */
+  function put(queue, slice) {
+    if (!_qhubModel[queue]) return;
+    Object.assign(_qhubModel[queue], slice);
+    renderQueueHub();
+  }
+
+  return {
+    esc: esc, num: num, pct: pct, fmtEta: fmtEta, fmtMb: fmtMb,
+    isToday: isToday, hhmm: hhmm, episodeCode: episodeCode,
+    episodeFromFile: episodeFromFile, sourceLabel: sourceLabel,
+    stations: stations, put: put, model: _qhubModel,
+  };
+})();
+
+// =====================================================================
+// Downloads: fetching
+// =====================================================================
 
 async function loadQueue() {
   try {
@@ -59,78 +309,45 @@ async function loadQueue() {
     const items = data.items || [];
     lastFfmpegProgress = data.ffmpeg_progress || {};
     _queueIsPaused = !!data.paused;
-    updateFilterCounts(items);
-    updatePauseButton(items, _queueIsPaused);
-    renderQueue(items);
+    _qhubModel.downloads.items = items;
+    _qhubModel.downloads.progress = lastFfmpegProgress;
+    _qhubModel.downloads.paused = _queueIsPaused;
+    _qPruneSticky(items);
     updateBadge(items);
-
+    qhubSetFacet("downloads", items.filter(i => i.status === "running" || i.status === "queued").length);
+    renderQueueHub();
+    // The home page shows one strip about the running download; it has no
+    // poller of its own on purpose (see renderHomeRunStrip in app.js).
+    if (typeof window.renderHomeRunStrip === "function") {
+      window.renderHomeRunStrip(items, data.ffmpeg_progress, _queueIsPaused);
+    }
   } catch (e) {
     /* ignore */
   }
 }
 
-function updateFilterCounts(items) {
-  const counts = {
-    all: items.length,
-    active: items.filter(i => i.status === "running").length,
-    queued: items.filter(i => i.status === "queued").length,
-    completed: items.filter(i => i.status === "completed").length,
-    partial: items.filter(i => i.status === "partial").length,
-    failed: items.filter(i => i.status === "failed" || i.status === "cancelled").length,
-  };
-  Object.entries(counts).forEach(([key, n]) => {
-    const el = document.getElementById("qfCount-" + key);
-    if (!el) return;
-    el.textContent = n > 0 ? n : "";
-    el.style.display = n > 0 ? "" : "none";
-  });
-}
-
-function updatePauseButton(items, paused) {
-  const btn = document.getElementById("queuePauseBtn");
-  const icon = document.getElementById("queuePauseIcon");
-  const label = document.getElementById("queuePauseLabel");
-  if (!btn) return;
-
-  // Only show the button when there are active (queued/running) items
-  const hasActive = items.some(i => i.status === "running" || i.status === "queued");
-  btn.style.display = hasActive ? "" : "none";
-
-  if (paused) {
-    btn.title = t("Downloads fortsetzen", "Resume downloads");
-    btn.classList.add("queue-pause-btn--paused");
-    if (label) label.textContent = t("Fortsetzen", "Resume");
-    if (icon) icon.innerHTML =
-      '<polygon points="5 3 19 12 5 21 5 3"/>';
-  } else {
-    btn.title = t("Downloads pausieren","Pause downloads");
-    btn.classList.remove("queue-pause-btn--paused");
-    if (label) label.textContent = t("Pause","Pause");
-    if (icon) icon.innerHTML =
-      '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
-  }
-}
-
+/**
+ * Legacy status filter. The hub groups by what an entry needs from you
+ * instead ("needs you" / "up next" / "finished today"), so there is no
+ * filter row any more — the name stays because inline handlers and older
+ * third-party pages call it.
+ */
 function setQueueFilter(filter) {
   _queueFilter = filter;
-  // Update active tab
-  ["all", "active", "queued", "completed", "partial", "failed"].forEach(f => {
-    const tab = document.getElementById("qfTab-" + f);
-    if (tab) tab.classList.toggle("active", f === filter);
-  });
   loadQueue();
 }
+function setEncodingFilter(f) { if (typeof loadEncodingQueue === "function") loadEncodingQueue(); }
+function setUpscaleFilter(f) { if (typeof loadUpscaleQueue === "function") loadUpscaleQueue(); }
 
 async function toggleQueuePause() {
   const wasPaused = _queueIsPaused;
   try {
-    const endpoint = wasPaused ? "/api/queue/resume" : "/api/queue/pause";
-    await fetch(endpoint, { method: "POST" });
+    await fetch(wasPaused ? "/api/queue/resume" : "/api/queue/pause", { method: "POST" });
     await loadQueue();
     if (window.showToast) {
       showToast(wasPaused
-        ? t("Downloads werden fortgesetzt.","Downloads are being resumed")
-        : t("Downloads pausiert.","Downloads paused"));
+        ? t("Downloads werden fortgesetzt.", "Downloads are being resumed")
+        : t("Downloads pausiert.", "Downloads paused"));
     }
   } catch (e) {
     if (window.showToast) showToast(t("Fehler: " + e.message, "Error: " + e.message));
@@ -141,441 +358,482 @@ async function clearOldQueueItems() {
   try {
     await fetch("/api/queue/completed", { method: "DELETE" });
     await loadQueue();
-    if (window.showToast) showToast(t("Alte Einträge gelöscht","Old entries deleted"));
+    if (window.showToast) showToast(t("Alte Einträge gelöscht", "Old entries deleted"));
   } catch (e) {
     if (window.showToast) showToast(t("Fehler: " + e.message, "Error: " + e.message));
   }
 }
 
 function updateBadge(items) {
-  const activeItems = items.filter(
-    (i) => i.status === "queued" || i.status === "running",
-  );
+  const activeItems = items.filter(i => i.status === "queued" || i.status === "running");
   const active = activeItems.length;
-  
-  // Update running status on browse cards if app.js is present
+
+  // Running status on browse cards — download items only, never the other
+  // two queues.
   if (window.updateRunningCards) {
-    const runningUrls = activeItems.map(i => i.series_url).filter(Boolean);
-    window.updateRunningCards(runningUrls);
+    window.updateRunningCards(activeItems.map(i => i.series_url).filter(Boolean));
   }
 
-  const badge = document.getElementById("queueBadge");
-  if (active > 0) {
+  window._qBadgeCounts.downloads = active;
+  // #queueBadge only exists on pages/modules that still render their own
+  // download badge; the sidebar shows the summed one.
+  ["queueBadge", "mobileQueueBadge"].forEach(function (id) {
+    const badge = document.getElementById(id);
+    if (!badge) return;
     badge.textContent = active;
-    badge.style.display = "inline-block";
-  } else {
-    badge.style.display = "none";
-  }
+    badge.style.display = active > 0 ? "inline-block" : "none";
+  });
   if (window.updateTotalQueueBadge) window.updateTotalQueueBadge();
 }
 
-function renderQueue(items, paused) {
-  const list = document.getElementById("queueList");
-  paused = (paused !== undefined) ? paused : _queueIsPaused;
+// =====================================================================
+// One normalised entry per queue row, so the renderer stays queue-agnostic
+// =====================================================================
 
-  let visible;
-  if (_queueFilter === "active") {
-    visible = items.filter(i => i.status === "running");
-  } else if (_queueFilter === "queued") {
-    visible = items.filter(i => i.status === "queued");
-  } else if (_queueFilter === "completed") {
-    visible = items.filter(i => i.status === "completed").reverse();
-  } else if (_queueFilter === "partial") {
-    visible = items.filter(i => i.status === "partial").reverse();
-  } else if (_queueFilter === "failed") {
-    visible = items.filter(i => i.status === "failed" || i.status === "cancelled").reverse();
-  } else {
-    // "all" — default: active on top, then last 3 finished (newest first)
-    const running = items.filter(i => i.status === "running");
-    const queued = items.filter(i => i.status === "queued");
-    const done = items
-      .filter(i => i.status === "completed" || i.status === "partial" || i.status === "failed" || i.status === "cancelled")
-      .slice(-3)
-      .reverse();
-    visible = running.concat(queued, done);
+/**
+ * Resolve the per-episode progress of the running download. Between phases
+ * and between episodes the last active snapshot is held, so the bar never
+ * collapses to 0% and causes a layout jump.
+ */
+function _qEpisodeProgress(item) {
+  const currentUrl = item.current_url || "";
+  const slot = _stickyProgressById[item.id] || { progress: {}, url: "" };
+  if (lastFfmpegProgress.active && lastFfmpegProgress.percent > 0) {
+    slot.progress = Object.assign({}, lastFfmpegProgress);
+    slot.url = currentUrl;
+  } else if (_queueIsPaused && !lastFfmpegProgress.active) {
+    slot.progress = {};
+    slot.url = "";
+  } else if (currentUrl && currentUrl !== slot.url) {
+    // The item moved on to the next episode — the old snapshot is stale.
+    slot.progress = {};
+    slot.url = currentUrl;
   }
+  _stickyProgressById[item.id] = slot;
+  return (lastFfmpegProgress.active && lastFfmpegProgress.percent > 0)
+    ? lastFfmpegProgress
+    : (slot.progress.active !== undefined ? slot.progress : lastFfmpegProgress);
+}
 
-  if (!visible.length) {
-    const emptyMsgs = {
-      active:    t("Kein Download läuft gerade.", "No download is currently running."),
-      queued:    t("Keine wartenden Downloads.", "No pending downloads."),
-      completed: t("Keine abgeschlossenen Downloads.", "No completed downloads."),
-      partial:   t("Keine teilweise abgeschlossenen Downloads.", "No partially completed downloads."),
-      failed:    t("Keine fehlgeschlagenen oder abgebrochenen Downloads.", "No failed or cancelled downloads."),
-      all:       t("Warteschlange ist leer", "Queue is empty"),
-    };
-    list.innerHTML = '<div class="queue-empty">' + (emptyMsgs[_queueFilter] || emptyMsgs.all) + '</div>';
-    return;
-  }
-
-  // For non-"all" filters, rebuild queued sub-list from visible only
-  const queued = visible.filter(i => i.status === "queued");
-
-  // Remember which error panels are expanded before re-render
-  const expandedErrors = new Set();
-  list.querySelectorAll(".queue-error-details.expanded").forEach((el) => {
-    expandedErrors.add(el.id);
-  });
-
-  // Remember old widths for smooth transitions
-  const oldWidths = {};
-  list.querySelectorAll(".queue-item").forEach((el) => {
-    const id = el.dataset.id;
-    if (id) {
-      const fills = el.querySelectorAll(".queue-progress-fill");
-      oldWidths[id] = {
-        ep: fills[0] ? fills[0].style.width : null,
-        phase: fills[1] ? fills[1].style.width : null
-      };
-    }
-  });
-
-  let html = "";
-  visible.forEach((item) => {
-    // Determine position within the queued sub-list so we can disable boundary arrows
-    const queuedIdx = queued.indexOf(item);  // -1 when item is not queued
-    const isRunning = item.status === "running";
-    const isActive =
-      isRunning || (item.status === "cancelled" && item.current_url);
-    const cls = isActive ? "queue-item queue-item-active" : "queue-item";
-
-    const isCancelling = item.status === "cancelled" && item.current_url;
-
-    let statusBadge = "";
-    if (item.status === "running")
-      statusBadge =
-        '<span class="queue-status queue-status-running">' + t("Läuft", "Running") + '</span>';
-    else if (item.status === "queued")
-      statusBadge = paused
-        ? '<span class="queue-status queue-status-paused">' + t("Pausiert", "Paused") + '</span>'
-        : '<span class="queue-status queue-status-queued">' + t("Wartend", "Queued") + '</span>';
-    else if (item.status === "completed")
-      statusBadge =
-        '<span class="queue-status queue-status-completed">' + t("Abgeschlossen", "Completed") + '</span>';
-    else if (item.status === "partial")
-      statusBadge =
-        '<span class="queue-status queue-status-partial">' + t("Teilweise erfolgreich", "Partially completed") + '</span>';
-    else if (item.status === "failed")
-      statusBadge =
-        '<span class="queue-status queue-status-failed">' + t("Fehlgeschlagen", "Failed") + '</span>';
-    else if (isCancelling)
-      statusBadge =
-        '<span class="queue-status queue-status-cancelling">' + t("Wird abgebrochen...", "Cancelling...") + '</span>';
-    else if (item.status === "cancelled")
-      statusBadge =
-        '<span class="queue-status queue-status-cancelled">' + t("Abgebrochen", "Cancelled") + '</span>';
-    // Captcha badge shown on top of the running badge when captcha_url is set
-    const captchaBadge = (isRunning && item.captcha_url)
-      ? ' <span class="queue-status queue-status-captcha">CAPTCHA</span>'
-      : '';
-
-    let progressHtml = "";
-    if (isRunning || isCancelling || item.status === "cancelled") {
-      const epPct =
-        item.total_episodes > 0
-          ? (item.current_episode / item.total_episodes) * 100
-          : 0;
-      const seInfo = item.current_url
-        ? parseSeasonEpisode(item.current_url)
-        : "";
-
-      // Combine episode progress with in-episode ffmpeg progress.
-      // During the ffmpeg phase, percent resets to 0 — but the download is
-      // already done, so we treat the full episode weight as earned to prevent
-      // the overall bar from jumping backwards.
-      let ffPct = 0;
-      if (isRunning && lastFfmpegProgress.active && item.total_episodes > 0) {
-        const inEpPct = (lastFfmpegProgress.phase === "ffmpeg" || lastFfmpegProgress.phase === "move" || lastFfmpegProgress.phase === "upscaling")
-          ? 100                                 // download done — hold full weight
-          : (lastFfmpegProgress.percent || 0);  // still downloading
-        ffPct = inEpPct / item.total_episodes;
-      }
-      const combinedPct = Math.min(Math.round(epPct + ffPct), 100);
-
-      const isFilmPalast = (item.series_url || "").includes("filmpalast.to");
-      let epLabel;
-      if (isFilmPalast) {
-        epLabel = isCancelling ? t("Film – wird abgebrochen...","Movie - cancelling...") : item.status === "cancelled" ? t("Film (gestoppt)","Movie (stopped)") : t("Film","Movie");
-      } else if (isCancelling) {
-        epLabel = item.current_episode + "/" + item.total_episodes + t(" Ep. – wird abgebrochen..."," Ep. - cancelling...");
-      } else if (item.status === "cancelled") {
-        epLabel = item.current_episode + "/" + item.total_episodes + t(" Ep. (gestoppt)", " Ep. (stopped)");
-      } else {
-        epLabel = item.current_episode + "/" + item.total_episodes + t(" Ep.", " Ep.");
-      }
-
-      // Second bar: per-episode phase progress (download or ffmpeg)
-      // Always rendered while running/cancelling so the modal height stays stable.
-      // Between phases/episodes the last active snapshot is held so the bar never
-      // collapses to 0% and causes a layout jump.
-      let episodeBarHtml = "";
-      if (isRunning || isCancelling) {
-        const currentUrl = item.current_url || "";
-
-        if (lastFfmpegProgress.active && lastFfmpegProgress.percent > 0) {
-          // Fresh data — update sticky snapshot
-          _stickyFfmpegProgress = Object.assign({}, lastFfmpegProgress);
-          _stickyUrl = currentUrl;
-        } else if (_queueIsPaused && !lastFfmpegProgress.active) {
-          // Queue is paused and episode finished — clear sticky so the bar
-          // resets to 0% while waiting for resume instead of freezing on the
-          // last percentage of the completed episode
-          _stickyFfmpegProgress = {};
-          _stickyUrl = "";
-        } else if (currentUrl && currentUrl !== _stickyUrl) {
-          // New episode URL with no active progress yet — reset sticky so the
-          // bar starts fresh at 0% rather than showing stale data from prev ep
-          _stickyFfmpegProgress = {};
-          _stickyUrl = currentUrl;
-        }
-        // If neither condition matched (same URL, just between phases) keep sticky as-is
-
-        const fp = (lastFfmpegProgress.active && lastFfmpegProgress.percent > 0)
-          ? lastFfmpegProgress
-          : (_stickyFfmpegProgress.active !== undefined ? _stickyFfmpegProgress : lastFfmpegProgress);
-
-        const phase = fp.phase || "";
-        const epPct = fp.percent || 0;
-        const bw = formatBandwidth(fp.bandwidth || "");
-        const dlMb = fp.downloaded_mb || 0;
-        const totalMb = fp.total_mb || 0;
-        const etaSec = fp.eta_sec || 0;
-        const fpsFps = fp.fps || "";
-        const fpTime = fp.time || "";
-        const fpEncoder = fp.encoder || "";
-
-        let phaseLabel, fillClass;
-        const episodeTag = seInfo ? " · " + seInfo : "";
-        if (phase === "move") {
-          phaseLabel = t("📦 Verschieben", "📦 Moving") + episodeTag;
-          fillClass = "queue-progress-fill--move";
-        } else if (phase === "upscaling") {
-          phaseLabel = t("✨ Upscaling", "✨ Upscaling") + episodeTag;
-          fillClass = "queue-progress-fill--upscaling";
-        } else if (phase === "ffmpeg") {
-          phaseLabel = t("⚙ FFmpeg", "⚙ FFmpeg") + episodeTag;
-          fillClass = "queue-progress-fill--ffmpeg";
-        } else {
-          phaseLabel = t("⬇ Download", "⬇ Download") + episodeTag;
-          fillClass = "queue-progress-fill--download";
-        }
-
-        // Build info pills
-        let pillsHtml = "";
-        if (epPct > 0 && phase === "move") {
-          // Move phase: show size + speed + ETA
-          const fmtMbM = mb => mb >= 1024 ? (mb / 1024).toFixed(2) + " GB" : mb.toFixed(1) + " MB";
-          const dlMbM = fp.downloaded_mb || 0;
-          const totalMbM = fp.total_mb || 0;
-          if (dlMbM > 0) {
-            const sizeLabel = totalMbM > 0
-              ? escQ(fmtMbM(dlMbM) + " / " + fmtMbM(totalMbM))
-              : escQ(fmtMbM(dlMbM));
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill">' + sizeLabel + '</span>';
-          }
-          if (bw) pillsHtml += '<span class="queue-meta-pill queue-progress-pill">' + escQ(bw) + '</span>';
-          if (etaSec > 0) {
-            const etaStr = etaSec >= 60
-              ? Math.floor(etaSec / 60) + "m " + (etaSec % 60) + "s"
-              : etaSec + "s";
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill queue-progress-pill--eta">ETA ' + escQ(etaStr) + '</span>';
-          }
-        } else if (epPct > 0 && phase === "upscaling") {
-          // Upscaling phase: show speed + ETA
-          if (fp.speed) {
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill">⚡ ' + escQ(fp.speed) + '</span>';
-          }
-          if (etaSec > 0) {
-            const etaStr = etaSec >= 60
-              ? Math.floor(etaSec / 60) + "m " + (etaSec % 60) + "s"
-              : etaSec + "s";
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill queue-progress-pill--eta">ETA ' + escQ(etaStr) + '</span>';
-          }
-        } else if (epPct > 0 && phase === "ffmpeg") {
-          // FFmpeg phase: show encoder + fps + ETA
-          if (fpEncoder) {
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill">⚙ ' + escQ(fpEncoder) + '</span>';
-          }
-          if (fpsFps) {
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill">⚡ ' + escQ(fpsFps) + ' fps</span>';
-          }
-          if (etaSec > 0) {
-            const etaStr = etaSec >= 60
-              ? Math.floor(etaSec / 60) + "m " + (etaSec % 60) + "s"
-              : etaSec + "s";
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill queue-progress-pill--eta">ETA ' + escQ(etaStr) + '</span>';
-          }
-        } else if (epPct > 0) {
-          // Download phase: show size + speed + eta
-          const fmtMb = mb => mb >= 1024
-            ? (mb / 1024).toFixed(2) + " GB"
-            : mb.toFixed(1) + " MB";
-          if (dlMb > 0) {
-            const sizeLabel = totalMb > 0
-              ? escQ(fmtMb(dlMb) + " / " + fmtMb(totalMb))
-              : escQ(fmtMb(dlMb));
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill">' + sizeLabel + '</span>';
-          }
-          if (bw) {
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill">' + escQ(bw) + '</span>';
-          }
-          if (etaSec > 0) {
-            const etaStr = etaSec >= 60
-              ? Math.floor(etaSec / 60) + "m " + (etaSec % 60) + "s"
-              : etaSec + "s";
-            pillsHtml += '<span class="queue-meta-pill queue-progress-pill queue-progress-pill--eta">ETA ' + escQ(etaStr) + '</span>';
-          }
-
-        }
-
-        const prevPhaseWidth = (oldWidths[item.id] && oldWidths[item.id].phase) ? oldWidths[item.id].phase : epPct + "%";
-        episodeBarHtml =
-          '<div class="queue-progress-bar queue-progress-bar--episode">' +
-          '<div class="queue-progress-fill ' + fillClass + '" style="width:' + prevPhaseWidth + '" data-target-width="' + epPct + '%"></div>' +
-          '</div>' +
-          '<div class="queue-progress-footer">' +
-          '<span class="queue-progress-phase">' + escQ(phaseLabel) + '</span>' +
-          '<span class="queue-progress-pct">' + epPct + '%</span>' +
-          '</div>' +
-          '<div class="queue-progress-pills">' + pillsHtml + '</div>';
-      }
-
-      const prevEpWidth = (oldWidths[item.id] && oldWidths[item.id].ep) ? oldWidths[item.id].ep : combinedPct + "%";
-      progressHtml =
-        '<div class="queue-progress">' +
-        '<div class="queue-progress-bar"><div class="queue-progress-fill" style="width:' + prevEpWidth + '" data-target-width="' + combinedPct + '%"></div></div>' +
-        '<div class="queue-progress-footer">' +
-        '<span>' + epLabel + '</span>' +
-        '<span class="queue-progress-pct">' + combinedPct + '%</span>' +
-        '</div>' +
-        episodeBarHtml +
-        '</div>';
-    }
-
-    let errorsHtml = "";
-    if (item.errors) {
-      let errors = [];
-      try {
-        errors =
-          typeof item.errors === "string"
-            ? JSON.parse(item.errors)
-            : item.errors;
-      } catch (e) { }
-      if (errors.length) {
-        const errId = "qerr-" + item.id;
-        let details = "";
-        errors.forEach(function (err) {
-          var ep = err.url ? parseSeasonEpisode(err.url) : "";
-          var label = ep ? ep + ": " : "";
-          details +=
-            '<div class="queue-error-detail">' +
-            escQ(label + (err.error || "")) +
-            "</div>";
-        });
-        errorsHtml =
-          "<div class=\"queue-errors queue-errors-expandable\" onclick=\"this.classList.toggle('expanded');document.getElementById('" +
-          errId +
-          "').classList.toggle('expanded')\">" +
-          errors.length +
-          ' Fehler <span class="queue-errors-toggle">&#9654;</span>' +
-          "</div>" +
-          '<div class="queue-error-details" id="' +
-          errId +
-          '">' +
-          details +
-          "</div>";
-      }
-    }
-
-    let actionBtn = "";
-    if (item.status === "queued") {
-      const isFirst = queuedIdx === 0;
-      const isLast = queuedIdx === queued.length - 1;
-      actionBtn =
-        '<button class="queue-move" onclick="moveQueueItem(' + item.id + ',\'up\')" title="'+t("Nach oben","Up")+'"' + (isFirst ? ' disabled' : '') + '>&#9650;</button>' +
-        '<button class="queue-move" onclick="moveQueueItem(' + item.id + ',\'down\')" title="'+t("Nach unten","Down")+'"' + (isLast ? ' disabled' : '') + '>&#9660;</button>' +
-        '<button class="queue-remove" onclick="removeQueueItem(' + item.id + ')" title="'+t("Entfernen","Remove")+'">&times;</button>';
-    } else if (item.status === "running") {
-      const captchaBtn = item.captcha_url
-        ? '<button class="queue-captcha-btn" onclick="openCaptchaModal(' + item.id + ')" title="'+t("Captcha lösen","Solve captcha")+'">&#128274; Lösen</button>'
-        : '';
-      actionBtn =
-        captchaBtn +
-        '<button class="queue-cancel" onclick="cancelQueueItem(' + item.id + ')" title="'+t("Download sofort abbrechen","Cancel the download right away")+'">Abbrechen</button>';
-    } else if (isCancelling) {
-      actionBtn = '';
-    } else if (item.status === "failed" || item.status === "cancelled") {
-      // Show how many episodes would be restarted
-      let errCount = 0;
-      try {
-        const errs = typeof item.errors === "string" ? JSON.parse(item.errors || "[]") : (item.errors || []);
-        errCount = errs.length;
-      } catch (e) { }
-      const restartLabel = errCount > 0
-        ? '&#8635; ' + errCount + ' neu'
-        : '&#8635; Neu starten';
-      actionBtn =
-        '<button class="queue-restart" onclick="restartQueueItem(' + item.id + ')" title="' +
-        (errCount > 0 ? errCount + t(' fehlerhafte Episoden neu starten', ' fehlerhafte Episoden neu starten') : t('Alle Episoden neu starten', 'Alle Episoden neu starten')) +
-        '">' + restartLabel + '</button>' +
-        '<button class="queue-remove" onclick="removeQueueItem(' + item.id + ')" title="'+t("Entfernen","Remove")+'">&times;</button>';
-    } else if (item.status === "completed" || item.status === "partial") {
-      actionBtn =
-        '<button class="queue-remove" onclick="removeQueueItem(' + item.id + ')" title="'+t("Entfernen","Remove")+'">&times;</button>';
-    }
-
-    const isSync = (item.source || "").startsWith("sync");
-    const syncBadge = isSync
-      ? '<span class="queue-sync-badge">'+t("Auto&#8209;Sync","Auto-Sync")+'</span> '
-      : "";
-
-    const userHtml = item.username
-      ? '<span class="queue-meta-pill queue-user">' + escQ(item.username) + "</span>"
-      : "";
-
-    let pathHtml = "";
-    if (item.custom_path_id) {
-      const cp = queueCustomPaths.find((p) => p.id === item.custom_path_id);
-      const pathName = cp ? cp.name : "Custom #" + item.custom_path_id;
-      pathHtml = '<span class="queue-meta-pill queue-path">' + escQ(pathName) + "</span>";
-    }
-
-    html +=
-      '<div class="' + cls + '" data-id="' + item.id + '">' +
-      '<div class="queue-item-header">' +
-      '<div class="queue-item-title">' + syncBadge + escQ(item.title) + '</div>' +
-      '<div class="queue-item-right">' + actionBtn + '</div>' +
-      '</div>' +
-      '<div class="queue-item-meta">' +
-      statusBadge + captchaBadge +
-      '<span class="queue-meta-pill">' + ((item.series_url || "").includes("filmpalast.to") ? "Film" : item.total_episodes + " Ep.") + '</span>' +
-      '<span class="queue-meta-pill">' + escQ(item.language_label || item.language) + '</span>' +
-      '<span class="queue-meta-pill">' + escQ(item.provider) + '</span>' +
-      pathHtml + userHtml +
-      '</div>' +
-      progressHtml + errorsHtml +
-      '</div>';
-  });
-
-  list.innerHTML = html;
-
-  // Trigger progress bar transitions by setting target widths in the next frame
-  setTimeout(() => {
-    list.querySelectorAll('.queue-progress-fill[data-target-width]').forEach((el) => {
-      el.style.width = el.getAttribute('data-target-width');
-    });
-  }, 50);
-
-  // Restore expanded state (both the details panel and its sibling header)
-  expandedErrors.forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.classList.add("expanded");
-      const header = el.previousElementSibling;
-      if (header) header.classList.add("expanded");
-    }
+/** Forget snapshots of items that are no longer in the queue. */
+function _qPruneSticky(items) {
+  const alive = {};
+  items.forEach(function (i) { alive[i.id] = true; });
+  Object.keys(_stickyProgressById).forEach(function (id) {
+    if (!alive[id]) delete _stickyProgressById[id];
   });
 }
+
+const _QHUB_PHASES = ["download", "ffmpeg", "upscaling", "move"];
+
+/** Normalise a download queue row. */
+function _qNormDownload(item) {
+  const Q = window.QHub;
+  const running = item.status === "running";
+  const cancelling = item.status === "cancelled" && !!item.current_url;
+  const attn = running && !!item.captcha_url;
+  const fp = (running || cancelling) ? _qEpisodeProgress(item) : {};
+  const phase = fp.phase || "download";
+
+  let state = item.status;
+  if (cancelling) state = "cancelling";
+
+  const epPct = item.total_episodes > 0 ? (item.current_episode / item.total_episodes) * 100 : 0;
+  let ffPct = 0;
+  if (running && lastFfmpegProgress.active && item.total_episodes > 0) {
+    // During ffmpeg/upscale/move the episode's download is already done, so
+    // its full weight counts — otherwise the overall bar jumps backwards.
+    const inEp = (phase === "ffmpeg" || phase === "move" || phase === "upscaling")
+      ? 100 : (lastFfmpegProgress.percent || 0);
+    ffPct = inEp / item.total_episodes;
+  }
+
+  let statusText;
+  if (attn) statusText = "CAPTCHA";
+  else if (running) statusText = t("LÄUFT", "RUNNING");
+  else if (item.status === "queued") statusText = _queueIsPaused ? t("PAUSIERT", "PAUSED") : t("WARTET", "QUEUED");
+  else if (cancelling) statusText = t("BRICHT AB", "CANCELLING");
+  else if (item.status === "completed") statusText = t("FERTIG", "DONE");
+  else if (item.status === "partial") statusText = t("TEILWEISE", "PARTIAL");
+  else if (item.status === "failed") statusText = t("FEHLER", "FAILED");
+  else statusText = t("ABGEBROCHEN", "CANCELLED");
+
+  // The SECOND bar in the hero: how far the CURRENT episode is through its
+  // current phase. That is a different number from the overall bar — during
+  // the ffmpeg/upscale/move phase the episode's download already counts as
+  // finished in the overall figure while this one starts over at 0.
+  const epLabel = phase === "move" ? t("📦 Verschieben", "📦 Moving")
+    : phase === "upscaling" ? t("✨ Upscaling", "✨ Upscaling")
+      : phase === "ffmpeg" ? t("⚙ FFmpeg", "⚙ FFmpeg")
+        : t("⬇ Download", "⬇ Download");
+
+  const src = Q.sourceLabel(item.series_url);
+  return {
+    queue: "downloads",
+    epPct: (running || cancelling) ? (fp.percent || 0) : null,
+    epLabel: epLabel,
+    id: item.id,
+    raw: item,
+    title: item.title,
+    episode: Q.episodeCode(item.current_url) || (item.total_episodes > 1 ? item.total_episodes + " Ep." : ""),
+    chip: [src, item.provider].filter(Boolean).join(" · "),
+    language: item.language_label || item.language || "",
+    poster: item.poster || "",
+    station: attn ? "attn" : (running || cancelling ? _QHUB_PHASES.indexOf(phase) : 0),
+    state: state,
+    attn: attn,
+    running: running || cancelling,
+    pct: Math.min(epPct + ffPct, 100),
+    statusText: statusText,
+    completed_at: item.completed_at,
+    sync: (item.source || "").startsWith("sync"),
+    fp: fp,
+    phase: phase,
+  };
+}
+
+/** Normalise an encoding / upscaling queue row (they have the same shape). */
+function _qNormJob(item, queue) {
+  const Q = window.QHub;
+  const progress = _qhubModel[queue].progress || {};
+  const running = item.status === "running";
+  const totalFiles = item.total_files || 1;
+  const curIdx = item.current_file_idx || 0;
+  const filePct = running && progress.active ? (progress.percent || 0) : 0;
+  const pct = item.status === "completed" ? 100
+    : running ? Math.min(curIdx / totalFiles * 100 + filePct / totalFiles, 99)
+      : (item.progress_pct || 0);
+
+  const isEnc = queue === "encoding";
+  const word = isEnc ? t("ENCODING", "ENCODING") : t("UPSCALING", "UPSCALING");
+  let statusText;
+  if (running) statusText = filePct > 0 ? word + " " + Q.pct(filePct) : word;
+  else if (item.status === "queued") statusText = t("WARTET", "QUEUED");
+  else if (item.status === "completed") statusText = t("FERTIG", "DONE");
+  else if (item.status === "failed") statusText = t("FEHLER", "FAILED");
+  else statusText = t("ABGEBROCHEN", "CANCELLED");
+
+  // "Series – file.mkv" is what both queues store as the title
+  const dash = String(item.title || "").indexOf(" – ");
+  const seriesTitle = dash > 0 ? item.title.substring(0, dash) : (item.title || "");
+  const fileName = running && progress.file ? progress.file : item.file_path;
+
+  const epLabel = totalFiles > 1
+    ? (isEnc ? t("🎞 Datei ", "🎞 File ") : t("✨ Datei ", "✨ File ")) + (curIdx + 1) + "/" + totalFiles
+    : (isEnc ? t("🎞 Diese Datei", "🎞 This file") : t("✨ Diese Datei", "✨ This file"));
+
+  return {
+    queue: queue,
+    id: item.id,
+    raw: item,
+    epPct: running ? filePct : null,
+    epLabel: epLabel,
+    title: seriesTitle || String(fileName || "").split("/").pop(),
+    episode: Q.episodeFromFile(item.title) || Q.episodeFromFile(fileName)
+      || (totalFiles > 1 ? totalFiles + " " + t("Dateien", "files") : ""),
+    chip: "",
+    language: "",
+    poster: "",
+    station: isEnc ? 1 : 2,
+    state: item.status,
+    attn: false,
+    running: running,
+    pct: pct,
+    statusText: statusText,
+    completed_at: item.completed_at,
+    sync: false,
+    fileName: fileName,
+    filePct: filePct,
+    totalFiles: totalFiles,
+    curIdx: curIdx,
+  };
+}
+
+/** Everything the current segment should show, already normalised. */
+function _qhubEntries() {
+  const pane = window.qhubActivePane;
+  let out = [];
+  if (pane === "all" || pane === "downloads") {
+    out = out.concat(_qhubModel.downloads.items.map(_qNormDownload));
+  }
+  if (pane === "all" || pane === "encoding") {
+    out = out.concat(_qhubModel.encoding.items.map(i => _qNormJob(i, "encoding")));
+  }
+  if (pane === "all" || pane === "upscaling") {
+    out = out.concat(_qhubModel.upscaling.items.map(i => _qNormJob(i, "upscaling")));
+  }
+  return out;
+}
+
+// =====================================================================
+// Rendering
+// =====================================================================
+
+/** Action buttons of a row — same handler names as before. */
+function _qhubActions(e) {
+  const Q = window.QHub;
+  const q = e.queue;
+  const mv = q === "downloads" ? "moveQueueItem" : (q === "encoding" ? "moveEncodingItem" : "moveUpscaleItem");
+  const rm = q === "downloads" ? "removeQueueItem" : (q === "encoding" ? "removeEncodingItem" : "removeUpscaleItem");
+  const cn = q === "downloads" ? "cancelQueueItem" : (q === "encoding" ? "cancelEncodingItem" : "cancelUpscaleItem");
+
+  if (e.state === "queued") {
+    return '<button class="queue-move" onclick="' + mv + '(' + e.id + ',\'up\')" title="' + t("Nach oben", "Up") + '">&#9650;</button>'
+      + '<button class="queue-move" onclick="' + mv + '(' + e.id + ',\'down\')" title="' + t("Nach unten", "Down") + '">&#9660;</button>'
+      + '<button class="queue-remove" onclick="' + rm + '(' + e.id + ')" title="' + t("Entfernen", "Remove") + '">&times;</button>';
+  }
+  if (e.running) {
+    const captcha = e.attn
+      ? '<button class="queue-captcha-btn" onclick="openCaptchaModal(' + e.id + ')" title="' + t("Captcha lösen", "Solve captcha") + '">&#128274;</button>'
+      : '';
+    // An item that is already tearing down cannot be cancelled twice — same as
+    // the hero card, the button says so instead of inviting another click.
+    if (e.state === "cancelling") {
+      return '<button class="queue-cancel" disabled title="' + t("Bricht ab…", "Cancelling…") + '">'
+        + t("Bricht ab…", "Cancelling…") + '</button>';
+    }
+    return captcha + '<button class="queue-cancel" onclick="' + cn + '(' + e.id + ')" title="' + t("Abbrechen", "Cancel") + '">' + t("Abbrechen", "Cancel") + '</button>';
+  }
+  if (q === "downloads" && (e.state === "failed" || e.state === "cancelled")) {
+    let errCount = 0;
+    try {
+      const errs = typeof e.raw.errors === "string" ? JSON.parse(e.raw.errors || "[]") : (e.raw.errors || []);
+      errCount = errs.length;
+    } catch (err) { }
+    return '<button class="queue-restart" onclick="restartQueueItem(' + e.id + ')" title="'
+      + (errCount > 0 ? errCount + t(" fehlerhafte Episoden neu starten", " failed episodes will be restarted")
+        : t("Alle Episoden neu starten", "Restart all episodes"))
+      + '">&#8635;' + (errCount > 0 ? " " + errCount : "") + '</button>'
+      + '<button class="queue-remove" onclick="' + rm + '(' + e.id + ')" title="' + t("Entfernen", "Remove") + '">&times;</button>';
+  }
+  return '<button class="queue-remove" onclick="' + rm + '(' + e.id + ')" title="' + t("Entfernen", "Remove") + '">&times;</button>';
+}
+
+/** One slim list row. `index` renders the position number when given. */
+function _qhubRow(e, index) {
+  const Q = window.QHub;
+  const kind = e.attn ? "attn"
+    : e.state === "completed" ? "done"
+      : (e.state === "failed" || e.state === "cancelled") ? "failed"
+        : e.state === "partial" ? "partial"
+          : e.queue === "encoding" ? "encoding"
+            : e.queue === "upscaling" ? "upscaling"
+              : "download";
+
+  const right = e.state === "completed" && e.completed_at
+    ? '<span class="qhub-row-time">' + Q.esc(Q.hhmm(e.completed_at)) + '</span>'
+    : '<span class="qhub-row-state">' + Q.esc(e.statusText) + '</span>';
+
+  return '<div class="queue-item qhub-row qhub-row--' + kind + '" data-id="' + Q.esc(e.id) + '">'
+    + (index ? '<span class="qhub-row-idx">' + index + '</span>' : '<span class="qhub-row-idx"></span>')
+    + '<span class="qhub-row-title">'
+    + (e.sync ? '<span class="queue-sync-badge">' + t("Auto&#8209;Sync", "Auto-Sync") + '</span> ' : '')
+    + Q.esc(e.title) + '</span>'
+    + '<span class="qhub-row-right">'
+    + (e.episode ? '<span class="qhub-row-ep">' + Q.esc(e.episode) + '</span>' : '')
+    + right
+    + '<span class="qhub-row-actions queue-item-right">' + _qhubActions(e) + '</span>'
+    + '</span>'
+    + '</div>';
+}
+
+function _qhubGroup(label, count) {
+  return '<div class="qhub-group">' + window.QHub.esc(label)
+    + '<span class="qhub-group-count">' + count + '</span></div>';
+}
+
+/** The meta line under the hero title: what it is doing, how fast, how long. */
+function _qhubHeroMeta(e) {
+  const Q = window.QHub;
+  const parts = [];
+  if (e.queue === "downloads") {
+    const fp = e.fp || {};
+    const verb = e.phase === "ffmpeg" ? t("Kodiert", "Encoding")
+      : e.phase === "upscaling" ? t("Skaliert hoch", "Upscaling")
+        : e.phase === "move" ? t("Verschiebt", "Moving")
+          : t("Lädt", "Downloading");
+    parts.push(verb);
+    const speed = e.phase === "download" || e.phase === "move"
+      ? formatBandwidth(fp.bandwidth || "")
+      : (fp.speed || (fp.fps ? fp.fps + " fps" : ""));
+    if (speed) parts.push(speed);
+    const eta = Q.fmtEta(fp.eta_sec);
+    if (eta) parts.push(t("noch ", "") + eta + t("", " left"));
+    if (fp.downloaded_mb > 0) {
+      parts.push(fp.total_mb > 0
+        ? Q.fmtMb(fp.downloaded_mb) + t(" von ", " of ") + Q.fmtMb(fp.total_mb)
+        : Q.fmtMb(fp.downloaded_mb));
+    }
+    if (e.language) parts.push(e.language);
+  } else {
+    const pr = _qhubModel[e.queue].progress || {};
+    parts.push(e.queue === "encoding" ? t("Kodiert", "Encoding") : t("Skaliert hoch", "Upscaling"));
+    if (pr.speed) parts.push(pr.speed);
+    const eta = Q.fmtEta(pr.eta_sec);
+    if (eta) parts.push(t("noch ", "") + eta + t("", " left"));
+    if (e.totalFiles > 1) parts.push((e.curIdx + 1) + "/" + e.totalFiles + " " + t("Dateien", "files"));
+    else if (e.fileName) parts.push(String(e.fileName).replace(/\\/g, "/").split("/").pop());
+  }
+  return parts.filter(Boolean).join(" · ");
+}
+
+function _qhubHero(e) {
+  const Q = window.QHub;
+  const labels = [t("Download", "Download"), t("Encoding", "Encoding"),
+  t("Upscaling", "Upscaling"), t("Bibliothek", "Library")];
+  const active = e.station === "attn" ? 0 : e.station;
+  const rail = Q.stations(labels.map(function (label, i) {
+    return { label: label, state: i < active ? "done" : (i === active ? "active" : "todo") };
+  }));
+
+  const pauseBtn = (e.queue === "downloads" && !e.attn)
+    ? '<button class="btn btn-secondary btn-sm qhub-hero-btn" onclick="toggleQueuePause()">'
+    + (_queueIsPaused ? t("Fortsetzen", "Resume") : t("Pause", "Pause")) + '</button>'
+    : '';
+  const cancelFn = e.queue === "downloads" ? "cancelQueueItem"
+    : (e.queue === "encoding" ? "cancelEncodingItem" : "cancelUpscaleItem");
+  const captchaBtn = e.attn
+    ? '<button class="btn btn-sm qhub-hero-btn qhub-hero-btn--attn" onclick="openCaptchaModal(' + e.id + ')">'
+    + t("Captcha lösen", "Solve captcha") + '</button>'
+    : '';
+
+  // Second track: the episode (or file) that is being worked on right now.
+  // Rendered for the whole time the job runs — including at 0% — so the card
+  // keeps its height instead of jumping every time a phase changes.
+  const epBar = (e.epPct === null || e.epPct === undefined) ? "" :
+    '<div class="qhub-hero-subhead">'
+    + '<span class="qhub-hero-sublabel">' + Q.esc(e.epLabel) + '</span>'
+    + '<span class="qhub-hero-subpct">' + Q.pct(e.epPct) + '</span>'
+    + '</div>'
+    + '<div class="qhub-hero-bar qhub-hero-bar--ep">'
+    + '<div class="qhub-hero-fill qhub-hero-fill--ep" style="width:' + Math.round(e.epPct) + '%"></div>'
+    + '</div>';
+
+  // is-paused freezes the stripe animation in the bars (see queue.css) —
+  // a paused queue should not look like it is still moving.
+  const paused = e.queue === "downloads" && _queueIsPaused;
+  return '<div class="qhub-hero-card qhub-hero-card--' + (e.attn ? "attn" : e.queue)
+    + (paused ? " is-paused" : "") + '">'
+    + '<div class="qhub-hero-poster"'
+    + (e.poster ? ' style="background-image:url(\'' + Q.esc(e.poster) + '\')"' : '') + '></div>'
+    + '<div class="qhub-hero-body">'
+    + '<div class="qhub-hero-head">'
+    + '<div class="qhub-hero-titles">'
+    + '<div class="qhub-hero-title">' + Q.esc(e.title)
+    + (e.episode ? ' <span class="qhub-hero-ep">' + Q.esc(e.episode) + '</span>' : '')
+    + (e.chip ? ' <span class="qhub-hero-chip">' + Q.esc(e.chip) + '</span>' : '')
+    + '</div>'
+    + '<div class="qhub-hero-meta">' + Q.esc(_qhubHeroMeta(e)) + '</div>'
+    + '</div>'
+    + '<div class="qhub-hero-side">'
+    + '<div class="qhub-hero-pct">' + Q.pct(e.pct) + '</div>'
+    + captchaBtn + pauseBtn
+    + (e.state === "cancelling"
+      ? '<button class="btn btn-sm qhub-hero-btn qhub-hero-btn--cancel" disabled>'
+      + t("Bricht ab…", "Cancelling…") + '</button>'
+      : '<button class="btn btn-sm qhub-hero-btn qhub-hero-btn--cancel" onclick="'
+      + cancelFn + '(' + e.id + ')">' + t("Abbrechen", "Cancel") + '</button>')
+    + '</div>'
+    + '</div>'
+    + '<div class="qhub-hero-bar"><div class="qhub-hero-fill" style="width:' + Math.round(e.pct) + '%"></div></div>'
+    + epBar
+    + rail
+    + '</div></div>';
+}
+
+/** The whole window body: hero + the three groups. */
+function renderQueueHub() {
+  const list = document.getElementById("queueList");
+  const heroBox = document.getElementById("qhubHero");
+  if (!list || !heroBox) return;
+  const Q = window.QHub;
+
+  const entries = _qhubEntries();
+
+  // Facets: what is still moving per queue
+  const openTotal = ["downloads", "encoding", "upscaling"].reduce(function (n, q) {
+    return n + _qhubModel[q].items.filter(i => i.status === "running" || i.status === "queued").length;
+  }, 0);
+  qhubSetFacet("all", openTotal);
+
+  // ---- Hero: the one thing running right now ------------------------
+  // Deliberately the FIRST runner in queue order, not "whatever needs you":
+  // /api/queue carries a single global ffmpeg_progress, so any other choice
+  // would show one item's speed and percentage on another item's card. An
+  // entry waiting for a captcha is surfaced by the "Needs you" group.
+  const heroItem = entries.filter(e => e.running)[0] || null;
+  if (heroItem) {
+    heroBox.innerHTML = _qhubHero(heroItem);
+    heroBox.style.display = "";
+  } else {
+    heroBox.innerHTML = "";
+    heroBox.style.display = "none";
+  }
+
+  // ---- Groups -------------------------------------------------------
+  const rest = entries.filter(e => e !== heroItem);
+  const needsYou = rest.filter(e => e.attn || e.state === "failed" || e.state === "partial"
+    || (e.state === "cancelled" && !e.running));
+  // A second running job (an encode next to a download, on "Everything") used
+  // to land under "Up next" although it is working right now. The hero can only
+  // ever show one job, so everything else that runs gets its own group.
+  const alsoRunning = rest.filter(e => e.running && needsYou.indexOf(e) === -1);
+  const upNext = rest.filter(e => e.state === "queued" && needsYou.indexOf(e) === -1
+    && alsoRunning.indexOf(e) === -1);
+  const doneToday = rest.filter(e => e.state === "completed" && Q.isToday(e.completed_at))
+    .sort((a, b) => String(b.completed_at || "").localeCompare(String(a.completed_at || "")));
+
+  let html = "";
+  if (needsYou.length) {
+    html += _qhubGroup(t("Braucht dich", "Needs you"), needsYou.length)
+      + needsYou.map(e => _qhubRow(e, 0)).join("");
+  }
+  if (alsoRunning.length) {
+    html += _qhubGroup(t("Läuft außerdem", "Also running"), alsoRunning.length)
+      + alsoRunning.map(e => _qhubRow(e, 0)).join("");
+  }
+  if (upNext.length) {
+    html += _qhubGroup(t("Als nächstes", "Up next"), upNext.length)
+      + upNext.map((e, i) => _qhubRow(e, i + 1)).join("");
+  }
+  if (doneToday.length) {
+    html += _qhubGroup(t("Heute fertig", "Finished today"), doneToday.length)
+      + doneToday.map(e => _qhubRow(e, 0)).join("");
+  }
+
+  if (!html && !heroItem) {
+    const pane = window.qhubActivePane;
+    const msg = pane === "encoding" ? t("Encoding-Warteschlange ist leer", "Encoding queue is empty")
+      : pane === "upscaling" ? t("Upscaling-Warteschlange ist leer", "Upscaling queue is empty")
+        : pane === "downloads" ? t("Warteschlange ist leer", "Queue is empty")
+          : t("Nichts zu tun. Alle Warteschlangen sind leer.", "Nothing to do. All queues are empty.");
+    html = '<div class="queue-empty">' + Q.esc(msg) + '</div>';
+  }
+  list.innerHTML = html;
+
+  // ---- The global pause button in the bar ---------------------------
+  // Hidden while the hero already offers a contextual Pause, so the same
+  // action never appears twice.
+  const pauseBtn = document.getElementById("queuePauseBtn");
+  const pauseLabel = document.getElementById("queuePauseLabel");
+  if (pauseBtn) {
+    const heroHasPause = heroItem && heroItem.queue === "downloads" && !heroItem.attn;
+    const hasDownloads = _qhubModel.downloads.items.some(i => i.status === "running" || i.status === "queued");
+    const pane = window.qhubActivePane;
+    const relevant = (pane === "all" || pane === "downloads") && hasDownloads && !heroHasPause;
+    pauseBtn.style.display = relevant ? "" : "none";
+    pauseBtn.classList.toggle("queue-pause-btn--paused", _queueIsPaused);
+    if (pauseLabel) {
+      pauseLabel.textContent = _queueIsPaused
+        ? t("Alle fortsetzen", "Resume all") : t("Alles pausieren", "Pause all");
+    }
+  }
+}
+
+// Kept so older callers (and third-party pages) don't break.
+function renderQueue() { renderQueueHub(); }
+function updateFilterCounts() { /* the hub has no filter row */ }
+function updatePauseButton() { /* handled inside renderQueueHub */ }
 
 function parseSeasonEpisode(url) {
   const m = url.match(/staffel-(\d+)\/episode-(\d+)/i);
@@ -585,17 +843,19 @@ function parseSeasonEpisode(url) {
   return "";
 }
 
+// =====================================================================
+// Download queue actions
+// =====================================================================
+
 async function cancelQueueItem(id) {
   try {
-    const resp = await fetch("/api/queue/" + id + "/cancel", {
-      method: "POST",
-    });
+    const resp = await fetch("/api/queue/" + id + "/cancel", { method: "POST" });
     const data = await resp.json();
     if (data.error) {
       if (typeof showToast === "function") showToast(data.error);
-    } else {
-      if (typeof showToast === "function")
-        showToast(t("Download wird abgebrochen – Teildateien werden aufgeräumt.","Cancelling the download – partial files are being cleaned up."));
+    } else if (typeof showToast === "function") {
+      showToast(t("Download wird abgebrochen – Teildateien werden aufgeräumt.",
+        "Cancelling the download – partial files are being cleaned up."));
     }
     loadQueue();
   } catch (e) {
@@ -620,27 +880,24 @@ async function moveQueueItem(id, direction) {
 
 async function restartQueueItem(id) {
   try {
-    const resp = await fetch("/api/queue/" + id + "/restart", {
-      method: "POST",
-    });
+    const resp = await fetch("/api/queue/" + id + "/restart", { method: "POST" });
     let data;
     try {
       data = await resp.json();
     } catch (e) {
-      if (typeof showToast === "function") showToast("Neustart fehlgeschlagen (Server-Fehler).");
+      if (typeof showToast === "function")
+        showToast(t("Neustart fehlgeschlagen (Server-Fehler).", "Restart failed (server error)."));
       loadQueue();
       return;
     }
     if (data.error) {
       if (typeof showToast === "function") showToast(data.error);
-    } else {
+    } else if (typeof showToast === "function") {
       const epCount = data.episodes || 0;
-      if (typeof showToast === "function")
-        showToast(
-          epCount > 0
-            ? epCount + t(" Episode(n) wurden erneut in die Warteschlange gestellt.", "Episode(s) were added to the queue again.")
-            : t("Neu gestartet.", "Restarted."),
-        );
+      showToast(epCount > 0
+        ? epCount + t(" Episode(n) wurden erneut in die Warteschlange gestellt.",
+          " episode(s) were added to the queue again.")
+        : t("Neu gestartet.", "Restarted."));
     }
     loadQueue();
   } catch (e) {
@@ -653,9 +910,7 @@ async function removeQueueItem(id) {
   try {
     const resp = await fetch("/api/queue/" + id, { method: "DELETE" });
     const data = await resp.json();
-    if (data.error) {
-      if (typeof showToast === "function") showToast(data.error);
-    }
+    if (data.error && typeof showToast === "function") showToast(data.error);
     loadQueue();
   } catch (e) {
     /* ignore */
@@ -668,13 +923,15 @@ function escQ(s) {
   return d.innerHTML;
 }
 
-// ESC key closes queue modal
+// ESC closes the hub / the captcha window
 document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape" && queueModalOpen) closeQueueModal();
+  if (e.key === "Escape" && queueHubOpen) closeQueueHub();
   if (e.key === "Escape" && captchaModalOpen) closeCaptchaModal();
 });
 
-// ===== Captcha Modal =====
+// =====================================================================
+// Captcha window
+// =====================================================================
 
 let captchaModalOpen = false;
 let captchaQueueId = null;
@@ -693,18 +950,17 @@ function openCaptchaModal(queueId) {
   if (hint) hint.textContent = t("Lade Browser-Screenshot...", "Loading browser screenshot...");
   overlay.style.display = "block";
 
-  // Start screenshot polling
   captchaRefreshTimer = setInterval(function () {
     img.src = "/api/captcha/" + queueId + "/screenshot?t=" + Date.now();
     img.onload = function () {
-      if (hint) hint.textContent = t("Klicke irgendwo im Screenshot um mit dem Captcha zu interagieren.", "Click anywhere in the screenshot to interact with the captcha.");
+      if (hint) hint.textContent = t("Klicke irgendwo im Screenshot um mit dem Captcha zu interagieren.",
+        "Click anywhere in the screenshot to interact with the captcha.");
     };
     img.onerror = function () {
       if (hint) hint.textContent = t("Warte auf Captcha-Browser...", "Waiting for captcha browser...");
     };
   }, 800);
 
-  // Poll for solved status
   captchaStatusTimer = setInterval(async function () {
     try {
       const resp = await fetch("/api/captcha/" + queueId + "/status");
@@ -726,14 +982,8 @@ function closeCaptchaModal() {
   captchaQueueId = null;
   const overlay = document.getElementById("captchaOverlay");
   if (overlay) overlay.style.display = "none";
-  if (captchaRefreshTimer) {
-    clearInterval(captchaRefreshTimer);
-    captchaRefreshTimer = null;
-  }
-  if (captchaStatusTimer) {
-    clearInterval(captchaStatusTimer);
-    captchaStatusTimer = null;
-  }
+  if (captchaRefreshTimer) { clearInterval(captchaRefreshTimer); captchaRefreshTimer = null; }
+  if (captchaStatusTimer) { clearInterval(captchaStatusTimer); captchaStatusTimer = null; }
 }
 
 (function attachCaptchaClickHandler() {
@@ -743,19 +993,19 @@ function closeCaptchaModal() {
     const rect = img.getBoundingClientRect();
     const scaleX = img.naturalWidth / img.clientWidth;
     const scaleY = img.naturalHeight / img.clientHeight;
-    const x = Math.round((e.clientX - rect.left) * scaleX);
-    const y = Math.round((e.clientY - rect.top) * scaleY);
     fetch("/api/captcha/" + captchaQueueId + "/click", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ x, y }),
+      body: JSON.stringify({
+        x: Math.round((e.clientX - rect.left) * scaleX),
+        y: Math.round((e.clientY - rect.top) * scaleY),
+      }),
     }).catch(function () { });
   });
 })();
 
 // Background badge poll every 5s
 (function startBadgePoll() {
-  // Wait for all scripts (like app.js) to be ready before first update
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", loadQueue);
   } else {
@@ -782,22 +1032,22 @@ function closeCaptchaModal() {
     } catch (e) { /* ignore — Seerr may not be configured */ }
   }
   updateSeerrBadge();
-  setInterval(updateSeerrBadge, 60000); // refresh every 60s
+  setInterval(updateSeerrBadge, 60000);
 })();
 
-window.updateTotalQueueBadge = function() {
-  const dBadge = document.getElementById("queueBadge");
-  const eBadge = document.getElementById("encodingBadge");
-  const uBadge = document.getElementById("upscaleBadge");
+// The sidebar has ONE Queues entry, so it carries the sum of all three
+// queues. The per-queue numbers are kept here as numbers instead of being read
+// back out of three badge elements: those elements only existed inside the old
+// Queues sub-menu, and a DOM-based sum would silently report 0 without them.
+// Each loader writes its own slot (see updateBadge, _updateEncodingBadges,
+// _updateUpscaleBadges) and then calls this.
+window._qBadgeCounts = window._qBadgeCounts || { downloads: 0, encoding: 0, upscaling: 0 };
+
+window.updateTotalQueueBadge = function () {
   const totalBadge = document.getElementById("totalQueueBadge");
   if (!totalBadge) return;
-
-  const dCount = (dBadge && dBadge.style.display !== "none") ? parseInt(dBadge.textContent) || 0 : 0;
-  const eCount = (eBadge && eBadge.style.display !== "none") ? parseInt(eBadge.textContent) || 0 : 0;
-  const uCount = (uBadge && uBadge.style.display !== "none") ? parseInt(uBadge.textContent) || 0 : 0;
-  
-  const total = dCount + eCount + uCount;
-  
+  const c = window._qBadgeCounts;
+  const total = (c.downloads || 0) + (c.encoding || 0) + (c.upscaling || 0);
   totalBadge.textContent = total;
   totalBadge.style.display = total > 0 ? "inline-block" : "none";
 };

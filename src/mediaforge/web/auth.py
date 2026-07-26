@@ -302,31 +302,46 @@ def setup():
     if lang_param in ("en", "de"):
         session["ui_language"] = lang_param
 
-    # Setup token protection 
+    # Setup token protection (July 2026: merged into the account-creation
+    # form below -- previously a separate setup_token.html gate page had to
+    # be passed before the account fields ever appeared; now the token input
+    # sits right next to username/password and all of it is validated
+    # together on submit). Only a genuinely EXPIRED token still gets its own
+    # dead-end screen, since nothing typed there could fix it.
     expected_token = current_app.config.get("SETUP_TOKEN")
-    if expected_token:
-        expires = current_app.config.get("SETUP_TOKEN_EXPIRES", 0)
-        if _time.time() > expires:
-            return render_template("setup_locked.html", ui_language=session.get("ui_language", "en")), 403
-        provided = (request.args.get("token") or request.form.get("setup_token") or "").strip()
-        if not provided:
-            return render_template("setup_token.html", ui_language=session.get("ui_language", "en"))
-        try:
-            token_ok = secrets.compare_digest(provided.encode(), expected_token.encode())
-        except Exception:
-            token_ok = False
-        if not token_ok:
+    setup_token_required = bool(expected_token)
+    if setup_token_required:
+        token_expires = current_app.config.get("SETUP_TOKEN_EXPIRES", 0)
+        if _time.time() > token_expires:
             return render_template("setup_locked.html", ui_language=session.get("ui_language", "en")), 403
 
-    setup_token = current_app.config.get("SETUP_TOKEN", "")
+    # Convenience prefill from a direct "?token=..." link (printed to the
+    # console next to the token) -- read back only what was already supplied
+    # in this request, never looked up from app.config, so the real secret
+    # is never echoed into the page unless the caller already has it.
+    setup_token_value = request.args.get("token", "").strip()
 
     error = None
     if request.method == "POST":
+        provided_token = (request.form.get("setup_token") or "").strip()
+        setup_token_value = provided_token  # keep it filled in after a failed submit
+
+        token_ok = True
+        if setup_token_required:
+            try:
+                token_ok = bool(provided_token) and secrets.compare_digest(
+                    provided_token.encode(), expected_token.encode()
+                )
+            except Exception:
+                token_ok = False
+
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
         confirm = request.form.get("confirm") or ""
 
-        if not username:
+        if setup_token_required and not token_ok:
+            error = "Setup token is incorrect."
+        elif not username:
             error = "Username is required."
         elif len(username) > 64:
             error = "Username must be at most 64 characters."
@@ -353,7 +368,12 @@ def setup():
             session["_lang_synced"] = True
             return redirect(url_for("index"))
 
-    return render_template("setup.html", error=error, setup_token=setup_token)
+    return render_template(
+        "setup.html",
+        error=error,
+        setup_token_required=setup_token_required,
+        setup_token_value=setup_token_value,
+    )
 
 
 # ---------------------------------------------------------------------------

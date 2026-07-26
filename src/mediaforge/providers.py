@@ -186,6 +186,16 @@ def unregister_provider(item_id: str) -> None:
         logger.info("[Providers] Unregistered third-party content source: %s (%s)", removed.name, item_id)
 
 
+def thirdparty_provider_ids() -> set:
+    """item_ids that currently own a third-party content source.
+
+    Read-only counterpart of :func:`unregister_register_provider` -- the Modulmanager uses
+    it to report what a module registered without reaching into this
+    module's private dict.
+    """
+    return set(_EXTRA_PROVIDERS)
+
+
 def all_providers() -> list["Provider"]:
     """Every provider resolve_provider() considers, built-ins first."""
     return list(PROVIDERS) + list(_EXTRA_PROVIDERS.values())

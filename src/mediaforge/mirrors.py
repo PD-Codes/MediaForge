@@ -245,6 +245,16 @@ def unregister_site_mirrors(item_id) -> None:
     logger.info("[Mirrors] Unregistered third-party site mirrors: %s", site_id)
 
 
+def thirdparty_mirror_ids() -> set:
+    """item_ids that currently own a third-party mirror list.
+
+    Read-only counterpart of :func:`unregister_site_mirrors` -- the
+    Modulmanager uses it to report what a module registered without reaching
+    into this module's private dict.
+    """
+    return set(_EXTRA_SITES)
+
+
 def get_mirrors(site=None):
     """All mirror lists, or the list for one site."""
     mirrors, _ = _get_tables()

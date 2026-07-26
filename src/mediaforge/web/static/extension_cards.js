@@ -18,6 +18,114 @@
 // expanded/collapsed; the state is remembered per-card in localStorage,
 // mirroring the AutoSync group-collapse pattern (see autosync.js /
 // .autosync-group).
+// ─── Modulmanager: Modules / Theme Packs tabs ──────────────────────────────
+// Same shape as switchMonTab() on the Monitoring page. Deliberately NOT stored
+// in the URL hash: module_store.js already owns "#store" for its view swap, and
+// two features writing the same hash is how you get a page that opens on the
+// wrong thing after an install reload.
+function switchExtTab(name) {
+  document.querySelectorAll("#extensionsMenu .settings-tab").forEach(function (b) {
+    b.classList.toggle("active", b.dataset.exttab === name);
+  });
+  document.querySelectorAll("#extInstalledView > .settings-tab-panel").forEach(function (p) {
+    p.classList.toggle("active", p.id === "exttab-" + name);
+  });
+  try { localStorage.setItem("extActiveTab", name); } catch (e) { /* private mode */ }
+  // Below 861px the menu is an off-canvas drawer (base.html) -- picking an entry
+  // there should close it, like every other menu on the site.
+  const menu = document.getElementById("extensionsMenu");
+  if (menu && menu.classList.contains("mobile-open")) {
+    const backdrop = document.querySelector(".floating-menu-backdrop");
+    menu.classList.remove("mobile-open");
+    if (backdrop) backdrop.classList.remove("show");
+    if (window.MFScrollLock) window.MFScrollLock.unlock();
+  }
+}
+
+(function restoreExtTab() {
+  if (!document.getElementById("extensionsMenu")) return;
+  let want = "modules";
+  try { want = localStorage.getItem("extActiveTab") || "modules"; } catch (e) {}
+  // An empty Themes panel is a dead end -- fall back rather than opening it.
+  if (want === "themes" && !document.querySelector("#exttab-themes .integ-card")) {
+    want = "modules";
+  }
+  if (want !== "modules") switchExtTab(want);
+})();
+
+// ─── Modulmanager: state filter, traceback toggle, copy ────────────────────
+// Delegated on document so nothing has to be re-wired when the store view
+// swaps the installed list in and out (module_store.js toggles #extInstalledView
+// / #extStoreView). All of it is progressive: without JS the cards are simply
+// all visible with their errors collapsed.
+(function mmModuleManager() {
+  function applyFilter(want) {
+    document.querySelectorAll(".integ-card.mm-card").forEach(function (card) {
+      const state = card.getAttribute("data-mm-state") || "";
+      // "trouble" is the union of the two states worth acting on -- one button
+      // for "what is wrong", instead of making people check two.
+      const show = !want
+        || state === want
+        || (want === "trouble" && (state === "error" || state === "skipped"));
+      card.style.display = show ? "" : "none";
+    });
+  }
+
+  document.addEventListener("click", function (ev) {
+    const filter = ev.target.closest("#mmFilters .mm-filter");
+    if (filter) {
+      document.querySelectorAll("#mmFilters .mm-filter").forEach(function (b) {
+        b.classList.toggle("active", b === filter);
+      });
+      applyFilter(filter.getAttribute("data-mm-filter") || "");
+      return;
+    }
+
+    const toggle = ev.target.closest(".mm-error-toggle");
+    if (toggle) {
+      const pre = document.getElementById(toggle.getAttribute("data-mm-trace"));
+      if (!pre) return;
+      const open = pre.hidden;
+      pre.hidden = !open;
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      // Keep the label, swap the marker -- the text is translated server-side.
+      toggle.textContent = (open ? "▾" : "▸") + toggle.textContent.slice(1);
+      return;
+    }
+
+    const copy = ev.target.closest(".mm-copy-btn");
+    if (copy) {
+      const pre = document.getElementById(copy.getAttribute("data-mm-copy"));
+      if (!pre) return;
+      const text = pre.textContent || "";
+      const done = function () {
+        const old = copy.textContent;
+        copy.textContent = t("Kopiert", "Copied");
+        setTimeout(function () { copy.textContent = old; }, 1500);
+      };
+      // navigator.clipboard needs a secure context; a MediaForge on plain http
+      // in a LAN is the normal case, so keep the textarea fallback.
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+      } else {
+        fallback(text, done);
+      }
+    }
+  });
+
+  function fallback(text, done) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) { /* nothing to offer */ }
+    document.body.removeChild(ta);
+  }
+})();
+
 function toggleIntegCollapse(name) {
   const card = document.getElementById("integCard-" + name);
   if (!card) return;

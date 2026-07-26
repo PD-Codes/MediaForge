@@ -359,6 +359,102 @@ _PENDING_SETTING_PURGES: list = []
 _UNINSTALLED_BLUEPRINTS: set = set()
 
 
+def deregister_blueprint(app, bp_name) -> int:
+    """Really remove a blueprint from a running app. Returns rules dropped.
+
+    Flask has no ``unregister_blueprint()``: a blueprint's rules, view
+    functions, request hooks, error handlers and template folder stay on the
+    app for its whole life. That left three problems here:
+
+      * an uninstalled module's routes were only *blocked* by the guard in
+        app.py -- still matched, still in the URL map;
+      * every install/uninstall cycle grew the URL map a little further;
+      * reinstalling the same module live was impossible, because Flask
+        refuses a second blueprint of the same name.
+
+    Only one part is more than dict-popping: the URL map. Werkzeug's ``Map``
+    keeps a state-machine matcher that ``Map.update()`` does **not** prune, so
+    deleting entries from ``Map._rules`` leaves the routes matchable. The map
+    is therefore rebuilt from the surviving rules -- carrying its own
+    configuration across, because ``host_matching`` alone changes how every
+    rule is built.
+
+    Nested blueprints register as ``parent.child``; everything below matches on
+    that prefix so they go with their parent.
+    """
+    import inspect
+
+    prefix = bp_name + "."
+
+    def owned(endpoint):
+        return endpoint == bp_name or endpoint.startswith(prefix)
+
+    old = app.url_map
+    keep = [r for r in old.iter_rules() if not owned(r.endpoint)]
+    dropped = sum(1 for _ in old.iter_rules()) - len(keep)
+
+    params = inspect.signature(type(old).__init__).parameters
+    kwargs = {}
+    for attr in ("default_subdomain", "strict_slashes", "merge_slashes",
+                 "redirect_defaults", "converters", "sort_parameters",
+                 "sort_key", "host_matching"):
+        if attr in params and hasattr(old, attr):
+            value = getattr(old, attr)
+            kwargs[attr] = dict(value) if attr == "converters" else value
+    new_map = type(old)(**kwargs)
+    for rule in keep:
+        # empty() returns an unbound copy -- a Rule belongs to exactly one Map.
+        new_map.add(rule.empty())
+    app.url_map = new_map
+
+    app.view_functions = {e: f for e, f in app.view_functions.items() if not owned(e)}
+
+    for holder in (app.before_request_funcs, app.after_request_funcs,
+                   app.teardown_request_funcs, app.url_value_preprocessors,
+                   app.url_default_functions, app.template_context_processors,
+                   app.error_handler_spec, app.blueprints):
+        for key in [k for k in list(holder)
+                    if isinstance(k, str) and (k == bp_name or k.startswith(prefix))]:
+            holder.pop(key, None)
+
+    # The template loader walks app.iter_blueprints(), so the folder is gone
+    # with the line above -- but Jinja caches compiled templates by name, and a
+    # stale entry would still render after the module is gone.
+    cache = getattr(app.jinja_env, "cache", None)
+    if cache is not None:
+        cache.clear()
+
+    logger.info("[Thirdparties] Deregistered blueprint '%s' (%d rule(s))", bp_name, dropped)
+    return dropped
+
+
+def deregister_module_blueprints(app, name) -> list:
+    """Deregister every blueprint that thirdparties/<name>/ registered.
+
+    Found by import_name rather than by asking the registry: a module can
+    register a Blueprint and then never call register_thirdparty(), in which
+    case the registry knows no blueprint name -- but its routes are live all
+    the same.
+    """
+    prefix = f"{__name__}.{name}"
+    targets = []
+    for bp_name, blueprint in list((getattr(app, "blueprints", None) or {}).items()):
+        import_name = getattr(blueprint, "import_name", "") or ""
+        if import_name == prefix or import_name.startswith(prefix + "."):
+            targets.append(bp_name)
+    done = []
+    for bp_name in targets:
+        try:
+            deregister_blueprint(app, bp_name)
+            done.append(bp_name)
+        except Exception:
+            # Whatever went wrong, the request guard below still keeps the
+            # routes unreachable -- a half-removed blueprint must not take the
+            # uninstall (or the app) down with it.
+            logger.exception("[Thirdparties] Could not deregister blueprint '%s'", bp_name)
+    return done
+
+
 def uninstalled_blueprints() -> set:
     """Blueprint names whose module was uninstalled live -- their leftover
     routes must 404. Read by app.py's guard on every request."""
@@ -1248,11 +1344,11 @@ def install_staged_live(app, folder=None) -> dict:
 
     - **live**: folder was new to this process -- moved into place, imported,
       register(app) called, translations merged. Fully usable now.
-    - **staged**: left in ``_pending/`` because the folder is ALREADY imported
-      and registered (an upgrade/reinstall). Flask cannot replace a live
-      blueprint, so this one genuinely needs the restart, and
-      apply_pending_changes() will pick it up at the next start exactly as
-      before.
+    - **staged**: left in ``_pending/`` for the next start. Since
+      :func:`upgrade_module_live` exists this is no longer the normal outcome of
+      an upgrade -- it means the live upgrade was declined or failed (another
+      loaded module DEPENDS_ON this one, or the new version would not register
+      and was rolled back). ``result["reasons"][folder]`` says which.
     - **failed**: moving the folder blew up (permissions, a file still open).
 
     Note the staged->live move is a plain shutil.move of a folder nothing has
@@ -1275,10 +1371,20 @@ def install_staged_live(app, folder=None) -> dict:
     moved = []
     for staged in candidates:
         target = package_dir / staged.name
-        # Already live in this process (upgrade/reinstall): the blueprint, the
-        # imported module object and the routes are all unreplaceable now.
+        # Already live in this process: an upgrade/reinstall. Since blueprints
+        # can be deregistered now, try to do it live -- deregister, swap the
+        # folder, register the new version (see upgrade_module_live, which rolls
+        # back to the working version if the new one refuses to register).
+        # Anything it declines stays in _pending/ for the next start, exactly as
+        # before.
         if staged.name in known or target.exists():
-            result["staged"].append(staged.name)
+            upgraded = upgrade_module_live(app, staged.name)
+            if upgraded.get("live"):
+                result["live"].append(staged.name)
+            else:
+                result["staged"].append(staged.name)
+                if upgraded.get("reason"):
+                    result.setdefault("reasons", {})[staged.name] = upgraded["reason"]
             continue
         try:
             if not (staged / "__init__.py").is_file():
@@ -1308,6 +1414,162 @@ def install_staged_live(app, folder=None) -> dict:
             # Modulmanager card now shows the reason -- it just isn't running.
             result["failed"].append(name)
     return result
+
+
+def upgrade_module_live(app, name) -> dict:
+    """Replace an already-loaded module with the version staged in ``_pending/``,
+    on the running app. Returns ``{"ok", "live", "reason"}``.
+
+    This is the third live operation, and it only became possible once
+    :func:`deregister_blueprint` existed: an upgrade is a deregistration
+    followed by a registration of the same folder name, which Flask used to
+    refuse outright. The sequence is deliberately the reverse of a start:
+
+      1. **Take the old version off the app** -- registry entries (which stops
+         its background workers, notification channels, event hooks, providers,
+         hosters, ...), then its blueprints, then its modules out of
+         ``sys.modules`` so the new files are actually imported rather than
+         served from the import cache.
+      2. **Swap the folder.** The live folder is *renamed aside* first, not
+         deleted: if anything below fails, a working module has to come back.
+      3. **Import and register the new version**, which fires
+         ``on_upgrade(app, old, new)`` through the normal
+         :func:`_run_lifecycle_hooks` path.
+      4. **On failure, roll back** to the folder from step 2 and register that
+         again. A failed upgrade must leave the module running, not gone.
+
+    What it deliberately does NOT do, unlike :func:`uninstall_module_live`:
+    touch the module's settings, its data directory or its enabled state, and
+    it does not fire ``on_disable`` -- the module is not being switched off, its
+    code is being replaced underneath it.
+
+    It refuses (and leaves the folder staged for the next start) when another
+    *loaded* module declares ``DEPENDS_ON`` this one. Those dependents imported
+    symbols from the old module object at their own import time and would keep
+    using them; Python has no way to rebind that, so a restart is the honest
+    answer.
+    """
+    name = (name or "").strip()
+    if not name or name.startswith("_") or "/" in name or "\\" in name:
+        return {"ok": False, "live": False, "reason": "invalid module folder"}
+
+    package_dir = modules_dir()
+    pending_dir = package_dir / PENDING_DIR
+    staged = pending_dir / name
+    target = package_dir / name
+    if not staged.is_dir() or not (staged / "__init__.py").is_file():
+        return {"ok": False, "live": False, "reason": "nothing staged"}
+    if not target.is_dir():
+        # Not an upgrade at all -- install_staged_live()'s plain path handles it.
+        return {"ok": False, "live": False, "reason": "not installed"}
+
+    dependents = [
+        other for other in registered_module_names()
+        if other != name and name in ((module_entry(other) or {}).get("depends_on") or ())
+    ]
+    if dependents:
+        logger.info("[Thirdparties] '%s' not upgraded live — %s depend(s) on it",
+                    name, ", ".join(sorted(dependents)))
+        return {"ok": False, "live": False,
+                "reason": "other modules depend on it: " + ", ".join(sorted(dependents))}
+
+    old_version = str(getattr(_LOADED.get(name), "MODULE_VERSION", "") or "")
+
+    # ---- 1. off the app ---------------------------------------------------
+    unregister_module(name)
+    deregister_module_blueprints(app, name)
+    _forget_module_imports(name)
+
+    # ---- 2. swap the folder, keeping the old one aside --------------------
+    backup = pending_dir / ("_rollback_" + name)
+    try:
+        if backup.exists():
+            shutil.rmtree(backup)
+        target.rename(backup)
+    except Exception as exc:
+        logger.exception("[Thirdparties] Could not move '%s' aside for an upgrade", name)
+        # Nothing was replaced yet; put the module back on the app as it was.
+        _reregister_after_rollback(app, name)
+        return {"ok": False, "live": False, "reason": str(exc)}
+
+    try:
+        shutil.move(str(staged), str(target))
+    except Exception as exc:
+        logger.exception("[Thirdparties] Could not move the staged '%s' into place", name)
+        try:
+            backup.rename(target)
+        except Exception:
+            logger.exception("[Thirdparties] Rollback of '%s' failed too — the folder is at %s",
+                             name, backup)
+        _reregister_after_rollback(app, name)
+        return {"ok": False, "live": False, "reason": str(exc)}
+
+    # ---- 3. import + register the new version -----------------------------
+    _add_module_translations(app, name)
+    registered = []
+    try:
+        modules = _import_folders([name])
+        if modules:
+            registered = _register_modules(app, modules, registered_module_names())
+    except Exception:
+        logger.exception("[Thirdparties] The new version of '%s' blew up while registering", name)
+
+    if name in registered:
+        try:
+            shutil.rmtree(backup)
+        except Exception:
+            logger.warning("[Thirdparties] Upgraded '%s' but could not remove %s", name, backup)
+        new_version = str(getattr(_LOADED.get(name), "MODULE_VERSION", "") or "")
+        logger.info("[Thirdparties] Upgraded '%s' live: %s -> %s", name, old_version, new_version)
+        return {"ok": True, "live": True, "reason": None,
+                "from_version": old_version, "to_version": new_version}
+
+    # ---- 4. rollback ------------------------------------------------------
+    logger.warning("[Thirdparties] Upgrade of '%s' failed — rolling back to %s",
+                   name, old_version or "the previous version")
+    _forget_module_imports(name)
+    try:
+        # Keep the broken new version where the store put it, so a restart does
+        # not silently retry it and the admin can still see what was downloaded.
+        broken = pending_dir / ("_failed_" + name)
+        if broken.exists():
+            shutil.rmtree(broken)
+        target.rename(broken)
+        backup.rename(target)
+    except Exception:
+        logger.exception("[Thirdparties] Could not roll '%s' back — it may be at %s", name, backup)
+        return {"ok": False, "live": False, "reason": "upgrade failed and rollback failed"}
+    _reregister_after_rollback(app, name)
+    return {"ok": False, "live": False, "reason": "the new version could not be registered"}
+
+
+def _forget_module_imports(name) -> None:
+    """Drop a module's package (and submodules) from sys.modules + _LOADED, so
+    the next import reads the files on disk instead of the import cache."""
+    import sys
+
+    prefix = f"{__name__}.{name}"
+    _LOADED.pop(name, None)
+    for mod_name in [m for m in sys.modules if m == prefix or m.startswith(prefix + ".")]:
+        sys.modules.pop(mod_name, None)
+    importlib.invalidate_caches()
+
+
+def _reregister_after_rollback(app, name) -> None:
+    """Best-effort: bring a module back on the app after an upgrade bailed out.
+
+    The old files are in place again, but everything was already taken off the
+    app in step 1, so it has to be imported and registered from scratch. If even
+    that fails there is nothing left to try -- the Modulmanager card then shows
+    the module as not registered, with the reason, which is at least honest.
+    """
+    try:
+        modules = _import_folders([name])
+        if modules:
+            _register_modules(app, modules, registered_module_names())
+            logger.info("[Thirdparties] '%s' is back on the previous version", name)
+    except Exception:
+        logger.exception("[Thirdparties] Could not bring '%s' back after a failed upgrade", name)
 
 
 def uninstall_module_live(app, name) -> dict:
@@ -1370,19 +1632,13 @@ def uninstall_module_live(app, name) -> dict:
         fire_module_hook(name, "on_disable", app)
 
     # 2. Out of the registry -> out of the UI, immediately.
-    prefix = f"{__name__}.{name}"
     blueprints = set(unregister_module(name))
-    # ...and ask Flask itself, rather than trusting the registry to know every
-    # blueprint: a module can register a Blueprint and then fail (or never call)
-    # register_thirdparty(), in which case the registry has no item for it and no
-    # blueprint name to report — but its routes are live all the same. Matching on
-    # import_name catches those too, so nothing of an uninstalled module stays
-    # reachable.
-    for bp_name, blueprint in (getattr(app, "blueprints", None) or {}).items():
-        import_name = getattr(blueprint, "import_name", "") or ""
-        if import_name == prefix or import_name.startswith(prefix + "."):
-            blueprints.add(bp_name)
-    _UNINSTALLED_BLUEPRINTS.update(blueprints)
+    # Then really take the blueprints off the app: rules, view functions,
+    # hooks, error handlers, template folder. Anything that could not be
+    # removed stays on the block list, so its routes 404 either way -- the
+    # guard is the fallback now, not the mechanism.
+    removed = set(deregister_module_blueprints(app, name))
+    _UNINSTALLED_BLUEPRINTS.update(blueprints - removed)
 
     # 3. Settings + data dir + the imported module object.
     try:

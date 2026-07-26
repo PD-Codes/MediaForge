@@ -1,90 +1,231 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Seerr Requests') }} — MediaForge{% endblock %}
 {% block styles %}
+{# forms.css (.chb-main, .mf-segmented, …) and modals.css are already loaded
+   globally by base.html; mf_components.css is not, so link it here. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='mf_components.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='seerr.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
 {% endblock %}
 {% block content %}
 <div class="seerr-container">
 
-  <div class="page-header" style="margin-bottom:8px">
-    <h1 class="page-title">{{ _('Seerr Requests') }}</h1>
-    <p class="page-subtitle">{{ _('Pending & accepted series requests') }}</p>
-  </div>
-
-  <div class="lib-toolbar">
-    <span class="lib-watcher-status" id="seerrStatus" style="display:none">
-      <span class="lib-watcher-dot" id="seerrStatusDot"></span>
+  <header class="seerr-header">
+    <div class="seerr-header-titles">
+      <h1 class="page-title">{{ _('Seerr Requests') }}</h1>
+      <p class="page-subtitle">{{ _('Pending & accepted series requests') }}</p>
+    </div>
+    <span class="seerr-conn" id="seerrStatus" hidden>
+      <span class="seerr-conn-dot" id="seerrStatusDot"></span>
       <span id="seerrStatusLabel"></span>
     </span>
-    <div class="lib-toolbar-right">
-      <button class="btn btn-secondary btn-sm" onclick="seerrOpenHiddenModal()" style="margin-right:6px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px">
+  </header>
+
+  <!-- ===== Toolbar =====
+       Row 1 finds things, row 2 shapes the view. See .mf-toolbar in
+       mf_components.css for why they are separate rows. -->
+  <div class="mf-toolbar">
+
+    <div class="mf-toolbar-row">
+      <div class="mf-search">
+        <svg class="mf-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" class="mf-search-input" id="seerrQuery"
+               placeholder="{{ _('Search requests…') }}"
+               aria-label="{{ _('Search requests…') }}" autocomplete="off">
+        <button type="button" class="mf-search-clear" id="seerrSearchClear"
+                aria-label="{{ _('Clear search') }}" hidden>&times;</button>
+      </div>
+    </div>
+
+    <div class="mf-toolbar-row">
+
+      <div class="mf-segmented" id="seerrStatusFilter" role="group"
+           aria-label="{{ _('Filter by status') }}">
+        <button type="button" class="mf-segmented-btn active" data-status="all" aria-pressed="true">
+          {{ _('All') }}<span class="mf-facet" data-facet="all" hidden></span>
+        </button>
+        <button type="button" class="mf-segmented-btn" data-status="pending" aria-pressed="false">
+          {{ _('Pending') }}<span class="mf-facet" data-facet="pending" hidden></span>
+        </button>
+        <button type="button" class="mf-segmented-btn" data-status="approved" aria-pressed="false">
+          {{ _('Approved') }}<span class="mf-facet" data-facet="approved" hidden></span>
+        </button>
+      </div>
+
+      <span class="mf-toolbar-sep" aria-hidden="true"></span>
+
+      <div class="mf-segmented" id="seerrTypeFilter" role="group"
+           aria-label="{{ _('Filter by media type') }}">
+        <button type="button" class="mf-segmented-btn active" data-type="all" aria-pressed="true">
+          {{ _('All') }}
+        </button>
+        <button type="button" class="mf-segmented-btn" data-type="tv" aria-pressed="false">
+          {{ _('Series') }}<span class="mf-facet" data-facet="tv" hidden></span>
+        </button>
+        <button type="button" class="mf-segmented-btn" data-type="movie" aria-pressed="false">
+          {{ _('Movies') }}<span class="mf-facet" data-facet="movie" hidden></span>
+        </button>
+      </div>
+
+      <div class="mf-toolbar-gap"></div>
+
+      <div class="seerr-sort-group">
+        <label class="seerr-sort-label" for="seerrSort">{{ _('Sort') }}</label>
+        <select class="seerr-select" id="seerrSort" aria-label="{{ _('Sort by') }}">
+          <option value="added">{{ _('Request date') }}</option>
+          <option value="title">{{ _('Title') }}</option>
+          <option value="status">{{ _('Status') }}</option>
+        </select>
+        <button type="button" class="mf-icon-btn" id="seerrSortDir"
+                aria-label="{{ _('Toggle sort direction') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="mf-segmented" id="seerrLayoutToggle" role="group"
+           aria-label="{{ _('Layout') }}">
+        <button type="button" class="mf-segmented-btn active" data-layout="grid"
+                aria-pressed="true" title="{{ _('Poster view') }}" aria-label="{{ _('Poster view') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+          </svg>
+        </button>
+        <button type="button" class="mf-segmented-btn" data-layout="list"
+                aria-pressed="false" title="{{ _('List view') }}" aria-label="{{ _('List view') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+            <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
+            <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <button type="button" class="mf-icon-btn" id="seerrSelectToggle" aria-pressed="false"
+              title="{{ _('Select multiple') }}" aria-label="{{ _('Select multiple') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="9 11 12 14 22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+      </button>
+
+      <button type="button" class="mf-icon-btn" id="seerrHiddenBtn"
+              title="{{ _('Hidden') }}" aria-label="{{ _('Hidden requests') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
           <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
           <line x1="1" y1="1" x2="23" y2="23"/>
-        </svg>{{ _('Hidden') }}
+        </svg>
       </button>
-      <button class="btn btn-secondary btn-sm" onclick="seerrLoad()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px">
+
+      <button type="button" class="mf-icon-btn" id="seerrRefreshBtn"
+              title="{{ _('Refresh') }}" aria-label="{{ _('Refresh') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
           <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-        </svg>{{ _('Refresh') }}
+        </svg>
       </button>
     </div>
+  </div>
+
+  <!-- ===== Bulk action bar (shown while requests are selected) ===== -->
+  <div class="seerr-bulk-bar" id="seerrBulkBar" role="region"
+       aria-label="{{ _('Bulk actions') }}" hidden>
+    <div class="seerr-bulk-info">
+      <label class="seerr-bulk-selectall">
+        <input type="checkbox" class="chb-main" id="seerrSelectAll"
+               aria-label="{{ _('Select all loaded requests') }}">
+      </label>
+      <span><span id="seerrBulkCount">0</span> {{ _('selected') }}</span>
+      <span class="seerr-bulk-limit" id="seerrBulkLimit" hidden>
+        {{ _('Only the first 50 are processed.') }}
+      </span>
+    </div>
+    <div class="seerr-bulk-actions">
+      {% set is_admin = not auth_enabled or (current_user and current_user.role == 'admin') %}
+      {% if is_admin %}
+      <button type="button" class="btn btn-primary btn-sm" data-bulk="approve">{{ _('Approve') }}</button>
+      <button type="button" class="btn btn-reject btn-sm" data-bulk="decline">{{ _('Decline') }}</button>
+      {% endif %}
+      <button type="button" class="btn btn-secondary btn-sm" data-bulk="hide">{{ _('Hide') }}</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-bulk="clear">{{ _('Clear selection') }}</button>
+    </div>
+  </div>
+
+  <div class="seerr-meta-row">
+    <span class="seerr-count" id="seerrCount"></span>
+    <span class="seerr-truncated" id="seerrTruncated" hidden>
+      {{ _('Search covered only the newest 400 requests.') }}
+    </span>
   </div>
 
   <div id="seerrList"></div>
 </div>
 
-<!-- ===== Search Modal ===== -->
-<div class="overlay" id="seerrSearchOverlay" onclick="if(event.target===this)closeSeerrSearch()" style="display:none">
-  <div class="modal" style="max-width:580px">
-    <button class="close" onclick="closeSeerrSearch()" aria-label="{{ _('Close') }}">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px">
+<!-- ===== Search Modal (find streams for a request) ===== -->
+<div class="overlay" id="seerrSearchOverlay" style="display:none" role="dialog" aria-modal="true"
+     aria-labelledby="seerrSearchTitle">
+  <div class="modal seerr-modal">
+    <button type="button" class="close" id="seerrSearchClose" aria-label="{{ _('Close') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
     </button>
-    <h2 id="seerrSearchTitle" style="font-size:1.1rem;margin:0 0 14px">{{ _('Search') }}</h2>
+    <h2 class="seerr-modal-title" id="seerrSearchTitle">{{ _('Search') }}</h2>
 
-    <div class="search-bar" style="margin-bottom:12px">
+    <div class="search-bar seerr-modal-search">
       <input type="text" id="seerrSearchInput" placeholder="{{ _('Enter title…') }}" autocomplete="off"
-             onkeydown="if(event.key==='Enter')seerrDoSearch()">
-      <button onclick="seerrDoSearch()">{{ _('Search') }}</button>
+             aria-label="{{ _('Enter title…') }}">
+      <button type="button" id="seerrSearchGo">{{ _('Search') }}</button>
     </div>
 
     <div id="seerrSearchResults" class="seerr-search-results"></div>
+
     <div class="seerr-search-footer">
-      <button class="btn btn-secondary" onclick="closeSeerrSearch()">{{ _('Cancel') }}</button>
-      <button class="btn btn-reject" id="seerrSearchDeclineBtn" onclick="seerrDeclineFromSearch()" style="display:none">{{ _('Decline') }}</button>
+      <button type="button" class="btn btn-secondary" id="seerrSearchCancel">{{ _('Cancel') }}</button>
+      <button type="button" class="btn btn-reject" id="seerrSearchDeclineBtn" hidden>{{ _('Decline') }}</button>
     </div>
   </div>
 </div>
 
-<!-- Series/movie modal + VeeV Availability Check overlay: now the shared
-     implementation from shared_modals.html (previously a duplicate parallel
-     modal was defined here -- see openSeriesFromSeerr() in static/app.js). -->
+<!-- Series/movie modal + VeeV Availability Check overlay: the shared
+     implementation from shared_modals.html (a duplicate parallel modal used
+     to be defined here -- see openSeriesFromSeerr() in static/app.js). -->
 {% include "shared_modals.html" %}
 
 <!-- ===== Hidden Requests Modal ===== -->
-<div class="overlay" id="seerrHiddenOverlay" onclick="if(event.target===this)seerrCloseHiddenModal()" style="display:none">
-  <div class="modal" style="max-width:520px">
-    <button class="close" onclick="seerrCloseHiddenModal()" aria-label="{{ _('Close') }}">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px">
+<div class="overlay" id="seerrHiddenOverlay" style="display:none" role="dialog" aria-modal="true"
+     aria-labelledby="seerrHiddenTitle">
+  <div class="modal seerr-modal seerr-modal-sm">
+    <button type="button" class="close" id="seerrHiddenClose" aria-label="{{ _('Close') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
     </button>
-    <h2 style="font-size:1.1rem;margin:0 0 14px">{{ _('Hidden requests') }}</h2>
+    <h2 class="seerr-modal-title" id="seerrHiddenTitle">{{ _('Hidden requests') }}</h2>
     <div id="seerrHiddenList"></div>
-    <div style="margin-top:16px;text-align:right">
-      <button class="btn btn-secondary" onclick="seerrCloseHiddenModal()">{{ _('Close') }}</button>
+    <div class="seerr-search-footer">
+      <button type="button" class="btn btn-secondary" id="seerrHiddenCloseBtn">{{ _('Close') }}</button>
     </div>
   </div>
 </div>
 {% endblock %}
 {% block scripts %}
 {% set is_admin = not auth_enabled or (current_user and current_user.role == 'admin') %}
-<script>var seerrCanDecline = {{ 'true' if is_admin else 'false' }};</script>
+<script>window.seerrCanDecline = {{ 'true' if is_admin else 'false' }};</script>
 <!-- app.js must load first: it defines the shared modal (openSeries(),
      openSeriesFromSeerr(), closeModal(), etc.) that shared_modals.html's
      markup and seerr.js's search-result click handler both depend on. -->

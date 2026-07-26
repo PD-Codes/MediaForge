@@ -303,7 +303,9 @@ def _run_mediascan(source: str | None = None) -> None:
     Core refresh: fetch library from Plex / Jellyfin and populate mediascan_cache.
     Runs in a background thread. Updates _mediascan_status throughout.
     """
-    global _mediascan_status
+    # No `global` needed: the dict is only mutated in place (.update() and
+    # item assignment), never rebound. Declaring it anyway trips flake8's
+    # F824 and fails CI.
     import time as _t
 
     creds = _mediascan_get_credentials()

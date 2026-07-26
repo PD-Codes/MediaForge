@@ -205,6 +205,8 @@ async function loadSettings() {
     }
     const mediaStatsEl = document.getElementById("mediaStatsEnabled");
     if (mediaStatsEl) mediaStatsEl.checked = data.media_stats_enabled === "1";
+    const newHomeEl = document.getElementById("newHomeEnabled");
+    if (newHomeEl) newHomeEl.checked = data.new_home_enabled === "1";
     const rescanEl = document.getElementById("libraryRescanHours");
     if (rescanEl && data.library_rescan_hours != null) rescanEl.value = String(data.library_rescan_hours);
     const probeEl = document.getElementById("libraryProbeWorkers");
@@ -875,6 +877,25 @@ async function saveLibraryProbeWorkers() {
     showToast(el.value === "0"
       ? t("Scan-Intensität: automatisch", "Scan intensity: automatic")
       : t("Scan-Intensität: ", "Scan intensity: ") + el.value);
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+async function saveNewHomeEnabled() {
+  const el = document.getElementById("newHomeEnabled");
+  if (!el) return;
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_home_enabled: el.checked }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(el.checked
+      ? t("Neue Startseite aktiviert — Startseite neu laden", "New home page enabled — reload the home page")
+      : t("Klassische Startseite aktiviert — Startseite neu laden", "Classic home page enabled — reload the home page"));
   } catch (e) {
     showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
   }

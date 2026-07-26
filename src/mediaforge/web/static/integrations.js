@@ -185,6 +185,8 @@ async function loadCineinfoSettings() {
     if (calSeerrEl) calSeerrEl.checked = d.calendar_seerr === "1";
     const calMediathekEl = document.getElementById("cineinfoCalendarMediathek");
     if (calMediathekEl) calMediathekEl.checked = d.calendar_mediathek === "1";
+    const calLibraryEl = document.getElementById("cineinfoCalendarLibrary");
+    if (calLibraryEl) calLibraryEl.checked = d.calendar_library === "1";
     const calIntervalEl = document.getElementById("cineinfoCalendarRefreshInterval");
     if (calIntervalEl) calIntervalEl.value = d.calendar_refresh_interval || "24";
 
@@ -203,10 +205,12 @@ function _applyCalendarSeerrState() {
   const subEl = document.getElementById("cineinfoCalendarSeerr");
   const hint = document.getElementById("cineinfoCalendarSeerrHint");
   const mediathekEl = document.getElementById("cineinfoCalendarMediathek");
+  const libraryEl = document.getElementById("cineinfoCalendarLibrary");
   const intervalEl = document.getElementById("cineinfoCalendarRefreshInterval");
 
   const calendarOn = !!(calEl && calEl.checked);
   if (mediathekEl) mediathekEl.disabled = !calendarOn;
+  if (libraryEl) libraryEl.disabled = !calendarOn;
   if (intervalEl) intervalEl.disabled = !calendarOn;
 
   if (!subEl) return;
@@ -250,6 +254,8 @@ async function saveCineinfoDisplayOptions() {
   
   const calMediathekEl = document.getElementById("cineinfoCalendarMediathek");
   const calendar_mediathek = (calendar === "1" && calMediathekEl && calMediathekEl.checked) ? "1" : "0";
+  const calLibraryEl = document.getElementById("cineinfoCalendarLibrary");
+  const calendar_library = (calendar === "1" && calLibraryEl && calLibraryEl.checked) ? "1" : "0";
   const calIntervalEl = document.getElementById("cineinfoCalendarRefreshInterval");
   const calendar_refresh_interval = (calIntervalEl && calIntervalEl.value) || "24";
 
@@ -272,7 +278,7 @@ async function saveCineinfoDisplayOptions() {
       body: JSON.stringify({
         show_providers, show_fsk, show_genres, show_rating, show_recommendations, show_trailer,
         show_hover_rating, show_hover_genres, show_hover_fsk, advanced_search, calendar,
-        calendar_seerr, calendar_mediathek, calendar_refresh_interval
+        calendar_seerr, calendar_mediathek, calendar_library, calendar_refresh_interval
       }),
     });
   } catch (e) { /* silent */ }

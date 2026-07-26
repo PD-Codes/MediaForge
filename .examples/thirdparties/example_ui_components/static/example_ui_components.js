@@ -241,4 +241,45 @@ function uicSwitchPill(id, el) {
 
   var spark = document.getElementById("uicSparkline");
   if (spark) spark.innerHTML = MFCharts.sparkline([2, 5, 3, 9, 6, 11, 8], { color: "#22c55e", width: 140, height: 34 });
+
+  // ── mf-search clear button ────────────────────────────────────────
+  // The component ships the markup, not the behaviour -- two listeners is
+  // less code than a config object, and every page wants it slightly
+  // differently (this one only shows/hides; Seerr also re-queries).
+  var uicSearch = document.getElementById("uicSearchInput");
+  var uicClear = document.getElementById("uicSearchClear");
+  if (uicSearch && uicClear) {
+    uicSearch.addEventListener("input", function () {
+      uicClear.hidden = !uicSearch.value;
+    });
+    uicClear.addEventListener("click", function () {
+      uicSearch.value = "";
+      uicClear.hidden = true;
+      uicSearch.focus();
+    });
+  }
+
+  // ── Shared TMDB detail modal ──────────────────────────────────────
+  // Three shapes of the same call. The third one deliberately passes no
+  // tmdbId, to show the modal degrades to "just what you handed it"
+  // rather than erroring out.
+  var DETAIL_DEMOS = {
+    uicDetailSeries: {
+      tmdbId: 1396, mediaType: "tv", title: "Breaking Bad",
+      subtitle: "S01E01", caption: "Pilot", date: "2008-01-20",
+    },
+    uicDetailMovie: {
+      tmdbId: 27205, mediaType: "movie", title: "Inception",
+      date: "2010-07-15",
+    },
+    uicDetailNoId: {
+      title: "Something we only know the name of",
+      subtitle: "S02E04", caption: "No TMDB id was passed",
+      date: "2026-08-01",
+    },
+  };
+  Object.keys(DETAIL_DEMOS).forEach(function (id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.addEventListener("click", function () { MFDetailModal.open(DETAIL_DEMOS[id]); });
+  });
 })();

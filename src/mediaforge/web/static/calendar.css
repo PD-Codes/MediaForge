@@ -192,6 +192,10 @@
   color: #fff;
 }
 
+/* Today reads as a cell, not just as a round number -- an inset ring instead
+   of a border so the 1px grid gaps stay intact. */
+.cal-day.cal-today { box-shadow: inset 0 0 0 2px var(--accent); }
+
 .cal-day-num.cal-has-events {
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
@@ -214,6 +218,55 @@
   gap: 4px;
   overflow: hidden;
 }
+
+/* ===================================================================
+   Month cell, list layout: one flat line per entry
+   -------------------------------------------------------------------
+   Replaces the pill for the default layout. The pill itself stays below
+   because the poster/tile layout (.cal-layout-grid) is built from it.
+   =================================================================== */
+.cal-mrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 3px 2px 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.cal-mrow:hover { background: var(--bg-hover); }
+
+/* Same 3px spine idea as the timeline: the source is a colour, not a word
+   competing with the title. Colour comes from the shared .cal-src-* classes. */
+.cal-mrow-spine {
+  width: 3px;
+  align-self: stretch;
+  min-height: 14px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.cal-mrow-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.73rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-mrow-ep {
+  flex: none;
+  font-size: 0.63rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-mrow-star { flex: none; font-size: 0.62rem; color: var(--cal-cr); line-height: 1; }
 
 /* Event pill inside a month cell */
 .cal-pill {
@@ -252,17 +305,22 @@
   color: var(--accent);
 }
 
+/* "+N more" is a way out of the cell, not a headline: a quiet chip rather
+   than an accent-coloured link across the full width. */
 .cal-day-more {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-link);
+  align-self: flex-start;
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-top: 1px;
   cursor: pointer;
-  padding: 2px 4px;
-  text-align: center;
-  display: block;
 }
 
-.cal-day-more:hover { text-decoration: underline; }
+.cal-day-more:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 /* ===== Month grid – tile/grid layout (posters) ===== */
 .cal-month-grid.cal-layout-grid .cal-pill {
@@ -385,9 +443,11 @@
 /* Tile layout (grid) for list/week view */
 .cal-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px;
-  padding: 16px 18px;
+  /* Was 150px: on a wide screen that produced six oversized tiles per row
+     with a lot of air. Smaller minimum = more entries visible at once. */
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
 }
 
 .cal-tile {
@@ -439,7 +499,10 @@
 }
 
 /* ===== Seerr-sourced events ===== */
-:root { --cal-seerr: #14b8a6; }
+/* MediaScan (the Jellyfin/Plex inventory comparison) and the local MediaForge
+   library are two different calendar sources, so they get two different
+   colours -- sharing one would defeat the point of the coloured spine. */
+:root { --cal-seerr: #14b8a6; --cal-mediascan: #64748b; --cal-library: #0ea5e9; }
 
 .cal-seerr-tag {
   display: inline-block;
@@ -475,8 +538,8 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg), 0 10px 30px rgba(0, 0, 0, 0.5);
   z-index: 1000;
-  width: 300px;
-  max-width: 90vw;
+  width: 380px;
+  max-width: min(92vw, 440px);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -538,13 +601,19 @@
   flex: 1;
 }
 
+/* Titles wrap to two lines instead of being cut to a stub. At 300px with
+   nowrap, "Bungo Stray Dogs WAN!" rendered as "Bungo…" — the popover exists
+   precisely to show what the cramped day cell could not. */
 .cal-popover-title {
   font-size: 0.82rem;
   font-weight: 600;
+  line-height: 1.3;
   color: var(--text-primary);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .cal-popover-sub {
@@ -743,9 +812,193 @@
 .cal-filter-off { opacity: 0.4; text-decoration: line-through; }
 .cal-filter-seerr { border-color: var(--cal-seerr); color: var(--cal-seerr); }
 .cal-filter-crunchyroll { border-color: var(--cal-cr); color: var(--cal-cr); }
+.cal-filter-mediathek { border-color: var(--cal-mediascan); color: var(--cal-mediascan); }
+.cal-filter-library { border-color: var(--cal-library); color: var(--cal-library); }
 .cal-filter-wl { border-color: var(--cal-cr); color: var(--cal-cr); background: transparent; }
 
 /* Mobile: chips wrap and stay tap-friendly */
 @media (max-width: 640px) {
   .cal-filter { padding: 6px 12px; font-size: 0.8rem; }
+}
+
+/* ===================================================================
+   July 2026 redesign — timeline agenda, search, media-type filter,
+   subscription. The toolbar chrome, the timeline itself and the empty
+   states now come from mf_components.css; only what is genuinely
+   specific to the calendar lives below.
+   =================================================================== */
+
+/* ── Header ── */
+.cal-header-titles { min-width: 0; }
+
+.cal-feed-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cal-feed-btn svg { width: 15px; height: 15px; }
+
+/* ── Toolbar bits the shared components do not cover ── */
+/* Prev/next/today are meaningless in the agenda view; calendar.js disables
+   them rather than hiding them, so the toolbar does not jump around. */
+.cal-nav-btn:disabled,
+.cal-today-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+.cal-period-label {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.cal-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 16px;
+  margin: -6px 0 14px;
+}
+
+.cal-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* ── Source spines on timeline items ── */
+/* One colour per source, as a 3px edge rather than another coloured word.
+   These are the same hues the filter chips use. */
+.cal-src-auto { background: var(--accent); }
+.cal-src-seerr { background: #14b8a6; }
+.cal-src-cr { background: #f97316; }
+.cal-src-lib { background: var(--cal-mediascan); }
+.cal-src-library { background: var(--cal-library); }
+
+.cal-stop-empty {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: default;
+}
+
+.cal-stop-empty:hover { background: none; }
+
+.cal-event { cursor: pointer; }
+
+.cal-agenda-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* ── Filtered-away empty state ── */
+#calEmptyFiltered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── ICS subscription modal ── */
+.cal-feed-modal { max-width: 560px; }
+
+.cal-feed-title {
+  font-size: 1.15rem;
+  margin: 0 0 10px;
+  padding-right: 36px;
+}
+
+.cal-feed-hint,
+.cal-feed-warning {
+  margin: 0 0 14px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.cal-feed-warning {
+  color: var(--warning);
+  font-size: 0.8rem;
+}
+
+.cal-feed-url-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+input.cal-feed-url {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  padding: 9px 12px;
+  outline: none;
+}
+
+input.cal-feed-url:focus { border-color: var(--accent); }
+
+.cal-feed-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .cal-header { flex-direction: column; }
+  .cal-feed-btn { align-self: flex-start; }
+  .cal-period-label { font-size: 0.92rem; }
+  .cal-feed-url-row { flex-direction: column; }
+  .cal-feed-actions { flex-direction: column-reverse; }
+  .cal-feed-actions .btn { width: 100%; }
+}
+
+/* ===================================================================
+   July 2026 follow-up: density and legibility fixes reported from the
+   live calendar (876 entries, almost all Crunchyroll).
+   =================================================================== */
+
+/* The watchlist star is kept even when the Crunchyroll source badge is
+   suppressed (see badgesWorthShowing() in calendar.js) — as a bare star it
+   needs to stay round rather than stretch like a word badge. */
+.cal-cr-tag.cal-cr-wl {
+  padding: 1px 5px;
+  letter-spacing: 0;
+}
+
+/* Popover rows: give the text column room and let it breathe over two
+   lines; the badge column keeps its own width. */
+.cal-popover-item { align-items: flex-start; }
+.cal-popover-info { min-width: 0; flex: 1; }
+
+.cal-popover-sub {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+/* Month cells hold two tiles now, so the tiles themselves must be modest. */
+.cal-layout-grid .cal-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+  padding: 8px;
 }

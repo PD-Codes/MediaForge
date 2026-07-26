@@ -342,6 +342,16 @@ def unregister_monitor_site(item_id) -> None:
     logger.info("[Uptime] Unregistered third-party monitor site: %s", site_id)
 
 
+def thirdparty_monitor_ids() -> set:
+    """item_ids that currently own a third-party monitor site.
+
+    Read-only counterpart of :func:`unregister_monitor_site` -- the
+    Modulmanager uses it to report what a module registered without reaching
+    into this module's private dict.
+    """
+    return set(_EXTRA_MONITOR_SITES)
+
+
 def _uptime_run_round(cfg=None):
     """Probe every tracked source once and store a heartbeat each; then prune.
 

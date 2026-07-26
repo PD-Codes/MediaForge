@@ -7,6 +7,9 @@
      horizontally on narrow screens (unwrapped badge rows, a fixed-min-width
      textarea, an unwrapped header button row). See extensions.css. -->
 <link rel="stylesheet" href="{{ url_for('static', filename='extensions.css') }}">
+<!-- mf_components.css is not loaded globally: the store toolbar uses .mf-search
+     and the catalog's empty state uses .mf-empty from it. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='mf_components.css') }}">
 {% endblock %}
 {% block content %}
 <div class="settings-container extensions-page">
@@ -112,7 +115,13 @@
 
   <!-- View 1: what is installed here. Shown by default; module_store.js swaps it
        for the store view (and back) when the header button is used. -->
-  <div id="extInstalledView">
+  {# The installed view is now two panels behind a floating side menu, so
+     modules and theme packs stop sharing one scroll. has-floating-menu makes
+     this element the flex container -- the menu and the panels have to be its
+     DIRECT children (see shell.css). #}
+  <div id="extInstalledView" class="has-floating-menu">
+  {% include "_extensions_nav.html" %}
+  <div class="settings-tab-panel active" id="exttab-modules">
   {% if not extensions %}
   <div class="settings-section">
     <div class="settings-hint" style="padding:20px 24px;">{{ _('No extension folders discovered.') }}</div>
@@ -129,6 +138,55 @@
        MODULE_NAME/MODULE_DESCRIPTION/MODULE_AUTHOR constants (see
        web/thirdparties/__init__.py's docstring), falling back to the
        folder name / nothing when a module doesn't declare them. -->
+  {# Labels for registry.module_capabilities()'s kinds. Written as
+     "3 × provider" so neither language needs a plural form for twelve
+     different nouns. #}
+  {% set CAP_LABELS = {
+      'menu': _('menu entry'),
+      'settings_card': _('settings card'),
+      'dashboard_widget': _('dashboard widget'),
+      'provider_pill': _('provider pill'),
+      'provider': _('content source'),
+      'search_source': _('search source'),
+      'hoster': _('hoster'),
+      'mirrors': _('mirror list'),
+      'monitor': _('monitor entry'),
+      'notification_channel': _('notification channel'),
+      'event_hook': _('event hook'),
+      'background_worker': _('background worker')
+  } %}
+
+  {# Tally + filter. Both read the cards' data-mm-state, so nothing here has
+     to be kept in sync with the loop below. #}
+  {% set _states = extensions|map(attribute="state")|list %}
+  {% if extensions %}
+  <div class="mm-bar">
+    <div class="mm-tally">
+      <b>{{ extensions|length }}</b> {{ _('modules') }}
+      <span class="mm-sep">·</span> <b>{{ _states|select("equalto", "ok")|list|length }}</b> {{ _('running') }}
+      <span class="mm-sep">·</span> <b>{{ _states|select("equalto", "off")|list|length }}</b> {{ _('off') }}
+      {% set _trouble = _states|select("equalto", "error")|list|length + _states|select("equalto", "skipped")|list|length %}
+      {% if _trouble %}
+      <span class="mm-sep">·</span>
+      <span class="mm-warn">{{ _states|select("equalto", "skipped")|list|length }} {{ _('skipped') }} ·
+        {{ _states|select("equalto", "error")|list|length }} {{ _('with errors') }}</span>
+      {% endif %}
+    </div>
+    <div class="mm-filters" id="mmFilters" role="group" aria-label="{{ _('Filter by state') }}">
+      <button type="button" class="mm-filter active" data-mm-filter="">{{ _('All') }}
+        <span class="n">{{ extensions|length }}</span></button>
+      <button type="button" class="mm-filter" data-mm-filter="ok">{{ _('Running') }}
+        <span class="n">{{ _states|select("equalto", "ok")|list|length }}</span></button>
+      <button type="button" class="mm-filter" data-mm-filter="off">{{ _('Off') }}
+        <span class="n">{{ _states|select("equalto", "off")|list|length }}</span></button>
+      {% if _trouble %}
+      <button type="button" class="mm-filter mm-filter-trouble" data-mm-filter="trouble">{{ _('Problems') }}
+        <span class="n">{{ _trouble }}</span></button>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {% for ext in extensions %}
   <!-- data-module-id carries the module's stable MODULE_ID (falls back to the
        folder name). module_store.js matches an installed card to a store entry
@@ -136,15 +194,35 @@
        the store computes update_available on MODULE_ID too, so matching on the
        folder name (which can differ from the store's declared folder for a
        hand-installed or renamed module) would attach the badge to nothing. -->
-  <div class="settings-section integ-card collapsed" id="integCard-ext-{{ ext.name }}" data-module-id="{{ ext.module_id }}">
-    <div class="integ-subsection-header integ-collapsible-header" style="padding:14px 20px !important;" onclick="toggleIntegCollapse('ext-{{ ext.name }}')">
+  {# One state per card, not a row of badges. Everything the old header
+     carried as its own pill (version, author, "Loaded", "Enabled", Registry
+     API) is either the state itself or quiet meta text below the name -- the
+     badges that survive are the ones that are NOT the normal case: a
+     signature that does not check out, an unmet dependency, a pending
+     restart. "Unsigned" deliberately gets none: that is the ordinary state of
+     a third-party module, and labelling it trains people to ignore labels.
+
+     mm-state drives the filter buttons above (data-mm-state) and the sort
+     order (see extensions.py: problems first). #}
+  {% set mm_state = ext.state %}
+  <div class="settings-section integ-card collapsed mm-card mm-{{ mm_state }}"
+       id="integCard-ext-{{ ext.name }}" data-module-id="{{ ext.module_id }}"
+       data-mm-state="{{ mm_state }}">
+    <div class="integ-subsection-header integ-collapsible-header mm-head" style="padding:14px 20px !important;" onclick="toggleIntegCollapse('ext-{{ ext.name }}')">
       <span class="integ-collapsible-chevron">▸</span>
-      <span class="integ-subsection-title">{{ ext.module_name }}</span>
-      <!-- MODULE_VERSION, always rendered (falls back to 0.0.0 for a module
-           that declares none) so every card has a version to point at — the
-           planned module store compares exactly this string against what it
-           has on offer. -->
-      <span class="integ-subsection-badge badge-version" title="{{ _('Module version') }}">v{{ ext.version }}</span>
+      <span class="mm-state">
+        <span class="mm-dot" aria-hidden="true"></span>
+        {%- if mm_state == "error" %}{{ _('Error') }}
+        {%- elif mm_state == "skipped" %}{{ _('Skipped') }}
+        {%- elif mm_state == "ok" %}{{ _('Running') }}
+        {%- else %}{{ _('Off') }}{% endif -%}
+      </span>
+      <span class="mm-ident">
+        <span class="mm-title-row">
+          <span class="integ-subsection-title">{{ ext.module_name }}</span>
+      <!-- MODULE_VERSION is no longer a badge -- it moved to the meta line
+           below the name. The module store still finds this card by
+           data-module-id and hangs its "Update: v…" badge in this header. -->
       <!-- Trust, derived from the module's own MODULE.sig (see signing.py) and
            never from anything a store or the module itself merely claims:
              official  = signed by a MediaForge maintainer key
@@ -159,36 +237,33 @@
       <span class="integ-subsection-badge badge-verified" title="{{ _('Signed by') }} {{ ext.signature.signer }}">{{ _('Verified') }}</span>
       {% elif ext.signature.signed %}
       <span class="integ-subsection-badge badge-incompatible" title="{{ ext.signature.reason }}">{{ _('Signature invalid') }}</span>
-      {% else %}
-      <span class="integ-subsection-badge badge-unsigned" title="{{ _('No MODULE.sig — nobody vouches for this code') }}">{{ _('Unsigned') }}</span>
       {% endif %}
-       {% if ext.author %}
-      <span class="integ-subsection-badge badge-author" title="{{ _('Author') }}">{{ ext.author }}</span>
-      {% endif %}
+      {# No "Unsigned" badge on purpose: unsigned is the normal state of a
+         third-party module, and a warning on the normal case is noise. What
+         the module *does* is stated below instead. #}
       {% if ext.incompatible_reason %}
       <span class="integ-subsection-badge badge-incompatible" title="{{ ext.incompatible_reason }}">{{ _('Incompatible') }}</span>
-      {% endif %}
-      {% if ext.registered %}
-      <span class="integ-subsection-badge badge-loaded">{{ _('Loaded') }}</span>
-      {% elif ext.imported == false %}
-      <span class="integ-subsection-badge badge-import-failed">{{ _('Import failed') }}</span>
-      {% elif ext.registered == false %}
-      <span class="integ-subsection-badge badge-skipped">{{ _('Skipped') }}</span>
-      {% else %}
-      <span class="integ-subsection-badge badge-unknown">{{ _('Unknown') }}</span>
-      {% endif %}
-      {% if ext.registered_items %}
-      {% if ext.registered_items|selectattr("enabled")|list %}
-      <span class="integ-subsection-badge badge-enabled">{{ _('Enabled') }}</span>
-      {% else %}
-      <span class="integ-subsection-badge badge-disabled">{{ _('Disabled') }}</span>
-      {% endif %}
       {% endif %}
       {% if ext.depends_on %}
       <span class="integ-subsection-badge badge-depends" title="{{ _('DEPENDS_ON') }}">
         → {{ ext.depends_on|join(', ') }}
       </span>
       {% endif %}
+        </span>
+        {# Identity as quiet text, not as four pills. #}
+        <span class="mm-meta">v{{ ext.version }}{% if ext.author %} · {{ ext.author }}{% endif %} · <code>{{ ext.module_id }}</code></span>
+        {# The line this page never had: what the module hung into the app.
+           Counts come from registry.module_capabilities(). #}
+        {% if ext.capabilities %}
+        <span class="mm-caps">
+          {% for cap in ext.capabilities %}
+          <span class="mm-cap{% if cap.hot %} mm-cap-hot{% endif %}">{{ cap.count }}&nbsp;×&nbsp;{{ CAP_LABELS.get(cap.kind, cap.kind) }}</span>
+          {% endfor %}
+        </span>
+        {% elif ext.registered == false or ext.imported == false %}
+        <span class="mm-caps"><span class="mm-cap mm-cap-none">{{ _('registered nothing') }}</span></span>
+        {% endif %}
+      </span>
     </div>
     <div class="integ-collapsible-body" style="padding:0 20px 16px;">
       {% if ext.description %}
@@ -246,8 +321,32 @@
       <!-- ...and not the recorded error when that error IS the incompatibility
            (which is exactly what discover_and_register() records as the skip
            reason), or the same sentence would render twice in a row. -->
+      {# The recorded reason is what somebody has to paste into an issue, and
+         an import failure's reason is a whole traceback. One line of it is
+         useless, so it gets its own block: collapsed by default (it is long),
+         with a copy button that does not require selecting monospace text in a
+         scroll box. #}
       {% if ext.error and ext.error != ext.incompatible_reason %}
-      <div class="settings-hint" style="color:var(--error);">{{ ext.error }}</div>
+      <div class="mm-error-box">
+        {% if "\n" in ext.error %}
+        <div class="mm-error-head">
+          <button type="button" class="mm-error-toggle" data-mm-trace="mmTrace-{{ ext.name }}"
+                  aria-expanded="false" aria-controls="mmTrace-{{ ext.name }}">
+            ▸ {{ _('Show full error') }}
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm mm-copy-btn"
+                  data-mm-copy="mmTrace-{{ ext.name }}">{{ _('Copy') }}</button>
+        </div>
+        <pre class="mm-trace" id="mmTrace-{{ ext.name }}" hidden>{{ ext.error }}</pre>
+        {% else %}
+        <div class="mm-error-head">
+          <div class="settings-hint" style="color:var(--error);padding:0;">{{ ext.error }}</div>
+          <button type="button" class="btn btn-ghost btn-sm mm-copy-btn"
+                  data-mm-copy="mmTrace-{{ ext.name }}">{{ _('Copy') }}</button>
+        </div>
+        <pre class="mm-trace" id="mmTrace-{{ ext.name }}" hidden>{{ ext.error }}</pre>
+        {% endif %}
+      </div>
       {% endif %}
 
       <!-- Needs a Python dependency it doesn't have. Previously this module was
@@ -364,6 +463,9 @@
   </div>
   {% endfor %}
 
+  </div><!-- /#exttab-modules -->
+
+  <div class="settings-tab-panel" id="exttab-themes">
   <!-- ── Installed theme packs (web/themes.py) ──────────────────────────────
        Same card idiom as modules above, same store, different lifecycle:
        themes are inert CSS/asset packs, so install, upgrade and uninstall are
@@ -453,6 +555,7 @@
     </div>
   </div>
   {% endfor %}
+  </div><!-- /#exttab-themes -->
   </div><!-- /#extInstalledView -->
 
   <!-- ── View 2: the module store ─────────────────────────────────────────
@@ -663,6 +766,17 @@
       <span class="integ-subsection-badge badge-version" id="extStoreCount" style="display:none;"></span>
       <!-- Type filter (module_store.js): the same catalog carries modules and
            theme packs (index "type" field); this narrows the list client-side. -->
+      <div class="mf-search ext-store-search">
+        <svg class="mf-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" class="mf-search-input" id="extStoreSearch"
+               placeholder="{{ _('Search modules and themes…') }}"
+               aria-label="{{ _('Search modules and themes…') }}" autocomplete="off">
+        <button type="button" class="mf-search-clear" id="extStoreSearchClear"
+                aria-label="{{ _('Clear search') }}" hidden>&times;</button>
+      </div>
       <div class="ext-type-filter" id="extTypeFilter" role="group" aria-label="{{ _('Filter by type') }}">
         <button type="button" class="ext-type-filter-btn active" data-type="">{{ _('All') }}</button>
         <button type="button" class="ext-type-filter-btn" data-type="module">{{ _('Modules') }}</button>

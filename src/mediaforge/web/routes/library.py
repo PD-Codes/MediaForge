@@ -369,11 +369,14 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
             continue
         title_name = f.stem
         try:
-            fsize = f.stat().st_size
+            _st = f.stat()
+            fsize = _st.st_size
+            fmtime = _st.st_mtime
         except OSError:
             fsize = 0
+            fmtime = 0
         if title_name not in titles:
-            titles[title_name] = {"folder": title_name, "seasons": {}, "total_size": 0, "is_movie": False}
+            titles[title_name] = {"folder": title_name, "seasons": {}, "total_size": 0, "is_movie": False, "_added_at": 0}
         entry = titles[title_name]
         if "movies" not in entry["seasons"]:
             entry["seasons"]["movies"] = []
@@ -388,6 +391,7 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
             })
             entry["total_size"] += fsize
             entry["is_movie"] = True
+            entry["_added_at"] = max(entry.get("_added_at", 0), fmtime)
 
     for folder in title_folders():
         if not folder.is_dir():
@@ -396,7 +400,7 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
         if name in lang_folder_set:
             continue
         if name not in titles:
-            titles[name] = {"folder": name, "seasons": {}, "total_size": 0, "is_movie": False}
+            titles[name] = {"folder": name, "seasons": {}, "total_size": 0, "is_movie": False, "_added_at": 0}
         entry = titles[name]
 
         # First pass: direct video files in the title folder (no season subfolder)
@@ -406,9 +410,12 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
             if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
                 continue
             try:
-                fsize = f.stat().st_size
+                _st = f.stat()
+                fsize = _st.st_size
+                fmtime = _st.st_mtime
             except OSError:
                 fsize = 0
+                fmtime = 0
             skey = "movies"
             if skey not in entry["seasons"]:
                 entry["seasons"][skey] = []
@@ -423,6 +430,7 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
                 })
                 entry["total_size"] += fsize
                 entry["is_movie"] = True
+                entry["_added_at"] = max(entry.get("_added_at", 0), fmtime)
 
         # Second pass: recurse into subfolders for SxxExx episodes
         for f in folder.rglob("*"):
@@ -440,9 +448,12 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
                 else:
                     continue
             try:
-                fsize = f.stat().st_size
+                _st = f.stat()
+                fsize = _st.st_size
+                fmtime = _st.st_mtime
             except OSError:
                 fsize = 0
+                fmtime = 0
             skey = str(snum)
             if skey not in entry["seasons"]:
                 entry["seasons"][skey] = []
@@ -456,6 +467,7 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
                     "audio_codec": mdata.get("audio_codec")
                 })
                 entry["total_size"] += fsize
+                entry["_added_at"] = max(entry.get("_added_at", 0), fmtime)
 
     result = []
     for entry in sorted(titles.values(), key=lambda x: x["folder"].lower()):
@@ -467,7 +479,7 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
                 entry["seasons"][skey].sort(key=lambda e: e["episode"])
         result.append({"folder": entry["folder"], "seasons": entry["seasons"],
                        "total_episodes": total_eps, "total_size": entry["total_size"],
-                       "is_movie": entry["is_movie"]})
+                       "is_movie": entry["is_movie"], "added_at": entry.get("_added_at", 0)})
     return result
 
 

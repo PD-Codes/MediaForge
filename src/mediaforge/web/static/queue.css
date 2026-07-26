@@ -389,9 +389,16 @@
   white-space: nowrap;
 }
 
-.queue-cancel:hover {
+.queue-cancel:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.18);
   border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* "Cancelling..." — the abort is already running, a second click is pointless. */
+.queue-cancel:disabled,
+.qhub-hero-btn--cancel:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 /* Captcha solve button */
@@ -799,50 +806,11 @@
 
   
 
-  /* ── Direct link button ─────────────────────────────────────────────────── */
-  #directLinkBtn {
-    height: 46px;
-    padding: 0 20px;
-    border-radius: var(--radius-md);
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    border: 1.5px solid var(--border);
-    transition: background var(--transition), color var(--transition), border-color var(--transition);
-    white-space: nowrap;
-  }
-
-  #directLinkBtn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    border-color: var(--accent);
-  }
-
-  /* ── Direct link button (duplicate of the block above, verbatim — left over
-     from the style.css extraction; harmless since both blocks are identical) ── */
-  #directLinkBtn {
-    height: 46px;
-    padding: 0 20px;
-    border-radius: var(--radius-md);
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    border: 1.5px solid var(--border);
-    transition: background var(--transition), color var(--transition), border-color var(--transition);
-    white-space: nowrap;
-  }
-
-  #directLinkBtn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    border-color: var(--accent);
-  }
+  /* The #directLinkBtn rules that used to sit here — twice, verbatim — are
+     gone. They are home-page styling that had no business in queue.css, and
+     being ID rules (1,0,0) they quietly beat the pill styling in index.css:
+     that is why the button kept its old 46px rounded-rect shape inside the
+     50px search pill. index.css owns that button now. */
 
 
 /* Recommendations grid & cards */
@@ -1137,4 +1105,536 @@
   font-size: 0.88rem;
   color: var(--error, #e05a5a);
   background: rgba(224, 90, 90, 0.1);
+}
+
+
+/* ===================================================================
+   QUEUE HUB (.qhub)
+   -------------------------------------------------------------------
+   One window for all three queues (markup: #queueOverlay in base.html).
+
+     bar     Everything | Downloads | Encoding | Upscaling  + two actions
+     hero    the ONE job running right now, with its station rail
+     list    "Needs you" / "Up next" / "Finished today"
+
+   The coloured edge on a row names the STATION, not the status:
+     violet  var(--accent)   download
+     yellow  var(--warning)  encoding
+     blue    var(--info)     upscaling
+     green   var(--success)  finished
+     red     var(--error)    needs you (captcha, failure)
+
+   The older .queue-progress-fill--download/--ffmpeg/... colours are NOT
+   touched: the home page run strip and third-party modules still use them.
+   =================================================================== */
+
+.queue-modal.qhub {
+  max-width: 840px;
+}
+
+.qhub-header {
+  padding: 16px 20px 12px;
+}
+
+/* ---- Bar: which queue + the actions that apply to all of them ---- */
+.qhub-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 20px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Tighter than the app-wide default so the four segments and the two
+   actions share one row instead of wrapping. */
+.qhub-seg .mf-segmented-btn {
+  padding: 7px 13px;
+}
+
+.qhub-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.qhub-off-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.qhub-off-badge--warn {
+  color: var(--text-muted);
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.qhub-off-badge--error {
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* ---- Hero: the one job running right now ---- */
+.qhub-hero {
+  padding: 16px 20px 0;
+  flex-shrink: 0;
+}
+
+.qhub-hero-card {
+  display: flex;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-input);
+  padding: 14px 16px;
+}
+
+.qhub-hero-card--attn {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.qhub-hero-poster {
+  width: 62px;
+  height: 88px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background-color: var(--bg-hover);
+  background-image: linear-gradient(150deg, rgba(124, 58, 237, 0.35), rgba(239, 68, 68, 0.22));
+  background-size: cover;
+  background-position: center;
+}
+
+.qhub-hero-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.qhub-hero-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.qhub-hero-titles {
+  min-width: 0;
+  flex: 1;
+}
+
+.qhub-hero-title {
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qhub-hero-ep {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-left: 4px;
+}
+
+.qhub-hero-chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-left: 4px;
+  vertical-align: 1px;
+}
+
+.qhub-hero-meta {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qhub-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.qhub-hero-pct {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.qhub-hero-btn {
+  white-space: nowrap;
+}
+
+.qhub-hero-btn--cancel {
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: transparent;
+}
+
+.qhub-hero-btn--cancel:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.qhub-hero-btn--attn {
+  color: #14140c;
+  background: var(--warning);
+  font-weight: 600;
+}
+
+/* NOTE display:block — the bar and its fill are built from a plain HTML
+   string; height on an inline element does nothing and the fill would be
+   invisible. Same trap as the home page run strip. */
+.qhub-hero-bar {
+  display: block;
+  height: 7px;
+  margin-top: 12px;
+  border-radius: 99px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.qhub-hero-fill {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  /* background-COLOR, not the shorthand: the shorthand would wipe the stripe
+     image below, and the per-queue colour overrides further down would do the
+     same. Every one of them sets background-color only. */
+  background-color: var(--accent);
+  /* The moving diagonal stripes — same pattern and same keyframes the old
+     queue modal used (queue-progress-stripes, further up this file). They say
+     "still working" even while the width sits still, which is most of the
+     time on a long episode. */
+  background-image: linear-gradient(45deg,
+      rgba(255, 255, 255, 0.16) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.16) 50%,
+      rgba(255, 255, 255, 0.16) 75%,
+      transparent 75%,
+      transparent);
+  background-size: 1rem 1rem;
+  animation: queue-progress-stripes 1s linear infinite;
+  transition: width 0.4s ease;
+}
+
+.qhub-hero-card--encoding .qhub-hero-fill { background-color: var(--warning); }
+.qhub-hero-card--upscaling .qhub-hero-fill { background-color: var(--info); }
+.qhub-hero-card--attn .qhub-hero-fill { background-color: var(--error); }
+
+/* Paused: the stripes stop instead of pretending something is happening.
+   Set from renderQueueHub() whenever the download queue is on hold. */
+.qhub-hero-card.is-paused .qhub-hero-fill { animation-play-state: paused; }
+
+/* Second track: the episode / file being worked on right now. Thinner and a
+   shade quieter than the overall bar, so the hierarchy reads at a glance —
+   the thick one is the whole entry, the thin one is what is happening now. */
+.qhub-hero-subhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.qhub-hero-sublabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qhub-hero-subpct {
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.qhub-hero-bar--ep {
+  height: 4px;
+  margin-top: 3px;
+}
+
+.qhub-hero-fill--ep {
+  opacity: 0.7;
+}
+
+/* Extra air: the episode bar directly above is the same 4px height as the
+   rail's segments, so without a gap the two read as one striped block. */
+.qhub-stations {
+  margin-top: 16px;
+}
+
+/* mf_components.css paints the active step in --warning, which reads as a
+   warning here. In the hub the rail is neutral progress: the station you are
+   at is the accent, everything behind it is a dimmed accent. */
+.qhub-stations .mf-progress-step.is-done .mf-progress-bar { background: var(--accent); opacity: 0.45; }
+.qhub-stations .mf-progress-step.is-active .mf-progress-bar { background: var(--accent); opacity: 1; }
+.qhub-stations .mf-progress-step.is-active .mf-progress-label { color: var(--accent); }
+.qhub-stations .mf-progress-step.is-done .mf-progress-label { color: var(--text-secondary); }
+
+.qhub-hero-card--encoding .qhub-stations .mf-progress-step.is-active .mf-progress-bar { background: var(--warning); }
+.qhub-hero-card--encoding .qhub-stations .mf-progress-step.is-active .mf-progress-label { color: var(--warning); }
+.qhub-hero-card--upscaling .qhub-stations .mf-progress-step.is-active .mf-progress-bar { background: var(--info); }
+.qhub-hero-card--upscaling .qhub-stations .mf-progress-step.is-active .mf-progress-label { color: var(--info); }
+
+/* ---- Group headings ---- */
+.qhub-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  margin: 14px 0 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.qhub-group:first-child {
+  margin-top: 2px;
+}
+
+.qhub-group-count {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  border-radius: 10px;
+  padding: 0 6px;
+}
+
+/* ---- List ---- */
+.queue-list.qhub-list {
+  gap: 0;
+  padding: 4px 20px 18px;
+}
+
+/* Overrides the .queue-item card look: rows here are a quiet list, not a
+   stack of cards. */
+.queue-item.qhub-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 9px 4px 9px 14px;
+  transition: background var(--transition);
+}
+
+.queue-item.qhub-row:last-child {
+  border-bottom: none;
+}
+
+.queue-item.qhub-row:hover {
+  background: var(--bg-hover);
+}
+
+.queue-item.qhub-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+/* NOTE the doubled class: the base rule above is `.queue-item.qhub-row::before`
+   (specificity 0,2,1), so a single `.qhub-row--x::before` (0,1,1) would lose
+   and every edge would stay grey. */
+.queue-item.qhub-row--download::before { background: var(--accent); }
+.queue-item.qhub-row--encoding::before { background: var(--warning); }
+.queue-item.qhub-row--upscaling::before { background: var(--info); }
+.queue-item.qhub-row--attn::before { background: var(--error); }
+.queue-item.qhub-row--failed::before { background: var(--error); }
+.queue-item.qhub-row--partial::before { background: var(--warning); }
+.queue-item.qhub-row--done::before { background: var(--success); }
+
+.qhub-row-idx {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.qhub-row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qhub-row-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.qhub-row-ep {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.qhub-row-state {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 76px;
+  text-align: right;
+}
+
+.qhub-row--attn .qhub-row-state,
+.qhub-row--failed .qhub-row-state { color: var(--error); }
+.qhub-row--encoding .qhub-row-state { color: var(--warning); }
+.qhub-row--upscaling .qhub-row-state { color: var(--info); }
+
+.qhub-row-time {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 76px;
+  text-align: right;
+}
+
+/* The buttons take the place of the status word on hover, so the row keeps
+   its rhythm instead of growing a permanent button column. */
+.qhub-row-actions {
+  display: none;
+  gap: 4px;
+}
+
+.queue-item.qhub-row:hover .qhub-row-actions,
+.queue-item.qhub-row:focus-within .qhub-row-actions {
+  display: flex;
+}
+
+.queue-item.qhub-row:hover .qhub-row-state,
+.queue-item.qhub-row:hover .qhub-row-time,
+.queue-item.qhub-row:focus-within .qhub-row-state,
+.queue-item.qhub-row:focus-within .qhub-row-time {
+  display: none;
+}
+
+/* Touch has no hover — show the buttons permanently. The status stays visible
+   next to them rather than being swapped out: without hover there is no way to
+   get it back, and the coloured edge cannot tell "cancelled" from "failed"
+   (both are red). Narrower type and no reserved width keep the row on one
+   line; the title truncates first because it is the flexible column. */
+@media (hover: none) {
+  .qhub-row-actions { display: flex; }
+  .qhub-row-right { gap: 8px; }
+  .qhub-row-state,
+  .qhub-row-time {
+    min-width: 0;
+    font-size: 0.6rem;
+  }
+  .qhub-row-time { font-size: 0.68rem; }
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 640px) {
+  .queue-modal.qhub {
+    max-width: 100%;
+    max-height: calc(100vh - 24px);
+  }
+
+  .qhub-header { padding: 12px 14px 10px; }
+
+  .qhub-bar {
+    padding: 0 8px 12px;
+    gap: 8px;
+  }
+
+  .qhub-bar .mf-segmented { width: 100%; }
+
+  .qhub-bar .mf-segmented-btn {
+    flex: 1;
+    padding: 7px 6px;
+    font-size: 0.74rem;
+  }
+
+  .qhub-bar-actions { width: 100%; }
+  .qhub-bar-actions .btn { flex: 1; }
+
+  .qhub-hero { padding: 12px 14px 0; }
+
+  .qhub-hero-card {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .qhub-hero-poster {
+    width: 46px;
+    height: 66px;
+  }
+
+  .qhub-hero-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .qhub-hero-side {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .mf-progress-label { font-size: 0.55rem; }
+
+  .queue-list.qhub-list { padding: 4px 14px 16px; }
+
+  .qhub-row-ep { display: none; }
+  .qhub-row-state,
+  .qhub-row-time { min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qhub-hero-fill {
+    animation: none;
+    background-image: none;
+    transition: none;
+  }
 }

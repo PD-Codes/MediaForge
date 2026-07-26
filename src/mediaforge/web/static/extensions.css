@@ -99,6 +99,7 @@
      column for space. */
   .extensions-page .ext-store-extra-controls {
     width: 100%;
+    display: unset !important;
   }
 
   .extensions-page .ext-store-extra-textarea {
@@ -116,10 +117,346 @@
      comfortable tap target instead of a 60px sliver. */
   .extensions-page .ext-author-links {
     width: 100%;
+    max-width: unset !important;
   }
 
   .extensions-page .ext-author-links .btn {
     flex: 1 1 100%;
     text-align: center;
   }
+
+  .settings-row button {
+    width:100%;
+    justify-content: center;
+  }
+}
+
+
+/* ===================================================================
+   Store catalog as a card grid (July 2026)
+   -------------------------------------------------------------------
+   Page-scoped on purpose: .settings-row still styles the store's own
+   settings rows right above the catalog, and those must not change.
+   Every action button inside a card keeps the classes and data-ids the
+   single delegated click handler in module_store.js matches on.
+   =================================================================== */
+
+.extensions-page .mod-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 12px;
+  padding: 4px 20px 18px;
+}
+
+.extensions-page .mod-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* An available update colours the whole edge -- visible before you read a word. */
+.extensions-page .mod-card.has-update { border-color: rgba(245, 158, 11, 0.45); }
+
+.extensions-page .mod-card-top { display: flex; align-items: flex-start; gap: 11px; }
+
+.extensions-page .mod-card-icon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* An inline SVG with only a viewBox resolves to 0x0. */
+.extensions-page .mod-card-icon svg { width: 20px; height: 20px; }
+
+/* A skin is not a feature: different glyph tint so the two never blur. */
+.extensions-page .mod-card.is-theme .mod-card-icon {
+  background: rgba(14, 165, 233, 0.14);
+  color: #0ea5e9;
+}
+
+.extensions-page .mod-card-ident { min-width: 0; flex: 1; }
+
+.extensions-page .mod-card-name {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.extensions-page .mod-card-by {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+/* Two lines of description, then clamp -- a card grid only works if the cards
+   stay the same height. */
+.extensions-page .mod-card-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.extensions-page .mod-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.extensions-page .mod-card-update {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warning);
+  color: #14140c;
+}
+
+.extensions-page .mod-card-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.extensions-page .mod-card-meta:empty { display: none; }
+
+/* Actions sit on the bottom edge of every card, so a grid row scans as a row. */
+.extensions-page .mod-card-foot {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.extensions-page .mod-card-empty { margin: 4px 20px 18px; }
+
+/* Toolbar: the search box shares its row with the type filter and the refresh
+   button, and takes the slack. */
+.extensions-page .ext-store-search {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 380px;
+}
+
+@media (max-width: 640px) {
+  .extensions-page .mod-card-grid { grid-template-columns: 1fr; padding: 4px 12px 14px; }
+  .extensions-page .ext-store-search { flex-basis: 100%; max-width: none; }
+}
+
+
+/* ===================================================================
+   Modulmanager: one state per card (July 2026)
+   -------------------------------------------------------------------
+   Replaces the row of up to eight badges in each card header. The
+   state is a word plus a dot -- the colour repeats it, it does not
+   carry it alone -- and identity (version, author, id) drops to quiet
+   meta text. Page-scoped: .integ-* is shared with Integrations.
+   =================================================================== */
+
+.extensions-page .mm-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 4px 12px;
+}
+
+.extensions-page .mm-tally { font-size: 0.82rem; color: var(--text-secondary); }
+.extensions-page .mm-tally b { color: var(--text-primary); font-weight: 700; }
+.extensions-page .mm-sep { color: var(--text-muted); }
+.extensions-page .mm-warn { color: var(--warning); font-weight: 600; }
+
+.extensions-page .mm-filters {
+  display: inline-flex;
+  margin-left: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.extensions-page .mm-filter {
+  font: inherit;
+  font-size: 0.79rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.extensions-page .mm-filter .n { opacity: 0.7; font-variant-numeric: tabular-nums; }
+.extensions-page .mm-filter.active { background: var(--accent); color: #fff; }
+/* Problems is the one filter that should look like one. */
+.extensions-page .mm-filter-trouble.active { background: var(--error); }
+
+/* ── Card header ── */
+.extensions-page .mm-head { align-items: flex-start !important; gap: 12px; }
+
+.extensions-page .mm-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 108px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding-top: 2px;
+}
+
+.extensions-page .mm-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+.extensions-page .mm-ok .mm-state { color: var(--success); }
+.extensions-page .mm-ok .mm-dot { background: var(--success); }
+.extensions-page .mm-off .mm-state { color: var(--text-muted); }
+.extensions-page .mm-off .mm-dot { background: var(--text-muted); }
+.extensions-page .mm-skipped .mm-state { color: var(--warning); }
+.extensions-page .mm-skipped .mm-dot { background: var(--warning); }
+.extensions-page .mm-error .mm-state { color: var(--error); }
+.extensions-page .mm-error .mm-dot { background: var(--error); }
+
+/* The edge repeats the state for the two cases that need finding fast. */
+.extensions-page .mm-card.mm-error { border-color: rgba(239, 68, 68, 0.4); }
+.extensions-page .mm-card.mm-skipped { border-color: rgba(245, 158, 11, 0.35); }
+
+.extensions-page .mm-ident { flex: 1; min-width: 0; }
+
+.extensions-page .mm-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.extensions-page .mm-meta {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.extensions-page .mm-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  opacity: 0.85;
+}
+
+/* ── The capability line ── */
+.extensions-page .mm-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.extensions-page .mm-cap {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+/* Capabilities that reach into MediaForge's own work rather than just adding
+   UI -- the ones worth a second look on a module nobody signed. */
+.extensions-page .mm-cap-hot {
+  color: var(--warning);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.extensions-page .mm-cap-none {
+  color: var(--text-muted);
+  font-style: italic;
+  background: none;
+  border-style: dashed;
+}
+
+/* ── Error details ── */
+.extensions-page .mm-error-box { margin: 4px 0 10px; }
+
+.extensions-page .mm-error-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.extensions-page .mm-error-toggle {
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.extensions-page .mm-error-toggle:hover { color: var(--text-primary); }
+
+.extensions-page .mm-trace {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.71rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.extensions-page .mm-trace[hidden] { display: none; }
+
+@media (max-width: 640px) {
+  .extensions-page .mm-head { flex-wrap: wrap; }
+  .extensions-page .mm-state { min-width: 0; }
+  .extensions-page .mm-filters { margin-left: 0; width: 100%; overflow-x: auto; }
+  .extensions-page .mm-bar { gap: 8px; }
+}
+
+/* The state word is the uppercase micro-label now, so the module name goes
+   back to normal case -- .integ-subsection-title upper-cases every card title
+   on Integrations, and two shouting things side by side have no hierarchy. */
+.extensions-page .mm-title-row .integ-subsection-title {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.95rem;
 }

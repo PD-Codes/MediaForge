@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ _('Setup') }} — MediaForge</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    {# No webfont link: this screen renders before an instance has any
+       network guarantees, and a Google Fonts request used to be the first
+       thing to time out. base.css falls back to the system stack. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='variables.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}" />
@@ -20,44 +20,137 @@
     </script>
   </head>
   <body>
-    <div class="auth-container">
+    <div class="auth-split">
 
-      <!-- Language switcher -->
-      <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:6px;">
-        {% for lang in available_languages %}
-        <a href="{{ url_for('auth.setup') }}{% if setup_token %}?token={{ setup_token }}&lang={{ lang }}{% else %}?lang={{ lang }}{% endif %}"
-           style="font-size:0.78rem;font-weight:600;padding:3px 10px;border-radius:6px;text-decoration:none;
-                  border:1px solid var(--border);
-                  background:{{ 'var(--accent)' if ui_language == lang else 'transparent' }};
-                  color:{{ '#fff' if ui_language == lang else 'var(--text-muted)' }};">{{ get_language_name(lang) }}</a>
-        {% endfor %}
-      </div>
+      <!-- Brand panel. Purely decorative and the first thing to go when the
+           viewport gets narrow -- the form is what matters on a phone.
+           Same copy as login.html's hero for a consistent first impression
+           across the two screens a fresh instance ever shows. -->
+      <aside class="auth-hero" aria-hidden="true">
+        <div class="auth-brand">
+            <div style="margin-bottom:8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px;display:block;margin:0 auto;">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+          <span class="auth-brand-name">MediaForge</span>
+        </div>
 
-      <div style="margin-bottom:8px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:44px;height:44px;display:block;margin:0 auto;">
-          <polygon points="5 3 19 12 5 21 5 3"/>
-        </svg>
-      </div>
-      <h1>MediaForge</h1>
-      <h2>{{ _('Initial Setup') }}</h2>
-      <p class="auth-info" style="margin-bottom:16px;">
-        {{ _('No admin account exists yet. Create the first admin account to get started.') }}
-      </p>
-      <p class="auth-info" style="margin-bottom:16px;font-size:0.82rem;color:var(--text-muted);">
-        {{ _('Coming from AniWorld Downloader? Your data from ~/.aniworld is imported automatically on first start — nothing gets lost.') }}
-      </p>
-      {% if error %}
-      <div class="auth-error">{{ error }}</div>
-      {% endif %}
-      <form method="post" action="{{ url_for('auth.setup') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        {% if setup_token %}<input type="hidden" name="setup_token" value="{{ setup_token }}" />{% endif %}
-        <input type="hidden" name="language" value="{{ ui_language }}" />
-        <input type="text" name="username" placeholder="{{ _('Admin username') }}" required autofocus />
-        <input type="password" name="password" placeholder="{{ _('Password (min. 8 characters)') }}" required />
-        <input type="password" name="confirm" placeholder="{{ _('Confirm password') }}" required />
-        <button type="submit">{{ _('Create admin account') }}</button>
-      </form>
+        <div class="auth-hero-body">
+          <h2 class="auth-hero-claim">{{ _('Your media, your disk, your place') }}</h2>
+          <p class="auth-hero-sub">{{ _('Media management, transcoding, upscaling, calendar. The private server built around your own media management.') }}</p>
+          <div class="auth-hero-shelf">
+            <span class="auth-hero-poster auth-hero-poster-1"></span>
+            <span class="auth-hero-poster auth-hero-poster-2"></span>
+            <span class="auth-hero-poster auth-hero-poster-3"></span>
+            <span class="auth-hero-poster auth-hero-poster-4"></span>
+          </div>
+        </div>
+
+        <div class="auth-hero-foot">{{ _('Version') }} {{ app_version }}</div>
+      </aside>
+
+      <!-- Form panel -->
+      <main class="auth-form-side">
+        <div class="auth-form-inner">
+
+          <div class="auth-setup-top">
+            <!-- Repeated here because the brand panel is hidden on small screens. -->
+            <div class="auth-brand auth-brand-compact" style="margin-bottom:0;">
+              <span class="auth-brand-mark">
+                <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              </span>
+              <span class="auth-brand-name">MediaForge</span>
+            </div>
+
+            <!-- Language switcher -- needed here since no account exists yet
+                 to remember a language preference from. Preserves a
+                 ?token= prefill across the switch so it isn't lost. -->
+            <div class="auth-lang-switch">
+              <a href="{{ url_for('auth.setup', lang='en', token=setup_token_value or None) }}"
+                 class="{{ 'active' if ui_language == 'en' }}">EN</a>
+              <a href="{{ url_for('auth.setup', lang='de', token=setup_token_value or None) }}"
+                 class="{{ 'active' if ui_language == 'de' }}">DE</a>
+            </div>
+          </div>
+
+          <h1 class="auth-title">{{ _('Initial Setup') }}</h1>
+          <p class="auth-subtitle">{{ _('Create the first admin account to get started.') }}</p>
+
+          <div class="auth-info">
+            {{ _('Coming from AniWorld Downloader? Your data from ~/.aniworld is imported automatically on first start — nothing gets lost.') }}
+          </div>
+
+          {% if error %}
+          <div class="auth-error">{{ error }}</div>
+          {% endif %}
+
+          <form method="post" action="{{ url_for('auth.setup') }}" class="auth-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <input type="hidden" name="language" value="{{ ui_language }}" />
+
+            {% if setup_token_required %}
+            <div class="auth-field">
+              <label for="setupToken">{{ _('Setup token') }}</label>
+              <div class="auth-input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                </svg>
+                <input type="text" id="setupToken" name="setup_token" value="{{ setup_token_value }}"
+                       placeholder="{{ _('Paste the token here') }}" required autofocus
+                       autocomplete="off" autocapitalize="none" spellcheck="false" />
+              </div>
+              <p class="auth-hint">
+                {{ _('You can find the token in your server console or Docker container logs. It stays valid for 30 minutes — after that, restart the instance to get a new one.') }}
+              </p>
+            </div>
+            {% endif %}
+
+            <div class="auth-field">
+              <label for="setupUser">{{ _('Admin username') }}</label>
+              <div class="auth-input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+                <input type="text" id="setupUser" name="username" required{% if not setup_token_required %} autofocus{% endif %}
+                       autocomplete="username" autocapitalize="none" spellcheck="false" />
+              </div>
+            </div>
+
+            <div class="auth-field">
+              <label for="setupPass">{{ _('Password') }}</label>
+              <div class="auth-input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <input type="password" id="setupPass" name="password" required minlength="8"
+                       placeholder="{{ _('Min. 8 characters') }}" autocomplete="new-password" />
+              </div>
+            </div>
+
+            <div class="auth-field">
+              <label for="setupConfirm">{{ _('Confirm password') }}</label>
+              <div class="auth-input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <input type="password" id="setupConfirm" name="confirm" required autocomplete="new-password" />
+              </div>
+            </div>
+
+            <button type="submit">{{ _('Create admin account') }}</button>
+          </form>
+
+          <!-- Also visible when the brand panel is hidden, so a support request
+               can always name the version. -->
+          <div class="auth-form-foot">MediaForge {{ app_version }}</div>
+        </div>
+      </main>
+
     </div>
   </body>
 </html>

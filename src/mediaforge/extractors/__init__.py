@@ -238,6 +238,16 @@ def register_hoster(
     logger.info("[Extractors] Registered third-party hoster: %s (%s)", name, item_id)
 
 
+def thirdparty_hoster_ids() -> set:
+    """item_ids that currently own a third-party hoster.
+
+    Read-only counterpart of :func:`unregister_hoster` -- the Modulmanager
+    uses it to report what a module registered without reaching into this
+    module's private dict.
+    """
+    return set(_EXTRA_HOSTERS)
+
+
 def unregister_hoster(item_id) -> None:
     """Drop a hoster previously added via :func:`register_hoster`. Leaves
     ``config.SUPPORTED_PROVIDERS``/``HOST_PROVIDER_MAP`` entries in place

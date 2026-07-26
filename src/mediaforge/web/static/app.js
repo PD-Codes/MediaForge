@@ -574,8 +574,98 @@ async function showBrowseSections() {
   if (enabled.megakino !== "0") loadMegakinoBrowse();
   if (enabled.hanime === "1") loadHanimeBrowse();
 
+  renderSourceChips(sources);
   applyUptimeStatus();
 }
+
+// ── "Who is being asked" chips under the search field ───────────────────────
+// A search fans out to every *enabled* source, and the most common surprise is
+// finding nothing because a source is switched off. So the chips state the
+// answer instead of hiding it: enabled = normal, off = greyed with a label,
+// down = red (set later by applyUptimeStatus, which is the only place that
+// knows). Order follows the user's own source order.
+const _SOURCE_CHIP_LABELS = {
+  aniworld: "AniWorld",
+  sto: "SerienStream",
+  filmpalast: "FilmPalast",
+  megakino: "MegaKino",
+  hanime: "hanime",
+};
+const _SOURCE_CHIP_ORDER = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
+
+function renderSourceChips(sources) {
+  const wrap = document.getElementById("homeSourceChips");
+  if (!wrap) return;
+  const enabled = (sources && sources.enabled) || {};
+  const order = (sources && Array.isArray(sources.order) && sources.order.length)
+    ? sources.order : _SOURCE_CHIP_ORDER;
+  // Anything the settings order does not mention still gets a chip, appended.
+  const ids = order.filter(function (id) { return _SOURCE_CHIP_LABELS[id]; });
+  _SOURCE_CHIP_ORDER.forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+
+  wrap.innerHTML = ids.map(function (id) {
+    // hanime is opt-in ("1"), everything else opt-out ("0").
+    const on = id === "hanime" ? enabled[id] === "1" : enabled[id] !== "0";
+    return '<span class="home-chip' + (on ? "" : " is-off") + '" data-source="' + escapeHtml(id) + '">' +
+      '<span class="home-chip-dot" style="background:' +
+        (on ? "var(--success)" : "var(--text-muted)") + '"></span>' +
+      escapeHtml(_SOURCE_CHIP_LABELS[id]) +
+      (on ? "" : " · " + t("aus", "off")) +
+      "</span>";
+  }).join("");
+}
+
+// Called from applyUptimeStatus(): a source that is enabled but unreachable is
+// neither "on" nor "off" -- it is temporary and not the user's doing.
+function markSourceChipsDown(ids) {
+  const wrap = document.getElementById("homeSourceChips");
+  if (!wrap) return;
+  ids.forEach(function (id) {
+    const chip = wrap.querySelector('.home-chip[data-source="' + id + '"]');
+    if (!chip || chip.classList.contains("is-off")) return;
+    chip.classList.add("is-down");
+    const dot = chip.querySelector(".home-chip-dot");
+    if (dot) dot.style.background = "var(--error)";
+    if (chip.textContent.indexOf("·") === -1) {
+      chip.appendChild(document.createTextNode(" · " + t("offline", "offline")));
+    }
+  });
+}
+
+// ── One strip about the download that is running ────────────────────────────
+// Fed by the queue poll that runs on every page anyway (queue.js), so this
+// costs no extra request. Only visible while something is actually running --
+// an always-present empty strip would just be furniture.
+window.renderHomeRunStrip = function (items, progress, paused) {
+  const wrap = document.getElementById("homeRunStrip");
+  if (!wrap) return;
+  const list = Array.isArray(items) ? items : [];
+  const running = list.find(function (i) { return i.status === "running"; });
+  if (!running) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
+
+  const waiting = list.filter(function (i) { return i.status === "queued"; }).length;
+  const p = progress || {};
+  const pct = Math.max(0, Math.min(100, parseFloat(p.percent) || 0));
+  const ep = running.current_episode
+    ? " · " + t("Folge", "Episode") + " " + escapeHtml(String(running.current_episode))
+    : "";
+  const facts = [];
+  if (p.active && pct) facts.push(Math.round(pct) + " %");
+  if (p.bandwidth) facts.push(escapeHtml(String(p.bandwidth)));
+  if (p.phase && p.phase !== "download") facts.push(escapeHtml(String(p.phase)));
+  if (waiting) facts.push(waiting + " " + t("in der Warteschlange", "in the queue"));
+
+  wrap.innerHTML =
+    '<span class="home-run-text">' +
+      '<span class="home-run-title">' + escapeHtml(running.title || "") + ep + "</span>" +
+      '<span class="home-run-bar' + (paused ? " is-paused" : "") + '">'
+        + '<span class="home-run-fill" style="width:' + pct + '%"></span></span>' +
+      '<span class="home-run-sub">' + (facts.join(" · ") || t("Lädt…", "Downloading…")) + "</span>" +
+    "</span>" +
+    '<button type="button" class="btn btn-secondary btn-sm home-run-btn" onclick="openQueueModal()">' +
+      t("Warteschlange", "Queue") + "</button>";
+  wrap.style.display = "flex";
+};
 
 // ── Source offline banner (only when UpTime monitoring is enabled) ──────────
 let _uptimeBannerDismissed = false;
@@ -600,6 +690,8 @@ async function applyUptimeStatus() {
     const block = browseDiv && browseDiv.querySelector('.browse-provider-block[data-provider="' + sc.id + '"]');
     if (block) block.style.display = "none";
   });
+
+  markSourceChipsDown(offline.map(function (sc) { return sc.id; }));
 
   if (!offline.length) { wrap.innerHTML = ""; return; }
 
@@ -1217,7 +1309,11 @@ async function doSearch() {
   resultsDiv.appendChild(block);
   renderSkeletons(grid, 12);
 
-  browseDiv.style.display = "none";
+  // Either layout may be on the page (see index.html's new_home switch), and
+  // on the new home page #browse does not exist at all.
+  if (browseDiv) browseDiv.style.display = "none";
+  const _homeFeed = document.getElementById("homeFeed");
+  if (_homeFeed) _homeFeed.style.display = "none";
 
   const searchSite = async (site) => {
     const controller = new AbortController();

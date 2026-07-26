@@ -27,6 +27,12 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='feedback.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='detail-page.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='queue.css') }}" />
+  {# mf_components.css used to be linked per page. The queue hub (one window for
+     downloads/encoding/upscaling, further down in this file) sits on EVERY page
+     and uses .mf-progress / .mf-facet, so the sheet is loaded globally now.
+     Every selector in it is .mf-* scoped, so nothing else changes; the extra
+     per-page <link>s that still exist are harmless duplicates. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='mf_components.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='autosync_filter.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='selfupdate.css') }}" />
@@ -308,37 +314,25 @@
           </div>
           {% endif %}
 
-          {# Queues — a container only (no page of its own); each entry opens its
-             modal exactly like before. #}
-          <button type="button" class="sidebar-link sidebar-group-btn" id="queuesToggle"
-            onclick="return toggleSidebarSub(event, 'queuesSidebarSub', this.querySelector('.sidebar-toggle-chevron'));">
+          {# Queues — one entry, one window. The three queues used to hang in a
+             sub-menu because each had its own modal; since they share the queue
+             hub (with its own segment switcher inside) a sub-menu would only add
+             a click. The badge is the sum of all three (updateTotalQueueBadge in
+             queue.js), and the per-queue counts live in window._qBadgeCounts
+             rather than in three hidden badge elements. #}
+          <button type="button" class="sidebar-link sidebar-group-btn sidebar-queue-btn" id="queuesToggle"
+            onclick="openQueueHub('all')" title="{{ _('Queues') }}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line>
-              <line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>
+              <line class="moving-line line-1" x1="8" y1="6" x2="21" y2="6"></line>
+              <line class="moving-line line-2" x1="8" y1="12" x2="21" y2="12"></line>
+              <line class="moving-line line-3" x1="8" y1="18" x2="21" y2="18"></line>
+              <line class="moving-line line-1" x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line class="moving-line line-2" x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line class="moving-line line-3" x1="3" y1="18" x2="3.01" y2="18"></line>
             </svg>
             <span>{{ _('Queues') }}</span>
             <span class="queue-badge" id="totalQueueBadge" style="display:none">0</span>
-            <span class="sidebar-toggle-chevron collapsed" title="{{ _('Toggle Submenu') }}">▾</span>
           </button>
-          <div class="sidebar-sub" id="queuesSidebarSub">
-            <button class="sidebar-sub-link has-icon sidebar-queue-btn" id="sidebarQueueBtn" onclick="openQueueModal()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line class="moving-line line-1" x1="8" y1="6" x2="21" y2="6"></line>
-                <line class="moving-line line-2" x1="8" y1="12" x2="21" y2="12"></line>
-                <line class="moving-line line-3" x1="8" y1="18" x2="21" y2="18"></line>
-                <line class="moving-line line-1" x1="3" y1="6" x2="3.01" y2="6"></line>
-                <line class="moving-line line-2" x1="3" y1="12" x2="3.01" y2="12"></line>
-                <line class="moving-line line-3" x1="3" y1="18" x2="3.01" y2="18"></line>
-              </svg><span>{{ _('Downloads') }}</span><span class="queue-badge" id="queueBadge" style="display:none">0</span></button>
-            <button class="sidebar-sub-link has-icon sidebar-queue-btn" id="sidebarEncodingBtn" onclick="openEncodingQueueModal()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
-              </svg><span>{{ _('Encoding') }}</span><span class="queue-badge" id="encodingBadge" style="display:none">0</span></button>
-            <button class="sidebar-sub-link has-icon sidebar-queue-btn" id="sidebarUpscaleBtn" onclick="openUpscaleModal()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8" class="moving-arrow arrow-head"/><line x1="12" y1="3" x2="12" y2="15" class="moving-arrow arrow-shift"/>
-              </svg><span>{{ _('Upscaling') }}</span><span class="queue-badge" id="upscaleBadge" style="display:none">0</span></button>
-          </div>
 
           {# SyncPlay — no longer its own category; a single entry here, gated by
              syncplay_enabled just like before. #}
@@ -584,7 +578,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       <span class="queue-badge mobile-queue-badge" id="mobileUpscaleBadge" style="display:none">0</span>
     </button>
-    <button class="mobile-queue-btn" onclick="openQueueModal()" aria-label="Warteschlange">
+    <button class="mobile-queue-btn" onclick="openQueueHub('all')" aria-label="{{ _('Queues') }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round">
         <line class="moving-line line-1" x1="8" y1="6" x2="21" y2="6"></line>
@@ -607,125 +601,70 @@
     {% block content %}{% endblock %}
   </main>
 
-  <!-- ===== Queue Modal ===== -->
-  <div class="queue-overlay" id="queueOverlay" onclick="if(event.target===this)closeQueueModal();">
-    <div class="queue-modal">
-      <div class="modal-header">
-        <h2 class="modal-title">{{ _('Queue') }}</h2>
-        <div class="modal-header-actions">
-          <button class="btn btn-ghost btn-sm queue-clear-btn" onclick="clearOldQueueItems()"
-            title="{{ _('Remove completed, failed and cancelled entries') }}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14H6L5 6" />
-              <path d="M10 11v6" />
-              <path d="M14 11v6" />
-              <path d="M9 6V4h6v2" />
-            </svg>{{ _('Clear entries') }}
-          </button>
-          <button class="modal-close" onclick="closeQueueModal()" aria-label="{{ _('Close') }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-              stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      <!-- Filter toolbar + Pause button -->
-      <div class="queue-toolbar">
-        <div class="queue-filter-tabs" role="tablist">
-          <button class="queue-filter-tab active" id="qfTab-all" onclick="setQueueFilter('all')" role="tab">{{ _('All') }}<span
-              class="qf-count" id="qfCount-all"></span></button>
-          <button class="queue-filter-tab" id="qfTab-active" onclick="setQueueFilter('active')" role="tab">{{ _('Running') }}<span
-              class="qf-count" id="qfCount-active"></span></button>
-          <button class="queue-filter-tab" id="qfTab-queued" onclick="setQueueFilter('queued')" role="tab">{{ _('Queued') }}<span
-              class="qf-count" id="qfCount-queued"></span></button>
-          <button class="queue-filter-tab" id="qfTab-completed" onclick="setQueueFilter('completed')"
-            role="tab">{{ _('Done') }}<span class="qf-count" id="qfCount-completed"></span></button>
-          <button class="queue-filter-tab" id="qfTab-partial" onclick="setQueueFilter('partial')"
-            role="tab">{{ _('Partial') }}<span class="qf-count" id="qfCount-partial"></span></button>
-          <button class="queue-filter-tab" id="qfTab-failed" onclick="setQueueFilter('failed')" role="tab">{{ _('Failed') }}<span
-              class="qf-count" id="qfCount-failed"></span></button>
-        </div>
-        <button class="queue-pause-btn" id="queuePauseBtn" onclick="toggleQueuePause()" title="{{ _('Pause downloads') }}"
-          style="display:none">
-          <svg id="queuePauseIcon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="6" y="4" width="4" height="16" />
-            <rect x="14" y="4" width="4" height="16" />
+  <!-- ===== Queue hub =====================================================
+       ONE window for all three queues. "Alles" merges downloads, encoding and
+       upscaling into a single list; the other three segments narrow it down.
+       It replaces the former three separate overlays (#queueOverlay /
+       #encodingOverlay / #upscaleOverlay).
+
+       Kept on purpose: the three sidebar badges stay separate (they feed
+       window.updateTotalQueueBadge, which reads their textContent), and every
+       legacy handler name an inline onclick= refers to still exists in
+       queue.js — openQueueModal(), setQueueFilter(), moveQueueItem(), …
+       ===================================================================== -->
+  <div class="queue-overlay" id="queueOverlay" onclick="if(event.target===this)closeQueueHub();"
+    role="dialog" aria-modal="true" aria-labelledby="qhubTitle">
+    <div class="queue-modal qhub">
+      <div class="modal-header qhub-header">
+        <h2 class="modal-title" id="qhubTitle">{{ _('Queues') }}</h2>
+        <button class="modal-close" onclick="closeQueueHub()" aria-label="{{ _('Close') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
-          <span id="queuePauseLabel">Pause</span>
         </button>
       </div>
-      <div id="queueList" class="queue-list"></div>
-    </div>
-  </div>
 
-  <!-- ===== Upscaling Queue Modal ===== -->
-  <div class="queue-overlay" id="upscaleOverlay" onclick="if(event.target===this)closeUpscaleModal();" style="display:none">
-    <div class="queue-modal">
-      <div class="modal-header">
-        <h2 class="modal-title">Upscaling<span id="upscaleDisabledBadge" style="display:none;margin-left:8px;font-size:0.7rem;font-weight:600;color:var(--error);background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.25);border-radius:999px;padding:2px 8px;vertical-align:middle;letter-spacing:0.04em;text-transform:uppercase;">{{ _('Disabled') }}</span></h2>
-        <div class="modal-header-actions">
-          <button class="btn btn-ghost btn-sm queue-clear-btn" onclick="clearUpscaleQueue()"
-            title="{{ _('Remove completed, failed and cancelled entries') }}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px">
-              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
-              <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-            </svg>{{ _('Clear entries') }}
+      <!-- Which queue is shown + the two actions that apply to all of them -->
+      <div class="qhub-bar">
+        <div class="mf-segmented qhub-seg" role="tablist" aria-label="{{ _('Queues') }}">
+          <button type="button" class="mf-segmented-btn active" id="qhubTab-all" role="tab"
+            aria-selected="true" onclick="setQueuePane('all')">
+            <span>{{ _('Everything') }}</span><span class="mf-facet" id="qhubFacet-all" hidden>0</span>
           </button>
-          <button class="modal-close" onclick="closeUpscaleModal()" aria-label="{{ _('Close') }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-              stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <button type="button" class="mf-segmented-btn" id="qhubTab-downloads" role="tab"
+            aria-selected="false" onclick="setQueuePane('downloads')">
+            <span>{{ _('Downloads') }}</span><span class="mf-facet" id="qhubFacet-downloads" hidden>0</span>
+          </button>
+          <button type="button" class="mf-segmented-btn" id="qhubTab-encoding" role="tab"
+            aria-selected="false" onclick="setQueuePane('encoding')">
+            <span>{{ _('Encoding') }}</span><span class="mf-facet" id="qhubFacet-encoding" hidden>0</span>
+          </button>
+          <button type="button" class="mf-segmented-btn" id="qhubTab-upscaling" role="tab"
+            aria-selected="false" onclick="setQueuePane('upscaling')">
+            <span>{{ _('Upscaling') }}</span><span class="mf-facet" id="qhubFacet-upscaling" hidden>0</span>
+          </button>
+        </div>
+        <div class="qhub-bar-actions">
+          <span class="qhub-off-badge qhub-off-badge--warn" id="encodingDisabledBadge"
+            style="display:none">{{ _('Inactive') }}</span>
+          <span class="qhub-off-badge qhub-off-badge--error" id="upscaleDisabledBadge"
+            style="display:none">{{ _('Disabled') }}</span>
+          <button class="btn btn-secondary btn-sm" id="qhubClearBtn" onclick="qhubClear()"
+            title="{{ _('Remove completed, failed and cancelled entries') }}">{{ _('Clear finished') }}</button>
+          <button class="btn btn-ghost btn-sm" id="queuePauseBtn" onclick="toggleQueuePause()"
+            title="{{ _('Pause downloads') }}" style="display:none">
+            <span id="queuePauseLabel">{{ _('Pause all') }}</span>
           </button>
         </div>
       </div>
-      <div class="queue-toolbar">
-        <div class="queue-filter-tabs" role="tablist">
-          <button class="queue-filter-tab active" id="uqfTab-all"       onclick="setUpscaleFilter('all')"       role="tab">{{ _('All') }}<span class="qf-count" id="uqfCount-all"></span></button>
-          <button class="queue-filter-tab"         id="uqfTab-active"    onclick="setUpscaleFilter('active')"    role="tab">{{ _('Running') }}<span class="qf-count" id="uqfCount-active"></span></button>
-          <button class="queue-filter-tab"         id="uqfTab-queued"    onclick="setUpscaleFilter('queued')"    role="tab">{{ _('Queued') }}<span class="qf-count" id="uqfCount-queued"></span></button>
-          <button class="queue-filter-tab"         id="uqfTab-completed" onclick="setUpscaleFilter('completed')" role="tab">{{ _('Done') }}<span class="qf-count" id="uqfCount-completed"></span></button>
-          <button class="queue-filter-tab"         id="uqfTab-failed"    onclick="setUpscaleFilter('failed')"    role="tab">{{ _('Failed') }}<span class="qf-count" id="uqfCount-failed"></span></button>
-        </div>
-      </div>
-      <div id="upscaleQueueList" class="queue-list"></div>
-    </div>
-  </div>
 
-  <!-- ===== Encoding Queue Modal ===== -->
-  <div class="queue-overlay" id="encodingOverlay" onclick="if(event.target===this)closeEncodingQueueModal();" style="display:none">
-    <div class="queue-modal">
-      <div class="modal-header">
-        <h2 class="modal-title">{{ _('Encoding') }}<span id="encodingDisabledBadge" style="display:none;margin-left:8px;font-size:0.7rem;font-weight:600;color:var(--text-muted);background:rgba(148,163,184,0.12);border:1px solid rgba(148,163,184,0.25);border-radius:999px;padding:2px 8px;vertical-align:middle;letter-spacing:0.04em;text-transform:uppercase;">{{ _('Inactive') }}</span></h2>
-        <div class="modal-header-actions">
-          <button class="btn btn-ghost btn-sm queue-clear-btn" onclick="clearEncodingQueue()"
-            title="{{ _('Remove completed, failed and cancelled entries') }}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px">
-              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
-              <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-            </svg>{{ _('Clear entries') }}
-          </button>
-          <button class="modal-close" onclick="closeEncodingQueueModal()" aria-label="{{ _('Close') }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-              stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-      </div>
-      <div class="queue-toolbar">
-        <div class="queue-filter-tabs" role="tablist">
-          <button class="queue-filter-tab active" id="eqfTab-all"       onclick="setEncodingFilter('all')"       role="tab">{{ _('All') }}<span class="qf-count" id="eqfCount-all"></span></button>
-          <button class="queue-filter-tab"         id="eqfTab-active"    onclick="setEncodingFilter('active')"    role="tab">{{ _('Running') }}<span class="qf-count" id="eqfCount-active"></span></button>
-          <button class="queue-filter-tab"         id="eqfTab-queued"    onclick="setEncodingFilter('queued')"    role="tab">{{ _('Queued') }}<span class="qf-count" id="eqfCount-queued"></span></button>
-          <button class="queue-filter-tab"         id="eqfTab-completed" onclick="setEncodingFilter('completed')" role="tab">{{ _('Done') }}<span class="qf-count" id="eqfCount-completed"></span></button>
-          <button class="queue-filter-tab"         id="eqfTab-failed"    onclick="setEncodingFilter('failed')"    role="tab">{{ _('Failed') }}<span class="qf-count" id="eqfCount-failed"></span></button>
-        </div>
-      </div>
-      <div id="encodingQueueList" class="queue-list"></div>
+      <!-- The one job that is running right now -->
+      <div class="qhub-hero" id="qhubHero"></div>
+
+      <!-- Everything else, grouped: needs attention / up next / finished today -->
+      <div id="queueList" class="queue-list qhub-list"></div>
     </div>
   </div>
 
@@ -1374,34 +1313,11 @@
     })();
     {% endif %}
 
-    // ===== Sync mobile queue badge =====
-    var _origSetQueueBadge = window.setQueueBadge;
-    function syncQueueBadges(count) {
-      var ids = ['queueBadge', 'mobileQueueBadge'];
-      ids.forEach(function (id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        if (count > 0) {
-          el.textContent = count;
-          el.style.display = '';
-        } else {
-          el.style.display = 'none';
-        }
-      });
-    }
-    // Patch queue.js badge update — queue.js uses queueBadge directly;
-    // we observe it with MutationObserver to sync mobile badge
-    (function () {
-      var badge = document.getElementById('queueBadge');
-      if (!badge) return;
-      var observer = new MutationObserver(function () {
-        var mobileBadge = document.getElementById('mobileQueueBadge');
-        if (!mobileBadge) return;
-        mobileBadge.textContent = badge.textContent;
-        mobileBadge.style.display = badge.style.display;
-      });
-      observer.observe(badge, { attributes: true, childList: true, subtree: true, characterData: true });
-    })();
+    // The mobile download badge used to be mirrored from the sidebar's
+    // #queueBadge through a MutationObserver. That element is gone with the
+    // Queues sub-menu, and updateBadge() in queue.js now writes
+    // #mobileQueueBadge directly — the same way the encoding and upscale
+    // loaders have always done it.
 
     // ===== Global Confirm Modal =====
     var _confirmResolveCallback = null;

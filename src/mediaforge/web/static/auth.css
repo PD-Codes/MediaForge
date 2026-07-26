@@ -5,6 +5,12 @@
    shell), so they link this file directly instead of through style.css.
    Used by: templates/login.html, templates/setup.html,
             templates/setup_locked.html
+
+   .auth-container below (and its child selectors) is legacy: setup.html
+   and setup_locked.html used it before the July 2026 modernization that
+   moved them onto the same .auth-split layout login.html already used.
+   Left in place rather than deleted -- same as when login.html itself
+   migrated off it earlier -- in case a theme pack targets it.
    =================================================================== */
 
 .auth-container {
@@ -114,4 +120,284 @@
   margin: 60px auto;
   padding: 24px;
   text-align: center;
+}
+/* ===================================================================
+   Split sign-in screen (July 2026), now shared by setup + setup-locked too
+   -------------------------------------------------------------------
+   Brand panel + form, collapsing to the form alone below 760px. Added
+   as its own block rather than by rewriting .auth-container above.
+   login.html, setup.html and setup_locked.html all use this layout
+   (setup.html/setup_locked.html moved onto it in a later pass; the
+   separate setup_token.html gate page was retired at the same time --
+   its job is now a field inside setup.html's own form).
+   =================================================================== */
+
+.auth-split {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  background: var(--bg-base);
+}
+
+/* -- Brand panel -- */
+.auth-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  /* Deliberately not a var: the panel is one fixed piece of brand surface,
+     the only place in the app that does not follow the accent picker. */
+  background: linear-gradient(150deg, #2a1a52 0%, #140f28 55%, #0d0d14 100%);
+}
+
+/* Soft accent bloom, bottom right. Decoration only, hence aria-hidden on the
+   whole panel. */
+.auth-hero::after {
+  content: "";
+  position: absolute;
+  right: -30%;
+  bottom: -45%;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-glow), transparent 65%);
+  pointer-events: none;
+}
+
+.auth-hero-body,
+.auth-hero-foot { position: relative; z-index: 1; }
+
+.auth-hero-claim {
+  font-size: 1.55rem;
+  line-height: 1.25;
+  font-weight: 700;
+  color: #f0f0f8;
+  margin: 0 0 10px;
+  max-width: 22ch;
+}
+
+.auth-hero-sub {
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: #9191b0;
+  margin: 0;
+  max-width: 36ch;
+}
+
+/* Four blank poster tiles. No image requests: the sign-in screen must render
+   fully before any library exists (and before any network is available). */
+.auth-hero-shelf { display: flex; gap: 8px; margin-top: 26px; }
+
+.auth-hero-poster {
+  width: 52px;
+  height: 78px;
+  border-radius: var(--radius-sm);
+}
+
+.auth-hero-poster-1 {
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.auth-hero-poster-2 {
+  background: linear-gradient(150deg,rgba(183, 0, 255, 0.65), rgba(127, 0, 153, 0.692));
+  border: 1px solid rgba(183, 0, 255, 0.06);
+}
+
+.auth-hero-poster-3 {
+  background: linear-gradient(150deg,rgba(0, 110, 255, 0.65), rgba(0, 110, 255, 0.65));
+  border: 1px solid rgba(0, 110, 255, 0.06);
+}
+
+.auth-hero-poster-4 {
+  background: linear-gradient(150deg,rgba(0, 255, 21, 0.65), rgba(0, 255, 21, 0.65));
+  border: 1px solid rgba(0, 255, 21, 0.06);
+}
+
+
+.auth-hero-poster:nth-child(2) { opacity: 0.85; }
+.auth-hero-poster:nth-child(3) { opacity: 0.7; }
+.auth-hero-poster:nth-child(4) { opacity: 0.55; }
+
+.auth-hero-foot { font-size: 0.72rem; color: #55556a; }
+
+/* -- Brand lockup (used in both panels) -- */
+.auth-brand {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-brand-name {
+  font-size: 1.16rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #f0f0f8;
+}
+
+.auth-hero .auth-brand-name { color: #f0f0f8; }
+.auth-form-side .auth-brand-name { color: var(--text-primary); }
+
+/* Only shown once the brand panel is gone. */
+.auth-brand-compact { display: none; margin-bottom: 22px; }
+
+/* -- Form panel -- */
+.auth-form-side {
+  background: var(--bg-surface);
+  padding: 40px 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.auth-form-inner { width: 100%; max-width: 320px; margin: 0 auto; }
+
+.auth-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.auth-subtitle {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  margin: 0 0 22px;
+}
+
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+
+.auth-field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+
+/* The icon lives in the box, the input keeps its own hit area. Note the
+   `.auth-input input` selector: forms.css styles inputs by attribute
+   (input[type="search"] etc., specificity 0,1,1), so a bare class would lose. */
+.auth-input {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  padding: 0 11px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.auth-input svg { width: 15px; height: 15px; color: var(--text-muted); flex: none; }
+
+.auth-input input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.auth-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.auth-form button[type="submit"] {
+  height: 44px;
+  margin-top: 6px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), box-shadow var(--transition);
+}
+
+.auth-form button[type="submit"]:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+/* "or" as a quiet line of text between two options. */
+.auth-or {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 16px 0 12px;
+}
+
+/* The shared .sso-button is centred via max-width in the block above; inside
+   the narrow form column it should simply fill it. */
+.auth-form-side .sso-button { max-width: none; }
+
+.auth-form-side .auth-error,
+.auth-form-side .auth-info { max-width: none; text-align: left; }
+
+.auth-form-foot {
+  margin-top: 26px;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* -- setup.html only: compact brand mark + language switch on one row,
+   above the title. Needed there (and not on login.html) because no account
+   exists yet to remember a language preference from. -- */
+.auth-setup-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.auth-lang-switch { display: flex; gap: 6px; }
+
+.auth-lang-switch a {
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.auth-lang-switch a.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Small helper text under a field, e.g. the setup-token hint. Distinct from
+   .auth-hint's near-namesake .auth-info (a full info box) -- this one is
+   quieter and sits directly under the input it explains. */
+.auth-hint {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 6px 2px 0;
+}
+
+/* -- Phones: the brand panel is the first thing to go -- */
+@media (max-width: 760px) {
+  .auth-split { grid-template-columns: 1fr; }
+  .auth-hero { display: none; }
+  .auth-brand-compact { display: flex; }
+  .auth-form-side { padding: 32px 20px; background: var(--bg-base); }
 }

@@ -774,6 +774,16 @@ def unregister_search_source(item_id: str) -> None:
         logger.info("[Search] Unregistered third-party search source: %s (%s)", removed["site_id"], item_id)
 
 
+def thirdparty_search_source_ids() -> set:
+    """item_ids that currently own a third-party search source.
+
+    Read-only counterpart of :func:`unregister_register_search_source` -- the Modulmanager uses
+    it to report what a module registered without reaching into this
+    module's private dict.
+    """
+    return set(_EXTRA_SEARCH_SOURCES)
+
+
 def get_search_source(site_id: str):
     """Return the ``{"site_id", "search_fn", "label"}`` entry for *site_id*, or
     ``None``. Used by ``web/routes/search.py``'s ``api_search()``."""

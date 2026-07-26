@@ -22,7 +22,8 @@ def set_debug_mode(enabled: bool):
     toggles debug logging in the WebUI (unless locked via --debug/
     MEDIAFORGE_DEBUG_FORCED, see arguments.py).
     """
-    global _global_logger
+    # No `global` needed: the module-level name is only read here, never
+    # rebound. Declaring it anyway trips flake8's F824 and fails CI.
     if _global_logger is not None:
         _global_logger.setLevel(logging.DEBUG if enabled else logging.WARNING)
 
