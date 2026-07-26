@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2026-06-28 13:22+0000\n"
-"PO-Revision-Date: 2026-07-23 15:29+0000\n"
+"PO-Revision-Date: 2026-07-26 22:44+0000\n"
 "Last-Translator: Pascal Keller <keller.pascal1313@proton.me>\n"
 "Language: de\n"
 "Language-Team: German <https://webplate.softarchiv.com/projects/mediaforge/"
@@ -990,7 +990,6 @@ msgstr "Wähle Filter oder eine Schnellauswahl im Menü, um Serien und Filme zu 
 
 msgid "Searching streams on AniWorld, SerienStream & FilmPalast..."
 msgstr "Suche Streams auf AniWorld, SerienStream & FilmPalast..."
-
 
 # ── advanced_search.html (rework July 2026: filter groups, new filters) ──
 msgid "Basics"
@@ -5165,7 +5164,6 @@ msgstr "Legt fest, ob das Web-Interface im Standardbrowser geöffnet wird, wenn 
 msgid "This feature is not available in Docker."
 msgstr "Diese Funktion ist für Docker nicht verfügbar."
 
-
 # --- Favorites page (added) ---
 msgid "Sort"
 msgstr "Sortieren"
@@ -5187,7 +5185,6 @@ msgstr "Gruppierung"
 
 msgid "Type"
 msgstr "Typ"
-
 
 #: src/mediaforge/web/templates/settings.html src/mediaforge/web/templates/extensions.html
 msgid "Theme Packs"
@@ -5411,7 +5408,6 @@ msgstr "Stimmen"
 msgid "Original"
 msgstr "Original"
 
-
 # --- Theme pack install hint (templates/extensions.html) ---
 msgid "Theme pack installed"
 msgstr "Theme-Pack installiert"
@@ -5582,7 +5578,6 @@ msgstr ""
 # ──────────────────────────────────────────────────────────────────────────
 # Calendar rework (July 2026) — agenda view, filters, ICS subscription
 # ──────────────────────────────────────────────────────────────────────────
-
 #: templates/calendar.html
 msgid "Agenda"
 msgstr "Agenda"
@@ -5626,7 +5621,6 @@ msgstr "Neue Adresse erzeugen"
 # ──────────────────────────────────────────────────────────────────────────
 # Seerr rework (July 2026) — search/filter/sort toolbar, bulk actions
 # ──────────────────────────────────────────────────────────────────────────
-
 #: templates/seerr.html
 msgid "Search requests…"
 msgstr "Anfragen durchsuchen…"
@@ -5765,7 +5759,7 @@ msgstr "Alles"
 
 #: templates/base.html
 msgid "Clear finished"
-msgstr "Fertige aufräumen"
+msgstr "Einträge Löschen"
 
 #: templates/base.html
 msgid "Pause all"
@@ -5812,7 +5806,6 @@ msgstr "Der Setup-Token ist abgelaufen."
 #: templates/setup_locked.html
 msgid "Restart the application to get a new setup token — it stays valid for 30 minutes after each start."
 msgstr "Starte die Anwendung neu, um einen neuen Setup-Token zu erhalten — er ist nach jedem Start 30 Minuten gültig."
-
 
 #: src/mediaforge/web/templates/settings.html
 msgid "Library and Statistics"
