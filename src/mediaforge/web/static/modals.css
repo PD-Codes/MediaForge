@@ -836,3 +836,24 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ── Narrow screens ───────────────────────────────────────────────────
+   838 lines and no breakpoint until now. Flex rows here carry min-width
+   floors (180px for the consent buttons, 140px for the download buttons,
+   120px for the selects); at 360px minus padding those leave a few pixels
+   of slack at best, so below 480px the rows stack instead. */
+@media (max-width: 480px) {
+  .telemetry-consent-btn,
+  .btn-download-selected,
+  .btn-download-all,
+  .btn-download-all-langs,
+  .controls select {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .modal-content,
+  .mf-modal-content {
+    padding-inline: 14px;
+  }
+}

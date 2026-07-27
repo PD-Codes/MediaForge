@@ -1675,7 +1675,7 @@ function renderLanguageGroups() {
       tr.innerHTML =
         '<td><input type="text" id="editLangGroupName" value="' + esc(g.name) + '"></td>' +
         '<td><div class="lang-group-editor" id="editLangGroupEditor"></div></td>' +
-        '<td><label class="path-site-chip"><input type="checkbox" id="editLangGroupDelete"' +
+        '<td><label class="path-site-chip"><input type="checkbox" class="chb-main" id="editLangGroupDelete"' +
           (g.delete_replaced ? " checked" : "") + "> " +
           esc(t("Alte Datei löschen", "Delete old file")) + "</label></td>" +
         "<td>" +

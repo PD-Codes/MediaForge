@@ -267,3 +267,12 @@
   height: 1px;
   background: var(--border);
 }
+
+/* ── Narrow screens ───────────────────────────────────────────────────
+   The hero poster was a hard 100px at every width, which is nearly a third
+   of a 360px viewport next to the title block. */
+@media (max-width: 480px) {
+  .series-hero-poster {
+    width: 72px;
+  }
+}

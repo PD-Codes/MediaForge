@@ -219,7 +219,7 @@ function _favCard(f) {
     : "";
 
   const checkbox = _selectMode
-    ? `<input type="checkbox" class="fav-checkbox fav-poster-checkbox" data-url="${url}" ${
+    ? `<input type="checkbox" class="chb-main fav-poster-checkbox" data-url="${url}" ${
         isSelected ? "checked" : ""
       } />`
     : "";
@@ -278,7 +278,7 @@ function _favListCard(f) {
 
   const checkbox = _selectMode
     ? `<div class="fav-checkbox-wrap">
-         <input type="checkbox" class="fav-checkbox" data-url="${url}" ${
+         <input type="checkbox" class="chb-main" data-url="${url}" ${
            isSelected ? "checked" : ""
          } />
        </div>`
@@ -502,7 +502,10 @@ function _toggleSelectMode() {
 }
 
 function _onFavListClick(e) {
-  const checkbox = e.target.closest(".fav-checkbox");
+  // Both the poster and the list view render a .chb-main checkbox carrying
+  // data-url; the former .fav-checkbox class was never styled anywhere, which
+  // is why the list view showed a native browser control.
+  const checkbox = e.target.closest("input[type=checkbox][data-url]");
   if (checkbox) {
     const url = checkbox.dataset.url;
     if (checkbox.checked) {

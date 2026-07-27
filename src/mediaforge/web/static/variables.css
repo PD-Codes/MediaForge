@@ -46,6 +46,14 @@
   --error: #ef4444;
   --info: #3b82f6;
 
+  /* Tinted backgrounds for status pills/badges. Defined per theme so a badge
+     cannot hardcode a colour that only works in one of them -- which is what
+     notifications.css did with #57F287 / #b8a200. */
+  --success-bg: rgba(34, 197, 94, 0.15);
+  --warning-bg: rgba(245, 158, 11, 0.15);
+  --error-bg: rgba(239, 68, 68, 0.15);
+  --info-bg: rgba(59, 130, 246, 0.15);
+
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
@@ -100,6 +108,11 @@
   --warning: #d97706;
   --error: #dc2626;
   --info: #2563eb;
+
+  --success-bg: rgba(22, 163, 74, 0.12);
+  --warning-bg: rgba(217, 119, 6, 0.12);
+  --error-bg: rgba(220, 38, 38, 0.12);
+  --info-bg: rgba(37, 99, 235, 0.12);
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);

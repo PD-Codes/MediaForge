@@ -40,9 +40,25 @@
    Discord, WhatsApp, ...), toggled between these two classes by JS based on
    whether that channel is configured. */
 .notif-badge-ok {
-  background: rgba(87, 242, 135, .15);
-  color: #57F287;
-}.notif-badge-warn {
-  background: rgba(254, 231, 92, .12);
-  color: #b8a200;
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.notif-badge-warn {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+/* The page itself (templates/notifications.html, 1500+ lines) had no
+   breakpoint of its own and borrowed integrations.css. Keep the badges and
+   the WIP panel usable on a phone. */
+@media (max-width: 640px) {
+  .service-wip {
+    padding: 32px 16px;
+  }
+
+  .notif-badge {
+    max-width: 100%;
+    white-space: normal;
+  }
 }

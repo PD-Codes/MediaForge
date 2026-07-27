@@ -72,3 +72,30 @@
   font-weight: 400;
   margin-top: 2px;
 }
+
+/* ── Narrow screens ───────────────────────────────────────────────────
+   The stage rows are built in JS (static/telemetry.js), so nothing else
+   provides a mobile layout for them: label and control sit side by side and
+   the long explanatory texts squeeze the control off screen. */
+@media (max-width: 640px) {
+  .telemetry-stage-card {
+    padding: 12px;
+  }
+
+  /* The rows are .settings-row elements built in JS; settings_rows.css only
+     tightens their padding on mobile, so the long explain texts still squeeze
+     the toggle. Let them wrap and keep the toggle on its own line. */
+  .telemetry-stage-card .settings-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .telemetry-stage-card .settings-row-left {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .telemetry-stage-card .settings-row-right {
+    margin-left: auto;
+  }
+}

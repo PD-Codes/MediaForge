@@ -1072,6 +1072,12 @@ redesign is made of. The split is worth internalising:
   `.mf-poster-progress`/`.mf-poster-watched`, `.mf-avatar`, `.mf-timeline`,
   `.mf-progress`, `.mf-empty`, `.mf-pagination-bar`. Loaded globally since
   the queue hub landed (July 2026); no `<link>` of your own required.
+- **`variables.css` = the palette** — never hardcode a colour. Text and
+  surfaces come from `--text-primary`/`--text-muted`/`--bg-card`/`--border`,
+  and a status pill uses the pair `--success` + `--success-bg` (same for
+  `--warning`, `--error`, `--info`). Both halves are defined per theme, so a
+  hardcoded hex is a badge that only works in dark mode — exactly what
+  notifications.css did until July 2026.
 
 The Calendar, Seerr and Library pages are built out of these, and
 `example_ui_components/` shows every one of them live with the markup

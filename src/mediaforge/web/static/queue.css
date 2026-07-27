@@ -526,12 +526,6 @@
   
 }
 
-/* ── Settings: User management table scroll ── */
-.user-table-wrapper {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  /* enables momentum scrolling on iOS Safari */
-}
 
 
 /* ── Seerr: Reject button ── */

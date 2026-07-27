@@ -103,3 +103,24 @@ tbody td {
 .toggle input:checked+.toggle-slider::before {
   transform: translateX(18px);
 }
+
+/* ── Table scroll wrapper ──────────────────────────────────────────────
+   Used by the user management table (templates/settings.html) and every
+   other wide table. It lived in queue.css, which owns none of those pages:
+   tidying that file would have silently broken the Settings layout. */
+.user-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* enables momentum scrolling on iOS Safari */
+}
+
+/* Tables are the widest thing on the page; below this width they scroll
+   inside their wrapper instead of pushing the layout. thead stays nowrap
+   (see above), so the wrapper is what makes them usable on a phone. */
+@media (max-width: 640px) {
+  .table-wrap,
+  .user-table-wrapper {
+    margin-inline: -8px;
+    padding-inline: 8px;
+  }
+}
