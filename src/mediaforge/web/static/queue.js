@@ -609,6 +609,91 @@ function _qhubActions(e) {
   return '<button class="queue-remove" onclick="' + rm + '(' + e.id + ')" title="' + t("Entfernen", "Remove") + '">&times;</button>';
 }
 
+// ---------------------------------------------------------------------
+// Failed rows: click to reveal the error
+// ---------------------------------------------------------------------
+// The pre-hub modals showed this. Downloads had a click-to-expand list,
+// encoding/upscaling printed a permanent one-liner. Both are restored here as
+// one disclosure so a long ffmpeg message cannot push the list apart.
+
+// Which panels the user opened, as "<queue>:<id>". renderQueueHub() rebuilds
+// the whole list every 2s, so without this the panel would snap shut mid-read.
+const _qhubOpenErrors = new Set();
+
+/** Normalise both payload shapes into [{label, text}]. */
+function _qhubErrorList(e) {
+  const raw = e.raw || {};
+  const out = [];
+
+  // Downloads: `errors` is a JSON array of {url, error} -- one entry per
+  // episode that failed, so a 12-episode season can carry 12 of them.
+  if (e.queue === "downloads") {
+    let errs = [];
+    try {
+      errs = typeof raw.errors === "string" ? JSON.parse(raw.errors || "[]") : (raw.errors || []);
+    } catch (err) { errs = []; }
+    if (Array.isArray(errs)) {
+      errs.forEach(function (err) {
+        if (!err) return;
+        const text = typeof err === "string" ? err : (err.error || "");
+        if (!text) return;
+        const ep = (err && err.url) ? parseSeasonEpisode(err.url) : "";
+        out.push({ label: ep || "", text: text });
+      });
+    }
+    return out;
+  }
+
+  // Encoding / upscaling: a single plain string.
+  if (raw.error) out.push({ label: "", text: String(raw.error) });
+  return out;
+}
+
+/**
+ * Toggle a row's error panel.
+ * Bails on clicks that land on an action button, so Cancel/Remove/Restart keep
+ * working -- cheaper and less brittle than adding stopPropagation() to each of
+ * the eight buttons _qhubActions() can emit.
+ */
+window.qhubToggleError = function (ev, rowEl) {
+  if (ev && ev.target && ev.target.closest && ev.target.closest(".qhub-row-actions")) return;
+  const key = rowEl.getAttribute("data-errkey");
+  if (!key) return;
+  const panel = document.getElementById("qhuberr-" + key);
+  if (!panel) return;
+  const open = panel.classList.toggle("is-open");
+  rowEl.classList.toggle("is-err-open", open);
+  rowEl.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) _qhubOpenErrors.add(key); else _qhubOpenErrors.delete(key);
+};
+
+// The row carries role="button"/tabindex="0", so it has to answer the keyboard
+// too. Delegated once instead of an inline onkeydown per row -- the list is
+// rebuilt every 2s and inline handlers would be re-parsed each time.
+document.addEventListener("keydown", function (ev) {
+  if (ev.key !== "Enter" && ev.key !== " " && ev.key !== "Spacebar") return;
+  const row = ev.target && ev.target.closest ? ev.target.closest(".qhub-row--haserr") : null;
+  if (!row) return;
+  ev.preventDefault();
+  window.qhubToggleError(ev, row);
+});
+
+/** The sibling panel. Sibling, not child: .qhub-row is a horizontal flex box. */
+function _qhubErrorPanel(e, errors, key) {
+  const Q = window.QHub;
+  let body = errors.length > 1
+    ? '<div class="qhub-err-head">' + errors.length + " " + t("Fehler", "errors") + '</div>'
+    : '';
+  errors.forEach(function (err) {
+    body += '<div class="qhub-err-line">'
+      + (err.label ? '<span class="qhub-err-ep">' + Q.esc(err.label) + '</span>' : '')
+      + '<span class="qhub-err-text">' + Q.esc(err.text) + '</span>'
+      + '</div>';
+  });
+  const open = _qhubOpenErrors.has(key) ? " is-open" : "";
+  return '<div class="qhub-err-panel' + open + '" id="qhuberr-' + Q.esc(key) + '">' + body + '</div>';
+}
+
 /** One slim list row. `index` renders the position number when given. */
 function _qhubRow(e, index) {
   const Q = window.QHub;
@@ -624,8 +709,36 @@ function _qhubRow(e, index) {
     ? '<span class="qhub-row-time">' + Q.esc(Q.hhmm(e.completed_at)) + '</span>'
     : '<span class="qhub-row-state">' + Q.esc(e.statusText) + '</span>';
 
-  return '<div class="queue-item qhub-row qhub-row--' + kind + '" data-id="' + Q.esc(e.id) + '">'
-    + (index ? '<span class="qhub-row-idx">' + index + '</span>' : '<span class="qhub-row-idx"></span>')
+  // Gate on the error actually being there, not on state === "failed": a
+  // partially failed encode/upscale finishes as "completed" but still carries
+  // a message, and those were invisible in the old UI too.
+  const errors = e.running ? [] : _qhubErrorList(e);
+  const hasErr = errors.length > 0;
+  const errKey = e.queue + ":" + e.id;
+  const isOpen = hasErr && _qhubOpenErrors.has(errKey);
+
+  // The chevron takes the index slot rather than sitting in front of the
+  // title: the slot is a fixed 14px that failed rows leave empty anyway, so
+  // the titles stay on one vertical line instead of each error row shunting
+  // its own title to the right. The count lives in the tooltip and in the
+  // panel header.
+  const errArrow = '<svg class="qhub-err-arrow" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
+  const errTitle = errors.length > 1
+    ? errors.length + " " + t("Fehler — zum Anzeigen klicken", "errors — click to show")
+    : t("Fehler — zum Anzeigen klicken", "Error — click to show");
+
+  const rowCls = 'queue-item qhub-row qhub-row--' + kind
+    + (hasErr ? ' qhub-row--haserr' : '')
+    + (isOpen ? ' is-err-open' : '');
+  const errAttrs = hasErr
+    ? ' data-errkey="' + Q.esc(errKey) + '" onclick="qhubToggleError(event,this)"'
+      + ' role="button" tabindex="0" aria-expanded="' + (isOpen ? 'true' : 'false') + '"'
+      + ' title="' + Q.esc(errTitle) + '"'
+    : '';
+
+  const row = '<div class="' + rowCls + '"' + errAttrs
+    + ' data-id="' + Q.esc(e.id) + '">'
+    + '<span class="qhub-row-idx">' + (index ? index : (hasErr ? errArrow : '')) + '</span>'
     + '<span class="qhub-row-title">'
     + (e.sync ? '<span class="queue-sync-badge">' + t("Auto&#8209;Sync", "Auto-Sync") + '</span> ' : '')
     + Q.esc(e.title) + '</span>'
@@ -635,6 +748,8 @@ function _qhubRow(e, index) {
     + '<span class="qhub-row-actions queue-item-right">' + _qhubActions(e) + '</span>'
     + '</span>'
     + '</div>';
+
+  return hasErr ? row + _qhubErrorPanel(e, errors, errKey) : row;
 }
 
 function _qhubGroup(label, count) {

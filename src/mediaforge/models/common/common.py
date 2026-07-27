@@ -23,7 +23,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading as _threading
 from html import unescape as _html_unescape
 from pathlib import Path
@@ -39,6 +38,7 @@ try:
         INVERSE_LANG_LABELS,
         LANG_CODE_MAP,
         LANG_KEY_MAP,
+        MEDIAFORGE_TEMP_DIR,
         PROVIDER_HEADERS_D,
         PROVIDER_HEADERS_W,
         Audio,
@@ -52,6 +52,7 @@ except ImportError:
         INVERSE_LANG_LABELS,
         LANG_CODE_MAP,
         LANG_KEY_MAP,
+        MEDIAFORGE_TEMP_DIR,
         PROVIDER_HEADERS_D,
         PROVIDER_HEADERS_W,
         Audio,
@@ -152,7 +153,10 @@ def _read_encoding_settings():
 # Temp directory for intermediate download files (yt-dlp raw + ffmpeg tagged).
 # All work-in-progress files land here; only the finished file moves to the
 # configured destination folder.  Uses the OS system-temp on the main drive.
-_MEDIAFORGE_TEMP_DIR = Path(tempfile.gettempdir()) / "mediaforge"
+# Module-private alias kept for the existing call sites in this file; the
+# canonical definition lives in config.MEDIAFORGE_TEMP_DIR so the web workers
+# and this module can never drift to two different scratch directories.
+_MEDIAFORGE_TEMP_DIR = MEDIAFORGE_TEMP_DIR
 
 def _get_ffmpeg_codec_opts():
     """Return (vcodec, acodec, extra_vopts) from DB encoding settings.
@@ -551,11 +555,24 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
         r"size=\s*(\d+(?:\.\d+)?)\s*([kKmM])(?:i)?B", re.IGNORECASE
     )
     _RE_DURATION = re.compile(r"Duration:\s*(\d+:\d+:\d+\.\d+)")
+    # ffmpeg's startup banner (version / build flags / library versions). It is
+    # noise here, and it used to crowd the real error out of the last-20-lines
+    # detail built below -- the "configuration:" line alone is ~1.5 kB, so a
+    # failure report reaching telemetry could consist of nothing but the
+    # banner. Matched defensively even though -hide_banner is passed, because
+    # some builds still emit parts of it.
+    _RE_BANNER = re.compile(
+        r"^(ffmpeg version |built with |configuration:|lib(avutil|avcodec|avformat|"
+        r"avdevice|avfilter|swscale|swresample|postproc)\s)"
+    )
 
     # Use shorter stats_period for smoother progress (1s in non-debug, 10s in debug)
     stats_period = "10" if debug_mode else "1"
 
     args = ffmpeg.compile(node, overwrite_output=overwrite_output)
+    # Global option -- must sit right after the binary, before any input.
+    if "-hide_banner" not in args:
+        args.insert(1, "-hide_banner")
     if "-stats_period" not in args:
         args.insert(-1, "-stats_period")
         args.insert(-1, stats_period)
@@ -593,6 +610,7 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
 
     # --- main loop: consume lines, log them, and watch for stalls ---
     stderr_lines = []  # collect non-progress stderr lines for error reporting
+    kill_reason = None  # set when *we* killed ffmpeg, so the error can say so
     last_frame = None
     last_time = None
     last_size_kb = None
@@ -629,6 +647,10 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
                     logger.warning(
                         "[FFmpeg] Stall detected – no progress for "
                         f"{STALL_TIMEOUT}s. Killing process."
+                    )
+                    kill_reason = (
+                        f"no progress for {STALL_TIMEOUT}s "
+                        "(source stalled or unreachable) – ffmpeg was killed"
                     )
                     process.kill()
                     break
@@ -732,6 +754,10 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
                         "[FFmpeg] Stall detected – no progress for "
                         f"{STALL_TIMEOUT}s. Killing process."
                     )
+                    kill_reason = (
+                        f"no progress for {STALL_TIMEOUT}s "
+                        "(encode/download frozen) – ffmpeg was killed"
+                    )
                     process.kill()
                     break
             elif line_str:
@@ -762,8 +788,20 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
     if process.returncode != 0:
         if cancel_event is not None and cancel_event.is_set():
             raise RuntimeError("Download cancelled")
-        detail = "\n".join(stderr_lines[-20:]) if stderr_lines else f"exit code {process.returncode}"
+        # Prefer real diagnostics over banner leftovers, and keep the tail:
+        # ffmpeg prints the line that explains the failure last.
+        _useful = [ln for ln in stderr_lines if not _RE_BANNER.match(ln)]
+        _detail_lines = (_useful or stderr_lines)[-20:]
+        detail = "\n".join(_detail_lines) if _detail_lines else f"exit code {process.returncode}"
+        if len(detail) > 4000:
+            # Keep the end -- that is where the cause is.
+            detail = "…" + detail[-4000:]
         logger.error(f"[FFmpeg] Process failed (rc={process.returncode}):\n{detail}")
+        if kill_reason:
+            # Not an ffmpeg failure at all -- we pulled the plug. Saying so
+            # keeps these out of the "ffmpeg is broken" bucket in telemetry,
+            # while the stderr tail above still reaches the log.
+            raise RuntimeError(f"ffmpeg aborted (rc={process.returncode}): {kill_reason}")
         raise RuntimeError(f"ffmpeg error (rc={process.returncode}): {detail}")
 
 

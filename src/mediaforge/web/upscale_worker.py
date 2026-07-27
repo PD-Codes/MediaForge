@@ -13,9 +13,13 @@ Used by: web/app.py (starts the worker at startup) and web/queue_worker.py
 # telemetry/registry.py. Registry-only for now.
 """
 
+import os
+import shutil
 import threading
 import time
+import uuid
 
+from ..config import MEDIAFORGE_TEMP_DIR
 from ..logger import get_logger
 from .db import (
     add_to_upscale_queue,
@@ -157,10 +161,7 @@ def _upscale_worker():
                 output_path = _fentry.get("output_path") or file_path
 
                 _replace_original = (file_path == output_path)
-                
-                from ..config import MEDIAFORGE_TEMP_DIR
-                import uuid
-                import shutil
+
                 temp_output = str(MEDIAFORGE_TEMP_DIR / f"{_WPath(file_path).stem}_{uuid.uuid4().hex[:8]}_upscale_tmp.mkv")
                 actual_output = output_path
 
@@ -172,6 +173,11 @@ def _upscale_worker():
                     current_file_idx=_fi)
 
                 try:
+                    # See encoding_worker.py: the scratch dir sits on the OS
+                    # temp volume and may have been wiped between runs. Inside
+                    # the try so a permission problem fails this one file
+                    # rather than the whole queue item.
+                    os.makedirs(MEDIAFORGE_TEMP_DIR, exist_ok=True)
                     # The source can be gone by now (deleted in the library,
                     # replaced by an after-download encode). Say so plainly
                     # instead of letting ffmpeg fail with an opaque error.

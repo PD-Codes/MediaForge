@@ -27,8 +27,10 @@
     </button>
   </div>
 
-  <!-- Encoding Queue Timing (applies to H.264/H.265 real transcodes) -->
-  <div class="settings-section">
+  <!-- Encoding Queue Timing (applies to H.264/H.265 real transcodes).
+       Lives outside the mode panels because both transcode panels share it,
+       so showMode() toggles it: hidden by default, revealed for h264/h265. -->
+  <div class="settings-section" id="enc-queue-section" style="display:none;">
     <div class="settings-section-header">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:6px;vertical-align:-2px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       {{ _('Encoding Queue') }}
@@ -665,6 +667,11 @@ function showMode(id, pill) {
   document.querySelectorAll('.service-panel').forEach(p => p.classList.remove('active'));
   pill.classList.add('active');
   document.getElementById('panel-' + id).classList.add('active');
+  // The encoding-queue timing block is shared by the two transcode modes and
+  // therefore sits outside the panels -- but it is meaningless under Copy,
+  // Expert and Upscaling, so hide it there.
+  const queueSec = document.getElementById('enc-queue-section');
+  if (queueSec) queueSec.style.display = (id === 'h264' || id === 'h265') ? '' : 'none';
 }
 
 /* ── Hardware badge selection ── */
@@ -846,8 +853,11 @@ function updateEncTimingHint(timing) {
   if (el) el.textContent = labels[timing] || timing;
 }
 
-/* ── Load settings on page load ── */
-async function loadSettings() {
+/* ── Load settings on page load ──
+   Deliberately NOT called loadSettings(): settings.js declares a global of
+   that name and is loaded after this partial on the settings page, so the
+   generic one would silently shadow this one on the #tab-encoding mount. */
+async function loadEncodingSettings() {
   try {
     const r = await fetch('/api/encoding/settings');
     const data = await r.json();
@@ -927,7 +937,12 @@ async function loadSettings() {
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
-  await loadSettings();
+  // Reveal/hide the shared queue-timing block from the default pill first, so
+  // a failing settings fetch below can never leave the page in a state where
+  // no panel state was ever applied.
+  const _defaultPill = document.getElementById('pill-copy');
+  if (_defaultPill) showMode('copy', _defaultPill);
+  await loadEncodingSettings();
   await loadEncTiming();
   await loadUpscaleSettings();
   // Check mpv auto-download status and start polling if in progress

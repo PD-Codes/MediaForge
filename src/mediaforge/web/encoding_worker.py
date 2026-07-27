@@ -18,11 +18,15 @@ Used by: web/app.py (starts the worker at startup) and web/queue_worker.py
 "after_download").
 """
 
+import os
 import re
+import shutil
 import subprocess
 import threading
 import time
+import uuid
 
+from ..config import MEDIAFORGE_TEMP_DIR
 from ..logger import get_logger
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
@@ -230,10 +234,7 @@ def _encoding_worker():
                 output_path = _fentry.get("output_path") or file_path
 
                 _replace_original = (file_path == output_path)
-                
-                from ..config import MEDIAFORGE_TEMP_DIR
-                import uuid
-                import shutil
+
                 temp_output = str(MEDIAFORGE_TEMP_DIR / f"{_WPath(file_path).stem}_{uuid.uuid4().hex[:8]}_encode_tmp.mkv")
                 actual_output = output_path
 
@@ -242,6 +243,11 @@ def _encoding_worker():
                     current_file_idx=_fi)
 
                 try:
+                    # The scratch dir lives on the OS temp volume, which a
+                    # reboot or a tmp cleaner may have wiped since the last
+                    # run. Inside the try on purpose: a permission problem
+                    # here must fail this one file, not the whole queue item.
+                    os.makedirs(MEDIAFORGE_TEMP_DIR, exist_ok=True)
                     _encode_one_file(
                         input_path=file_path,
                         output_path=temp_output,

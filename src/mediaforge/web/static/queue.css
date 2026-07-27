@@ -1572,6 +1572,85 @@
   .qhub-row-time { font-size: 0.68rem; }
 }
 
+/* ---- Failed rows: click to reveal the error ---------------------------
+   The row itself is the click target, so the whole line reads as one control;
+   the chevron matches the library's .lib-arrow so expanding feels the same
+   everywhere. The panel is a SIBLING of the row, not a child: .qhub-row is a
+   horizontal flex container and a block child would be squeezed into a
+   column. */
+.queue-item.qhub-row--haserr {
+  cursor: pointer;
+}
+
+.queue-item.qhub-row--haserr:hover {
+  background: var(--bg-hover);
+}
+
+/* The chevron sits in the 14px index slot, so titles stay aligned down the
+   whole list whether or not a row failed. */
+.qhub-row-idx .qhub-err-arrow {
+  stroke: var(--error);
+  vertical-align: -1px;
+}
+
+.qhub-err-head {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--error);
+  padding: 4px 0 2px;
+}
+
+.qhub-err-arrow {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.18s;
+}
+
+.qhub-row.is-err-open .qhub-err-arrow { transform: rotate(90deg); }
+
+.qhub-err-panel {
+  display: none;
+  margin: 0 4px 8px 28px;
+  padding-left: 10px;
+  border-left: 2px solid var(--error);
+}
+
+.qhub-err-panel.is-open { display: block; }
+
+.qhub-err-line {
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.qhub-err-line + .qhub-err-line { border-top: 1px solid var(--border); }
+
+.qhub-err-ep {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ffmpeg messages carry long unbroken paths and flag strings — let them wrap
+   anywhere rather than widening the modal. */
+.qhub-err-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
 /* ---- Mobile ---- */
 @media (max-width: 640px) {
   .queue-modal.qhub {
@@ -1596,6 +1675,11 @@
 
   .qhub-bar-actions { width: 100%; }
   .qhub-bar-actions .btn { flex: 1; }
+
+  /* The row is tight on a phone: the chevron alone carries the meaning, and
+     the red left edge already marks the row as failed. */
+  .qhub-err-panel { margin-left: 18px; }
+  .qhub-err-line { font-size: 0.74rem; }
 
   .qhub-hero { padding: 12px 14px 0; }
 

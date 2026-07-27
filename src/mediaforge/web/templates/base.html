@@ -574,10 +574,11 @@
       <span></span><span></span><span></span>
     </button>
     <a href="{{ url_for('index') }}" class="mobile-brand">MediaForge</a>
-    <button class="mobile-queue-btn" onclick="openUpscaleModal()" aria-label="{{ _('Upscaling') }}" style="margin-right:4px;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      <span class="queue-badge mobile-queue-badge" id="mobileUpscaleBadge" style="display:none">0</span>
-    </button>
+    <!-- The standalone Upscaling shortcut was removed from the mobile top bar:
+         the queue button next to it opens the same unified hub, where
+         Upscaling is one segment away, and its badge already includes the
+         upscale count. _updateUpscaleBadges() tolerates the missing
+         #mobileUpscaleBadge element. -->
     <button class="mobile-queue-btn" onclick="openQueueHub('all')" aria-label="{{ _('Queues') }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round">

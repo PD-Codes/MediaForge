@@ -810,7 +810,14 @@ body.mf-select-mode .mf-poster-select,
 @media (max-width: 480px) {
   .mf-poster-grid { grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 12px; }
   .mf-poster-title { font-size: 0.84rem; }
-  .mf-vol-tag span { display: none; }
+
+  /* Only the poster scrim is too cramped for the volume label -- there the
+     icon alone has to do. In the list row and the detail header the label is
+     the sole indicator of which disk a title lives on, and a title attribute
+     is unreachable on touch, so it stays visible there. */
+  .mf-poster-meta .mf-vol-tag span { display: none; }
+  .mf-poster-meta .mf-vol-tag { max-width: none; }
+  .lib-row-pills .mf-vol-tag { max-width: 100%; }
 
   .mf-pagination-bar { justify-content: center; }
   .mf-pagination-count { width: 100%; text-align: center; order: -1; }

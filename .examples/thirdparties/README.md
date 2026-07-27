@@ -682,6 +682,24 @@ path = module_data_dir(MODULE_ID) / "cache.json"   # ~/.mediaforge/module_data/<
 
 It survives upgrades and is deleted only when the module is uninstalled.
 
+For *work-in-progress* files -- a download being fetched, an ffmpeg pass, any
+output you build up before it is complete -- use the shared scratch directory
+instead, so partial files never sit on a slow or networked destination:
+
+```python
+import os
+import uuid
+from mediaforge.config import MEDIAFORGE_TEMP_DIR
+
+os.makedirs(MEDIAFORGE_TEMP_DIR, exist_ok=True)   # <os-temp>/mediaforge
+tmp = MEDIAFORGE_TEMP_DIR / f"{name}_{uuid.uuid4().hex[:8]}.mkv"
+# ... write tmp, then move it to its destination only once it is complete
+```
+
+Always create it first: it lives on the OS temp volume, so a reboot or a tmp
+cleaner may have removed it since your last run. Clean up your own temp files
+on failure -- nothing sweeps this directory for you.
+
 ## Per-user UI preferences (`register_ui_pref_key`)
 
 `set_setting()` is *instance*-wide and admin-owned. For something each user

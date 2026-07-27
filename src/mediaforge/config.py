@@ -10,6 +10,7 @@ the package import from here rather than reading ``os.environ`` directly.
 
 import os
 import re
+import tempfile
 import threading
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
@@ -53,6 +54,16 @@ def is_newest_version() -> bool:
 # MediaForge's per-user config/data directory (formerly ~/.aniworld before
 # the AniWorld Downloader -> MediaForge rename; see legacy_import.py).
 MEDIAFORGE_CONFIG_DIR = Path.home() / ".mediaforge"
+
+# Scratch directory for intermediate work files: yt-dlp raw downloads, ffmpeg
+# tagging passes, and the encode/upscale temp outputs the web workers write
+# before moving the finished file to its destination. Lives on the OS temp
+# volume (main drive) so a slow network target never sees partial files.
+# Defined here -- and not in models/common/common.py -- because both the CLI
+# download path and web/encoding_worker.py + web/upscale_worker.py need it,
+# and importing common.py from the web workers would drag in the whole
+# extractor stack.
+MEDIAFORGE_TEMP_DIR = Path(tempfile.gettempdir()) / "mediaforge"
 
 # Mirror legacy ANIWORLD_* variables, and load a not-yet-imported .env once,
 # whenever config is imported. Configuration itself lives in the app_settings
