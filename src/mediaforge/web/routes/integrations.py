@@ -32,6 +32,11 @@ from ...telemetry import events as telemetry_events
 
 logger = get_logger(__name__)
 
+# What a stored secret looks like in a GET response. The matching PUT skips
+# this exact value, so a form that was loaded and saved unchanged keeps the
+# secret instead of overwriting it with the mask.
+SECRET_PLACEHOLDER = "***"
+
 
 def _report_integration_error(integration, *, error_type=None, reason=None):
     """Submit a detail.integrations telemetry event for a failed connection
@@ -270,7 +275,10 @@ def register_integrations_routes(app):
             "type":         svc,
             "url":          get_setting("mediaplayer_url",          ""),
             "plex_url":     get_setting("mediaplayer_plex_url",     ""),
-            "apikey":       token,
+            # Never hand the token back out: the UI only needs to know that one
+            # is stored. PUT ignores the placeholder, so saving the form
+            # without touching the field keeps the stored value.
+            "apikey":       SECRET_PLACEHOLDER if token else "",
             "has_token":    bool(token),
             "plex_section": get_setting("mediaplayer_plex_section", ""),
         })
@@ -290,7 +298,10 @@ def register_integrations_routes(app):
                     return jsonify({"ok": False, "error": str(e)}), 400
         for key in ["type", "url", "plex_url", "apikey", "plex_section"]:
             if key in data:
-                set_setting("mediaplayer_" + key, str(data[key]).strip())
+                value = str(data[key]).strip()
+                if key == "apikey" and value == SECRET_PLACEHOLDER:
+                    continue  # unchanged masked value from the GET above
+                set_setting("mediaplayer_" + key, value)
         return jsonify({"ok": True})
     @app.route("/api/settings/mediaplayer/test", methods=["POST"])
     def api_settings_mediaplayer_test():
@@ -517,7 +528,8 @@ def register_integrations_routes(app):
             "enabled":       enabled,
             "source":        source,
             "jf_url":        _strip(jf_url_raw),
-            "jf_apikey":     jf_key,
+            "jf_apikey":     SECRET_PLACEHOLDER if jf_key else "",
+            "has_jf_apikey": bool(jf_key),
             "jf_ssl":        jf_url_raw.startswith("https://"),
             "plex_url":      _strip(plex_url_raw),
             "plex_ssl":      plex_url_raw.startswith("https://"),
@@ -571,7 +583,11 @@ def register_integrations_routes(app):
         if jf_url_full is not None:
             set_setting("mediascan_jf_url", jf_url_full)
         if "jf_apikey" in data:
-            set_setting("mediascan_jf_apikey", str(data["jf_apikey"] or "").strip())
+            _jf_key = str(data["jf_apikey"] or "").strip()
+            # The GET returns the placeholder instead of the key, so a form
+            # saved without touching the field must not wipe the stored one.
+            if _jf_key != SECRET_PLACEHOLDER:
+                set_setting("mediascan_jf_apikey", _jf_key)
         if plex_url_full is not None:
             set_setting("mediascan_plex_url", plex_url_full)
         if "plex_section" in data:

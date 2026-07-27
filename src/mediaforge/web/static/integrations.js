@@ -787,9 +787,13 @@ async function loadMediaplayerSettings() {
 function _updatePlexTokenBadge(hasToken, token) {
   const badge = document.getElementById("plexTokenBadge");
   if (!badge) return;
-  if (hasToken && token) {
-    const masked = token.slice(0, 4) + "••••" + token.slice(-4);
-    badge.textContent = t("✓ Token gespeichert ","✓ Token saved ") + "(" + masked + ")";
+  if (hasToken) {
+    // The API reports a stored token as "***" instead of the value, so there
+    // is usually nothing left to mask -- only show a preview when a real
+    // token was passed in (e.g. right after the Plex PIN flow).
+    const real = token && token !== "***" && token.length >= 8;
+    const masked = real ? " (" + token.slice(0, 4) + "••••" + token.slice(-4) + ")" : "";
+    badge.textContent = t("✓ Token gespeichert","✓ Token saved") + masked;
     badge.style.background = "rgba(34,197,94,.12)";
     badge.style.color = "#4ade80";
     badge.style.border = "1px solid rgba(34,197,94,.3)";

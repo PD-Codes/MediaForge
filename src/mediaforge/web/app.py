@@ -859,6 +859,56 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "settings_page",
             "api_settings",
             "api_settings_update",
+            # The Integrations page itself: its sidebar link was already
+            # admin-only (base.html), the route was not -- same mismatch the
+            # Module Manager had.
+            "integrations_page",
+            # Integrations (routes/integrations.py). None of these had an
+            # admin check of their own, and every *_get returned the stored
+            # Jellyfin/Plex/TMDB credentials in clear text -- a plain "user"
+            # account could read them and repoint the server at a host of its
+            # choosing. The availability lookups
+            # (api_crunchyroll_availability, api_fernsehserien_availability)
+            # and api_mediascan_library stay open: they carry no secrets and
+            # are used by the normal search/detail pages.
+            "api_settings_crunchyroll_get",
+            "api_settings_crunchyroll_put",
+            "api_settings_crunchyroll_test",
+            "api_settings_crunchyroll_profiles",
+            "api_settings_fernsehserien_get",
+            "api_settings_fernsehserien_put",
+            "api_settings_fernsehserien_test",
+            "api_settings_mediaplayer_get",
+            "api_settings_mediaplayer_put",
+            "api_settings_mediaplayer_test",
+            "api_mediaplayer_scan",
+            "api_mediaplayer_scan_status",
+            "api_mediaplayer_plex_pin_create",
+            "api_mediaplayer_plex_pin_poll",
+            "api_mediaplayer_plex_libraries",
+            "api_settings_mediascan_get",
+            "api_settings_mediascan_put",
+            "api_mediascan_refresh",
+            "api_mediascan_status",
+            "api_mediascan_plex_libraries",
+            "api_mediascan_debug",
+            "api_settings_jellyfin_nfo_get",
+            "api_settings_jellyfin_nfo_put",
+            # Repoints the whole process's DNS resolver (api_settings_dns) or
+            # the Seerr/TMDB endpoints it talks to -- same tier as SSO.
+            "api_settings_dns",
+            "api_settings_seerr",
+            "api_settings_cineinfo_get",
+            "api_settings_cineinfo_put",
+            # Touches the filesystem (~/.aniworld) and reveals whether it exists.
+            "api_settings_legacy_import_status",
+            "api_settings_legacy_import_run",
+            "api_settings_legacy_import_dismiss",
+            # Structurally identical to api_custom_paths_* below, which is
+            # admin-only -- the two were simply inconsistent.
+            "api_language_groups_add",
+            "api_language_groups_update",
+            "api_language_groups_delete",
             "api_settings_sso_get",
             "api_settings_sso_put",
             "api_settings_env_file_get",

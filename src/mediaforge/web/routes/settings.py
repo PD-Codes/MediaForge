@@ -52,6 +52,11 @@ from ...logger import get_logger
 
 logger = get_logger(__name__)
 
+# Mirrors routes/integrations.py: a stored secret is reported as this
+# placeholder and the matching PUT skips it, so loading and saving a form
+# unchanged never overwrites the real value with the mask.
+SECRET_PLACEHOLDER = "***"
+
 
 def _language_group_error(language):
     """Reason a language value can't be used, or None if it's fine.
@@ -495,7 +500,11 @@ def register_settings_routes(app):
         under "cineinfo") is what static/integrations.js actually reads via
         `_getSettings()`."""
         return jsonify({
-            "tmdb_api_key":   get_setting("cineinfo_tmdb_api_key",   ""),
+            # The TMDB key is a stored secret (db.SENSITIVE_KEYS, encrypted at
+            # rest) -- handing it back out through the API would undo that.
+            # The PUT below ignores the placeholder.
+            "tmdb_api_key":   SECRET_PLACEHOLDER if get_setting("cineinfo_tmdb_api_key", "") else "",
+            "has_tmdb_api_key": bool(get_setting("cineinfo_tmdb_api_key", "")),
             "country":        get_setting("cineinfo_country",        "DE"),
             "show_providers": get_setting("cineinfo_show_providers", "1"),
             "show_genres":    get_setting("cineinfo_show_genres",    "0"),
@@ -536,7 +545,10 @@ def register_settings_routes(app):
                     "calendar", "calendar_seerr", "calendar_mediathek", "calendar_library",
                     "calendar_refresh_interval"]:
             if key in data:
-                set_setting("cineinfo_" + key, str(data[key]))
+                _val = str(data[key])
+                if key == "tmdb_api_key" and _val.strip() == SECRET_PLACEHOLDER:
+                    continue  # unchanged masked value from the GET above
+                set_setting("cineinfo_" + key, _val)
 
         new_key = get_setting("cineinfo_tmdb_api_key", "")
         new_country = get_setting("cineinfo_country", "DE")
