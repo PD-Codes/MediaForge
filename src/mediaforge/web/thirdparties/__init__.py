@@ -1596,7 +1596,6 @@ def uninstall_module_live(app, name) -> dict:
     the module is off, gone from the UI and purged -- and the deletion alone is
     staged for the next start, which is what ``restart_required`` then reports.
     """
-    import sys
 
     name = (name or "").strip()
     if not name or name.startswith("_") or "/" in name or "\\" in name:
@@ -1654,10 +1653,9 @@ def uninstall_module_live(app, name) -> dict:
         purge_module_data(module_id)
     except Exception:
         logger.exception("[Thirdparties] Could not purge data dir of '%s'", module_id)
-    _LOADED.pop(name, None)
-    for mod_name in [m for m in sys.modules if m == prefix or m.startswith(prefix + ".")]:
-        sys.modules.pop(mod_name, None)
-    importlib.invalidate_caches()
+    # Same job as the upgrade path: drop the package from sys.modules so a
+    # later reinstall reads the files on disk instead of the import cache.
+    _forget_module_imports(name)
 
     # 4. The files.
     try:
