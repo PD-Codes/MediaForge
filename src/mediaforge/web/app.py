@@ -634,11 +634,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # templates; tightening to nonces would need a larger template refactor.
         _csp = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: https:; "
-            "connect-src 'self' blob: https://cdn.jsdelivr.net; "
+            "connect-src 'self' blob:; "
             "worker-src 'self' blob:; "
             "media-src 'self' blob:; "
             "object-src 'none'; "

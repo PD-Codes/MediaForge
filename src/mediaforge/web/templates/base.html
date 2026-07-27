@@ -1545,8 +1545,13 @@
 
     </div>
   </div>
-  <!-- hls.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+  {# hls.js, vendored (static/hls.min.js, upstream dist of v1.5.7). It used to
+     come from cdn.jsdelivr.net, which meant the player was dead on any install
+     without internet access -- a LAN-only container, or one behind Gluetun:
+     player.js falls back to video.canPlayType('application/vnd.apple.mpegurl'),
+     and Chrome and Firefox answer "" to that, so every play click ended in the
+     generic error branch. It also kept a third-party origin in the CSP. #}
+  <script src="{{ url_for('static', filename='hls.min.js') }}"></script>
   <script src="{{ url_for('static', filename='player.js') }}"></script>
 
   <!-- ===== Page Transition Loader JS ===== -->
