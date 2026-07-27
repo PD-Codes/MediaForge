@@ -1,0 +1,1190 @@
+/* ===================================================================
+   MediaForge — Web player ("Rail" layout)
+
+   Everything the player draws lives INSIDE #playerVideoWrap and floats
+   above the picture; the container itself never reserves height for a
+   control strip. That is the whole point of the rework: the old player
+   put a fixed bar below the video, which squeezed the picture on phones
+   and made fullscreen letterbox twice.
+
+   Namespace: .mfp-*  (MediaForge Player). The legacy ids (#playerOverlay,
+   #playerContainer, #playerVideoWrap, #playerVideo, #playerSeekWrap,
+   #playerPlayBtn) are kept because syncplay_page.js re-parents the
+   container and syncplay.css targets those ids by name.
+   =================================================================== */
+
+
+/* ── Shell ──────────────────────────────────────────────────────── */
+
+#playerContainer.mfp {
+  position: relative;
+  width: min(1280px, 96vw);
+  /* The stage has no intrinsic height of its own -- a <video> without
+     loaded metadata is 300x150, which used to collapse the whole modal to
+     a sliver until the first frame arrived. 16:9 is therefore the shape
+     the box STARTS in; player.js overwrites --mfp-ar with the real ratio
+     as soon as the video reports it.
+
+     That second step matters more than it sounds: a 2.39:1 film in a
+     fixed 16:9 box grows a fat black bar above and below, and the
+     controls then sit on that bar instead of on the picture -- which is
+     exactly the letterboxed-header look this rework set out to remove.
+     A variable (not an inline aspect-ratio) so the phone rule below,
+     which drops the ratio entirely, still wins. */
+  aspect-ratio: var(--mfp-ar, 16 / 9);
+  max-height: 94vh;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+}
+
+.mfp-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+  /* The stage owns the pointer/gesture handling; text selection while
+     scrubbing on a touch screen would otherwise select the title. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mfp-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #000;
+}
+
+/* Idle = no pointer movement for a few seconds. Chrome keeps firing
+   mousemove during video playback on some setups, so the JS drives this
+   class rather than a CSS-only :hover rule. */
+#playerContainer.mfp.is-idle .mfp-top,
+#playerContainer.mfp.is-idle .mfp-bar,
+#playerContainer.mfp.is-idle .mfp-center {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0);
+}
+#playerContainer.mfp.is-idle .mfp-stage { cursor: none; }
+#playerContainer.mfp.is-idle .mfp-scrim { opacity: 0; }
+
+/* When the controls are hidden the captions may use the full height. */
+#playerContainer.mfp.is-idle .mfp-captions { bottom: 6%; }
+
+
+/* ── Scrims ─────────────────────────────────────────────────────── */
+
+.mfp-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity var(--transition-slow, .3s ease);
+  background:
+    linear-gradient(to top, rgba(0, 0, 0, .88) 0, rgba(0, 0, 0, .42) 13%, transparent 32%),
+    linear-gradient(to bottom, rgba(0, 0, 0, .62) 0, transparent 18%);
+}
+
+
+/* ── Top bar ────────────────────────────────────────────────────── */
+
+.mfp-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  color: #fff;
+  transition: opacity var(--transition-slow, .3s ease);
+}
+
+.mfp-title-wrap { min-width: 0; }
+
+.mfp-title {
+  font-size: .95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mfp-subtitle {
+  font-size: .75rem;
+  color: rgba(255, 255, 255, .62);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mfp-top-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.mfp-encoder {
+  font-size: .65rem;
+  letter-spacing: .04em;
+  color: rgba(255, 255, 255, .38);
+  white-space: nowrap;
+}
+
+
+/* ── Source badge (Direct Play only) ────────────────────────────── */
+
+.mfp-srcbadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(124, 58, 237, .24);
+  border: 1px solid rgba(124, 58, 237, .5);
+  color: #d8c9ff;
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+.mfp-srcbadge:hover { background: rgba(124, 58, 237, .38); }
+.mfp-srcbadge svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+.mfp-srcbadge .mfp-live {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 7px var(--success);
+  flex-shrink: 0;
+}
+
+.mfp-srcbadge.is-warn {
+  background: rgba(245, 158, 11, .2);
+  border-color: rgba(245, 158, 11, .5);
+  color: #f8d9a2;
+}
+.mfp-srcbadge.is-warn .mfp-live {
+  background: var(--warning);
+  box-shadow: 0 0 7px var(--warning);
+}
+
+
+/* ── Icon buttons (shared) ──────────────────────────────────────── */
+
+.mfp-icon-btn {
+  color: #fff;
+  background: none;
+  border: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background var(--transition);
+}
+.mfp-icon-btn:hover { background: rgba(255, 255, 255, .16); }
+.mfp-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mfp-icon-btn[aria-disabled="true"],
+.mfp-icon-btn:disabled { opacity: .35; cursor: default; }
+.mfp-icon-btn:disabled:hover { background: none; }
+
+/* An inline <svg> with only a viewBox resolves to 0x0 inside a grid item
+   — the same trap that made .mf-segmented-btn icons invisible. Pin it. */
+.mfp-icon-btn svg { width: 21px; height: 21px; display: block; }
+
+/* Skip buttons carry their second count inside the circular arrow, so no
+   separate label is needed next to them. */
+.mfp-skip-n {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 57%;
+  transform: translateY(-50%);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 0 3px rgba(0, 0, 0, .9);
+}
+
+
+/* ── Bottom rail ────────────────────────────────────────────────── */
+
+.mfp-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  padding: 0 12px 8px;
+  color: #fff;
+  transition: opacity var(--transition-slow, .3s ease);
+}
+
+.mfp-row {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-top: 2px;
+}
+
+.mfp-spacer { flex: 1; min-width: 4px; }
+
+.mfp-time {
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0 10px;
+  color: rgba(255, 255, 255, .88);
+  white-space: nowrap;
+}
+.mfp-time b { font-weight: 600; color: #fff; }
+
+/* Labelled toggles ("1080p", "1x", "DE 5.1") — cheaper to read than a
+   symbol when the value itself is the information. */
+.mfp-lbl {
+  font-size: .74rem;
+  font-weight: 600;
+  padding: 0 9px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  color: #fff;
+  transition: background var(--transition);
+}
+.mfp-lbl:hover { background: rgba(255, 255, 255, .16); }
+.mfp-lbl:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mfp-lbl.is-on { color: #cbb7ff; background: var(--accent-soft); }
+.mfp-lbl small { color: rgba(255, 255, 255, .55); font-weight: 500; }
+.mfp-lbl.is-on small { color: #a98cf5; }
+
+
+/* ── Seek bar ───────────────────────────────────────────────────── */
+
+#playerSeekWrap {
+  position: relative;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;   /* required: otherwise the browser scrolls instead of scrubbing */
+}
+
+.mfp-seek-track,
+.mfp-seek-buf,
+.mfp-seek-fill {
+  position: absolute;
+  left: 0;
+  height: 4px;
+  border-radius: 3px;
+  pointer-events: none;
+  transition: height .12s ease;
+}
+.mfp-seek-track { right: 0; background: rgba(255, 255, 255, .22); }
+.mfp-seek-buf   { width: 0; background: rgba(255, 255, 255, .38); }
+.mfp-seek-fill  { width: 0; background: var(--accent); }
+
+#playerSeekWrap:hover .mfp-seek-track,
+#playerSeekWrap:hover .mfp-seek-buf,
+#playerSeekWrap:hover .mfp-seek-fill,
+#playerSeekWrap.is-dragging .mfp-seek-track,
+#playerSeekWrap.is-dragging .mfp-seek-buf,
+#playerSeekWrap.is-dragging .mfp-seek-fill { height: 6px; }
+
+.mfp-seek-thumb {
+  position: absolute;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+#playerSeekWrap:hover .mfp-seek-thumb,
+#playerSeekWrap.is-dragging .mfp-seek-thumb { opacity: 1; }
+
+/* Chapter notches are cut out of all three layers at once with a mask,
+   so a chapter break stays visible in the played part too. The mask is
+   written by JS (chaptersMask()) as a single linear-gradient. */
+.mfp-seek-masked .mfp-seek-track,
+.mfp-seek-masked .mfp-seek-buf,
+.mfp-seek-masked .mfp-seek-fill {
+  -webkit-mask-image: var(--mfp-chapter-mask);
+  mask-image: var(--mfp-chapter-mask);
+}
+
+/* Hover preview: time bubble, optionally with a thumbnail above it. */
+.mfp-preview {
+  position: absolute;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: none;
+  z-index: 7;
+  pointer-events: none;
+  background: rgba(0, 0, 0, .9);
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.mfp-preview.is-open { display: block; }
+
+.mfp-preview-img {
+  width: 168px;
+  height: 94px;
+  background-color: #05050a;
+  background-repeat: no-repeat;
+  display: none;
+}
+.mfp-preview.has-img .mfp-preview-img { display: block; }
+
+.mfp-preview-time {
+  font-size: .7rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 3px 8px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mfp-preview-chapter {
+  font-size: .65rem;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 0 8px 4px;
+  max-width: 168px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+/* ── Volume ─────────────────────────────────────────────────────── */
+
+.mfp-volwrap { display: flex; align-items: center; flex-shrink: 0; }
+
+.mfp-volslot {
+  width: 0;
+  overflow: hidden;
+  transition: width .2s ease;
+  display: flex;
+  align-items: center;
+}
+.mfp-volwrap:hover .mfp-volslot,
+.mfp-volwrap:focus-within .mfp-volslot { width: 82px; }
+
+/* The volume slider has to be drawn from scratch. forms.css only styles
+   ranges inside .mf-range, so anything else falls back to the browser's
+   native control — a chunky grey groove with a 3D handle that looks two
+   decades old next to the rest of the rail. Setting accent-color alone
+   does not help: it recolours that control, it does not replace it.
+
+   Qualified with the element (input.mfp-volslider, 0,2,1) so it also
+   beats any bare input[type="range"] rule that may be added later. */
+input.mfp-volslider[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 74px;
+  height: 16px;
+  margin: 0 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  /* Filled portion. WebKit has no ::-moz-range-progress equivalent, so
+     the track paints it as a hard-stop gradient; player.js keeps the
+     variable in sync with the volume. */
+  --mfp-vol: 100%;
+}
+
+input.mfp-volslider[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(to right,
+    #fff 0, #fff var(--mfp-vol),
+    rgba(255, 255, 255, .28) var(--mfp-vol), rgba(255, 255, 255, .28) 100%);
+}
+input.mfp-volslider[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;          /* centre the thumb on the 4px track */
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .6);
+  transition: transform .12s ease;
+}
+input.mfp-volslider[type="range"]:hover::-webkit-slider-thumb,
+input.mfp-volslider[type="range"]:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+input.mfp-volslider[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .28);
+  border: none;
+}
+input.mfp-volslider[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: 3px;
+  background: #fff;
+}
+input.mfp-volslider[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .6);
+}
+
+input.mfp-volslider[type="range"]:focus { outline: none; }
+input.mfp-volslider[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+
+/* ── Centre controls ────────────────────────────────────────────── */
+
+.mfp-center {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: none;
+  transition: opacity var(--transition-slow, .3s ease);
+}
+.mfp-center .mfp-cbtn { pointer-events: auto; }
+
+.mfp-cbtn {
+  color: #fff;
+  background: rgba(0, 0, 0, .42);
+  border: none;
+  border-radius: 50%;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  position: relative;
+  padding: 0;
+  backdrop-filter: blur(10px);
+  transition: background var(--transition), transform var(--transition);
+}
+.mfp-cbtn:hover { background: rgba(0, 0, 0, .62); transform: scale(1.06); }
+.mfp-cbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mfp-cbtn svg { width: 22px; height: 22px; }
+
+.mfp-cbtn.is-main {
+  width: 64px;
+  height: 64px;
+  background: rgba(255, 255, 255, .18);
+}
+.mfp-cbtn.is-main svg { width: 30px; height: 30px; }
+
+/* The centre cluster is a phone/tablet affordance. On a mouse-driven
+   screen the rail already carries the same five buttons, and a second
+   copy floating over the picture is noise. */
+@media (hover: hover) and (pointer: fine) {
+  .mfp-center { display: none; }
+}
+
+
+/* ── Touch gestures ─────────────────────────────────────────────── */
+
+.mfp-gestures {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none;
+}
+@media (hover: none) {
+  .mfp-gestures { display: flex; }
+}
+.mfp-gesture { flex: 1; }
+.mfp-gesture.is-mid { flex: .8; }
+
+/* Feedback ripple for a double tap. */
+.mfp-ripple {
+  position: absolute;
+  top: 50%;
+  width: 46%;
+  height: 116%;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: none;
+  place-items: center;
+  pointer-events: none;
+  color: #fff;
+  font-weight: 800;
+  font-size: .75rem;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, .85);
+}
+.mfp-ripple.is-on { display: grid; animation: mfp-ripple-fade .55s ease forwards; }
+.mfp-ripple.is-left {
+  left: 0;
+  border-radius: 0 50% 50% 0;
+  background: radial-gradient(60% 50% at 22% 50%, rgba(255, 255, 255, .22), transparent 70%);
+}
+.mfp-ripple.is-right {
+  right: 0;
+  border-radius: 50% 0 0 50%;
+  background: radial-gradient(60% 50% at 78% 50%, rgba(255, 255, 255, .22), transparent 70%);
+}
+.mfp-ripple-inner { text-align: center; line-height: 1.4; }
+.mfp-ripple-inner svg { width: 26px; height: 26px; margin: 0 auto 2px; display: block; }
+
+@keyframes mfp-ripple-fade {
+  0%   { opacity: 0; }
+  18%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Brightness veil — a swipe on the left half dims the picture. There is
+   no way to touch the device backlight from a web page, so this is a
+   plain overlay; it is honest about only affecting the video. */
+.mfp-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s linear;
+}
+
+/* Transient readout for a brightness/volume swipe. */
+.mfp-swipe-hud {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .68);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  font-size: .8rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+.mfp-swipe-hud.is-on { display: flex; }
+.mfp-swipe-hud svg { width: 18px; height: 18px; }
+.mfp-swipe-meter {
+  width: 92px;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .25);
+  position: relative;
+}
+.mfp-swipe-meter i {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-radius: 3px;
+  background: #fff;
+}
+
+/* Press-and-hold = 2x speed, for as long as the finger stays down. */
+.mfp-speed-hud {
+  position: absolute;
+  left: 50%;
+  top: 12%;
+  transform: translateX(-50%);
+  z-index: 8;
+  display: none;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .7);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  pointer-events: none;
+}
+.mfp-speed-hud.is-on { display: flex; }
+
+
+/* ── Captions ───────────────────────────────────────────────────── */
+
+/* Cues are rendered by us (the TextTrack stays in "hidden" mode) so the
+   look is identical in every browser and survives the ffmpeg restarts
+   that a seek outside the encoded range triggers. */
+.mfp-captions {
+  position: absolute;
+  left: 50%;
+  bottom: 13%;
+  transform: translateX(-50%);
+  z-index: 4;
+  max-width: 82%;
+  text-align: center;
+  pointer-events: none;
+  transition: bottom var(--transition-slow, .3s ease);
+  display: none;
+}
+.mfp-captions.is-on { display: block; }
+
+.mfp-cue {
+  display: inline-block;
+  font-size: var(--mfp-cue-size, 1.15rem);
+  font-weight: 600;
+  line-height: 1.36;
+  color: var(--mfp-cue-color, #fff);
+  text-shadow:
+    0 2px 6px rgba(0, 0, 0, .95),
+    0 0 3px rgba(0, 0, 0, .9);
+  padding: 2px 8px;
+  white-space: pre-wrap;
+}
+.mfp-captions.has-box .mfp-cue {
+  background: rgba(0, 0, 0, .68);
+  border-radius: 5px;
+  text-shadow: none;
+}
+
+
+/* ── Menus (settings, tracks, source) ───────────────────────────── */
+
+.mfp-menu {
+  position: absolute;
+  right: 12px;
+  bottom: 58px;
+  z-index: 9;
+  max-height: min(62vh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(16, 16, 26, .96);
+  backdrop-filter: blur(22px);
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font-size: .82rem;
+  display: none;
+}
+.mfp-menu.is-open { display: block; }
+.mfp-menu.is-wide { width: 392px; }
+
+.mfp-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(255, 255, 255, .09);
+  position: sticky;
+  top: 0;
+  background: rgba(16, 16, 26, .97);
+  z-index: 1;
+}
+.mfp-menu-head svg { width: 15px; height: 15px; flex-shrink: 0; }
+.mfp-menu-head .mfp-menu-note {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.mfp-menu-back {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+.mfp-menu-back:hover { color: var(--text-primary); }
+
+.mfp-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  cursor: pointer;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background var(--transition);
+}
+.mfp-menu-item:hover { background: rgba(255, 255, 255, .07); }
+.mfp-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mfp-menu-item svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-secondary); }
+.mfp-menu-item .mfp-menu-val {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: .76rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.mfp-menu-item.is-sel { background: rgba(124, 58, 237, .16); color: #ded2ff; }
+.mfp-menu-tick { width: 14px; flex-shrink: 0; color: var(--accent); font-size: .8rem; }
+.mfp-menu-sep { height: 1px; background: rgba(255, 255, 255, .08); }
+
+.mfp-speedrow { display: flex; gap: 5px; padding: 9px 12px; flex-wrap: wrap; }
+.mfp-speedrow button {
+  font: inherit;
+  font-weight: 600;
+  font-size: .74rem;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.mfp-speedrow button:hover { background: rgba(255, 255, 255, .17); }
+.mfp-speedrow button.is-on { background: var(--accent); color: #fff; }
+
+
+/* ── Source picker rows ─────────────────────────────────────────── */
+
+.mfp-src {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 11px 14px;
+  cursor: pointer;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, .055);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background var(--transition);
+}
+.mfp-src:hover { background: rgba(255, 255, 255, .06); }
+.mfp-src.is-sel { background: rgba(124, 58, 237, .16); }
+.mfp-src.is-dead { opacity: .5; }
+.mfp-src-body { flex: 1; min-width: 0; }
+.mfp-src-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: .82rem;
+}
+.mfp-src-tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+
+.mfp-tag {
+  font-size: .64rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, .09);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.mfp-tag.is-hd   { background: rgba(124, 58, 237, .22); color: #cbb7ff; }
+.mfp-tag.is-lang { background: rgba(59, 130, 246, .2);  color: #9dc2ff; }
+.mfp-tag.is-sub  { background: rgba(34, 197, 94, .16);  color: #86e0a6; }
+.mfp-tag.is-dub  { background: rgba(245, 158, 11, .18); color: #f5cf87; }
+.mfp-tag.is-dead { background: rgba(239, 68, 68, .18);  color: #f5a3a3; }
+
+/* Measured reachability: four bars + the time to the first response.
+   Without it the list is a guess, which is the whole problem with the
+   two plain <select>s this replaces. */
+.mfp-health {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding-left: 10px;
+  flex-shrink: 0;
+  font-size: .68rem;
+}
+.mfp-health-bars { display: flex; gap: 2px; align-items: flex-end; height: 13px; }
+.mfp-health-bars i { width: 3px; border-radius: 1px; background: rgba(255, 255, 255, .22); }
+.mfp-health-bars i:nth-child(1) { height: 4px; }
+.mfp-health-bars i:nth-child(2) { height: 7px; }
+.mfp-health-bars i:nth-child(3) { height: 10px; }
+.mfp-health-bars i:nth-child(4) { height: 13px; }
+.mfp-health.is-good i { background: var(--success); }
+.mfp-health.is-ok   i:nth-child(-n+3) { background: var(--warning); }
+.mfp-health.is-slow i:nth-child(-n+2) { background: var(--warning); }
+.mfp-health.is-bad  i:nth-child(1)    { background: var(--error); }
+.mfp-health span { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.mfp-src-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  font-size: .74rem;
+}
+.mfp-src-foot button {
+  margin-left: auto;
+  background: rgba(255, 255, 255, .09);
+  border: 1px solid rgba(255, 255, 255, .12);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 11px;
+  font: inherit;
+  font-size: .74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.mfp-src-foot button:hover { background: rgba(255, 255, 255, .18); }
+
+.mfp-mini-spin {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, .2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: spin .9s linear infinite;
+}
+
+
+/* ── Overlays: spinner, error, resume, switching, next up ───────── */
+
+.mfp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 13px;
+  background: rgba(0, 0, 0, .74);
+  color: #fff;
+  text-align: center;
+  padding: 20px;
+}
+.mfp-overlay.is-on { display: flex; }
+
+.mfp-spinner-ring {
+  width: 42px;
+  height: 42px;
+  border: 3px solid rgba(255, 255, 255, .13);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+.mfp-overlay-msg { font-size: .82rem; color: rgba(255, 255, 255, .6); max-width: 420px; }
+.mfp-overlay-title { font-size: .95rem; font-weight: 700; }
+.mfp-overlay-note { font-size: .72rem; color: var(--text-muted); }
+
+.mfp-btn {
+  padding: 9px 20px;
+  background: var(--accent);
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: background var(--transition);
+}
+.mfp-btn:hover { background: var(--accent-hover); }
+.mfp-btn svg { width: 14px; height: 14px; }
+
+.mfp-btn.is-ghost {
+  background: rgba(255, 255, 255, .09);
+  border: 1px solid rgba(255, 255, 255, .14);
+}
+.mfp-btn.is-ghost:hover { background: rgba(255, 255, 255, .18); }
+
+.mfp-btn-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+/* Errors are a card, not a red wall of text: they always offer a way on. */
+.mfp-error-card {
+  width: min(360px, 90%);
+  background: rgba(16, 16, 26, .96);
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  padding: 18px;
+}
+.mfp-error-card .mfp-overlay-msg { margin: 7px 0 0; color: var(--text-secondary); line-height: 1.5; }
+.mfp-error-card .mfp-btn-row { margin-top: 15px; }
+
+/* Floating actions above the rail. */
+.mfp-float {
+  position: absolute;
+  right: 14px;
+  bottom: 62px;
+  z-index: 7;
+  display: none;
+}
+.mfp-float.is-on { display: block; }
+
+.mfp-skip-btn {
+  background: rgba(255, 255, 255, .92);
+  color: #101018;
+  border: none;
+  border-radius: 8px;
+  padding: 11px 18px;
+  font: inherit;
+  font-weight: 700;
+  font-size: .8rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  transition: background var(--transition);
+}
+.mfp-skip-btn:hover { background: #fff; }
+
+.mfp-nextup {
+  width: 300px;
+  display: flex;
+  gap: 12px;
+  position: relative;
+  background: rgba(16, 16, 26, .94);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+}
+.mfp-nextup-art {
+  width: 86px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+  background: #0b0b14 center/cover no-repeat;
+}
+.mfp-nextup-kicker {
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.mfp-nextup-name { font-size: .8rem; font-weight: 700; margin: 3px 0 8px; line-height: 1.3; }
+.mfp-nextup-count {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: .68rem;
+  color: var(--text-secondary);
+}
+.mfp-nextup-close {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: .7rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+
+/* ── Bottom sheet (touch) ───────────────────────────────────────── */
+
+/* On a phone a menu anchored to a 32px button is a coin toss to hit, so
+   the same menu markup is presented as a sheet instead. Only the
+   positioning changes — the content is shared. */
+@media (hover: none), (max-width: 640px) {
+  .mfp-menu {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: auto !important;
+    max-height: 72vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding-top: 8px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .mfp-menu.is-open { animation: mfp-sheet-up .22s ease; }
+  .mfp-menu::before {
+    content: "";
+    display: block;
+    width: 38px;
+    height: 4px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, .28);
+    margin: 0 auto 8px;
+  }
+  .mfp-menu-item,
+  .mfp-src { padding-top: 13px; padding-bottom: 13px; }
+  .mfp-menu-head { top: -8px; }
+}
+
+@keyframes mfp-sheet-up {
+  from { transform: translateY(18px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+
+/* ── Responsive rail ────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .mfp-lbl.is-optional { display: none; }
+  .mfp-time { margin: 0 6px; font-size: .72rem; }
+}
+
+@media (max-width: 720px) {
+  /* A phone gets the whole screen. A 16:9 card floating in the middle of a
+     portrait display wastes most of it, and it leaves no room for the
+     bottom sheets -- they would be clipped by the card instead of resting
+     on the bottom edge. The video letterboxes inside, as it does in every
+     phone player. (:not(.sp-embed) keeps the SyncPlay page's inline stage
+     out of this: there the player is one block among others.) */
+  #playerContainer.mfp:not(.sp-embed) {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    aspect-ratio: auto;
+    border-radius: 0;
+  }
+
+  /* Labelled toggles move into the settings sheet; keeping them here
+     would wrap the rail onto a second line and cover the picture. */
+  .mfp-lbl { display: none; }
+  .mfp-volwrap { display: none; }
+  .mfp-bar { padding: 0 8px 6px; }
+  .mfp-icon-btn { width: 34px; height: 34px; }
+  .mfp-icon-btn svg { width: 19px; height: 19px; }
+  .mfp-title { font-size: .82rem; }
+  .mfp-subtitle { font-size: .68rem; }
+  .mfp-encoder { display: none; }
+  #playerSeekWrap { height: 24px; }
+  .mfp-seek-track, .mfp-seek-buf, .mfp-seek-fill { height: 5px; }
+  .mfp-seek-thumb { width: 17px; height: 17px; opacity: 1; }
+  .mfp-cue { font-size: var(--mfp-cue-size-sm, .95rem); }
+  .mfp-nextup { width: min(300px, calc(100vw - 40px)); }
+}
+
+/* On a touch screen the centre cluster already carries play and the four
+   jumps, so the rail drops its copies and keeps the row short. */
+@media (hover: none) {
+  .mfp-icon-btn.is-transport { display: none; }
+}
+
+/* Very narrow phones: the +-30s pair drops out of the centre cluster and
+   stays reachable through the settings sheet only. */
+@media (max-width: 380px) {
+  .mfp-cbtn.is-30 { display: none; }
+  .mfp-center { gap: 12px; }
+}
+
+/* Landscape phone: almost no vertical room, so the rail gets tighter and
+   the centre cluster shrinks rather than covering the subtitles. */
+@media (hover: none) and (orientation: landscape) and (max-height: 460px) {
+  .mfp-cbtn { width: 40px; height: 40px; }
+  .mfp-cbtn.is-main { width: 54px; height: 54px; }
+  .mfp-top { padding: 8px 12px; }
+  .mfp-captions { bottom: 16%; }
+}
+
+
+/* ── Fullscreen ─────────────────────────────────────────────────── */
+
+#playerContainer.mfp:fullscreen,
+#playerContainer.mfp:-webkit-full-screen {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+#playerContainer.mfp:fullscreen .mfp-bar { padding: 0 26px 18px; }
+#playerContainer.mfp:fullscreen .mfp-top { padding: 18px 26px; }
+
+
+/* ── SyncPlay embed ─────────────────────────────────────────────── */
+
+/* In a SyncPlay room the container is re-parented into the page (see
+   syncplay_page.js::_embedPlayer). Seeking is the room host's job, so
+   the seek bar and the play button are locked by syncplay.css; the
+   source picker has to go too, because switching the source would
+   desync everyone else. */
+#playerContainer.mfp.sp-embed { aspect-ratio: 16 / 9; max-height: none; }
+
+body.sp-locked #playerSourceBadge,
+body.sp-locked .mfp-cbtn.is-skip { pointer-events: none; opacity: .45; }
+
+
+/* ── Reduced motion ─────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .mfp-top, .mfp-bar, .mfp-center, .mfp-scrim, .mfp-captions,
+  .mfp-cbtn, .mfp-icon-btn, .mfp-menu.is-open { transition: none; animation: none; }
+  .mfp-ripple.is-on { animation: none; opacity: 1; }
+}

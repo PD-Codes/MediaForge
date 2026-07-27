@@ -3650,6 +3650,11 @@ USER_UI_PREF_KEYS = {
     "theme_pack": _valid_theme_pack,
     "theme_mode": lambda v: v in ("dark", "light"),
     "accent": lambda v: bool(_HEX_COLOR_RE.match(v)),
+    # Library layout. Same reasoning as the appearance keys: a browser-local
+    # choice is one the user loses on their next device, and the Library
+    # silently fell back to the poster grid every single visit.
+    "library_view": lambda v: v in ("grid", "list"),
+    "library_per_page": lambda v: v in ("10", "20", "50", "100"),
 }
 
 

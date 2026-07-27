@@ -2167,8 +2167,34 @@ async function streamEpisode(episodeUrl, title, langOptions) {
       if (p && p.percent > 3 && !p.watched) startPos = p.position || 0;
     }
   } catch (e) { /* resume is best-effort */ }
-  openStreamSource(episodeUrl, title, provider, language, startPos, langs, providers);
+  // The full {language: [hoster]} matrix powers the player's source picker;
+  // `providers` alone only covers the language that happens to be selected
+  // on this page right now.
+  openStreamSource(episodeUrl, title, provider, language, startPos, langs, providers,
+                   availableProviders || null);
 }
+
+// The player asks the page what comes next (see player.js::_resolveNext).
+// Episode rows carry their URL in the checkbox value, so the next one is the
+// next row in the same season body.
+window.mfPlayerResolveNext = function (current) {
+  if (!current || !current.url) return null;
+  const boxes = Array.from(document.querySelectorAll("#seasonAccordion .episode-item input[type=checkbox][value]"));
+  const i = boxes.findIndex((b) => b.value === current.url);
+  if (i < 0 || i + 1 >= boxes.length) return null;
+  const next = boxes[i + 1];
+  // Stay inside the same season: the last episode of season 1 does not
+  // roll into season 2 on its own.
+  if (next.closest(".season-body") !== boxes[i].closest(".season-body")) return null;
+  const row = next.closest(".episode-item");
+  const titleEl = row ? row.querySelector(".ep-title") : null;
+  return {
+    url: next.value,
+    title: titleEl ? titleEl.textContent : "",
+    language: current.language,
+    provider: current.provider,
+  };
+};
 
 async function startDownload(all) {
   const episodes = all ? getAllEpisodeUrls() : getSelectedEpisodeUrls();

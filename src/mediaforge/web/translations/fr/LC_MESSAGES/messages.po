@@ -5064,3 +5064,48 @@ msgstr "Télécharger les sous-titres"
 
 msgid "Every subtitle track the source offers is downloaded and muxed into the video file as a selectable track. Only affects sources that provide real subtitle tracks — burned-in subtitles are part of the picture."
 msgstr "Chaque piste de sous-titres proposée par la source est téléchargée et intégrée au fichier vidéo comme piste sélectionnable. Ne concerne que les sources fournissant de vraies pistes de sous-titres — les sous-titres incrustés font partie de l’image."
+
+# Player rework 2026-07: overlay controls, subtitle/audio/quality
+# pickers, touch gestures and the Direct Play source picker.
+
+msgid "Back 30 seconds"
+msgstr ""
+
+msgid "Back 10 seconds"
+msgstr ""
+
+msgid "Forward 10 seconds"
+msgstr ""
+
+msgid "Forward 30 seconds"
+msgstr ""
+
+msgid "Skip intro"
+msgstr ""
+
+msgid "Up next"
+msgstr ""
+
+msgid "Play now"
+msgstr ""
+
+msgid "Seek"
+msgstr ""
+
+msgid "Next episode"
+msgstr ""
+
+msgid "Volume"
+msgstr ""
+
+msgid "CC"
+msgstr ""
+
+msgid "Picture in picture"
+msgstr ""
+
+msgid "Playback failed"
+msgstr ""
+
+msgid "off"
+msgstr ""

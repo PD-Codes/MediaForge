@@ -971,6 +971,7 @@ in your own page is harmless but no longer needed.
 | Filter chip | `.mf-chip` (+ `.mf-chip-static` for one without an ✕) / `.mf-chip-remove` | `forms.css` | The "active filter" pills above a result list. Delegate the click on the container and read an index/id off the button — do not build an inline `onclick` |
 | Pagination | `.mf-pagination` / `-btn` / `-page` (+ `.active`) / `-ellipsis` / `-jump` | `forms.css` | First/prev, numbered pages with ellipses, next/last and a "jump to page" box. Give every clickable element a `data-page` attribute and delegate the click on the container, since the pager is re-rendered on each page change |
 | Pagination bar | `.mf-pagination-bar` (wrapper, supports `[hidden]`) / `.mf-pagination-count` / `.mf-pagination-perpage` | `mf_components.css` | The row a `.mf-pagination` pager usually sits in: a "Showing X–Y of Z" count on one side, the pager in the middle, and a results-per-page `<select>` on the other — stacks to one centered column below 480px. Client-side pagination (slice an already-fetched array, e.g. Library) and server-paged tables (History) both use it; see `libRenderPagination()` in `library.js` for the reference implementation, including a 10/20/50/100 per-page `<select>` persisted to `localStorage` |
+| Player controls | `.mfp-icon-btn` / `.mfp-lbl` / `.mfp-menu` (+ `.is-open`, `.is-wide`) / `.mfp-menu-item` / `.mfp-src` / `.mfp-tag` / `.mfp-health` | `player.css` | The overlay control vocabulary of the web player. Loaded globally (`base.html`), so a module that opens the player or draws a player-like surface gets them for free. `.mfp-menu` doubles as a bottom sheet on touch screens without any markup change — only the positioning switches. See "The web player (MFPlayer)" below for the JS side |
 | Buttons | `.btn` + `.btn-primary`/`-secondary`/`-ghost`/`-danger`, `.btn-sm`/`-lg`, `.btn-icon` | `buttons.css` | |
 | Settings row layout | `.settings-section` (card) / `.settings-row` / `-left`/`-right`/`-label`/`-desc` | `settings_rows.css` (needs its own `<link>`) | The label-left/control-right row every Settings page is built from |
 | Empty state | `.empty-state` / `-icon` / `-title` / `-desc` | `feedback.css` | Centered icon+title+description for "nothing here yet" |
@@ -1114,6 +1115,69 @@ knowing beyond them:
 - Every colour comes from the `variables.css` tokens, so a user's theme
   pack restyles your page for free — do not hardcode hex values next to
   them.
+
+### The web player (MFPlayer)
+
+`web/static/player.js` + `player.css` are the in-browser player. Both are
+loaded globally by `base.html` and the modal markup lives there too, so any
+page — including yours — can start playback without shipping a player.
+
+```js
+// A file from the library (an absolute path inside a configured root).
+MFPlayer.open(path, "Title", startSeconds, { subtitle: "S01E04" });
+
+// Direct Play: stream straight from a provider, no download.
+// The last argument is the full {language: [hoster, ...]} matrix, i.e. the
+// body of GET /api/providers?url=... — it is what fills the source picker.
+MFPlayer.openSource(episodeUrl, "Title", "VOE", "German Dub", 0, null, null, matrix);
+
+MFPlayer.close();
+MFPlayer.skip(-30);                 // seconds, negative = backwards
+MFPlayer.getState();                // {open, position, duration, paused, ...}
+MFPlayer.setChapters([{ start: 0, end: 90, title: "Intro" }]);
+MFPlayer.setMarkers([{ start: 20, end: 110, kind: "intro" }]);
+MFPlayer.setNextUp({ path: "/media/next.mkv", title: "Episode 5" });
+```
+
+**Tell the player what comes next.** The player has no idea what a "next
+episode" is — the page that opened it does. Register a resolver and both the
+"Up next" card and the `N` key work:
+
+```js
+// Called with {path} for a library file, or {url, language, provider} for
+// Direct Play. Return the same shape, or null when there is nothing after.
+window.mfPlayerResolveNext = function (current) {
+  const next = myList[myList.findIndex((e) => e.path === current.path) + 1];
+  return next ? { path: next.path, title: next.title } : null;
+};
+```
+
+Only one resolver can be active at a time, so set it on your own page (not
+globally from a module that runs everywhere) and let the built-in pages keep
+theirs.
+
+**Endpoints the player uses** — useful if you are building something adjacent
+rather than reusing the player itself:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/stream/start` | start a transcode of a library file. Accepts `audio_index`, `quality` (`auto`/`1080`/`720`/`480`/`360`) and `burn_subtitle`; answers with `audio_tracks`, `subtitle_tracks`, `qualities` and `chapters` |
+| `POST /api/stream/start-source` | the same for a provider URL |
+| `POST /api/stream/start-proxy` | pass the provider's own HLS through without FFmpeg |
+| `GET /api/stream/subtitle?path=&track=` | one embedded text track as WebVTT |
+| `GET /api/stream/thumbs?path=` | seek-preview sprite sheets (built in the background; answers `{pending:true}` until ready) |
+| `GET /api/stream/markers?url=` | intro/outro markers for an episode |
+| `POST /api/stream/probe-source` | measure one hoster: reachable, and how fast |
+
+Two things to know before you build on this:
+
+- **Audio track, quality and burned-in subtitles restart FFmpeg.** They are
+  encoder settings, not switches in a running output. The player keeps the
+  position across the restart; anything you build on top has to expect a
+  short gap.
+- **`path` is validated against the library roots** on every one of these
+  endpoints. A path outside them answers 404 — do not try to hand the player
+  an arbitrary file, it is a deliberate limit and not a bug to route around.
 
 ### Charts (MFCharts)
 

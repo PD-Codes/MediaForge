@@ -33,6 +33,7 @@
      Every selector in it is .mf-* scoped, so nothing else changes; the extra
      per-page <link>s that still exist are harmless duplicates. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='mf_components.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='player.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='autosync_filter.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='selfupdate.css') }}" />
@@ -987,6 +988,13 @@
         } catch (e) { }
       }, 500);
     }
+
+    // Shared with the rest of the app (and with modules): any per-account UI
+    // preference whitelisted in db.USER_UI_PREF_KEYS can be saved through the
+    // same debounced, fire-and-forget path the appearance settings use.
+    // static/library.js stores its grid/list choice this way.
+    window.mfSaveUserPref = _persistAppearance;
+
     // persist=false is used by the restore paths below: replaying a stored
     // value must not write it straight back.
     function applyAccent(hex, persist) {
@@ -1447,111 +1455,236 @@
 
   <div id="toast" class="toast"></div>
 
-  <!-- ===== Player Modal ===== -->
+  <!-- ===== Player Modal =====
+       Every control lives inside #playerVideoWrap and floats above the
+       picture, so the video keeps the full height of the container. The ids
+       playerOverlay / playerContainer / playerVideoWrap / playerVideo /
+       playerSeekWrap / playerPlayBtn are load-bearing: syncplay_page.js
+       re-parents the container and syncplay.css locks those two controls
+       inside a room. -->
   <div class="queue-overlay" id="playerOverlay" style="display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.92);" onclick="if(event.target===this)closePlayer()">
-    <div id="playerContainer" style="position:relative;width:min(1200px,96vw);max-height:96vh;background:#000;border-radius:10px;overflow:hidden;box-shadow:0 25px 80px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div id="playerContainer" class="mfp">
 
-      <!-- Header -->
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:rgba(15,15,15,0.95);flex-shrink:0;">
-        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-          <svg style="width:14px;height:14px;flex-shrink:0;color:var(--accent)" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
-          <span id="playerTitle" style="font-size:0.85rem;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw;"></span>
+      <div id="playerVideoWrap" class="mfp-stage">
+        <video id="playerVideo" class="mfp-video" playsinline preload="auto"></video>
+
+        <!-- Swipe-dimmer (a web page cannot touch the device backlight, so
+             "brightness" is an overlay on the picture only). -->
+        <div class="mfp-dim" id="playerDim"></div>
+        <div class="mfp-scrim" id="playerScrim"></div>
+
+        <!-- Rendered subtitle cues (the TextTrack itself stays hidden). -->
+        <div class="mfp-captions" id="playerCaptions" aria-live="off"></div>
+
+        <!-- Touch gesture zones: double tap = -10 s / +10 s, hold = 2x. -->
+        <div class="mfp-gestures" id="playerGestures" aria-hidden="true">
+          <div class="mfp-gesture" data-zone="left"></div>
+          <div class="mfp-gesture is-mid" data-zone="mid"></div>
+          <div class="mfp-gesture" data-zone="right"></div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-          <span id="playerEncoderInfo" style="font-size:0.65rem;color:rgba(255,255,255,0.35);letter-spacing:0.04em;"></span>
-          <button onclick="closePlayer()" style="background:rgba(255,255,255,0.08);border:none;color:#fff;width:26px;height:26px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="{{ _('Close (Esc)') }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:13px;height:13px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <div class="mfp-ripple is-left" id="playerRippleL" aria-hidden="true">
+          <div class="mfp-ripple-inner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19l-9-7 9-7v14zM22 19l-9-7 9-7v14z"/></svg>
+            <span id="playerRippleLText">10</span>
+          </div>
+        </div>
+        <div class="mfp-ripple is-right" id="playerRippleR" aria-hidden="true">
+          <div class="mfp-ripple-inner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5l9 7-9 7V5zM2 5l9 7-9 7V5z"/></svg>
+            <span id="playerRippleRText">10</span>
+          </div>
+        </div>
+        <div class="mfp-swipe-hud" id="playerSwipeHud" aria-hidden="true">
+          <svg id="playerSwipeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></svg>
+          <div class="mfp-swipe-meter"><i id="playerSwipeFill"></i></div>
+          <span id="playerSwipeVal">100%</span>
+        </div>
+        <div class="mfp-speed-hud" id="playerSpeedHud" aria-hidden="true">2x &nbsp;&#9654;&#9654;</div>
+
+        <!-- ── Top bar ── -->
+        <div class="mfp-top" id="playerTopBar">
+          <div class="mfp-title-wrap">
+            <div class="mfp-title" id="playerTitle"></div>
+            <div class="mfp-subtitle" id="playerSubtitle" style="display:none;"></div>
+          </div>
+          <button class="mfp-srcbadge" id="playerSourceBadge" style="display:none;" onclick="_playerToggleMenu('source')" aria-haspopup="true" aria-expanded="false">
+            <span class="mfp-live"></span>
+            <span id="playerSourceBadgeText"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="mfp-top-right">
+            <span class="mfp-encoder" id="playerEncoderInfo"></span>
+            <button class="mfp-icon-btn" onclick="closePlayer()" title="{{ _('Close (Esc)') }}" aria-label="{{ _('Close (Esc)') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Centre cluster (touch screens) ── -->
+        <div class="mfp-center" id="playerCenter">
+          <button class="mfp-cbtn is-30 is-skip" onclick="_playerSkip(-30)" title="{{ _('Back 30 seconds') }}" aria-label="{{ _('Back 30 seconds') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5A9 9 0 1 1 12 21"/><path d="M3 4v5h5"/></svg>
+            <span class="mfp-skip-n">30</span>
+          </button>
+          <button class="mfp-cbtn is-skip" onclick="_playerSkip(-10)" title="{{ _('Back 10 seconds') }}" aria-label="{{ _('Back 10 seconds') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5A9 9 0 1 1 12 21"/><path d="M3 4v5h5"/></svg>
+            <span class="mfp-skip-n">10</span>
+          </button>
+          <button class="mfp-cbtn is-main" id="playerCenterPlay" onclick="_playerTogglePlay()" title="{{ _('Play/Pause (Space)') }}" aria-label="{{ _('Play/Pause (Space)') }}">
+            <svg id="playerCenterPlayIcon" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
+            <svg id="playerCenterPauseIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          </button>
+          <button class="mfp-cbtn is-skip" onclick="_playerSkip(10)" title="{{ _('Forward 10 seconds') }}" aria-label="{{ _('Forward 10 seconds') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:scaleX(-1)"><path d="M3.5 8.5A9 9 0 1 1 12 21"/><path d="M3 4v5h5"/></svg>
+            <span class="mfp-skip-n">10</span>
+          </button>
+          <button class="mfp-cbtn is-30 is-skip" onclick="_playerSkip(30)" title="{{ _('Forward 30 seconds') }}" aria-label="{{ _('Forward 30 seconds') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:scaleX(-1)"><path d="M3.5 8.5A9 9 0 1 1 12 21"/><path d="M3 4v5h5"/></svg>
+            <span class="mfp-skip-n">30</span>
           </button>
         </div>
-      </div>
 
-      <!-- Source-stream controls: language + provider (shown only when streaming from source) -->
-      <div id="playerSourceBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 14px;background:rgba(15,15,15,0.95);border-top:1px solid rgba(255,255,255,0.06);flex-shrink:0;">
-        <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:rgba(255,255,255,0.6);">
-          {{ _('Language') }}
-          <select id="playerLangSelect" onchange="_playerChangeSource()" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.14);border-radius:5px;padding:3px 6px;font-size:0.74rem;"></select>
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:rgba(255,255,255,0.6);">
-          {{ _('Provider') }}
-          <select id="playerProviderSelect" onchange="_playerChangeSource()" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.14);border-radius:5px;padding:3px 6px;font-size:0.74rem;"></select>
-        </label>
-      </div>
-
-      <!-- Video area -->
-      <div id="playerVideoWrap" style="position:relative;flex:1;min-height:0;background:#000;">
-        <video id="playerVideo" playsinline preload="auto"
-          style="width:100%;height:100%;display:block;object-fit:contain;background:#000;cursor:pointer;"></video>
-
-        <!-- Single spinner (transcoding start + buffering) -->
-        <div id="playerSpinner" style="display:flex;position:absolute;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);flex-direction:column;gap:12px;pointer-events:none;z-index:5;">
-          <div style="width:42px;height:42px;border:3px solid rgba(255,255,255,0.12);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-          <span id="playerSpinnerMsg" style="font-size:0.8rem;color:rgba(255,255,255,0.5);">{{ _('Starting transcoder...') }}</span>
+        <!-- ── Floating actions ── -->
+        <div class="mfp-float" id="playerSkipFloat">
+          <button class="mfp-skip-btn" id="playerSkipMarkerBtn" onclick="_playerSkipMarker()">{{ _('Skip intro') }}</button>
+        </div>
+        <div class="mfp-float" id="playerNextFloat">
+          <div class="mfp-nextup">
+            <span class="mfp-nextup-count" id="playerNextCount"></span>
+            <div class="mfp-nextup-art" id="playerNextArt"></div>
+            <div>
+              <div class="mfp-nextup-kicker">{{ _('Up next') }}</div>
+              <div class="mfp-nextup-name" id="playerNextName"></div>
+              <button class="mfp-btn" style="padding:6px 12px;font-size:0.75rem;" onclick="_playerPlayNext()">{{ _('Play now') }}</button>
+            </div>
+            <button class="mfp-nextup-close" onclick="_playerCancelNext()">{{ _('Cancel') }}</button>
+          </div>
         </div>
 
-        <!-- Error overlay -->
-        <div id="playerError" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.88);flex-direction:column;gap:12px;z-index:6;">
-          <svg style="width:34px;height:34px;color:#ef4444" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span id="playerErrorMsg" style="font-size:0.85rem;color:#ef4444;text-align:center;max-width:380px;padding:0 20px;"></span>
-          <button onclick="closePlayer()" style="margin-top:4px;padding:6px 18px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:#fff;cursor:pointer;font-size:0.8rem;">{{ _('Close') }}</button>
+        <!-- ── Bottom rail ── -->
+        <div class="mfp-bar" id="playerControls">
+          <div id="playerSeekWrap" role="slider" tabindex="0" aria-label="{{ _('Seek') }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="mfp-seek-track"></div>
+            <div class="mfp-seek-buf"  id="playerSeekBuf"></div>
+            <div class="mfp-seek-fill" id="playerSeekFill"></div>
+            <div class="mfp-seek-thumb" id="playerSeekThumb"></div>
+          </div>
+          <div class="mfp-preview" id="playerPreview">
+            <div class="mfp-preview-img" id="playerPreviewImg"></div>
+            <div class="mfp-preview-time" id="playerHoverTime"></div>
+            <div class="mfp-preview-chapter" id="playerPreviewChapter" style="display:none;"></div>
+          </div>
+
+          <div class="mfp-row">
+            <button class="mfp-icon-btn is-transport" onclick="_playerSkip(-30)" title="{{ _('Back 30 seconds') }}" aria-label="{{ _('Back 30 seconds') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5A9 9 0 1 1 12 21"/><path d="M3 4v5h5"/></svg>
+              <span class="mfp-skip-n">30</span>
+            </button>
+            <button class="mfp-icon-btn is-transport" onclick="_playerSkip(-10)" title="{{ _('Back 10 seconds') }}" aria-label="{{ _('Back 10 seconds') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5A9 9 0 1 1 12 21"/><path d="M3 4v5h5"/></svg>
+              <span class="mfp-skip-n">10</span>
+            </button>
+            <button class="mfp-icon-btn is-transport" id="playerPlayBtn" title="{{ _('Play/Pause (Space)') }}" aria-label="{{ _('Play/Pause (Space)') }}">
+              <svg id="playerPlayIcon"  viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
+              <svg id="playerPauseIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+            </button>
+            <button class="mfp-icon-btn is-transport" onclick="_playerSkip(10)" title="{{ _('Forward 10 seconds') }}" aria-label="{{ _('Forward 10 seconds') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:scaleX(-1)"><path d="M3.5 8.5A9 9 0 1 1 12 21"/><path d="M3 4v5h5"/></svg>
+              <span class="mfp-skip-n">10</span>
+            </button>
+            <button class="mfp-icon-btn is-transport" onclick="_playerSkip(30)" title="{{ _('Forward 30 seconds') }}" aria-label="{{ _('Forward 30 seconds') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:scaleX(-1)"><path d="M3.5 8.5A9 9 0 1 1 12 21"/><path d="M3 4v5h5"/></svg>
+              <span class="mfp-skip-n">30</span>
+            </button>
+            <button class="mfp-icon-btn" id="playerNextBtn" style="display:none;" onclick="_playerPlayNext()" title="{{ _('Next episode') }}" aria-label="{{ _('Next episode') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8V4z"/><path d="M19 5v14"/></svg>
+            </button>
+
+            <div class="mfp-volwrap">
+              <button class="mfp-icon-btn" id="playerMuteBtn" onclick="_playerToggleMute()" title="{{ _('Mute (M)') }}" aria-label="{{ _('Mute (M)') }}">
+                <svg id="playerVolIcon"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                <svg id="playerMuteIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+              </button>
+              <div class="mfp-volslot">
+                <input id="playerVolSlider" class="mfp-volslider" type="range" min="0" max="1" step="0.02" value="1" aria-label="{{ _('Volume') }}">
+              </div>
+            </div>
+
+            <span class="mfp-time" id="playerTimeText"><b>0:00</b> / --:--</span>
+            <div class="mfp-spacer"></div>
+
+            <button class="mfp-lbl" id="playerAudioLbl" style="display:none;" onclick="_playerToggleMenu('audio')" aria-haspopup="true"></button>
+            <button class="mfp-lbl" id="playerSubLbl" onclick="_playerToggleMenu('subs')" aria-haspopup="true">{{ _('CC') }} <small>{{ _('off') }}</small></button>
+            <button class="mfp-lbl is-optional" id="playerSpeedLbl" onclick="_playerToggleMenu('speed')" aria-haspopup="true">1&times;</button>
+            <button class="mfp-lbl" id="playerQualityLbl" onclick="_playerToggleMenu('quality')" aria-haspopup="true"></button>
+
+            <button class="mfp-icon-btn" id="playerSettingsBtn" onclick="_playerToggleMenu('settings')" title="{{ _('Settings') }}" aria-label="{{ _('Settings') }}" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <button class="mfp-icon-btn" id="playerPipBtn" onclick="_playerTogglePip()" title="{{ _('Picture in picture') }}" aria-label="{{ _('Picture in picture') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="12" width="8" height="6" rx="1" fill="currentColor"/></svg>
+            </button>
+            <button class="mfp-icon-btn" onclick="_playerFullscreen()" title="{{ _('Fullscreen (F)') }}" aria-label="{{ _('Fullscreen (F)') }}">
+              <svg id="playerFsIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
+              <svg id="playerFsExitIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5"/></svg>
+            </button>
+          </div>
         </div>
 
-        <!-- Resume / start-over choice -->
-        <div id="playerResumeChoice" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.88);flex-direction:column;gap:16px;z-index:7;">
-          <span style="font-size:0.95rem;color:#fff;font-weight:600;">{{ _('Continue watching?') }}</span>
-          <span id="playerResumeAt" style="font-size:0.8rem;color:rgba(255,255,255,0.6);"></span>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;padding:0 16px;">
-            <button id="playerResumeBtn" onclick="_playerResume()" style="padding:9px 22px;background:var(--accent);border:none;border-radius:7px;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;display:flex;align-items:center;gap:7px;">
-              <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <!-- Menus are filled by player.js so quality/audio/subtitle lists can
+             follow the actual media instead of being hardcoded here. -->
+        <div class="mfp-menu" id="playerMenu" role="menu"></div>
+
+        <!-- ── Overlays ── -->
+        <div class="mfp-overlay is-on" id="playerSpinner">
+          <div class="mfp-spinner-ring"></div>
+          <span class="mfp-overlay-msg" id="playerSpinnerMsg">{{ _('Starting transcoder...') }}</span>
+        </div>
+
+        <div class="mfp-overlay" id="playerError">
+          <div class="mfp-error-card">
+            <div class="mfp-overlay-title" id="playerErrorTitle">{{ _('Playback failed') }}</div>
+            <div class="mfp-overlay-msg" id="playerErrorMsg"></div>
+            <div class="mfp-btn-row" id="playerErrorActions">
+              <button class="mfp-btn is-ghost" onclick="closePlayer()">{{ _('Close') }}</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mfp-overlay" id="playerResumeChoice">
+          <span class="mfp-overlay-title">{{ _('Continue watching?') }}</span>
+          <span class="mfp-overlay-msg" id="playerResumeAt"></span>
+          <div class="mfp-btn-row">
+            <button class="mfp-btn" id="playerResumeBtn" onclick="_playerResume()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               <span id="playerResumeLabel">{{ _('Resume') }}</span>
             </button>
-            <button onclick="_playerStartOver()" style="padding:9px 22px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.14);border-radius:7px;color:#fff;cursor:pointer;font-size:0.85rem;display:flex;align-items:center;gap:7px;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:14px;height:14px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            <button class="mfp-btn is-ghost" onclick="_playerStartOver()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
               {{ _('Start over') }}
             </button>
           </div>
         </div>
+
+        <div class="mfp-overlay" id="playerSwitching">
+          <div class="mfp-spinner-ring"></div>
+          <div class="mfp-overlay-title" id="playerSwitchTitle"></div>
+          <div class="mfp-overlay-msg" id="playerSwitchSub"></div>
+          <div class="mfp-overlay-note" id="playerSwitchNote"></div>
+        </div>
       </div>
 
-      <!-- Custom controls -->
-      <div id="playerControls" style="flex-shrink:0;display:flex;flex-direction:column;background:rgba(10,10,10,0.97);padding:8px 14px 10px;">
-
-        <!-- Seekbar -->
-        <div id="playerSeekWrap" style="position:relative;height:20px;display:flex;align-items:center;cursor:pointer;margin-bottom:6px;">
-          <div style="position:absolute;left:0;right:0;height:4px;background:rgba(255,255,255,0.15);border-radius:2px;"></div>
-          <div id="playerSeekBuf"  style="position:absolute;left:0;width:0%;height:4px;background:rgba(255,255,255,0.28);border-radius:2px;pointer-events:none;"></div>
-          <div id="playerSeekFill" style="position:absolute;left:0;width:0%;height:4px;background:var(--accent,#e05);border-radius:2px;pointer-events:none;"></div>
-          <div id="playerSeekThumb" style="position:absolute;left:0;width:13px;height:13px;background:#fff;border-radius:50%;transform:translateX(-50%);box-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none;opacity:0;transition:opacity .15s;"></div>
-          <div id="playerHoverTime" style="position:absolute;bottom:22px;background:rgba(0,0,0,0.8);color:#fff;font-size:11px;padding:2px 7px;border-radius:4px;pointer-events:none;display:none;white-space:nowrap;transform:translateX(-50%);"></div>
-        </div>
-
-        <!-- Buttons -->
-        <div style="display:flex;align-items:center;gap:10px;">
-          <button id="playerPlayBtn" style="background:none;border:none;color:#fff;cursor:pointer;padding:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;" title="{{ _('Play/Pause (Space)') }}">
-            <svg id="playerPlayIcon"  viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px;"><polygon points="5,3 19,12 5,21"/></svg>
-            <svg id="playerPauseIcon" viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px;display:none;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          </button>
-
-          <button id="playerMuteBtn" style="background:none;border:none;color:#fff;cursor:pointer;padding:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;flex-shrink:0;" title="{{ _('Mute (M)') }}">
-            <svg id="playerVolIcon"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:17px;height:17px;"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-            <svg id="playerMuteIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:17px;height:17px;display:none;"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-          </button>
-          <input id="playerVolSlider" type="range" min="0" max="1" step="0.02" value="1"
-            style="width:68px;accent-color:var(--accent,#e05);cursor:pointer;flex-shrink:0;">
-
-          <span id="playerTimeText" style="font-size:12px;color:rgba(255,255,255,0.75);font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0;min-width:90px;">0:00 / --:--</span>
-
-          <div style="flex:1;"></div>
-
-          <span style="font-size:10px;color:rgba(255,255,255,0.2);">← → ±10s &nbsp; F: {{ _('Fullscreen') }} &nbsp; Esc: {{ _('Close') }}</span>
-
-          <button onclick="window._playerFullscreen()" style="background:none;border:none;color:#fff;cursor:pointer;padding:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;" title="{{ _('Fullscreen (F)') }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:17px;height:17px;"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-          </button>
-        </div>
+      <!-- Legacy source selects. The picker above replaced them, but third
+           party modules read/write these ids, so they stay in the DOM as
+           hidden mirrors of the current selection (see player.js). -->
+      <div id="playerSourceBar" hidden style="display:none;">
+        <select id="playerLangSelect" onchange="_playerChangeSource()"></select>
+        <select id="playerProviderSelect" onchange="_playerChangeSource()"></select>
       </div>
 
     </div>
   </div>
+
   {# hls.js, vendored (static/hls.min.js, upstream dist of v1.5.7). It used to
      come from cdn.jsdelivr.net, which meant the player was dead on any install
      without internet access -- a LAN-only container, or one behind Gluetun:

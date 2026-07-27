@@ -23,7 +23,7 @@ var _libSearchTimer  = null;  // debounce timer for search input
 var libSortKey       = "name"; // "name" | "size" | "episodes"
 var libSortAsc       = true;   // ascending = true
 var libFilterMode    = "all";  // "all" | "series" | "movies"
-var libViewMode      = "grid"; // "grid" | "list"
+var libViewMode      = "grid"; // "grid" | "list"  (restored below)
 
 // Pagination — purely client-side: the whole filtered/sorted item list is
 // already in memory (libFlattenTitles/libFilterTitles/libSortTitles), so
@@ -31,15 +31,47 @@ var libViewMode      = "grid"; // "grid" | "list"
 // .mf-pagination usage pattern from history.js (numbered pager + a
 // 10/20/50/100 "results per page" <select>, persisted in localStorage).
 var LIB_PER_PAGE_OPTIONS = [10, 20, 50, 100];
-function _libInitialPerPage() {
+
+// How the library is displayed is a per-ACCOUNT preference, not a per-browser
+// one: window._USER_PREFS is rendered into <head> server-side (see base.html)
+// and saved back through /api/user/preferences, so the layout a user picked on
+// their desktop is the one they get on their phone. localStorage stays as the
+// fallback for the logged-out / no-auth case and as the value used on the very
+// first paint before anything is fetched.
+function _libPref(key, lsKey, valid, fallback) {
+  var prefs = window._USER_PREFS || {};
+  if (valid(prefs[key])) return prefs[key];
   try {
-    var saved = parseInt(localStorage.getItem("mf-lib-perpage"), 10);
-    if (LIB_PER_PAGE_OPTIONS.indexOf(saved) !== -1) return saved;
+    var saved = localStorage.getItem(lsKey);
+    if (valid(saved)) return saved;
   } catch (e) { /* private mode */ }
-  return 20;
+  return fallback;
+}
+
+function _libSavePref(key, lsKey, value) {
+  try { localStorage.setItem(lsKey, String(value)); } catch (e) { /* private mode */ }
+  // Fire-and-forget, exactly like the appearance settings: the change has
+  // already been applied locally, so a failed save (or a 401 with auth on and
+  // the session expired) must not interrupt anything.
+  if (typeof window.mfSaveUserPref === "function") {
+    window.mfSaveUserPref(_libPrefPatch(key, String(value)));
+  }
+}
+function _libPrefPatch(key, value) { var o = {}; o[key] = value; return o; }
+
+function _libInitialPerPage() {
+  var v = _libPref("library_per_page", "mf-lib-perpage",
+                   function (x) { return LIB_PER_PAGE_OPTIONS.indexOf(parseInt(x, 10)) !== -1; },
+                   "20");
+  return parseInt(v, 10);
+}
+function _libInitialView() {
+  return _libPref("library_view", "mf-lib-view",
+                  function (x) { return x === "grid" || x === "list"; }, "grid");
 }
 var libPerPage = _libInitialPerPage();
 var libPage    = 0; // 0-based
+libViewMode = _libInitialView();
 
 // Single-open accordion state — which flattened item (by stable key) is
 // currently expanded, and which of its seasons are expanded. Survives
@@ -299,13 +331,19 @@ function libClearSearch() {
   libRender(libLocations);
 }
 
+function _libSyncViewButtons() {
+  var gBtn = document.getElementById("libViewGrid");
+  var lBtn = document.getElementById("libViewList");
+  var grid = libViewMode === "grid";
+  if (gBtn) { gBtn.classList.toggle("active", grid); gBtn.setAttribute("aria-pressed", grid); }
+  if (lBtn) { lBtn.classList.toggle("active", !grid); lBtn.setAttribute("aria-pressed", !grid); }
+}
+
 function libSetView(mode) {
   if (mode !== "grid" && mode !== "list") return;
   libViewMode = mode;
-  var gBtn = document.getElementById("libViewGrid");
-  var lBtn = document.getElementById("libViewList");
-  if (gBtn) { gBtn.classList.toggle("active", mode === "grid"); gBtn.setAttribute("aria-pressed", mode === "grid"); }
-  if (lBtn) { lBtn.classList.toggle("active", mode === "list"); lBtn.setAttribute("aria-pressed", mode === "list"); }
+  _libSavePref("library_view", "mf-lib-view", mode);
+  _libSyncViewButtons();
   libRender(libLocations);
 }
 
@@ -523,7 +561,7 @@ function libSetPerPage(value) {
   var n = parseInt(value, 10);
   if (LIB_PER_PAGE_OPTIONS.indexOf(n) === -1) n = 20;
   libPerPage = n;
-  try { localStorage.setItem("mf-lib-perpage", String(n)); } catch (e) { /* private mode */ }
+  _libSavePref("library_per_page", "mf-lib-perpage", n);
   libPage = 0;
   libRepaint();
 }
@@ -1443,6 +1481,12 @@ function libCopyFromButton(btn) {
 
 // ---- Init ----
 
+// The template renders the grid button as the active one; move the highlight
+// to the stored choice before the first fetch, so the toolbar and the layout
+// agree even while the library is still loading. Only the buttons — calling
+// libSetView() here would render an empty library and write the value it just
+// read straight back.
+_libSyncViewButtons();
 libLoad(false);
 
 // ── Upscaling ────────────────────────────────────────────────────────
@@ -1661,6 +1705,33 @@ function libPlayEpisode(event, filePath, fileTitle) {
     if (typeof showToast === 'function') showToast(t('Player wird geladen…', 'Player loading…'));
   }
 }
+
+/**
+ * Tell the player what follows the file it is playing (see
+ * player.js::_resolveNext). The rendered rows already carry path and title
+ * in data attributes, so this needs no extra bookkeeping -- and it stays
+ * inside the same season block, because "next" across a season boundary is
+ * a guess, not a fact.
+ */
+window.mfPlayerResolveNext = function (current) {
+  if (!current || !current.path) return null;
+  var rows = Array.prototype.slice.call(
+    document.querySelectorAll('.lib-episode-row[data-path]'));
+  var i = -1;
+  for (var k = 0; k < rows.length; k++) {
+    if (rows[k].getAttribute('data-path') === current.path) { i = k; break; }
+  }
+  if (i < 0) return null;
+  for (var j = i + 1; j < rows.length; j++) {
+    if (rows[j].parentNode !== rows[i].parentNode) break;
+    // Only video rows: a subtitle or nfo file next to the episode is not
+    // something to start playing.
+    if (!rows[j].querySelector('.lib-icon-video')) continue;
+    var p = rows[j].getAttribute('data-path');
+    if (p) return { path: p, title: rows[j].getAttribute('data-title') || '' };
+  }
+  return null;
+};
 
 /* ── Media Info Modal Controller ── */
 function libCloseMediaInfoModal() {

@@ -5909,3 +5909,45 @@ msgstr "Captcha-Screenshot"
 msgid "UUID from the identity provider"
 msgstr "UUID aus dem Identity-Provider"
 
+
+# Player rework 2026-07: overlay controls, subtitle/audio/quality
+# pickers, touch gestures and the Direct Play source picker.
+
+msgid "Back 30 seconds"
+msgstr "30 Sekunden zurück"
+
+msgid "Back 10 seconds"
+msgstr "10 Sekunden zurück"
+
+msgid "Forward 10 seconds"
+msgstr "10 Sekunden vor"
+
+msgid "Forward 30 seconds"
+msgstr "30 Sekunden vor"
+
+msgid "Skip intro"
+msgstr "Intro überspringen"
+
+msgid "Up next"
+msgstr "Als Nächstes"
+
+msgid "Play now"
+msgstr "Jetzt abspielen"
+
+msgid "Seek"
+msgstr "Zeitleiste"
+
+msgid "Next episode"
+msgstr "Nächste Folge"
+
+msgid "Volume"
+msgstr "Lautstärke"
+
+msgid "CC"
+msgstr "UT"
+
+msgid "Picture in picture"
+msgstr "Bild im Bild"
+
+msgid "Playback failed"
+msgstr "Wiedergabe fehlgeschlagen"
