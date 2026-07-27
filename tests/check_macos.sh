@@ -2,6 +2,7 @@
 # MediaForge Diagnostics Suite (macOS Shell Menu)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="$SCRIPT_DIR/Log"
 mkdir -p "$LOG_DIR"
 
@@ -12,7 +13,10 @@ show_menu() {
     echo "========================================================================"
     echo ""
     echo "  [1] Hardware Encoder and VideoToolbox Diagnostics (encoding/check_nvenc.py)"
-    echo "  [2] Open Diagnostics Log Directory in Finder ($LOG_DIR)"
+    echo "  [2] Run the Test Suite (pytest)"
+    echo "  [3] Run the Repository Checks (static assets, translations, line endings)"
+    echo "  [4] Run Everything CI Runs (checks + tests)"
+    echo "  [5] Open Diagnostics Log Directory in Finder ($LOG_DIR)"
     echo "  [0] Exit"
     echo ""
     echo "========================================================================"
@@ -28,24 +32,73 @@ find_python() {
     fi
 }
 
+# Everything below needs an interpreter; bail out with one message instead of
+# letting each option fail on its own.
+require_python() {
+    PY_CMD=$(find_python)
+    if [ -z "$PY_CMD" ]; then
+        echo "[ERROR] Python 3 was not found on this system. Please install python3 (e.g. via brew install python)."
+        return 1
+    fi
+    return 0
+}
+
+run_tests() {
+    require_python || return
+    if ! "$PY_CMD" -c "import pytest" >/dev/null 2>&1; then
+        echo "[ERROR] pytest is not installed. Install the test extra first:"
+        echo "        $PY_CMD -m pip install -e \".[test]\""
+        return
+    fi
+    ( cd "$REPO_DIR" && "$PY_CMD" -m pytest -q )
+}
+
+run_repo_checks() {
+    require_python || return
+    ( cd "$REPO_DIR" && "$PY_CMD" .github/scripts/check_repo.py )
+}
+
 while true; do
     show_menu
-    read -r -p "Select an option (0-2): " choice
+    read -r -p "Select an option (0-5): " choice
     case "$choice" in
         1)
             clear
             echo "Starting VideoToolbox and Hardware Encoder Diagnostics..."
             echo ""
-            PY_CMD=$(find_python)
-            if [ -z "$PY_CMD" ]; then
-                echo "[ERROR] Python 3 was not found on this system. Please install python3 (e.g. via brew install python)."
-            else
+            if require_python; then
                 "$PY_CMD" "$SCRIPT_DIR/encoding/check_nvenc.py"
             fi
             echo ""
             read -r -p "Press [ENTER] to return to the menu..."
             ;;
         2)
+            clear
+            echo "Running the test suite..."
+            echo ""
+            run_tests
+            echo ""
+            read -r -p "Press [ENTER] to return to the menu..."
+            ;;
+        3)
+            clear
+            echo "Running the repository checks..."
+            echo ""
+            run_repo_checks
+            echo ""
+            read -r -p "Press [ENTER] to return to the menu..."
+            ;;
+        4)
+            clear
+            echo "Running the repository checks, then the test suite..."
+            echo ""
+            run_repo_checks
+            echo ""
+            run_tests
+            echo ""
+            read -r -p "Press [ENTER] to return to the menu..."
+            ;;
+        5)
             echo "Opening Log Directory ($LOG_DIR) in Finder..."
             if command -v open >/dev/null 2>&1; then
                 open "$LOG_DIR"
