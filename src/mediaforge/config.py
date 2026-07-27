@@ -53,7 +53,14 @@ def is_newest_version() -> bool:
 
 # MediaForge's per-user config/data directory (formerly ~/.aniworld before
 # the AniWorld Downloader -> MediaForge rename; see legacy_import.py).
-MEDIAFORGE_CONFIG_DIR = Path.home() / ".mediaforge"
+#
+# Overridable so a test run (or a second instance) can be pointed at a scratch
+# directory instead of the real database, secret key and image cache.
+_cfg_dir_override = os.environ.get("MEDIAFORGE_CONFIG_DIR", "").strip()
+MEDIAFORGE_CONFIG_DIR = (
+    Path(_cfg_dir_override).expanduser() if _cfg_dir_override
+    else Path.home() / ".mediaforge"
+)
 
 # Scratch directory for intermediate work files: yt-dlp raw downloads, ffmpeg
 # tagging passes, and the encode/upscale temp outputs the web workers write

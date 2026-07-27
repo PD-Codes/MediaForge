@@ -94,5 +94,21 @@ mediaforge = [
   "web/thirdparties/**/babel.cfg",
 ]
 
+[project.optional-dependencies]
+# Test-only: `pip install -e .[test] && pytest`
+test = [
+  "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Only files following this pattern are collected -- tests/ also holds the
+# manual environment check scripts (check_linux.sh and friends).
+python_files = ["test_*.py"]
+addopts = "-q"
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
+
 [project.scripts]
 mediaforge = "mediaforge.entry:mediaforge"

@@ -28,8 +28,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install .
+          pip install .[test]
           pip install pyinstaller
+
+      - name: Run tests
+        # Route smoke test + the authorisation regression tests. Runs against a
+        # throwaway MEDIAFORGE_CONFIG_DIR (see tests/conftest.py), so nothing
+        # here touches a real installation.
+        run: pytest
 
       - name: Build executable
         run: pyinstaller mediaforge.spec

@@ -1037,6 +1037,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_settings_telemetry_request_status",
         }
 
+        # Published so it can be asserted on (tests/test_admin_gating.py):
+        # authorisation lives in this hand-maintained set, not on the routes,
+        # so a new endpoint is login-protected but NOT admin-protected unless
+        # someone remembers to add it here.
+        app.config["ADMIN_ONLY_ENDPOINTS"] = frozenset(_admin_only)
+
         # Wrap all non-auth, non-static view functions with login_required
         # (admin_required for settings endpoints)
         _exempt = {
