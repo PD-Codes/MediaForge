@@ -234,3 +234,7 @@ _backups/
 
 # Deletion Folder where files will be moved at first instance if we are sure to remove them finally
 _to_delete/
+# Ad-hoc backup folders (e.g. static/_css_backup_20260707) — one of them was an
+# empty directory sitting untracked in web/static for weeks.
+**/_css_backup_*/
+**/_backup_*/

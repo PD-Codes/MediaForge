@@ -31,6 +31,24 @@ venv/
 Dockerfile
 .dockerignore
 docker-compose.yaml
+docker-compose.gluetun.yaml
 
-# Docs / examples
-examples/
+# Docs, examples and repo assets — none of this is needed at runtime, and the
+# entry was ".examples" all along (the pattern below used to read "examples/",
+# which matches nothing: the directory starts with a dot). .github alone
+# carries ~1.4 MB of screenshots.
+.examples/
+Guides/
+.github/
+# LICENSE.old is the MIT licence this project shipped under up to v1.0.0. It
+# stays in the repository as a record of that, but nothing at runtime reads it.
+LICENSE.old
+# NOT excluded: README.md and COPYRIGHT. The Dockerfile copies them at line
+# 114 because pyproject.toml references them (readme = / license-files = ), so
+# `uv sync` fails without them.
+
+# Scratch and leftovers that live in the working tree but must never end up in
+# the build context (they are gitignored, but Docker does not read .gitignore).
+_to_delete/
+_backups/
+Downloads/

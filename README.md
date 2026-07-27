@@ -61,6 +61,10 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **Encoding** (Stream Copy / H.264 / H.265, with NVENC, VAAPI, VideoToolbox) and **Anime4K** upscaling
 - **Full & Selective Backup** — export/import settings and user data as a password-protected file to back up or migrate a MediaForge install (admin only)
 - **Modules & Theme Packs** — extend MediaForge with store-installable modules, and reskin the whole UI (fonts, animations, checkboxes, inputs, calendar, images) with CSS-only theme packs from the same store; the theme, dark/light mode and accent colour are saved per account and follow the user to every browser and device. **Anyone can build one:** start from the worked examples in [`.examples/thirdparties/`](.examples/thirdparties) and [`.examples/themes/`](.examples/themes) (each with its own README), read the [Modules](https://github.com/PD-Codes/MediaForge/wiki/Modules) wiki page, and publish the result on the [developer portal](https://mediaforge.softarchiv.com) — the Module Store page links to all three
+- **SyncPlay** — watch together in a room: synchronised playback, chat and an invite link guests can use without an account
+- **Crunchyroll & Fernsehserien.de** as metadata sources — availability pills on search results, plus Crunchyroll simulcast/watchlist entries in the calendar
+- **UpTime monitor & Dev Infos** — a dashboard showing whether each source site is reachable (history, response times, per-source tracking), and release notes from the developers right in the UI
+- **Opt-in telemetry** — off by default, staged consent, every data point listed and individually switchable under Settings → Privacy
 - **Multi-user auth & OIDC SSO**, a full **REST API**, **Docker**-ready, and a UI in **English & German**
 
 → Full feature tour in the **[Wiki](https://github.com/PD-Codes/MediaForge/wiki/Web-UI)**.
@@ -129,7 +133,7 @@ Actively in development — current work in progress:
 
 ## Supported Sites & Extractors
 
-URLs from **aniworld.to**, **s.to** and **filmpalast.to** are supported, delivered behind the scenes via hosters such as VOE, Vidoza, Vidmoly, Filemoon, Doodstream, Vidara and Veev.
+URLs from **aniworld.to**, **s.to**, **filmpalast.to**, **megakino.to** and **hanime.tv** are supported, delivered behind the scenes via hosters such as VOE, Vidoza, Vidmoly, Filemoon, Doodstream, Vidara, Veev, LoadX, Luluvdo, Streamtape and Vidavaca.
 
 → See **[Supported Sites](https://github.com/PD-Codes/MediaForge/wiki/Supported-Sites)** for the live status of each site and extractor, and which hosters are prioritized per site.
 
