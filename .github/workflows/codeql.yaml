@@ -1,12 +1,22 @@
 name: "CodeQL Security Scan"
 
+# No push trigger: a full CodeQL analysis on every commit to main is the most
+# expensive recurring job in this repository, and it finds the same things a
+# day later on the weekly run. Pull requests still get scanned before they
+# land, and the schedule covers everything pushed directly.
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+    paths:
+      - '**.py'
+      - '.github/workflows/codeql.yaml'
   schedule:
     - cron: '0 0 * * 0' # Run weekly on Sunday
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:

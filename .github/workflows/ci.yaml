@@ -1,0 +1,142 @@
+name: CI
+
+# One workflow for lint, tests and the platform builds, replacing the separate
+# python-syntax-check / check-linux / check-macos / check-windows files.
+#
+# The jobs form a chain -- lint -> test -> build -- so a typo never pays for a
+# PyInstaller run on three operating systems. That matters: GitHub bills macOS
+# minutes at 10x and Windows at 2x the Linux rate, and those two used to start
+# in parallel on every single push and pull request.
+#
+# (The paths-ignore list is repeated per trigger on purpose: GitHub Actions
+# does not support YAML anchors.)
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'Guides/**'
+      - 'COPYRIGHT'
+      - 'LICENSE*'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'Guides/**'
+      - 'COPYRIGHT'
+      - 'LICENSE*'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+
+# A second push supersedes the first: cancel the run that is now pointless
+# instead of paying for both.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: without this block the job runs with whatever the repository
+# default is, which on older repos is read AND write for the whole token -- in a
+# job that builds code straight out of the checkout.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Under a minute, and it gates everything below.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Untrusted on a fork PR, which is why this workflow uses
+          # pull_request rather than pull_request_target: the token is
+          # read-only and carries no secrets.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install lint tools
+        run: pip install flake8 babel
+
+      - name: Python syntax and undefined names
+        # The blocking part: real errors only, not style.
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: JavaScript syntax
+        # ~15 files, well under a second. A broken script otherwise only shows
+        # up as a dead button in the browser.
+        run: |
+          status=0
+          for file in src/mediaforge/web/static/*.js; do
+            node --check "$file" || status=1
+          done
+          exit $status
+
+      - name: Static assets, translation catalogs, line endings
+        run: python .github/scripts/check_repo.py
+
+      - name: Unused imports and locals (advisory)
+        # Never fails the build -- this is a cleanup list, not a gate.
+        continue-on-error: true
+        run: flake8 . --count --select=F401,F841 --statistics -qq
+
+  # ---------------------------------------------------------------------------
+  # Route smoke test + the authorisation regression tests. Runs against a
+  # throwaway MEDIAFORGE_CONFIG_DIR (see tests/conftest.py), so nothing here
+  # touches a real installation.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install .[test]
+
+      - name: Run tests
+        run: pytest -q
+
+  # ---------------------------------------------------------------------------
+  # The expensive part. Only on a push to main: a pull request has already been
+  # covered by lint + tests, and the release workflow (auto-tag.yaml) builds all
+  # three platforms again before anything is published.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.os }})
+    needs: test
+    if: github.event_name == 'push'
+    strategy:
+      # One platform failing makes the other two pointless to keep paying for.
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install . pyinstaller
+
+      - name: Build executable
+        run: pyinstaller mediaforge.spec

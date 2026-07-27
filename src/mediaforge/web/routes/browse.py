@@ -295,6 +295,12 @@ def ensure_prefetch_worker():
 def register_browse_routes(app):
     """Register all browse/discovery routes (anime, series, movie listings,
     hanime, and the local downloaded-folders lookup) on the Flask app."""
+    # Upstream failures answer 502, not 500: none of these routes is broken
+    # when they fire -- the third-party site is unreachable or answered with
+    # something unusable. 500 would claim MediaForge itself failed, which also
+    # made the route smoke test (tests/test_routes_smoke.py) go red whenever a
+    # source site had a bad day. The frontend only looks at the payload
+    # ("results" present or not), so the status change is invisible to it.
     @app.route("/api/random")
     def api_random():
         """Return a random anime URL. GET /api/random.
@@ -308,7 +314,7 @@ def register_browse_routes(app):
         url = random_anime()
         if url:
             return jsonify({"url": url})
-        return jsonify({"error": "Failed to fetch random anime"}), 500
+        return jsonify({"error": "Failed to fetch random anime"}), 502
     @app.route("/api/new-animes")
     def api_new_animes():
         """Return the cached "new animes" browse list. GET /api/new-animes.
@@ -316,7 +322,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadAniworldBrowse()`."""
         results = _cached_browse("new_animes", fetch_new_animes)
         if results is None:
-            return jsonify({"error": "Failed to fetch new animes"}), 500
+            return jsonify({"error": "Failed to fetch new animes"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/popular-animes")
     def api_popular_animes():
@@ -325,7 +331,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadAniworldBrowse()`."""
         results = _cached_browse("popular_animes", fetch_popular_animes)
         if results is None:
-            return jsonify({"error": "Failed to fetch popular animes"}), 500
+            return jsonify({"error": "Failed to fetch popular animes"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/new-series")
     def api_new_series():
@@ -334,7 +340,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadStoBrowse()`."""
         results = _cached_browse("new_series", fetch_new_series)
         if results is None:
-            return jsonify({"error": "Failed to fetch new series"}), 500
+            return jsonify({"error": "Failed to fetch new series"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/popular-series")
     def api_popular_series():
@@ -343,7 +349,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadStoBrowse()`."""
         results = _cached_browse("popular_series", fetch_popular_series)
         if results is None:
-            return jsonify({"error": "Failed to fetch popular series"}), 500
+            return jsonify({"error": "Failed to fetch popular series"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/new-movies")
     def api_new_movies():
@@ -352,7 +358,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadFilmPalastBrowse()`."""
         results = _cached_browse("new_movies", _fetch_new_movies)
         if results is None:
-            return jsonify({"error": "Failed to fetch new movies"}), 500
+            return jsonify({"error": "Failed to fetch new movies"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/megakino/new-movies")
     def api_megakino_new_movies():
@@ -361,7 +367,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadMegakinoBrowse()`."""
         results = _cached_browse("megakino_new_movies", fetch_megakino_new_movies)
         if results is None:
-            return jsonify({"error": "Failed to fetch megakino movies"}), 500
+            return jsonify({"error": "Failed to fetch megakino movies"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/megakino/popular-movies")
     def api_megakino_popular_movies():
@@ -370,7 +376,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadMegakinoBrowse()`."""
         results = _cached_browse("megakino_popular_movies", fetch_megakino_popular_movies)
         if results is None:
-            return jsonify({"error": "Failed to fetch megakino popular movies"}), 500
+            return jsonify({"error": "Failed to fetch megakino popular movies"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/megakino/new-series")
     def api_megakino_new_series():
@@ -379,7 +385,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadMegakinoBrowse()`."""
         results = _cached_browse("megakino_new_series", fetch_megakino_new_series)
         if results is None:
-            return jsonify({"error": "Failed to fetch megakino series"}), 500
+            return jsonify({"error": "Failed to fetch megakino series"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/megakino/popular-series")
     def api_megakino_popular_series():
@@ -388,7 +394,7 @@ def register_browse_routes(app):
         Called from static/app.js's `loadMegakinoBrowse()`."""
         results = _cached_browse("megakino_popular_series", fetch_megakino_popular_series)
         if results is None:
-            return jsonify({"error": "Failed to fetch megakino popular series"}), 500
+            return jsonify({"error": "Failed to fetch megakino popular series"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/hanime/new")
     def api_hanime_new():
@@ -406,7 +412,7 @@ def register_browse_routes(app):
             lambda: fetch_hanime_new(show_censored=show_censored, show_uncensored=show_uncensored),
         )
         if results is None:
-            return jsonify({"error": "Failed to fetch hanime new"}), 500
+            return jsonify({"error": "Failed to fetch hanime new"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/hanime/trending")
     def api_hanime_trending():
@@ -423,7 +429,7 @@ def register_browse_routes(app):
             lambda: fetch_hanime_trending(show_censored=show_censored, show_uncensored=show_uncensored),
         )
         if results is None:
-            return jsonify({"error": "Failed to fetch hanime trending"}), 500
+            return jsonify({"error": "Failed to fetch hanime trending"}), 502
         return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/downloaded-folders")
     def api_downloaded_folders():

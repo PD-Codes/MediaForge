@@ -1,0 +1,64 @@
+name: Pull Request Checks
+
+# Replaces pr-validation.yaml + conflict_labeler.yaml. Both need the trusted
+# pull_request_target context for a write-scoped token, and neither checks out
+# PR code, so there is no fork-code-execution risk in either job. Anything that
+# does check out PR code lives in ci.yaml, which uses plain pull_request.
+on:
+  push:
+    branches: [main]          # main moved: re-check open PRs for conflicts
+  pull_request_target:
+    types: [opened, edited, synchronize]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The PR title has to start with a conventional-commit type. auto-tag.yaml
+  # builds the release notes by grepping commit subjects for exactly these
+  # prefixes, so a PR titled "update stuff" silently drops out of the changelog.
+  # ---------------------------------------------------------------------------
+  pr-title:
+    name: Validate PR title
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825 # v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            security
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+
+  # ---------------------------------------------------------------------------
+  # Label pull requests that no longer merge cleanly.
+  # ---------------------------------------------------------------------------
+  conflicts:
+    name: Label merge conflicts
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: eps1lon/actions-label-merge-conflict@0273be72a0bbd58fcd71d0d6c02c209b50d1e5e1 # v3.1.0
+        with:
+          dirtyLabel: "has conflicts"
+          repoToken: "${{ secrets.GITHUB_TOKEN }}"
+          commentOnDirty: "This pull request has merge conflicts. Please resolve them so the changes can be merged."
