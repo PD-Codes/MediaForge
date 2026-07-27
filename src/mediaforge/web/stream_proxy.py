@@ -25,6 +25,7 @@ import socket
 import threading
 import time
 import uuid
+import urllib.error
 import urllib.request
 from urllib.parse import urljoin, urlsplit
 
@@ -127,6 +128,33 @@ def is_safe_url(url: str) -> bool:
 
 # ── Fetching ────────────────────────────────────────────────────────────────────────
 
+# Upper bound for one proxied response. A playlist is a few KB and a segment a
+# few MB; without a limit a hostile or broken upstream could stream gigabytes
+# into memory, since the body is read in full before it is passed on.
+MAX_PROXY_BYTES = 64 * 1024 * 1024
+# How many redirects to follow. Each hop is re-checked against is_safe_url().
+MAX_PROXY_REDIRECTS = 5
+
+
+class _CheckedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Redirect handler that re-runs the SSRF check on every hop.
+
+    is_safe_url() validated the URL the client asked for, but urlopen() then
+    followed redirects unchecked -- so an upstream that answered 302 ->
+    http://127.0.0.1:8080/... or -> 169.254.169.254 got the proxy to fetch it
+    and hand the body straight back to the browser.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not is_safe_url(newurl):
+            raise urllib.error.HTTPError(
+                newurl, code, "redirect to a forbidden address", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_proxy_opener = urllib.request.build_opener(_CheckedRedirectHandler)
+
+
 def fetch(url: str, headers: dict, range_header: str | None = None) -> tuple:
     """Fetch a URL with the provider headers. Returns (code, headers, data, final_url)."""
     req = urllib.request.Request(url)
@@ -136,9 +164,17 @@ def fetch(url: str, headers: dict, range_header: str | None = None) -> tuple:
     req.add_header("Accept-Encoding", "identity")
     if range_header:
         req.add_header("Range", range_header)
-    resp = urllib.request.urlopen(req, timeout=30)
-    data = resp.read()
-    return resp.getcode(), dict(resp.headers), data, resp.geturl()
+    # Opened through the checked opener, not urlopen(): see _CheckedRedirectHandler.
+    resp = _proxy_opener.open(req, timeout=30)
+    # One byte over the limit is enough to notice and refuse.
+    data = resp.read(MAX_PROXY_BYTES + 1)
+    if len(data) > MAX_PROXY_BYTES:
+        raise ValueError(f"upstream response larger than {MAX_PROXY_BYTES} bytes")
+    final_url = resp.geturl()
+    # Belt and braces: geturl() is the address the body actually came from.
+    if final_url != url and not is_safe_url(final_url):
+        raise ValueError("upstream resolved to a forbidden address")
+    return resp.getcode(), dict(resp.headers), data, final_url
 
 
 def is_playlist(data: bytes) -> bool:

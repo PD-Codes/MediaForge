@@ -4,7 +4,11 @@ Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 """
 
+from ...config import HANIME_API_BASE
+from ...config import HANIME_BASE_URL
+from ...config import HANIME_SEARCH_URL
 from ...config import MEDIAFORGE_CONFIG_DIR
+from ...config import MEGAKINO_BASE_URL
 from ..db import get_setting
 from ..db import get_tmdb_cache_bulk
 from flask import request
@@ -26,6 +30,35 @@ _ALLOWED_IMAGE_HOSTS = {
     "imgsrv.crunchyroll.com", "static.crunchyroll.com",
     "img1.ak.crunchyroll.com", "www.crunchyroll.com",
 }
+
+
+def _domains_of(*urls):
+    """Registrable hosts of the configured base URLs (mirrors are editable)."""
+    from urllib.parse import urlparse as _u
+    out = set()
+    for u in urls:
+        host = (_u(u).hostname or "").lower()
+        if host:
+            out.add(host.removeprefix("www."))
+    return out
+
+
+# Sites whose image hosts vary (mirror domains, CDN subdomains), so they are
+# matched by domain suffix rather than by an exact host. This USED to be a
+# substring test -- `"hanime" not in host` -- which let an attacker point
+# hanime.evil.tld (or any host containing the word) at an internal address and
+# have the server fetch it. Suffix matching only accepts the domain itself and
+# its subdomains.
+_ALLOWED_IMAGE_DOMAINS = _domains_of(
+    MEGAKINO_BASE_URL, HANIME_BASE_URL, HANIME_API_BASE, HANIME_SEARCH_URL,
+)
+
+
+def _image_host_allowed(netloc: str) -> bool:
+    host = (netloc or "").lower().split(":")[0]
+    if host in _ALLOWED_IMAGE_HOSTS or host.removeprefix("www.") in _ALLOWED_IMAGE_HOSTS:
+        return True
+    return any(host == d or host.endswith("." + d) for d in _ALLOWED_IMAGE_DOMAINS)
 
 import hashlib as _hashlib
 from pathlib import Path as _Path
@@ -297,13 +330,7 @@ def register_image_proxy_routes(app):
         except Exception:
             return ("Bad URL", 400)
 
-        netloc = parsed.netloc.lower()
-        host_stripped = netloc.removeprefix("www.")
-        if (netloc not in _ALLOWED_IMAGE_HOSTS
-                and host_stripped not in _ALLOWED_IMAGE_HOSTS
-                and "megakino" not in host_stripped
-                and "hanime" not in host_stripped
-                and "htv-services" not in host_stripped):
+        if not _image_host_allowed(parsed.netloc):
             return ("Forbidden host", 403)
 
         # --- Serve from disk cache if available ---
@@ -322,6 +349,13 @@ def register_image_proxy_routes(app):
             return r
 
         # --- Fetch from source ---
+        # Only now, on the miss path: the allowlist says which site may be
+        # fetched, this says the name must not resolve to an internal address
+        # (a whitelisted domain whose DNS points at 127.0.0.1 or 169.254.x.x).
+        from ..stream_proxy import is_safe_url as _img_safe_url
+        if not _img_safe_url(raw_url):
+            return ("Forbidden host", 403)
+
         # Collapse concurrent requests for the same URL: the first one fetches,
         # the others wait for it and then read the file it wrote.
         with _img_inflight_lock:

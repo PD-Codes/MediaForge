@@ -196,7 +196,9 @@ def extra_urls() -> list:
     seen, out = {store_url()}, []
     for line in raw.replace(",", "\n").splitlines():
         url = line.strip()
-        if url and url not in seen and url.startswith(("http://", "https://")):
+        # https only: the index decides which modules are offered and what
+        # they are called, and over plain http any network hop can rewrite it.
+        if url and url not in seen and url.startswith("https://"):
             seen.add(url)
             out.append(url)
     return out
