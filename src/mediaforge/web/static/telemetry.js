@@ -39,7 +39,9 @@ async function loadTelemetrySettings() {
     if (descEl) {
       if (data.consent_given === true) {
         descEl.textContent = t(
-          "Aktiv seit " + (data.consent_at || "?") + ". Ausschalten löscht auch alle unten aktivierten Datenpunkte.",
+          t("Aktiv seit ", "Active since ") + (data.consent_at || "?")
+            + t(". Ausschalten löscht auch alle unten aktivierten Datenpunkte.",
+                ". Turning it off also clears every data point enabled below."),
           "Active since " + (data.consent_at || "?") + ". Turning this off also clears every data point enabled below."
         );
       } else if (data.consent_given === false) {

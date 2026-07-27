@@ -5834,3 +5834,78 @@ msgstr "Gerade beliebt"
 #: src/mediaforge/web/templates/settings.html
 msgid "Nothing to show with these filters."
 msgstr "Mit diesen Filtern gibt es nichts zu zeigen."
+
+# Module Manager (templates/extensions.html) — added 2026-07
+msgid "Error"
+msgstr "Fehler"
+
+msgid "Filter by state"
+msgstr "Nach Status filtern"
+
+msgid "Problems"
+msgstr "Probleme"
+
+msgid "Show full error"
+msgstr "Vollständigen Fehler anzeigen"
+
+msgid "background worker"
+msgstr "Hintergrund-Worker"
+
+msgid "content source"
+msgstr "Inhaltsquelle"
+
+msgid "dashboard widget"
+msgstr "Dashboard-Widget"
+
+msgid "event hook"
+msgstr "Event-Hook"
+
+msgid "hoster"
+msgstr "Hoster"
+
+msgid "menu entry"
+msgstr "Menüeintrag"
+
+msgid "mirror list"
+msgstr "Mirror-Liste"
+
+msgid "modules"
+msgstr "Module"
+
+msgid "monitor entry"
+msgstr "Monitor-Eintrag"
+
+msgid "notification channel"
+msgstr "Benachrichtigungskanal"
+
+msgid "off"
+msgstr "aus"
+
+msgid "provider pill"
+msgstr "Provider-Pill"
+
+msgid "registered nothing"
+msgstr "nichts registriert"
+
+msgid "running"
+msgstr "läuft"
+
+msgid "search source"
+msgstr "Suchquelle"
+
+msgid "settings card"
+msgstr "Einstellungskarte"
+
+msgid "with errors"
+msgstr "mit Fehlern"
+
+# Strings that were hardcoded in the templates until 2026-07
+msgid "Automatic NFO metadata for downloaded media."
+msgstr "Automatische NFO-Metadaten für heruntergeladene Medien."
+
+msgid "Captcha screenshot"
+msgstr "Captcha-Screenshot"
+
+msgid "UUID from the identity provider"
+msgstr "UUID aus dem Identity-Provider"
+

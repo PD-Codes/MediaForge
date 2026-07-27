@@ -1277,7 +1277,7 @@ function initBrowseScrollButtons() {
     const btns = document.createElement("div");
     btns.className = "browse-scroll-btns";
     btns.innerHTML =
-      '<button class="browse-scroll-btn" onclick="scrollBrowseGrid(this,-1)" aria-label="Zurück">' +
+      '<button class="browse-scroll-btn" onclick="scrollBrowseGrid(this,-1)" aria-label="' + t("Zurück", "Back") + '">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>' +
       '</button>' +
       '<button class="browse-scroll-btn" onclick="scrollBrowseGrid(this,1)" aria-label="Weiter">' +
@@ -1527,7 +1527,7 @@ async function openSeries(url) {
   } else {
     modal.classList.remove("skeleton");
     document.getElementById("modalPoster").style.opacity = "";
-    document.getElementById("modalTitle").textContent = "Lädt...";
+    document.getElementById("modalTitle").textContent = t("Lädt...", "Loading...");
     document.getElementById("modalGenres").textContent = "";
     document.getElementById("modalYear").textContent = "";
     document.getElementById("modalDesc").textContent = "";
@@ -2030,7 +2030,8 @@ function showVeevCheck() {
   const spinnerWrap = document.getElementById("veevCheckSpinnerWrap");
   if (spinnerWrap) spinnerWrap.style.display = "flex";
   const textEl = document.getElementById("veevCheckText");
-  if (textEl) { textEl.style.display = ""; textEl.textContent = "Es wird überprüft ob der ausgewählte Inhalt auf Veev verfügbar ist"; }
+  if (textEl) { textEl.style.display = ""; textEl.textContent = t("Es wird überprüft, ob der ausgewählte Inhalt auf Veev verfügbar ist",
+                             "Checking whether the selected content is available on Veev"); }
   const errEl = document.getElementById("veevCheckError");
   if (errEl) { errEl.style.display = "none"; errEl.textContent = ""; }
   const closeBtn = document.getElementById("veevCheckCloseBtn");

@@ -481,7 +481,8 @@
             _hlsRetries++;
             setTimeout(function(){ _hls && _hls.startLoad(); }, 1200);
           } else {
-            _playerSetError('Stream-Fehler: ' + (data.details || data.type));
+            _playerSetError((window.t ? t('Stream-Fehler: ', 'Stream error: ') : 'Stream error: ')
+                            + (data.details || data.type));
           }
         }
       });

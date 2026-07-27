@@ -253,7 +253,8 @@ async function loadSettings() {
     _loadMirrorSettings(data.mirrors || {});
 
   } catch (e) {
-    showToast("Einstellungen konnten nicht geladen werden: " + e.message);
+    showToast(t("Einstellungen konnten nicht geladen werden: ",
+                "Could not load the settings: ") + e.message);
   }
   loadApiKey();
   loadSsoSettings();
@@ -2132,7 +2133,7 @@ async function copyDevChannelCmd() {
 async function checkForUpdates(force = false) {
   const btn = document.getElementById("updateCheckBtn");
   const status = document.getElementById("updateStatus");
-  if (btn) { btn.disabled = true; btn.textContent = "Prüfe…"; }
+  if (btn) { btn.disabled = true; btn.textContent = t("Prüfe…", "Checking…"); }
   if (status) status.textContent = "";
   try {
     const resp = await fetch("/api/update-check", {

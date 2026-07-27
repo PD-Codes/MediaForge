@@ -128,7 +128,7 @@ async function saveSeerrSettings() {
       window._seerrConfigured = _seerrIsConfigured();
       if (typeof _applyCalendarSeerrState === "function") _applyCalendarSeerrState();
     } else {
-      showToast(data.error || "Fehler beim Speichern");
+      showToast(data.error || t("Fehler beim Speichern", "Could not save"));
     }
   } catch (e) {
     showToast(t("Fehler: " + e.message, "Error: " + e.message));
@@ -999,7 +999,7 @@ async function triggerMediaScan() {
   const NO_SCAN_MAX = 5 * 60 * 1000; // if never seen scanning=true after 5 min, warn
 
   btns.forEach(b => b.disabled = true);
-  setBtns("Wird ausgelöst…");
+  setBtns(t("Wird ausgelöst…", "Triggering…"));
 
   // 1. Trigger scan
   try {
@@ -1293,7 +1293,7 @@ async function saveMediascanSettings() {
     else showToast(d.error || t("Fehler beim Speichern", "Error saving"));
     await loadMediascanSettings();
   } catch (e) {
-    showToast("Fehler: " + e.message);
+    showToast(t("Fehler: ", "Error: ") + e.message);
   }
 }
 

@@ -176,14 +176,15 @@ function libUpdateWatcherStatus(watcher) {
   if (!watcher.available) {
     dot.className   = "lib-watcher-dot lib-watcher-off";
     label.textContent = t("Watcher inaktiv", "Watcher inactive");
-    if (tip) tip.title = "watchdog nicht installiert (pip install watchdog)";
+    if (tip) tip.title = t("watchdog nicht installiert (pip install watchdog)",
+                           "watchdog not installed (pip install watchdog)");
     return;
   }
   if (watcher.active) {
     dot.className   = "lib-watcher-dot lib-watcher-on";
     label.textContent = t("Watcher aktiv", "Watcher active");
     if (tip && watcher.watched && watcher.watched.length) {
-      tip.title = "Überwacht: " + watcher.watched.map(function(w){ return w.path; }).join(", ");
+      tip.title = t("Überwacht: ", "Watching: ") + watcher.watched.map(function(w){ return w.path; }).join(", ");
     }
   } else {
     dot.className   = "lib-watcher-dot lib-watcher-starting";
@@ -238,7 +239,8 @@ function libSetSort(key) {
     if (dir) dir.textContent = (k === libSortKey) ? (libSortAsc ? "↑" : "↓") : "";
     if (k === libSortKey) {
       btn.title = (k === "name")
-        ? (libSortAsc ? "A–Z (klicken für Z–A)" : "Z–A (klicken für A–Z)")
+        ? (libSortAsc ? t("A–Z (klicken für Z–A)", "A–Z (click for Z–A)")
+                      : t("Z–A (klicken für A–Z)", "Z–A (click for A–Z)"))
         : (libSortAsc ? t("Aufsteigend", "Ascending") : t("Absteigend", "Descending"));
     }
   });
@@ -1332,8 +1334,8 @@ function _libMoveError(msg) {
   if (pv) pv.style.display = "";
   var sv = document.getElementById("libMoveSelectView");
   if (sv) sv.style.display = "none";
-  if (err) { err.style.display = ""; err.textContent = "Fehler: " + msg; }
-  if (act) act.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="libCloseMoveModal()">Schließen</button>';
+  if (err) { err.style.display = ""; err.textContent = t("Fehler: ", "Error: ") + msg; }
+  if (act) act.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="libCloseMoveModal()">' + libEsc(t("Schließen", "Close")) + '</button>';
 }
 
 async function libConfirmMove() {
@@ -1700,7 +1702,8 @@ async function libOpenMediaInfo(path, title) {
     if (loading) loading.style.display = 'none';
 
     if (data.error) {
-      if (content) content.innerHTML = '<div style="color:var(--text-danger);text-align:center;padding:20px;">Fehler: ' + libEsc(data.error) + '</div>';
+      if (content) content.innerHTML = '<div style="color:var(--text-danger);text-align:center;padding:20px;">'
+        + libEsc(t("Fehler: ", "Error: ")) + libEsc(data.error) + '</div>';
       return;
     }
 

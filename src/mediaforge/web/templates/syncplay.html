@@ -117,7 +117,7 @@
       <div class="sp-modal-head">
         <h2>{{ _('Choose what to watch') }}</h2>
         <input type="text" id="spPickerSearch" class="sp-picker-search" placeholder="{{ _('Search library…') }}" oninput="SP.filterPicker()" />
-        <button class="sp-modal-close" onclick="SP.closePicker()" aria-label="Close">&times;</button>
+        <button class="sp-modal-close" onclick="SP.closePicker()" aria-label="{{ _('Close') }}">&times;</button>
       </div>
       <div class="sp-picker-tabs" id="spPickerTabs">
         <button class="sp-picker-tab active" data-ptab="series" onclick="SP.pickTab('series')">{{ _('Series') }}</button>
@@ -133,7 +133,7 @@
     <div class="sp-modal-box sp-modal-small">
       <div class="sp-modal-head">
         <h2>{{ _('Invite to room') }}</h2>
-        <button class="sp-modal-close" onclick="SP.closeInvite()" aria-label="Close">&times;</button>
+        <button class="sp-modal-close" onclick="SP.closeInvite()" aria-label="{{ _('Close') }}">&times;</button>
       </div>
       <div class="sp-invite-body">
         <div class="sp-qr" id="spQr"></div>
@@ -151,7 +151,7 @@
     <div class="sp-modal-box sp-modal-small">
       <div class="sp-modal-head">
         <h2>{{ _('Host settings') }}</h2>
-        <button class="sp-modal-close" onclick="SP.closeHostSettings()" aria-label="Close">&times;</button>
+        <button class="sp-modal-close" onclick="SP.closeHostSettings()" aria-label="{{ _('Close') }}">&times;</button>
       </div>
       <div class="sp-host-settings">
         <label class="sp-toggle-row">
