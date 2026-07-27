@@ -155,13 +155,6 @@ Builds upon the work of several outstanding open-source projects and individuals
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Other Cool Projects
-
-- **[Jellyfin AniWorld Downloader](https://github.com/SiroxCW/Jellyfin-AniWorld-Downloader)** by **[SiroxCW](https://github.com/SiroxCW)** — a Jellyfin plugin to browse and download anime & series directly from AniWorld, integrated into your media server.
-- **[AniBridge](https://github.com/Zzackllack/AniBridge)** by **[Zzackllack](https://github.com/Zzackllack)** — a minimal FastAPI service bridging anime and series catalogues (AniWorld, SerienStream/s.to, MegaKino) with automation tools.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 ## Support
 
 - **[Discord Server](https://discord.gg/TGaZ9hFFhC)** — the fastest way to get help and chat with other users.
