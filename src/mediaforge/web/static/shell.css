@@ -380,12 +380,24 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   font-size: 0.85rem;
 }
 
+/* The logout control is a submit button inside a form (POST), so it needs the
+   browser's button defaults reset to keep looking like the icon link it was. */
+.sidebar-logout-form {
+  display: flex;
+  align-items: center;
+}
+
 .sidebar-logout {
   display: flex;
   align-items: center;
   color: var(--text-muted);
   transition: color var(--transition);
   padding: 2px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  line-height: 0;
 }
 
 .sidebar-logout svg {

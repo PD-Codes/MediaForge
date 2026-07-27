@@ -85,7 +85,24 @@ def register_syncplay_routes(app):
         if _sess.get("user_id") is not None:
             return None  # logged-in user
         from .. import syncplay_rooms as sp
-        if _syncplay_enabled() and sp.valid_token(_sess.get("sp_guest", "")):
+        _guest = _sess.get("sp_guest", "")
+        if _syncplay_enabled() and sp.valid_token(_guest):
+            # A guest token is permission to watch what the room is watching --
+            # not a library-wide read pass. api_stream_start takes the path
+            # from the request body, so without this check a guest who joined
+            # an open room could stream any file inside the library roots whose
+            # path they knew or guessed.
+            if request.endpoint == "api_stream_start":
+                _wanted = ((request.get_json(silent=True) or {}).get("path") or "").strip()
+                _room_file = sp.media_file_for_token(_guest)
+                if not _room_file or not _wanted:
+                    return jsonify({"error": "no media selected in this room"}), 403
+                try:
+                    from pathlib import Path as _P
+                    if _P(_wanted).resolve() != _P(_room_file).resolve():
+                        return jsonify({"error": "not the file this room is watching"}), 403
+                except OSError:
+                    return jsonify({"error": "invalid path"}), 400
             return None  # valid SyncPlay guest
         return jsonify({"error": "authentication required"}), 401
     @app.route("/api/syncplay/config", methods=["GET"])
@@ -243,10 +260,21 @@ def register_syncplay_routes(app):
     def api_syncplay_rooms():
         """Serve GET /api/syncplay/rooms: list open SyncPlay rooms for the
         lobby directory. Called from static/syncplay_page.js's `_loadRooms()`."""
+        from flask import session as _sess
         from .. import syncplay_rooms as sp
         if not _syncplay_enabled():
             return jsonify({"rooms": []})
-        return jsonify({"rooms": sp.list_rooms()})
+        rooms = sp.list_rooms()
+        # This endpoint is login-exempt so the lobby works for invited guests,
+        # and it used to hand out the host's username and the title everyone is
+        # watching to anyone who asked. Callers who are neither logged in nor a
+        # room member get the bare directory: name, size, password flag.
+        _known = _sess.get("user_id") is not None or sp.valid_token(_sess.get("sp_guest", ""))
+        if not _known:
+            rooms = [{"name": r["name"], "count": r["count"],
+                      "has_password": r["has_password"], "locked": r["locked"]}
+                     for r in rooms]
+        return jsonify({"rooms": rooms})
     @app.route("/api/syncplay/close-room", methods=["POST"])
     def api_syncplay_close_room():
         """Serve POST /api/syncplay/close-room: force-close a room by name

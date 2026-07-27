@@ -248,11 +248,39 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 + "=" * 72
             )
 
+        # Behind a reverse proxy every request arrives from the proxy, so
+        # remote_addr is the proxy and the scheme is http even when the client
+        # spoke https. That breaks two things: the login rate limit buckets all
+        # clients together (one attacker can lock everyone out, and per-attacker
+        # limiting does not work), and HTTPS goes undetected.
+        #
+        # Opt-in, because trusting X-Forwarded-* headers when NOT behind a proxy
+        # would let any client forge its own address. Set the variable to the
+        # number of proxies in front of MediaForge (usually 1).
+        try:
+            _trusted_proxies = int(os.environ.get("MEDIAFORGE_TRUSTED_PROXIES", "0"))
+        except ValueError:
+            _trusted_proxies = 0
+        if _trusted_proxies > 0:
+            from werkzeug.middleware.proxy_fix import ProxyFix
+            app.wsgi_app = ProxyFix(
+                app.wsgi_app,
+                x_for=_trusted_proxies,
+                x_proto=_trusted_proxies,
+                x_host=_trusted_proxies,
+                x_port=_trusted_proxies,
+            )
+            get_logger(__name__).info(
+                "Trusting X-Forwarded-* from %d proxy hop(s)", _trusted_proxies)
+
         # Check HTTPS AFTER init_db() so the DB-stored web_base_url is available as fallback
         from .db import get_setting as _get_setting
         _db_base_url = (_get_setting("web_base_url") or "").strip().rstrip("/")
         _effective_base_url = base_url or _db_base_url
         _https_forced = os.environ.get("MEDIAFORGE_HTTPS", "").lower() in ("1", "true", "yes")
+        # With MEDIAFORGE_TRUSTED_PROXIES set, a TLS-terminating proxy is
+        # detected on its own -- no need to also set MEDIAFORGE_HTTPS.
+        _https_forced = _https_forced or _trusted_proxies > 0
         if _effective_base_url.startswith("https") or _https_forced:
             app.config["SESSION_COOKIE_SECURE"] = True
         else:
@@ -686,11 +714,26 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             return
         exempt = app.config.get("CSRF_EXEMPT_ENDPOINTS") or frozenset()
         if request.path.startswith("/api/") or request.endpoint in exempt:
+            # Fetch metadata beats the Content-Type heuristic: browsers set
+            # Sec-Fetch-Site themselves and a page cannot forge it, so a
+            # cross-site POST is recognisable no matter what body or headers it
+            # carries. This closes the hole the Content-Type check leaves open
+            # -- a bodiless fetch(url, {method:'POST', mode:'no-cors',
+            # credentials:'include'}) sends no Content-Type at all and is not
+            # preflighted. SameSite=Lax already keeps the cookie off such a
+            # request today; this is the layer that survives SameSite being
+            # loosened. Browsers too old to send the header fall through to the
+            # Content-Type rule below, exactly as before.
+            _fetch_site = request.headers.get("Sec-Fetch-Site", "")
+            if _fetch_site and _fetch_site not in ("same-origin", "none"):
+                return jsonify({"error": "cross-site request rejected"}), 403
             ct = (request.content_type or "").split(";")[0].strip()
             # If a Content-Type header is present at all it must be JSON.
             # Browser form submissions always declare application/x-www-form-urlencoded
             # or multipart/form-data, so this reliably blocks them.
-            # Requests with no body and no Content-Type header are allowed through.
+            # Bodiless requests without a Content-Type are allowed: ~44 of the
+            # frontend's own calls (cancel, delete, pause, ...) send exactly
+            # that, and Sec-Fetch-Site above is what guards them.
             if ct and ct != "application/json":
                 return jsonify({"error": "Content-Type must be application/json"}), 415
 

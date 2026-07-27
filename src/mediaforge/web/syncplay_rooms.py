@@ -362,6 +362,20 @@ def valid_token(token: str) -> bool:
     return (token or "").strip() in _token_index
 
 
+def media_file_for_token(token: str) -> "str | None":
+    """The file the token's room is currently watching, or None.
+
+    A guest token proves membership in a room, not permission to read the whole
+    library. This is what lets the stream endpoints check that a guest is
+    asking for the file their room is actually playing.
+    """
+    room = room_for_token((token or "").strip())
+    if not room:
+        return None
+    with room.lock:
+        return (room.media or {}).get("file")
+
+
 def leave(token: str) -> None:
     """Remove a member from their room and notify the rest (host reassigned
     automatically if needed — see ``Room.remove_member``)."""

@@ -281,8 +281,16 @@ def login():
     return resp
 
 
-@auth_bp.route("/logout")
+@auth_bp.route("/logout", methods=["POST"])
 def logout():
+    """POST only, and CSRF-protected like every other non-/api form.
+
+    As a GET it could be triggered by any third-party page simply embedding
+    <img src="http://<host>/logout">: SameSite=Lax allows a top-level GET, and
+    the endpoint is CSRF-exempt, so a visitor got silently logged out. Only a
+    nuisance, but there is no reason for a state-changing endpoint to answer
+    GET at all.
+    """
     session.clear()
     return redirect(url_for("auth.login"))
 
