@@ -409,13 +409,18 @@
             '<h3 class="mf-poster-title">' + esc(req.title) + "</h3>" +
           "</div>" +
         "</div>" +
-        '<div class="mf-poster-actions">' +
-          (req.overview
-            ? '<p class="seerr-poster-overview">' + esc(req.overview) + "</p>"
-            : "") +
-          actionButtons(req) +
-        "</div>" +
         hideBtn(id) +
+      "</div>" +
+
+      // Sibling of the artwork, not a child of it: on hover-capable pointers
+      // the overlay lays itself back over the poster (see mf_components.css),
+      // while on touch it becomes an ordinary row *below* the poster. Nested
+      // inside the artwork the touch variant flowed on top of the image.
+      '<div class="mf-poster-actions">' +
+        (req.overview
+          ? '<p class="seerr-poster-overview">' + esc(req.overview) + "</p>"
+          : "") +
+        actionButtons(req) +
       "</div>" +
 
       footHtml(req) +
@@ -1245,13 +1250,26 @@
         return;
       }
       var btn = e.target.closest("[data-action]");
-      if (!btn) return;
-      var id = Number(btn.getAttribute("data-req-id"));
-      switch (btn.getAttribute("data-action")) {
-        case "hide": hideRequest(id); break;
-        case "decline": declineRequest(id); break;
-        case "search": openSearchModal(id); break;
+      if (btn) {
+        var id = Number(btn.getAttribute("data-req-id"));
+        switch (btn.getAttribute("data-action")) {
+          case "hide": hideRequest(id); break;
+          case "decline": declineRequest(id); break;
+          case "search": openSearchModal(id); break;
+        }
+        return;
       }
+      activateCard(e.target);
+    });
+
+    // Keyboard equivalent of the card tap: the card carries tabindex="0", so
+    // Enter/Space must do what a click does.
+    list.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      var card = e.target.closest && e.target.closest(".seerr-card");
+      if (!card || card !== e.target) return;
+      e.preventDefault();
+      activateCard(card);
     });
 
     list.addEventListener("change", function (e) {
@@ -1259,6 +1277,27 @@
       if (!cb) return;
       setSelected(cb.getAttribute("data-req-id"), cb.checked);
     });
+  }
+
+  // A click on the card body itself (not on one of its buttons). The poster
+  // layout hides its action overlay behind :hover, which touch devices never
+  // deliver, so without this a tap on a poster does nothing at all. In select
+  // mode the same tap toggles the selection instead — that is the mode the
+  // user is in, and hitting the small checkbox on a phone is fiddly.
+  function activateCard(target) {
+    if (!target || !target.closest) return;
+    var card = target.closest(".seerr-card");
+    if (!card || card.classList.contains("seerr-skeleton")) return;
+    // Never hijack a real control that happens to live inside the card.
+    if (target.closest("a, button, input, label, select, textarea")) return;
+
+    var id = card.getAttribute("data-req-id");
+    if (!id) return;
+    if (S.selectMode || S.selected[id]) {
+      setSelected(id, !S.selected[id]);
+    } else {
+      openSearchModal(Number(id));
+    }
   }
 
   function wireModals() {

@@ -228,8 +228,9 @@ select.seerr-select:focus { border-color: var(--accent); }
   .mf-poster-actions .btn { width: auto; }
 }
 
-/* Hide button: top-left, because the corner flag owns the top-right on a
-   poster and the selection box sits beside it. */
+/* Hide button: top-right, because the rotated corner flag owns the top-left
+   of a poster. The selection box takes the same spot in select mode, where
+   this button is hidden, and the "in sync" marker stacks underneath it. */
 .mf-poster-card .seerr-hide-btn {
   position: absolute;
   top: 9px;
@@ -261,7 +262,11 @@ body.mf-select-mode .mf-poster-card .seerr-hide-btn { display: none; }
 
 .seerr-hide-btn:hover { background: rgba(220, 38, 38, 0.8); }
 
-@media (hover: none) { .seerr-hide-btn { opacity: 1; } }
+@media (hover: none) {
+  .seerr-hide-btn { opacity: 1; }
+  /* Comfortable touch target — 27px is hard to hit reliably on a phone. */
+  .mf-poster-card .seerr-hide-btn { width: 32px; height: 32px; }
+}
 
 /* --- Compact row --- */
 .seerr-row {
@@ -423,11 +428,14 @@ body.mf-select-mode .seerr-row,
 
 .seerr-sync-pill[hidden] { display: none; }
 
-/* Top-left on the poster: the corner flag owns the opposite corner and the
-   scrim area at the bottom already carries the facts line and the title. */
+/* Top-right on the poster, stacked *below* the hide button (which shares that
+   corner with the selection box): the rotated corner flag owns the top-left,
+   and the scrim at the bottom already carries the facts line and the title.
+   The offset is unconditional — on touch the hide button is permanently
+   visible, so the marker must never be laid on top of it. */
 .mf-poster-card .seerr-sync-pill {
   position: absolute;
-  top: 12px;
+  top: 47px;
   right: 12px;
   z-index: 3;
   display: none;
@@ -436,10 +444,15 @@ body.mf-select-mode .seerr-row,
   background: rgba(6, 6, 12, 0.82);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
+  /* Purely informational — it must never swallow a tap meant for the card. */
+  pointer-events: none;
+  transition: opacity var(--transition);
 }
 
-/* In select mode the checkbox takes that corner, so the marker steps aside. */
-body.mf-select-mode .mf-poster-card .seerr-sync-pill { top: 44px; }
+/* While the action overlay is up, the marker would sit on top of the synopsis.
+   The overlay is what the pointer came for, so the marker steps back. */
+.mf-poster-card:hover .seerr-sync-pill,
+.mf-poster-card:focus-within .seerr-sync-pill { opacity: 0; }
 
 .mf-poster-card .seerr-sync-pill:not([hidden]) { display: inline-flex; }
 .seerr-row .seerr-sync-pill:not([hidden]) { display: inline-flex; }
@@ -480,18 +493,18 @@ body.mf-select-mode .mf-poster-card .seerr-sync-pill { top: 44px; }
    appearance.css only shimmers `.skeleton` while body.skeleton-loader is on
    (an opt-in appearance setting). These cards are shown on every load, so
    they carry their own shimmer and do not depend on that setting. */
-.seerr-card-skeleton {
+.seerr-skeleton {
   pointer-events: none;
   border-style: dashed;
 }
 
-.seerr-card-skeleton:hover {
+.seerr-skeleton:hover {
   transform: none;
   box-shadow: none;
   border-color: var(--border);
 }
 
-.seerr-card-skeleton .skeleton {
+.seerr-skeleton .skeleton {
   background: linear-gradient(90deg,
       var(--bg-elevated) 25%, var(--bg-hover) 37%, var(--bg-elevated) 63%);
   background-size: 400% 100%;
@@ -510,7 +523,7 @@ body.mf-select-mode .mf-poster-card .seerr-sync-pill { top: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .seerr-card-skeleton .skeleton,
+  .seerr-skeleton .skeleton,
   .seerr-conn-dot.is-starting,
   .seerr-bulk-bar,
   .seerr-spinner { animation: none; }

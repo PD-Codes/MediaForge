@@ -840,7 +840,12 @@ function _isDownloadedByTitle(title) {
 // 27px = ~20px badge height + ~7px gap, same spacing the old hardcoded
 // "hasVorhanden ? 34 : 7" constant used.
 function _nextTopBadgeOffset(card) {
-  return 7 + card.querySelectorAll(".card-top-badge").length * 27;
+  // hanime cards carry a rotated corner flag (.hanime-pill) across the
+  // top-left corner whose tip reaches into the top-right area of a 140px
+  // card. Start the badge stack below it there, so "Downloaded"/"Sync" no
+  // longer land on top of the flag.
+  const base = card.querySelector(".hanime-pill") ? 32 : 7;
+  return base + card.querySelectorAll(".card-top-badge").length * 27;
 }
 
 function _attachDownloadedBadge(card) {

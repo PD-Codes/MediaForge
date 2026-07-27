@@ -22,22 +22,28 @@
   background: linear-gradient(135deg, #e0356b, #b5179e);
 }
 
-/* --- Censored / Uncensored pills on the poster cards --- */
+/* --- Censored / Uncensored corner flag on the poster cards ---
+   A rotated corner band rather than a pill: the cards are only 140px wide and
+   the top edge is already taken by the "Downloaded" / "Sync" badges on the
+   right, which a left-aligned pill ran straight into. Same geometry as
+   .mf-poster-flag (mf_components.css), scaled down for the smaller card; the
+   card's own overflow:hidden clips the band at the corner. */
 .hanime-pill {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  top: 21px;
+  left: -30px;
+  width: 120px;
+  padding: 3px 0;
+  transform: rotate(-45deg);
+  text-align: center;
   z-index: 3;
-  font-size: 0.66rem;
+  font-size: 0.54rem;
   font-weight: 800;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 999px;
   color: #fff;
-  line-height: 1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(2px);
+  line-height: 1.4;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
 .hanime-pill-uncensored {

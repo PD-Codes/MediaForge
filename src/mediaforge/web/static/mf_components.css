@@ -330,10 +330,16 @@ input.mf-search-input::-webkit-search-cancel-button { display: none; }
   color: var(--text-muted);
 }
 
-/* Action overlay — secondary, because the foot already answers "whose". */
+/* Action overlay — secondary, because the foot already answers "whose".
+   It is a *sibling* of .mf-poster-art, never a child, so that on touch it can
+   flow below the artwork as a normal row. On hover-capable pointers it is
+   pulled back over the artwork by pinning it to the top of the card and
+   repeating the artwork's aspect ratio, which reproduces the artwork's box
+   without having to know its pixel height. */
 .mf-poster-actions {
   position: absolute;
-  inset: 0;
+  inset: 0 0 auto 0;
+  aspect-ratio: 2 / 3;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -344,16 +350,22 @@ input.mf-search-input::-webkit-search-cancel-button { display: none; }
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   opacity: 0;
-  transition: opacity var(--transition);
+  transition: opacity var(--transition), transform var(--transition);
 }
 
 .mf-poster-card:hover .mf-poster-actions,
 .mf-poster-card:focus-within .mf-poster-actions { opacity: 1; }
 
-/* No hover on touch: reveal the actions with a persistent button instead. */
+/* The artwork lifts on hover/focus — the overlay has to travel with it, or it
+   sits 4px low and lets a strip of poster show above it. */
+.mf-poster-card:hover .mf-poster-actions,
+.mf-poster-card:focus-visible .mf-poster-actions { transform: translateY(-4px); }
+
+/* No hover on touch: the actions are always visible, as a row under the art. */
 @media (hover: none) {
   .mf-poster-actions {
     position: static;
+    aspect-ratio: auto;
     opacity: 1;
     background: none;
     backdrop-filter: none;
@@ -825,7 +837,10 @@ body.mf-select-mode .mf-poster-select,
 
 @media (prefers-reduced-motion: reduce) {
   .mf-poster-art,
+  .mf-poster-actions,
   .mf-stop-item,
   .mf-icon-btn { transition: none; }
-  .mf-poster-card:hover .mf-poster-art { transform: none; }
+  .mf-poster-card:hover .mf-poster-art,
+  .mf-poster-card:hover .mf-poster-actions,
+  .mf-poster-card:focus-visible .mf-poster-actions { transform: none; }
 }
