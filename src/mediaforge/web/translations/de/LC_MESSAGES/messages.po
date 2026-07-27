@@ -5758,7 +5758,7 @@ msgid "Everything"
 msgstr "Alles"
 
 #: templates/base.html
-msgid "Clear finished"
+msgid "Clear Entries"
 msgstr "Einträge Löschen"
 
 #: templates/base.html

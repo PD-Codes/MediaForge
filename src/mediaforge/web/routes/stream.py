@@ -169,16 +169,29 @@ def register_stream_routes(app):
         if not stream_url:
             return jsonify({"error": "Kein Stream-Link gefunden"}), 502
         # Only HLS can be proxied as a playlist; signal the client to fall back
-        # to the transcoder otherwise (e.g. a direct .mp4).
-        is_hls = ".m3u8" in stream_url.lower()
+        # to the transcoder otherwise (e.g. a direct .mp4). Not every manifest
+        # advertises itself by extension -- hanime's player fetches an
+        # extension-less "/hls/<id>/<token>" path -- so the path counts too.
+        _lower = stream_url.lower()
+        is_hls = ".m3u8" in _lower or "/hls/" in _lower
         if not is_safe_url(stream_url):
             return jsonify({"error": "Unsichere Stream-URL", "hls": is_hls}), 400
 
+        # Headers the episode itself resolved together with the URL win: a
+        # signed, session-bound stream (hanime, behind Cloudflare Turnstile)
+        # answers 403 to anything that doesn't replay its cookies and the
+        # matching User-Agent. Everything else keeps the per-provider defaults.
+        headers = {}
         try:
-            from ...config import PROVIDER_HEADERS_D
-            headers = dict(PROVIDER_HEADERS_D.get(provider, {}) or {})
+            headers = dict(getattr(episode, "stream_headers", None) or {})
         except Exception:
             headers = {}
+        if not headers:
+            try:
+                from ...config import PROVIDER_HEADERS_D
+                headers = dict(PROVIDER_HEADERS_D.get(provider, {}) or {})
+            except Exception:
+                headers = {}
         if not headers:
             headers = {"User-Agent": os.environ.get("MEDIAFORGE_USER_AGENT", "Mozilla/5.0")}
 

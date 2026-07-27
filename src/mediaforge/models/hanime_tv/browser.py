@@ -9,7 +9,9 @@ Playwright, as VeeV does) and read what the page itself exposes:
                 description, year, tags, censored, franchise episode links).
                 No signed API call needed.
   * stream    – click the play overlay so the player loads the signed
-                ``…highwinds-cdn.com/….m3u8`` and intercept that request.
+                ``…highwinds-cdn.com/….m3u8`` and intercept that request,
+                together with the headers/cookies it was sent with (the
+                stream is bound to the browser session -- see fetch_video).
 
 All best-effort: if patchright is missing or the page changes, callers degrade
 to empty results instead of crashing.
@@ -141,13 +143,26 @@ _PLAY_JS = r"""
 """
 
 
+# Request headers worth replaying outside the browser. Everything else is
+# either connection-specific (:authority, accept-encoding) or set by the
+# HTTP client itself.
+_REPLAY_HEADERS = ("user-agent", "referer", "origin", "accept", "accept-language")
+
+
 def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
-    """Return (detail, m3u8) for a hanime video slug.
+    """Return (detail, stream) for a hanime video slug.
 
     ``detail`` is a normalised dict:
         {title, description, poster_url, year, censored, genres[], episodes[]}
-    ``m3u8`` is the HLS URL (only fetched when ``want_stream`` – requires
-    clicking the player), else None.
+    ``stream`` is None, or {"url": <HLS URL>, "headers": {...}} (only fetched
+    when ``want_stream`` -- requires clicking the player).
+
+    The headers matter: hanime fronts the player with Cloudflare Turnstile, so
+    the signed /hls/ URL is bound to the browser session that requested it.
+    Handing the bare URL to ffmpeg gets a 403 -- it needs the same cookies
+    (cf_clearance above all) and the *same* User-Agent the cookie was issued
+    for. So the request's headers plus the context cookies are captured here
+    and travel with the URL.
     """
     spw = _sync_playwright()
     if spw is None:
@@ -156,6 +171,8 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
 
     detail = {}
     m3u8 = [None]
+    req_headers = [None]
+    cookie_header = [""]
     seen = []
     title = ""
     with spw() as p:
@@ -180,6 +197,10 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
                             is_manifest = "mpegurl" in ct or "vnd.apple.mpegurl" in ct
                         if is_manifest:
                             m3u8[0] = u
+                            try:
+                                req_headers[0] = dict(resp.request.headers or {})
+                            except Exception:
+                                req_headers[0] = {}
                             seen.append((u[:70], resp.status))
                             return
                     if "handshake" in u or "sign.bin" in u:
@@ -263,6 +284,15 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
                 title = page.title()
             except Exception:
                 pass
+            if m3u8[0]:
+                # Cookies have to be read while the context is still open.
+                try:
+                    jar = context.cookies(_BASE) or []
+                    cookie_header[0] = "; ".join(
+                        f"{c.get('name')}={c.get('value')}" for c in jar if c.get("name")
+                    )
+                except Exception as e:
+                    logger.debug("hanime cookie read failed: %s", e)
         finally:
             try:
                 handle.close()
@@ -275,4 +305,19 @@ def fetch_video(slug, want_stream=False, timeout_ms=_NAV_TIMEOUT):
             slug, want_stream, list(detail.keys()) if detail else "NONE",
             m3u8[0], title, seen or "NONE",
         )
-    return detail or {}, m3u8[0]
+
+    stream = None
+    if m3u8[0]:
+        captured = req_headers[0] or {}
+        headers = {}
+        for name in _REPLAY_HEADERS:
+            value = captured.get(name) or captured.get(name.title())
+            if value:
+                headers[name.title()] = value   # "user-agent" -> "User-Agent"
+        # Normalise the two the player does not always send explicitly.
+        headers.setdefault("Referer", _BASE + "/")
+        headers.setdefault("Origin", _BASE)
+        if cookie_header[0]:
+            headers["Cookie"] = cookie_header[0]
+        stream = {"url": m3u8[0], "headers": headers}
+    return detail or {}, stream

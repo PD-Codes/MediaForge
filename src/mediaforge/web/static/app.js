@@ -769,6 +769,21 @@ function normalizeQuotes(s) {
     .replace(/[\u201C\u201D\u201E]/g, '"');
 }
 
+// Punctuation-insensitive comparison key. The card title and the folder name
+// do not come from the same place -- e.g. for hanime the card carries the
+// catalogue's "name" while the folder is built from the video page's JSON-LD
+// title -- so the two can differ by a "!", a dash or a colon and the strict
+// comparison below then misses a title that IS on disk. Reducing both sides to
+// letters and digits catches those without loosening what counts as a match:
+// the whole (episode-suffix-stripped) title still has to be there.
+function _looseTitleKey(s) {
+  return normalizeQuotes(unesc(s || ""))
+    .toLowerCase()
+    .replace(/\s*\(.*$/, "")        // drop "(2013)" and everything after it
+    .replace(/[^a-z0-9]+/g, "")      // punctuation, spaces, quotes -- all out
+    .trim();
+}
+
 function isDownloaded(title) {
   // Folder-based check (used when mediascan is inactive)
   if (!downloadedFolders.length || !title) return false;
@@ -779,9 +794,15 @@ function isDownloaded(title) {
       .trim()
       .toLowerCase(),
   );
-  return downloadedFolders.some((f) =>
+  if (downloadedFolders.some((f) =>
     normalizeQuotes(f.toLowerCase()).startsWith(clean),
-  );
+  )) return true;
+
+  // Second pass, punctuation-insensitive (see _looseTitleKey). Only ever adds
+  // matches the strict pass above missed.
+  const loose = _looseTitleKey(title);
+  if (!loose) return false;
+  return downloadedFolders.some((f) => _looseTitleKey(f).startsWith(loose));
 }
 
 function _normalizeForMediascan(title) {
@@ -1263,6 +1284,20 @@ if (browseDiv) {
   showBrowseSections();
 }
 
+function updateBrowseScrollBtns(section) {
+  // A row that fits on screen (or was thinned out by a content filter) has
+  // nothing to scroll -- grey the arrows out instead of leaving buttons that
+  // visibly do nothing when clicked.
+  const grid = section.querySelector(".browse-grid");
+  const btns = section.querySelectorAll(".browse-scroll-btn");
+  if (!grid || btns.length < 2) return;
+  const max = grid.scrollWidth - grid.clientWidth;
+  const atStart = grid.scrollLeft <= 1;
+  const atEnd = grid.scrollLeft >= max - 1;
+  btns[0].disabled = max <= 1 || atStart;
+  btns[1].disabled = max <= 1 || atEnd;
+}
+
 function initBrowseScrollButtons() {
   document.querySelectorAll(".browse-section").forEach(function (section) {
     const grid = section.querySelector(".browse-grid");
@@ -1284,11 +1319,21 @@ function initBrowseScrollButtons() {
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
       '</button>';
     row.appendChild(btns);
+
+    const refresh = function () { updateBrowseScrollBtns(section); };
+    grid.addEventListener("scroll", refresh, { passive: true });
+    // Cards arrive asynchronously and the row width changes with the window,
+    // so the state has to be recomputed on both.
+    if (window.ResizeObserver) new ResizeObserver(refresh).observe(grid);
+    if (window.MutationObserver) new MutationObserver(refresh).observe(grid, { childList: true });
+    window.addEventListener("resize", refresh);
+    refresh();
   });
 }
 
 function scrollBrowseGrid(btn, dir) {
-  const grid = btn.closest(".browse-section").querySelector(".browse-grid");
+  const section = btn.closest(".browse-section");
+  const grid = section && section.querySelector(".browse-grid");
   if (grid) grid.scrollBy({ left: dir * 460, behavior: "smooth" });
 }
 

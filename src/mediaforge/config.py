@@ -904,6 +904,18 @@ HANIME_SEARCH_URL = os.environ.get(
     "HANIME_SEARCH_URL", "https://guest.freeanimehentai.net/api/v11/search_hvs"
 )
 
+# Hosts that serve this site's artwork. Kept separate from the URLs above
+# because the images do NOT live under any of those domains: the catalogue is
+# served from freeanimehentai.net while every poster_url/cover_url in it points
+# at hanime-cdn.com. routes/image_proxy.py only allows what it can derive from
+# the configured base URLs, so without this list every poster is answered with
+# a 403 -- titles appear, images do not.
+HANIME_IMAGE_HOSTS = tuple(
+    h.strip().lower()
+    for h in os.environ.get("HANIME_IMAGE_HOSTS", "hanime-cdn.com,htv-services.com").split(",")
+    if h.strip()
+)
+
 # A "series" is a franchise, represented by one of its video slugs:
 #   https://hanime.tv/videos/hentai/<slug>
 HANIME_SERIES_PATTERN = re.compile(

@@ -9,6 +9,7 @@ It always starts the WebUI directly -- the standalone CLI was removed (see
 ``arguments.py``) -- and returns a process exit code instead of raising.
 """
 
+import os
 import sys
 import warnings
 
@@ -19,6 +20,31 @@ try:
     warnings.filterwarnings("ignore", category=AuthlibDeprecationWarning)
 except ImportError:
     pass
+
+
+def _silence_insecure_request_warnings():
+    """Keep urllib3(-future)'s InsecureRequestWarning out of the console.
+
+    MediaForge itself no longer disables certificate verification anywhere
+    except for an explicitly configured bare-IP site mirror (mirrors.py), where
+    the certificate cannot match by definition and the warning carries no new
+    information. Some setups (TLS-inspecting security suites, for instance)
+    additionally make the warning appear spuriously, several times per page
+    load, which drowns out the log.
+
+    Set MEDIAFORGE_SHOW_TLS_WARNINGS=1 to get the warnings back.
+    """
+    if os.environ.get("MEDIAFORGE_SHOW_TLS_WARNINGS", "").strip().lower() in ("1", "true", "yes", "on"):
+        return
+    for module in ("urllib3_future.exceptions", "urllib3.exceptions"):
+        try:
+            warning_cls = __import__(module, fromlist=["InsecureRequestWarning"]).InsecureRequestWarning
+        except Exception:
+            continue
+        warnings.filterwarnings("ignore", category=warning_cls)
+
+
+_silence_insecure_request_warnings()
 
 from .arguments import parse_args
 from .autodeps import ensure_patchright_chromium

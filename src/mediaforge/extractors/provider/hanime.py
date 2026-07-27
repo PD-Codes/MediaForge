@@ -64,12 +64,17 @@ def _best_stream_from_detail(detail):
     return best_url
 
 
-def get_direct_link_from_hanime(url):
-    """Return the HLS (.m3u8) URL for a hanime video URL.
+def get_stream_info_from_hanime(url):
+    """Return {"url", "headers"} for a hanime video URL, or None.
 
     hanime signs every /api/v8 request since the Astro rewrite, so the stream
     is resolved through the signing headless browser (shared with the model
     scraper, which caches the result so we don't launch twice).
+
+    The headers are not optional decoration: the player sits behind Cloudflare
+    Turnstile, so the signed /hls/ URL only answers requests carrying the same
+    cookies (cf_clearance) and User-Agent the browser used. Without them the
+    CDN replies 403 to every segment.
     """
     slug = _slug(url)
     if not slug:
@@ -78,17 +83,42 @@ def get_direct_link_from_hanime(url):
         from ...models.hanime_tv import scraper
     except ImportError:
         from mediaforge.models.hanime_tv import scraper
-    link = scraper.stream_for_slug(slug)
+    info = scraper.stream_info_for_slug(slug)
     # Fallback: if only the detail JSON was captured, derive the stream from it.
-    if not link:
+    if not info:
         detail = scraper.video_detail(slug)
         link = _best_stream_from_detail(detail or {})
-    if not link:
+        info = {"url": link, "headers": dict(_HEADERS)} if link else None
+    if not info:
         logger.warning("hanime get_direct_link found no stream for %s", slug)
-    return link
+    return info
 
 
-def download_from_hanime(stream_url, output_path, cancel_event=None, label=""):
+def get_direct_link_from_hanime(url):
+    """The HLS URL only -- see get_stream_info_from_hanime for the headers."""
+    info = get_stream_info_from_hanime(url)
+    return info.get("url") if info else None
+
+
+def _ffmpeg_header_opts(headers):
+    """Split a header dict into ffmpeg's ``user_agent`` + ``headers`` options.
+
+    ffmpeg wants the User-Agent separately and everything else as one CRLF
+    -separated blob. Both are applied to the segment/key requests too, not just
+    the manifest, which is what makes the AES-128 key fetch work.
+    """
+    headers = dict(headers or {})
+    user_agent = _HEADERS["User-Agent"]
+    for key in list(headers):
+        if key.lower() == "user-agent":
+            user_agent = headers.pop(key) or user_agent
+    headers.setdefault("Referer", HANIME_BASE_URL + "/")
+    blob = "".join(f"{k}: {v}\r\n" for k, v in headers.items() if v)
+    return user_agent, blob
+
+
+def download_from_hanime(stream_url, output_path, cancel_event=None, label="",
+                         headers=None):
     """Download a hanime HLS stream to ``output_path``.
 
     hanime streams are AES-128 encrypted HLS with ``.html``-disguised segments
@@ -110,9 +140,13 @@ def download_from_hanime(stream_url, output_path, cancel_event=None, label=""):
     os.makedirs(C._MEDIAFORGE_TEMP_DIR, exist_ok=True)
     tmp = C._MEDIAFORGE_TEMP_DIR / f"{output_path.stem}.hanime.mkv"
 
+    _user_agent, _header_blob = _ffmpeg_header_opts(headers)
     in_opts = {
-        "headers": f"Referer: {HANIME_BASE_URL}/\r\n",
-        "user_agent": _HEADERS["User-Agent"],
+        # Session cookies + the matching User-Agent, captured together with the
+        # signed URL (see get_stream_info_from_hanime) -- without them the CDN
+        # answers 403.
+        "headers": _header_blob,
+        "user_agent": _user_agent,
         # segments are served as .html and the key/segments use crypto+https
         "allowed_extensions": "ALL",
         "protocol_whitelist": "file,http,https,tcp,tls,crypto,httpproxy,data",

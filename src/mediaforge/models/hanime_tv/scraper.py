@@ -10,7 +10,9 @@ the same site fetches -- we read those JSON payloads directly (this is still
 "reading what the site serves", just the machine-readable variant).  Two
 sources are used:
 
-  * ``search.htv-services.com``  -> listing + search (new / trending / query)
+  * ``HANIME_SEARCH_URL``        -> the catalogue (listing + search). Note it
+                                    is a plain GET returning EVERYTHING; the
+                                    filtering/sorting/paging happens here.
   * ``<api>/video?id=<slug>``    -> a single video: metadata, the franchise's
                                     episode list, and the HLS stream manifest.
 
@@ -56,8 +58,8 @@ _HEADERS = {
 # hanime.tv/api/* sits behind Cloudflare and answers plain `requests` with a
 # 404-style block, so we impersonate a real browser TLS fingerprint via
 # curl_cffi (same approach the project uses for VeeV), falling back to plain
-# requests only if curl_cffi is unavailable.  The separate search host
-# (search.htv-services.com) is not gated, but using the same path is harmless.
+# requests only if curl_cffi is unavailable.  The separate catalogue host is
+# not gated, but using the same path is harmless.
 _IMPERSONATE = "chrome120"
 
 
@@ -166,7 +168,21 @@ def franchise_key(hit):
 
 
 def _poster(hit):
-    return hit.get("poster_url") or hit.get("cover_url") or ""
+    """The portrait artwork for a card -- cover_url first, deliberately.
+
+    The two fields swapped meaning when the catalogue backend changed. On the
+    current one, measured on a live entry:
+
+        poster_url  1920x1080, /images/posters/...  -> a wide scene still
+        cover_url    268x394,  /images/covers/...   -> the portrait cover
+
+    A card slot is portrait, so cover_url is the one that belongs there; the
+    old order put a cropped, zoomed-in scene on every card while the detail
+    modal (which reads the video endpoint, with its own field layout) showed
+    the right image. poster_url stays as the fallback for entries that carry
+    no cover, and for the old backend should anyone still point at one.
+    """
+    return hit.get("cover_url") or hit.get("poster_url") or ""
 
 
 def _hit_to_card(hit):
@@ -218,31 +234,112 @@ def _group_by_franchise(hits):
 
 
 # ---------------------------------------------------------------------------
-# Listing / search via search.htv-services.com
+# Listing / search
 # ---------------------------------------------------------------------------
+# The old backend (search.htv-services.com) was a real search service: one POST
+# per query, with search_text/order_by/ordering/page evaluated server-side. It
+# was shut down (NXDOMAIN), and the endpoint that replaced it does not take
+# parameters at all -- a plain GET returns the WHOLE catalogue as a flat JSON
+# list (~3300 entries, ~4 MB), no envelope, no paging, no ordering.
+#
+# So searching, sorting and paging happen here now. That is why the catalogue
+# is cached in memory: re-downloading 4 MB for every keystroke in the search
+# box would be absurd, and the data changes a few times a day at most.
+_CATALOG_TTL = 1800.0            # 30 min
+_CATALOG_PAGE_SIZE = 24          # what one "page" means to the callers below
+_catalog_lock = threading.Lock()
+_catalog_cache = {"entries": None, "ts": 0.0}
+
+
+def _catalog_entries(force=False):
+    """The full catalogue, cached. Raises on a failed fetch (see callers).
+
+    The fetch happens under the lock on purpose: a second thread arriving mid
+    download waits for the result instead of starting its own 4 MB transfer.
+    """
+    with _catalog_lock:
+        cached = _catalog_cache["entries"]
+        if (not force and cached is not None
+                and time.monotonic() - _catalog_cache["ts"] < _CATALOG_TTL):
+            return cached
+
+        resp = _http_get(HANIME_SEARCH_URL)
+        resp.raise_for_status()
+        data = resp.json()
+        # Flat list today; tolerate the old {"hits": [...]} envelope (and the
+        # JSON-string variant it used) in case a mirror still serves it.
+        if isinstance(data, dict):
+            data = data.get("hits")
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except Exception:
+                    data = []
+        entries = [e for e in (data or []) if isinstance(e, dict)]
+        _catalog_cache["entries"] = entries
+        _catalog_cache["ts"] = time.monotonic()
+        logger.debug("[hanime] catalogue refreshed: %d entries", len(entries))
+        return entries
+
+
+def _matches_text(entry, needle):
+    """Substring match over the fields the site itself searches on."""
+    if not needle:
+        return True
+    hay = " ".join(str(entry.get(f) or "") for f in ("name", "search_titles", "slug", "brand"))
+    return all(word in hay.lower() for word in needle.lower().split())
+
+
+def _sort_key(order_by):
+    """Numeric sort key, tolerating entries that lack the field."""
+    def key(entry):
+        value = entry.get(order_by)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return 0
+        return value
+    return key
+
+
+def _search_hits(search_text="", order_by="created_at_unix", ordering="desc",
+                 tags=None, blacklist=None):
+    """EVERY catalogue entry matching the filters, sorted -- not paged.
+
+    A page is just a slice of this list (see _search_request).  Callers that
+    drop entries afterwards -- franchise grouping, the censorship filter --
+    walk the whole list instead, so their grid still ends up full.
+    """
+    entries = _catalog_entries()
+
+    wanted = {t.lower() for t in (tags or []) if t}
+    unwanted = {t.lower() for t in (blacklist or []) if t}
+
+    hits = []
+    for entry in entries:
+        if not _matches_text(entry, search_text):
+            continue
+        if wanted or unwanted:
+            names = {t.lower() for t in _tag_names(entry)}
+            if wanted and not wanted.issubset(names):   # tags_mode was "AND"
+                continue
+            if unwanted and names & unwanted:
+                continue
+        hits.append(entry)
+
+    if order_by:
+        hits.sort(key=_sort_key(order_by), reverse=(ordering or "desc") != "asc")
+    return hits
+
+
 def _search_request(search_text="", order_by="created_at_unix", ordering="desc",
                     page=0, tags=None, blacklist=None):
-    body = {
-        "search_text": search_text or "",
-        "tags": tags or [],
-        "tags_mode": "AND",
-        "brands": [],
-        "blacklist": blacklist or [],
-        "order_by": order_by,
-        "ordering": ordering,
-        "page": page,
-    }
-    resp = _http_post(HANIME_SEARCH_URL, body)
-    resp.raise_for_status()
-    data = resp.json()
-    hits = data.get("hits")
-    # hanime returns "hits" as a JSON-encoded string; be tolerant either way.
-    if isinstance(hits, str):
-        try:
-            hits = json.loads(hits)
-        except Exception:
-            hits = []
-    return hits or []
+    """One page of results, filtered and sorted locally (see the note above).
+
+    Same signature and return value as when this was a server-side query, so
+    the callers did not have to change.
+    """
+    hits = _search_hits(search_text, order_by, ordering, tags, blacklist)
+    start = max(0, int(page or 0)) * _CATALOG_PAGE_SIZE
+    return hits[start:start + _CATALOG_PAGE_SIZE]
 
 
 # Throttle for the "search backend is down" warning. A dead endpoint fails for
@@ -269,60 +366,41 @@ def _log_search_failure(what, exc):
 
 
 _LISTING_TARGET_COUNT = 24  # aim for a full-looking grid
-_LISTING_MAX_PAGES = 4      # politeness cap — stop even if still short of target
 
 
 def _fetch_filtered(order_by, ordering, show_censored=True, show_uncensored=True):
-    """Fetch a new/trending listing, applying the censored/uncensored content
-    filter and backfilling from additional pages so filtering doesn't just
-    leave a half-empty grid.
+    """A listing, franchise-grouped, filled up to _LISTING_TARGET_COUNT cards.
 
-    The censorship filter has to happen here (before the page is "full")
-    rather than after a single fixed-size page is fetched — otherwise ticking
-    off "Zensiert" would simply remove matching cards from an already-short
-    list instead of the caller getting a fresh page's worth of items that
-    actually match. Franchise de-duplication (see _group_by_franchise) spans
-    all fetched pages, not just one, so a franchise seen on page 0 can't
-    reappear once page 1 is pulled in.
+    Both reduction steps -- collapsing a franchise's episodes into one card
+    and dropping cards the censorship prefs exclude -- would otherwise leave a
+    half-empty row (and scroll arrows with nothing to scroll).  Since the whole
+    catalogue is available locally, the walk simply continues down the sorted
+    list until the target count is reached instead of stopping at a fixed
+    page.  Franchise de-duplication therefore spans the entire listing.
     """
-    if show_censored and show_uncensored:
-        # No filtering needed — one page is enough, same as before.
-        try:
-            hits = _search_request(order_by=order_by, ordering=ordering)
-        except Exception as e:
-            _log_search_failure(order_by, e)
-            return None
-        return _group_by_franchise(hits)
+    try:
+        hits = _search_hits(order_by=order_by, ordering=ordering)
+    except Exception as e:
+        _log_search_failure(order_by, e)
+        return None
 
     cards, seen_franchise = [], set()
-    fetched_any_page = False
-    for page in range(_LISTING_MAX_PAGES):
-        try:
-            hits = _search_request(order_by=order_by, ordering=ordering, page=page)
-        except Exception as e:
-            _log_search_failure(f"{order_by} page {page}", e)
-            break
-        fetched_any_page = True
-        if not hits:
-            break
-        for hit in hits:
-            card = _hit_to_card(hit)
-            if not card["url"]:
-                continue
-            key = card["franchise"]
-            if key in seen_franchise:
-                continue
-            seen_franchise.add(key)
-            c = card["censored"]
-            if c == "Censored" and not show_censored:
-                continue
-            if c == "Uncensored" and not show_uncensored:
-                continue
-            cards.append(card)
+    for hit in hits:
+        card = _hit_to_card(hit)
+        if not card["url"]:
+            continue
+        key = card["franchise"]
+        if key in seen_franchise:
+            continue
+        seen_franchise.add(key)
+        c = card["censored"]
+        if c == "Censored" and not show_censored:
+            continue
+        if c == "Uncensored" and not show_uncensored:
+            continue
+        cards.append(card)
         if len(cards) >= _LISTING_TARGET_COUNT:
             break
-    if not fetched_any_page:
-        return None
     return cards
 
 
@@ -382,9 +460,9 @@ def _video_cache_get(slug):
     return None
 
 
-def _video_cache_put(slug, detail, m3u8):
+def _video_cache_put(slug, detail, stream):
     with _video_cache_lock:
-        _video_cache[slug] = (time.time(), (detail, m3u8))
+        _video_cache[slug] = (time.time(), (detail, stream))
 
 
 _video_inflight_locks = {}
@@ -401,11 +479,16 @@ def _slug_lock(slug):
 
 
 def _get_video(cand, want_stream=False):
-    """Return (detail, m3u8) for a candidate slug, cached, one browser at a time.
+    """Return (detail, stream) for a candidate slug, cached, one browser at a time.
+
+    ``stream`` is None or {"url", "headers"} -- see browser.fetch_video: the
+    signed URL only works together with the session headers/cookies it was
+    captured with, so the two always travel as one unit.
 
     ``want_stream`` triggers the poster/play click so the signed .m3u8 is
     captured; metadata-only calls skip it (faster).  A cached metadata result is
-    reused, but a stream request re-runs the browser if no m3u8 was captured yet.
+    reused, but a stream request re-runs the browser if no stream was captured
+    yet.
     """
     cached = _video_cache_get(cand)
     if cached is not None and (cached[1] or not want_stream):
@@ -416,16 +499,16 @@ def _get_video(cand, want_stream=False):
             return cached
         try:
             from . import browser as _browser
-            detail, m3u8 = _browser.fetch_video(cand, want_stream=want_stream)
+            detail, stream = _browser.fetch_video(cand, want_stream=want_stream)
         except Exception as e:  # pragma: no cover - best effort
             logger.warning("hanime browser fetch_video(%s) failed: %s", cand, e)
-            detail, m3u8 = {}, None
+            detail, stream = {}, None
         if cached is not None:
             detail = detail or cached[0]
-            m3u8 = m3u8 or cached[1]
-        if detail or m3u8:
-            _video_cache_put(cand, detail, m3u8)
-        return (detail, m3u8)
+            stream = stream or cached[1]
+        if detail or stream:
+            _video_cache_put(cand, detail, stream)
+        return (detail, stream)
 
 
 def video_detail(slug):
@@ -433,23 +516,50 @@ def video_detail(slug):
     if not slug:
         return None
     for cand in _slug_candidates(slug):
-        detail, _m3u8 = _get_video(cand, want_stream=False)
+        detail, _stream = _get_video(cand, want_stream=False)
         if detail:
             return detail
     logger.warning("hanime video_detail failed for %r", slug)
     return None
 
 
-def stream_for_slug(slug):
-    """Best HLS (.m3u8) URL for a video slug via the browser (clicks play)."""
+def forget_video(slug):
+    """Drop a slug's cached detail/stream so the next call re-runs the browser.
+
+    A signed stream is short-lived and bound to a browser session, so a failed
+    download must not be retried against the very same cached URL -- that just
+    repeats the same 403 until the attempts run out.
+    """
+    with _video_cache_lock:
+        for cand in _slug_candidates(slug or ""):
+            _video_cache.pop(cand, None)
+
+
+def stream_info_for_slug(slug):
+    """{"url", "headers"} for a video slug via the browser (clicks play).
+
+    The headers belong to the URL: hanime's signed /hls/ path only answers to
+    the session it was issued for, so every consumer (ffmpeg, the stream proxy)
+    has to replay them. Returns None when no stream could be captured.
+    """
     if not slug:
         return None
     for cand in _slug_candidates(slug):
-        _detail, m3u8 = _get_video(cand, want_stream=True)
-        if m3u8:
-            return m3u8
-    logger.warning("hanime stream_for_slug found nothing for %r", slug)
+        _detail, stream = _get_video(cand, want_stream=True)
+        if stream and stream.get("url"):
+            return stream
+    logger.warning("hanime stream_info_for_slug found nothing for %r", slug)
     return None
+
+
+def stream_for_slug(slug):
+    """Best HLS (.m3u8) URL for a video slug -- URL only, no headers.
+
+    Kept for callers that just need the address; anything that FETCHES the
+    stream wants stream_info_for_slug() instead (see the note there).
+    """
+    stream = stream_info_for_slug(slug)
+    return stream.get("url") if stream else None
 
 
 def parse_meta(detail):

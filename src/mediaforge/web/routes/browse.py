@@ -45,6 +45,19 @@ from collections import OrderedDict as _OD
 _BROWSE_CACHE_MAX = 50     # hard cap; evicts LRU entry when exceeded
 _browse_cache: "_OD" = _OD()
 _BROWSE_TTL = 3600  # 1 hour
+
+# Bump when the SHAPE of a cached card changes -- a renamed field, a different
+# source for one of them, anything that makes an old entry wrong rather than
+# merely outdated. The value becomes part of the cache key, so stale entries
+# are simply never read again instead of being served for up to an hour from
+# memory and, worse, immediately after every restart from SQLite (the DB half
+# is stale-while-revalidate on purpose).
+#
+# v2: hanime cards take their artwork from cover_url; poster_url turned into a
+#     1920x1080 scene still on the new catalogue backend.
+# v3: hanime listings are filled up to a full grid after franchise grouping
+#     and the censored/uncensored filter.
+_CARD_SCHEMA = "v3"
 _browse_refresh_locks: dict = {}
 _browse_refresh_mutex = threading.Lock()
 
@@ -63,6 +76,10 @@ def _browse_cache_set(k, v):
 
 
 def _cached_browse(key, fetch_fn):
+    # Every lookup and every write goes through the versioned key (see
+    # _CARD_SCHEMA), so a card-shape change invalidates the old entries
+    # everywhere at once -- memory and DB.
+    key = _CARD_SCHEMA + ":" + key
     now = _time.time()
     # 1. In-memory fast path
     entry = _browse_cache.get(key)

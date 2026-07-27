@@ -165,17 +165,25 @@ def _delete_replaced_files(old_paths, new_path, ep_url):
             logger.warning("[LangGroup] Could not delete replaced file %s: %s", raw, exc)
 
 
+# Sources that serve their own single stream instead of embedding third-party
+# hosters. Running the hoster fallback chain for them is pure noise: every
+# "other provider" resolves to the exact same URL, so one failure turns into
+# one per hoster in the log, and the summary then claims seven sources were
+# tried when there only ever was one.
+_SINGLE_SOURCE_PROVIDERS = ("Direct", "hanime")
+
+
 def _build_attempt_plan(primary_provider, max_retries):
     """Ordered [(provider, attempt_no, attempts_for_this_provider), ...].
 
     The provider the user picked gets the full *max_retries* budget; every
     other working provider (in the order configured in the settings) then gets
     one shot each, so a dead hoster costs one extra try rather than failing the
-    whole episode. Direct-link jobs ("Direct") have no hoster concept and just
-    keep the plain retry loop.
+    whole episode. Sources with only one stream of their own (direct links,
+    hanime) have no hoster concept and just keep the plain retry loop.
     """
-    if primary_provider == "Direct":
-        return [("Direct", i, max_retries) for i in range(1, max_retries + 1)]
+    if primary_provider in _SINGLE_SOURCE_PROVIDERS:
+        return [(primary_provider, i, max_retries) for i in range(1, max_retries + 1)]
 
     chain = get_provider_fallback_chain(primary_provider)
     plan = [(chain[0], i, max_retries) for i in range(1, max_retries + 1)]

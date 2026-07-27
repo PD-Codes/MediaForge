@@ -64,6 +64,7 @@ class HanimeEpisode:
         self.__episode_path = None
         self.__is_downloaded = None
         self.__stream_url = None
+        self.__stream_headers = {}
 
     # --- relations ---
     @property
@@ -145,21 +146,33 @@ class HanimeEpisode:
         return "hanime"
 
     # --- stream resolution (via extractor) ---
-    @property
-    def stream_url(self):
-        """Resolve the signed HLS (.m3u8) URL via the hanime extractor, which
-        drives a headless browser to click play and capture the request
-        (see hanime_tv/browser.py)."""
+    def _resolve_stream(self):
+        """Resolve the signed HLS URL + its session headers via the hanime
+        extractor, which drives a headless browser to click play and capture
+        the request (see hanime_tv/browser.py). The headers stay with the URL:
+        the CDN rejects the signed link without the session's cookies."""
         if self.__stream_url is None:
             try:
-                from ...extractors.provider.hanime import get_direct_link_from_hanime
+                from ...extractors.provider.hanime import get_stream_info_from_hanime
             except ImportError:
-                from mediaforge.extractors.provider.hanime import get_direct_link_from_hanime
-            url = get_direct_link_from_hanime(scraper.series_url(self.episode_slug))
-            if not url:
+                from mediaforge.extractors.provider.hanime import get_stream_info_from_hanime
+            info = get_stream_info_from_hanime(scraper.series_url(self.episode_slug))
+            if not info or not info.get("url"):
                 raise ValueError(f"No HLS stream found for hanime episode: {self.url}")
-            self.__stream_url = url
-        return self.__stream_url
+            self.__stream_url = info["url"]
+            self.__stream_headers = info.get("headers") or {}
+        return self.__stream_url, self.__stream_headers
+
+    @property
+    def stream_url(self):
+        """The signed HLS (.m3u8) URL. See _resolve_stream."""
+        return self._resolve_stream()[0]
+
+    @property
+    def stream_headers(self):
+        """Headers that have to accompany every request for stream_url."""
+        self._resolve_stream()
+        return self.__stream_headers
 
     # --- paths (NAMING_TEMPLATE, season/episode layout) ---
     def _fmt(self, template_part):
@@ -236,10 +249,20 @@ class HanimeEpisode:
             from mediaforge.extractors.provider.hanime import download_from_hanime
         ep_label = os.path.splitext(self._file_name)[0] if self._file_name else ""
         os.makedirs(self._folder_path, exist_ok=True)
-        return download_from_hanime(
-            self.stream_url, self._episode_path,
-            cancel_event=cancel_event, label=ep_label,
-        )
+        stream_url, stream_headers = self._resolve_stream()
+        try:
+            return download_from_hanime(
+                stream_url, self._episode_path,
+                cancel_event=cancel_event, label=ep_label,
+                headers=stream_headers,
+            )
+        except Exception:
+            # The signed URL is short-lived and session-bound. Forget it so a
+            # retry resolves a fresh one instead of replaying the dead link.
+            self.__stream_url = None
+            self.__stream_headers = {}
+            scraper.forget_video(self.episode_slug)
+            raise
 
     watch = episode_watch
     syncplay = episode_syncplay

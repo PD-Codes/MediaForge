@@ -5,6 +5,7 @@ Extracted from create_app as a plain route-registration function
 """
 
 from ...config import HANIME_API_BASE
+from ...config import HANIME_IMAGE_HOSTS
 from ...config import HANIME_BASE_URL
 from ...config import HANIME_SEARCH_URL
 from ...config import MEDIAFORGE_CONFIG_DIR
@@ -68,7 +69,7 @@ def _domains_of(*urls):
 # its subdomains.
 _ALLOWED_IMAGE_DOMAINS = _domains_of(
     MEGAKINO_BASE_URL, HANIME_BASE_URL, HANIME_API_BASE, HANIME_SEARCH_URL,
-)
+) | {h for h in HANIME_IMAGE_HOSTS if h}
 
 
 def _image_host_allowed(netloc: str) -> bool:
