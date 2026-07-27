@@ -41,6 +41,13 @@ from .encoding_worker import _trigger_after_download_encode
 
 logger = get_logger(__name__)
 
+# Marker in the exception message that tells the retry loop a download thread
+# survived the watchdog abort, so no further attempt may touch the same file.
+_WATCHDOG_STUCK = "watchdog: download thread unresponsive"
+# How long to wait for an aborted download thread to wind down before giving up
+# on it (yt-dlp aborts on its next progress hook, ffmpeg has to be killed).
+_WATCHDOG_JOIN_GRACE = 60
+
 
 # Errors that mean "this hoster has nothing for this episode" (as opposed to a
 # transient failure worth retrying on the same hoster): the site didn't offer
@@ -792,7 +799,20 @@ def _queue_worker():
 
                         # ── Watchdog: run download in a thread so a hung yt-dlp
                         # cannot freeze the entire queue worker forever. ──────
-                        _HANG_TIMEOUT   = int(get_setting("watchdog_hang_timeout") or os.environ.get("MEDIAFORGE_HANG_TIMEOUT", "1800"))   # 30 min default
+                        # What the watchdog is for is a download that stops
+                        # making progress -- that is _STALL_TIMEOUT, measured
+                        # from the last change of the ffmpeg percentage.
+                        #
+                        # _HANG_TIMEOUT is an absolute cap on ONE attempt and
+                        # is off by default. It used to default to 1800s while
+                        # the stall timeout was 3600s, and it was measured over
+                        # the whole download rather than over a hang: a 9 GB 4K
+                        # episode at 5 MB/s takes ~30 min, so every large file
+                        # was killed mid-transfer, every retry ran into the same
+                        # cap, and the stall branch could never be reached at
+                        # all. Set it only if you deliberately want a ceiling on
+                        # how long a single episode may take.
+                        _HANG_TIMEOUT   = int(get_setting("watchdog_hang_timeout") or os.environ.get("MEDIAFORGE_HANG_TIMEOUT", "0"))  # 0 = no absolute cap
                         _STALL_TIMEOUT  = int(get_setting("watchdog_stall_timeout") or os.environ.get("MEDIAFORGE_STALL_TIMEOUT", "3600"))  # 60 min no progress (must comfortably exceed yt-dlp's reconnect_delay_max=60s so a normal reconnect isn't mistaken for a stall)
                         _dl_exc = [None]
                         _dl_res = [None]
@@ -825,6 +845,7 @@ def _queue_worker():
                         _last_change = time.monotonic()
                         _start_watch = time.monotonic()
                         _timed_out   = False
+                        _timeout_why = ""
                         _cancelled   = False
                         while not _dl_done.wait(timeout=1):
                             if _item_cancel.is_set():
@@ -832,12 +853,13 @@ def _queue_worker():
                                 _cancelled = True
                                 break
                             _now = time.monotonic()
-                            if _now - _start_watch > _HANG_TIMEOUT:
+                            if _HANG_TIMEOUT > 0 and _now - _start_watch > _HANG_TIMEOUT:
                                 logger.error(
                                     f"[watchdog] Download hard-timeout ({_HANG_TIMEOUT}s) for {ep_url} — aborting"
                                 )
                                 _attempt_cancel.set()
                                 _timed_out = True
+                                _timeout_why = f"hard timeout after {_HANG_TIMEOUT}s"
                                 break
                             _prog = get_ffmpeg_progress()
                             _pct  = _prog.get("percent", 0.0)
@@ -850,6 +872,7 @@ def _queue_worker():
                                 )
                                 _attempt_cancel.set()
                                 _timed_out = True
+                                _timeout_why = f"stalled for {_STALL_TIMEOUT}s without progress"
                                 break
 
                         if _cancelled:
@@ -867,10 +890,22 @@ def _queue_worker():
                             raise RuntimeError("Download cancelled")
 
                         if _timed_out:
-                            _dl_done.wait(timeout=10)  # give thread a moment to notice cancel
-                            raise RuntimeError(
-                                f"Download aborted by watchdog (stalled/hung after {_STALL_TIMEOUT}s without progress)"
-                            )
+                            # The thread has to actually be gone before the next
+                            # attempt starts: it derives its temp path from the
+                            # episode, so a still-running yt-dlp/ffmpeg would
+                            # write into the same file as the retry and produce
+                            # a corrupt (or silently wrong) result. 10s was not
+                            # enough for a process that is by definition stuck.
+                            _dl_done.wait(timeout=_WATCHDOG_JOIN_GRACE)
+                            _t.join(timeout=5)
+                            if _t.is_alive():
+                                # Unkillable in-process: retrying on another
+                                # hoster would race this thread over the same
+                                # output file, so this episode ends here.
+                                raise RuntimeError(
+                                    f"{_WATCHDOG_STUCK}: {_timeout_why}, download thread still running"
+                                )
+                            raise RuntimeError(f"Download aborted by watchdog ({_timeout_why})")
 
                         if _dl_exc[0] is not None:
                             raise _dl_exc[0]
@@ -941,6 +976,13 @@ def _queue_worker():
                         if is_queue_cancelled(item["id"]) or "Download cancelled" in str(e):
                             _episode_cancelled = True
                             last_error = None
+                            break
+                        if _WATCHDOG_STUCK in str(e):
+                            # A download thread that ignored the cancel event is
+                            # still holding the output file. Neither a retry on
+                            # this hoster nor the next one may start.
+                            last_error = e
+                            logger.error(f"Episode {ep_url}: {e} — no further attempts")
                             break
                         friendly = _lang_unavailable_msg(e)
                         if friendly is not None:
