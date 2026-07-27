@@ -59,9 +59,16 @@ jobs:
               NOTES="${NOTES}${SECTION}"$'\n'
             fi
           done
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Random delimiter: NOTES is built from commit messages, and a
+          # commit containing a line "EOF" would have closed the block early
+          # and written arbitrary step outputs in a job that has contents:
+          # write and packages: write.
+          DELIM="EOF_$(openssl rand -hex 16)"
+          {
+            echo "notes<<${DELIM}"
+            echo "$NOTES"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
         if: steps.check.outputs.exists == 'false'
@@ -71,7 +78,7 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.check.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2.3.2
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           body: ${{ steps.changelog.outputs.notes }}
@@ -116,7 +123,7 @@ jobs:
         run: mv dist/${{ matrix.dist }} dist/${{ matrix.artifact }}
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2.3.2
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           tag_name: ${{ needs.create-release.outputs.tag }}
           files: dist/${{ matrix.artifact }}
@@ -148,7 +155,7 @@ jobs:
           python -m build
 
       - name: Upload dist to GitHub Release
-        uses: softprops/action-gh-release@v2.3.2
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           tag_name: ${{ needs.create-release.outputs.tag }}
           files: |
@@ -156,7 +163,7 @@ jobs:
             dist/*.whl
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
 
   # -----------------------------------------------------------------------
   # 4. Build and push Docker image to GitHub Container Registry (ghcr.io)
@@ -175,7 +182,7 @@ jobs:
       - uses: actions/checkout@v4.2.2
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -183,7 +190,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/mediaforge
           tags: |
@@ -191,7 +198,7 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true

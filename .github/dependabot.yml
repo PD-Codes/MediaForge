@@ -1,0 +1,18 @@
+# Keeps the SHA-pinned GitHub Actions up to date.
+#
+# The workflows pin every third-party action to a full commit SHA (a moving
+# tag can be repointed by whoever owns the repository, and several of our jobs
+# run with contents: write, packages: write or an OIDC token for PyPI). Pinning
+# without an update path just means running old code forever, so Dependabot
+# opens a PR whenever a pinned action has a new release -- and rewrites the SHA
+# with the version comment intact.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"

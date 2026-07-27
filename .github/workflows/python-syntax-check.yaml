@@ -12,6 +12,12 @@ on:
       - edited
       - synchronize
 
+# Least privilege: without this block the job runs with whatever the repository
+# default is, which on older repos is read AND write for the whole token -- in a
+# job that builds code straight out of the checkout.
+permissions:
+  contents: read
+
 jobs:
   python-syntax:
     name: Python Syntax Check
