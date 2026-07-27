@@ -13,6 +13,7 @@ from ..db import get_upscale_queue
 from ..db import move_upscale_queue_item
 from ..db import remove_from_upscale_queue
 from ..db import set_setting
+from .library import lib_resolve_library_file
 from ..runtime_state import _upscale_active_cancel_events
 from ..runtime_state import _upscale_cancel_lock
 from flask import jsonify
@@ -119,13 +120,17 @@ def register_upscale_routes(app):
         if not files:
             return jsonify({"ok": False, "error": "Keine Dateien angegeben"}), 400
         replace = get_setting("upscaling_replace_original", "1") == "1"
-        from pathlib import Path as _Path
-        import json as _json
         valid = []
         title = None
+        rejected = 0
         for f in files:
-            fp = _Path(f.get("path", ""))
-            if not fp.exists():
+            # The client sends absolute paths, so every one of them has to be
+            # checked against the library roots before it reaches the worker:
+            # with replace_original on (the default) the worker overwrites
+            # exactly this path. Existence alone is not a permission.
+            fp = lib_resolve_library_file(f.get("path", ""))
+            if fp is None:
+                rejected += 1
                 continue
             if replace:
                 out = str(fp)
@@ -137,6 +142,9 @@ def register_upscale_routes(app):
                 t = f.get("title", fp.stem)
                 title = t.split(" – ")[0].strip() if " – " in t else t
         if not valid:
+            if rejected:
+                logger.warning("[Upscale] %d Pfad(e) außerhalb der Mediathek abgelehnt", rejected)
+                return jsonify({"ok": False, "error": "Datei liegt nicht in der Mediathek"}), 403
             return jsonify({"ok": False, "error": "Keine Dateien gefunden"}), 400
         add_to_upscale_queue(
             title=title or "Unbekannt",

@@ -869,6 +869,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_encoding_settings_get",
             "api_encoding_settings_post",
             "api_encoding_detect_hw",
+            # Replaces files in place (upscaling_replace_original defaults to
+            # on), so it belongs in the same tier as library delete/rename/move.
+            "api_upscale_add_library",
             "api_library_delete",
             "api_library_rename",
             "api_library_move",

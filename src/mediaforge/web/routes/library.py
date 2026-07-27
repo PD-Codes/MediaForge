@@ -891,6 +891,39 @@ def _lib_watcher_scan_callback(path_key: str, changed_paths=None):
         return
 
 
+def lib_resolve_library_file(path):
+    """Resolve *path* and return it only if it is a real media file inside one
+    of the configured scan targets; otherwise None.
+
+    The single place that answers "may the caller touch this file?". Any
+    endpoint that reads, probes, replaces or deletes a file the client named
+    has to go through here -- /api/upscale/add-library did not, which let any
+    logged-in user hand the upscale worker an arbitrary path and have it
+    overwritten (upscaling_replace_original is on by default).
+
+    resolve() is applied to both sides, so symlinks pointing out of the
+    library are rejected too.
+    """
+    from pathlib import Path as _P
+    if not path:
+        return None
+    try:
+        resolved = _P(path).resolve()
+    except (OSError, ValueError):
+        return None
+    if resolved.suffix.lower() not in _LIB_VIDEO_EXTS:
+        return None
+    if not resolved.is_file():
+        return None
+    for (_, _, base_path) in _lib_build_scan_targets():
+        try:
+            resolved.relative_to(_P(base_path).resolve())
+            return resolved
+        except (ValueError, OSError):
+            continue
+    return None
+
+
 def _lib_assert_within_root(path, root):
     """Resolve path and verify it stays within root — blocks symlink escapes.
     Returns the resolved Path on success, raises ValueError on violation."""
@@ -1237,7 +1270,6 @@ def register_library_routes(app):
         resolve inside one of the known scan targets. POST /api/library/media_info.
 
         Called from static/library.js's `libOpenMediaInfo()`."""
-        from pathlib import Path
         import subprocess
         import json
 
@@ -1246,25 +1278,11 @@ def register_library_routes(app):
         if not path:
             return jsonify({"error": "Path required"}), 400
 
-        # Security check: check if the path is within any scanned library base
-        targets = _lib_build_scan_targets()
-        path_obj = Path(path).resolve()
-
-        allowed = False
-        for (_, _, base_path) in targets:
-            try:
-                base_resolved = base_path.resolve()
-                path_obj.relative_to(base_resolved)
-                allowed = True
-                break
-            except ValueError:
-                continue
-
-        if not allowed:
+        # Security check: the path must resolve to a media file inside one of
+        # the scanned library bases (shared helper, see lib_resolve_library_file)
+        path_obj = lib_resolve_library_file(path)
+        if path_obj is None:
             return jsonify({"error": "Access denied"}), 403
-
-        if not path_obj.is_file():
-            return jsonify({"error": "File not found"}), 404
 
         # Run ffprobe
         try:
