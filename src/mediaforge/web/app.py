@@ -40,6 +40,7 @@ from .db import (
     evict_tmdb_cache,
     init_provider_cache_db,
     evict_provider_cache,
+    evict_browse_cache,
     init_calendar_db,
     init_browse_cache_db,
     init_notification_db,
@@ -488,6 +489,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                     get_logger(__name__).debug("[DB] Evicted %d expired provider cache entries", removed)
             except Exception as exc:
                 get_logger(__name__).warning("[DB] Provider cache eviction failed: %s", exc)
+            try:
+                removed = evict_browse_cache()
+                if removed:
+                    get_logger(__name__).debug("[DB] Evicted %d expired browse cache entries", removed)
+            except Exception as exc:
+                get_logger(__name__).warning("[DB] Browse cache eviction failed: %s", exc)
 
     threading.Thread(target=_tmdb_cache_eviction_loop, daemon=True,
                      name="tmdb-cache-evict").start()

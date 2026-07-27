@@ -279,6 +279,24 @@ WHERE sso_issuer IS NOT NULL AND sso_subject IS NOT NULL;
 """
 
 
+def _configure_connection(conn):
+    """Apply the per-connection PRAGMAs. Every connection gets the same set.
+
+    synchronous was never set, so SQLite used its default (FULL): an fsync on
+    every single commit, 5-20 ms on an HDD, a NAS or a Docker volume. With WAL
+    enabled, NORMAL is still crash-safe for the application (only an OS-level
+    crash can lose the very last transaction) and removes that cost from the
+    workers, which commit constantly.
+    """
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA cache_size=-16000")   # 16 MB page cache, negative = KiB
+    conn.execute("PRAGMA temp_store=MEMORY")
+    return conn
+
+
 class ContextConnection(sqlite3.Connection):
     """sqlite3.Connection subclass whose close() is a no-op while it is the
     connection cached on the current Flask request (``g.db_conn``).
@@ -317,20 +335,16 @@ def get_db():
         from flask import g, has_app_context
         if has_app_context():
             if "db_conn" not in g:
-                conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False, factory=ContextConnection)
-                conn.row_factory = sqlite3.Row
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA busy_timeout=30000")
-                g.db_conn = conn
+                g.db_conn = _configure_connection(sqlite3.connect(
+                    str(DB_PATH), timeout=30, check_same_thread=False,
+                    factory=ContextConnection))
             return g.db_conn
     except Exception:
         pass
 
-    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False, factory=ContextConnection)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
-    return conn
+    return _configure_connection(sqlite3.connect(
+        str(DB_PATH), timeout=30, check_same_thread=False,
+        factory=ContextConnection))
 
 
 def _migrate_db(conn):
@@ -761,6 +775,13 @@ def init_queue_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_dq_status_position "
             "ON download_queue(status, position)"
+        )
+        # get_queue() filters on hidden and orders by position, id -- the index
+        # above starts with status and does not serve it, so every queue poll
+        # (every 2-5s per open tab) was a full scan plus a sort.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dq_hidden_position "
+            "ON download_queue(hidden, position, id)"
         )
         conn.commit()
     finally:
@@ -1876,6 +1897,17 @@ def init_download_history_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_download_history_finished "
             "ON download_history(finished_at DESC)"
+        )
+        # The history page filters by user and by status before ordering. With
+        # only the finished_at index those filters were a full scan of a table
+        # that is meant to grow into six figures.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_download_history_user_finished "
+            "ON download_history(username, finished_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_download_history_status "
+            "ON download_history(status)"
         )
         # Migration: add error column for existing DBs
         try:
@@ -3748,6 +3780,13 @@ def init_tmdb_cache_db() -> None:
             )
             """
         )
+        # Eviction below and the hourly one in app.py filter on cached_at,
+        # which is not the primary key -- without this index both are a full
+        # table scan, at startup and once an hour.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tmdb_cache_cached_at "
+            "ON tmdb_cache(cached_at)"
+        )
         # Remove expired entries so the table does not grow unboundedly
         conn.execute(
             "DELETE FROM tmdb_cache WHERE cached_at < strftime('%s', 'now') - 86400"
@@ -3867,6 +3906,12 @@ def init_provider_cache_db() -> None:
                 PRIMARY KEY (namespace, cache_key)
             )
             """
+        )
+        # Same reason as the TMDB cache: eviction filters on cached_at, which
+        # is not part of the primary key.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_provider_cache_cached_at "
+            "ON provider_cache(cached_at)"
         )
         # Remove expired entries so the table does not grow unboundedly
         conn.execute(
@@ -4047,6 +4092,40 @@ def save_calendar_episode(media_id: int, season: int, episode: int, name: str, n
                 """,
                 (media_id, season, episode, name, name_en, air_date, still_path),
             )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_calendar_episodes(media_id: int, rows: list) -> None:
+    """Write many episodes of one media in ONE transaction.
+
+    *rows* is a list of (season, episode, name, name_en, air_date, still_path).
+
+    save_calendar_episode() opens a connection, writes a single row, commits
+    and closes. The watcher called it once per episode, so a series with 120
+    episodes meant 120 connections and 120 commits -- each of them an fsync.
+    Everything here goes through one executemany and one commit instead.
+    Movie rows (season/episode NULL) still go through the single-row function:
+    they need a DELETE first because SQLite treats NULLs as distinct in a
+    UNIQUE constraint, and there is at most one of them per media.
+    """
+    if not rows:
+        return
+    conn = get_db()
+    try:
+        conn.executemany(
+            """
+            INSERT INTO calendar_episodes (media_id, season, episode, name, name_en, air_date, still_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(media_id, season, episode) DO UPDATE SET
+                name = excluded.name,
+                name_en = excluded.name_en,
+                air_date = excluded.air_date,
+                still_path = excluded.still_path
+            """,
+            [(media_id, s, e, n, ne, ad, sp) for (s, e, n, ne, ad, sp) in rows],
+        )
         conn.commit()
     finally:
         conn.close()
@@ -5088,7 +5167,32 @@ def init_browse_cache_db() -> None:
             )
             """
         )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_browse_cache_cached_at "
+            "ON browse_cache(cached_at)"
+        )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def evict_browse_cache(ttl: float = 604800.0) -> int:
+    """Delete browse entries older than *ttl* (default 7 days).
+
+    This table had no eviction at all -- unlike tmdb_cache and provider_cache,
+    which both prune at startup and hourly. Every prefetch cycle wrote new
+    keys, so it only ever grew. A week is deliberately generous: the entries
+    are still useful as stale-while-revalidate fallbacks long after their TTL.
+    """
+    import time as _time
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "DELETE FROM browse_cache WHERE cached_at < ?",
+            (_time.time() - ttl,),
+        )
+        conn.commit()
+        return cur.rowcount
     finally:
         conn.close()
 

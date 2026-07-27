@@ -17,6 +17,7 @@ from ..db import get_mediascan_series
 from ..db import get_setting
 from ..db import get_tmdb_cache_bulk
 from ..db import save_calendar_episode
+from ..db import save_calendar_episodes
 from ..db import save_calendar_media
 from datetime import datetime
 from datetime import timedelta
@@ -362,6 +363,10 @@ def _sync_calendar_item(tmdb_id, media_type, api_key):
 
             media_id = save_calendar_media(tmdb_id, cal["title"], title_en, cal.get("poster") or "")
             keep_episodes = []
+            # Collected first, then written in one transaction: the per-episode
+            # call opened a connection and committed (i.e. fsynced) per row, so
+            # a 120-episode series cost 120 of each.
+            _ep_rows = []
             for ep in cal.get("episodes", []):
                 season = ep.get("season")
                 episode = ep.get("episode")
@@ -370,8 +375,9 @@ def _sync_calendar_item(tmdb_id, media_type, api_key):
                 air_date = ep.get("air_date")
                 still_path = ep.get("still") or ""
                 if season is not None and episode is not None and air_date:
-                    save_calendar_episode(media_id, season, episode, name, name_en, air_date, still_path)
+                    _ep_rows.append((season, episode, name, name_en, air_date, still_path))
                     keep_episodes.append((season, episode))
+            save_calendar_episodes(media_id, _ep_rows)
 
             # Delete any other episodes no longer in the TMDB schedule
             delete_calendar_episodes_except(media_id, keep_episodes)
