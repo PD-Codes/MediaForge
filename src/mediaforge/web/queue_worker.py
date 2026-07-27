@@ -550,6 +550,17 @@ def _queue_worker():
             # were kept when the user retried just one specific episode).
             # For brand-new jobs the DB default is '[]', so this is always safe.
             errors = json.loads(item.get("errors") or "[]")
+            # How many of those were already there when this run started. Every
+            # count below has to be about THIS run, not about the job's whole
+            # history -- see the status calculation at the end of the loop.
+            _errors_before_run = len(errors)
+            # The job's episode count as the UI knows it. On a single-episode
+            # retry `episodes` holds just that one URL while the job is still
+            # a 12-episode job, so len(episodes) is not the job size.
+            try:
+                _job_total = int(item.get("total_episodes") or 0) or len(episodes)
+            except (TypeError, ValueError):
+                _job_total = len(episodes)
 
             # Language separation: compute subfolder path if enabled
             import os
@@ -1148,20 +1159,34 @@ def _queue_worker():
 
             # Only set final status if not already cancelled
             if not is_queue_cancelled(item["id"]):
-                update_queue_progress(item["id"], len(episodes), "")
+                # Progress is a job-level number: after a retry run everything
+                # the job ever finished is done except what is still in errors.
+                update_queue_progress(
+                    item["id"], max(len(episodes), _job_total - len(errors)), "")
 
-                # Calculate speed and update stats
+                # Calculate speed and update stats. Skipped for a partial run
+                # (a single-episode retry), which would otherwise replace the
+                # job's total size and average speed with that one file's.
                 download_end_time = time.time()
                 duration = download_end_time - download_start_time
-                if duration > 0 and total_bytes_before > 0:
+                if (len(episodes) >= _job_total
+                        and duration > 0 and total_bytes_before > 0):
                     total_size_mb = total_bytes_before / (1024 * 1024)
                     avg_speed = total_size_mb / duration
                     update_queue_stats(item["id"], round(avg_speed, 2), round(total_size_mb, 1))
 
-                successful = len(episodes) - len(errors)
+                # Counted over THIS run. `errors` also carries the job's older
+                # failures (retry_single_episode keeps them on purpose), so the
+                # old `len(episodes) - len(errors)` went negative when a retry
+                # of one episode succeeded on a job with two other failures --
+                # and booked the run as "failed", with a matching "download
+                # failed" notification, although nothing had failed.
+                run_failed = max(0, len(errors) - _errors_before_run)
+                successful = len(episodes) - run_failed
                 if not errors:
                     status = "completed"
                 elif successful > 0:
+                    # Something succeeded now; older failures are still open.
                     status = "partial"
                 else:
                     status = "failed"
@@ -1177,7 +1202,7 @@ def _queue_worker():
                     _body = "✅ Film heruntergeladen" if _is_movie else f"✅ {len(episodes)} Episode(n) heruntergeladen"
                     _event = "on_completed"
                 elif status == "partial":
-                    _body = f"❌ Film-Download fehlgeschlagen ({len(errors)} Fehler)" if _is_movie else f"⚠️ {successful} von {len(episodes)} Episode(n) heruntergeladen, {len(errors)} Fehler"
+                    _body = f"❌ Film-Download fehlgeschlagen ({len(errors)} Fehler)" if _is_movie else f"⚠️ {successful} von {len(episodes)} Episode(n) heruntergeladen, {len(errors)} Fehler offen"
                     _event = "on_partial"
                 else:
                     _body = f"❌ Download fehlgeschlagen ({len(errors)} Fehler)"

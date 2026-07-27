@@ -1273,28 +1273,41 @@ def _move_with_progress(src, dst, label="", cancel_event=None):
         copied = 0
         start = _time.time()
 
-        with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
-            while True:
-                chunk = fsrc.read(CHUNK)
-                if not chunk:
-                    break
-                fdst.write(chunk)
-                copied += len(chunk)
-                elapsed = _time.time() - start or 0.001
-                pct   = copied / total * 100 if total else 100.0
-                speed = copied / elapsed          # bytes/s
-                eta   = int((total - copied) / speed) if speed > 0 else 0
-                speed_str = f"{speed / 1_048_576:.1f} MB/s"
-                with _ffmpeg_progress_lock:
-                    _ffmpeg_progress.update(
-                        percent=round(pct, 1),
-                        downloaded_mb=round(copied / 1_048_576, 1),
-                        speed=speed_str,
-                        bandwidth=speed_str,
-                        eta_sec=eta,
-                    )
-                if cancel_event is not None and cancel_event.is_set():
-                    break
+        try:
+            with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
+                while True:
+                    chunk = fsrc.read(CHUNK)
+                    if not chunk:
+                        break
+                    fdst.write(chunk)
+                    copied += len(chunk)
+                    elapsed = _time.time() - start or 0.001
+                    pct   = copied / total * 100 if total else 100.0
+                    speed = copied / elapsed          # bytes/s
+                    eta   = int((total - copied) / speed) if speed > 0 else 0
+                    speed_str = f"{speed / 1_048_576:.1f} MB/s"
+                    with _ffmpeg_progress_lock:
+                        _ffmpeg_progress.update(
+                            percent=round(pct, 1),
+                            downloaded_mb=round(copied / 1_048_576, 1),
+                            speed=speed_str,
+                            bandwidth=speed_str,
+                            eta_sec=eta,
+                        )
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+        except Exception:
+            # A failed cross-device copy used to leave the truncated file at
+            # the destination: the cancel path below removed it, the error
+            # path did not. MediaScan, the dupe check and Jellyfin/Plex all
+            # then saw the episode as present, so the next sync skipped it --
+            # and what was there could not be played.
+            try:
+                if dst.exists():
+                    dst.unlink()
+            except OSError:
+                logger.warning("Unvollständige Zieldatei %s konnte nicht entfernt werden", dst)
+            raise
 
         if cancel_event is not None and cancel_event.is_set():
             if dst.exists():
