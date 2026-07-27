@@ -1,0 +1,50 @@
+# Line endings
+#
+# Without this file the working tree decides what lands in the index: a
+# checkout on Windows (or an edit through a mounted share) turns files into
+# CRLF, git stores them that way, and `git status` reports hundreds of files
+# as modified although nothing changed. Normalising here makes the repository
+# content independent of the platform it is edited on.
+#
+# After adding this file, run ONCE:
+#     git add --renormalize .
+#     git commit -m "chore: normalise line endings"
+# That single commit rewrites the endings of every affected file. Do it on a
+# clean tree, with no other work in progress.
+
+# Everything git detects as text is stored with LF.
+* text=auto eol=lf
+
+# Files that must keep CRLF on checkout: cmd.exe misreads LF-only batch files.
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+
+# Files that must keep LF: they run inside the Linux container.
+*.sh          text eol=lf
+entrypoint.sh text eol=lf
+Dockerfile    text eol=lf
+
+# Compiled translation catalogues are binary — never touch their bytes.
+*.mo binary
+
+# Binary assets
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.pdf  binary
+*.exe  binary
+*.dll  binary
+*.zip  binary
+*.mfmod binary
+
+# Translation sources stay text (Weblate writes them), but diffing them line
+# by line is what makes a .po review readable.
+*.po text eol=lf
+
+# Keep GitHub's language stats honest: vendored/minified assets and the
+# generated lock file are not hand-written project code.
+uv.lock                        linguist-generated=true
+src/mediaforge/web/static/*.min.js linguist-vendored=true
