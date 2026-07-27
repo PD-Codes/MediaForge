@@ -193,6 +193,10 @@ def _encoding_worker():
     while True:
         item = None
         _final_status_set = False
+        # Files already passed to the upscale queue. Bound out here because the
+        # except handler reads it, and the item can die before the file list
+        # even exists.
+        _handed_paths = set()
         try:
             with _encoding_lock:
                 item = claim_next_encoding_queued()
@@ -258,6 +262,18 @@ def _encoding_worker():
                         if _replace_original:
                             _WPath(file_path).unlink(missing_ok=True)
                         shutil.move(temp_output, actual_output)
+                        # Hand this file to the upscale queue now that the
+                        # encode is done with it. With both steps set to
+                        # "after download" the download worker deliberately
+                        # does NOT queue the upscale itself -- otherwise both
+                        # workers would run ffmpeg on the same path at the
+                        # same time and the slower one would overwrite the
+                        # other's result. Note actual_output, not file_path:
+                        # with "replace original" off the encode wrote a new
+                        # file and that is what should be upscaled.
+                        if item.get("upscale_after"):
+                            _handed_paths.add(file_path)
+                            _handover_to_upscale(item, actual_output)
                 except Exception as _fe:
                     _overall_failed += 1
                     logger.error(f"[Encoding] Fehler bei {file_path}: {_fe}")
@@ -267,6 +283,23 @@ def _encoding_worker():
                         pass
                     if is_encoding_cancelled(item["id"]):
                         break
+                    # A failed encode is no reason to silently drop the
+                    # upscale the user also asked for -- upscale the original
+                    # instead. It usually still exists (ffmpeg failed before
+                    # anything was replaced), but NOT always: unlink() runs
+                    # just before move(), so a move that fails leaves nothing
+                    # behind. Hence the existence check, and a warning rather
+                    # than a silent skip. Not done on cancel: there the user
+                    # stopped the whole chain.
+                    if item.get("upscale_after"):
+                        _handed_paths.add(file_path)
+                        if _WPath(file_path).exists():
+                            _handover_to_upscale(item, file_path)
+                        else:
+                            logger.warning(
+                                "[Encoding] %s ist nach dem Fehler nicht mehr da — "
+                                "Upscaling entfällt", file_path,
+                            )
 
                 # Overall progress after this file completes
                 update_encoding_progress(item["id"],
@@ -302,6 +335,11 @@ def _encoding_worker():
             logger.error(f"[Encoding] Worker-Fehler: {e}", exc_info=True)
             with _encoding_progress_lock:
                 _encoding_progress.update(active=False, percent=0.0, time="", speed="", file="")
+            # The item died outside the per-file loop, so nothing handed its
+            # files to the upscale queue -- and queue_worker.py no longer
+            # queues them as a fallback. Do it here instead of losing them.
+            if item is not None and not is_encoding_cancelled(item["id"]):
+                _handover_remaining(item, _handed_paths)
             if item is not None and not _final_status_set:
                 try:
                     if not is_encoding_cancelled(item["id"]):
@@ -327,7 +365,55 @@ def _ensure_encoding_worker():
     thread.start()
 
 
-def _trigger_after_download_encode(episode_paths, title):
+def _handover_remaining(item, done_paths):
+    """Hand every not-yet-processed file of a dying item to the upscale queue.
+
+    Reached when the item fails outside the per-file loop (a DB error, a bad
+    files column). Without this the upscale would be lost silently: since the
+    chain was introduced, queue_worker.py no longer queues it as a fallback.
+    """
+    import json as _wjson
+    from pathlib import Path as _WPath
+
+    if not item.get("upscale_after"):
+        return
+    try:
+        raw = item.get("files")
+        entries = _wjson.loads(raw) if raw else None
+        if not entries:
+            entries = [{"file_path": item.get("file_path")}]
+        for entry in entries:
+            path = (entry or {}).get("file_path")
+            if not path or path in done_paths:
+                continue
+            if _WPath(path).exists():
+                _handover_to_upscale(item, path)
+    except Exception as exc:
+        logger.warning(f"[Encoding] Upscale-Nachreichung fehlgeschlagen: {exc}")
+
+
+def _handover_to_upscale(item, encoded_path):
+    """Queue one finished encode for upscaling.
+
+    Only reached when the download that produced this job asked for upscaling
+    AND upscaling runs after the download -- see queue_worker.py, which skips
+    its own upscale trigger in exactly that case so the two never overlap.
+    Failing here must not fail the encode: the file is already in place, a
+    missing upscale is a degradation, not a loss.
+    """
+    try:
+        from .upscale_worker import _trigger_episode_after_download_upscale
+        _trigger_episode_after_download_upscale(
+            str(encoded_path),
+            item.get("title", ""),
+            item.get("queue_item_id"),
+            upscale=True,
+        )
+    except Exception as exc:
+        logger.warning(f"[Encoding] Upscale-Übergabe fehlgeschlagen: {exc}")
+
+
+def _trigger_after_download_encode(episode_paths, title, queue_item_id=None, upscale_after=False):
     """Add one or more just-downloaded episodes as ONE encoding queue entry.
 
     Called PER EPISODE, right after that single episode finishes downloading
@@ -354,9 +440,9 @@ def _trigger_after_download_encode(episode_paths, title):
         timing = get_setting("encoding_timing", "during_download")
         mode = get_setting("encoding_mode", "copy")
         if timing != "after_download":
-            return
+            return False
         if mode not in ("h264", "h265"):
-            return
+            return False
         replace = get_setting("encoding_replace_original", "1") == "1"
         from pathlib import Path as _Path
         valid = []
@@ -367,14 +453,19 @@ def _trigger_after_download_encode(episode_paths, title):
             out = str(ep) if replace else str(ep.with_name(ep.stem + f" ({mode.upper()}).mkv"))
             valid.append({"file_path": str(ep), "output_path": out})
         if not valid:
-            return
+            return False
         add_to_encoding_queue(
             title=title,
             file_path=valid[0]["file_path"],
             output_path=valid[0]["output_path"],
             source="download",
             files=valid if len(valid) > 1 else None,
+            queue_item_id=queue_item_id,
+            upscale_after=upscale_after,
         )
-        logger.info(f"[Encoding] {len(valid)} Datei(en) als ein Eintrag in Queue: {title}")
+        logger.info(f"[Encoding] {len(valid)} Datei(en) als ein Eintrag in Queue: {title}"
+                    + (" (Upscaling folgt)" if upscale_after else ""))
+        return True
     except Exception as exc:
         logger.warning(f"[Encoding] Batch-Trigger Fehler: {exc}")
+        return False

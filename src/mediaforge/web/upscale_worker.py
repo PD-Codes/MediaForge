@@ -70,6 +70,11 @@ def _upscale_worker():
                 time.sleep(4)
                 continue
 
+            # An item whose file an encode still has to touch is never
+            # handed out in the first place -- claim_next_upscale_queued()
+            # skips those and takes the next candidate, so one blocked job no
+            # longer stalls the whole queue.
+
             cancel_ev = threading.Event()
             with _upscale_cancel_lock:
                 _upscale_active_cancel_events[item["id"]] = cancel_ev

@@ -894,35 +894,45 @@ def _queue_worker():
                         except Exception:
                             pass
 
-                        # Hand THIS episode to the upscale queue right away
-                        # (same idea as the encoding trigger below): the first
-                        # episode of the download creates the upscale job, the
-                        # following ones are appended to that same job. Waiting
-                        # for the whole season only delayed the upscaling, and
-                        # a job could never be queued for a file that wasn't
-                        # written yet.
+                        # Encoding and upscaling are a CHAIN, not two peers.
+                        # Both used to be queued here side by side, so with
+                        # both set to "after download" two ffmpeg processes
+                        # started on the same file within seconds of each
+                        # other and whichever finished last overwrote the
+                        # other's result. The encode goes first (that is also
+                        # the order the queue window shows: Download →
+                        # Encoding → Upscaling → Library) and hands the
+                        # finished file to the upscale queue itself.
+                        #
+                        # Both triggers stay PER EPISODE rather than batched at
+                        # the end of the download item, so episode 1 is already
+                        # being worked on while episode 2 still downloads.
+                        _wants_upscale = bool(item.get("upscale", 0))
+                        _encode_queued = False
                         try:
                             if _out_path is not None:
+                                _encode_queued = _trigger_after_download_encode(
+                                    [str(_out_path)],
+                                    item.get("title", ""),
+                                    queue_item_id=item["id"],
+                                    upscale_after=_wants_upscale,
+                                )
+                        except Exception as _ee:
+                            logger.warning(f"[Encoding] Trigger Fehler: {_ee}")
+
+                        # Only queue the upscale directly when no encode will
+                        # touch this file first -- otherwise encoding_worker
+                        # does it once it is done, on the ENCODED file.
+                        try:
+                            if _out_path is not None and not _encode_queued:
                                 _trigger_episode_after_download_upscale(
                                     str(_out_path),
                                     item.get("title", ""),
                                     item["id"],
-                                    upscale=bool(item.get("upscale", 0)),
+                                    upscale=_wants_upscale,
                                 )
                         except Exception as _ue:
                             logger.warning(f"[Upscale] Trigger Fehler: {_ue}")
-
-                        # Trigger after_download encoding for THIS episode right away
-                        # (not batched at the end of the whole queue item) so encoding
-                        # starts as soon as this episode finishes downloading while the
-                        # next episode keeps downloading in parallel. The encoding
-                        # worker only processes one item at a time, so if it's already
-                        # busy this episode's entry simply waits its turn in the queue.
-                        try:
-                            if _out_path is not None:
-                                _trigger_after_download_encode([str(_out_path)], item.get("title", ""))
-                        except Exception as _ee:
-                            logger.warning(f"[Encoding] Trigger Fehler: {_ee}")
 
                         break  # success — stop retrying
                     except Exception as e:
