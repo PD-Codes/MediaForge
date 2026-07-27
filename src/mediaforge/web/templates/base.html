@@ -44,6 +44,9 @@
      the very first paint is already themed; a user's personal override
      (localStorage 'aw-themepack') is applied by the synchronous script below
      before paint — same no-FOUC pattern as the dark/light bootstrap. #}
+  {# Shared HTML escaping (window.mfEscape / window.mfSafeUrl). In <head> and
+     before every other script so inline blocks can use it too. #}
+  <script src="{{ url_for('static', filename='mf_escape.js') }}"></script>
   {% if active_theme_pack %}
   <link rel="stylesheet" id="themePackCss" data-theme-folder="{{ active_theme_pack.folder }}"
     href="{{ url_for('theme_bundle_css', folder=active_theme_pack.folder) }}?v={{ active_theme_pack.version }}" />

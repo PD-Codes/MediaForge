@@ -2171,11 +2171,9 @@ function showToast(msg, type) {
   t._hideTimer = setTimeout(function () { t.classList.remove("show"); }, 4000);
 }
 
-function esc(s) {
-  const d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
-}
+// Shared escaper (static/mf_escape.js) -- quote-safe, and it no longer turns
+// 0/false into an empty string the way the old `s || ""` did.
+const esc = window.mfEscape;
 
 // ─── Kick off ─────────────────────────────────────────────────────────────────
 loadSettings();

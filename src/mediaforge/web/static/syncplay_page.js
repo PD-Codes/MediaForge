@@ -19,7 +19,7 @@
   function tt(de, en) { return (window.t ? window.t(de, en) : en); }
   function post(url, body) { return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).catch(function(){}); }
   function toast(m) { if (window.showToast) return showToast(m); var e = $('spToast'); if (e) { e.textContent = m; e.classList.add('show'); setTimeout(function(){ e.classList.remove('show'); }, 2600); } }
-  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+  var esc = window.mfEscape;  // shared, quote-safe (static/mf_escape.js)
 
   // Remember the room session across reloads (so a refresh doesn't drop you).
   function _saveSession() { try { localStorage.setItem('sp_session', JSON.stringify({ token: S.token, room: S.room })); } catch (e) {} }

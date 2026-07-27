@@ -1741,7 +1741,7 @@ def register_generic_settings_routes(app):
     declared extra_settings keys.
     """
     from flask import jsonify, request
-    from ..db import get_setting, set_setting
+    from ..db import get_setting, is_sensitive_key, set_setting
 
     @app.route("/api/settings/thirdparty/<item_id>", methods=["GET"])
     def api_thirdparty_settings_get(item_id):
@@ -1756,7 +1756,14 @@ def register_generic_settings_routes(app):
             # the plaintext token straight into the DOM of the settings page
             # (the field is type="password", which hides it from the user's
             # eyes but not from any script on the page).
-            if s["type"] == "secret":
+            #
+            # is_sensitive_key() is checked as well, so a key a module declared
+            # via MODULE_SENSITIVE_SETTINGS (or registered with
+            # register_sensitive_keys) stays masked even when its card field
+            # was declared as plain "text". A value that is encrypted at rest
+            # must never leave the server in clear text just because the field
+            # type says otherwise.
+            if s["type"] == "secret" or is_sensitive_key(s["key"]):
                 value = SECRET_MASK if value else ""
             extra[s["key"]] = value
         return jsonify({"enabled": get_setting(item["enabled_setting_key"], "0"), "extra": extra})
@@ -1819,5 +1826,10 @@ def register_generic_settings_routes(app):
                 if str(value) != SECRET_MASK:
                     set_setting(key, str(value))
             else:  # "text"
+                # Same masking rule as the GET: a registered-sensitive key
+                # rendered as a text field gets the mask back, and the mask
+                # means "unchanged".
+                if is_sensitive_key(key) and str(value) == SECRET_MASK:
+                    continue
                 set_setting(key, str(value).strip())
         return jsonify({"ok": True})

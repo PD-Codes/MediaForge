@@ -39,12 +39,10 @@ async function updateDevInfoBadge() {
     return t("Ankündigung", "Announcement");
   }
 
-  function escapeHtml(s) {
-    return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
+  // Shared escaper (static/mf_escape.js). The local one escaped & < > only,
+  // while the values land in data-type="..."/data-id="..."/class="..." -- and
+  // the Dev-Info feed is explicitly untrusted content (see markdown_utils.py).
+  const escapeHtml = window.mfEscape;
 
   function markReadBtnHtml(post) {
     const isRead = !!post.is_read;

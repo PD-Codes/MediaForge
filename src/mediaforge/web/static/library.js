@@ -736,9 +736,10 @@ function libRenderMovieFlat(title, li, langFolder, lfi, cpId) {
     h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(ep.size) + '</span>');
     // Play button for films
     if (ep.path) {
-      var _epPath  = libEscJs(ep.path);
-      var _epLabel = libEscJs(title.folder);
-      h.push('<button class="lib-action-btn lib-btn-play" onclick="event.stopPropagation();libPlayEpisode(event,\'' + _epPath + '\',\'' + _epLabel + '\')" title="Film abspielen"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>');
+      // Path and title come from disk and can contain quotes, so they go into
+      // data-* attributes (HTML-escaped) instead of being interpolated into a
+      // JS string inside an onclick attribute.
+      h.push('<button class="lib-action-btn lib-btn-play" data-libplay="' + libEscAttr(ep.path) + '" data-libplaytitle="' + libEscAttr(title.folder) + '" onclick="event.stopPropagation();libPlayFromButton(event,this)" title="Film abspielen"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>');
     }
     h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="Mehr Optionen"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
     h.push('</div>');
@@ -887,7 +888,7 @@ function libRenderEpisode(ep, title, skey, cpId, langFolder) {
   h.push('<div class="lib-info-col">');
   h.push('<div class="lib-info-main">');
   if (!ep.is_movie_file) h.push('<span class="lib-ep-num">E' + String(ep.episode).padStart(2,"0") + '</span>');
-  h.push('<span class="lib-ep-file" title="' + libEsc(ep.file) + '">' + libEsc(ep.file) + '</span>');
+  h.push('<span class="lib-ep-file" title="' + libEscAttr(ep.file) + '">' + libEscAttr(ep.file) + '</span>');
   h.push('</div>');
   h.push('<div class="lib-info-meta">');
   h.push(libCodecBadge(ep.file, ep.video_codec) + libResolutionBadge(ep.file, ep.resolution));
@@ -899,9 +900,8 @@ function libRenderEpisode(ep, title, skey, cpId, langFolder) {
   h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(ep.size) + '</span>');
   // Play button (always visible, not in kebab)
   if (isVideo && ep.path) {
-    var _epPath  = libEscJs(ep.path);
-    var _epLabel = libEscJs(_titleVal);
-    h.push('<button class="lib-action-btn lib-btn-play" onclick="event.stopPropagation();libPlayEpisode(event,\'' + _epPath + '\',\'' + _epLabel + '\')" title='+t("Abspielen","Play")+'><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>');
+    // See the film row above: data-* attributes, not an onclick string.
+    h.push('<button class="lib-action-btn lib-btn-play" data-libplay="' + libEscAttr(ep.path) + '" data-libplaytitle="' + libEscAttr(_titleVal) + '" onclick="event.stopPropagation();libPlayFromButton(event,this)" title='+t("Abspielen","Play")+'><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>');
   }
   // Kebab for rename/upscale/delete
   h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title='+t("Mehr Optionen", "More Options")+'><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
@@ -927,10 +927,11 @@ function libRegMenuCtx(data) {
   return key;
 }
 
+// Attribute-safe escaping. Same implementation as libEsc now -- the shared
+// escaper (static/mf_escape.js) is safe in both text and attribute context,
+// so the two names only survive to keep the call sites readable.
 function libEscAttr(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return window.mfEscape(s);
 }
 
 var _libMenuEl     = null;
@@ -1421,14 +1422,21 @@ function libFmtSize(bytes) {
   return String(val).replace('.', ',') + " GB";
 }
 
-function libEsc(s) {
-  var d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
+// Both names now point at the same shared, quote-safe escaper
+// (static/mf_escape.js). libEsc() used to escape & < > only, and libEscJs()
+// escaped for a JS string but not for HTML -- a file name containing a double
+// quote therefore closed the onclick attribute it was interpolated into and
+// the rest was parsed as markup.
+var libEsc = window.mfEscape;
+
+// Click handlers for the buttons that carry their payload in data-*
+// attributes rather than in an interpolated onclick string.
+function libPlayFromButton(event, btn) {
+  libPlayEpisode(event, btn.dataset.libplay || "", btn.dataset.libplaytitle || "");
 }
 
-function libEscJs(s) {
-  return (s || "").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"\\\"");
+function libCopyFromButton(btn) {
+  libCopyToClipboard(btn.dataset.libcopy || "", btn);
 }
 
 // ---- Init ----
@@ -1709,7 +1717,7 @@ async function libOpenMediaInfo(path, title) {
     h.push('<div class="lib-media-info-label">' + t('Pfad', 'Path') + ':</div>');
     h.push('<div class="lib-media-info-value" style="display:flex;align-items:center;gap:6px;">' +
            '<span>' + libEsc(data.path) + '</span>' +
-           '<button class="lib-copy-btn" onclick="libCopyToClipboard(\'' + libEscJs(data.path) + '\', this)" title="' + t('Pfad kopieren', 'Copy path') + '">' +
+           '<button class="lib-copy-btn" data-libcopy="' + libEscAttr(data.path) + '" onclick="libCopyFromButton(this)" title="' + t('Pfad kopieren', 'Copy path') + '">' +
            '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>' +
            '</button>' +
            '</div>');

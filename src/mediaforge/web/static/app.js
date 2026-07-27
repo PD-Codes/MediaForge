@@ -3011,8 +3011,13 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
     const trailerSection = document.getElementById('trailerSection');
     if (trailerEl && trailerSection) {
       const showT = (cineinfoSettings?.show_trailer !== '0');
-      if (showT && d.trailer_key) {
-        trailerEl.innerHTML = `<iframe src="https://www.youtube.com/embed/${d.trailer_key}" allowfullscreen></iframe>`;
+      // The key comes from the TMDB response and goes straight into an
+      // attribute, so it is validated against YouTube's id charset rather than
+      // merely escaped -- anything else is not a video id anyway.
+      const trailerKey = /^[A-Za-z0-9_-]{5,20}$/.test(String(d.trailer_key || ''))
+        ? String(d.trailer_key) : '';
+      if (showT && trailerKey) {
+        trailerEl.innerHTML = `<iframe src="https://www.youtube.com/embed/${trailerKey}" allowfullscreen></iframe>`;
         trailerSection.style.display = 'block';
       } else {
         trailerEl.innerHTML = '';
@@ -3923,13 +3928,8 @@ async function advLoadPoster(url, imgEl) {
 }
 
 function escapeHtml(unsafe) {
-  if (!unsafe) return '';
-  return (unsafe + '').replace(/[&<"']/g, function (m) {
-    switch (m) {
-      case '&': return '&amp;';
-      case '<': return '&lt;';
-      case '"': return '&quot;';
-      case "'": return '&#039;';
-    }
-  });
+  // Delegates to the shared escaper (static/mf_escape.js). The local version
+  // missed '>' and returned '' for every falsy value, so an episode number 0
+  // or a size of 0 MB vanished from the output.
+  return window.mfEscape(unsafe);
 }

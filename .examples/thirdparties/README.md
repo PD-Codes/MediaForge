@@ -609,6 +609,12 @@ it as a sensitive setting, exactly like its own API keys and tokens:
   mask back means "unchanged" — send `""` to clear the value. If you render
   the field on a page of your own, do the same: never put the stored secret
   into the HTML.
+  The mask applies to **every key MediaForge knows to be sensitive**, not
+  only to fields you declared as `type="secret"`: a key listed in
+  `MODULE_SENSITIVE_SETTINGS` (or registered via `register_sensitive_keys()`)
+  stays masked even if its card field is a plain `"text"` input. Reading the
+  real value inside your module is unaffected — `get_setting()` decrypts as
+  always. The rule is only about what leaves the server.
 
 For a secret with **no settings-card field** — an OAuth refresh token, a
 session cookie, anything your module obtains itself — declare the key in
@@ -1036,6 +1042,13 @@ Notes:
   details are available — it does not error out.
 - Everything you pass is escaped, and `image` is URL-scheme-checked, so it
   is safe to hand it values that came from a remote API.
+- Building markup yourself? Use `window.mfEscape(value)` for anything that
+  goes into HTML — it is quote-safe, so it also covers attributes
+  (`title="..."`, `data-x="..."`), and `window.mfSafeUrl(value)` for `href`
+  and `src`, which drops everything that is not http(s) or same-origin. Both
+  are loaded on every page from `static/mf_escape.js`; do not write your own
+  escaper. Better still, put values in `data-*` attributes and read them in
+  the handler instead of interpolating them into an `onclick` string.
 - Requests are abortable: opening a second entry while the first is still
   loading cannot let the slower answer overwrite the newer one.
 - The "Search streams" button uses `openAniSearchModal()` when the host

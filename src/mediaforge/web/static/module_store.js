@@ -31,11 +31,12 @@
     console.log("[ModuleStore]", msg);
   }
 
-  function esc(s) {
-    const d = document.createElement("div");
-    d.textContent = s == null ? "" : String(s);
-    return d.innerHTML;
-  }
+  // Shared escaper (static/mf_escape.js): the local one built the string via
+  // div.textContent, which leaves " and ' untouched -- and every use here is
+  // an attribute (data-id, title, href), so a module name from the store
+  // index could break out of it.
+  const esc = window.mfEscape;
+  const safeUrl = window.mfSafeUrl;
 
   // ---- badges: update count + restart banner --------------------------------
   // The whole reason the store view is worth opening, shown from the installed
@@ -172,7 +173,12 @@
     if (m.installed && m.installed_version) meta.push(t("installiert: v", "installed: v") + esc(m.installed_version));
     if (m.compat_reason) meta.push(`<span style="color:var(--error);">${esc(m.compat_reason)}</span>`);
     if (m.trust === "unverified" && m.source_url) {
-      meta.push(`<a href="${esc(m.source_url)}" target="_blank" rel="noopener noreferrer">${esc(m.source_url)}</a>`);
+      // safeUrl() drops anything that is not http(s) or same-origin, so a
+      // catalog entry cannot smuggle a javascript: URL into the link.
+      const srcUrl = safeUrl(m.source_url);
+      if (srcUrl) {
+        meta.push(`<a href="${esc(srcUrl)}" target="_blank" rel="noopener noreferrer">${esc(srcUrl)}</a>`);
+      }
     }
 
     // Two different warnings, two badges. "Unverified" = nobody signed this. "Unreviewed" =

@@ -189,11 +189,7 @@ function formatBandwidth(bwStr) {
 
 window.QHub = (function () {
 
-  function esc(s) {
-    const d = document.createElement("div");
-    d.textContent = (s === undefined || s === null) ? "" : s;
-    return d.innerHTML;
-  }
+  const esc = window.mfEscape;  // shared, quote-safe (static/mf_escape.js)
 
   function num(n) {
     // German writes 8,4 — the queue shows a lot of these
@@ -1032,11 +1028,7 @@ async function removeQueueItem(id) {
   }
 }
 
-function escQ(s) {
-  const d = document.createElement("div");
-  d.textContent = s || "";
-  return d.innerHTML;
-}
+const escQ = window.mfEscape;  // shared, quote-safe (static/mf_escape.js)
 
 // ESC closes the hub / the captcha window
 document.addEventListener("keydown", function (e) {

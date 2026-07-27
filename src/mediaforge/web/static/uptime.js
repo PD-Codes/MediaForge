@@ -50,7 +50,10 @@
   let curStart = null, curEnd = null; // custom mode (epoch seconds)
   let _rangeBuiltFor = -1;
 
-  function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+  // Shared escaper (static/mf_escape.js). Matters here in particular because
+  // the monitor renders error strings that come back from the watched
+  // third-party endpoints into data-msg="..." attributes.
+  const esc = window.mfEscape;
   function host(url) { return (url || "").replace(/^https?:\/\//, "").replace(/\/$/, ""); }
 
   function relTime(ts, now) {
