@@ -51,7 +51,7 @@ jobs:
           else
             RAW=$(git log ${PREV}..HEAD --pretty=format:"%B" --no-merges)
           fi
-          PREFIXES="feat fix refactor perf chore docs style test build ci"
+          PREFIXES="feat fix refactor perf chore docs style test build ci security revert"
           NOTES=""
           for PREFIX in $PREFIXES; do
             SECTION=$(echo "$RAW" | grep -E "^${PREFIX}:" | sed "s/^/- /")

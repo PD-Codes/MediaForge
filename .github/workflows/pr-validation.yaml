@@ -28,6 +28,7 @@ jobs:
           types: |
             feat
             fix
+            security
             docs
             style
             refactor

@@ -253,19 +253,18 @@ def _http_get(url: str, max_bytes: int, timeout: int = HTTP_TIMEOUT) -> bytes:
     """Plain GET with a size cap. Reads max_bytes + 1 so an oversized body is
     *detected* rather than silently truncated into a corrupt package.
 
-    Certificate verification is skipped for MediaForge's own store hosts (see
-    config.TLS_INSECURE_HOSTS) -- an expired certificate there must not take the
-    Modulmanager offline. What actually guards a package is the signature check
-    against the built-in keys (see trusted_keys.py), which is unaffected by how
-    the bytes were transported. Every other (admin-added) repository keeps full
-    TLS verification: insecure_ssl_context_for() returns None for those, i.e.
-    Python's default verifying context.
+    Certificate verification is on for every host, first-party ones included:
+    the index decides what is offered for installation, so a MITM must not be
+    able to rewrite it. ssl_context_for() only picks the root store (OS trust
+    store when truststore is installed, Python's default otherwise). The
+    signature check against the built-in keys (see trusted_keys.py) stays the
+    second line of defence for the package itself.
     """
-    from ...config import insecure_ssl_context_for
+    from ...config import ssl_context_for
 
     req = urllib.request.Request(url, headers={"User-Agent": "MediaForge-ModuleStore/1.0"})
     with urllib.request.urlopen(
-        req, timeout=timeout, context=insecure_ssl_context_for(url)
+        req, timeout=timeout, context=ssl_context_for(url)
     ) as resp:
         data = resp.read(max_bytes + 1)
     if len(data) > max_bytes:

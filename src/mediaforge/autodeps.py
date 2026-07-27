@@ -240,7 +240,7 @@ def _download_mpv_windows() -> None:
     for a valid binary.
     """
     import urllib.request
-    from .config import insecure_ssl_context_for
+    from .config import ssl_context_for
 
     dest = Path(__file__).parent / "bin" / "windows" / "mpv.exe"
     tmp  = dest.with_suffix(".download_tmp")
@@ -248,17 +248,16 @@ def _download_mpv_windows() -> None:
         logger.info("[mpv] mpv.exe nicht gefunden — starte Auto-Download von softarchiv.com …")
         dest.parent.mkdir(parents=True, exist_ok=True)
 
-        # Streamed by hand rather than via urlretrieve(): only urlopen() takes an
-        # SSL context, and softarchiv.com is one of our own hosts, which are
-        # exempt from certificate verification (see config.TLS_INSECURE_HOSTS) so
-        # an expired certificate can't break the mpv auto-download. For any other
-        # URL insecure_ssl_context_for() returns None = Python's default,
-        # fully verifying context.
+        # Streamed by hand rather than via urlretrieve(): only urlopen() takes
+        # an SSL context, and ssl_context_for() hands us the OS trust store so
+        # the chain is validated against the same roots the browser uses. This
+        # payload is an executable that get_player_path() later launches, so a
+        # failed certificate check has to stay fatal.
         req = urllib.request.Request(
             _MPV_DOWNLOAD_URL, headers={"User-Agent": "MediaForge/1.0"}
         )
         with urllib.request.urlopen(
-            req, timeout=60, context=insecure_ssl_context_for(_MPV_DOWNLOAD_URL)
+            req, timeout=60, context=ssl_context_for(_MPV_DOWNLOAD_URL)
         ) as resp, open(tmp, "wb") as fh:
             total_size = int(resp.headers.get("Content-Length") or 0)
             read_bytes = 0

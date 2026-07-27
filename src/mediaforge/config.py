@@ -335,89 +335,34 @@ def _os_trust_store_context():
 
 
 # -----------------------------
-# TLS: first-party hosts exempt from certificate verification
+# TLS at the urllib egress points
 # -----------------------------
-# MediaForge's own infrastructure (the Dev Info feed, the module store, the
-# mpv download) occasionally serves an expired/misissued certificate, which
-# makes every outbound call to it die with SSLCertVerificationError. These
-# hosts are OURS, and what actually protects the payloads that matter is not
-# TLS but the signature check: module packages are verified against the
-# built-in signing keys (see web/thirdparties/store.py + trusted_keys.py)
-# regardless of how they were transported.
+# There used to be a TLS_INSECURE_HOSTS allowlist here that turned certificate
+# verification OFF (check_hostname=False, CERT_NONE) for our own domains, so a
+# lapsed certificate on our infrastructure could not take the module store,
+# the Dev Info feed or the mpv download offline.
 #
-# So: certificate verification is skipped for these hosts, and ONLY these
-# hosts. This is deliberately a short, hard-coded allowlist and not a global
-# "verify=False" -- every third-party host (hosters, TMDB, Jellyfin, the
-# scraper sites) keeps full verification. Note this does trade away MITM
-# protection on the listed hosts; renewing the certificate is still the real
-# fix, this only stops a lapsed cert from taking features offline.
+# That was the wrong trade. CERT_NONE accepts ANY certificate, including a
+# self-signed one from whoever sits between the user and us -- and exactly
+# those hosts carry code: the mpv binary is downloaded and later executed, and
+# the store index decides what is offered for installation. An expired
+# certificate on our side is an operations problem and has to be fixed there,
+# not worked around on every user's machine.
 #
-# Extendable for self-hosters via MEDIAFORGE_TLS_INSECURE_HOSTS (comma-separated,
-# same glob syntax).
-TLS_INSECURE_HOSTS = (
-    "domekologe.eu",
-    "*.domekologe.eu",
-    "softarchiv.com",
-    "*.softarchiv.com",
-)
-
-_extra_insecure = os.environ.get("MEDIAFORGE_TLS_INSECURE_HOSTS", "")
-if _extra_insecure:
-    TLS_INSECURE_HOSTS = TLS_INSECURE_HOSTS + tuple(
-        h.strip().lower() for h in _extra_insecure.split(",") if h.strip()
-    )
+# Verification is therefore always on. The only thing decided here is *which*
+# root store validates the chain.
 
 
-def is_tls_insecure_host(url_or_host):
-    """True if *url_or_host* is one of our own hosts on TLS_INSECURE_HOSTS.
+def ssl_context_for(url):  # noqa: ARG001 - url kept for call-site symmetry
+    """The SSLContext for the urllib egress points (module store, mpv download).
 
-    Accepts either a full URL or a bare hostname. Matching is glob-style
-    (``*.softarchiv.com``) and case-insensitive; a plain http:// URL is never
-    "insecure" in this sense (there is no certificate to skip).
+    Returns the OS trust store (via truststore) when available -- the same
+    certificate store the browser uses, which validates chains an ageing
+    certifi bundle would wrongly reject as expired -- otherwise None, i.e.
+    Python's default certifi-based context. Callers pass the result straight
+    through: None simply means "your default". Verification is never disabled.
     """
-    import fnmatch
-    from urllib.parse import urlsplit
-
-    value = str(url_or_host or "").strip()
-    if not value:
-        return False
-    if "://" in value:
-        parts = urlsplit(value)
-        if parts.scheme != "https":
-            return False
-        host = parts.hostname or ""
-    else:
-        host = value
-    host = host.lower()
-    return any(fnmatch.fnmatch(host, pattern) for pattern in TLS_INSECURE_HOSTS)
-
-
-def insecure_ssl_context_for(url):
-    """The SSLContext to use for *url* at the urllib egress points
-    (``urllib.request.urlopen(..., context=...)``) -- the module store and the
-    mpv auto-download.
-
-    - One of our own hosts (TLS_INSECURE_HOSTS): a context with verification
-      switched off, so a lapsed certificate on our own infrastructure can't take
-      the Modulmanager/Dev Infos/mpv download offline.
-    - Anything else: the OS trust store (via truststore) when available -- the
-      same certificate store the browser uses, which validates chains an ageing
-      certifi bundle would wrongly reject as expired. Verification stays fully
-      ON here; this only fixes *which* roots are trusted.
-    - truststore missing: None, i.e. Python's default certifi-based context.
-
-    Callers pass the result straight through: None simply means "your default".
-    """
-    if not is_tls_insecure_host(url):
-        return _os_trust_store_context()
-
-    import ssl
-
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    logger.debug("TLS verification skipped for first-party host: %s", url)
-    return ctx
+    return _os_trust_store_context()
 
 
 def _make_session(resolver=None):
@@ -470,11 +415,10 @@ class _SessionProxy:
     # untouched. See mirrors.py.
     def request(self, method, url, **kwargs):
         from .mirrors import request_with_failover
-        # Our own hosts (Dev Info feed, module store) are exempt from
-        # certificate verification -- see TLS_INSECURE_HOSTS above. An explicit
-        # verify= from the caller always wins.
-        if "verify" not in kwargs and is_tls_insecure_host(url):
-            kwargs["verify"] = False
+        # No host is exempt from certificate verification here any more; the
+        # former first-party allowlist silently turned verify=False on for the
+        # Dev Info feed and the module store. An explicit verify= from the
+        # caller still wins, as niquests intends.
         return request_with_failover(self._get_session(), method, url, **kwargs)
 
     def get(self, url, **kwargs):
