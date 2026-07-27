@@ -107,7 +107,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
-      - uses: actions/setup-python@v5.6.0
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
           cache: pip
@@ -144,7 +144,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
-      - uses: actions/setup-python@v5.6.0
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
           cache: pip
