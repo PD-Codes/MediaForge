@@ -33,13 +33,30 @@ _ALLOWED_IMAGE_HOSTS = {
 
 
 def _domains_of(*urls):
-    """Registrable hosts of the configured base URLs (mirrors are editable)."""
+    """Allowed domains derived from the configured base URLs.
+
+    Returns both the configured host AND its registrable domain (the last two
+    labels), because a site serves its images from sibling hosts: the search
+    endpoint may be search.<domain> while the posters come from cdn.<domain>.
+    Taking only the configured host would reject the image CDN -- which is
+    exactly what happened when this check replaced the old substring test and
+    hanime posters stopped loading.
+
+    Still a suffix match, never a substring one: <domain> and *.<domain> are
+    accepted, hanime.attacker.tld is not. Two-label public suffixes (co.uk and
+    friends) would widen this by one level, but every domain fed in here comes
+    from our own configuration defaults, not from user input.
+    """
     from urllib.parse import urlparse as _u
     out = set()
     for u in urls:
-        host = (_u(u).hostname or "").lower()
-        if host:
-            out.add(host.removeprefix("www."))
+        host = (_u(u).hostname or "").lower().removeprefix("www.")
+        if not host:
+            continue
+        out.add(host)
+        labels = host.split(".")
+        if len(labels) > 2:
+            out.add(".".join(labels[-2:]))
     return out
 
 

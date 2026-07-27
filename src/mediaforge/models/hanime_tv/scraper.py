@@ -245,6 +245,29 @@ def _search_request(search_text="", order_by="created_at_unix", ordering="desc",
     return hits or []
 
 
+# Throttle for the "search backend is down" warning. A dead endpoint fails for
+# every listing (new + trending) and for every page of each, so the same line
+# used to appear a handful of times per page load. Once every 10 minutes is
+# enough to notice it; the detail stays available at debug level.
+_SEARCH_FAIL_LOG_INTERVAL = 600.0
+_last_search_fail_log = 0.0
+
+
+def _log_search_failure(what, exc):
+    """Log a search-backend failure at most once per interval."""
+    global _last_search_fail_log
+    now = time.monotonic()
+    if now - _last_search_fail_log > _SEARCH_FAIL_LOG_INTERVAL:
+        _last_search_fail_log = now
+        logger.warning(
+            "hanime search backend unreachable (%s: %s) — set HANIME_SEARCH_URL "
+            "if the endpoint moved. Current: %s",
+            type(exc).__name__, str(exc)[:160], HANIME_SEARCH_URL,
+        )
+    else:
+        logger.debug("hanime %s fetch failed: %s", what, exc)
+
+
 _LISTING_TARGET_COUNT = 24  # aim for a full-looking grid
 _LISTING_MAX_PAGES = 4      # politeness cap — stop even if still short of target
 
@@ -267,7 +290,7 @@ def _fetch_filtered(order_by, ordering, show_censored=True, show_uncensored=True
         try:
             hits = _search_request(order_by=order_by, ordering=ordering)
         except Exception as e:
-            logger.warning("hanime %s fetch failed: %s", order_by, e)
+            _log_search_failure(order_by, e)
             return None
         return _group_by_franchise(hits)
 
@@ -277,7 +300,7 @@ def _fetch_filtered(order_by, ordering, show_censored=True, show_uncensored=True
         try:
             hits = _search_request(order_by=order_by, ordering=ordering, page=page)
         except Exception as e:
-            logger.warning("hanime %s fetch failed (page %s): %s", order_by, page, e)
+            _log_search_failure(f"{order_by} page {page}", e)
             break
         fetched_any_page = True
         if not hits:

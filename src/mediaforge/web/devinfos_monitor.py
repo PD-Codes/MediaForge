@@ -73,8 +73,16 @@ def _devinfos_fetch_and_store():
                 "remote_created_at": rp.get("created_at"),
             })
         replace_devinfo_posts(posts)
-    except Exception:
-        logger.warning("[DevInfos] fetch failed — keeping cached posts", exc_info=True)
+    except Exception as exc:
+        # One line, not a traceback: the Dev Info server being unreachable is a
+        # routine event (no internet, DNS filtered, server down) and the cached
+        # posts stay in place. A full stack at WARNING level buried the real
+        # errors around it in 60 lines of noise -- same lesson as the ffmpeg
+        # banner drowning out transcoding failures. The stack is still there
+        # when debug logging is on.
+        logger.warning("[DevInfos] fetch failed (%s: %s) — keeping cached posts",
+                       type(exc).__name__, str(exc)[:200])
+        logger.debug("[DevInfos] fetch failure detail", exc_info=True)
 
 
 def _start_devinfos_poller():

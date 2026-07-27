@@ -15,11 +15,9 @@ import logging
 import random
 import re
 import time
-import warnings
 from urllib.parse import urljoin
 
 import niquests
-from urllib3.exceptions import InsecureRequestWarning
 
 try:
     from ...config import DEFAULT_USER_AGENT, is_source_unavailable
@@ -27,8 +25,6 @@ try:
 except ImportError:
     from mediaforge.config import DEFAULT_USER_AGENT, is_source_unavailable
     from mediaforge.extractors.subtitle_parse import absolutize, tracks_from_text
-
-warnings.simplefilter("ignore", InsecureRequestWarning)
 
 # -----------------------------
 # Constants

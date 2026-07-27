@@ -894,7 +894,15 @@ MEGAKINO_EPISODE_PATTERN = re.compile(
 # lives in models/hanime_tv/scraper.py -- these patterns only classify URLs.
 HANIME_BASE_URL = os.environ.get("HANIME_BASE_URL", "https://hanime.tv").rstrip("/")
 HANIME_API_BASE = os.environ.get("HANIME_API_BASE", "https://hanime.tv/api/v8").rstrip("/")
-HANIME_SEARCH_URL = os.environ.get("HANIME_SEARCH_URL", "https://search.htv-services.com/")
+# The search backend moved: search.htv-services.com stopped resolving entirely
+# (NXDOMAIN from every public resolver, and the remaining htv-services.com apex
+# answers Cloudflare 530), and the site's own frontend now calls the endpoint
+# below. Overridable, because this is the part most likely to move again -- and
+# note that routes/image_proxy.py derives its allowed poster hosts from this
+# URL's domain, so pointing it somewhere new also permits that host's CDN.
+HANIME_SEARCH_URL = os.environ.get(
+    "HANIME_SEARCH_URL", "https://guest.freeanimehentai.net/api/v11/search_hvs"
+)
 
 # A "series" is a franchise, represented by one of its video slugs:
 #   https://hanime.tv/videos/hentai/<slug>

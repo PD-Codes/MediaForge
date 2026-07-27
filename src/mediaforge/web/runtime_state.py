@@ -56,8 +56,10 @@ def _get_working_providers():
     worker, the auto-sync worker and Flask lost every log line, and an
     extractor hanging on the empty URL would have left logging off for good.
     A per-module logger is not an option either: get_logger() hands every
-    caller the same "mediaforge" logger. Hence a filter that drops records
-    from the probing thread only.
+    caller the same "mediaforge" logger -- and some extractors log through
+    logging.getLogger(__name__) instead, i.e. a child of it. Hence a filter
+    that drops records from the probing thread only, installed on the
+    handlers so propagated child records are covered too.
     """
     import logging as _logging
     import threading as _threading
@@ -73,7 +75,15 @@ def _get_working_providers():
     working = []
     _log = _logging.getLogger("mediaforge")
     _filter = _SilenceThisThread(_threading.get_ident())
-    _log.addFilter(_filter)
+    # The filter goes on the HANDLERS, not just on the logger: a filter attached
+    # to a logger only sees records logged through that logger directly, never
+    # the ones propagated up from a child. Several extractors use
+    # logging.getLogger(__name__) -- e.g. extractors/provider/voe.py, whose
+    # empty-URL retries are exactly what this probe is meant to silence -- so a
+    # logger-level filter alone let all of them through.
+    _targets = [_log] + list(_log.handlers)
+    for _t in _targets:
+        _t.addFilter(_filter)
     try:
         for p in SUPPORTED_PROVIDERS:
             func_name = f"get_direct_link_from_{p.lower()}"
@@ -86,7 +96,8 @@ def _get_working_providers():
             except Exception:
                 working.append(p)
     finally:
-        _log.removeFilter(_filter)
+        for _t in _targets:
+            _t.removeFilter(_filter)
     return working
 
 
