@@ -33,8 +33,20 @@ from pathlib import Path as _Path
 _IMAGE_CACHE_DIR = MEDIAFORGE_CONFIG_DIR / "image_cache"
 _IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-_IMG_FETCH_RETRIES = 3
-_IMG_FETCH_TIMEOUT = 20
+# A poster is a nice-to-have, and this fetch happens inside a request handler
+# on a server with 16 worker threads. At 3 x 20s plus backoff a single page
+# with 40 uncached posters could hold every thread for a minute and take the
+# whole app down with it -- including the queue polls. One retry at 5s keeps a
+# slow-but-working CDN usable while bounding the damage at ~11s.
+_IMG_FETCH_RETRIES = 2
+_IMG_FETCH_TIMEOUT = 5
+
+# url -> Event, for requests that are already fetching that URL. Without this,
+# three tabs opening the same browse page produced three upstream requests per
+# poster. The TMDB path has had the same guard for a while (_tmdb_inflight in
+# web/tmdb_cache.py); the image path did not.
+_img_inflight: dict = {}
+_img_inflight_lock = threading.Lock()
 
 import concurrent.futures as _cf
 import urllib.parse as _up_img
@@ -310,24 +322,57 @@ def register_image_proxy_routes(app):
             return r
 
         # --- Fetch from source ---
-        try:
-            resp = _img_fetch_with_retries(raw_url)
-            resp.raise_for_status()
-            content_type = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip()
-            if not content_type.startswith("image/"):
-                return ("Not an image", 400)
-            data = resp.content
-        except Exception as e:
-            logger.debug(f"Image proxy fetch failed for {raw_url}: {e}")
+        # Collapse concurrent requests for the same URL: the first one fetches,
+        # the others wait for it and then read the file it wrote.
+        with _img_inflight_lock:
+            waiter = _img_inflight.get(raw_url)
+            leader = waiter is None
+            if leader:
+                waiter = threading.Event()
+                _img_inflight[raw_url] = waiter
+
+        if not leader:
+            # Bounded by the fetch timeout above plus a little slack, so a
+            # hanging leader cannot pin this thread indefinitely.
+            waiter.wait(timeout=_IMG_FETCH_TIMEOUT * _IMG_FETCH_RETRIES + 2)
+            cached = _img_cache_path_any(raw_url)
+            if cached and cached.exists():
+                ext = cached.suffix.lower()
+                mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                        ".webp": "image/webp", ".gif": "image/gif",
+                        ".avif": "image/avif"}.get(ext, "image/jpeg")
+                r = send_file(cached, mimetype=mime)
+                r.headers["Cache-Control"] = "public, max-age=604800"
+                return r
             return ("", 502)
 
-        # --- Save to disk cache ---
-        cache_file = _img_cache_path(raw_url, content_type)
         try:
-            cache_file.write_bytes(data)
-        except OSError as e:
-            logger.debug(f"Image cache write failed: {e}")
+            try:
+                resp = _img_fetch_with_retries(raw_url)
+                resp.raise_for_status()
+                content_type = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip()
+                if not content_type.startswith("image/"):
+                    return ("Not an image", 400)
+                data = resp.content
+            except Exception as e:
+                logger.debug(f"Image proxy fetch failed for {raw_url}: {e}")
+                return ("", 502)
 
-        r = Response(data, content_type=content_type)
-        r.headers["Cache-Control"] = "public, max-age=604800"
-        return r
+            # --- Save to disk cache ---
+            cache_file = _img_cache_path(raw_url, content_type)
+            try:
+                cache_file.write_bytes(data)
+            except OSError as e:
+                logger.debug(f"Image cache write failed: {e}")
+
+            r = Response(data, content_type=content_type)
+            r.headers["Cache-Control"] = "public, max-age=604800"
+            return r
+        finally:
+            # Released only once the cache file is on disk, so a waiter really
+            # finds it -- and in the failure case too, where the waiters fall
+            # through to their own 502 instead of blocking for the full
+            # timeout.
+            with _img_inflight_lock:
+                _img_inflight.pop(raw_url, None)
+            waiter.set()

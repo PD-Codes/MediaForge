@@ -399,13 +399,26 @@ def init_db():
             logger.info("Auto-created admin user '%s' from environment", env_user)
 
 
+# Once an admin exists there is no way back to "no admin at all" (the last
+# admin cannot be deleted or demoted), so the True answer is permanent and
+# worth caching: _check_setup() calls this before EVERY request, including the
+# 40 image-proxy hits a browse page makes.
+_has_admin_cached = False
+
+
 def has_any_admin():
+    global _has_admin_cached
+    if _has_admin_cached:
+        return True
     conn = get_db()
     try:
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin'"
         ).fetchone()
-        return row["cnt"] > 0
+        found = bool(row["cnt"] > 0)
+        if found:
+            _has_admin_cached = True
+        return found
     finally:
         conn.close()
 

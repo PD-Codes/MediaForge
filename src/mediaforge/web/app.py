@@ -296,6 +296,10 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 return None
             if request.endpoint == "static":
                 return None
+            # Same reasoning as static: a browse page fires ~40 of these, and
+            # redirecting an <img> to the setup page helps nobody.
+            if request.endpoint == "api_image_proxy":
+                return None
             if not app.config.get("FORCE_SSO", False) and not has_any_admin():
                 return redirect(url_for("auth.setup"))
             return None
