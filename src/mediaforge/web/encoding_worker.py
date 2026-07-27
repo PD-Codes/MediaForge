@@ -20,7 +20,6 @@ Used by: web/app.py (starts the worker at startup) and web/queue_worker.py
 
 import os
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -28,6 +27,7 @@ import uuid
 
 from ..config import MEDIAFORGE_TEMP_DIR
 from ..logger import get_logger
+from .media_publish import publish_output, sweep_stale_temp_files
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
 from .db import (
@@ -237,8 +237,6 @@ def _encoding_worker():
                 file_path   = _fentry["file_path"]
                 output_path = _fentry.get("output_path") or file_path
 
-                _replace_original = (file_path == output_path)
-
                 temp_output = str(MEDIAFORGE_TEMP_DIR / f"{_WPath(file_path).stem}_{uuid.uuid4().hex[:8]}_encode_tmp.mkv")
                 actual_output = output_path
 
@@ -246,6 +244,7 @@ def _encoding_worker():
                     round(_fi / _total_files * 100, 1),
                     current_file_idx=_fi)
 
+                _published = False
                 try:
                     # The scratch dir lives on the OS temp volume, which a
                     # reboot or a tmp cleaner may have wiped since the last
@@ -259,9 +258,12 @@ def _encoding_worker():
                         cancel_event=cancel_ev,
                     )
                     if not is_encoding_cancelled(item["id"]):
-                        if _replace_original:
-                            _WPath(file_path).unlink(missing_ok=True)
-                        shutil.move(temp_output, actual_output)
+                        # Never unlink the original first: publish_output()
+                        # stages the result next to its destination and swaps
+                        # it in atomically, so a failed copy cannot leave the
+                        # user without a file. See web/media_publish.py.
+                        publish_output(temp_output, actual_output)
+                        _published = True
                         # Hand this file to the upscale queue now that the
                         # encode is done with it. With both steps set to
                         # "after download" the download worker deliberately
@@ -277,20 +279,16 @@ def _encoding_worker():
                 except Exception as _fe:
                     _overall_failed += 1
                     logger.error(f"[Encoding] Fehler bei {file_path}: {_fe}")
-                    try:
-                        _WPath(temp_output).unlink(missing_ok=True)
-                    except Exception:
-                        pass
                     if is_encoding_cancelled(item["id"]):
                         break
                     # A failed encode is no reason to silently drop the
                     # upscale the user also asked for -- upscale the original
-                    # instead. It usually still exists (ffmpeg failed before
-                    # anything was replaced), but NOT always: unlink() runs
-                    # just before move(), so a move that fails leaves nothing
-                    # behind. Hence the existence check, and a warning rather
-                    # than a silent skip. Not done on cancel: there the user
-                    # stopped the whole chain.
+                    # instead. Since publish_output() never removes the
+                    # original before the new file is completely written, it
+                    # is still there in every failure path; the existence
+                    # check stays as a cheap guard against an outside change
+                    # (user deleted it in the library meanwhile). Not done on
+                    # cancel: there the user stopped the whole chain.
                     if item.get("upscale_after"):
                         _handed_paths.add(file_path)
                         if _WPath(file_path).exists():
@@ -300,6 +298,15 @@ def _encoding_worker():
                                 "[Encoding] %s ist nach dem Fehler nicht mehr da — "
                                 "Upscaling entfällt", file_path,
                             )
+                finally:
+                    # Covers the cancel path too: a job stopped between the
+                    # finished encode and the publish step used to leave a
+                    # full-size scratch file behind forever.
+                    if not _published:
+                        try:
+                            _WPath(temp_output).unlink(missing_ok=True)
+                        except Exception:
+                            pass
 
                 # Overall progress after this file completes
                 update_encoding_progress(item["id"],
@@ -361,6 +368,7 @@ def _ensure_encoding_worker():
             return
         _encoding_worker_started = True
     reset_running_encoding_items()
+    sweep_stale_temp_files("_encode_tmp.mkv")
     thread = threading.Thread(target=_encoding_worker, daemon=True, name="encoding-worker")
     thread.start()
 

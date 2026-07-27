@@ -14,13 +14,13 @@ Used by: web/app.py (starts the worker at startup) and web/queue_worker.py
 """
 
 import os
-import shutil
 import threading
 import time
 import uuid
 
 from ..config import MEDIAFORGE_TEMP_DIR
 from ..logger import get_logger
+from .media_publish import publish_output, sweep_stale_temp_files
 from .db import (
     add_to_upscale_queue,
     append_download_upscale_file,
@@ -165,8 +165,6 @@ def _upscale_worker():
                 file_path   = _fentry["file_path"]
                 output_path = _fentry.get("output_path") or file_path
 
-                _replace_original = (file_path == output_path)
-
                 temp_output = str(MEDIAFORGE_TEMP_DIR / f"{_WPath(file_path).stem}_{uuid.uuid4().hex[:8]}_upscale_tmp.mkv")
                 actual_output = output_path
 
@@ -177,6 +175,7 @@ def _upscale_worker():
                     round(_fi / _total_files * 100, 1),
                     current_file_idx=_fi)
 
+                _published = False
                 try:
                     # See encoding_worker.py: the scratch dir sits on the OS
                     # temp volume and may have been wiped between runs. Inside
@@ -196,20 +195,27 @@ def _upscale_worker():
                         label=item.get("title", ""),
                     )
                     if not is_upscale_cancelled(item["id"]):
-                        if _replace_original:
-                            _WPath(file_path).unlink(missing_ok=True)
-                        shutil.move(temp_output, actual_output)
+                        # Never unlink the original first: publish_output()
+                        # stages the result next to its destination and swaps
+                        # it in atomically, so a failed copy cannot leave the
+                        # user without a file. See web/media_publish.py.
+                        publish_output(temp_output, actual_output)
+                        _published = True
                 except Exception as _fe:
                     _overall_failed += 1
                     logger.error(f"[Upscale] Fehler bei {file_path}: {_fe}")
-                    try:
-                        _WPath(temp_output).unlink(missing_ok=True)
-                    except Exception:
-                        pass
                     # Continue with next file unless cancelled
                     if is_upscale_cancelled(item["id"]):
                         break
                 finally:
+                    # Covers the cancel path too: a job stopped between the
+                    # finished upscale and the publish step used to leave a
+                    # full-size scratch file behind forever.
+                    if not _published:
+                        try:
+                            _WPath(temp_output).unlink(missing_ok=True)
+                        except Exception:
+                            pass
                     _fi += 1
 
             # Final status. Counts refer to what was actually processed (_fi),
@@ -260,6 +266,7 @@ def _ensure_upscale_worker():
             return
         _upscale_worker_started = True
     reset_running_upscale_items()
+    sweep_stale_temp_files("_upscale_tmp.mkv")
     thread = threading.Thread(target=_upscale_worker, daemon=True, name="upscale-worker")
     thread.start()
 
