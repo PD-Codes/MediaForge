@@ -78,12 +78,12 @@ async function libFetch() {
     if (data.is_scanning) {
       libShowScanBadge(true);
       if (!libScanPollTimer) {
-        libScanPollTimer = setInterval(libPollScan, 2500);
+        libScanPollTimer = window.mfPoll(libPollScan, 2500);
       }
     } else {
       libShowScanBadge(false);
       if (libScanPollTimer) {
-        clearInterval(libScanPollTimer);
+        window.mfPollStop(libScanPollTimer);
         libScanPollTimer = null;
       }
       libUpdateTimestamp();
@@ -91,7 +91,7 @@ async function libFetch() {
 
     // Start idle poll if not already running
     if (!libIdlePollTimer) {
-      libIdlePollTimer = setInterval(libIdlePoll, 8000);
+      libIdlePollTimer = window.mfPoll(libIdlePoll, 8000);
     }
   } catch (e) {
     var gridEl = document.getElementById("libGridView");
@@ -118,7 +118,7 @@ async function libIdlePoll() {
       // Watcher just triggered a scan — hand off to scan poller
       libShowScanBadge(true);
       if (!libScanPollTimer) {
-        libScanPollTimer = setInterval(libPollScan, 2500);
+        libScanPollTimer = window.mfPoll(libPollScan, 2500);
       }
     } else if (status.last_updated > libLastUpdated) {
       // Cache was updated since our last render — fetch and re-render
@@ -143,7 +143,7 @@ async function libPollScan() {
       libRender(libLocations);
       libUpdateTotalSize(libLocations);
       libShowScanBadge(false);
-      clearInterval(libScanPollTimer);
+      window.mfPollStop(libScanPollTimer);
       libScanPollTimer = null;
       libUpdateTimestamp();
     }

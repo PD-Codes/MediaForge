@@ -87,7 +87,8 @@ async function clearUpscaleQueue() {
 
 // ── Background badge poll ────────────────────────────────────────────
 function _startUpscaleBadgePoll() {
-  setInterval(async () => {
+  // mfPoll: paused while the tab is hidden (static/mf_poll.js).
+  window.mfPoll(async () => {
     if (_upscalePaneActive()) return;   // the hub's own 2s poll is running
     try {
       const d = await (await fetch("/api/upscale/badge")).json();

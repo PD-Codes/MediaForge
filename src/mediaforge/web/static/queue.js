@@ -78,9 +78,10 @@ function closeQueueHub() {
 }
 
 function _qhubStopTimers() {
-  if (queuePollTimer) { clearInterval(queuePollTimer); queuePollTimer = null; }
-  if (window._qhubEncodingTimer) { clearInterval(window._qhubEncodingTimer); window._qhubEncodingTimer = null; }
-  if (window._qhubUpscaleTimer) { clearInterval(window._qhubUpscaleTimer); window._qhubUpscaleTimer = null; }
+  // mfPoll() returns a handle, not a numeric id — stop it through mfPollStop.
+  window.mfPollStop(queuePollTimer); queuePollTimer = null;
+  window.mfPollStop(window._qhubEncodingTimer); window._qhubEncodingTimer = null;
+  window.mfPollStop(window._qhubUpscaleTimer); window._qhubUpscaleTimer = null;
 }
 
 /**
@@ -111,20 +112,20 @@ function setQueuePane(pane) {
 
   if (queueModalOpen) {
     loadQueue();
-    queuePollTimer = setInterval(loadQueue, 2000);
+    queuePollTimer = window.mfPoll(loadQueue, 2000);
   }
   if (pane === "all" || pane === "encoding") {
     if (typeof _checkEncodingDisabled === "function") _checkEncodingDisabled();
     if (typeof loadEncodingQueue === "function") {
       loadEncodingQueue();
-      window._qhubEncodingTimer = setInterval(loadEncodingQueue, 2000);
+      window._qhubEncodingTimer = window.mfPoll(loadEncodingQueue, 2000);
     }
   }
   if (pane === "all" || pane === "upscaling") {
     if (typeof _checkUpscaleDisabled === "function") _checkUpscaleDisabled();
     if (typeof loadUpscaleQueue === "function") {
       loadUpscaleQueue();
-      window._qhubUpscaleTimer = setInterval(loadUpscaleQueue, 2000);
+      window._qhubUpscaleTimer = window.mfPoll(loadUpscaleQueue, 2000);
     }
   }
   renderQueueHub();
@@ -362,12 +363,16 @@ async function clearOldQueueItems() {
 
 function updateBadge(items) {
   const activeItems = items.filter(i => i.status === "queued" || i.status === "running");
-  const active = activeItems.length;
+  applyDownloadBadge(activeItems.length, activeItems.map(i => i.series_url).filter(Boolean));
+}
 
+// Split out of updateBadge() so the lightweight badge poll can feed the same
+// UI without fetching the whole queue payload.
+function applyDownloadBadge(active, urls) {
   // Running status on browse cards — download items only, never the other
   // two queues.
   if (window.updateRunningCards) {
-    window.updateRunningCards(activeItems.map(i => i.series_url).filter(Boolean));
+    window.updateRunningCards(urls || []);
   }
 
   window._qBadgeCounts.downloads = active;
@@ -1111,15 +1116,26 @@ function closeCaptchaModal() {
   });
 })();
 
-// Background badge poll every 5s
+// Background badge poll every 5s.
+// Hits /api/queue/badge, not /api/queue: the latter is a SELECT * including
+// every job's episodes JSON, i.e. a few hundred KB every 5s per open tab for
+// a single number. Paused while the tab is hidden (mf_poll.js).
 (function startBadgePoll() {
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", loadQueue);
-  } else {
-    loadQueue();
+  async function refreshQueueBadge() {
+    try {
+      const resp = await fetch("/api/queue/badge");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      applyDownloadBadge(data.badge || 0, data.urls || []);
+    } catch (e) { /* ignore */ }
   }
-  badgePollTimer = setInterval(function () {
-    if (!queueModalOpen) loadQueue();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", refreshQueueBadge);
+  } else {
+    refreshQueueBadge();
+  }
+  badgePollTimer = window.mfPoll(function () {
+    if (!queueModalOpen) refreshQueueBadge();
   }, 5000);
 })();
 
@@ -1139,7 +1155,7 @@ function closeCaptchaModal() {
     } catch (e) { /* ignore — Seerr may not be configured */ }
   }
   updateSeerrBadge();
-  setInterval(updateSeerrBadge, 60000);
+  window.mfPoll(updateSeerrBadge, 60000);
 })();
 
 // The sidebar has ONE Queues entry, so it carries the sum of all three

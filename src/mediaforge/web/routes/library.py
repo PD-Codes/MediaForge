@@ -5,6 +5,7 @@ Extracted from create_app as a plain route-registration function
 """
 
 from ..db import get_all_library_cache
+from ..db import get_library_cache_status
 from ..db import get_custom_path_by_id
 from ..db import get_custom_paths
 from ..db import get_setting
@@ -528,7 +529,9 @@ def _lib_stale_targets(targets, hours=None):
     if hours is None:
         hours = _lib_rescan_hours()
     try:
-        cached = get_all_library_cache()
+        # Status only: this runs on a timer and used to parse every target's
+        # full listing just to check a timestamp.
+        cached = get_library_cache_status()
     except Exception:
         logger.exception("[LibraryScan] Could not read the library cache")
         return list(targets)
@@ -538,7 +541,7 @@ def _lib_stale_targets(targets, hours=None):
     for (label, cp_id, base_path) in targets:
         path_key = _lib_path_key(cp_id)
         entry = cached.get(path_key) or {}
-        if not entry.get("data"):
+        if not entry.get("has_data"):
             stale.append((label, cp_id, base_path))
             continue
         if path_key in _LIB_PROBE_PENDING:
@@ -1135,7 +1138,9 @@ def register_library_routes(app):
         GET /api/library/status.
 
         Called from static/library.js's `libIdlePoll()`/`libPollScan()`."""
-        cache = get_all_library_cache()
+        # Status only -- get_all_library_cache() would parse the whole cached
+        # listing (several MB on a large library) for two numbers.
+        cache = get_library_cache_status()
         any_scanning = any(e["is_scanning"] for e in cache.values())
         last_updated = max((e["scanned_at"] for e in cache.values()), default=0)
         return jsonify({"is_scanning": any_scanning, "last_updated": last_updated})

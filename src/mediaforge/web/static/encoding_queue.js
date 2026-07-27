@@ -88,7 +88,8 @@ async function clearEncodingQueue() {
 
 // ── Background badge poll ────────────────────────────────────────────
 function _startEncodingBadgePoll() {
-  setInterval(async () => {
+  // mfPoll: paused while the tab is hidden (static/mf_poll.js).
+  window.mfPoll(async () => {
     if (_encodingPaneActive()) return;   // the hub's own 2s poll is running
     try {
       const d = await (await fetch("/api/encoding/queue/badge")).json();

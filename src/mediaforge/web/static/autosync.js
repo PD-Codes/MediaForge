@@ -1154,7 +1154,7 @@ function esc(s) {
 _loadPrefs();
 _applyPrefsToControls();
 Promise.all([loadSyncSchedule()]).then(loadAutosyncJobs);
-setInterval(loadAutosyncJobs, 30000);
+window.mfPoll(loadAutosyncJobs, 30000);
 
 // ===== Export =====
 async function exportAutosync() {

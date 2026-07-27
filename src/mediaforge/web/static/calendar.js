@@ -994,7 +994,7 @@
     load();
 
     // Poll calendar data & watcher status silently
-    setInterval(function () { load(true); }, POLL_MS);
+    window.mfPoll(function () { load(true); }, POLL_MS);
   }
 
   function closeFeed() {

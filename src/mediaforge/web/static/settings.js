@@ -1093,12 +1093,12 @@ function startWebConsole() {
   if (out) { out.innerHTML = ""; }
   _webConsoleSeq = 0;
   _webConsolePoll();
-  _webConsoleTimer = setInterval(_webConsolePoll, 1500);
+  _webConsoleTimer = window.mfPoll(_webConsolePoll, 1500);
 }
 
 function stopWebConsole() {
   _webConsolePolling = false;
-  if (_webConsoleTimer) { clearInterval(_webConsoleTimer); _webConsoleTimer = null; }
+  if (_webConsoleTimer) { window.mfPollStop(_webConsoleTimer); _webConsoleTimer = null; }
 }
 
 // ─── DNS ────────────────────────────────────────────────────────────────────

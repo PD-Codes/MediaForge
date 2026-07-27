@@ -23,7 +23,7 @@ async function updateDevInfoBadge() {
 
 (function startDevInfoBadgePoll() {
   updateDevInfoBadge();
-  setInterval(updateDevInfoBadge, 60000); // refresh every 60s
+  window.mfPoll(updateDevInfoBadge, 60000); // refresh every 60s, paused while hidden
 })();
 
 // Dev Infos page -- keep the list itself reasonably fresh without a full
@@ -120,5 +120,5 @@ async function updateDevInfoBadge() {
   // normal 60s background cadence for as long as the tab stays open.
   setTimeout(refresh, 2000);
   setTimeout(refresh, 5000);
-  setInterval(refresh, 60000);
+  window.mfPoll(refresh, 60000);
 })();

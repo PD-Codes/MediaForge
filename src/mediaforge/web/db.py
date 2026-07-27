@@ -2895,6 +2895,36 @@ def get_all_library_cache():
         conn.close()
 
 
+def get_library_cache_status():
+    """Scan state and timestamps only -- without the cached listing.
+
+    get_all_library_cache() selects the `data` column and json.loads() it for
+    every scan target, i.e. the entire title/season/episode tree. The status
+    endpoint is polled every few seconds and only needs these two numbers; on
+    a 20k-episode library that was several MB of JSON parsed per poll and per
+    open tab.
+    """
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            # length() is computed by SQLite without materialising the value,
+            # so "is there a listing?" costs nothing here.
+            "SELECT path_key, scanned_at, is_scanning, length(data) AS data_len "
+            "FROM library_cache"
+        ).fetchall()
+        return {
+            r["path_key"]: {
+                "scanned_at": r["scanned_at"],
+                "is_scanning": bool(r["is_scanning"]),
+                # '[]' (the column default) counts as empty.
+                "has_data": (r["data_len"] or 0) > 2,
+            }
+            for r in rows
+        }
+    finally:
+        conn.close()
+
+
 def set_library_cache(path_key, data, scanned_at=None):
     import json as _json, time as _time
     conn = get_db()
@@ -4679,6 +4709,29 @@ def clear_upscale_completed():
             "DELETE FROM upscale_queue WHERE status IN ('completed', 'failed', 'cancelled')"
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_queue_badge_info():
+    """Number of queued/running download items plus their series URLs.
+
+    Everything the sidebar badge and the "running" markers on browse cards
+    need. The badge poll used to call get_queue(), which is a SELECT * over
+    the whole table including the episodes JSON blob (often several KB per
+    job) -- a few hundred KB every 5 seconds per open tab, to display one
+    number.
+    """
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT series_url FROM download_queue "
+            "WHERE status IN ('queued', 'running') AND hidden = 0"
+        ).fetchall()
+        return {
+            "active": len(rows),
+            "urls": [r["series_url"] for r in rows if r["series_url"]],
+        }
     finally:
         conn.close()
 

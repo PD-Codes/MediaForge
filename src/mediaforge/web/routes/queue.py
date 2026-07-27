@@ -170,6 +170,17 @@ def register_queue_routes(app):
             "ffmpeg_progress": ffmpeg_pct,
             "paused": is_queue_paused()
         })
+    @app.route("/api/queue/badge")
+    def api_queue_badge():
+        """Return just the active download count and its series URLs.
+
+        GET /api/queue/badge. Polled by queue.js's badge timer on every page.
+        Mirrors /api/encoding/queue/badge and /api/upscale/badge; the badge
+        used to poll the full /api/queue payload instead.
+        """
+        from ..db import get_queue_badge_info
+        info = get_queue_badge_info()
+        return jsonify({"ok": True, "badge": info["active"], "urls": info["urls"]})
     @app.route("/api/queue/pause", methods=["POST"])
     def api_queue_pause():
         """Pause the download queue worker.

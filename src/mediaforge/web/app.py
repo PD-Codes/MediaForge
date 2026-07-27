@@ -1179,6 +1179,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         logger.exception("[SelfUpdate] finalize_after_restart failed")
 
 
+    # Static assets carry ?v=<mtime> (see override_url_for below), so a new
+    # build produces new URLs and a long max-age is safe. Without it Flask
+    # sends no max-age at all and every page load revalidates all 34 CSS/JS
+    # files -- 34 conditional requests, each going through the whole
+    # before-request chain, just to be told "not modified".
+    app.config.setdefault("SEND_FILE_MAX_AGE_DEFAULT", 31536000)  # 1 year
+
     @app.context_processor
     def override_url_for():
         """Override the `url_for` available in Jinja templates so static asset
