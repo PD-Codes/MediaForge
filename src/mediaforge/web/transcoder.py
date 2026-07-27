@@ -35,6 +35,9 @@ MAX_TRANSCODE_SESSIONS = 8  # max concurrent HLS transcode sessions
 # position — e.g. everyone in a SyncPlay room — reuse ONE ffmpeg process and the
 # same HLS segments instead of each spawning their own. Refcounted.
 _shared: dict = {}              # share_key -> token
+# Tokens whose session is being built right now. They count towards
+# MAX_TRANSCODE_SESSIONS so the limit holds while ffmpeg is still starting.
+_starting: set = set()
 _share_locks: dict = {}         # share_key -> Lock (serialize creation per key)
 _share_locks_guard = threading.Lock()
 SHARE_EPSILON = 3.0             # seconds: positions within this reuse a session
@@ -453,6 +456,15 @@ class TranscodeSession:
                     self.process.kill()
                 except Exception as e2:
                     logger.warning("[Transcoder] kill failed for %s: %s", self.token[:8], e2)
+            # Close the pipes explicitly instead of waiting for the garbage
+            # collector: every session holds an ffmpeg stderr pipe, and on a
+            # long-running server that is a file descriptor per stopped stream.
+            for _pipe in (self.process.stdout, self.process.stderr, self.process.stdin):
+                try:
+                    if _pipe is not None:
+                        _pipe.close()
+                except Exception:
+                    pass
             self.process = None
         if self.tmp_dir and os.path.exists(self.tmp_dir):
             try:
@@ -482,24 +494,34 @@ def start_session(file_path: str, start_pos: float = 0.0, headers: dict | None =
     -aspect when re-encoding, so hardware encoders can't reset a non-square
     SAR and change the displayed shape.
     """
+    token = uuid.uuid4().hex
+    # Reserve the slot in the SAME critical section that checks the limit.
+    # Checking first and inserting only after get_best_encoder() (which shells
+    # out to ffmpeg and takes a moment) let every concurrent starter pass the
+    # check while _sessions was still empty -- so N viewers hitting play at the
+    # same time produced N ffmpeg processes no matter what the limit said.
     with _sessions_lock:
-        if len(_sessions) >= MAX_TRANSCODE_SESSIONS:
+        if len(_sessions) + len(_starting) >= MAX_TRANSCODE_SESSIONS:
             raise RuntimeError(
                 f"Zu viele gleichzeitige Transcode-Sessions ({MAX_TRANSCODE_SESSIONS} max). "
                 "Bitte warte, bis eine andere Session beendet ist."
             )
-    encoder, _ = get_best_encoder()
-    if not encoder:
-        raise RuntimeError(
-            "Kein H.264-Encoder verfügbar. "
-            "Bitte ffmpeg mit NVENC/VAAPI/VideoToolbox oder libx264 installieren."
-        )
-    token   = uuid.uuid4().hex
-    session = TranscodeSession(token, file_path, encoder, start_pos, headers=headers,
-                               copy_video=copy_video, copy_audio=copy_audio,
-                               display_aspect_ratio=display_aspect_ratio)
-    with _sessions_lock:
-        _sessions[token] = session
+        _starting.add(token)
+    try:
+        encoder, _ = get_best_encoder()
+        if not encoder:
+            raise RuntimeError(
+                "Kein H.264-Encoder verfügbar. "
+                "Bitte ffmpeg mit NVENC/VAAPI/VideoToolbox oder libx264 installieren."
+            )
+        session = TranscodeSession(token, file_path, encoder, start_pos, headers=headers,
+                                   copy_video=copy_video, copy_audio=copy_audio,
+                                   display_aspect_ratio=display_aspect_ratio)
+        with _sessions_lock:
+            _sessions[token] = session
+    finally:
+        with _sessions_lock:
+            _starting.discard(token)
     ok = session.start()
     if not ok:
         with _sessions_lock:
@@ -583,6 +605,14 @@ def _cleanup_loop():
                 if now - sess.last_access > SESSION_TIMEOUT:
                     stale.append((tok, sess))
                     del _sessions[tok]
+                    # stop_session() drops this mapping, the timeout path did
+                    # not -- so an expired shared session left its share_key
+                    # pointing at a token that no longer exists, and the next
+                    # viewer of that file looked it up before falling through
+                    # to a fresh session anyway.
+                    share_key = getattr(sess, "share_key", None)
+                    if share_key and _shared.get(share_key) == tok:
+                        _shared.pop(share_key, None)
         for tok, sess in stale:
             logger.info("[Transcoder] stale session cleanup: %s", tok[:8])
             sess.stop()

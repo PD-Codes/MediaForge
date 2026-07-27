@@ -17,6 +17,7 @@ from ..db import count_language_group_users
 from ..db import get_custom_paths
 from ..db import get_language_groups
 from ..db import get_setting
+from ..db import get_setting_int
 from ..db import remove_custom_path
 from ..db import remove_language_group
 from ..db import set_setting
@@ -184,7 +185,7 @@ def register_settings_routes(app):
         sync_language               = get_setting("sync_language")               or os.environ.get("MEDIAFORGE_SYNC_LANGUAGE", "German Dub")
         sync_provider               = get_setting("sync_provider")               or os.environ.get("MEDIAFORGE_SYNC_PROVIDER", "VOE")
         sync_path_unavailable_action = get_setting("sync_path_unavailable_action") or os.environ.get("MEDIAFORGE_SYNC_PATH_UNAVAILABLE_ACTION", "skip")
-        sync_error_retries   = int(get_setting("sync_error_retries") or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRIES", "0"))
+        sync_error_retries   = get_setting_int("sync_error_retries", 0, "MEDIAFORGE_SYNC_ERROR_RETRIES")
         sync_error_retry_time = get_setting("sync_error_retry_time") or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRY_TIME", "5min")
         sync_adaptive_enabled     = get_setting("sync_adaptive_enabled")     or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_ENABLED", "0")
         sync_adaptive_pause_after = get_setting("sync_adaptive_pause_after") or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_PAUSE_AFTER", "4w")
@@ -194,7 +195,7 @@ def register_settings_routes(app):
         download_language    = get_setting("download_language")    or os.environ.get("MEDIAFORGE_LANGUAGE", "German Dub")
         download_provider    = get_setting("download_provider")    or os.environ.get("MEDIAFORGE_PROVIDER", "VOE")
         naming_template      = get_setting("naming_template")      or os.environ.get("MEDIAFORGE_NAMING_TEMPLATE", "{title} ({year}) [imdbid-{imdbid}]/Season {season}/{title} S{season}E{episode}.mkv")
-        download_rate_limit  = int(get_setting("download_rate_limit") or os.environ.get("MEDIAFORGE_DOWNLOAD_RATE_LIMIT", "0"))
+        download_rate_limit  = get_setting_int("download_rate_limit", 0, "MEDIAFORGE_DOWNLOAD_RATE_LIMIT")
         # Duplicate handling (models/common/dupecheck.py). Both default to "0":
         # an existing install keeps the old "already on disk -> skip" behaviour
         # until the user opts in.

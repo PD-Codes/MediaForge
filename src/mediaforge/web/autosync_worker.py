@@ -1,6 +1,7 @@
 """Auto-sync worker — periodic new/missing-episode detection and queueing."""
 
 import re
+import threading
 import time
 
 from ..config import INVERSE_LANG_LABELS, LANG_KEY_MAP
@@ -12,6 +13,7 @@ from .db import (
     get_custom_path_by_id,
     get_custom_paths,
     get_setting,
+    get_setting_int,
     is_series_queued_or_running,
     prune_download_history,
     update_autosync_job,
@@ -43,6 +45,9 @@ logger = get_logger(__name__)
 
 # Auto-sync worker state
 _autosync_worker_started = False
+# Guards the check-then-set in _ensure_autosync_worker(); mirrors
+# queue_worker.py's _queue_lock.
+_autosync_start_lock = threading.Lock()
 
 _last_history_prune: "float" = 0.0  # throttle: download-history retention prune (~hourly)
 
@@ -1025,7 +1030,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             logger.error("Auto-sync failed for '%s': %s", job.get("title", "?"), e, exc_info=True)
 
             current_retry = job.get("retry_count", 0)
-            max_retries = int(get_setting("sync_error_retries") or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRIES", "0"))
+            max_retries = get_setting_int("sync_error_retries", 0, "MEDIAFORGE_SYNC_ERROR_RETRIES")
             new_retry = current_retry + 1
 
             update_autosync_job(
@@ -1089,8 +1094,8 @@ def _autosync_worker():
             if _now_mono - _last_history_prune > 3600:
                 _last_history_prune = _now_mono
                 try:
-                    _hrd = int(get_setting("history_retention_days")
-                               or os.environ.get("MEDIAFORGE_HISTORY_RETENTION_DAYS", "30"))
+                    _hrd = get_setting_int("history_retention_days", 30,
+                                           "MEDIAFORGE_HISTORY_RETENTION_DAYS")
                     _pruned = prune_download_history(_hrd)
                     if _pruned:
                         logger.info("[History] pruned %d entries older than %d days", _pruned, _hrd)
@@ -1108,7 +1113,7 @@ def _autosync_worker():
 
             now = datetime.utcnow()
             jobs = get_autosync_jobs()
-            max_retries = int(get_setting("sync_error_retries") or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRIES", "0"))
+            max_retries = get_setting_int("sync_error_retries", 0, "MEDIAFORGE_SYNC_ERROR_RETRIES")
             retry_time_key = get_setting("sync_error_retry_time") or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRY_TIME", "5min")
             job_retry_interval = SYNC_RETRY_MAP.get(retry_time_key, 300)
 
@@ -1204,9 +1209,13 @@ def _ensure_autosync_worker():
     Used by: app.py's create_app(), once per running server process.
     """
     global _autosync_worker_started
-    if _autosync_worker_started:
-        return
-    _autosync_worker_started = True
-    import threading
+    # Check and set under a lock, the way _ensure_queue_worker() does it. The
+    # bare check-then-set let two concurrent callers (debug reloader, or two
+    # requests racing a lazy start) both pass and start two worker threads,
+    # which then polled the same jobs and queued every episode twice.
+    with _autosync_start_lock:
+        if _autosync_worker_started:
+            return
+        _autosync_worker_started = True
     thread = threading.Thread(target=_autosync_worker, daemon=True)
     thread.start()

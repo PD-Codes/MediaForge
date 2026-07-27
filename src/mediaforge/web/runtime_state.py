@@ -48,22 +48,45 @@ def _get_working_providers():
     skipped.  Any other exception means the extractor *is* implemented (it just
     rejected the empty URL as expected).  Logging is silenced during the probe
     so that the intentional empty-URL errors don't spam the terminal on startup.
+
+    The silencing is scoped to THIS thread. It used to be
+    ``logging.disable(CRITICAL)``, a process-wide switch: while the probe ran
+    -- and this function is also called at runtime by
+    refresh_working_providers() when a module registers a hoster -- the queue
+    worker, the auto-sync worker and Flask lost every log line, and an
+    extractor hanging on the empty URL would have left logging off for good.
+    A per-module logger is not an option either: get_logger() hands every
+    caller the same "mediaforge" logger. Hence a filter that drops records
+    from the probing thread only.
     """
     import logging as _logging
+    import threading as _threading
+
+    class _SilenceThisThread(_logging.Filter):
+        def __init__(self, thread_id):
+            super().__init__()
+            self._tid = thread_id
+
+        def filter(self, record):
+            return record.thread != self._tid
+
     working = []
-    for p in SUPPORTED_PROVIDERS:
-        func_name = f"get_direct_link_from_{p.lower()}"
-        if func_name not in provider_functions:
-            continue
-        _logging.disable(_logging.CRITICAL)  # suppress expected empty-URL errors
-        try:
-            provider_functions[func_name]("")
-        except NotImplementedError:
-            continue
-        except Exception:
-            working.append(p)
-        finally:
-            _logging.disable(_logging.NOTSET)  # restore normal logging
+    _log = _logging.getLogger("mediaforge")
+    _filter = _SilenceThisThread(_threading.get_ident())
+    _log.addFilter(_filter)
+    try:
+        for p in SUPPORTED_PROVIDERS:
+            func_name = f"get_direct_link_from_{p.lower()}"
+            if func_name not in provider_functions:
+                continue
+            try:
+                provider_functions[func_name]("")
+            except NotImplementedError:
+                continue
+            except Exception:
+                working.append(p)
+    finally:
+        _log.removeFilter(_filter)
     return working
 
 

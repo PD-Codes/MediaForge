@@ -3141,6 +3141,32 @@ def get_setting(key: str, default: str | None = None) -> str | None:
         conn.close()
 
 
+def get_setting_int(key: str, default: int, env_key: str | None = None) -> int:
+    """Integer setting with a fallback chain: DB -> environment -> *default*.
+
+    Every value in that chain is user-editable, and a non-numeric one used to
+    take the caller down with a ValueError. The DB side is validated when the
+    settings page writes it, the environment side is not at all: a typo in
+    e.g. MEDIAFORGE_SYNC_ERROR_RETRIES threw the auto-sync worker into its
+    error branch on every cycle -- it slept 30s, retried, and never synced,
+    without anything visible in the UI -- and made the settings page answer
+    with a 500. A bad value is logged once and the default is used.
+    """
+    raw = get_setting(key)
+    if raw is None or str(raw).strip() == "":
+        raw = os.environ.get(env_key, "") if env_key else ""
+    if str(raw).strip() == "":
+        return default
+    try:
+        return int(float(str(raw).strip()))
+    except (TypeError, ValueError):
+        logger.warning(
+            "Setting %s has the non-numeric value %r — falling back to %s",
+            env_key or key, raw, default,
+        )
+        return default
+
+
 def set_setting(key: str, value: str) -> None:
     conn = get_db()
     try:

@@ -65,8 +65,12 @@ def register_captcha_routes(app):
         if captcha_sess is None:
             return jsonify({"error": "No active captcha session"}), 404
         data = request.get_json(silent=True) or {}
-        x = int(data.get("x", 0))
-        y = int(data.get("y", 0))
+        # int() on client input without a guard turned a typo into a 500.
+        try:
+            x = int(data.get("x", 0))
+            y = int(data.get("y", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "x and y must be integers"}), 400
         captcha_sess.enqueue_click(x, y)
         return jsonify({"ok": True})
     @app.route("/api/captcha/<int:queue_id>/status")

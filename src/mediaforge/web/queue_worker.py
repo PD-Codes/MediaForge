@@ -13,6 +13,7 @@ from .db import (
     claim_next_queued,
     get_custom_path_by_id,
     get_setting,
+    get_setting_int,
     is_queue_cancelled,
     set_queue_status,
     update_queue_errors,
@@ -812,8 +813,8 @@ def _queue_worker():
                         # cap, and the stall branch could never be reached at
                         # all. Set it only if you deliberately want a ceiling on
                         # how long a single episode may take.
-                        _HANG_TIMEOUT   = int(get_setting("watchdog_hang_timeout") or os.environ.get("MEDIAFORGE_HANG_TIMEOUT", "0"))  # 0 = no absolute cap
-                        _STALL_TIMEOUT  = int(get_setting("watchdog_stall_timeout") or os.environ.get("MEDIAFORGE_STALL_TIMEOUT", "3600"))  # 60 min no progress (must comfortably exceed yt-dlp's reconnect_delay_max=60s so a normal reconnect isn't mistaken for a stall)
+                        _HANG_TIMEOUT   = get_setting_int("watchdog_hang_timeout", 0, "MEDIAFORGE_HANG_TIMEOUT")  # 0 = no absolute cap
+                        _STALL_TIMEOUT  = get_setting_int("watchdog_stall_timeout", 3600, "MEDIAFORGE_STALL_TIMEOUT")  # 60 min no progress (must comfortably exceed yt-dlp's reconnect_delay_max=60s so a normal reconnect isn't mistaken for a stall)
                         _dl_exc = [None]
                         _dl_res = [None]
                         _dl_done = threading.Event()
