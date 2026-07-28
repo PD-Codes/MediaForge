@@ -32,27 +32,10 @@ function uicSwitchPill(id, el) {
   }
 
   // Multi-select dropdown ----------------------------------------------
-  var multiselect = document.getElementById("uicMultiselect");
-  if (multiselect) {
-    var trigger = multiselect.querySelector(".mf-multiselect-trigger");
-    var label = multiselect.querySelector(".mf-multiselect-label");
-    trigger.addEventListener("click", function (e) {
-      e.stopPropagation();
-      var open = !multiselect.classList.contains("is-open");
-      multiselect.classList.toggle("is-open", open);
-      trigger.setAttribute("aria-expanded", open ? "true" : "false");
-    });
-    multiselect.addEventListener("change", function () {
-      var chosen = Array.prototype.map.call(
-        multiselect.querySelectorAll('input[type="checkbox"]:checked'),
-        function (cb) { return cb.value; }
-      );
-      label.textContent = chosen.length ? chosen.join(", ") : "Nothing selected";
-    });
-    document.addEventListener("click", function (e) {
-      if (!multiselect.contains(e.target)) multiselect.classList.remove("is-open");
-    });
-  }
+  // Nothing to do here: the root carries data-mf-multiselect, so the
+  // globally loaded web/static/mf_multiselect.js opens/closes it, keeps the
+  // trigger label in sync and fires mf-multiselect-change / -close on the
+  // root. Only add JS of your own if you need to react to the selection.
 
   // Token field ---------------------------------------------------------
   var tokenInput = document.getElementById("uicTokenInput");

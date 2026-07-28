@@ -480,11 +480,107 @@ async function saveNamingTemplate() {
   }
 }
 
+// The stock template, identical to config.NAMING_TEMPLATE. Kept as a constant
+// because both the Reset button and the "Set Defaults" preset restore it.
+//
+// Note the placeholders carry NO format spec: the backend hands .format() values
+// that are already zero-padded strings, so a "{season:02d}" here would raise
+// "Unknown format code 'd' for object of type 'str'" on every single download.
+const NAMING_TEMPLATE_DEFAULT =
+  "{title} ({year}) [imdbid-{imdbid}]/Season {season}/{title} S{season}E{episode}.mkv";
+
 function resetNamingTemplate() {
   const el = document.getElementById("namingTemplate");
-  if (el) el.value = "{title} - S{season:02d}E{episode:02d}";
+  if (el) el.value = NAMING_TEMPLATE_DEFAULT;
   saveNamingTemplate();
 }
+
+// ─── Download presets ───────────────────────────────────────────────────────
+// Two buttons, one field set. Both write exactly the same five settings, so
+// whichever was pressed last fully describes the state — a preset can never
+// leave a half-applied mix behind. Keep the lists in sync with the hint text
+// under the buttons in settings.html.
+const DOWNLOAD_PRESETS = {
+  // MediaForge out of the box.
+  default: {
+    naming_template: NAMING_TEMPLATE_DEFAULT,
+    aniworld_absolute_episodes: false,
+    lang_separation: false,
+    disable_english_sub: false,
+    movie_subfolder: false,
+  },
+  // Jellyfin: one folder per series and no season subfolder (in absolute order
+  // every episode is season 1, so season folders would only ever hold "Season
+  // 01"), absolute episode numbers so anime matches TMDB/TVDB, no language
+  // folders (they split one series across several library entries), and each
+  // movie in its own folder, which is what Jellyfin's movie scanner expects.
+  jellyfin: {
+    naming_template: "{title} ({year}) [imdbid-{imdbid}]/{title} S{season}E{episode}.mkv",
+    aniworld_absolute_episodes: true,
+    lang_separation: false,
+    disable_english_sub: false,
+    movie_subfolder: true,
+  },
+};
+
+async function _applyDownloadPreset(name, title, okMessage) {
+  const preset = DOWNLOAD_PRESETS[name];
+  if (!preset) return;
+
+  const msg = t(
+    "Namensvorlage, absolute Episodennummern, Sprachen-Trennung, englische Untertitel und Film-Unterordner werden überschrieben. Bereits heruntergeladene Dateien werden nicht umbenannt.",
+    "The naming template, absolute episode numbers, language separation, English subtitles and movie subfolders will be overwritten. Files already downloaded are not renamed.");
+  const okLabel = t("Übernehmen", "Apply");
+  let confirmed;
+  if (typeof showConfirm === "function") {
+    confirmed = await showConfirm(msg, okLabel, title, "btn-primary");
+  } else {
+    confirmed = window.confirm(msg);
+  }
+  if (!confirmed) return;
+
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      // filmpalast_movie_subfolder is the legacy twin of movie_subfolder and
+      // the backend keeps both in step — send both, exactly like
+      // saveMovieSubfolder() does.
+      body: JSON.stringify({
+        ...preset,
+        filmpalast_movie_subfolder: preset.movie_subfolder,
+      }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    // Language separation gates the fallback groups, so every language dropdown
+    // on the page can change with it. Re-reading the settings rebuilds all of
+    // them instead of patching five fields by hand and missing the sixth.
+    await loadSettings();
+    showToast(okMessage);
+    // Switching language separation off breaks any job that uses a fallback
+    // group; the backend counts them and says so.
+    if (data.warning) showToast(data.warning);
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+async function applyJellyfinDefaults() {
+  await _applyDownloadPreset(
+    "jellyfin",
+    t("Jellyfin-Standards übernehmen?", "Apply Jellyfin defaults?"),
+    t("Jellyfin-Standards gesetzt", "Jellyfin defaults applied"));
+}
+window.applyJellyfinDefaults = applyJellyfinDefaults;
+
+async function applyDownloadDefaults() {
+  await _applyDownloadPreset(
+    "default",
+    t("Standardwerte wiederherstellen?", "Restore defaults?"),
+    t("Standardwerte gesetzt", "Defaults applied"));
+}
+window.applyDownloadDefaults = applyDownloadDefaults;
 
 async function saveDownloadRateLimit() {
   const el = document.getElementById("downloadRateLimit");
@@ -1419,6 +1515,43 @@ async function loadCustomPaths() {
   }
 }
 
+function customPathsCanEdit() {
+  return typeof settingsCanEdit === "undefined" || settingsCanEdit;
+}
+
+function parsePathSites(value) {
+  return String(value || "").split(",").map((site) => site.trim()).filter(Boolean);
+}
+
+// The "default for sites" column used to be a row of loose checkboxes, one per
+// site. mirrors.SITE_LABELS is a registry third-party modules add to, so that
+// row grew without bound and wrapped into a wall of text on a phone. It is a
+// single .mf-multiselect dropdown now (shared behaviour in
+// static/mf_multiselect.js), which stays one line tall no matter how many
+// sites are registered.
+function renderPathSiteSelect(p) {
+  const active = parsePathSites(p.default_sites);
+  const disabled = customPathsCanEdit() ? "" : "disabled";
+  const items = customPathSiteOptions.length
+    ? customPathSiteOptions.map(function ({ key, label }) {
+        return '<label class="mf-multiselect-item"><input type="checkbox" class="chb-main" value="' +
+          esc(key) + '"' + (active.includes(key) ? " checked" : "") + " " + disabled +
+          "><span>" + esc(label) + "</span></label>";
+      }).join("")
+    : '<div class="mf-multiselect-empty">' + esc(t("Keine Seiten verfügbar", "No sites available")) + "</div>";
+  return '<div class="mf-multiselect path-site-select" data-mf-multiselect' +
+    ' data-custom-path-id="' + p.id + '"' +
+    ' data-none-label="' + esc(t("Keine Seite", "No site")) + '"' +
+    ' data-many-label="' + esc(t("Seiten", "sites")) + '">' +
+    '<button type="button" class="mf-multiselect-trigger" aria-haspopup="true" aria-expanded="false"' +
+      ' aria-label="' + esc(t("Standardseiten für ", "Default sites for ") + p.name) + '" ' + disabled + ">" +
+      '<span class="mf-multiselect-label"></span>' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>' +
+    "</button>" +
+    '<div class="mf-multiselect-dropdown">' + items + "</div>" +
+  "</div>";
+}
+
 function renderCustomPaths(paths) {
   customPathsBody.innerHTML = "";
   if (!paths.length) {
@@ -1428,64 +1561,100 @@ function renderCustomPaths(paths) {
     return;
   }
   paths.forEach(function (p) {
-    const active = (p.default_sites || "").split(",").map((site) => site.trim()).filter(Boolean);
-    const siteChips = customPathSiteOptions.map(function ({ key, label }) {
-      const checked = active.includes(key) ? "checked" : "";
-      const disabled = (typeof settingsCanEdit !== "undefined" && !settingsCanEdit) ? "disabled" : "";
-      return '<label class="path-site-chip"><input class="chb-main" data-custom-path-id="' + p.id + '" type="checkbox" ' + checked + " " + disabled +
-        " onchange=\"togglePathSite(" + p.id + ",'" + key + "',this.checked)\"> " + esc(label) + "</label>";
-    }).join("");
     const tr = document.createElement("tr");
-    const delCell = (typeof settingsCanEdit !== "undefined" && settingsCanEdit)
+    const delCell = customPathsCanEdit()
       ? '<td><button class="btn-del" onclick="deleteCustomPath(' + p.id + ')">'+t("Löschen","Delete")+'</button></td>'
       : '<td></td>';
     tr.innerHTML =
       "<td>" + esc(p.name) + "</td>" +
       "<td style=\"font-family:'SF Mono','Fira Code',monospace;font-size:.82rem\">" + esc(p.path) + "</td>" +
-      '<td><div class="path-site-chips">' + siteChips + "</div></td>" +
+      '<td class="path-site-cell">' + renderPathSiteSelect(p) + "</td>" +
       delCell;
     customPathsBody.appendChild(tr);
   });
+  // The trigger label is derived from the checked boxes, so it is filled in
+  // after the rows are in the DOM rather than duplicated into the markup.
+  customPathsBody.querySelectorAll(".path-site-select").forEach(function (root) {
+    window.mfMultiSelect.refresh(root);
+  });
 }
 
-async function togglePathSite(pathId, siteKey, enabled) {
+// Ticking three sites used to fire three PUTs. Collapse a burst of changes
+// into one request, and flush immediately when the dropdown closes so a
+// selection is never left unsaved for longer than the debounce.
+const customPathSaveTimers = new Map();
+const customPathSaveInflight = new Set();
+const PATH_SITES_SAVE_DELAY = 400;
+
+if (customPathsBody) {
+  customPathsBody.addEventListener("mf-multiselect-change", function (ev) {
+    const root = ev.target;
+    if (!root.classList || !root.classList.contains("path-site-select")) return;
+    queuePathSitesSave(Number(root.dataset.customPathId), ev.detail.values);
+  });
+  customPathsBody.addEventListener("mf-multiselect-close", function (ev) {
+    const root = ev.target;
+    if (!root.classList || !root.classList.contains("path-site-select")) return;
+    flushPathSitesSave(Number(root.dataset.customPathId));
+  });
+}
+
+function queuePathSitesSave(pathId, siteKeys) {
   const path = customPathsCache.find((item) => item.id === pathId);
   if (!path) return;
+  if (path._savedSites === undefined) path._savedSites = path.default_sites || "";
+  path.default_sites = siteKeys.join(",");
+  clearTimeout(customPathSaveTimers.get(pathId));
+  customPathSaveTimers.set(pathId, setTimeout(function () {
+    customPathSaveTimers.delete(pathId);
+    savePathSites(pathId);
+  }, PATH_SITES_SAVE_DELAY));
+}
 
-  const previousDefaultSites = path.default_sites || "";
-  const active = new Set(previousDefaultSites.split(",")
-    .map((site) => site.trim()).filter(Boolean));
-  if (enabled) active.add(siteKey);
-  else active.delete(siteKey);
-  path.default_sites = Array.from(active).join(",");
-  setPathSiteInputsDisabled(pathId, true);
+function flushPathSitesSave(pathId) {
+  if (!customPathSaveTimers.has(pathId)) return;
+  clearTimeout(customPathSaveTimers.get(pathId));
+  customPathSaveTimers.delete(pathId);
+  savePathSites(pathId);
+}
+
+async function savePathSites(pathId) {
+  const path = customPathsCache.find((item) => item.id === pathId);
+  if (!path) return;
+  // Never let two PUTs for the same path overlap: they both send the full
+  // list, so an out-of-order response would resurrect a stale selection.
+  // Re-queue instead and let the debounce fire again once this one is done.
+  if (customPathSaveInflight.has(pathId)) {
+    queuePathSitesSave(pathId, parsePathSites(path.default_sites));
+    return;
+  }
+  customPathSaveInflight.add(pathId);
+  const previousDefaultSites = path._savedSites || "";
+  const siteKeys = parsePathSites(path.default_sites);
 
   try {
     const save = await fetch("/api/custom-paths/" + pathId, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ default_sites: Array.from(active) }),
+      body: JSON.stringify({ default_sites: siteKeys }),
     });
     const result = await save.json();
     if (result.error) {
       path.default_sites = previousDefaultSites;
+      delete path._savedSites;
       renderCustomPaths(customPathsCache);
-      showToast(result.error);
+      showToast(result.error, "error");
       return;
     }
-    setPathSiteInputsDisabled(pathId, false);
+    path._savedSites = path.default_sites;
   } catch (e) {
     path.default_sites = previousDefaultSites;
+    delete path._savedSites;
     renderCustomPaths(customPathsCache);
-    showToast(t("Standardseiten konnten nicht aktualisiert werden: " + e.message, "Default sites could not be updated: " + e.message));
+    showToast(t("Standardseiten konnten nicht aktualisiert werden: " + e.message, "Default sites could not be updated: " + e.message), "error");
+  } finally {
+    customPathSaveInflight.delete(pathId);
   }
-}
-
-function setPathSiteInputsDisabled(pathId, disabled) {
-  const canEdit = typeof settingsCanEdit === "undefined" || settingsCanEdit;
-  document.querySelectorAll('[data-custom-path-id="' + pathId + '"]').forEach((input) => {
-    input.disabled = disabled || !canEdit;
-  });
 }
 
 async function addCustomPath() {

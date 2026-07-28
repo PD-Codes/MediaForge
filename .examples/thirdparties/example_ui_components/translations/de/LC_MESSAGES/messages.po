@@ -193,8 +193,11 @@ msgstr "Filme"
 msgid "Multi-select dropdown"
 msgstr "Multi-Select-Dropdown"
 
-msgid "web/static/forms.css — a trigger showing a summary, opening a .chb-main checkbox list. Toggle .is-open on the root yourself and listen for change on the dropdown; wrap every option in a <label class=\"mf-multiselect-item\"> so the whole row is clickable."
-msgstr "web/static/forms.css — ein Trigger mit Zusammenfassung, der eine .chb-main-Checkbox-Liste öffnet. Das .is-open am Wurzelelement setzt du selbst und lauschst auf change am Dropdown; jede Option in ein <label class=\"mf-multiselect-item\"> wickeln, damit die ganze Zeile klickbar ist."
+msgid "web/static/forms.css + web/static/mf_multiselect.js — a trigger showing a summary, opening a .chb-main checkbox list. Add data-mf-multiselect to the root and the globally loaded mf_multiselect.js does the rest: open/close, the summary label, outside-click and Escape, and repositioning so the list is never clipped by a scrolling container. Word the label with data-none-label / data-many-label / data-max-names and listen for mf-multiselect-change or mf-multiselect-close on the root (detail: {values, labels}) instead of raw change. Wrap every option in a <label class=\"mf-multiselect-item\"> so the whole row is clickable."
+msgstr "web/static/forms.css + web/static/mf_multiselect.js — ein Trigger mit Zusammenfassung, der eine .chb-main-Checkbox-Liste öffnet. data-mf-multiselect ans Wurzelelement schreiben — den Rest erledigt das global geladene mf_multiselect.js: Öffnen/Schließen, das Label mit der Zusammenfassung, Klick nach außen und Escape sowie die Positionierung, damit die Liste in einem scrollenden Container nicht abgeschnitten wird. Den Text mit data-none-label / data-many-label / data-max-names formulieren und statt auf change auf mf-multiselect-change bzw. mf-multiselect-close am Wurzelelement lauschen (detail: {values, labels}). Jede Option in ein <label class=\"mf-multiselect-item\"> wickeln, damit die ganze Zeile klickbar ist."
+
+msgid "genres selected"
+msgstr "Genres ausgewählt"
 
 msgid "Nothing selected"
 msgstr "Nichts ausgewählt"

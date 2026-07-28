@@ -21,6 +21,7 @@ from .db import (
     update_queue_stats,
 )
 from .download_history import _record_download_history
+from .episode_marker import season_episode_from_name
 from .language_groups import (
     is_group_ref,
     labels_from_provider_data,
@@ -1124,8 +1125,21 @@ def _queue_worker():
                                 if tmdb_data and tmdb_data.get("found"):
                                     season_data = None
                                     episode_data = None
-                                    if _tel_media_type == "series" and _tel_season is not None and _tel_episode is not None:
-                                        se_data = _tmdb_fetch_season_and_episode(tmdb_data["tmdb_id"], _tel_season, _tel_episode, cineinfo_api_key)
+                                    # The NFO sits next to the file and Jellyfin reads it as
+                                    # the truth about that file, so it has to describe the
+                                    # NAME on disk -- not the URL the episode came from. With
+                                    # AniWorld's absolute numbering the two differ: the URL
+                                    # says staffel-2/episode-2, the file says S01E063, and an
+                                    # NFO claiming season 2 episode 2 would relabel the file
+                                    # right back to a mismatch. Names without an SxxExx marker
+                                    # (movies, exotic templates) fall back to the URL pair.
+                                    _nfo_season, _nfo_episode = season_episode_from_name(
+                                        getattr(_ep_path, "name", _ep_path)
+                                    )
+                                    if _nfo_season is None:
+                                        _nfo_season, _nfo_episode = _tel_season, _tel_episode
+                                    if _tel_media_type == "series" and _nfo_season is not None and _nfo_episode is not None:
+                                        se_data = _tmdb_fetch_season_and_episode(tmdb_data["tmdb_id"], _nfo_season, _nfo_episode, cineinfo_api_key)
                                         season_data = se_data.get("season")
                                         episode_data = se_data.get("episode")
                                     generate_nfo_for_download(_ep_path, tmdb_data, _tel_media_type, season_data, episode_data)

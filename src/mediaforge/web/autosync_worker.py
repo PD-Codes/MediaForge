@@ -26,6 +26,7 @@ from .language_groups import (
     resolve_chain,
 )
 from .queue_worker import _dl_lock
+from .episode_marker import EPISODE_MARKER_RE
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
 from .runtime_state import (
@@ -480,7 +481,13 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
         # Resolve the path for movies/specials: dedicated path falls back to the
         # series path when unset.
         _movie_path_id = job.get("movie_custom_path_id") or job.get("custom_path_id")
-        # list of (season_num, ep_num, url, ep_obj, is_movie)
+        # list of (season_num, ep_num, url, ep_obj, is_movie, name_candidates)
+        #
+        # season_num/ep_num are the pair a NEW download would be named after;
+        # name_candidates additionally holds the name an *existing* file may
+        # carry. The two differ only for AniWorld with absolute numbering on,
+        # where the same episode is S01E063 now and S02E002 in a library from
+        # before the switch -- see AniworldEpisode.file_number_candidates.
         online_episodes = []
         for season in series.seasons:
             season_obj = prov.season_cls(url=season.url, series=series)
@@ -495,9 +502,12 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                     )
                     continue
                 for ep in season_obj.episodes:
-                    online_episodes.append(
-                        (ep.season.season_number, ep.episode_number, ep.url, ep, True)
-                    )
+                    _msn = ep.season.season_number
+                    online_episodes.append((
+                        _msn, ep.episode_number, ep.url, ep, True,
+                        getattr(ep, "file_number_candidates",
+                                ((_msn, ep.episode_number),)),
+                    ))
                 continue
             for ep in season_obj.episodes:
                 _sn = ep.season.season_number
@@ -505,19 +515,35 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                 if not episode_included(_flt, _sn, _en):
                     continue
                 # The episode filter is written against the numbers the site
-                # shows ("Folge 1"), but from here on every comparison is
-                # against file names on disk. With AniWorld's absolute-numbering
-                # option on those are not the same number, so the tuple carries
-                # the one the file actually gets. Equals episode_number for
+                # shows ("Staffel 2 / Folge 1"), but from here on every
+                # comparison is against file names on disk. With AniWorld's
+                # absolute-numbering option on those are not the same pair --
+                # the file says S01E063 -- so the tuple carries the pair the
+                # file actually gets. Equal to the site's own numbering for
                 # every other provider and whenever the option is off.
-                online_episodes.append(
-                    (_sn, getattr(ep, "file_episode_number", _en), ep.url, ep, False)
-                )
+                online_episodes.append((
+                    getattr(ep, "file_season_number", _sn),
+                    getattr(ep, "file_episode_number", _en),
+                    ep.url, ep, False,
+                    getattr(ep, "file_number_candidates", ((_sn, _en),)),
+                ))
 
         total_online_count = len(online_episodes)
-        # (season, episode) pairs that are in scope of the filter — used to keep
-        # the local/downloaded count consistent with the configured episodes.
-        scope_pairs = {(s, e) for (s, e, _u, _o, _m) in online_episodes}
+
+        def _count_local(present_pairs):
+            """How many of the filtered episodes are on disk.
+
+            Counts EPISODES, not file names: one that exists under the old
+            naming scheme still counts, and one that exists under both must not
+            count twice. That is also why this walks online_episodes instead of
+            intersecting two sets of pairs -- the episodes in scope are exactly
+            the ones the filter let through, and each brings its own list of
+            names it may go by.
+            """
+            return sum(
+                1 for (_s, _e, _u, _o, _m, _cand) in online_episodes
+                if any(pair in present_pairs for pair in _cand)
+            )
         is_first_run = previous_episodes_found == 0
         has_new_episodes_online = total_online_count > previous_episodes_found
 
@@ -561,7 +587,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
 
         from concurrent.futures import ThreadPoolExecutor as _TPE
         with _TPE(max_workers=5) as _pool:
-            for (_s, _e, _url, _ep, _is_movie) in online_episodes:
+            for (_s, _e, _url, _ep, _is_movie, _cand) in online_episodes:
                 _pool.submit(_fetch_pd, _url, _ep)
 
         # Compute scan_roots once — same for all languages
@@ -603,7 +629,9 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             raise RuntimeError(f"{problem} — sync skipped, not treated as 'no new episodes'")
 
         title_clean = (getattr(series, "title_cleaned", "") or series_title).lower()
-        ep_re = re.compile(r"S(\d{2})E(\d{2,3})", re.IGNORECASE)
+        # Shared with the library scanner and the download dialog -- a local
+        # copy here is how the two drifted apart in the first place.
+        ep_re = EPISODE_MARKER_RE
 
         # mtime-based scan cache: {base_path_str -> (mtime, {(s, e): [paths]})}
         # Avoids re-scanning the same folder multiple times within one sync run.
@@ -639,6 +667,20 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             _scan_cache[key] = (mtime, eps)
             return eps
 
+        def _present_paths(present, candidates) -> list:
+            """Files on disk for one episode, under any name it may carry.
+
+            `present` is a _scan_languages() result; `candidates` the episode's
+            file_number_candidates. Flattened because an episode that exists
+            under both naming schemes has to be reported once, with all its
+            files -- an upgrade has to be able to delete every copy, not just
+            the one whose name happens to match today's setting.
+            """
+            paths = []
+            for pair in candidates:
+                paths.extend(present.get(pair, []))
+            return paths
+
         def _scan_languages(languages) -> dict:
             """(season, episode) -> paths already on disk for any of `languages`."""
             found: dict = {}
@@ -673,11 +715,11 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             local_pairs = set()
             for _lang_present in present_by_lang.values():
                 local_pairs |= _lang_present.keys()
-            max_local_found = len(local_pairs & scope_pairs)
+            max_local_found = _count_local(local_pairs)
 
             # language -> ([series urls], [movie urls], {url: [old paths]})
             chain_buckets: dict = {}
-            for (s_num, e_num, url, ep_obj, is_movie) in online_episodes:
+            for (s_num, e_num, url, ep_obj, is_movie, candidates) in online_episodes:
                 available = labels_from_provider_data(_pd_cache.get(url))
                 chosen = pick_language(lang_chain, available)
                 if not chosen:
@@ -695,7 +737,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                 # would replace.
                 have_ranks = [
                     rank for rank, lang in enumerate(lang_chain)
-                    if (s_num, e_num) in present_by_lang[lang]
+                    if _present_paths(present_by_lang[lang], candidates)
                 ]
                 if have_ranks and min(have_ranks) <= chosen_rank:
                     # Already there in the best language available right now
@@ -707,7 +749,9 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                     if _replace_old_files:
                         for rank in have_ranks:
                             replaced.extend(
-                                str(p) for p in present_by_lang[lang_chain[rank]][(s_num, e_num)]
+                                str(p) for p in _present_paths(
+                                    present_by_lang[lang_chain[rank]], candidates
+                                )
                             )
                     logger.info(
                         "Auto-sync: upgrading S%02dE%02d of '%s' from '%s' to '%s' (%s)",
@@ -735,9 +779,9 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             # Build set of downloaded (season, episode) on disk using cached scans
             downloaded_eps = set(_scan_languages([target_lang]))
 
-            in_scope_local = downloaded_eps & scope_pairs
-            if len(in_scope_local) > max_local_found:
-                max_local_found = len(in_scope_local)
+            in_scope_local = _count_local(downloaded_eps)
+            if in_scope_local > max_local_found:
+                max_local_found = in_scope_local
 
             # Build the lang-enum target for language-availability checks.
             # We compare by string value so it works for both aniworld and s.to
@@ -754,8 +798,11 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             # collected separately so they can be queued to their own path.
             missing_series = []
             missing_movies = []
-            for (s_num, e_num, url, ep_obj, is_movie) in online_episodes:
-                if (s_num, e_num) in downloaded_eps:
+            for (s_num, e_num, url, ep_obj, is_movie, candidates) in online_episodes:
+                # Any of the episode's names counts as "already there", so
+                # turning absolute numbering on does not re-download a library
+                # that is complete under the old scheme.
+                if any(pair in downloaded_eps for pair in candidates):
                     continue
                 # Check language availability before queuing to avoid
                 # "No provider data found for language" errors in the queue worker.

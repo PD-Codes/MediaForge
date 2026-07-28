@@ -772,7 +772,21 @@
           <input type="checkbox" class="chb-main" id="aniworldAbsoluteEpisodes" onchange="saveAniworldAbsoluteEpisodes()" />
           <span>{{ _('AniWorld: use absolute episode numbers') }}</span>
         </label>
-        <div class="settings-hint">{{ _('Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that number is used for the file name — S02E062 instead of S02E001. Episodes without the marker keep their season number. Only affects new downloads; files already on disk are not renamed.') }}</div>
+        <div class="settings-hint">{{ _('Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that count is used for the file name — and since the whole show is one season in absolute order, the episode is filed under season 1: S01E062 instead of S02E001. Episodes without the marker keep the season the site gives them. Only affects new downloads; files already on disk are not renamed.') }}</div>
+      </div>
+
+      <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Presets') }}</h3>
+      <div class="settings-preset-block">
+        <div class="settings-notice">
+          <strong>{{ _('Why this matters for Jellyfin') }}</strong><br>
+          {{ _('Jellyfin identifies an episode by its season and episode number and looks that pair up at TMDB/TVDB. AniWorld\'s seasons do not exist there: what the site calls “Staffel 2, Folge 2” is episode 63 of season 1 everywhere else, so Jellyfin finds no match and the episode stays untitled. Absolute numbering writes the pair Jellyfin expects.') }}
+          {{ _('Because every episode then belongs to season 1, they all belong in one folder — a naming template without a season subfolder. Language folders are best left off as well; they split one series across several library entries.') }}
+        </div>
+        <div class="settings-preset-actions">
+          <button onclick="applyJellyfinDefaults()">{{ _('Set Jellyfin Defaults') }}</button>
+          <button class="btn btn-secondary" onclick="applyDownloadDefaults()">{{ _('Set Defaults') }}</button>
+        </div>
+        <div class="settings-preset-hint">{{ _('Both buttons write the same five settings at once: naming template, absolute episode numbers, language separation, English subtitle downloads and movie subfolders. Nothing else is touched, and files already on disk are never renamed.') }}</div>
       </div>
 
       <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Subtitles') }}</h3>

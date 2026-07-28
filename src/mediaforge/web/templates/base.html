@@ -51,6 +51,8 @@
   <script src="{{ url_for('static', filename='mf_escape.js') }}"></script>
   {# Visibility-aware polling (window.mfPoll) — see static/mf_poll.js. #}
   <script src="{{ url_for('static', filename='mf_poll.js') }}"></script>
+  {# Shared .mf-multiselect dropdown behaviour (window.mfMultiSelect) — see static/mf_multiselect.js. #}
+  <script src="{{ url_for('static', filename='mf_multiselect.js') }}"></script>
   {% if active_theme_pack %}
   <link rel="stylesheet" id="themePackCss" data-theme-folder="{{ active_theme_pack.folder }}"
     href="{{ url_for('theme_bundle_css', folder=active_theme_pack.folder) }}?v={{ active_theme_pack.version }}" />

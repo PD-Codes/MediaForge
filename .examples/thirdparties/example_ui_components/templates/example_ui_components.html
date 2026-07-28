@@ -224,8 +224,10 @@
       <span class="integ-subsection-title">{{ _('Multi-select dropdown') }}</span>
     </div>
     <div class="integ-collapsible-body" style="padding:0 20px 16px;">
-      <div class="integ-subsection-hint">{{ _('web/static/forms.css — a trigger showing a summary, opening a .chb-main checkbox list. Toggle .is-open on the root yourself and listen for change on the dropdown; wrap every option in a <label class="mf-multiselect-item"> so the whole row is clickable.') }}</div>
-      <div class="mf-multiselect" id="uicMultiselect" style="max-width:320px;">
+      <div class="integ-subsection-hint">{{ _('web/static/forms.css + web/static/mf_multiselect.js — a trigger showing a summary, opening a .chb-main checkbox list. Add data-mf-multiselect to the root and the globally loaded mf_multiselect.js does the rest: open/close, the summary label, outside-click and Escape, and repositioning so the list is never clipped by a scrolling container. Word the label with data-none-label / data-many-label / data-max-names and listen for mf-multiselect-change or mf-multiselect-close on the root (detail: {values, labels}) instead of raw change. Wrap every option in a <label class="mf-multiselect-item"> so the whole row is clickable.') }}</div>
+      <div class="mf-multiselect" id="uicMultiselect" data-mf-multiselect
+           data-none-label="{{ _('Nothing selected') }}" data-many-label="{{ _('genres selected') }}"
+           style="max-width:320px;">
         <button type="button" class="mf-multiselect-trigger" aria-expanded="false" aria-haspopup="true">
           <span class="mf-multiselect-label">{{ _('Nothing selected') }}</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -236,8 +238,11 @@
           <label class="mf-multiselect-item"><input type="checkbox" class="chb-main" value="Drama" /><span>Drama</span></label>
         </div>
       </div>
-      <pre class="uic-snippet">&lt;div class="mf-multiselect"&gt;
-  &lt;button type="button" class="mf-multiselect-trigger"&gt;
+      <pre class="uic-snippet">&lt;!-- markup only: data-mf-multiselect wires up the behaviour --&gt;
+&lt;div class="mf-multiselect" data-mf-multiselect
+     data-none-label="Nothing selected" data-many-label="genres selected"&gt;
+  &lt;button type="button" class="mf-multiselect-trigger"
+          aria-expanded="false" aria-haspopup="true"&gt;
     &lt;span class="mf-multiselect-label"&gt;Nothing selected&lt;/span&gt;
     &lt;svg ...&gt;&lt;polyline points="6 9 12 15 18 9"/&gt;&lt;/svg&gt;
   &lt;/button&gt;
@@ -246,7 +251,12 @@
       &lt;input type="checkbox" class="chb-main" value="Action" /&gt;&lt;span&gt;Action&lt;/span&gt;
     &lt;/label&gt;
   &lt;/div&gt;
-&lt;/div&gt;</pre>
+&lt;/div&gt;
+
+// reading the selection, if you need it
+root.addEventListener("mf-multiselect-change", (e) =&gt; {
+  console.log(e.detail.values, e.detail.labels);
+});</pre>
     </div>
   </div>
 

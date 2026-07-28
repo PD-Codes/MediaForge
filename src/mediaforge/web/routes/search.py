@@ -21,6 +21,7 @@ from ..db import get_custom_paths
 from ..db import get_setting
 from ...languages import label_for_pair
 from ..lang_folders import LANG_FOLDERS
+from ..episode_marker import EPISODE_MARKER_RE
 from ..queue_worker import _hanime_enabled
 from ..queue_worker import _is_filmpalast_url
 from ..queue_worker import _is_hanime_url
@@ -1181,7 +1182,7 @@ def register_search_routes(app):
                             roots.append(cpp)
                         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
                         lang_folders = LANG_FOLDERS
-                        ep_re = re.compile(r"S(\d{2})E(\d{2,3})", re.IGNORECASE)
+                        ep_re = EPISODE_MARKER_RE  # shared: S(\d{1,4})E(\d{1,4})(?!\d)
                         bases = []
                         for root in roots:
                             bases.extend([root / lf for lf in lang_folders] if lang_sep else [root])
@@ -1235,7 +1236,7 @@ def register_search_routes(app):
                             if not cpp.is_absolute():
                                 cpp = _P.home() / cpp
                             roots.append(cpp)
-                        ep_re = re.compile(r"S(\d{2})E(\d{2,3})", re.IGNORECASE)
+                        ep_re = EPISODE_MARKER_RE  # shared: S(\d{1,4})E(\d{1,4})(?!\d)
                         # With language separation on, hanime lands in the
                         # "japanese-dub" subfolder, not in the root itself.
                         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
@@ -1315,7 +1316,7 @@ def register_search_routes(app):
                         or getattr(series, "title", "")
                     ).lower()
                 if title_clean:
-                    ep_re = re.compile(r"S(\d{2})E(\d{2,3})", re.IGNORECASE)
+                    ep_re = EPISODE_MARKER_RE  # shared: S(\d{1,4})E(\d{1,4})(?!\d)
                     all_bases = []
                     for root in scan_roots:
                         if lang_sep:
@@ -1419,15 +1420,18 @@ def register_search_routes(app):
 
             episodes_data = []
             for ep in season.episodes:
-                # Not ep.episode_number: with AniWorld's absolute-numbering
-                # option on, the file on disk is named after the site's
-                # "[Episode NNN]" marker, so that is the number the SxxExx scan
-                # above produced. file_episode_number is that number and falls
-                # back to episode_number for every other provider.
-                downloaded = (
-                    ep.season.season_number,
-                    getattr(ep, "file_episode_number", ep.episode_number),
-                ) in downloaded_eps
+                # Not just (season_number, episode_number): with AniWorld's
+                # absolute-numbering option the same episode is called S01E063
+                # on disk instead of S02E002, and a library from before the
+                # switch still uses the old name. file_number_candidates lists
+                # both, so an episode already there is recognised either way --
+                # otherwise the whole show would show up as missing the moment
+                # the setting is flipped. Other providers have one name only.
+                _candidates = getattr(
+                    ep, "file_number_candidates",
+                    ((ep.season.season_number, ep.episode_number),),
+                )
+                downloaded = any(pair in downloaded_eps for pair in _candidates)
 
                 episodes_data.append(
                     {

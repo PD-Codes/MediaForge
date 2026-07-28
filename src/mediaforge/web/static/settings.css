@@ -234,13 +234,35 @@
   padding: 10px 14px;
 }
 
-.path-site-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  min-width: 220px;
+/* ── "Default for sites" cell (custom paths table) ─────────────────────
+   Replaced the old .path-site-chip checkbox row: mirrors.SITE_LABELS is a
+   registry third-party modules extend, so the row of checkboxes grew with
+   every registered site. The .mf-multiselect from forms.css keeps the cell
+   one line tall regardless — behaviour lives in static/mf_multiselect.js. */
+.path-site-cell {
+  min-width: 240px;
 }
 
+.path-site-select {
+  max-width: 320px;
+}
+
+/* The dropdown is switched to position:fixed by mf_multiselect.js while it
+   is open, because .user-table-wrapper is overflow-x:auto and would
+   otherwise clip it to the table. */
+.path-site-select .mf-multiselect-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.path-site-select .mf-multiselect-item input:disabled {
+  cursor: not-allowed;
+}
+
+/* Still in use: the language-group editor row builds its "delete old file"
+   checkbox with this class (settings.js). It outlived the custom-paths chip
+   row it was named after — kept rather than renamed so that row does not
+   silently lose its styling. */
 .path-site-chip {
   display: inline-flex;
   align-items: center;
@@ -270,6 +292,41 @@
    The order of the list IS the setting, so the editor shows the position
    number and the move controls right on each entry rather than relying on
    drag & drop, which the rest of the settings page doesn't use either. */
+/* Preset block in Settings -> Downloads ("Set Jellyfin Defaults" / "Set
+   Defaults"). Carries the section's own horizontal padding, because
+   .settings-notice brings only its inner padding. On a phone the two buttons
+   go full width rather than shrinking below a comfortable tap target. */
+.settings-preset-block {
+  padding: 4px 22px 14px;
+}
+
+.settings-preset-block .settings-notice {
+  margin-bottom: 14px;
+}
+
+.settings-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-preset-hint {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .settings-preset-block {
+    padding: 4px 14px 12px;
+  }
+
+  .settings-preset-actions button {
+    flex: 1 1 100%;
+  }
+}
+
 .lang-group-notice {
   margin-bottom: 14px;
   padding: 10px 12px;
