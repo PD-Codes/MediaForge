@@ -767,6 +767,12 @@
           <span>{{ _('Enable movie subfolders') }}</span>
         </label>
         <div class="settings-hint">{{ _('Each movie gets its own subfolder — recommended for Jellyfin.') }}</div>
+
+        <label class="settings-checkbox-row" for="aniworldAbsoluteEpisodes" style="margin-top:10px;">
+          <input type="checkbox" class="chb-main" id="aniworldAbsoluteEpisodes" onchange="saveAniworldAbsoluteEpisodes()" />
+          <span>{{ _('AniWorld: use absolute episode numbers') }}</span>
+        </label>
+        <div class="settings-hint">{{ _('Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that number is used for the file name — S02E062 instead of S02E001. Episodes without the marker keep their season number. Only affects new downloads; files already on disk are not renamed.') }}</div>
       </div>
 
       <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Subtitles') }}</h3>

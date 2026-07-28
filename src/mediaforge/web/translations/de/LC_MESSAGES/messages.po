@@ -6204,3 +6204,9 @@ msgstr "Breit"
 
 msgid "Paper"
 msgstr "Papier"
+
+msgid "AniWorld: use absolute episode numbers"
+msgstr "AniWorld: Absolute Episodennummern verwenden"
+
+msgid "Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that number is used for the file name — S02E062 instead of S02E001. Episodes without the marker keep their season number. Only affects new downloads; files already on disk are not renamed."
+msgstr "Lang laufende Serien werden auf AniWorld in Staffeln aufgeteilt, behalten aber eine durchgehende Zählung, die die Seite als „[Episode 062]“ an den Episodentitel anhängt. Ist die Option aktiv, wird diese Nummer für den Dateinamen verwendet — S02E062 statt S02E001. Episoden ohne Markierung behalten ihre Staffelnummer. Gilt nur für neue Downloads; bereits vorhandene Dateien werden nicht umbenannt."

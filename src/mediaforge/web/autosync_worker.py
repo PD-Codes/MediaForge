@@ -504,7 +504,15 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                 _en = ep.episode_number
                 if not episode_included(_flt, _sn, _en):
                     continue
-                online_episodes.append((_sn, _en, ep.url, ep, False))
+                # The episode filter is written against the numbers the site
+                # shows ("Folge 1"), but from here on every comparison is
+                # against file names on disk. With AniWorld's absolute-numbering
+                # option on those are not the same number, so the tuple carries
+                # the one the file actually gets. Equals episode_number for
+                # every other provider and whenever the option is off.
+                online_episodes.append(
+                    (_sn, getattr(ep, "file_episode_number", _en), ep.url, ep, False)
+                )
 
         total_online_count = len(online_episodes)
         # (season, episode) pairs that are in scope of the filter — used to keep

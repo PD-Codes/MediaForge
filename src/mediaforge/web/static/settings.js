@@ -69,6 +69,7 @@ const filmpalastSubfolderCb = document.getElementById("filmpalastSubfolder");
 const dlQualityUpgradeCb = document.getElementById("dlQualityUpgrade");
 const dlAudioTrackMergeCb = document.getElementById("dlAudioTrackMerge");
 const dlSubtitlesCb = document.getElementById("dlSubtitles");
+const aniworldAbsoluteEpisodesCb = document.getElementById("aniworldAbsoluteEpisodes");
 const syncScheduleSelect         = document.getElementById("syncSchedule");
 const syncLanguageSelect         = document.getElementById("syncLanguage");
 const syncProviderSelect         = document.getElementById("syncProvider");
@@ -96,6 +97,7 @@ async function loadSettings() {
     if (dlAudioTrackMergeCb) dlAudioTrackMergeCb.checked = data.dl_audio_track_merge === "1";
     // Defaults to on, so treat a missing value as enabled rather than unchecked.
     if (dlSubtitlesCb) dlSubtitlesCb.checked = data.dl_subtitles === undefined || data.dl_subtitles === "1";
+    if (aniworldAbsoluteEpisodesCb) aniworldAbsoluteEpisodesCb.checked = data.aniworld_absolute_episodes === "1";
 
     // Before any language dropdown gets its stored value: a saved default may
     // BE a fallback group, and a select silently ignores a value it has no
@@ -385,6 +387,16 @@ async function saveDlSubtitles() {
             : t("Untertitel-Download deaktiviert", "Subtitle download deactivated"));
 }
 window.saveDlSubtitles = saveDlSubtitles;
+
+// AniWorld absolute episode numbering. Shares the small PUT helper below; it is
+// a plain single-field save, not part of the duplicate handling.
+async function saveAniworldAbsoluteEpisodes() {
+  const checked = aniworldAbsoluteEpisodesCb ? aniworldAbsoluteEpisodesCb.checked : false;
+  await _saveDupeSetting({ aniworld_absolute_episodes: checked },
+    checked ? t("Absolute Episodennummern aktiviert", "Absolute episode numbers activated")
+            : t("Absolute Episodennummern deaktiviert", "Absolute episode numbers deactivated"));
+}
+window.saveAniworldAbsoluteEpisodes = saveAniworldAbsoluteEpisodes;
 
 async function _saveDupeSetting(payload, okMessage) {
   try {

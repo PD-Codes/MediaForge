@@ -81,6 +81,7 @@ _ENV_TO_DB = {
     "MEDIAFORGE_HISTORY_RETENTION_DAYS":     "history_retention_days",
     "MEDIAFORGE_DL_QUALITY_UPGRADE":         "dl_quality_upgrade",
     "MEDIAFORGE_DL_AUDIO_TRACK_MERGE":       "dl_audio_track_merge",
+    "MEDIAFORGE_ANIWORLD_ABSOLUTE_EPISODES": "aniworld_absolute_episodes",
     "MEDIAFORGE_WEB_BASE_URL":      "web_base_url",
     "MEDIAFORGE_DEBUG_MODE":        "debug_mode",
     "MEDIAFORGE_MEDIA_STATS_ENABLED": "media_stats_enabled",

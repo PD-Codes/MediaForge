@@ -25,6 +25,87 @@ from ..common.common import (
 )
 
 
+# AniWorld splits long-running shows into site-side "seasons" while the show
+# itself keeps one continuous count, and appends that absolute number to the
+# episode title:
+#
+#   "A Promise Between Men! Luffy and the Whale Vow to Meet Again! [Episode 063]"
+#
+# The season page lists that same episode as "Folge 2" of "Staffel 2", so the
+# naming template renders it S02E002 -- while every metadata source (and the
+# user's own library) knows it as episode 63. The `aniworld_absolute_episodes`
+# setting opts into naming files after the marker instead.
+#
+# "Folge" is accepted next to "Episode" because the marker follows the title
+# language of the row it sits in.
+_ABSOLUTE_EPISODE_RE = re.compile(
+    r"\[\s*(?:Episode|Folge)\s*(\d{1,4})\s*\]", re.IGNORECASE
+)
+
+# None is a real, cacheable result here ("this episode carries no marker"), so
+# the unset state needs its own sentinel. Without it every access would re-parse
+# and -- for episodes built from a bare URL, where the titles are lazy -- refetch
+# the episode page.
+_UNSET = object()
+
+
+def _get_setting(key, default="0"):
+    """Read an app setting without importing the web stack at module import.
+
+    Mirrors models/common/dupecheck._get_setting: models.* also runs from the
+    CLI, where web.db (and Flask with it) may not import at all.
+    """
+    try:
+        from ...web.db import get_setting
+    except Exception:
+        try:
+            from mediaforge.web.db import get_setting
+        except Exception:
+            return default
+    try:
+        return get_setting(key, default)
+    except Exception:
+        return default
+
+
+def absolute_episode_numbering_enabled():
+    """True when file names should follow AniWorld's "[Episode NNN]" marker.
+
+    Opt-in and off by default on purpose: it changes file names, and an existing
+    library built with season-relative numbers must not silently end up split
+    across two numbering schemes.
+    """
+    return str(
+        _get_setting(
+            "aniworld_absolute_episodes",
+            os.environ.get("MEDIAFORGE_ANIWORLD_ABSOLUTE_EPISODES", "0"),
+        )
+    ) == "1"
+
+
+def parse_absolute_episode_number(*titles):
+    """Return the absolute episode number from an AniWorld title, or None.
+
+    Most series carry no marker at all, so None is the normal case and callers
+    must fall back to the season-relative number rather than treat it as an
+    error. Titles are tried in the order given.
+    """
+    for title in titles:
+        if not title:
+            continue
+        match = _ABSOLUTE_EPISODE_RE.search(str(title))
+        if not match:
+            continue
+        try:
+            value = int(match.group(1))
+        except ValueError:
+            continue
+        if value > 0:
+            return value
+    return None
+
+
+
 class AniworldEpisode:
     """
     Represents a single episode (or movie entry) of an AniWorld anime series.
@@ -49,6 +130,8 @@ class AniworldEpisode:
         title_de:               "Ich habe endlich eine Freundin!"
         title_en:               "I Got a Girlfriend!"
         episode_number:         1
+        absolute_episode_number: None   # 63 for a title ending in "[Episode 063]"
+        file_episode_number:    1       # 63 when absolute numbering is enabled
         provider_data:          ProviderData({(<Audio.GERMAN: 'German'>, <Subtitles.NONE: 'None'>): {'VOE': 'https://aniworld.to/redirect/2526098', 'Filemoon': 'https://aniworld.to/redirect/2883363', 'Vidmoly': 'https://aniworld.to/redirect/3028732'}, (<Audio.JAPANESE: 'Japanese'>, <Subtitles.ENGLISH: 'English'>): {'VOE': 'https://aniworld.to/redirect/1791080', 'Filemoon': 'https://aniworld.to/redirect/2883251', 'Vidmoly': 'https://aniworld.to/redirect/3674098'}, (<Audio.JAPANESE: 'Japanese'>, <Subtitles.GERMAN: 'German'>): {'VOE': 'https://aniworld.to/redirect/1791211', 'Filemoon': 'https://aniworld.to/redirect/2883481', 'Vidmoly': 'https://aniworld.to/redirect/3028797'}})
 
         selected_path:          "/Users/phoenixthrush/Downloads"
@@ -132,6 +215,9 @@ class AniworldEpisode:
         self.__is_movie = None
         self.__is_downloaded = None
 
+        self.__absolute_episode_number = _UNSET
+        self.__file_episode_number = None
+
         self.__skip_times = None
 
         self.__html = None
@@ -200,7 +286,7 @@ class AniworldEpisode:
                     year=self.series.release_year,
                     imdbid=self.series.imdb,
                     season=f"{self.season.season_number:02d}",
-                    episode=f"{self.episode_number:03d}",
+                    episode=f"{self.file_episode_number:03d}",
                     language=self.selected_language,
                 )
                 self.__base_folder = Path(self.selected_path) / folder_str.strip()
@@ -220,7 +306,7 @@ class AniworldEpisode:
                     year=self.series.release_year,
                     imdbid=self.series.imdb,
                     season=f"{self.season.season_number:02d}",
-                    episode=f"{self.episode_number:03d}",
+                    episode=f"{self.file_episode_number:03d}",
                     language=self.selected_language,
                 )
                 self.__folder_path = self._base_folder / folder_str
@@ -233,7 +319,7 @@ class AniworldEpisode:
             try:
                 file_template = naming_template.split("/")[-1]
             except IndexError:
-                file_template = f"{self.series.title_cleaned} S{self.season.season_number:02d}E{self.episode_number:03d}.mkv"
+                file_template = f"{self.series.title_cleaned} S{self.season.season_number:02d}E{self.file_episode_number:03d}.mkv"
 
             # Remove extension
             if "." in file_template:
@@ -252,7 +338,7 @@ class AniworldEpisode:
                 year=self.series.release_year,
                 imdbid=self.series.imdb,
                 season=f"{self.season.season_number:02d}",
-                episode=f"{self.episode_number:03d}",
+                episode=f"{self.file_episode_number:03d}",
                 language=self.selected_language,
             )
         return self.__file_name
@@ -427,6 +513,56 @@ class AniworldEpisode:
         if self.__is_movie is None:
             self.__is_movie = self.__extract_is_movie()
         return self.__is_movie
+
+    @property
+    def absolute_episode_number(self):
+        """AniWorld's absolute episode number for this episode, or None.
+
+        Parsed from the "[Episode 062]" marker the site appends to the episode
+        title (see _ABSOLUTE_EPISODE_RE). Reports the raw fact regardless of the
+        `aniworld_absolute_episodes` setting, so UI and metadata can read it
+        without opting into the renaming.
+
+        AniWorld-only; s.to, MegaKino and hanime episodes have no equivalent.
+        """
+        if self.__absolute_episode_number is _UNSET:
+            self.__absolute_episode_number = parse_absolute_episode_number(
+                self.title_en, self.title_de
+            )
+        return self.__absolute_episode_number
+
+    @property
+    def file_episode_number(self):
+        """The episode number the folder path and file name are built from.
+
+        Equals episode_number unless absolute numbering is switched on AND this
+        episode actually carries a marker -- an episode without one keeps its
+        season-relative number rather than being guessed at. Movies are never
+        renumbered: /filme entries are counted per collection and carry no
+        absolute marker.
+
+        Anything that matches episodes against files already on disk (the
+        download list's "downloaded" badge, auto-sync's skip check) has to go
+        through this and not episode_number -- otherwise a library named
+        S02E062 reads as "nothing downloaded" and gets fetched all over again.
+        Other providers have no such property; call sites use
+        getattr(ep, "file_episode_number", ep.episode_number).
+        """
+        if self.__file_episode_number is None:
+            number = self.episode_number
+            if not self.is_movie and absolute_episode_numbering_enabled():
+                try:
+                    number = self.absolute_episode_number or number
+                except Exception as exc:
+                    # Titles are lazy: for an episode built from a bare URL this
+                    # touches the network. A failure here must not take the
+                    # download down with it -- fall back to the season number.
+                    logger.debug(
+                        "absolute episode number unavailable for %s: %s",
+                        self.url, exc,
+                    )
+            self.__file_episode_number = number
+        return self.__file_episode_number
 
     @property
     def is_downloaded(self):

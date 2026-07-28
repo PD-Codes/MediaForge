@@ -1419,9 +1419,14 @@ def register_search_routes(app):
 
             episodes_data = []
             for ep in season.episodes:
+                # Not ep.episode_number: with AniWorld's absolute-numbering
+                # option on, the file on disk is named after the site's
+                # "[Episode NNN]" marker, so that is the number the SxxExx scan
+                # above produced. file_episode_number is that number and falls
+                # back to episode_number for every other provider.
                 downloaded = (
                     ep.season.season_number,
-                    ep.episode_number,
+                    getattr(ep, "file_episode_number", ep.episode_number),
                 ) in downloaded_eps
 
                 episodes_data.append(

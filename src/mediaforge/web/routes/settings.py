@@ -261,6 +261,10 @@ def register_settings_routes(app):
         # being written anyway. `or` would swallow a stored "0", so read the
         # stored value explicitly and fall back only when nothing is stored.
         dl_subtitles         = get_setting("dl_subtitles", os.environ.get("MEDIAFORGE_DL_SUBTITLES", "1"))
+        # AniWorld absolute episode numbering. Off by default like the duplicate
+        # toggles: it changes file names, so an existing library must not get a
+        # second numbering scheme without the user asking for it.
+        aniworld_absolute_episodes = get_setting("aniworld_absolute_episodes") or os.environ.get("MEDIAFORGE_ANIWORLD_ABSOLUTE_EPISODES", "0")
         download_window_enabled = get_setting("download_window_enabled") or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_ENABLED", "0")
         download_window_start   = get_setting("download_window_start")   or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_START", "22:00")
         download_window_end     = get_setting("download_window_end")     or os.environ.get("MEDIAFORGE_DOWNLOAD_WINDOW_END", "06:00")
@@ -327,6 +331,7 @@ def register_settings_routes(app):
                 "dl_quality_upgrade":        dl_quality_upgrade,
                 "dl_audio_track_merge":      dl_audio_track_merge,
                 "dl_subtitles":              dl_subtitles,
+                "aniworld_absolute_episodes": aniworld_absolute_episodes,
                 "download_window_enabled":   download_window_enabled,
                 "download_window_start":     download_window_start,
                 "download_window_end":       download_window_end,
@@ -1047,6 +1052,10 @@ def register_settings_routes(app):
             val = "1" if data["dl_subtitles"] else "0"
             set_setting("dl_subtitles", val)
             os.environ["MEDIAFORGE_DL_SUBTITLES"] = val
+        if "aniworld_absolute_episodes" in data:
+            val = "1" if data["aniworld_absolute_episodes"] else "0"
+            set_setting("aniworld_absolute_episodes", val)
+            os.environ["MEDIAFORGE_ANIWORLD_ABSOLUTE_EPISODES"] = val
         if "download_rate_limit" in data:
             try:
                 rate = int(data["download_rate_limit"])
