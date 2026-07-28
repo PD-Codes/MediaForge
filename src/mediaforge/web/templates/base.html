@@ -34,6 +34,7 @@
      per-page <link>s that still exist are harmless duplicates. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='mf_components.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='player.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='reader.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='utilities.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='autosync_filter.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='selfupdate.css') }}" />
@@ -1707,6 +1708,99 @@
      generic error branch. It also kept a third-party origin in the CSP. #}
   <script src="{{ url_for('static', filename='hls.min.js') }}"></script>
   <script src="{{ url_for('static', filename='player.js') }}"></script>
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       eBook reader overlay
+
+       Lives in base.html for the same reason the player does: it is opened
+       from the library, but a module or a future page must be able to call
+       window.openReader() without shipping its own markup. Ids are
+       load-bearing (reader.js queries them by id) -- rename with care.
+       ══════════════════════════════════════════════════════════════════ -->
+  <div id="readerOverlay" data-reader-theme="dark" role="dialog" aria-modal="true"
+       aria-label="{{ _('Reader') }}">
+    <div class="mfr">
+
+      <div class="mfr-head">
+        <button type="button" class="mfr-btn" id="readerClose" title="{{ _('Close') }}"
+                aria-label="{{ _('Close') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <h2 class="mfr-title" id="readerTitle"></h2>
+        <button type="button" class="mfr-btn" id="readerTocBtn" data-reader-epub-only
+                title="{{ _('Table of contents') }}" aria-label="{{ _('Table of contents') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+            <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
+            <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        </button>
+        <button type="button" class="mfr-btn" id="readerFullscreen" title="{{ _('Fullscreen') }}"
+                aria-label="{{ _('Fullscreen') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/></svg>
+        </button>
+      </div>
+
+      <div class="mfr-stage">
+        <button type="button" class="mfr-tap mfr-tap--prev" id="readerPrev"
+                aria-label="{{ _('Previous page') }}"></button>
+        <div id="readerEpub" hidden></div>
+        <div id="readerPdf" hidden></div>
+        <button type="button" class="mfr-tap mfr-tap--next" id="readerNext"
+                aria-label="{{ _('Next page') }}"></button>
+
+        <div class="mfr-toc" id="readerToc" hidden>
+          <div class="mfr-toc-head">
+            <span>{{ _('Table of contents') }}</span>
+            <button type="button" class="mfr-btn" id="readerTocClose" aria-label="{{ _('Close') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="mfr-toc-list" id="readerTocList"></div>
+        </div>
+
+        <div class="mfr-status" id="readerStatus" hidden></div>
+      </div>
+
+      <div class="mfr-foot">
+        <div class="mfr-progress"><div class="mfr-progress-fill" id="readerProgressFill"></div></div>
+        <span class="mfr-progress-label" id="readerProgressLabel"></span>
+
+        <div class="mfr-group">
+          <button type="button" class="mfr-btn" id="readerFontMinus" title="{{ _('Smaller text') }}">A&minus;</button>
+          <span class="mfr-font-label" id="readerFontLabel">100%</span>
+          <button type="button" class="mfr-btn" id="readerFontPlus" title="{{ _('Larger text') }}">A+</button>
+        </div>
+
+        <div class="mfr-group" id="readerThemes" role="group" aria-label="{{ _('Reading theme') }}">
+          <button type="button" class="mfr-btn" data-theme="light" title="{{ _('Light') }}">{{ _('Light') }}</button>
+          <button type="button" class="mfr-btn" data-theme="sepia" title="{{ _('Sepia') }}">{{ _('Sepia') }}</button>
+          <button type="button" class="mfr-btn" data-theme="dark"  title="{{ _('Dark') }}">{{ _('Dark') }}</button>
+        </div>
+
+        <div class="mfr-group" id="readerFlow" data-reader-epub-only role="group"
+             aria-label="{{ _('Reading mode') }}">
+          <button type="button" class="mfr-btn" data-flow="paginated">{{ _('Pages') }}</button>
+          <button type="button" class="mfr-btn" data-flow="scrolled">{{ _('Scroll') }}</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  {# pdf.js (Apache-2.0, v3.11 legacy UMD build) and epub.js (BSD-2-Clause) with
+     its jszip dependency (MIT/GPL-3.0), all vendored for the same reason hls.js
+     is: an install without internet access must still be able to read a book,
+     and a CDN would put a third-party origin back into the CSP. The v3 build is
+     deliberate -- pdf.js v4 ships .mjs only, and pyproject.toml's package-data
+     globs are extension-specific, so a .mjs would silently not be packaged. #}
+  <script src="{{ url_for('static', filename='pdf.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='jszip.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='epub.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='reader.js') }}"></script>
+
 
   <!-- ===== Page Transition Loader JS ===== -->
   <script>

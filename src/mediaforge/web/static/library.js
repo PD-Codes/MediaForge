@@ -2435,9 +2435,20 @@ function libRenderBookDetail(it, pfx) {
            libEsc(libBookShortPath(f.path)) + '</span>');
     h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(f.size) + '</span>');
     if (f.readable) {
-      h.push('<a class="btn-secondary mf-book-open" href="/api/library/book/file?path=' +
-             encodeURIComponent(f.path) + '" target="_blank" rel="noopener">' +
-             libEsc(t("Öffnen", "Open")) + '</a>');
+      // Opens in the reader overlay, the same way a film opens in the player
+      // instead of a browser tab. The position is stored against the BOOK, so
+      // the format picked here does not start a separate bookmark.
+      h.push('<button type="button" class="btn-secondary mf-book-open" ' +
+             'onclick="libReadBook(\'' + libEscAttr(encodeURIComponent(f.path)) + '\', \'' +
+             libEscAttr(f.ext) + '\', \'' + libEscAttr(encodeURIComponent(book.key)) + '\')">' +
+             libEsc(t("Lesen", "Read")) + '</button>');
+      h.push('<a class="mf-book-dl" href="/api/library/book/file?path=' +
+             encodeURIComponent(f.path) + '" download title="' +
+             libEscAttr(t("Herunterladen", "Download")) + '" aria-label="' +
+             libEscAttr(t("Herunterladen", "Download")) + '">' +
+             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+             'stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>' +
+             '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>');
     } else {
       h.push('<span class="mf-book-locked" title="' +
              libEscAttr(t("Dieses Format ist kopiergeschützt und lässt sich nicht öffnen.",
@@ -2468,4 +2479,24 @@ function libToggleBook(pfx) {
 function libCloseBook() {
   _libOpenBookKey = null;
   libRenderBooks();
+}
+
+// Open a book in the reader overlay. Path and key arrive URI-encoded because
+// they travel through an inline onclick attribute, where a quote or a backslash
+// in a filename would otherwise break out of the handler.
+function libReadBook(encodedPath, ext, encodedKey) {
+  var path = decodeURIComponent(encodedPath);
+  var key = decodeURIComponent(encodedKey || "");
+  var title = "";
+  var items = libFlattenBooks(libLocations);
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].book.key === key) { title = items[i].book.title; break; }
+  }
+  if (typeof window.openReader !== "function") {
+    // Should not happen -- reader.js loads from base.html on every page -- but
+    // a missing reader must not swallow the click without explanation.
+    window.open("/api/library/book/file?path=" + encodeURIComponent(path), "_blank", "noopener");
+    return;
+  }
+  window.openReader(path, ext, title, key);
 }

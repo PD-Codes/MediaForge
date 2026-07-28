@@ -6351,3 +6351,47 @@ msgstr ""
 
 msgid "Groups the discovery rows by question instead of by source: \"New this week\" and \"Popular right now\" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this."
 msgstr ""
+
+# ── eBook reader (base.html overlay) ───────────────────────────────
+
+msgid "Reader"
+msgstr ""
+
+msgid "Table of contents"
+msgstr ""
+
+msgid "Fullscreen"
+msgstr ""
+
+msgid "Previous page"
+msgstr ""
+
+msgid "Next page"
+msgstr ""
+
+msgid "Smaller text"
+msgstr ""
+
+msgid "Larger text"
+msgstr ""
+
+msgid "Reading theme"
+msgstr ""
+
+msgid "Light"
+msgstr ""
+
+msgid "Sepia"
+msgstr ""
+
+msgid "Dark"
+msgstr ""
+
+msgid "Reading mode"
+msgstr ""
+
+msgid "Pages"
+msgstr ""
+
+msgid "Scroll"
+msgstr ""

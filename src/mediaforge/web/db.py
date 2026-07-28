@@ -3667,6 +3667,14 @@ USER_UI_PREF_KEYS = {
     # keeps following the instance default an admin set (Settings -> Start
     # Page). Empty string = "back to the default", which is why "" validates.
     "home_feed_layout": lambda v: bool(_HOME_FEED_FILTER_RE.match(v)),
+    # eBook reader. Reading is a per-person habit -- text size, page colour and
+    # whether you page or scroll -- and someone who set it up on the desktop
+    # expects the same book to look the same on their phone. The ranges are
+    # enforced here rather than trusted from the client, because these values
+    # are echoed back through window._USER_PREFS.
+    "reader_font": lambda v: v.isdigit() and 70 <= int(v) <= 200,
+    "reader_theme": lambda v: v in ("dark", "sepia", "light"),
+    "reader_flow": lambda v: v in ("paginated", "scrolled"),
 }
 
 
@@ -5638,6 +5646,148 @@ _CREATE_UPTIME_INDEX = (
     "ON uptime_heartbeats(source, ts)"
 )
 
+
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Reading progress (eBooks)
+# ══════════════════════════════════════════════════════════════════════════
+#  Same shape as watch_progress above, with one deliberate difference: the
+#  key is the BOOK, not the file. A book routinely exists as EPUB, MOBI and
+#  PDF at once (see web/books/identity.py), and someone who starts in the
+#  EPUB and later opens the PDF has not started a different book.
+#
+#  `username` is a TEXT column rather than a user id, for the same reason
+#  watch_progress uses one: the no-auth install has no user table to point at,
+#  and '' is the shared bucket every such row lands in.
+
+_CREATE_READING_PROGRESS_TABLE = """
+CREATE TABLE IF NOT EXISTS reading_progress (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT    NOT NULL DEFAULT '',
+    book_key   TEXT    NOT NULL,
+    location   TEXT    NOT NULL DEFAULT '',
+    percent    REAL    NOT NULL DEFAULT 0,
+    finished   INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(book_key, username)
+)
+"""
+
+
+def init_reading_progress_db() -> None:
+    MEDIAFORGE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    conn = get_db()
+    try:
+        conn.execute(_CREATE_READING_PROGRESS_TABLE)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reading_progress_user "
+            "ON reading_progress(username, updated_at DESC)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_reading_progress(book_key: str, location: str, percent: float, username=None) -> None:
+    """Upsert the reading position for one book and user.
+
+    A book counts as finished at 98%: unlike a film, the last pages of a book
+    are usually an afterword or an index, so 95% would mark a book finished
+    while a chapter is still open.
+    """
+    finished = 1 if percent >= 98 else 0
+    user = _normalize_user(username)
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT INTO reading_progress (username, book_key, location, percent, finished, updated_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(book_key, username) DO UPDATE SET
+                    location   = excluded.location,
+                    percent    = excluded.percent,
+                    finished   = excluded.finished,
+                    updated_at = datetime('now')""",
+            (user, book_key, location, float(percent), finished),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_reading_progress(book_key: str, username=None) -> dict:
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT location, percent, finished FROM reading_progress "
+            "WHERE book_key = ? AND username = ?",
+            (book_key, _normalize_user(username)),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return {}
+    return {
+        "location": row["location"],
+        "percent": round(row["percent"], 2),
+        "finished": bool(row["finished"]),
+    }
+
+
+def get_reading_progress_bulk(book_keys, username=None) -> dict:
+    keys = [k for k in (book_keys or []) if k]
+    if not keys:
+        return {}
+    user = _normalize_user(username)
+    out: dict = {}
+    conn = get_db()
+    try:
+        # Chunked because SQLite caps the number of bound variables (999 by
+        # default) -- a shelf with a thousand books would otherwise raise.
+        for start in range(0, len(keys), 400):
+            chunk = keys[start:start + 400]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                "SELECT book_key, location, percent, finished FROM reading_progress "
+                "WHERE username = ? AND book_key IN (%s)" % placeholders,
+                [user] + chunk,
+            ).fetchall()
+            for row in rows:
+                out[row["book_key"]] = {
+                    "location": row["location"],
+                    "percent": round(row["percent"], 2),
+                    "finished": bool(row["finished"]),
+                }
+    finally:
+        conn.close()
+    return out
+
+
+def get_recent_reading_progress(username=None, limit: int = 15) -> list:
+    """Books that are started but not finished -- the "continue reading" row."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT book_key, location, percent, updated_at FROM reading_progress "
+            "WHERE username = ? AND finished = 0 AND percent > 1 "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (_normalize_user(username), int(limit)),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_reading_progress(book_key: str, username=None) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            "DELETE FROM reading_progress WHERE book_key = ? AND username = ?",
+            (book_key, _normalize_user(username)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 def init_uptime_db():
     """Create the uptime_heartbeats table used by the UpTime monitor."""

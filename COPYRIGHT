@@ -28,3 +28,18 @@ It may be used only as an integral part of an unmodified MediaForge
 installation. Any use, extraction, modification, or redistribution outside of
 MediaForge requires prior written permission from the PD-Codes Team. The full
 terms are in the file LICENSE-CAPTCHA.
+
+
+Vendored third-party libraries
+------------------------------
+The following files under src/mediaforge/web/static/ are unmodified upstream
+distributions of third-party libraries, vendored so that an installation
+without internet access still works and so that no third-party origin has to
+be allowed in the Content-Security-Policy. Each keeps its own license; all of
+them are compatible with the GPL-3.0-or-later grant above.
+
+    hls.min.js                       hls.js v1.5.7          Apache-2.0
+    qrcode.min.js                    Kazuhiko Arase         MIT
+    pdf.min.js, pdf.worker.min.js    pdf.js v3.11 (Mozilla) Apache-2.0
+    epub.min.js                      epub.js v0.3.93        BSD-2-Clause
+    jszip.min.js                     JSZip v3.10.1          MIT or GPL-3.0-or-later

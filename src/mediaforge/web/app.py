@@ -48,6 +48,7 @@ from .db import (
     init_encoding_queue_db,
     init_mediascan_db,
     init_watch_progress_db,
+    init_reading_progress_db,
     init_uptime_db,
     init_devinfos_db,
     get_devinfo_posts,
@@ -553,6 +554,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     init_encoding_queue_db()
     init_mediascan_db()
     init_watch_progress_db()
+    init_reading_progress_db()
     init_uptime_db()
     _start_uptime_monitor()
     init_devinfos_db()
@@ -690,16 +692,22 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         _csp = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data: https:; "
+            # blob: is what the eBook reader needs: epub.js unpacks the book's
+            # own stylesheets, fonts and images out of the archive and hands
+            # them to the rendered document as blob: URLs. Without these three,
+            # an EPUB renders as unstyled text with broken images. It does not
+            # widen what a *page* may load -- a blob URL can only be created by
+            # script already running on this origin.
+            "style-src 'self' 'unsafe-inline' blob: https://fonts.googleapis.com; "
+            "font-src 'self' blob: https://fonts.gstatic.com; "
+            "img-src 'self' data: blob: https:; "
             "connect-src 'self' blob:; "
             "worker-src 'self' blob:; "
             "media-src 'self' blob:; "
             "object-src 'none'; "
             "base-uri 'self'; "
             "frame-ancestors 'none';"
-            "frame-src 'self' https://www.youtube.com;"
+            "frame-src 'self' blob: https://www.youtube.com;"
         )
         response.headers.setdefault("Content-Security-Policy", _csp)
         # HSTS — only sent when HTTPS is confirmed (SESSION_COOKIE_SECURE flag set by create_app)
@@ -838,6 +846,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     from .routes.captcha import register_captcha_routes
     from .routes.stream import register_stream_routes
     from .routes.progress import register_progress_routes
+    from .routes.reading import register_reading_routes
     from .routes.direct_link import register_direct_link_routes
     from .routes.backup import register_backup_routes
     from .routes.themes import register_themes_routes
@@ -891,6 +900,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     register_captcha_routes(app)
     register_stream_routes(app)
     register_progress_routes(app)
+    register_reading_routes(app)
     register_backup_routes(app)
     register_themes_routes(app)
 

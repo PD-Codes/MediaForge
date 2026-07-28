@@ -926,3 +926,24 @@
   .mf-book-file { gap: 8px; }
   .lib-row-right .mf-format-badges { display: none; }
 }
+
+/* The download link next to "Read": the reader is the primary action, so the
+   download is an icon, not a second button competing with it. */
+.mf-book-dl {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.mf-book-dl:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.mf-book-dl svg { width: 15px; height: 15px; }

@@ -6122,3 +6122,44 @@ msgstr "aus dem Kalender"
 
 msgid "from your sources"
 msgstr "aus deinen Quellen"
+
+# ── eBook reader (base.html overlay) ───────────────────────────────
+
+msgid "Reader"
+msgstr "Reader"
+
+msgid "Table of contents"
+msgstr "Inhaltsverzeichnis"
+
+msgid "Previous page"
+msgstr "Vorherige Seite"
+
+msgid "Next page"
+msgstr "Nächste Seite"
+
+msgid "Smaller text"
+msgstr "Kleinere Schrift"
+
+msgid "Larger text"
+msgstr "Größere Schrift"
+
+msgid "Reading theme"
+msgstr "Lesefarben"
+
+msgid "Light"
+msgstr "Hell"
+
+msgid "Sepia"
+msgstr "Sepia"
+
+msgid "Dark"
+msgstr "Dunkel"
+
+msgid "Reading mode"
+msgstr "Lesemodus"
+
+msgid "Pages"
+msgstr "Seiten"
+
+msgid "Scroll"
+msgstr "Scrollen"
