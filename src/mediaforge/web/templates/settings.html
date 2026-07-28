@@ -80,6 +80,19 @@
       </div>
       {% endif %}
 
+      {# Start Page had a tab but no card here, so the overview claimed to be
+         a complete map of Settings while silently skipping one page. #}
+      <div class="settings-overview-card" onclick="switchTab('startpage')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M7 12h10"/><path d="M7 16h6"/></svg>
+          </div>
+          <div class="settings-overview-title">{{ _('Start Page') }}</div>
+        </div>
+        <div class="settings-overview-desc">{{ _('Which rows the home page shows, in which order, how many cards each holds and the default filters') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
+      </div>
+
       <div class="settings-overview-card" onclick="switchTab('library')">
         <div class="settings-overview-card-header">
           <div class="settings-overview-icon">
@@ -418,18 +431,18 @@
        itself, because /settings is admin-only.
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-startpage">
-    <div class="settings-section settings-section--intro">
-      <h2>{{ _('Your home page') }}</h2>
-      <div class="settings-hint">{{ _('These settings are yours alone. Anything you do not change follows the instance default below.') }}</div>
-    </div>
-    {{ startpage.start_page_form('user') }}
+    {# The instance default comes first: it is the ground everything else
+       stands on, and the personal block below is explicitly described as
+       "everything you do not change follows the default". Reading the
+       override before the thing it overrides made no sense. #}
     {% if is_admin %}
-    <div class="settings-section settings-section--intro">
-      <h2>{{ _('Default for new accounts') }}</h2>
-      <div class="settings-hint">{{ _('What someone sees who has never opened these settings. Changing this does not overwrite what a user already chose for themselves.') }}</div>
-    </div>
-    {{ startpage.start_page_form('global', show_new_home_toggle=True) }}
+    {{ startpage.start_page_form('global', show_new_home_toggle=True,
+         heading=_('Default for new accounts'),
+         intro=_('What someone sees who has never opened these settings. Changing this does not overwrite what a user already chose for themselves.')) }}
     {% endif %}
+    {{ startpage.start_page_form('user',
+         heading=_('Your home page'),
+         intro=_('These settings are yours alone. Anything you do not change follows the instance default.')) }}
   </div>
 
   <div class="settings-tab-panel" id="tab-library">

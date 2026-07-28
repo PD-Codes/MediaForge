@@ -411,6 +411,54 @@
   opacity: 1;
   transform: translateX(3px);
 }
+/* ── Start Page: one card per scope ─────────────────────────
+   "What a new account starts with" and "what I see" are each one decision
+   with several facets, so each scope is a single .settings-section and the
+   facets inside it are .sp-group blocks separated by a hairline instead of
+   by a full card gap. */
+.sp-form .sp-group + .sp-group {
+  border-top: 1px solid var(--border);
+}
+
+/* The card's own lead-in sits directly under the h2 and should not be
+   mistaken for the first group's hint. */
+.sp-form .sp-intro {
+  padding-bottom: 4px;
+}
+
+/* One level below .settings-subtitle: labels the check grids inside the
+   "Default filters" group without competing with the group headings. */
+.sp-sublabel {
+  padding: 10px 22px 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.sp-form .sp-reset {
+  padding: 16px 22px;
+}
+
+.sp-form .sp-reset button {
+  width: auto;
+}
+
+@media (max-width: 640px) {
+  .sp-sublabel {
+    padding: 10px 14px 0;
+  }
+
+  .sp-form .sp-reset {
+    padding: 14px;
+  }
+
+  /* A full-width button is the only comfortable tap target once the card
+     is only a phone wide. */
+  .sp-form .sp-reset button {
+    width: 100%;
+  }
+}
+
 /* ── Start Page: filter checkbox groups ───────────────────────────────
    The source and type lists under "Default filters" grow with the number
    of installed modules, so a single stacked column turns the card into a

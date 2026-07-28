@@ -6051,6 +6051,15 @@ msgstr "Musik — bald verfügbar"
 
 # ── Start Page (settings tab + start_page.js) ──────────────────────
 
+msgid "Start Page"
+msgstr "Startseite"
+
+msgid "Which rows the home page shows, in which order, how many cards each holds and the default filters"
+msgstr "Welche Zeilen die Startseite zeigt, in welcher Reihenfolge, wie viele Karten jede enthält und die Standardfilter"
+
+msgid "These settings are yours alone. Anything you do not change follows the instance default."
+msgstr "Diese Einstellungen gehören nur dir. Alles, was du nicht änderst, folgt dem Instanz-Standard."
+
 msgid "Rows"
 msgstr "Zeilen"
 

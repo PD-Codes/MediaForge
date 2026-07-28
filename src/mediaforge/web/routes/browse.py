@@ -338,11 +338,12 @@ _FEED_ROW_SOURCES = {
     "movies":    {"hint": "sources",  "link": ""},
 }
 _FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming")
-# The default reading order: what you were doing, what arrived, then what is
-# out there -- and the two rows that are really other pages in miniature
-# (watchlist, calendar) at the end.
-_FEED_DEFAULT_ORDER = ("continue", "library", "new", "popular", "movies",
-                       "watchlist", "upcoming")
+# The default reading order: discovery first (a fresh install has no
+# playback history and an empty library, so leading with "Continue watching"
+# greets a new user with two blank rows), then the two rows that are really
+# other pages in miniature (watchlist, calendar), then the personal rows.
+_FEED_DEFAULT_ORDER = ("new", "popular", "movies", "watchlist", "upcoming",
+                       "continue", "library")
 _FEED_CARDS_CHOICES = (10, 20, 30, 40, 60)
 
 
