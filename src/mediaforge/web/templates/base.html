@@ -986,7 +986,20 @@
           }).then(function (r) {
             if (r.ok) {
               window._USER_PREFS = Object.assign(window._USER_PREFS || {}, body);
+              return;
             }
+            // The endpoint rejects the WHOLE call on one unknown key or one
+            // out-of-range value, so a single unregistered preference silently
+            // discarded every other setting sent with it -- which is how a
+            // reader setting could appear to work and then be gone after a
+            // reload. Failing silently is what made that take a bug report to
+            // find; say it once, in the console.
+            r.json().then(function (res) {
+              if (window.console && console.warn) {
+                console.warn('[Prefs] not saved:', (res && res.error) || r.status,
+                  '| keys:', Object.keys(body).join(', '));
+              }
+            }).catch(function () { });
           }).catch(function () { });
         } catch (e) { }
       }, 500);
@@ -1730,8 +1743,16 @@
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
         <h2 class="mfr-title" id="readerTitle"></h2>
-        <button type="button" class="mfr-btn mfr-btn--icon" id="readerTocBtn" data-reader-epub-only
-                title="{{ _('Table of contents') }}" aria-label="{{ _('Table of contents') }}">
+        <button type="button" class="mfr-btn mfr-btn--icon mfr-btn--mark" id="readerMarkBtn"
+                title="{{ _('Set bookmark') }}" aria-label="{{ _('Set bookmark') }}" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+        </button>
+        {# Not epub-only: the same panel lists the bookmarks, and a PDF has
+           those too. Its chapter section simply stays empty. #}
+        <button type="button" class="mfr-btn mfr-btn--icon" id="readerTocBtn"
+                title="{{ _('Contents and bookmarks') }}" aria-label="{{ _('Contents and bookmarks') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
             <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
@@ -1754,15 +1775,26 @@
         <button type="button" class="mfr-tap mfr-tap--next" id="readerNext"
                 aria-label="{{ _('Next page') }}"></button>
 
+        <!-- Says "this page is bookmarked" while the chrome is faded out and
+             the header button is not on screen. -->
+        <div class="mfr-mark" id="readerMark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 2h16v22l-8-6-8 6z"/></svg>
+        </div>
+
         <div class="mfr-toc" id="readerToc" hidden>
           <div class="mfr-toc-head">
-            <span>{{ _('Table of contents') }}</span>
+            <span>{{ _('Contents and bookmarks') }}</span>
             <button type="button" class="mfr-btn mfr-btn--icon" id="readerTocClose" aria-label="{{ _('Close') }}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
-          <div class="mfr-toc-list" id="readerTocList"></div>
+          <div class="mfr-toc-list" id="readerTocList">
+            <div class="mfr-toc-section" id="readerBookmarksHead" hidden>{{ _('Bookmarks') }}</div>
+            <div id="readerBookmarks"></div>
+            <div class="mfr-toc-section" id="readerChaptersHead" hidden>{{ _('Chapters') }}</div>
+            <div id="readerChapters"></div>
+          </div>
         </div>
 
         <div class="mfr-status" id="readerStatus" hidden></div>

@@ -3672,9 +3672,17 @@ USER_UI_PREF_KEYS = {
     # expects the same book to look the same on their phone. The ranges are
     # enforced here rather than trusted from the client, because these values
     # are echoed back through window._USER_PREFS.
-    "reader_font": lambda v: v.isdigit() and 70 <= int(v) <= 200,
+    # The upper bound matches the clamp in static/reader.js. It has to: a value
+    # the client is willing to produce and the server refuses does not fail
+    # quietly -- /api/user/preferences rejects the WHOLE call on one bad key, so
+    # a single out-of-range size threw away the paper colour and the reading
+    # mode with it, and none of the reader's settings survived a reload.
+    "reader_font": lambda v: v.isdigit() and 70 <= int(v) <= 220,
     "reader_theme": lambda v: v in ("dark", "sepia", "light"),
     "reader_flow": lambda v: v in ("paginated", "scrolled"),
+    "reader_face": lambda v: v in ("serif", "sans", "original"),
+    "reader_lead": lambda v: v in ("1.4", "1.65", "1.95"),
+    "reader_width": lambda v: v in ("34", "44", "62"),
 }
 
 
@@ -5788,6 +5796,105 @@ def delete_reading_progress(book_key: str, username=None) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Bookmarks (eBooks)
+# ══════════════════════════════════════════════════════════════════════════
+#  A position and a bookmark answer different questions. reading_progress
+#  holds exactly one row per book -- where you stopped -- and is overwritten
+#  every few seconds. A bookmark is a place you chose, there can be many, and
+#  nothing but the reader deleting it may ever remove one.
+#
+#  Keyed by the book rather than the file for the same reason the position is:
+#  a bookmark set in the EPUB should still be in the list when the PDF of the
+#  same book is opened. It will not resolve there -- a CFI means nothing to a
+#  page number -- so `kind` records which engine wrote it and the reader only
+#  offers the ones it can actually jump to.
+
+_CREATE_READING_BOOKMARKS_TABLE = """
+CREATE TABLE IF NOT EXISTS reading_bookmarks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT    NOT NULL DEFAULT '',
+    book_key   TEXT    NOT NULL,
+    location   TEXT    NOT NULL,
+    kind       TEXT    NOT NULL DEFAULT 'epub',
+    label      TEXT    NOT NULL DEFAULT '',
+    percent    REAL    NOT NULL DEFAULT 0,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(book_key, username, location)
+)
+"""
+
+# One reader cannot meaningfully keep hundreds of marks in one book, and an
+# unbounded list is an unbounded response on every open.
+MAX_BOOKMARKS_PER_BOOK = 200
+
+
+def init_reading_bookmarks_db() -> None:
+    MEDIAFORGE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    conn = get_db()
+    try:
+        conn.execute(_CREATE_READING_BOOKMARKS_TABLE)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reading_bookmarks_book "
+            "ON reading_bookmarks(username, book_key, created_at DESC)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def add_reading_bookmark(book_key, location, kind="epub", label="", percent=0.0, username=None):
+    """Set a bookmark. Setting the same place twice is not an error."""
+    user = _normalize_user(username)
+    conn = get_db()
+    try:
+        existing = conn.execute(
+            "SELECT COUNT(*) AS n FROM reading_bookmarks WHERE username = ? AND book_key = ?",
+            (user, book_key),
+        ).fetchone()
+        if existing and existing["n"] >= MAX_BOOKMARKS_PER_BOOK:
+            return False
+        conn.execute(
+            """INSERT INTO reading_bookmarks
+                    (username, book_key, location, kind, label, percent, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(book_key, username, location) DO UPDATE SET
+                    label   = excluded.label,
+                    percent = excluded.percent""",
+            (user, book_key, location, kind or "epub", label or "", float(percent or 0)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return True
+
+
+def list_reading_bookmarks(book_key: str, username=None) -> list:
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT location, kind, label, percent, created_at FROM reading_bookmarks "
+            "WHERE username = ? AND book_key = ? ORDER BY percent ASC, created_at ASC",
+            (_normalize_user(username), book_key),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_reading_bookmark(book_key: str, location: str, username=None) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            "DELETE FROM reading_bookmarks WHERE username = ? AND book_key = ? AND location = ?",
+            (_normalize_user(username), book_key, location),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def init_uptime_db():
     """Create the uptime_heartbeats table used by the UpTime monitor."""

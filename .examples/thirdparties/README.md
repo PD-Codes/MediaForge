@@ -1187,6 +1187,60 @@ Two things to know before you build on this:
   endpoints. A path outside them answers 404 — do not try to hand the player
   an arbitrary file, it is a deliberate limit and not a bug to route around.
 
+### The eBook reader (MFReader)
+
+`web/static/reader.js` + `reader.css` are the in-browser book reader, and like
+the player they are loaded globally by `base.html` with their markup already in
+the page — so a module can open a book without shipping a reader.
+
+```js
+MFReader.open({
+  path: "/books/Knaak/Der Tag des Drachen.azw3",  // a file inside a library root
+  ext: "azw3",                                    // epub | pdf | mobi | azw3 | azw
+  title: "Der Tag des Drachen",
+  bookKey: "der tag des drachen|richard a knaak"  // see below
+});
+
+MFReader.close();
+MFReader.isOpen();
+MFReader.getState();      // {open, kind, bookKey, title, location, percent, chapter}
+MFReader.bookmarks();     // [{location, kind, label, percent, created_at}, ...]
+MFReader.toggleBookmark();
+```
+
+**`bookKey`, not `path`, is the identity.** The same novel routinely exists as
+EPUB, MOBI and PDF at once, and the library merges those files into one entry
+(`web/books/identity.py`). Reading position and bookmarks are stored against
+that key, which is what lets someone start in the EPUB and carry on in the PDF.
+Pass the `key` field the library API reports for the book; falling back to the
+file path works but gives each format its own place in the book.
+
+**MOBI, AZW3 and AZW are converted server-side before they can be shown.** No
+browser renders Mobipocket. `MFReader.open()` handles this itself — it polls
+`/api/library/book/convert` and shows what it is waiting for — but a module that
+builds its own reading surface has to expect the first open of such a file to
+take a second or two.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/library/book/file?path=` | the book itself, validated against the library roots |
+| `GET /api/library/book/cover?path=` | the cover next to it |
+| `GET /api/library/book/convert?path=` | ask for the EPUB of a Kindle file; answers `{pending}`, `{ready, key}` or `{failed, reason}` |
+| `GET /api/library/book/converted/<key>.epub` | the finished conversion |
+| `GET`/`POST` `/api/reading/get`,`/save`,`/bulk`,`/reset` | reading position, keyed by book |
+| `GET /api/reading/bookmarks?book=` | the bookmarks of one book |
+| `POST /api/reading/bookmark` / `/bookmark/delete` | set and drop one, by `{book, location}` |
+
+Two things to know before you build on this:
+
+- **A location is engine-specific.** An EPUB position is a CFI, a PDF position
+  is a page number, and a CFI from one file is meaningless in another rendering
+  of the same book — which is why bookmarks carry a `kind` and the reader only
+  offers the ones it can actually jump to. Losing a position is always
+  preferable to refusing to open the book.
+- **`path` is validated against the library roots**, exactly as the player's
+  endpoints are. A path outside them answers 404.
+
 ### Charts (MFCharts)
 
 `web/static/mf-charts.js` + `mf-charts.css` are MediaForge's own chart

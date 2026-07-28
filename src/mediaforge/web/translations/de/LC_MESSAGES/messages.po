@@ -6234,3 +6234,15 @@ msgstr "Beide Buttons schreiben dieselben fünf Einstellungen auf einmal: Namens
 
 msgid "The Jellyfin preset keeps the language in the file name instead. Jellyfin reads whatever follows the SxxExx marker as the episode title, so it will show “(German Dub)” there until a Jellyfin NFO fills in the real one — set a TMDB key under Integrations if you want proper episode titles."
 msgstr "Die Jellyfin-Voreinstellung behält die Sprache stattdessen im Dateinamen. Jellyfin liest alles, was hinter dem SxxExx-Marker steht, als Episodentitel — dort steht dann „(German Dub)“, bis eine Jellyfin-NFO den echten Titel nachliefert. Für richtige Episodentitel also unter Integrationen einen TMDB-Key hinterlegen."
+
+msgid "Set bookmark"
+msgstr "Lesezeichen setzen"
+
+msgid "Contents and bookmarks"
+msgstr "Inhalt und Lesezeichen"
+
+msgid "Bookmarks"
+msgstr "Lesezeichen"
+
+msgid "Chapters"
+msgstr "Kapitel"

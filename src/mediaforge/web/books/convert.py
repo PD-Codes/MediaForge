@@ -58,7 +58,7 @@ _MAX_ENTRIES = 20_000
 # raising it retires every previously converted book instead of serving the old
 # result forever -- the mistake that let a bad OPF survive a fix during
 # development, because path, mtime and size had of course not changed.
-_CONVERTER_VERSION = "v3"
+_CONVERTER_VERSION = "v4"
 
 _lock = threading.Lock()
 _jobs: dict = {}      # key -> True while a conversion runs
@@ -236,6 +236,234 @@ def _fix_opf(opf_path: Path) -> None:
             pass
 
 
+# ---------------------------------------------------------------------------
+# Making the markup survive an XML parser
+# ---------------------------------------------------------------------------
+# An EPUB content document is declared as ``application/xhtml+xml``, and that
+# label is not decoration: the reader hands the file to an XML parser, which is
+# a parser with no error recovery at all. One `&nbsp;` -- an entity HTML defines
+# and XML does not -- and the reader shows
+#
+#     error on line 11 at column 94: Entity 'nbsp' not defined
+#
+# instead of the book. Kindle files are full of them, because the KF8 side of an
+# AZW3 was authored as HTML and only ever read by a lenient parser.
+#
+# Two things are wrong in practice and both are repairable without touching the
+# text itself: named entities XML never defined, and namespace prefixes
+# (`<mbp:pagebreak>`) used without a matching xmlns declaration. Everything else
+# -- unquoted attributes, unclosed tags -- is not worth guessing at, so anything
+# that still fails to parse afterwards has its media type dropped to
+# ``text/html`` instead: the same escape hatch the MOBI branch relies on, where
+# the browser's lenient parser renders the book fine.
+
+# Every ampersand, with whatever reference follows it captured if there is one.
+# Matching the bare ones too is deliberate: `AT&T` is as fatal to an XML parser
+# as `&nbsp;` is, and both come out of the same authoring tools.
+_ENTITY_RE = re.compile(r"&(#\d{1,7};|#[xX][0-9a-fA-F]{1,6};|[A-Za-z][A-Za-z0-9]{0,31};)?")
+
+# The five XML predefines. Everything else has to become a numeric reference.
+_XML_ENTITIES = frozenset({"amp", "lt", "gt", "quot", "apos"})
+
+_MARKUP_SUFFIXES = frozenset({".html", ".htm", ".xhtml", ".opf", ".ncx", ".svg"})
+
+# Prefixes seen in Kindle output, mapped to the namespace they are meant to be.
+# An unknown prefix gets a private URI: the point is only that the document
+# parses, and a made-up namespace nobody queries is harmless.
+_KNOWN_NS = {
+    "mbp": "http://www.mobipocket.com/ns/mbp",
+    "idx": "http://www.mobipocket.com/ns/indx",
+    "epub": "http://www.idpf.org/2007/ops",
+    "ops": "http://www.idpf.org/2007/ops",
+    "opf": "http://www.idpf.org/2007/opf",
+    "dc": "http://purl.org/dc/elements/1.1/",
+    "svg": "http://www.w3.org/2000/svg",
+    "xlink": "http://www.w3.org/1999/xlink",
+    "m": "http://www.w3.org/1998/Math/MathML",
+    "mml": "http://www.w3.org/1998/Math/MathML",
+    "math": "http://www.w3.org/1998/Math/MathML",
+    "calibre": "http://calibre.kovidgoyal.net/2009/metadata",
+}
+
+# xml/xmlns are bound by the specification and must never be redeclared.
+_RESERVED_PREFIXES = frozenset({"xml", "xmlns"})
+
+_TAG_PREFIX_RE = re.compile(r"</?([A-Za-z][\w.-]*):[A-Za-z]")
+_ATTR_PREFIX_RE = re.compile(r"[\s\"']([A-Za-z][\w.-]*):[\w.-]+\s*=")
+_ROOT_TAG_RE = re.compile(r"<(html|svg|package|ncx)\b[^>]*>", re.IGNORECASE)
+
+
+def _numeric_entities(text: str) -> str:
+    """Replace named entities with numeric ones an XML parser accepts."""
+    import html.entities
+
+    def replace(match):
+        ref = match.group(1)
+        if not ref:
+            return "&amp;"          # a bare ampersand: "AT&T"
+        if ref.startswith("#"):
+            return match.group(0)   # already numeric, nothing to do
+        name = ref[:-1]
+        if name in _XML_ENTITIES:
+            return match.group(0)
+        codepoint = html.entities.name2codepoint.get(name)
+        if codepoint is None:
+            # Not an entity at all, just an ampersand followed by a word and a
+            # semicolon. Escaping it is what the author meant anyway.
+            return "&amp;{}".format(ref)
+        return "&#{};".format(codepoint)
+
+    return _ENTITY_RE.sub(replace, text)
+
+
+def _declare_namespaces(text: str) -> str:
+    """Add an xmlns for every prefix the document uses but never declared."""
+    used = set(_TAG_PREFIX_RE.findall(text)) | set(_ATTR_PREFIX_RE.findall(text))
+    missing = [
+        prefix for prefix in sorted(used)
+        if prefix not in _RESERVED_PREFIXES and 'xmlns:{}='.format(prefix) not in text
+    ]
+    if not missing:
+        return text
+    root = _ROOT_TAG_RE.search(text)
+    if not root:
+        return text
+    declarations = "".join(
+        ' xmlns:{}="{}"'.format(p, _KNOWN_NS.get(p, "urn:x-mediaforge:ns:{}".format(p)))
+        for p in missing
+    )
+    tag = root.group(0)
+    patched = tag[:-1].rstrip("/") + declarations + ("/>" if tag.endswith("/>") else ">")
+    return text[:root.start()] + patched + text[root.end():]
+
+
+def _parses_as_xml(text: str) -> bool:
+    from xml.etree import ElementTree
+
+    try:
+        ElementTree.fromstring(text)
+        return True
+    except Exception:
+        return False
+
+
+def _sanitize_markup(folder: Path, opf_path: Path = None) -> None:
+    """Repair every markup file in *folder*, downgrading what cannot be repaired.
+
+    Runs after :func:`_normalize_encoding`, so everything on disk is already
+    UTF-8 and can simply be read as text.
+    """
+    unfixable: set = set()
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in _MARKUP_SUFFIXES:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        repaired = _declare_namespaces(_numeric_entities(text))
+        if repaired != text:
+            try:
+                path.write_text(repaired, encoding="utf-8")
+            except OSError:
+                continue
+        if path.suffix.lower() in (".html", ".htm", ".xhtml") and not _parses_as_xml(repaired):
+            unfixable.add(path.name)
+    if unfixable and opf_path is not None:
+        _downgrade_media_types(opf_path, unfixable)
+
+
+_ITEM_RE = re.compile(r"<item\b[^>]*>", re.IGNORECASE)
+_HREF_RE = re.compile(r'href\s*=\s*"([^"]*)"', re.IGNORECASE)
+
+
+def _downgrade_media_types(opf_path: Path, filenames: set) -> None:
+    """Relabel content documents that still do not parse as XML.
+
+    ``text/html`` sends the file through the browser's HTML parser, which
+    recovers from anything. It costs nothing a reader can see -- epub.js
+    renders both the same way -- and it is the difference between a book and a
+    parser error page.
+    """
+    try:
+        raw = opf_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+
+    def rewrite(match):
+        item = match.group(0)
+        href = _HREF_RE.search(item)
+        if not href or os.path.basename(href.group(1)) not in filenames:
+            return item
+        return item.replace("application/xhtml+xml", "text/html")
+
+    patched = _ITEM_RE.sub(rewrite, raw)
+    if patched != raw:
+        try:
+            opf_path.write_text(patched, encoding="utf-8")
+            logger.info("[Books] Relabelled %s unparsable document(s) as text/html", len(filenames))
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Packaging
+# ---------------------------------------------------------------------------
+
+_CONTAINER_ROOT_RE = re.compile(r'full-path\s*=\s*"([^"]+)"', re.IGNORECASE)
+
+
+def _unzip_epub(src: Path, dest: Path) -> None:
+    """Unpack an EPUB, refusing anything that tries to escape *dest*."""
+    dest.mkdir(parents=True, exist_ok=True)
+    total = 0
+    with zipfile.ZipFile(src) as zf:
+        infos = zf.infolist()
+        if len(infos) > _MAX_ENTRIES:
+            raise ValueError("book has implausibly many entries")
+        for info in infos:
+            if info.is_dir():
+                continue
+            total += info.file_size
+            if total > _MAX_UNPACKED_BYTES:
+                raise ValueError("book unpacks to an implausible size")
+            target = _safe_extract_member(info.filename, dest)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as source, open(target, "wb") as sink:
+                shutil.copyfileobj(source, sink)
+
+
+def _epub_opf_path(folder: Path) -> Path:
+    """The package document of an unpacked EPUB, per META-INF/container.xml."""
+    container = folder / "META-INF" / "container.xml"
+    try:
+        found = _CONTAINER_ROOT_RE.search(container.read_text(encoding="utf-8", errors="replace"))
+        if found:
+            candidate = _safe_extract_member(found.group(1), folder)
+            if candidate.is_file():
+                return candidate
+    except (OSError, ValueError):
+        pass
+    for candidate in sorted(folder.rglob("*.opf")):
+        return candidate
+    return None
+
+
+def _rezip_epub(folder: Path, out: Path) -> None:
+    """Repackage an unpacked EPUB, keeping its own META-INF intact."""
+    tmp_out = out.with_suffix(".part")
+    with zipfile.ZipFile(tmp_out, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(zipfile.ZipInfo("mimetype"), "application/epub+zip", zipfile.ZIP_STORED)
+        for root, _dirs, files in os.walk(folder):
+            for name in sorted(files):
+                src = Path(root) / name
+                rel = str(src.relative_to(folder)).replace(os.sep, "/")
+                if rel == "mimetype":
+                    continue  # already written, uncompressed and first
+                zf.write(src, rel)
+    tmp_out.replace(out)
+
+
 def _zip_folder_as_epub(folder: Path, opf_rel: str, out: Path) -> None:
     """Package an unpacked Mobipocket folder as a valid EPUB.
 
@@ -296,8 +524,17 @@ def _convert(src: Path, key: str) -> None:
             tmpdir, produced = mobi.extract(str(src))
         produced_path = Path(produced)
         if produced_path.suffix.lower() == ".epub":
-            # AZW3/KF8: already an EPUB, just take it.
-            shutil.copyfile(produced_path, out)
+            # AZW3/KF8: already an EPUB -- but "already an EPUB" only means the
+            # container is right. The content documents inside are Kindle HTML
+            # carrying an XHTML label, so handing the file straight to the
+            # reader produced "Entity 'nbsp' not defined" instead of a book.
+            # Unpack, repair, repack.
+            work.mkdir(parents=True, exist_ok=True)
+            staged = work / "epub"
+            _unzip_epub(produced_path, staged)
+            _normalize_encoding(staged)
+            _sanitize_markup(staged, _epub_opf_path(staged))
+            _rezip_epub(staged, out)
         else:
             # MOBI/AZW: an unpacked folder. Its parent is the "mobi7" directory
             # that holds book.html, content.opf, toc.ncx and Images/.
@@ -310,6 +547,7 @@ def _convert(src: Path, key: str) -> None:
             shutil.copytree(folder, staged, dirs_exist_ok=True)
             _normalize_encoding(staged)
             _fix_opf(staged / "content.opf")
+            _sanitize_markup(staged, staged / "content.opf")
             _zip_folder_as_epub(staged, "{}/content.opf".format(folder.name), out)
         (out_dir / "done.json").write_text(
             json.dumps({"key": key, "source": str(src), "created": int(time.time())}),

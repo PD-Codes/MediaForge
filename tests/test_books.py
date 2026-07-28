@@ -336,3 +336,123 @@ def test_drm_format_is_listed_but_not_readable(calibre_library):
 def test_scan_of_a_missing_path_is_empty_not_an_error(tmp_path):
     from mediaforge.web.books.scanner import scan_books
     assert scan_books(tmp_path / "does-not-exist") == []
+
+
+# ---------------------------------------------------------------------------
+# Making Kindle markup survive an XML parser
+# ---------------------------------------------------------------------------
+# An EPUB content document is handed to an XML parser, which has no error
+# recovery: one `&nbsp;` and the reader shows "Entity 'nbsp' not defined"
+# instead of the book. Everything below is a shape that actually came out of
+# the `mobi` package for a real AZW3.
+
+def test_named_entities_become_numeric():
+    from mediaforge.web.books.convert import _numeric_entities
+    out = _numeric_entities("Hallo&nbsp;Welt &mdash; ja&hellip;")
+    assert "&nbsp;" not in out and "&mdash;" not in out
+    assert "&#160;" in out and "&#8212;" in out
+
+
+def test_the_five_xml_entities_are_left_alone():
+    from mediaforge.web.books.convert import _numeric_entities
+    text = "&amp; &lt; &gt; &quot; &apos; &#233; &#x2014;"
+    assert _numeric_entities(text) == text
+
+
+def test_a_bare_ampersand_is_escaped():
+    """`AT&T` is as fatal to an XML parser as a named entity is."""
+    from mediaforge.web.books.convert import _numeric_entities
+    assert _numeric_entities("AT&T sells &stuff; here") == "AT&amp;T sells &amp;stuff; here"
+
+
+def test_undeclared_namespace_prefixes_get_an_xmlns():
+    from mediaforge.web.books.convert import _declare_namespaces
+    doc = '<html xmlns="http://www.w3.org/1999/xhtml"><body><mbp:pagebreak/></body></html>'
+    out = _declare_namespaces(doc)
+    assert 'xmlns:mbp="http://www.mobipocket.com/ns/mbp"' in out
+
+
+def test_an_already_declared_prefix_is_not_declared_twice():
+    from mediaforge.web.books.convert import _declare_namespaces
+    doc = ('<html xmlns="http://www.w3.org/1999/xhtml" '
+           'xmlns:mbp="http://www.mobipocket.com/ns/mbp"><mbp:pagebreak/></html>')
+    assert _declare_namespaces(doc).count("xmlns:mbp") == 1
+
+
+def test_a_repaired_kindle_document_actually_parses(tmp_path):
+    """The whole point, end to end: broken in, valid XML out."""
+    from mediaforge.web.books.convert import _sanitize_markup, _parses_as_xml
+    doc = tmp_path / "chapter1.xhtml"
+    doc.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+        '<mbp:pagebreak/><p>Ein&nbsp;Satz &mdash; mit Sonderzeichen &amp; AT&T.</p>'
+        "</body></html>",
+        encoding="utf-8",
+    )
+    opf = tmp_path / "content.opf"
+    opf.write_text(
+        '<package><manifest>'
+        '<item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>'
+        "</manifest></package>",
+        encoding="utf-8",
+    )
+    assert not _parses_as_xml(doc.read_text(encoding="utf-8"))
+    _sanitize_markup(tmp_path, opf)
+    assert _parses_as_xml(doc.read_text(encoding="utf-8"))
+    # Nothing was unrepairable, so the media type stays what the EPUB spec wants.
+    assert "application/xhtml+xml" in opf.read_text(encoding="utf-8")
+
+
+def test_a_document_that_cannot_be_repaired_is_relabelled(tmp_path):
+    """The escape hatch: an unclosed tag is not worth guessing at, so the file
+    goes to the browser's HTML parser instead of showing a parser error."""
+    from mediaforge.web.books.convert import _sanitize_markup
+    doc = tmp_path / "broken.xhtml"
+    doc.write_text("<html><body><p>offen<br></body></html>", encoding="utf-8")
+    opf = tmp_path / "content.opf"
+    opf.write_text(
+        '<package><manifest>'
+        '<item id="b" href="broken.xhtml" media-type="application/xhtml+xml"/>'
+        "</manifest></package>",
+        encoding="utf-8",
+    )
+    _sanitize_markup(tmp_path, opf)
+    assert 'media-type="text/html"' in opf.read_text(encoding="utf-8")
+
+
+def test_the_converter_version_is_part_of_the_cache_key(tmp_path):
+    """Twice now a fix reached nobody because path, mtime and size had not
+    changed and the old conversion was served forever."""
+    from mediaforge.web.books import convert
+    book = tmp_path / "b.azw3"
+    book.write_bytes(b"x" * 32)
+    before = convert.cache_key(book)
+    original = convert._CONVERTER_VERSION
+    try:
+        convert._CONVERTER_VERSION = original + "-next"
+        assert convert.cache_key(book) != before
+    finally:
+        convert._CONVERTER_VERSION = original
+
+
+# ---------------------------------------------------------------------------
+# Reader preferences
+# ---------------------------------------------------------------------------
+
+def test_every_reader_preference_the_client_sends_is_accepted():
+    """/api/user/preferences rejects the WHOLE call on one unknown key, so a
+    single unregistered reader setting silently threw away all the others."""
+    from mediaforge.web.db import USER_UI_PREF_KEYS
+    for key in ("reader_font", "reader_theme", "reader_flow",
+                "reader_face", "reader_lead", "reader_width"):
+        assert key in USER_UI_PREF_KEYS, key
+
+
+def test_the_reader_size_range_matches_the_clients_clamp():
+    """static/reader.js clamps to 70..220; a value the client will produce and
+    the server refuses does not fail quietly, it drops the whole batch."""
+    from mediaforge.web.db import USER_UI_PREF_KEYS
+    valid = USER_UI_PREF_KEYS["reader_font"]
+    assert valid("70") and valid("220")
+    assert not valid("69") and not valid("221")

@@ -49,6 +49,7 @@ from .db import (
     init_mediascan_db,
     init_watch_progress_db,
     init_reading_progress_db,
+    init_reading_bookmarks_db,
     init_uptime_db,
     init_devinfos_db,
     get_devinfo_posts,
@@ -555,6 +556,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     init_mediascan_db()
     init_watch_progress_db()
     init_reading_progress_db()
+    init_reading_bookmarks_db()
     init_uptime_db()
     _start_uptime_monitor()
     init_devinfos_db()

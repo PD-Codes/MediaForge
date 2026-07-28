@@ -158,22 +158,92 @@
     light: { color: "#1b1b20", background: "#fdfdfb", link: "#5b3fd0" }
   };
 
+  // Everything that carries running text. Naming them one by one rather than
+  // using `*` is deliberate: `*` would also hit <html>, <head> and <img>, and
+  // a font-size on an image container is a resizing bug waiting to happen.
+  var TEXT_SELECTOR = "p, div, span, li, dd, dt, td, th, blockquote, section, " +
+                      "article, figcaption, em, strong, i, b, small, sub, sup, a";
+
+  var STYLE_ID = "mf-reader-style";
+
+  /** The stylesheet pushed into the book's own document. */
+  function readerRules() {
+    var palette = PALETTES[_prefs.reader_theme] || PALETTES.dark;
+    var stack = FACE_STACKS[_prefs.reader_face];
+    var size = parseInt(_prefs.reader_font, 10) || 100;
+    var lead = _prefs.reader_lead;
+    var rules = [
+      // Mobile Safari and Chrome on Android silently scale text in a frame
+      // they consider too narrow, which fights every size the reader picks.
+      "html { -webkit-text-size-adjust: none; text-size-adjust: none; }",
+      "html, body { background: " + palette.background + " !important; " +
+        "color: " + palette.color + " !important; }",
+      // The size is set once, on <body>, and every descendant is pushed back to
+      // "same as my parent". That is what makes the setting actually do
+      // something: publishers routinely set `font-size: 11pt` on <p>, and an
+      // absolute size on the paragraph ignores anything set further up -- which
+      // is why raising the size appeared to change nothing at all.
+      "body { font-size: " + size + "% !important; line-height: " + lead + " !important; }",
+      TEXT_SELECTOR + " { font-size: 100% !important; line-height: " + lead + " !important; " +
+        "color: " + palette.color + " !important; }",
+      // Headings keep a hierarchy, but a relative one, so they scale with the
+      // body instead of staying at whatever the publisher hard-coded.
+      "h1 { font-size: 1.7em !important; } h2 { font-size: 1.45em !important; }",
+      "h3 { font-size: 1.25em !important; } h4 { font-size: 1.1em !important; }",
+      "h5, h6 { font-size: 1em !important; }",
+      "h1, h2, h3, h4, h5, h6 { color: " + palette.color + " !important; line-height: 1.25 !important; }",
+      "a, a * { color: " + palette.link + " !important; }",
+      // A fixed-width image in a reflowed column is the one thing that can push
+      // a page sideways and hide the text under it.
+      "img, svg, video, table { max-width: 100% !important; height: auto !important; }"
+    ];
+    if (stack) {
+      rules.push("body, " + TEXT_SELECTOR + ", h1, h2, h3, h4, h5, h6 { " +
+                 "font-family: " + stack + " !important; }");
+      // Code is the exception a reading font must not swallow: alignment in a
+      // listing carries meaning that a proportional face destroys.
+      rules.push("pre, code, kbd, samp, tt { font-family: ui-monospace, SFMono-Regular, " +
+                 'Menlo, Consolas, "Liberation Mono", monospace !important; }');
+    }
+    return rules.join("\n");
+  }
+
+  /** Put (or refresh) that stylesheet inside one rendered section. */
+  function injectStyles(contents) {
+    try {
+      var doc = contents && contents.document;
+      if (!doc || !doc.head) return;
+      var el = doc.getElementById(STYLE_ID);
+      if (!el) {
+        el = doc.createElement("style");
+        el.id = STYLE_ID;
+        // Last in <head> so it wins on equal specificity even before
+        // !important is considered.
+        doc.head.appendChild(el);
+      }
+      el.textContent = readerRules();
+    } catch (e) { /* the document can go away mid-update */ }
+  }
+
   function applyEpubStyles() {
     if (!_rendition) return;
     var palette = PALETTES[_prefs.reader_theme] || PALETTES.dark;
-    // epub.js renders into a separate document: the app's stylesheet does not
-    // reach inside it, so every visual choice has to be pushed in explicitly.
-    // `true` is the important argument -- it makes the override !important, and
-    // without it a publisher stylesheet that names its own colours wins and the
-    // reader gets black text on a black page.
-    _rendition.themes.override("color", palette.color, true);
-    _rendition.themes.override("background", palette.background, true);
-    _rendition.themes.override("line-height", _prefs.reader_lead, true);
-    var stack = FACE_STACKS[_prefs.reader_face];
-    // "original" keeps the publisher's own face: a technical book whose code
-    // samples are set in a monospace face should keep them that way.
-    _rendition.themes.override("font-family", stack || "", !!stack);
-    _rendition.themes.fontSize(_prefs.reader_font + "%");
+    // epub.js's own override still runs, but only for the two properties that
+    // must be right in the very first painted frame -- it is applied while a
+    // section is being set up, before there is a document to inject into, and
+    // without it a dark book flashes white for one frame.
+    try {
+      _rendition.themes.override("color", palette.color, true);
+      _rendition.themes.override("background", palette.background, true);
+    } catch (e) { /* older epub.js */ }
+    // The real work: a stylesheet inside the book's document. themes.override
+    // only ever writes `body { ... }`, and a publisher rule on `p` beats it on
+    // specificity -- which is exactly why typeface and size did nothing on the
+    // books that name their own.
+    var contents = [];
+    try { contents = _rendition.getContents() || []; } catch (e) { contents = []; }
+    if (contents && !contents.length && contents.document) contents = [contents];
+    Array.prototype.forEach.call(contents, injectStyles);
   }
 
   function applyLayout() {
@@ -197,6 +267,7 @@
     // Where you are beats how far you are: a chapter name is the answer to
     // "where was I", a percentage is only the answer to "how much is left".
     if (chapter) chapter.textContent = _chapterLabel;
+    syncMarkState();
   }
 
   // ---- PDF ----
@@ -397,6 +468,10 @@
       _rendition.hooks.content.register(function (contents) {
         var doc = contents && contents.document;
         if (!doc) return;
+        // Every section is a fresh document and needs the reader's stylesheet
+        // of its own; this is the hook that makes typeface, size, spacing and
+        // paper survive turning the page into a new chapter.
+        injectStyles(contents);
         ["mousemove", "pointerdown", "wheel", "touchstart"].forEach(function (evt) {
           doc.addEventListener(evt, wakeChrome, { passive: true });
         });
@@ -427,51 +502,279 @@
   }
 
   var _tocEntries = [];
+  var _tocScanned = false;   // the spine fallback has already run (or is running)
 
   function updateChapterLabel(location) {
     if (!_tocEntries.length || !location || !location.start) return;
     var href = String(location.start.href || "").split("#")[0];
+    var label = "";
     for (var i = 0; i < _tocEntries.length; i++) {
-      if (String(_tocEntries[i].href || "").split("#")[0] === href) {
-        _chapterLabel = _tocEntries[i].label;
-        return;
-      }
+      if (chapterHref(_tocEntries[i].href) === href) { label = _tocEntries[i].label; break; }
     }
+    if (label) _chapterLabel = label;
+    markCurrentChapter(href);
+  }
+
+  function chapterHref(href) {
+    return String(href || "").split("#")[0].replace(/^\.?\//, "");
+  }
+
+  function markCurrentChapter(href) {
+    var list = $id("readerChapters");
+    if (!list) return;
+    Array.prototype.forEach.call(list.querySelectorAll("[data-href]"), function (btn) {
+      btn.classList.toggle("is-current",
+        chapterHref(btn.getAttribute("data-href")) === chapterHref(href));
+    });
+  }
+
+  /** Flatten epub.js's nested navigation into rows that carry their depth. */
+  function flattenNav(items, depth, out) {
+    (items || []).forEach(function (item) {
+      out.push({
+        href: item.href,
+        label: (item.label || "").trim() || "?",
+        depth: Math.min(depth, 2)
+      });
+      if (item.subitems && item.subitems.length) flattenNav(item.subitems, depth + 1, out);
+    });
+    return out;
+  }
+
+  function renderChapters(entries, note) {
+    var list = $id("readerChapters");
+    var head = $id("readerChaptersHead");
+    if (!list) return;
+    if (head) head.hidden = false;
+    if (!entries.length) {
+      list.innerHTML = '<p class="mfr-toc-empty">' + esc(note ||
+        tr("Dieses Buch hat kein Inhaltsverzeichnis.", "This book has no table of contents.")) + "</p>";
+      return;
+    }
+    list.innerHTML = entries.map(function (item) {
+      return '<button type="button" class="mfr-toc-item" data-depth="' + (item.depth || 0) +
+        '" data-href="' + esc(item.href) + '">' + esc(item.label) + "</button>";
+    }).join("");
+    Array.prototype.forEach.call(list.querySelectorAll("[data-href]"), function (btn) {
+      btn.addEventListener("click", function () {
+        if (_rendition) _rendition.display(btn.getAttribute("data-href"));
+        toggleToc(false);
+      });
+    });
+    try {
+      if (_rendition && _rendition.currentLocation) {
+        updateChapterLabel(_rendition.currentLocation());
+        updateProgressUi();
+      }
+    } catch (e) { /* location not settled yet */ }
   }
 
   function buildEpubToc() {
-    var list = $id("readerTocList");
-    if (!list || !_book) return;
+    if (!_book) return;
     _book.loaded.navigation.then(function (nav) {
-      var items = (nav && nav.toc) || [];
-      _tocEntries = items.map(function (item) {
-        return { href: item.href, label: (item.label || "").trim() };
-      });
-      if (!items.length) {
-        list.innerHTML = '<p class="mfr-toc-empty">' +
-          esc(tr("Dieses Buch hat kein Inhaltsverzeichnis.", "This book has no table of contents.")) + "</p>";
-        return;
+      _tocEntries = flattenNav((nav && nav.toc) || [], 0, []);
+      if (_tocEntries.length) {
+        _tocScanned = true;
+        renderChapters(_tocEntries);
+      } else {
+        // Nothing yet. The spine walk below can supply a list, but it opens
+        // every section of the book to do it, so it waits until the reader
+        // actually asks for the chapter list.
+        renderChapters([], tr("Kapitel werden beim Öffnen der Liste ermittelt.",
+                              "Chapters are worked out when you open the list."));
       }
-      list.innerHTML = items.map(function (item) {
-        return '<button type="button" class="mfr-toc-item" data-href="' + esc(item.href) + '">' +
-          esc(item.label ? item.label.trim() : "?") + "</button>";
-      }).join("");
-      // The first relocation happens before the navigation document has been
-      // parsed, so the chapter field would stay empty until the reader turned
-      // a page. Fill it once the list is actually there.
-      try {
-        if (_rendition && _rendition.currentLocation) {
-          updateChapterLabel(_rendition.currentLocation());
-          updateProgressUi();
-        }
-      } catch (e) { /* location not settled yet */ }
-      Array.prototype.forEach.call(list.querySelectorAll("[data-href]"), function (btn) {
-        btn.addEventListener("click", function () {
-          if (_rendition) _rendition.display(btn.getAttribute("data-href"));
-          toggleToc(false);
-        });
+    }).catch(function () {
+      renderChapters([], tr("Kapitel werden beim Öffnen der Liste ermittelt.",
+                            "Chapters are worked out when you open the list."));
+    });
+  }
+
+  // A book with no navigation document is not a book without chapters -- it is
+  // usually a converted Kindle file, where the chapter structure survives only
+  // as the headings inside each section. Reading those back is what turns "no
+  // table of contents" into a usable list.
+  var _MAX_SPINE_SCAN = 400;
+
+  function ensureSpineToc() {
+    if (_tocScanned || !_book || !_book.spine) return;
+    _tocScanned = true;
+    var sections = [];
+    try {
+      _book.spine.each(function (section) { sections.push(section); });
+    } catch (e) { return; }
+    if (!sections.length) return;
+    renderChapters([], tr("Kapitel werden gelesen…", "Reading chapters…"));
+
+    var entries = [];
+    var chain = Promise.resolve();
+    sections.slice(0, _MAX_SPINE_SCAN).forEach(function (section, index) {
+      chain = chain.then(function () {
+        return section.load(_book.load.bind(_book)).then(function (doc) {
+          var heading = null;
+          try { heading = doc && doc.querySelector && doc.querySelector("h1, h2, h3, title"); }
+          catch (e) { heading = null; }
+          var label = heading ? String(heading.textContent || "").replace(/\s+/g, " ").trim() : "";
+          if (label.length > 90) label = label.slice(0, 90) + "…";
+          // A section with no heading still deserves a row: it is the only way
+          // to reach the front matter or an unnamed interlude.
+          entries.push({
+            href: section.href,
+            label: label || (tr("Abschnitt ", "Section ") + (index + 1)),
+            depth: 0
+          });
+          try { section.unload(); } catch (e) { /* already gone */ }
+        }).catch(function () { /* an unreadable section is simply skipped */ });
       });
-    }).catch(function () { /* no navigation document */ });
+    });
+    chain.then(function () {
+      if (!_open) return;
+      _tocEntries = entries;
+      renderChapters(entries);
+    });
+  }
+
+  // ---- bookmarks ----
+  // A position and a bookmark are different promises. The position is written
+  // every few seconds and answers "where did I stop"; a bookmark is chosen and
+  // answers "take me back here", so nothing but the reader may remove one.
+
+  var _bookmarks = [];
+
+  function currentLocation() {
+    return _kind === "pdf" ? String(_pdfPage) : _epubLocation;
+  }
+
+  function bookmarkAt(location) {
+    for (var i = 0; i < _bookmarks.length; i++) {
+      if (_bookmarks[i].location === location) return _bookmarks[i];
+    }
+    return null;
+  }
+
+  /** Reflect "this page is bookmarked" in the header button and the ribbon. */
+  function syncMarkState() {
+    var marked = !!(currentLocation() && bookmarkAt(currentLocation()));
+    var btn = $id("readerMarkBtn");
+    if (btn) {
+      btn.classList.toggle("is-marked", marked);
+      btn.setAttribute("aria-pressed", marked ? "true" : "false");
+    }
+    var ribbon = $id("readerMark");
+    if (ribbon) ribbon.classList.toggle("is-on", marked);
+  }
+
+  function loadBookmarks() {
+    if (!_bookKey) return Promise.resolve();
+    return fetch("/api/reading/bookmarks?book=" + encodeURIComponent(_bookKey))
+      .then(function (r) { return r.ok ? r.json() : {}; })
+      .then(function (data) {
+        _bookmarks = (data && data.bookmarks) || [];
+        renderBookmarks();
+        syncMarkState();
+      })
+      .catch(function () { /* a missing list must not stop the book opening */ });
+  }
+
+  function toggleBookmark() {
+    var location = currentLocation();
+    wakeChrome();
+    if (!location) return;
+    if (bookmarkAt(location)) { removeBookmark(location); return; }
+
+    var label = _chapterLabel ||
+      (_kind === "pdf" ? tr("Seite ", "Page ") + _pdfPage : "");
+    var entry = {
+      location: location, kind: _kind, label: label,
+      percent: Math.max(0, Math.min(100, _percent))
+    };
+    // Optimistic: the mark appears the moment it is asked for, and a failed
+    // write takes it away again. Waiting for the round trip makes the button
+    // feel broken on a slow connection.
+    _bookmarks.push(entry);
+    sortBookmarks();
+    renderBookmarks();
+    syncMarkState();
+
+    fetch("/api/reading/bookmark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        book: _bookKey, location: location, kind: _kind,
+        label: label, percent: entry.percent
+      })
+    }).then(function (r) { return r.ok ? r.json() : { error: "http" }; })
+      .then(function (res) {
+        if (!res || !res.error) return;
+        _bookmarks = _bookmarks.filter(function (b) { return b !== entry; });
+        renderBookmarks();
+        syncMarkState();
+      })
+      .catch(function () {
+        _bookmarks = _bookmarks.filter(function (b) { return b !== entry; });
+        renderBookmarks();
+        syncMarkState();
+      });
+  }
+
+  function removeBookmark(location) {
+    _bookmarks = _bookmarks.filter(function (b) { return b.location !== location; });
+    renderBookmarks();
+    syncMarkState();
+    fetch("/api/reading/bookmark/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ book: _bookKey, location: location })
+    }).catch(function () { /* it is gone from the list either way */ });
+  }
+
+  function sortBookmarks() {
+    _bookmarks.sort(function (a, b) { return (a.percent || 0) - (b.percent || 0); });
+  }
+
+  function goToBookmark(entry) {
+    if (entry.kind === "pdf") pdfGoTo(parseInt(entry.location, 10) || 1);
+    else if (_rendition) _rendition.display(entry.location).catch(function () {});
+    toggleToc(false);
+  }
+
+  var _TRASH_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2m-9 0v14a2 2 0 002 2h6' +
+    'a2 2 0 002-2V6"/></svg>';
+
+  function renderBookmarks() {
+    var host = $id("readerBookmarks");
+    var head = $id("readerBookmarksHead");
+    if (!host) return;
+    // A CFI written by the EPUB means nothing to the PDF of the same book, so
+    // only the ones this engine can actually jump to are offered.
+    var usable = _bookmarks.filter(function (b) { return (b.kind || "epub") === _kind; });
+    if (head) head.hidden = !usable.length;
+    if (!usable.length) { host.innerHTML = ""; return; }
+
+    host.innerHTML = usable.map(function (entry, index) {
+      var pct = Math.round(entry.percent || 0);
+      return '<div class="mfr-toc-row">' +
+        '<button type="button" class="mfr-toc-item" data-mark="' + index + '">' +
+          esc(entry.label || tr("Lesezeichen", "Bookmark")) +
+          '<span class="mfr-toc-when">' + pct + "%</span>" +
+        "</button>" +
+        '<button type="button" class="mfr-toc-del" data-drop="' + index + '" ' +
+          'aria-label="' + esc(tr("Lesezeichen entfernen", "Remove bookmark")) + '">' +
+          _TRASH_SVG + "</button>" +
+        "</div>";
+    }).join("");
+
+    Array.prototype.forEach.call(host.querySelectorAll("[data-mark]"), function (btn) {
+      btn.addEventListener("click", function () {
+        goToBookmark(usable[parseInt(btn.getAttribute("data-mark"), 10)]);
+      });
+    });
+    Array.prototype.forEach.call(host.querySelectorAll("[data-drop]"), function (btn) {
+      btn.addEventListener("click", function () {
+        removeBookmark(usable[parseInt(btn.getAttribute("data-drop"), 10)].location);
+      });
+    });
   }
 
   // ---- navigation ----
@@ -520,6 +823,11 @@
     if (!panel) return;
     var show = force === undefined ? panel.hidden : force;
     panel.hidden = !show;
+    // Deriving a chapter list from the spine means opening every section of
+    // the book, so it happens the first time someone asks to see the list --
+    // never on the way to the first page.
+    if (show && _kind === "epub") ensureSpineToc();
+    if (show) wakeChrome();
   }
 
   function setFont(delta) {
@@ -600,6 +908,7 @@
       case "ArrowLeft":  case "PageUp":   prev(); break;
       case "+": case "=": setFont(10); break;
       case "-": setFont(-10); break;
+      case "b": case "B": toggleBookmark(); break;
       case "f": case "F": toggleFullscreen(); break;
       default: return;
     }
@@ -631,6 +940,7 @@
       ["readerPrevBtn", prev], ["readerNextBtn", next],
       ["readerTocBtn", function () { toggleSheet(false); toggleToc(); }],
       ["readerTocClose", function () { toggleToc(false); }],
+      ["readerMarkBtn", toggleBookmark],
       ["readerSheetBtn", function () { toggleToc(false); toggleSheet(); }],
       ["readerFullscreen", toggleFullscreen]
     ];
@@ -681,6 +991,8 @@
     stopConvertPolling();
     if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
     _tocEntries = [];
+    _tocScanned = false;
+    _bookmarks = [];
     _chapterLabel = "";
     toggleSheet(false);
     if (_rendition) { try { _rendition.destroy(); } catch (e) {} }
@@ -695,8 +1007,12 @@
     }
     var epubHost = $id("readerEpub");
     if (epubHost) { epubHost.innerHTML = ""; epubHost.hidden = true; }
-    var toc = $id("readerTocList");
-    if (toc) toc.innerHTML = "";
+    var chapters = $id("readerChapters");
+    if (chapters) chapters.innerHTML = "";
+    var chaptersHead = $id("readerChaptersHead");
+    if (chaptersHead) chaptersHead.hidden = true;
+    renderBookmarks();
+    syncMarkState();
     toggleToc(false);
     setStatus("");
   }
@@ -729,6 +1045,7 @@
     applyLayout();
     syncSheet();
     wakeChrome();
+    loadBookmarks();
     // The chapter list and the flow switch only mean something for reflowable
     // text; a PDF has fixed pages and its own outline.
     var epubOnly = document.querySelectorAll("[data-reader-epub-only]");
@@ -834,6 +1151,16 @@
   window.MFReader = {
     open: function (o) { window.openReader(o.path, o.ext, o.title, o.bookKey); },
     close: function () { window.closeReader(); },
-    isOpen: function () { return _open; }
+    isOpen: function () { return _open; },
+    // Everything a module needs to say "you are on page 40 of Dune" without
+    // reaching into the reader's internals.
+    getState: function () {
+      return {
+        open: _open, kind: _kind, bookKey: _bookKey, title: _title,
+        location: currentLocation(), percent: _percent, chapter: _chapterLabel
+      };
+    },
+    bookmarks: function () { return _bookmarks.slice(); },
+    toggleBookmark: function () { toggleBookmark(); }
   };
 })();

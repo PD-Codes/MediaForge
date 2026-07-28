@@ -154,7 +154,6 @@ body.reader-open { overflow: hidden; }
   inset: 0;
   margin: 0 auto;
   max-width: var(--mfr-measure, 44rem);
-  padding: 56px 0 64px;
 }
 
 /* Both stages are positioned rather than flex children, because epub.js
@@ -162,19 +161,38 @@ body.reader-open { overflow: hidden; }
    `height: 100%` the percentage resolved against an auto height, so epub.js
    computed a column height of almost nothing and a page ended after two
    paragraphs with the rest of the screen empty. Absolute inset gives it a
-   definite box before it measures. */
+   definite box before it measures.
+
+   The insets name the chrome heights rather than being zero, and that is the
+   whole fix for two separate complaints. Padding on .mfr-page could not do it:
+   an absolutely positioned child resolves `inset: 0` against its container's
+   PADDING box, so the padding meant to keep the text clear of the bars was
+   silently ignored -- in paged mode the last lines sat underneath the footer.
+   And because the scroll container reached to the very top, the scrollbar ran
+   up behind the header, where its top end could not be grabbed. Insetting the
+   box itself puts the text and the scrollbar both between the bars. */
 #readerEpub {
   position: absolute;
-  inset: 0;
+  top: var(--mfr-head-h);
+  /* A few pixels more than the footer needs. The page is as tall as the window
+     happens to be, so the last line rarely ends exactly on the boundary --
+     without the gap it sits flush against the footer's edge and reads as
+     cut off even when every descender is there. */
+  bottom: calc(var(--mfr-foot-h) + 8px);
+  left: var(--mfr-gutter);
+  right: var(--mfr-gutter);
 }
 #readerEpub[hidden] { display: none; }
 
 #readerPdf {
   position: absolute;
-  inset: 0;
+  top: var(--mfr-head-h);
+  bottom: var(--mfr-foot-h);
+  left: 0;
+  right: 0;
   overflow-y: auto;
   overflow-x: auto;
-  padding: 18px 0 28px;
+  padding: 12px 0 16px;
   text-align: center;
   scroll-behavior: smooth;
 }
@@ -275,6 +293,90 @@ body.reader-open { overflow: hidden; }
 .mfr-toc-item:hover { background: var(--mfr-line); }
 .mfr-toc-empty { padding: 12px; font-size: 0.84rem; color: var(--mfr-muted); }
 
+/* The chapter you are in, so opening the list answers "where am I" before you
+   have read a single label. */
+.mfr-toc-item.is-current {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--mfr-hover);
+}
+
+/* A nested entry is a sub-chapter; the indent is the only thing that says so,
+   because a second type size in a list this small reads as noise. */
+.mfr-toc-item[data-depth="1"] { padding-left: 26px; font-size: 0.82rem; }
+.mfr-toc-item[data-depth="2"] { padding-left: 40px; font-size: 0.8rem; }
+
+.mfr-toc-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 5px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mfr-muted);
+}
+.mfr-toc-section[hidden] { display: none; }
+
+/* A bookmark is a row plus a way to drop it. The delete button only appears on
+   hover or focus, so a list of bookmarks reads as a list and not as a form. */
+.mfr-toc-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-radius: var(--radius-sm, 8px);
+}
+.mfr-toc-row:hover { background: var(--mfr-line); }
+.mfr-toc-row .mfr-toc-item { flex: 1 1 auto; }
+.mfr-toc-row .mfr-toc-item:hover { background: none; }
+
+.mfr-toc-del {
+  flex: 0 0 auto;
+  width: 30px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  color: var(--mfr-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s, color 0.14s;
+}
+.mfr-toc-row:hover .mfr-toc-del,
+.mfr-toc-del:focus-visible { opacity: 1; }
+.mfr-toc-del:hover { color: var(--error, #ef4444); }
+.mfr-toc-del svg { width: 14px; height: 14px; }
+
+.mfr-toc-when {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: var(--mfr-muted);
+}
+
+/* ---- bookmark ------------------------------------------------------
+   The button in the header both sets a bookmark and reports one: filled
+   means "this page is marked". The ribbon on the page edge is the same
+   fact said a second time, for the moment the chrome has faded out and
+   the button is not on screen at all. */
+.mfr-btn--mark.is-marked { color: var(--accent); }
+.mfr-btn--mark.is-marked svg { fill: currentColor; }
+
+.mfr-mark {
+  position: absolute;
+  top: calc(var(--mfr-head-h) + 4px);
+  right: 10px;
+  width: 14px;
+  height: 22px;
+  z-index: 3;
+  color: var(--accent);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.mfr-mark svg { width: 100%; height: 100%; fill: currentColor; }
+.mfr-mark.is-on { opacity: 0.95; }
+
 /* ---- footer ------------------------------------------------------ */
 .mfr-foot {
   bottom: 0;
@@ -372,6 +474,13 @@ body.reader-open { overflow: hidden; }
   --mfr-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
               "Liberation Sans", "Helvetica Neue", Arial, sans-serif;
   --mfr-measure: 44rem;
+  /* How much room the floating bars take. Named once here because the stage
+     insets, the settings popover and the mobile overrides all have to agree
+     with the actual height of .mfr-head / .mfr-foot -- three places that drift
+     apart the moment one of them carries the number literally. */
+  --mfr-head-h: 56px;
+  --mfr-foot-h: 64px;
+  --mfr-gutter: 0px;
 }
 
 /* ===================================================================
@@ -385,7 +494,7 @@ body.reader-open { overflow: hidden; }
 .mfr-sheet {
   position: absolute;
   right: 12px;
-  bottom: 62px;
+  bottom: calc(var(--mfr-foot-h) - 2px);
   z-index: 6;
   width: min(320px, calc(100% - 24px));
   padding: 6px 4px 10px;
@@ -554,14 +663,15 @@ body.reader-open { overflow: hidden; }
   letter-spacing: -0.005em;
 }
 
-/* The PDF stage keeps its own padding: a fixed-layout page is already a page
-   and must not be squeezed into the prose measure. */
-#readerPdf { padding: 56px 0 68px; }
-
 @media (max-width: 720px) {
-  .mfr-sheet { right: 8px; left: 8px; width: auto; bottom: 58px; }
+  .mfr {
+    --mfr-head-h: 50px;
+    --mfr-foot-h: 58px;
+    /* The measure alone leaves no side margin once the column is as wide as
+       the phone; a gutter keeps the text off the bezel. */
+    --mfr-gutter: 14px;
+  }
+  .mfr-sheet { right: 8px; left: 8px; width: auto; bottom: calc(var(--mfr-foot-h) - 2px); }
   .mfr-sheet-label { width: 4.6rem; font-size: 0.73rem; }
-  .mfr-page { padding: 48px 14px 58px; }
-  #readerPdf { padding: 48px 0 58px; }
   .mfr-chapter { display: none; }
 }

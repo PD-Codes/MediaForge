@@ -14,9 +14,12 @@ is the book's grouping key, and switching format keeps your place.
 from flask import jsonify, request
 
 from ..db import (
+    add_reading_bookmark,
+    delete_reading_bookmark,
     delete_reading_progress,
     get_reading_progress,
     get_reading_progress_bulk,
+    list_reading_bookmarks,
     save_reading_progress,
 )
 from ..request_context import get_current_user_info
@@ -29,6 +32,8 @@ logger = get_logger(__name__)
 _MAX_LOCATION_LEN = 512
 _MAX_BOOK_KEY_LEN = 512
 _MAX_BULK = 200
+# A bookmark's label is the chapter it sits in, not a note the reader typed.
+_MAX_LABEL_LEN = 200
 
 
 def _username():
@@ -96,4 +101,62 @@ def register_reading_routes(app):
         if not book:
             return jsonify({"error": "book is required"}), 400
         delete_reading_progress(book, username=_username())
+        return jsonify({"ok": True})
+
+    # ---- bookmarks -----------------------------------------------------
+    # Separate from the position on purpose: the position is overwritten every
+    # few seconds and means "where I stopped", a bookmark is chosen and means
+    # "come back here". Nothing but an explicit delete may remove one.
+
+    @app.route("/api/reading/bookmarks")
+    def api_reading_bookmarks():
+        """GET /api/reading/bookmarks?book=<key> -> {bookmarks: [...]}"""
+        book = str(request.args.get("book") or "")[:_MAX_BOOK_KEY_LEN]
+        if not book:
+            return jsonify({"bookmarks": []})
+        try:
+            return jsonify({"bookmarks": list_reading_bookmarks(book, username=_username())})
+        except Exception:
+            logger.exception("[Reading] Could not list bookmarks for %s", book)
+            return jsonify({"bookmarks": []})
+
+    @app.route("/api/reading/bookmark", methods=["POST"])
+    def api_reading_bookmark_add():
+        """POST /api/reading/bookmark {book, location, kind, label, percent}"""
+        data = request.get_json(silent=True) or {}
+        book = str(data.get("book") or "")[:_MAX_BOOK_KEY_LEN]
+        location = str(data.get("location") or "")[:_MAX_LOCATION_LEN]
+        if not book or not location:
+            return jsonify({"error": "book and location are required"}), 400
+        kind = "pdf" if str(data.get("kind") or "") == "pdf" else "epub"
+        label = str(data.get("label") or "")[:_MAX_LABEL_LEN]
+        try:
+            percent = float(data.get("percent") or 0)
+        except (TypeError, ValueError):
+            percent = 0.0
+        try:
+            stored = add_reading_bookmark(
+                book, location, kind=kind, label=label,
+                percent=max(0.0, min(100.0, percent)), username=_username(),
+            )
+        except Exception:
+            logger.exception("[Reading] Could not add a bookmark to %s", book)
+            return jsonify({"error": "could not save"}), 500
+        if not stored:
+            return jsonify({"error": "too_many"}), 409
+        return jsonify({"ok": True})
+
+    @app.route("/api/reading/bookmark/delete", methods=["POST"])
+    def api_reading_bookmark_delete():
+        """POST /api/reading/bookmark/delete {book, location}"""
+        data = request.get_json(silent=True) or {}
+        book = str(data.get("book") or "")[:_MAX_BOOK_KEY_LEN]
+        location = str(data.get("location") or "")[:_MAX_LOCATION_LEN]
+        if not book or not location:
+            return jsonify({"error": "book and location are required"}), 400
+        try:
+            delete_reading_bookmark(book, location, username=_username())
+        except Exception:
+            logger.exception("[Reading] Could not delete a bookmark from %s", book)
+            return jsonify({"error": "could not delete"}), 500
         return jsonify({"ok": True})
