@@ -1995,6 +1995,10 @@
   function _bindStage(stage) {
     var downAt = 0, downX = 0, downY = 0, downPos = 0, moved = false;
     var lastTap = 0, lastTapX = 0, holdTimer = null;
+    // Which kind of pointer produced the last press. A browser synthesises a
+    // dblclick from two quick taps as well, so the fullscreen shortcut below
+    // has to be able to tell a real mouse double-click from a double tap.
+    var lastPointerType = 'mouse';
     var swipeMode = null;   // 'vol' | 'dim' | null
     var startVol = 1, startDim = 0;
 
@@ -2008,6 +2012,9 @@
     });
 
     stage.addEventListener('pointerdown', function (e) {
+      // Recorded before the early return, so a press on a button still
+      // updates it.
+      lastPointerType = e.pointerType || 'mouse';
       if (interactive(e)) return;
       downAt = Date.now(); downX = e.clientX; downY = e.clientY;
       downPos = _filePos(); moved = false; swipeMode = null;
@@ -2105,8 +2112,13 @@
       _hideHud();
     });
 
-    // A double click on the picture is the desktop fullscreen shortcut.
+    // A double click on the picture is the DESKTOP fullscreen shortcut.
+    //
+    // Touch screens must be excluded explicitly: a double tap fires our own
+    // gesture handler (jump 10 s) AND a synthesised dblclick, so on a phone
+    // in fullscreen every jump also dropped straight back out of fullscreen.
     stage.addEventListener('dblclick', function (e) {
+      if (lastPointerType !== 'mouse') return;
       if (interactive(e)) return;
       _toggleFullscreen();
     });
