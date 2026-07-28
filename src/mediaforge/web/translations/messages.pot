@@ -6395,3 +6395,47 @@ msgstr ""
 
 msgid "Scroll"
 msgstr ""
+
+# ── eBook reader: settings sheet ───────────────────────────────────
+
+msgid "Reading settings"
+msgstr ""
+
+msgid "Typeface"
+msgstr ""
+
+msgid "Serif"
+msgstr ""
+
+msgid "Sans"
+msgstr ""
+
+msgid "Original"
+msgstr ""
+
+msgid "Text size"
+msgstr ""
+
+msgid "Line spacing"
+msgstr ""
+
+msgid "Tight"
+msgstr ""
+
+msgid "Normal"
+msgstr ""
+
+msgid "Loose"
+msgstr ""
+
+msgid "Page width"
+msgstr ""
+
+msgid "Narrow"
+msgstr ""
+
+msgid "Wide"
+msgstr ""
+
+msgid "Paper"
+msgstr ""

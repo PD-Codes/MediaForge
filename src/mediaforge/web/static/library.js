@@ -2145,6 +2145,15 @@ function _libShowAutosyncPicker(folder, results) {
 
 var _libOpenBookKey = null;   // key of the currently expanded book
 
+// True when books come from more than one library path. With a single path the
+// volume tag is the same word on every row -- noise that costs the title space
+// it needs, so it is only shown when it actually distinguishes anything.
+function libBooksSpanLocations(locations) {
+  var seen = 0;
+  (locations || []).forEach(function(loc) { if ((loc.books || []).length) seen++; });
+  return seen > 1;
+}
+
 function libFlattenBooks(locations) {
   var items = [];
   (locations || []).forEach(function(loc) {
@@ -2201,6 +2210,38 @@ function libBookCoverUrl(book) {
   return "/api/library/book/cover?path=" + encodeURIComponent(book.cover_path);
 }
 
+// The scanner normalises whatever the metadata carried ("deu", "de-DE") to a
+// two-letter code; the shelf shows the language the way a person names it.
+var LIB_LANGUAGE_NAMES = {
+  de: ["Deutsch", "German"],   en: ["Englisch", "English"],
+  fr: ["Französisch", "French"], es: ["Spanisch", "Spanish"],
+  it: ["Italienisch", "Italian"], nl: ["Niederländisch", "Dutch"],
+  pt: ["Portugiesisch", "Portuguese"], ru: ["Russisch", "Russian"],
+  ja: ["Japanisch", "Japanese"], zh: ["Chinesisch", "Chinese"],
+  ko: ["Koreanisch", "Korean"], pl: ["Polnisch", "Polish"],
+  sv: ["Schwedisch", "Swedish"], da: ["Dänisch", "Danish"],
+  no: ["Norwegisch", "Norwegian"], fi: ["Finnisch", "Finnish"],
+  cs: ["Tschechisch", "Czech"], tr: ["Türkisch", "Turkish"],
+  el: ["Griechisch", "Greek"], hu: ["Ungarisch", "Hungarian"],
+  ro: ["Rumänisch", "Romanian"], uk: ["Ukrainisch", "Ukrainian"],
+  ar: ["Arabisch", "Arabic"], he: ["Hebräisch", "Hebrew"], la: ["Latein", "Latin"]
+};
+
+// A book has a publication year. The day and month a publisher records are
+// usually the day a file was made, and a full date invites the reader to
+// believe a precision that is not there.
+function libBookYear(raw) {
+  var match = /(\d{4})/.exec(String(raw || ""));
+  return match ? match[1] : String(raw || "");
+}
+
+function libLanguageName(code) {
+  var pair = LIB_LANGUAGE_NAMES[(code || "").toLowerCase()];
+  // An unknown code is shown as it came, in upper case: better an honest
+  // "XYZ" than a wrong guess at what the file meant.
+  return pair ? t(pair[0], pair[1]) : String(code || "").toUpperCase();
+}
+
 function libBookAuthorLine(book) {
   var authors = book.authors || [];
   if (!authors.length) return t("Unbekannter Autor", "Unknown author");
@@ -2209,12 +2250,15 @@ function libBookAuthorLine(book) {
 
 function libBookSeriesLabel(book) {
   if (!book.series) return "";
-  if (book.series_index === null || book.series_index === undefined) return book.series;
+  var idx = Number(book.series_index);
+  // Volume 0 does not exist: where it appears the number came from something
+  // that is not a volume ("Industrie 4.0"), and a "#0" badge advertises the
+  // bad guess. Show the series without a number instead.
+  if (!book.series_index || !isFinite(idx) || idx < 1) return book.series;
   // 2.0 reads as a volume number, 2.5 as a side story -- keep the decimal only
   // when it carries information.
-  var idx = Number(book.series_index);
   var shown = (idx % 1 === 0) ? String(Math.round(idx)) : String(idx);
-  return book.series + " #" + shown;
+  return book.series + " " + shown;
 }
 
 // One badge per FORMAT, not per file. A book kept as two EPUBs plus a MOBI
@@ -2338,7 +2382,7 @@ function libRenderBookCard(it, pfx) {
   h.push('<div class="mf-poster-scrim">');
   h.push('<div class="mf-poster-meta">');
   if (series) h.push('<span class="mf-type-pill mf-type-pill--outline">' + libEsc(series) + '</span>');
-  h.push(volTagHtml(it.cpLabel));
+  if (libBooksSpanLocations(libLocations)) h.push(volTagHtml(it.cpLabel));
   h.push('</div>');
   h.push('<p class="mf-poster-title">' + libEsc(book.title || "") + '</p>');
   h.push('<p class="mf-book-author">' + libEsc(libBookAuthorLine(book)) + '</p>');
@@ -2359,24 +2403,29 @@ function libRenderBookRow(it, pfx) {
   var book = it.book;
   var isOpen = _libOpenBookKey === book.key;
   var series = libBookSeriesLabel(book);
+  var multi = libBooksSpanLocations(libLocations);
+
+  // Author and series belong under the title, not at the far right of the row:
+  // a book is identified by title AND author together, and separating them by
+  // 600px of empty row makes the reader pair them by eye on every line.
+  var sub = [];
+  sub.push('<span class="mf-book-row-author">' + libEsc(libBookAuthorLine(book)) + '</span>');
+  if (series) sub.push('<span class="mf-book-row-series">' + libEsc(series) + '</span>');
+  if (multi && it.cpLabel) sub.push('<span class="mf-book-row-vol">' + libEsc(it.cpLabel) + '</span>');
 
   var h = [];
-  h.push('<div class="lib-title-row lib-hoverable' + (isOpen ? ' is-open' : '') + '" id="' + pfx +
+  h.push('<div class="lib-title-row mf-book-row' + (isOpen ? ' is-open' : '') + '" id="' + pfx +
          '" onclick="libToggleBook(\'' + pfx + '\')">');
-  h.push('<div class="lib-row-left">');
-  h.push('<div class="lib-row-title-line">');
-  h.push('<svg class="lib-arrow' + (isOpen ? ' lib-arrow-open' : '') + '" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>');
-  h.push('<span class="lib-row-title">' + libEsc(book.title || "") + '</span>');
+  h.push('<div class="mf-book-row-main">');
+  h.push('<span class="mf-book-row-title">' + libEsc(book.title || "") + '</span>');
+  h.push('<span class="mf-book-row-sub">' + sub.join('<span class="mf-book-row-dot">·</span>') + '</span>');
   h.push('</div>');
-  h.push('<div class="lib-row-pills">');
-  h.push('<span class="mf-book-author">' + libEsc(libBookAuthorLine(book)) + '</span>');
-  if (series) h.push('<span class="mf-type-pill mf-type-pill--outline">' + libEsc(series) + '</span>');
-  h.push(volTagHtml(it.cpLabel));
-  h.push('</div>');
-  h.push('</div>');
-  h.push('<div class="lib-row-right">');
-  h.push('<span class="mf-format-badges">' + libBookFormatBadges(book, 4) + '</span>');
-  h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(book.total_size) + '</span>');
+  h.push('<div class="mf-book-row-facts">');
+  h.push('<span class="mf-format-badges">' + libBookFormatBadges(book, 3, true) + '</span>');
+  h.push('<span class="mf-book-row-size">' + libFmtSize(book.total_size) + '</span>');
+  h.push('<svg class="mf-book-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+         'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+         '<path d="M9 18l6-6-6-6"/></svg>');
   h.push('</div>');
   h.push('</div>');
   return h.join("");
@@ -2398,9 +2447,9 @@ function libRenderBookDetail(it, pfx) {
 
   var facts = [];
   if (book.series) facts.push([t("Reihe", "Series"), libBookSeriesLabel(book)]);
-  if (book.published) facts.push([t("Erschienen", "Published"), book.published]);
+  if (book.published) facts.push([t("Erschienen", "Published"), libBookYear(book.published)]);
   if (book.publisher) facts.push([t("Verlag", "Publisher"), book.publisher]);
-  if (book.language) facts.push([t("Sprache", "Language"), book.language]);
+  if (book.language) facts.push([t("Sprache", "Language"), libLanguageName(book.language)]);
   if (book.isbn) facts.push(["ISBN", book.isbn]);
   if (facts.length) {
     h.push('<dl class="mf-book-facts">');
@@ -2433,7 +2482,7 @@ function libRenderBookDetail(it, pfx) {
            libEsc((f.ext || "").toUpperCase()) + '</span>');
     h.push('<span class="mf-book-file-path" title="' + libEscAttr(f.path) + '">' +
            libEsc(libBookShortPath(f.path)) + '</span>');
-    h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(f.size) + '</span>');
+    h.push('<span class="mf-book-file-size">' + libFmtSize(f.size) + '</span>');
     if (f.readable) {
       // Opens in the reader overlay, the same way a film opens in the player
       // instead of a browser tab. The position is stored against the BOOK, so

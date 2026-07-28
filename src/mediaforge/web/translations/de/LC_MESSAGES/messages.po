@@ -6163,3 +6163,44 @@ msgstr "Seiten"
 
 msgid "Scroll"
 msgstr "Scrollen"
+
+# ── eBook reader: settings sheet ───────────────────────────────────
+
+msgid "Reading settings"
+msgstr "Leseeinstellungen"
+
+msgid "Typeface"
+msgstr "Schriftart"
+
+msgid "Serif"
+msgstr "Serif"
+
+msgid "Sans"
+msgstr "Serifenlos"
+
+msgid "Text size"
+msgstr "Schriftgröße"
+
+msgid "Line spacing"
+msgstr "Zeilenabstand"
+
+msgid "Tight"
+msgstr "Eng"
+
+msgid "Normal"
+msgstr "Normal"
+
+msgid "Loose"
+msgstr "Weit"
+
+msgid "Page width"
+msgstr "Seitenbreite"
+
+msgid "Narrow"
+msgstr "Schmal"
+
+msgid "Wide"
+msgstr "Breit"
+
+msgid "Paper"
+msgstr "Papier"

@@ -45,6 +45,14 @@ BOOK_UNREADABLE_EXTS = frozenset({".kfx"})
 
 BOOK_ALL_EXTS = frozenset(BOOK_EXTS | BOOK_UNREADABLE_EXTS)
 
+# Formats no browser can render, but which the server can turn into an EPUB
+# (see web/books/convert.py). Kept separate from BOOK_EXTS so the reader can
+# tell "open this directly" from "ask for a conversion first".
+BOOK_CONVERTIBLE_EXTS = frozenset({".mobi", ".azw3", ".azw"})
+
+# Formats the browser reads as they are.
+BOOK_DIRECT_EXTS = frozenset({".epub", ".pdf"})
+
 # Which file to offer first when the same book exists in several formats.
 # EPUB first because it needs no conversion, PDF last because it is a fixed
 # layout that cannot reflow to a phone screen.

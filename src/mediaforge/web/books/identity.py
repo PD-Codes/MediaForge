@@ -79,8 +79,14 @@ _PREFIX_MERGE_MIN_LEN = 18
 
 # "World of Warcraft 08 - Weltenbeben" -> ("World of Warcraft", 8)
 # "Yunas Geisterhaus 01"              -> ("Yunas Geisterhaus", 1)
+#
+# The number must NOT be part of a decimal: "Zukunft der Arbeit in Industrie
+# 4.0" was read as series "... Industrie 4", volume 0. A negative lookahead for
+# a following separator+digit is what keeps a version number from becoming a
+# volume number.
 _SERIES_IN_TITLE_RE = re.compile(
-    r"^(?P<series>.+?)[\s._-]+(?P<index>\d{1,3})(?:\s*[-–:]\s*(?P<rest>.+))?$"
+    r"^(?P<series>.+?)[\s._-]+(?P<index>\d{1,3})(?![.,]\d)"
+    r"(?:\s*[-–:]\s*(?P<rest>.+))?$"
 )
 
 
@@ -200,6 +206,15 @@ def split_series(title: str) -> tuple[str, float | None]:
     # A single leading word plus a number is too thin to call a series
     # ("Band 2"), and a four-digit number is a year, not a volume.
     if len(series) < 3 or index > 999:
+        return "", None
+    # Volume 0 does not exist. Where it appears it is the tail of something
+    # else -- a version ("Industrie 4.0"), a chapter marker, a stray digit --
+    # and a "#0" badge on the shelf is a visible symptom of a wrong guess.
+    if index < 1:
+        return "", None
+    # A series name that ends in a digit is usually a number that got split in
+    # the wrong place ("Der Hobbit 1 2" or a title carrying its own version).
+    if series[-1].isdigit():
         return "", None
     return series, index
 

@@ -122,6 +122,14 @@ def _image_cache_cleanup_worker():
             cleanup_image_cache()
         except Exception:
             logger.exception("Image cache cleanup error")
+        try:
+            # Converted eBooks live in the same kind of derived-data cache and
+            # go stale the same way, so they ride along on this loop instead of
+            # spawning a second thread that wakes up on the same schedule.
+            from ..books.convert import cleanup_converted
+            cleanup_converted()
+        except Exception:
+            logger.exception("Book conversion cache cleanup error")
         _time.sleep(_IMAGE_CACHE_CLEANUP_INTERVAL)
 
 

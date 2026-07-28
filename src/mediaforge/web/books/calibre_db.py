@@ -22,6 +22,7 @@ import sqlite3
 
 from ...logger import get_logger
 from .identity import normalize
+from .opf import html_to_text
 
 logger = get_logger(__name__)
 
@@ -100,7 +101,9 @@ def load_catalogue(db_path) -> dict:
         if row["tags"]:
             record["tags"] = [t.strip() for t in row["tags"].split(",") if t.strip()][:20]
         if row["description"]:
-            record["description"] = row["description"]
+            # The `comments` column holds whatever the user typed into
+            # Calibre's comment field, stored as HTML -- same as dc:description.
+            record["description"] = html_to_text(row["description"])
         if row["isbn"]:
             record["isbn"] = str(row["isbn"]).strip()
         if row["pubdate"]:

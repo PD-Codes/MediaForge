@@ -27,8 +27,11 @@
 body.reader-open { overflow: hidden; }
 
 .mfr {
-  display: flex;
-  flex-direction: column;
+  /* The positioning context for everything inside. Without it the floating
+     header and footer would anchor to the viewport and span the full window
+     while the book column sits at 1100px in the middle -- bars wider than the
+     thing they belong to. */
+  position: relative;
   width: min(1100px, 100%);
   height: 100%;
   margin: 0 auto;
@@ -37,20 +40,64 @@ body.reader-open { overflow: hidden; }
   box-shadow: 0 0 60px rgba(0, 0, 0, 0.6);
 }
 
-/* ---- palettes ---------------------------------------------------- */
-#readerOverlay[data-reader-theme="dark"]  .mfr { --mfr-bg: #14141c; --mfr-fg: #e8e8f0; --mfr-chrome: #1c1c26; --mfr-line: rgba(255,255,255,0.09); --mfr-muted: #9a9aab; }
-#readerOverlay[data-reader-theme="sepia"] .mfr { --mfr-bg: #f4ecd8; --mfr-fg: #4a3f35; --mfr-chrome: #ebe0c8; --mfr-line: rgba(74,63,53,0.16);  --mfr-muted: #7d6f5f; }
-#readerOverlay[data-reader-theme="light"] .mfr { --mfr-bg: #ffffff; --mfr-fg: #1c1c22; --mfr-chrome: #f4f4f7; --mfr-line: rgba(0,0,0,0.10);     --mfr-muted: #6b6b78; }
+/* ---- palettes ------------------------------------------------------
+   Three papers, not three colour schemes. Each names its own text
+   colour, page colour, chrome, hairline and muted tone, and every rule
+   below reads from those five so a new palette is five values.
 
-/* ---- header ------------------------------------------------------ */
+   Night is a very slightly blue-black at a text weight below pure white:
+   #e8e8f0 on #14141c is the pairing that stops a long page from glaring.
+   Sepia is a real paper tone rather than a beige overlay. Day is not pure
+   white either -- #fdfdfb takes the hardest edge off a full-screen page. */
+#readerOverlay[data-reader-theme="dark"] .mfr {
+  --mfr-bg: #14141c; --mfr-fg: #e8e8f0; --mfr-chrome: rgba(28, 28, 38, 0.94);
+  --mfr-line: rgba(255, 255, 255, 0.09); --mfr-muted: #9a9aab;
+  --mfr-hover: rgba(255, 255, 255, 0.07);
+}
+#readerOverlay[data-reader-theme="sepia"] .mfr {
+  --mfr-bg: #f4ecd8; --mfr-fg: #453a2e; --mfr-chrome: rgba(235, 224, 200, 0.94);
+  --mfr-line: rgba(74, 63, 53, 0.18); --mfr-muted: #7d6f5f;
+  --mfr-hover: rgba(74, 63, 53, 0.08);
+}
+#readerOverlay[data-reader-theme="light"] .mfr {
+  --mfr-bg: #fdfdfb; --mfr-fg: #1b1b20; --mfr-chrome: rgba(244, 244, 247, 0.94);
+  --mfr-line: rgba(0, 0, 0, 0.11); --mfr-muted: #6b6b78;
+  --mfr-hover: rgba(0, 0, 0, 0.05);
+}
+
+/* ---- chrome that gets out of the way -------------------------------
+   Header and footer float over the page and fade out while reading; they
+   come back on a mouse move, a tap, or any keystroke. That is the one
+   real design decision in this reader: a book should be the only thing
+   on screen, and a toolbar that is always there is a toolbar you read
+   past on every page. Everything else here stays deliberately quiet so
+   this one move is the thing you notice.
+
+   Reserving space for them is why the stage is inset rather than the
+   chrome being part of the flex column: the text must not reflow when
+   the bars appear, or every fade would shift the line you are reading. */
+.mfr-head,
+.mfr-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: var(--mfr-chrome);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.mfr.is-idle .mfr-head { opacity: 0; transform: translateY(-100%); pointer-events: none; }
+.mfr.is-idle .mfr-foot { opacity: 0; transform: translateY(100%); pointer-events: none; }
+
 .mfr-head {
+  top: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 14px;
-  background: var(--mfr-chrome);
   border-bottom: 1px solid var(--mfr-line);
-  flex-shrink: 0;
 }
 
 /* The element is an <h2>, and base.css styles h1-h4 globally with its own
@@ -94,10 +141,20 @@ body.reader-open { overflow: hidden; }
 
 /* ---- stage ------------------------------------------------------- */
 .mfr-stage {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
+  position: absolute;
+  inset: 0;
+}
+
+/* The reading column, not the window. Prose set edge to edge on a 1400px
+   screen is unreadable no matter how good the face is -- the eye loses the
+   line on the way back. The width is a setting (see --mfr-measure) because
+   how wide is comfortable depends on the text size the reader picked. */
+.mfr-page {
+  position: absolute;
+  inset: 0;
+  margin: 0 auto;
+  max-width: var(--mfr-measure, 44rem);
+  padding: 56px 0 64px;
 }
 
 /* Both stages are positioned rather than flex children, because epub.js
@@ -220,14 +277,12 @@ body.reader-open { overflow: hidden; }
 
 /* ---- footer ------------------------------------------------------ */
 .mfr-foot {
+  bottom: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  background: var(--mfr-chrome);
+  gap: 14px;
+  padding: 10px 16px;
   border-top: 1px solid var(--mfr-line);
-  flex-shrink: 0;
-  flex-wrap: wrap;
 }
 
 .mfr-progress {
@@ -279,4 +334,234 @@ body.reader-open { overflow: hidden; }
   .mfr-btn { padding: 0 8px; }
   .mfr-btn .mfr-btn-text { display: none; }
   .mfr-toc { width: 100%; }
+}
+
+/* Spinner for the one-off MOBI/AZW3 conversion. Same ring as the player's
+   loading state, in the reader's own palette. */
+.mfr-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--mfr-line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: mfr-spin 0.8s linear infinite;
+}
+@keyframes mfr-spin { to { transform: rotate(360deg); } }
+
+.mfr-status-note {
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+/* ===================================================================
+   Reading typography
+   -------------------------------------------------------------------
+   Three faces, chosen for what is actually installed rather than for a
+   webfont the reader has to download before the first page appears —
+   an offline install has to work, and a book that arrives 400ms after
+   the page does is worse than a book in a face one notch less perfect.
+
+   Serif is the default: Iowan Old Style and Palatino are the two most
+   comfortable long-form faces present on Apple and Windows machines,
+   with Charter and Liberation Serif covering Linux and the container.
+   =================================================================== */
+.mfr {
+  --mfr-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+               Charter, "Bitstream Charter", Georgia, "Liberation Serif",
+               "Nimbus Roman", "Times New Roman", serif;
+  --mfr-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+              "Liberation Sans", "Helvetica Neue", Arial, sans-serif;
+  --mfr-measure: 44rem;
+}
+
+/* ===================================================================
+   Settings popover — one panel instead of a crowded control bar
+   -------------------------------------------------------------------
+   Font, size, spacing, width, colour and reading mode are all the same
+   kind of decision: how this page should look. Nine buttons across the
+   footer made them look like nine unrelated features and left no room
+   for the ones that matter (where am I, how do I turn the page).
+   =================================================================== */
+.mfr-sheet {
+  position: absolute;
+  right: 12px;
+  bottom: 62px;
+  z-index: 6;
+  width: min(320px, calc(100% - 24px));
+  padding: 6px 4px 10px;
+  background: var(--mfr-chrome);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--mfr-line);
+  border-radius: 14px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.32);
+  animation: mfr-rise 0.16s ease;
+}
+.mfr-sheet[hidden] { display: none; }
+
+@keyframes mfr-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.mfr-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+}
+
+.mfr-sheet-label {
+  flex: 0 0 auto;
+  width: 5.5rem;
+  font-size: 0.76rem;
+  color: var(--mfr-muted);
+}
+
+/* A segmented control in the reader's own palette: the app's .mf-segmented
+   reads from the app theme, which is exactly what must not happen inside a
+   reader that carries its own paper colour. */
+.mfr-seg {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  padding: 2px;
+  background: var(--mfr-hover);
+  border-radius: 9px;
+}
+
+.mfr-seg button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  border-radius: 7px;
+  color: var(--mfr-muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+.mfr-seg button:hover { color: var(--mfr-fg); }
+.mfr-seg button.active {
+  background: var(--mfr-bg);
+  color: var(--mfr-fg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+/* The font row shows each option in its own face — the only honest way to
+   choose a typeface is to see it. */
+.mfr-seg--font button[data-font="serif"] { font-family: var(--mfr-serif); font-size: 0.88rem; }
+.mfr-seg--font button[data-font="sans"]  { font-family: var(--mfr-sans); }
+
+/* The three papers are swatches, not words: the choice is about colour. */
+.mfr-seg--theme button {
+  height: 26px;
+  border: 1px solid var(--mfr-line);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.mfr-seg--theme button[data-theme="light"] { background: #fdfdfb; color: #1b1b20; }
+.mfr-seg--theme button[data-theme="sepia"] { background: #f4ecd8; color: #453a2e; }
+.mfr-seg--theme button[data-theme="dark"]  { background: #14141c; color: #e8e8f0; }
+.mfr-seg--theme button.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.mfr-sheet-sep {
+  height: 1px;
+  margin: 5px 12px;
+  background: var(--mfr-line);
+}
+
+/* ---- footer contents ---------------------------------------------- */
+.mfr-foot-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.mfr-progress-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mfr-chapter {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--mfr-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A hairline that fills, sitting on the very top edge of the footer: the
+   reader glances at it, never aims at it. */
+.mfr-rail {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: transparent;
+}
+.mfr-rail-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+/* ---- reduced motion ------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .mfr-head, .mfr-foot, .mfr-sheet, .mfr-rail-fill, .mfr-btn { transition: none; animation: none; }
+  #readerPdf { scroll-behavior: auto; }
+}
+
+/* ---- button refinements for the new chrome ------------------------- */
+.mfr-btn--icon {
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-color: transparent;
+  color: var(--mfr-muted);
+}
+.mfr-btn--icon:hover { background: var(--mfr-hover); color: var(--mfr-fg); }
+
+/* "Aa" is the reader's one named control: it says what it opens without a
+   label, and every typographic decision lives behind it. */
+.mfr-btn--aa {
+  min-width: 40px;
+  height: 34px;
+  border-color: transparent;
+  color: var(--mfr-muted);
+  font-family: var(--mfr-serif);
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}
+.mfr-btn--aa:hover { background: var(--mfr-hover); color: var(--mfr-fg); }
+.mfr-btn--aa.active { background: var(--mfr-hover); color: var(--mfr-fg); }
+
+.mfr-head .mfr-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+/* The PDF stage keeps its own padding: a fixed-layout page is already a page
+   and must not be squeezed into the prose measure. */
+#readerPdf { padding: 56px 0 68px; }
+
+@media (max-width: 720px) {
+  .mfr-sheet { right: 8px; left: 8px; width: auto; bottom: 58px; }
+  .mfr-sheet-label { width: 4.6rem; font-size: 0.73rem; }
+  .mfr-page { padding: 48px 14px 58px; }
+  #readerPdf { padding: 48px 0 58px; }
+  .mfr-chapter { display: none; }
 }

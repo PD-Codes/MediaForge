@@ -21,6 +21,8 @@
 
   var SAVE_INTERVAL = 5000;     // how often a position is written back
   var PDF_RENDER_AHEAD = 2;     // pages kept rendered around the current one
+  // Formats the server converts to EPUB before the reader can show them.
+  var CONVERTIBLE = ["mobi", "azw3", "azw"];
 
   var _open = false;
   var _kind = "";               // "pdf" | "epub"
@@ -43,7 +45,21 @@
 
   // ---- preferences (per account, same channel as the library layout) ----
 
-  var PREF_DEFAULTS = { reader_font: "100", reader_theme: "dark", reader_flow: "paginated" };
+  var PREF_DEFAULTS = {
+    reader_font: "100",          // text size, percent
+    reader_theme: "dark",
+    reader_flow: "paginated",
+    reader_face: "serif",        // serif | sans | original (the book's own)
+    reader_lead: "1.65",         // line height
+    reader_width: "44"           // reading measure, rem
+  };
+
+  var FACE_STACKS = {
+    serif: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Charter, ' +
+           '"Bitstream Charter", Georgia, "Liberation Serif", "Nimbus Roman", "Times New Roman", serif',
+    sans:  'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Liberation Sans", ' +
+           '"Helvetica Neue", Arial, sans-serif'
+  };
 
   function loadPrefs() {
     var prefs = window._USER_PREFS || {};
@@ -96,6 +112,28 @@
 
   // ---- shell ----
 
+  // ---- chrome ----
+  // The bars fade out while reading and return on any sign of a reader: a
+  // mouse move, a tap, a key, the settings panel opening. The idle timer is
+  // long enough that a slow reader is never left hunting for the controls.
+  var IDLE_MS = 2800;
+  var _idleTimer = null;
+
+  function wakeChrome() {
+    var shell = $id("readerShell");
+    if (!shell) return;
+    shell.classList.remove("is-idle");
+    if (_idleTimer) clearTimeout(_idleTimer);
+    _idleTimer = setTimeout(function () {
+      // Never hide the chrome while a panel is open or the book is not there
+      // yet -- both are moments where the reader is looking AT the controls.
+      var sheet = $id("readerSheet"), toc = $id("readerToc"), status = $id("readerStatus");
+      if ((sheet && !sheet.hidden) || (toc && !toc.hidden) || (status && !status.hidden)) return;
+      var s2 = $id("readerShell");
+      if (s2 && _open) s2.classList.add("is-idle");
+    }, IDLE_MS);
+  }
+
   function setStatus(html, isError) {
     var el = $id("readerStatus");
     if (!el) return;
@@ -114,32 +152,51 @@
     if (_rendition) applyEpubStyles();
   }
 
+  var PALETTES = {
+    dark:  { color: "#e8e8f0", background: "#14141c", link: "#a78bfa" },
+    sepia: { color: "#453a2e", background: "#f4ecd8", link: "#7c5c2e" },
+    light: { color: "#1b1b20", background: "#fdfdfb", link: "#5b3fd0" }
+  };
+
   function applyEpubStyles() {
     if (!_rendition) return;
-    var themes = {
-      dark:  { color: "#e8e8f0", background: "#14141c" },
-      sepia: { color: "#4a3f35", background: "#f4ecd8" },
-      light: { color: "#1c1c22", background: "#ffffff" }
-    };
-    var palette = themes[_prefs.reader_theme] || themes.dark;
-    // epub.js injects into the rendered document, which is a separate context:
-    // the app's own stylesheet does not reach inside it, so every visual choice
-    // has to be pushed in explicitly.
+    var palette = PALETTES[_prefs.reader_theme] || PALETTES.dark;
+    // epub.js renders into a separate document: the app's stylesheet does not
+    // reach inside it, so every visual choice has to be pushed in explicitly.
+    // `true` is the important argument -- it makes the override !important, and
+    // without it a publisher stylesheet that names its own colours wins and the
+    // reader gets black text on a black page.
     _rendition.themes.override("color", palette.color, true);
     _rendition.themes.override("background", palette.background, true);
+    _rendition.themes.override("line-height", _prefs.reader_lead, true);
+    var stack = FACE_STACKS[_prefs.reader_face];
+    // "original" keeps the publisher's own face: a technical book whose code
+    // samples are set in a monospace face should keep them that way.
+    _rendition.themes.override("font-family", stack || "", !!stack);
     _rendition.themes.fontSize(_prefs.reader_font + "%");
   }
+
+  function applyLayout() {
+    var shell = $id("readerShell");
+    if (shell) shell.style.setProperty("--mfr-measure", _prefs.reader_width + "rem");
+  }
+
+  var _chapterLabel = "";
 
   function updateProgressUi() {
     var bar = $id("readerProgressFill");
     var label = $id("readerProgressLabel");
+    var chapter = $id("readerChapter");
     var pct = Math.max(0, Math.min(100, Math.round(_percent)));
     if (bar) bar.style.width = pct + "%";
     if (label) {
       label.textContent = _kind === "pdf" && _pdf
-        ? tr("Seite " + _pdfPage + " von " + _pdf.numPages, "Page " + _pdfPage + " of " + _pdf.numPages)
+        ? tr(_pdfPage + " / " + _pdf.numPages, _pdfPage + " / " + _pdf.numPages)
         : pct + "%";
     }
+    // Where you are beats how far you are: a chapter name is the answer to
+    // "where was I", a percentage is only the answer to "how much is left".
+    if (chapter) chapter.textContent = _chapterLabel;
   }
 
   // ---- PDF ----
@@ -295,7 +352,21 @@
       return;
     }
 
-    _rendition.display(startLocation || undefined).then(function () {
+    // A CFI is only meaningful inside the exact rendering it came from. The
+    // position is deliberately shared across a book's formats, so the CFI
+    // saved while reading the EPUB is structurally meaningless in the EPUB
+    // converted from the same book's MOBI -- display() rejects, and without
+    // this fallback that surfaced as "could not open the book" on a book that
+    // opens perfectly well. Losing the position is the right price; refusing
+    // to open the book is not.
+    var start = startLocation
+      ? _rendition.display(startLocation).catch(function () {
+          logLostPosition();
+          return _rendition.display();
+        })
+      : _rendition.display();
+
+    start.then(function () {
       setStatus("");
       applyEpubStyles();
       startSaveTimer();
@@ -310,11 +381,38 @@
 
     _rendition.on("relocated", function (location) {
       _epubLocation = (location && location.start && location.start.cfi) || "";
+      updateChapterLabel(location);
       updateEpubProgress(location);
     });
     // Keys pressed inside the rendered document belong to the reader too --
     // without this, arrow keys stop working the moment the text has focus.
     _rendition.on("keyup", onKey);
+
+    // The book renders inside an iframe, and an iframe is a separate document:
+    // its events never reach a listener on the overlay. While reading, the
+    // pointer is over exactly that iframe -- so without this hook, moving the
+    // mouse or tapping the page could not bring the hidden chrome back, and
+    // the only way out would be the keyboard.
+    try {
+      _rendition.hooks.content.register(function (contents) {
+        var doc = contents && contents.document;
+        if (!doc) return;
+        ["mousemove", "pointerdown", "wheel", "touchstart"].forEach(function (evt) {
+          doc.addEventListener(evt, wakeChrome, { passive: true });
+        });
+        // A tap in the middle of the page is the standard reader gesture for
+        // "show me the controls"; the outer tap zones handle the edges.
+        doc.addEventListener("click", function () { wakeChrome(); }, { passive: true });
+      });
+    } catch (e) { /* older epub.js without content hooks */ }
+  }
+
+  function logLostPosition() {
+    // Not shown to the reader: they are at the start of the book, which is
+    // self-evident, and a toast for it would be noise on every format switch.
+    if (window.console && console.info) {
+      console.info("[Reader] saved position does not apply to this file, starting at the beginning");
+    }
   }
 
   function updateEpubProgress(location) {
@@ -328,11 +426,27 @@
     updateProgressUi();
   }
 
+  var _tocEntries = [];
+
+  function updateChapterLabel(location) {
+    if (!_tocEntries.length || !location || !location.start) return;
+    var href = String(location.start.href || "").split("#")[0];
+    for (var i = 0; i < _tocEntries.length; i++) {
+      if (String(_tocEntries[i].href || "").split("#")[0] === href) {
+        _chapterLabel = _tocEntries[i].label;
+        return;
+      }
+    }
+  }
+
   function buildEpubToc() {
     var list = $id("readerTocList");
     if (!list || !_book) return;
     _book.loaded.navigation.then(function (nav) {
       var items = (nav && nav.toc) || [];
+      _tocEntries = items.map(function (item) {
+        return { href: item.href, label: (item.label || "").trim() };
+      });
       if (!items.length) {
         list.innerHTML = '<p class="mfr-toc-empty">' +
           esc(tr("Dieses Buch hat kein Inhaltsverzeichnis.", "This book has no table of contents.")) + "</p>";
@@ -342,6 +456,15 @@
         return '<button type="button" class="mfr-toc-item" data-href="' + esc(item.href) + '">' +
           esc(item.label ? item.label.trim() : "?") + "</button>";
       }).join("");
+      // The first relocation happens before the navigation document has been
+      // parsed, so the chapter field would stay empty until the reader turned
+      // a page. Fill it once the list is actually there.
+      try {
+        if (_rendition && _rendition.currentLocation) {
+          updateChapterLabel(_rendition.currentLocation());
+          updateProgressUi();
+        }
+      } catch (e) { /* location not settled yet */ }
       Array.prototype.forEach.call(list.querySelectorAll("[data-href]"), function (btn) {
         btn.addEventListener("click", function () {
           if (_rendition) _rendition.display(btn.getAttribute("data-href"));
@@ -362,6 +485,36 @@
     else if (_kind === "pdf") pdfGoTo(_pdfPage - 1);
   }
 
+  function toggleSheet(force) {
+    var sheet = $id("readerSheet");
+    var btn = $id("readerSheetBtn");
+    if (!sheet) return;
+    var show = force === undefined ? sheet.hidden : force;
+    sheet.hidden = !show;
+    if (btn) {
+      btn.setAttribute("aria-expanded", show ? "true" : "false");
+      btn.classList.toggle("active", show);
+    }
+    wakeChrome();
+  }
+
+  function syncSheet() {
+    var pairs = [
+      ["#readerFont [data-font]", "data-font", _prefs.reader_face],
+      ["#readerLead [data-lead]", "data-lead", _prefs.reader_lead],
+      ["#readerWidth [data-width]", "data-width", _prefs.reader_width],
+      ["#readerThemes [data-theme]", "data-theme", _prefs.reader_theme],
+      ["#readerFlow [data-flow]", "data-flow", _prefs.reader_flow]
+    ];
+    pairs.forEach(function (p) {
+      Array.prototype.forEach.call(document.querySelectorAll(p[0]), function (b) {
+        b.classList.toggle("active", b.getAttribute(p[1]) === String(p[2]));
+      });
+    });
+    var label = $id("readerSizeLabel");
+    if (label) label.textContent = _prefs.reader_font + "%";
+  }
+
   function toggleToc(force) {
     var panel = $id("readerToc");
     if (!panel) return;
@@ -370,10 +523,11 @@
   }
 
   function setFont(delta) {
-    var size = Math.max(70, Math.min(200, parseInt(_prefs.reader_font, 10) + delta));
+    var size = delta === "reset"
+      ? 100
+      : Math.max(70, Math.min(220, parseInt(_prefs.reader_font, 10) + delta));
     savePref("reader_font", size);
-    var label = $id("readerFontLabel");
-    if (label) label.textContent = size + "%";
+    syncSheet();
     if (_kind === "epub") applyEpubStyles();
     else if (_kind === "pdf") { _pdfScale = 1.1 * (size / 100); rerenderPdf(); }
   }
@@ -398,14 +552,33 @@
   function setTheme(theme) {
     savePref("reader_theme", theme);
     applyTheme();
+    syncSheet();
+  }
+
+  function setFace(face) {
+    savePref("reader_face", face);
+    if (_kind === "epub") applyEpubStyles();
+    syncSheet();
+  }
+
+  function setLead(lead) {
+    savePref("reader_lead", lead);
+    if (_kind === "epub") applyEpubStyles();
+    syncSheet();
+  }
+
+  function setWidth(width) {
+    savePref("reader_width", width);
+    applyLayout();
+    // epub.js lays the text out in columns sized to its container, so a new
+    // measure only takes effect once it re-measures.
+    if (_rendition && _rendition.resize) { try { _rendition.resize(); } catch (e) {} }
+    syncSheet();
   }
 
   function setFlow(flow) {
     savePref("reader_flow", flow);
-    var buttons = document.querySelectorAll("#readerFlow [data-flow]");
-    Array.prototype.forEach.call(buttons, function (b) {
-      b.classList.toggle("active", b.getAttribute("data-flow") === flow);
-    });
+    syncSheet();
     if (_kind === "epub" && _rendition) {
       _rendition.flow(flow === "scrolled" ? "scrolled-doc" : "paginated");
       applyEpubStyles();
@@ -414,10 +587,12 @@
 
   function onKey(ev) {
     if (!_open) return;
+    wakeChrome();
     var target = ev.target;
     if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
     switch (ev.key) {
       case "Escape":
+        if (!$id("readerSheet").hidden) { toggleSheet(false); break; }
         if (!$id("readerToc").hidden) { toggleToc(false); break; }
         closeReader();
         break;
@@ -449,34 +624,65 @@
     if (_bound) return;
     _bound = true;
     document.addEventListener("keydown", onKey);
-    var map = [
-      ["readerClose", closeReader], ["readerPrev", prev], ["readerNext", next],
-      ["readerFontMinus", function () { setFont(-10); }],
-      ["readerFontPlus", function () { setFont(10); }],
-      ["readerTocBtn", function () { toggleToc(); }],
+
+    var clicks = [
+      ["readerClose", closeReader],
+      ["readerPrev", prev], ["readerNext", next],
+      ["readerPrevBtn", prev], ["readerNextBtn", next],
+      ["readerTocBtn", function () { toggleSheet(false); toggleToc(); }],
       ["readerTocClose", function () { toggleToc(false); }],
+      ["readerSheetBtn", function () { toggleToc(false); toggleSheet(); }],
       ["readerFullscreen", toggleFullscreen]
     ];
-    map.forEach(function (pair) {
+    clicks.forEach(function (pair) {
       var el = $id(pair[0]);
-      if (el) el.addEventListener("click", pair[1]);
+      if (el) el.addEventListener("click", function (ev) { ev.stopPropagation(); pair[1](); });
     });
-    Array.prototype.forEach.call(document.querySelectorAll("#readerThemes [data-theme]"), function (b) {
-      b.addEventListener("click", function () { setTheme(b.getAttribute("data-theme")); });
+
+    // Every segmented control in the settings sheet, wired from its data
+    // attribute so adding an option is a line of HTML and nothing else.
+    var groups = [
+      ["#readerFont [data-font]", "data-font", setFace],
+      ["#readerLead [data-lead]", "data-lead", setLead],
+      ["#readerWidth [data-width]", "data-width", setWidth],
+      ["#readerThemes [data-theme]", "data-theme", setTheme],
+      ["#readerFlow [data-flow]", "data-flow", setFlow]
+    ];
+    groups.forEach(function (g) {
+      Array.prototype.forEach.call(document.querySelectorAll(g[0]), function (b) {
+        b.addEventListener("click", function () { g[2](b.getAttribute(g[1])); });
+      });
     });
-    Array.prototype.forEach.call(document.querySelectorAll("#readerFlow [data-flow]"), function (b) {
-      b.addEventListener("click", function () { setFlow(b.getAttribute("data-flow")); });
+    Array.prototype.forEach.call(document.querySelectorAll("#readerSize [data-size]"), function (b) {
+      var raw = b.getAttribute("data-size");
+      b.addEventListener("click", function () {
+        setFont(raw === "reset" ? "reset" : parseInt(raw, 10));
+      });
     });
+
     var overlay = $id("readerOverlay");
     if (overlay) {
       overlay.addEventListener("click", function (ev) {
-        if (ev.target === overlay) closeReader();
+        // A click on the backdrop closes; a click anywhere inside first
+        // dismisses an open panel, because that is what the reader means by
+        // "somewhere else".
+        if (ev.target === overlay) { closeReader(); return; }
+        var sheet = $id("readerSheet");
+        if (sheet && !sheet.hidden && !sheet.contains(ev.target)) toggleSheet(false);
+      });
+      ["mousemove", "pointerdown", "wheel"].forEach(function (evt) {
+        overlay.addEventListener(evt, wakeChrome, { passive: true });
       });
     }
   }
 
   function reset() {
     stopSaveTimer();
+    stopConvertPolling();
+    if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
+    _tocEntries = [];
+    _chapterLabel = "";
+    toggleSheet(false);
     if (_rendition) { try { _rendition.destroy(); } catch (e) {} }
     if (_book) { try { _book.destroy(); } catch (e) {} }
     if (_pdf) { try { _pdf.destroy(); } catch (e) {} }
@@ -519,19 +725,26 @@
     document.body.classList.add("reader-open");
     var titleEl = $id("readerTitle");
     if (titleEl) titleEl.textContent = _title;
-    var label = $id("readerFontLabel");
-    if (label) label.textContent = _prefs.reader_font + "%";
     applyTheme();
-    setFlow(_prefs.reader_flow);
+    applyLayout();
+    syncSheet();
+    wakeChrome();
     // The chapter list and the flow switch only mean something for reflowable
     // text; a PDF has fixed pages and its own outline.
     var epubOnly = document.querySelectorAll("[data-reader-epub-only]");
     Array.prototype.forEach.call(epubOnly, function (el) { el.hidden = _kind !== "epub"; });
 
+    if (CONVERTIBLE.indexOf(ext) !== -1) {
+      // No browser renders Mobipocket. The server turns it into an EPUB once
+      // and keeps it; until then the reader says what it is waiting for
+      // instead of showing an empty frame.
+      convertThenOpen(path, ext);
+      return;
+    }
     if (ext !== "pdf" && ext !== "epub") {
       setStatus(
-        esc(tr("Dieses Format (" + ext.toUpperCase() + ") lässt sich im Browser nicht anzeigen.",
-               "This format (" + ext.toUpperCase() + ") cannot be displayed in a browser.")) +
+        esc(tr("Dieses Format (" + ext.toUpperCase() + ") lässt sich nicht öffnen.",
+               "This format (" + ext.toUpperCase() + ") cannot be opened.")) +
         ' <a class="mfr-download" href="/api/library/book/file?path=' + encodeURIComponent(path) +
         '" download>' + esc(tr("Herunterladen", "Download")) + "</a>",
         true);
@@ -546,6 +759,62 @@
     });
   };
 
+  // ---- MOBI / AZW3 / AZW: convert on the server, then read the EPUB ----
+
+  var CONVERT_POLL_MS = 1200;
+  var CONVERT_MAX_WAIT_MS = 180000;   // a 12 MB AZW3 takes under a second; this is the give-up line
+  var _convertTimer = null;
+
+  function stopConvertPolling() {
+    if (_convertTimer) { clearTimeout(_convertTimer); _convertTimer = null; }
+  }
+
+  function convertThenOpen(path, ext) {
+    var started = Date.now();
+    setStatus(
+      '<div class="mfr-spinner"></div>' +
+      esc(tr(ext.toUpperCase() + " wird für den Reader vorbereitet…",
+             "Preparing the " + ext.toUpperCase() + " for the reader…")) +
+      '<div class="mfr-status-note">' +
+      esc(tr("Das passiert nur beim ersten Öffnen.", "This happens only the first time.")) +
+      "</div>");
+
+    function fail(reason) {
+      var why = reason === "too_large"
+        ? tr("Die Datei ist zu groß für die Umwandlung.", "The file is too large to convert.")
+        : tr("Die Datei konnte nicht umgewandelt werden.", "The file could not be converted.");
+      setStatus(esc(why) +
+        ' <a class="mfr-download" href="/api/library/book/file?path=' + encodeURIComponent(path) +
+        '" download>' + esc(tr("Herunterladen", "Download")) + "</a>", true);
+    }
+
+    function poll() {
+      if (!_open) return;
+      fetch("/api/library/book/convert?path=" + encodeURIComponent(path))
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!_open) return;
+          if (res.ready && res.key) {
+            _kind = "epub";
+            loadPosition(_bookKey).then(function (pos) {
+              if (!_open) return;
+              openEpub("/api/library/book/converted/" + encodeURIComponent(res.key) + ".epub",
+                       pos.location || "");
+            });
+            return;
+          }
+          if (res.failed) { fail(res.reason); return; }
+          if (Date.now() - started > CONVERT_MAX_WAIT_MS) {
+            fail("timeout");
+            return;
+          }
+          _convertTimer = setTimeout(poll, CONVERT_POLL_MS);
+        })
+        .catch(function () { fail("network"); });
+    }
+    poll();
+  }
+
   window.closeReader = function () {
     if (!_open) return;
     savePosition();
@@ -553,6 +822,8 @@
     reset();
     var overlay = $id("readerOverlay");
     if (overlay) overlay.style.display = "none";
+    var shell = $id("readerShell");
+    if (shell) shell.classList.remove("is-idle");
     document.body.classList.remove("reader-open");
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(function () {});

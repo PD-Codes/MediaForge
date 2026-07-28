@@ -855,6 +855,10 @@
 
 .mf-book-desc {
   margin: 12px 0 0;
+  /* The description arrives as plain text with blank lines where the original
+     had paragraphs (see books/opf.py html_to_text) -- pre-line keeps that
+     structure without letting a long line escape the panel. */
+  white-space: pre-line;
   font-size: 0.86rem;
   line-height: 1.6;
   color: var(--text-secondary);
@@ -947,3 +951,104 @@
   border-color: var(--accent);
 }
 .mf-book-dl svg { width: 15px; height: 15px; }
+
+/* ── eBook list rows ──────────────────────────────────────────────────
+   A shelf entry, not a table row. Title and author sit in one stack on
+   the left, because a book is identified by both together and pulling
+   them to opposite edges of a 1200px row makes the reader pair them by
+   eye on every single line. Everything technical — format, size — is
+   right-aligned, quiet, and the same width down the column so the eye
+   can scan it. */
+.mf-book-row {
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  min-height: 58px;
+}
+
+.mf-book-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mf-book-row-title {
+  font-size: 0.94rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-book-row-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.79rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.mf-book-row-author { color: var(--text-secondary); }
+
+/* The series was an uppercase bordered pill that regularly grew longer than
+   the title it belonged to. As quiet text in the sub-line it says the same
+   thing without competing for the row. */
+.mf-book-row-series { font-style: italic; }
+.mf-book-row-vol { opacity: 0.8; }
+.mf-book-row-dot { opacity: 0.45; }
+
+.mf-book-row-facts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.mf-book-row-size {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 5.5ch;
+  text-align: right;
+}
+
+.mf-book-row-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+.mf-book-row.is-open .mf-book-row-chevron { transform: rotate(90deg); }
+
+/* An open row is marked by an accent edge rather than a full outline: the
+   detail panel below already carries the border, and two of them stacked
+   read as two separate things. */
+.mf-book-row.is-open {
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.mf-book-file-size {
+  flex: 0 0 auto;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 5.5ch;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .mf-book-row { gap: 10px; padding: 10px; }
+  /* The sub-line is what makes a phone row two lines tall; the author stays,
+     the rest goes, because the author is what distinguishes two books with
+     the same title and the volume tag is not. */
+  .mf-book-row-series, .mf-book-row-vol, .mf-book-row-dot { display: none; }
+  .mf-book-row-facts .mf-format-badges { display: none; }
+}

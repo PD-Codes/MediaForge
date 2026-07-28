@@ -1719,33 +1719,35 @@
        ══════════════════════════════════════════════════════════════════ -->
   <div id="readerOverlay" data-reader-theme="dark" role="dialog" aria-modal="true"
        aria-label="{{ _('Reader') }}">
-    <div class="mfr">
+    <div class="mfr" id="readerShell">
 
       <div class="mfr-head">
-        <button type="button" class="mfr-btn" id="readerClose" title="{{ _('Close') }}"
+        <button type="button" class="mfr-btn mfr-btn--icon" id="readerClose" title="{{ _('Close') }}"
                 aria-label="{{ _('Close') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
         <h2 class="mfr-title" id="readerTitle"></h2>
-        <button type="button" class="mfr-btn" id="readerTocBtn" data-reader-epub-only
+        <button type="button" class="mfr-btn mfr-btn--icon" id="readerTocBtn" data-reader-epub-only
                 title="{{ _('Table of contents') }}" aria-label="{{ _('Table of contents') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
             <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
             <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
         </button>
-        <button type="button" class="mfr-btn" id="readerFullscreen" title="{{ _('Fullscreen') }}"
+        <button type="button" class="mfr-btn mfr-btn--icon" id="readerFullscreen" title="{{ _('Fullscreen') }}"
                 aria-label="{{ _('Fullscreen') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/></svg>
         </button>
       </div>
 
-      <div class="mfr-stage">
+      <div class="mfr-stage" id="readerStage">
         <button type="button" class="mfr-tap mfr-tap--prev" id="readerPrev"
                 aria-label="{{ _('Previous page') }}"></button>
-        <div id="readerEpub" hidden></div>
+        <div class="mfr-page">
+          <div id="readerEpub" hidden></div>
+        </div>
         <div id="readerPdf" hidden></div>
         <button type="button" class="mfr-tap mfr-tap--next" id="readerNext"
                 aria-label="{{ _('Next page') }}"></button>
@@ -1753,7 +1755,7 @@
         <div class="mfr-toc" id="readerToc" hidden>
           <div class="mfr-toc-head">
             <span>{{ _('Table of contents') }}</span>
-            <button type="button" class="mfr-btn" id="readerTocClose" aria-label="{{ _('Close') }}">
+            <button type="button" class="mfr-btn mfr-btn--icon" id="readerTocClose" aria-label="{{ _('Close') }}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -1764,27 +1766,82 @@
         <div class="mfr-status" id="readerStatus" hidden></div>
       </div>
 
+      <!-- Everything about how the page looks lives in one panel; the footer
+           keeps only where-am-I and how-do-I-turn-the-page. -->
+      <div class="mfr-sheet" id="readerSheet" hidden role="group" aria-label="{{ _('Reading settings') }}">
+        <div class="mfr-sheet-row">
+          <span class="mfr-sheet-label">{{ _('Typeface') }}</span>
+          <div class="mfr-seg mfr-seg--font" id="readerFont">
+            <button type="button" data-font="serif">{{ _('Serif') }}</button>
+            <button type="button" data-font="sans">{{ _('Sans') }}</button>
+            <button type="button" data-font="original">{{ _('Original') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row">
+          <span class="mfr-sheet-label">{{ _('Text size') }}</span>
+          <div class="mfr-seg" id="readerSize">
+            <button type="button" data-size="-10" aria-label="{{ _('Smaller text') }}">A&minus;</button>
+            <button type="button" data-size="reset" id="readerSizeLabel">100%</button>
+            <button type="button" data-size="10" aria-label="{{ _('Larger text') }}">A+</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row">
+          <span class="mfr-sheet-label">{{ _('Line spacing') }}</span>
+          <div class="mfr-seg" id="readerLead">
+            <button type="button" data-lead="1.4">{{ _('Tight') }}</button>
+            <button type="button" data-lead="1.65">{{ _('Normal') }}</button>
+            <button type="button" data-lead="1.95">{{ _('Loose') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row">
+          <span class="mfr-sheet-label">{{ _('Page width') }}</span>
+          <div class="mfr-seg" id="readerWidth">
+            <button type="button" data-width="34">{{ _('Narrow') }}</button>
+            <button type="button" data-width="44">{{ _('Normal') }}</button>
+            <button type="button" data-width="62">{{ _('Wide') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-sep"></div>
+        <div class="mfr-sheet-row">
+          <span class="mfr-sheet-label">{{ _('Paper') }}</span>
+          <div class="mfr-seg mfr-seg--theme" id="readerThemes">
+            <button type="button" data-theme="light" title="{{ _('Light') }}">{{ _('Light') }}</button>
+            <button type="button" data-theme="sepia" title="{{ _('Sepia') }}">{{ _('Sepia') }}</button>
+            <button type="button" data-theme="dark" title="{{ _('Dark') }}">{{ _('Dark') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-epub-only>
+          <span class="mfr-sheet-label">{{ _('Reading mode') }}</span>
+          <div class="mfr-seg" id="readerFlow">
+            <button type="button" data-flow="paginated">{{ _('Pages') }}</button>
+            <button type="button" data-flow="scrolled">{{ _('Scroll') }}</button>
+          </div>
+        </div>
+      </div>
+
       <div class="mfr-foot">
-        <div class="mfr-progress"><div class="mfr-progress-fill" id="readerProgressFill"></div></div>
-        <span class="mfr-progress-label" id="readerProgressLabel"></span>
+        <div class="mfr-rail"><div class="mfr-rail-fill" id="readerProgressFill"></div></div>
 
-        <div class="mfr-group">
-          <button type="button" class="mfr-btn" id="readerFontMinus" title="{{ _('Smaller text') }}">A&minus;</button>
-          <span class="mfr-font-label" id="readerFontLabel">100%</span>
-          <button type="button" class="mfr-btn" id="readerFontPlus" title="{{ _('Larger text') }}">A+</button>
+        <div class="mfr-foot-nav">
+          <button type="button" class="mfr-btn mfr-btn--icon" id="readerPrevBtn"
+                  aria-label="{{ _('Previous page') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button type="button" class="mfr-btn mfr-btn--icon" id="readerNextBtn"
+                  aria-label="{{ _('Next page') }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
         </div>
 
-        <div class="mfr-group" id="readerThemes" role="group" aria-label="{{ _('Reading theme') }}">
-          <button type="button" class="mfr-btn" data-theme="light" title="{{ _('Light') }}">{{ _('Light') }}</button>
-          <button type="button" class="mfr-btn" data-theme="sepia" title="{{ _('Sepia') }}">{{ _('Sepia') }}</button>
-          <button type="button" class="mfr-btn" data-theme="dark"  title="{{ _('Dark') }}">{{ _('Dark') }}</button>
+        <div class="mfr-progress-wrap">
+          <span class="mfr-chapter" id="readerChapter"></span>
+          <span class="mfr-progress-label" id="readerProgressLabel"></span>
         </div>
 
-        <div class="mfr-group" id="readerFlow" data-reader-epub-only role="group"
-             aria-label="{{ _('Reading mode') }}">
-          <button type="button" class="mfr-btn" data-flow="paginated">{{ _('Pages') }}</button>
-          <button type="button" class="mfr-btn" data-flow="scrolled">{{ _('Scroll') }}</button>
-        </div>
+        <button type="button" class="mfr-btn mfr-btn--aa" id="readerSheetBtn"
+                aria-label="{{ _('Reading settings') }}" aria-expanded="false">Aa</button>
       </div>
 
     </div>

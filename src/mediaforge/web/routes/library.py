@@ -12,6 +12,7 @@ from ..db import get_setting
 from ..lang_folders import LANG_FOLDERS
 from ..books.scanner import scan_books
 from ..media_types import BOOK_ALL_EXTS
+from ..media_types import BOOK_CONVERTIBLE_EXTS
 from ..media_types import BOOK_COVER_EXTS
 from ..media_types import BOOK_EXTS
 from ..media_types import VIDEO_EXTS
@@ -1261,6 +1262,44 @@ def register_library_routes(app):
         response.headers["Cache-Control"] = "private, max-age=3600"
         # A book is a document the browser must never try to render inline in
         # a top-level context; the reader fetches it with JavaScript.
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @app.route("/api/library/book/convert")
+    def api_library_book_convert():
+        """Ask for the EPUB of a MOBI/AZW3/AZW, converting it if needed.
+
+        GET /api/library/book/convert?path=<absolute path>
+            -> {"ready": true, "key": ...} | {"pending": true} | {"failed": ...}
+
+        Polled by the reader, exactly like the player polls the seek-preview
+        sprites. The conversion runs on a worker thread so the request returns
+        immediately even for a large book.
+        """
+        from ..books.convert import conversion_status
+        resolved = lib_resolve_library_file(request.args.get("path", ""), exts=BOOK_CONVERTIBLE_EXTS)
+        if resolved is None:
+            return jsonify({"failed": True, "reason": "not_found"}), 404
+        return jsonify(conversion_status(resolved))
+
+    @app.route("/api/library/book/converted/<key>.epub")
+    def api_library_book_converted(key):
+        """Serve a finished conversion by its cache key.
+
+        The key is a hash, not a path: it is validated against a strict hex
+        pattern and then resolved inside the conversion cache, so this route
+        cannot be talked into reading anything else.
+        """
+        from flask import send_file
+        from ..books.convert import converted_path
+        try:
+            target = converted_path(key)
+        except (ValueError, OSError):
+            return jsonify({"error": "not found"}), 404
+        if not target.is_file():
+            return jsonify({"error": "not found"}), 404
+        response = send_file(str(target), conditional=True, mimetype="application/epub+zip")
+        response.headers["Cache-Control"] = "private, max-age=3600"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 

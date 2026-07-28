@@ -9,6 +9,7 @@ on disk as "... der Clan").
 """
 from __future__ import annotations
 
+import html as _html
 import re
 from xml.etree import ElementTree
 
@@ -29,6 +30,69 @@ _OPF = "{http://www.idpf.org/2007/opf}"
 # otherwise match the first ten digits of a 13-digit number and silently
 # truncate it ("9783833216718" -> "9783833216").
 _ISBN_RE = re.compile(r"(\d{13}|\d{9}[\dXx])")
+
+# Calibre stores the description as a blob of HTML -- exactly what the user
+# typed into its comment field, tags and all. Rendered as text it reads as
+# "<p>Das Kriminalroman-Paket</p><p><strong>von ...", so it has to be turned
+# into plain text before it ever leaves this module. Escaping it (which the
+# frontend does) is the right defence against injection but the wrong answer
+# to markup that was never meant to be shown.
+_BLOCK_END_RE = re.compile(r"(?i)</(p|div|li|h[1-6]|tr|blockquote)\s*>|<br\s*/?>")
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def html_to_text(raw: str) -> str:
+    """Flatten a fragment of HTML into readable plain text.
+
+    Block ends become paragraph breaks so the original structure survives as
+    blank lines instead of collapsing into one wall of words; every other tag
+    is dropped and HTML entities are resolved (&uuml; -> ü, &nbsp; -> space).
+    """
+    if not raw:
+        return ""
+    text = _BLOCK_END_RE.sub("\n\n", raw)
+    text = _TAG_RE.sub(" ", text)
+    text = _html.unescape(text)
+    text = text.replace("\u00a0", " ").replace("\r", "")
+    # Collapse runs of spaces/tabs, then runs of blank lines.
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+# ISO 639-2/B three-letter codes, which is what Calibre writes ("deu"), mapped
+# to the two-letter code the rest of the app uses. Only the languages a German
+# or English library realistically contains -- an unknown code is passed
+# through rather than guessed at.
+_LANG_MAP = {
+    "deu": "de", "ger": "de", "eng": "en", "fra": "fr", "fre": "fr",
+    "spa": "es", "ita": "it", "nld": "nl", "dut": "nl", "por": "pt",
+    "rus": "ru", "jpn": "ja", "zho": "zh", "chi": "zh", "kor": "ko",
+    "pol": "pl", "swe": "sv", "dan": "da", "nor": "no", "fin": "fi",
+    "ces": "cs", "cze": "cs", "tur": "tr", "ell": "el", "gre": "el",
+    "hun": "hu", "ron": "ro", "rum": "ro", "ukr": "uk", "ara": "ar",
+    "heb": "he", "lat": "la",
+    # Some tools write the name instead of a code.
+    "german": "de", "deutsch": "de", "english": "en", "englisch": "en",
+    "french": "fr", "spanish": "es", "italian": "it", "japanese": "ja",
+}
+
+
+def normalize_language(raw: str) -> str:
+    """Return a two-letter language code for whatever the metadata carries.
+
+    Calibre and Mobipocket both write ISO 639-2 ("deu"), the OPF standard
+    allows regional tags ("de-DE"), and some files carry a plain "German".
+    The UI wants one shape.
+    """
+    value = (raw or "").strip().lower().replace("_", "-")
+    if not value:
+        return ""
+    base = value.split("-", 1)[0]
+    if len(base) == 2:
+        return base
+    return _LANG_MAP.get(base, base)
 
 
 def _text(node) -> str:
@@ -66,11 +130,15 @@ def parse_opf(path) -> dict:
                 if name and name not in authors:
                     authors.append(name)
         elif tag == _DC + "language" and "language" not in meta:
-            meta["language"] = _text(node)[:16]
+            meta["language"] = normalize_language(_text(node))
         elif tag == _DC + "date" and "published" not in meta:
-            meta["published"] = _text(node)[:32]
+            # Calibre writes a full ISO timestamp ("2017-05-18T22:00:00+00:00").
+            # A book has a publication date, not a publication second, and the
+            # timezone offset actively misleads -- it is the moment Calibre
+            # imported the file, not anything about the book.
+            meta["published"] = _text(node)[:10]
         elif tag == _DC + "description" and "description" not in meta:
-            meta["description"] = _text(node)
+            meta["description"] = html_to_text(_text(node))
         elif tag == _DC + "publisher" and "publisher" not in meta:
             meta["publisher"] = _text(node)[:120]
         elif tag == _DC + "subject":
