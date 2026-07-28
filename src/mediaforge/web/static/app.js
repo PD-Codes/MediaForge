@@ -1415,12 +1415,25 @@ function renderSearchSuggest() {
   input.setAttribute("aria-expanded", "true");
 }
 
+// The search field carries autofocus (the home page is a search page), and a
+// focus event is a focus event -- so the history panel used to be open before
+// the user had done anything at all, covering the first row of the feed. Only
+// a focus the user actually caused may open it: the very first pointer or key
+// event on the page arms it, which the browser's own autofocus never fires.
+let _suggestArmed = false;
+["pointerdown", "keydown", "touchstart"].forEach(function (evt) {
+  document.addEventListener(evt, function () { _suggestArmed = true; },
+    { capture: true, once: true, passive: true });
+});
+
 function initSearchSuggest() {
   const input = document.getElementById("searchInput");
   const box = _suggestBox();
   if (!input || !box) return;
 
-  input.addEventListener("focus", renderSearchSuggest);
+  input.addEventListener("focus", function () {
+    if (_suggestArmed) renderSearchSuggest();
+  });
   input.addEventListener("input", renderSearchSuggest);
   input.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape") closeSearchSuggest();

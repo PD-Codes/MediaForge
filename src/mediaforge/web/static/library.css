@@ -789,3 +789,140 @@
   .lib-soon-badge { display: none; }
   .lib-soon { padding: 40px 18px; }
 }
+
+/* ── eBooks ───────────────────────────────────────────────────────────
+   The book shelf reuses the poster grid, with two differences that come
+   from the medium: a real cover image instead of the generated tile, and
+   an author line under the title, because a book without its author is
+   ambiguous in a way a film is not. */
+.mf-book-card .mf-poster-art {
+  cursor: pointer;
+}
+
+.mf-book-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* `cover` rather than `contain`: book covers vary wildly in aspect ratio
+     and letterboxed tiles make the grid look broken. The scrim sits over
+     the bottom third, which is where cropping is least destructive. */
+  object-fit: cover;
+  display: block;
+}
+
+/* A series name can be long ("Yunas Geisterhaus #1") and the scrim is only as
+   wide as the poster, so the pill has to truncate rather than run off the
+   card edge -- visible on a 390 px viewport, invisible on a desktop. */
+.mf-book-card .mf-poster-meta { min-width: 0; }
+.mf-book-card .mf-poster-meta .mf-type-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-book-author {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-poster-scrim .mf-book-author {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.mf-book-foot {
+  gap: 6px;
+}
+
+.mf-book-detail {
+  padding: 16px 18px 18px;
+}
+
+.mf-book-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 12px 0 0;
+  font-size: 0.84rem;
+}
+.mf-book-facts dt { color: var(--text-muted); }
+.mf-book-facts dd { margin: 0; color: var(--text-primary); }
+
+.mf-book-desc {
+  margin: 12px 0 0;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 78ch;
+}
+
+.mf-book-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.mf-book-files-title {
+  margin: 18px 0 8px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mf-book-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mf-book-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+}
+
+.mf-book-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The path is evidence, not a headline -- readable but never louder than
+     the format badge next to it. A `direction: rtl` trick was tried here to
+     keep the END of a long path visible; it moves the leading slash to the
+     other end and renders "/lib/a/b.epub" as "lib/a/b.epub/", so the last two
+     segments are picked in JS instead (libBookShortPath). */
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.mf-book-open { flex: 0 0 auto; }
+
+.mf-book-locked {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+@media (max-width: 640px) {
+  .mf-book-facts { grid-template-columns: 1fr; gap: 2px; }
+  .mf-book-facts dt { margin-top: 8px; }
+  /* On a phone the row would otherwise be badge + path + size + button in
+     40 px each; the path is the first thing that can go, since it is fully
+     visible in the tooltip and in the grid card's title attribute. */
+  .mf-book-file-path { display: none; }
+  .mf-book-file { gap: 8px; }
+  .lib-row-right .mf-format-badges { display: none; }
+}

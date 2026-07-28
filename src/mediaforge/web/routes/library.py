@@ -10,6 +10,11 @@ from ..db import get_custom_path_by_id
 from ..db import get_custom_paths
 from ..db import get_setting
 from ..lang_folders import LANG_FOLDERS
+from ..books.scanner import scan_books
+from ..media_types import BOOK_ALL_EXTS
+from ..media_types import BOOK_COVER_EXTS
+from ..media_types import BOOK_EXTS
+from ..media_types import VIDEO_EXTS
 from ..db import invalidate_library_cache
 from ..db import prune_library_cache
 from ..db import set_library_cache
@@ -30,7 +35,10 @@ logger = get_logger(__name__)
 
 
 _LIB_LANG_FOLDERS = LANG_FOLDERS
-_LIB_VIDEO_EXTS = {".mkv", ".mp4", ".ts"}
+# Kept as a module-level name because a dozen call sites read it; the values
+# now live in web/media_types.py, which is the single source of truth shared
+# with the watcher and the duplicate checker (they used to disagree).
+_LIB_VIDEO_EXTS = VIDEO_EXTS
 # SxxExx episode marker.
 #
 # The digit counts matter more than they look. The previous pattern was
@@ -656,6 +664,15 @@ def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
         # bookkeeping for the rarer setup -- fall back to a full scan.
         return False
 
+    # A changed book cannot be merged in incrementally: which files form one
+    # book is decided across the WHOLE location at once (a new file may join a
+    # group three directories away, or split one), so there is no such thing as
+    # rescanning a single book folder. Falling back to the full scan is also no
+    # more expensive here, because that scan does exactly one book pass either
+    # way -- it just also refreshes the video side while it is at it.
+    if any(Path(p).suffix.lower() in BOOK_ALL_EXTS for p in (changed_paths or ())):
+        return False
+
     cache = get_all_library_cache().get(path_key) or {}
     data = cache.get("data") or {}
     if data.get("lang_folders") or not isinstance(data.get("titles"), list):
@@ -711,6 +728,12 @@ def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
     set_library_cache(path_key, {
         "label": label, "custom_path_id": cp_id,
         "lang_folders": None, "titles": titles,
+        # set_library_cache replaces the whole row, so the book list has to be
+        # carried over explicitly. Forgetting this would make every video-only
+        # partial update silently empty the eBook shelf until the next full
+        # scan -- a bug that would look like flaky scanning, not like a lost
+        # key.
+        "books": data.get("books") or [],
     })
     if progress.get("probe_incomplete"):
         _LIB_PROBE_PENDING.add(path_key)
@@ -731,6 +754,21 @@ def _lib_build_scan_targets():
             cp_base = Path.home() / cp_base
         targets.append((cp["name"], cp["id"], cp_base))
     return targets
+
+
+def _lib_scan_books_safe(base_path, label):
+    """Run the book pass for one location, swallowing its failures.
+
+    Deliberately isolated from the video scan: eBook indexing is the newer and
+    more speculative half, and a library that has no books at all must not lose
+    its films because a malformed OPF or an unreadable Calibre database raised
+    somewhere inside it.
+    """
+    try:
+        return scan_books(base_path)
+    except Exception:
+        logger.exception("[LibraryScan] Book scan of %s (%s) failed", base_path, label)
+        return []
 
 
 def _lib_do_scan(targets, lang_sep):
@@ -811,6 +849,14 @@ def _lib_do_scan_locked(targets, lang_sep):
         set_library_scanning(path_key, True)
         progress = {}
         try:
+            # Books are collected by a pass of their own and land under their
+            # own key. They are never folded into `titles`: everything reading
+            # that list -- stats, calendar, auto-sync, the v1 API, the upscale
+            # and encoding workers -- assumes a video, and a book reaching any
+            # of them is at best a wrong number and at worst a destroyed file.
+            # Language separation does not apply: a book has no dub track, so
+            # the same list is stored for both shapes.
+            loc_books = _lib_scan_books_safe(base_path, label)
             if lang_sep:
                 loc_lang_folders = []
                 for lf in _LIB_LANG_FOLDERS:
@@ -820,12 +866,14 @@ def _lib_do_scan_locked(targets, lang_sep):
                 set_library_cache(path_key, {
                     "label": label, "custom_path_id": cp_id,
                     "lang_folders": loc_lang_folders, "titles": None,
+                    "books": loc_books,
                 })
             else:
                 loc_titles = _lib_scan_base(base_path, old_cache_lookup, progress)
                 set_library_cache(path_key, {
                     "label": label, "custom_path_id": cp_id,
                     "lang_folders": None, "titles": loc_titles,
+                    "books": loc_books,
                 })
         except Exception:
             logger.exception("[LibraryScan] Scan of %s (%s) failed", base_path, label)
@@ -894,7 +942,7 @@ def _lib_watcher_scan_callback(path_key: str, changed_paths=None):
         return
 
 
-def lib_resolve_library_file(path):
+def lib_resolve_library_file(path, exts=None):
     """Resolve *path* and return it only if it is a real media file inside one
     of the configured scan targets; otherwise None.
 
@@ -906,15 +954,25 @@ def lib_resolve_library_file(path):
 
     resolve() is applied to both sides, so symlinks pointing out of the
     library are rejected too.
+
+    *exts* is the extension set the CALLER accepts and defaults to video. It
+    is a parameter rather than one module-wide constant on purpose, because
+    the callers behind this guard are not interchangeable: the media-info
+    route hands whatever it gets to ffprobe, and the upscale worker re-encodes
+    it and writes the result back over the original. Widening a single shared
+    set to also cover eBooks would mean an .epub could be probed for eight
+    seconds and then destroyed by an upscale job. So each caller names the
+    kind of file it actually wants.
     """
     from pathlib import Path as _P
     if not path:
         return None
+    allowed = _LIB_VIDEO_EXTS if exts is None else exts
     try:
         resolved = _P(path).resolve()
     except (OSError, ValueError):
         return None
-    if resolved.suffix.lower() not in _LIB_VIDEO_EXTS:
+    if resolved.suffix.lower() not in allowed:
         return None
     if not resolved.is_file():
         return None
@@ -1157,6 +1215,55 @@ def register_library_routes(app):
             "active": watcher.active,
             "watched": watcher.watched,
         })
+    @app.route("/api/library/book/cover")
+    def api_library_book_cover():
+        """Serve a cover image that sits next to a book in the library.
+
+        GET /api/library/book/cover?path=<absolute path to the image>
+
+        Two independent restrictions, because this reads a file the client
+        named: the path has to resolve inside a configured scan target (the
+        same guard every other library route uses) and the extension has to be
+        one of a short list of image types. Without the second check this would
+        be "read any file inside the library and hand it to the browser".
+
+        Not cached forever on purpose: `private` keeps it out of shared proxies
+        because a library path is not public, and a day is long enough that
+        scrolling the shelf costs nothing.
+        """
+        from flask import send_file
+        resolved = lib_resolve_library_file(request.args.get("path", ""), exts=BOOK_COVER_EXTS)
+        if resolved is None:
+            return jsonify({"error": "not found"}), 404
+        response = send_file(str(resolved), conditional=True)
+        response.headers["Cache-Control"] = "private, max-age=86400"
+        return response
+
+    @app.route("/api/library/book/file")
+    def api_library_book_file():
+        """Serve a book file itself, for the reader.
+
+        GET /api/library/book/file?path=<absolute path to the book>
+
+        `conditional=True` gives byte ranges, 304s and 206 partial responses
+        for free, which is what makes a 50 MB PDF usable in a browser viewer
+        instead of a 50 MB download before the first page appears.
+
+        The extension set is BOOK_EXTS, not BOOK_ALL_EXTS: a DRM-protected
+        .kfx is listed in the shelf so the user can see it exists, but there is
+        nothing a reader could do with the bytes, so it is not served either.
+        """
+        from flask import send_file
+        resolved = lib_resolve_library_file(request.args.get("path", ""), exts=BOOK_EXTS)
+        if resolved is None:
+            return jsonify({"error": "not found"}), 404
+        response = send_file(str(resolved), conditional=True)
+        response.headers["Cache-Control"] = "private, max-age=3600"
+        # A book is a document the browser must never try to render inline in
+        # a top-level context; the reader fetches it with JavaScript.
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     @app.route("/api/library/delete", methods=["POST"])
     def api_library_delete():
         """Delete an entire title, a season, or a single episode from disk

@@ -87,6 +87,7 @@ import hashlib
 import io
 import json
 import shutil
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -447,8 +448,23 @@ def fetch_index(url: str = None, force: bool = False, include_unapproved: bool =
             "modules": modules,
         }
     except Exception as exc:
-        logger.warning("[ModuleStore] Could not fetch index from %s: %s", index_url, exc)
-        index = {"ok": False, "error": str(exc), "name": url, "url": index_url,
+        # "That repo is unreachable" is an ordinary answer and gets an ordinary
+        # one-line warning. Anything that is NOT a network/parse problem is a
+        # bug in here, and a bare str(exc) is not something a bug report can be
+        # written from -- those get the full traceback, and the message the UI
+        # shows names the exception type so the two are recognisably the same
+        # event. (Written after a "maximum recursion depth exceeded" reached the
+        # Modulmanager with no way to tell where it came from.)
+        expected = (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+                    OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError)
+        if isinstance(exc, expected):
+            logger.warning("[ModuleStore] Could not fetch index from %s: %s", index_url, exc)
+            message = str(exc)
+        else:
+            logger.exception("[ModuleStore] Unexpected error fetching the index from %s",
+                             index_url)
+            message = f"{type(exc).__name__}: {exc}"
+        index = {"ok": False, "error": message, "name": url, "url": index_url,
                  "store_url": url, "includes_unapproved": False, "modules": []}
 
     _CACHE[cache_key] = {"index": index, "fetched_at": time.time()}

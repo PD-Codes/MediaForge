@@ -995,6 +995,22 @@
     // static/library.js stores its grid/list choice this way.
     window.mfSaveUserPref = _persistAppearance;
 
+    // The accent controls exist TWICE on the settings page: once in the quick
+    // appearance popup this file renders, once on Settings -> Design. They used
+    // to share the same element ids, and getElementById() only ever answers with
+    // the first match in document order -- so the popup's copies were dead on
+    // /settings while the settings ones were dead everywhere the popup came
+    // first. The settings page's copies carry their own ids now; everything
+    // below drives both.
+    function _accentHexInputs() {
+      return [document.getElementById('accentHexInput'),
+      document.getElementById('accentHexInputSettings')].filter(Boolean);
+    }
+    function _accentPickers() {
+      return [document.getElementById('accentColorPicker'),
+      document.getElementById('accentColorPickerSettings')].filter(Boolean);
+    }
+
     // persist=false is used by the restore paths below: replaying a stored
     // value must not write it straight back.
     function applyAccent(hex, persist) {
@@ -1009,10 +1025,11 @@
       root.style.setProperty('--text-link', _adjustLightness(hex, 0.12));
       root.style.setProperty('--text-link-hover', _adjustLightness(hex, 0.22));
       // sync swatch background
-      var swatch = document.getElementById('accentColorPicker');
-      if (swatch) swatch.value = hex;
-      var hexInput = document.getElementById('accentHexInput');
-      if (hexInput && document.activeElement !== hexInput) hexInput.value = hex;
+      _accentPickers().forEach(function (picker) { picker.value = hex; });
+      _accentHexInputs().forEach(function (input) {
+        // Never rewrite the field the user is typing in.
+        if (document.activeElement !== input) input.value = hex;
+      });
       // update preset active state
       document.querySelectorAll('.accent-preset').forEach(function (el) {
         el.classList.toggle('active', el.dataset.color === hex.toLowerCase());
@@ -1129,20 +1146,18 @@
 
         });
       }
-      // Hex input
-      var hexInput = document.getElementById('accentHexInput');
-      if (hexInput) {
+      // Hex inputs (popup + settings page)
+      _accentHexInputs().forEach(function (hexInput) {
         hexInput.addEventListener('input', function () {
           var v = hexInput.value.trim();
           if (!v.startsWith('#')) v = '#' + v;
           if (/^#[0-9a-fA-F]{6}$/.test(v)) applyAccent(v);
         });
-      }
-      // Color picker
-      var picker = document.getElementById('accentColorPicker');
-      if (picker) {
+      });
+      // Color pickers (popup + settings page)
+      _accentPickers().forEach(function (picker) {
         picker.addEventListener('input', function () { applyAccent(picker.value); });
-      }
+      });
       // Close on outside click
       document.addEventListener('click', function (e) {
         var btn = document.getElementById('themeToggle');
@@ -1162,11 +1177,10 @@
       var t = document.documentElement.getAttribute('data-theme') || 'dark';
       _updateThemeBtns(t);
       // Sync swatch bg color
-      var swatch = document.getElementById('accentColorPicker');
       var cur = document.documentElement.style.getPropertyValue('--accent') || _DEFAULT_ACCENT;
-      if (swatch) swatch.value = cur.trim() || _DEFAULT_ACCENT;
-      var hexIn = document.getElementById('accentHexInput');
-      if (hexIn) hexIn.value = cur.trim() || _DEFAULT_ACCENT;
+      cur = cur.trim() || _DEFAULT_ACCENT;
+      _accentPickers().forEach(function (picker) { picker.value = cur; });
+      _accentHexInputs().forEach(function (input) { input.value = cur; });
 
       // Initialize extended settings
       _initExtendedSettings();

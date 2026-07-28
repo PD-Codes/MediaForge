@@ -24,8 +24,18 @@ except ImportError:
     logger.warning("watchdog is not installed — file watching disabled (pip install watchdog)")
 
 
-# Video file extensions we care about
-_VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".webm", ".flv", ".mov", ".wmv", ".m4v", ".ts"}
+# Which files are worth waking up for. Both sets come from web/media_types.py
+# now: this module and the scanner used to keep separate lists that had drifted
+# apart, so a .m4v could trigger a rescan that then refused to index it.
+from .media_types import BOOK_ALL_EXTS, VIDEO_WATCH_EXTS
+
+_WATCHED_EXTS = frozenset(VIDEO_WATCH_EXTS | BOOK_ALL_EXTS)
+
+# Sidecar files carrying a book's metadata. Calibre rewrites these without
+# touching the book itself -- editing an author changes only the .opf -- so
+# without them a metadata edit would stay invisible until the next full rescan
+# hours later.
+_BOOK_SIDECARS = frozenset({"metadata.opf", "cover.jpg", "cover.jpeg", "cover.png"})
 
 
 # ------------------------------------------------------------------ #
@@ -55,7 +65,9 @@ if WATCHDOG_AVAILABLE:
 
         def _is_relevant(self, path: str) -> bool:
             p = Path(path)
-            if p.suffix.lower() not in _VIDEO_EXTS:
+            if p.name.lower() in _BOOK_SIDECARS:
+                return True
+            if p.suffix.lower() not in _WATCHED_EXTS:
                 return False
             # Exclude intermediate download files — their stem contains markers like
             # ".temp_audio", ".raw_full", ".new" (e.g. "Title S01E01.temp_audio.mkv")

@@ -51,6 +51,51 @@ def test_rejects_a_non_video_file(app, library):
     assert _resolve(app, other) is None
 
 
+def test_rejects_a_book_when_the_caller_wants_video(app, library):
+    """The reason lib_resolve_library_file takes an extension set at all.
+
+    An .epub sitting in the library is a perfectly legitimate file, but the
+    callers that pass no extension set -- the ffprobe media-info route and the
+    upscale worker -- would probe it for eight seconds and then re-encode and
+    overwrite it. Video callers must not see it.
+    """
+    book = library["root"] / "Some Show" / "Handbook.epub"
+    book.write_bytes(b"PK\x03\x04")
+    assert _resolve(app, book) is None
+
+
+def test_accepts_a_book_when_the_caller_asks_for_books(app, library):
+    from mediaforge.web.media_types import BOOK_EXTS
+    from mediaforge.web.routes.library import lib_resolve_library_file
+
+    book = library["root"] / "Some Show" / "Handbook.epub"
+    book.write_bytes(b"PK\x03\x04")
+    with app.test_request_context():
+        assert lib_resolve_library_file(str(book), exts=BOOK_EXTS) is not None
+
+
+def test_book_caller_still_cannot_escape_the_library(app, library, tmp_path):
+    """Widening the extension set must not widen the containment check."""
+    from mediaforge.web.media_types import BOOK_EXTS
+    from mediaforge.web.routes.library import lib_resolve_library_file
+
+    outside = tmp_path / "elsewhere.epub"
+    outside.write_bytes(b"PK\x03\x04")
+    with app.test_request_context():
+        assert lib_resolve_library_file(str(outside), exts=BOOK_EXTS) is None
+
+
+def test_drm_book_format_is_not_served(app, library):
+    """A .kfx is listed in the shelf but never handed to a reader."""
+    from mediaforge.web.media_types import BOOK_EXTS
+    from mediaforge.web.routes.library import lib_resolve_library_file
+
+    drm = library["root"] / "Some Show" / "Locked.kfx"
+    drm.write_bytes(b"\x00" * 16)
+    with app.test_request_context():
+        assert lib_resolve_library_file(str(drm), exts=BOOK_EXTS) is None
+
+
 def test_rejects_a_missing_file(app, library):
     assert _resolve(app, library["root"] / "Some Show" / "nope.mkv") is None
 

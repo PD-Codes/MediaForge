@@ -435,6 +435,12 @@ function _qNormDownload(item) {
   const attn = running && !!item.captcha_url;
   const fp = (running || cancelling) ? _qEpisodeProgress(item) : {};
   const phase = fp.phase || "download";
+  // A single-file download -- a movie, or one hand-picked episode -- has
+  // nothing to aggregate: "episode 1 of 1" and "this file" are the same
+  // number, so the hero card drew the identical percentage twice. Below,
+  // such an item gets ONE bar (the phase that is actually moving) and the
+  // station rail keeps naming the phase.
+  const singleEpisode = (item.total_episodes || 0) <= 1;
 
   let state = item.status;
   if (cancelling) state = "cancelling";
@@ -471,7 +477,7 @@ function _qNormDownload(item) {
   const src = Q.sourceLabel(item.series_url);
   return {
     queue: "downloads",
-    epPct: (running || cancelling) ? (fp.percent || 0) : null,
+    epPct: (!singleEpisode && (running || cancelling)) ? (fp.percent || 0) : null,
     epLabel: epLabel,
     id: item.id,
     raw: item,
@@ -484,7 +490,9 @@ function _qNormDownload(item) {
     state: state,
     attn: attn,
     running: running || cancelling,
-    pct: Math.min(epPct + ffPct, 100),
+    pct: singleEpisode
+      ? ((running || cancelling) ? (fp.percent || 0) : epPct)
+      : Math.min(epPct + ffPct, 100),
     statusText: statusText,
     completed_at: item.completed_at,
     sync: (item.source || "").startsWith("sync"),
@@ -527,7 +535,9 @@ function _qNormJob(item, queue) {
     queue: queue,
     id: item.id,
     raw: item,
-    epPct: running ? filePct : null,
+    // Same reasoning as _qNormDownload(): with one file in the job the
+    // overall bar and the per-file bar are the same number.
+    epPct: (running && totalFiles > 1) ? filePct : null,
     epLabel: epLabel,
     title: seriesTitle || String(fileName || "").split("/").pop(),
     episode: Q.episodeFromFile(item.title) || Q.episodeFromFile(fileName)

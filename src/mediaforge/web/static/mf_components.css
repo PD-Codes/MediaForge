@@ -974,3 +974,55 @@ body.mf-select-mode .mf-poster-select,
   /* The grip is a mouse affordance; on touch the arrows are the control. */
   .mf-order-handle { display: none; }
 }
+
+/* ===================================================================
+   Format badge
+   -------------------------------------------------------------------
+   A short uppercase chip naming a file format (EPUB, MOBI, PDF). Used
+   wherever one logical item exists as several files, so the reader can
+   see at a glance which shapes are on disk without opening anything.
+   `.is-locked` marks a format that is recognised but cannot be opened
+   (DRM) -- it stays visible on purpose, because a book that silently
+   disappeared would read as a scanning bug.
+   =================================================================== */
+.mf-format-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.mf-format-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.mf-format-badge.is-locked {
+  border-style: dashed;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+/* A chip that only labels something and cannot be removed -- the
+   read-only sibling of .mf-chip in forms.css. */
+.mf-chip-static {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}

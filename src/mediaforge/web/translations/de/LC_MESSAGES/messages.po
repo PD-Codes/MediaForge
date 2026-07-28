@@ -6026,3 +6026,24 @@ msgstr "Neu in deiner Bibliothek"
 
 msgid "Airing next"
 msgstr "Demnächst"
+
+msgid "eBooks only"
+msgstr "Nur eBooks"
+
+msgid "eBooks"
+msgstr "eBooks"
+
+msgid "Manga"
+msgstr "Manga"
+
+msgid "Music"
+msgstr "Musik"
+
+msgid "soon"
+msgstr "bald"
+
+msgid "Manga — coming soon"
+msgstr "Manga — bald verfügbar"
+
+msgid "Music — coming soon"
+msgstr "Musik — bald verfügbar"

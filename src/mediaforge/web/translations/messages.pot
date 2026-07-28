@@ -6246,3 +6246,24 @@ msgstr ""
 msgid "Close room for everyone"
 msgstr ""
 
+
+msgid "eBooks only"
+msgstr ""
+
+msgid "eBooks"
+msgstr ""
+
+msgid "Manga"
+msgstr ""
+
+msgid "Music"
+msgstr ""
+
+msgid "soon"
+msgstr ""
+
+msgid "Manga — coming soon"
+msgstr ""
+
+msgid "Music — coming soon"
+msgstr ""

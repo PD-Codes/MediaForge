@@ -289,12 +289,6 @@ function libSetSort(key) {
 // and the grid/list/pagination stay hidden until a real filter is picked
 // again. Keep the keys in sync with the buttons in library.html.
 var LIB_SOON_FILTERS = {
-  ebooks: {
-    label: function() { return t("eBooks", "eBooks"); },
-    text:  function() { return t("Deine eBooks bekommen hier bald ein eigenes Regal — inklusive Cover, Reihen und Lesefortschritt.",
-                                 "Your eBooks will get their own shelf here soon — covers, series and reading progress included."); },
-    icon:  '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>'
-  },
   manga: {
     label: function() { return t("Manga", "Manga"); },
     text:  function() { return t("Manga und Comics folgen als Nächstes — mit Bänden, Kapiteln und einem Reader.",
@@ -313,9 +307,13 @@ function libIsSoonFilter(mode) {
   return Object.prototype.hasOwnProperty.call(LIB_SOON_FILTERS, mode || libFilterMode);
 }
 
+function libIsBookFilter(mode) {
+  return (mode || libFilterMode) === "ebooks";
+}
+
 function libSetFilter(mode) {
   libFilterMode = mode;
-  ["all", "series", "movies"].concat(Object.keys(LIB_SOON_FILTERS)).forEach(function(k) {
+  ["all", "series", "movies", "ebooks"].concat(Object.keys(LIB_SOON_FILTERS)).forEach(function(k) {
     var btn = document.getElementById("libFilter-" + k);
     if (!btn) return;
     btn.classList.toggle("active", k === mode);
@@ -344,6 +342,14 @@ function libApplySoonState(soon) {
     var el = document.getElementById(id);
     if (el) el.hidden = !!soon;
   });
+  // Sorting by episode count is meaningless for books; the button is hidden
+  // rather than disabled so it cannot be the active sort with no effect.
+  var epBtn = document.getElementById("libSort-episodes");
+  if (epBtn) {
+    var hideEp = libIsBookFilter(libFilterMode);
+    epBtn.hidden = hideEp;
+    if (hideEp && libSortKey === "episodes") { libSortKey = "name"; libSortAsc = true; }
+  }
   var sep = document.querySelector("#libToolbar .mf-toolbar-sep");
   if (sep) sep.hidden = !!soon;
 }
@@ -498,6 +504,11 @@ function libRender(locations) {
   if (soon) { libPaintComingSoon(libFilterMode); return; }
   var host = document.getElementById("libComingSoon");
   if (host) { host.hidden = true; host.innerHTML = ""; }
+
+  // Books live under their own key in every location blob and never mix into
+  // `titles`, so they get their own paint path rather than a branch inside the
+  // title renderer.
+  if (libIsBookFilter(libFilterMode)) { libRenderBooks(); return; }
 
   if (libSearchQuery) { libRenderSearchResults(libSearchQuery); return; }
   var items = libSortTitles(libFilterTitles(libFlattenTitles(locations)));
@@ -2119,4 +2130,342 @@ function _libShowAutosyncPicker(folder, results) {
       _libOpenAutosyncCreate(r.url, r.title, r.poster_url);
     });
   });
+}
+
+// ============================================================
+// eBooks
+// ============================================================
+// Books arrive under `location.books` -- a list the backend has already
+// de-duplicated, so one entry is one book that may exist as several files
+// ("formats"). Nothing here shares state with the title renderer beyond the
+// three containers and the pager, which is deliberate: a book has no seasons,
+// no episodes, no watch progress and no kebab actions, and every attempt to
+// squeeze it into the title shape would need a branch in code that is load
+// bearing for video.
+
+var _libOpenBookKey = null;   // key of the currently expanded book
+
+function libFlattenBooks(locations) {
+  var items = [];
+  (locations || []).forEach(function(loc) {
+    (loc.books || []).forEach(function(book) {
+      items.push({ book: book, cpId: loc.custom_path_id, cpLabel: loc.label });
+    });
+  });
+  return items;
+}
+
+function libBookMatchesQuery(book, q) {
+  if ((book.title || "").toLowerCase().includes(q)) return true;
+  if ((book.series || "").toLowerCase().includes(q)) return true;
+  for (var i = 0; i < (book.authors || []).length; i++) {
+    if ((book.authors[i] || "").toLowerCase().includes(q)) return true;
+  }
+  for (var f = 0; f < (book.formats || []).length; f++) {
+    if ((book.formats[f].path || "").toLowerCase().includes(q)) return true;
+  }
+  return false;
+}
+
+function libSortBooks(items) {
+  return items.slice().sort(function(a, b) {
+    var v;
+    if (libSortKey === "size") {
+      v = (a.book.total_size || 0) - (b.book.total_size || 0);
+    } else {
+      // Inside a series, volume order beats alphabetical order: "Band 2"
+      // must not sort between "Band 11" and "Band 12".
+      var sa = (a.book.series || "").toLowerCase(), sb = (b.book.series || "").toLowerCase();
+      if (sa && sa === sb) {
+        v = (a.book.series_index || 0) - (b.book.series_index || 0);
+      } else {
+        v = (a.book.sort_title || a.book.title || "")
+              .localeCompare(b.book.sort_title || b.book.title || "", "de", { sensitivity: "base" });
+      }
+    }
+    return libSortAsc ? v : -v;
+  });
+}
+
+function libRenderBooks() {
+  var items = libFlattenBooks(libLocations);
+  if (libSearchQuery) {
+    var q = libSearchQuery.toLowerCase();
+    items = items.filter(function(it) { return libBookMatchesQuery(it.book, q); });
+  }
+  libPaintBooks(libSortBooks(items));
+}
+
+function libBookCoverUrl(book) {
+  if (!book.cover_path) return "";
+  return "/api/library/book/cover?path=" + encodeURIComponent(book.cover_path);
+}
+
+function libBookAuthorLine(book) {
+  var authors = book.authors || [];
+  if (!authors.length) return t("Unbekannter Autor", "Unknown author");
+  return authors.slice(0, 2).join(", ") + (authors.length > 2 ? " …" : "");
+}
+
+function libBookSeriesLabel(book) {
+  if (!book.series) return "";
+  if (book.series_index === null || book.series_index === undefined) return book.series;
+  // 2.0 reads as a volume number, 2.5 as a side story -- keep the decimal only
+  // when it carries information.
+  var idx = Number(book.series_index);
+  var shown = (idx % 1 === 0) ? String(Math.round(idx)) : String(idx);
+  return book.series + " #" + shown;
+}
+
+// One badge per FORMAT, not per file. A book kept as two EPUBs plus a MOBI
+// reads as "EPUB ×2 · MOBI": three separate chips would re-introduce on the
+// card exactly the duplication this whole grouping pass exists to remove, and
+// they pushed the size badge onto a third line on a narrow card.
+function libBookFormatBadges(book, limit, compact) {
+  var order = [], byExt = {};
+  (book.formats || []).forEach(function(f) {
+    var ext = (f.ext || "").toUpperCase();
+    if (!byExt[ext]) { byExt[ext] = { count: 0, readable: !!f.readable, size: 0 }; order.push(ext); }
+    byExt[ext].count++;
+    byExt[ext].size += f.size || 0;
+    if (f.readable) byExt[ext].readable = true;
+  });
+  var shown = (limit && order.length > limit) ? order.slice(0, limit) : order;
+  var out = shown.map(function(ext) {
+    var info = byExt[ext];
+    // On a poster card the "×2" is what tips the badge row onto a second
+    // line and pushes the size badge off it; the count survives in the
+    // tooltip and in the detail panel, where there is room for it.
+    var label = (info.count > 1 && !compact) ? (ext + " ×" + info.count) : ext;
+    var hint = info.count > 1
+      ? t(info.count + " Dateien", info.count + " files") + " · " + libFmtSize(info.size)
+      : libFmtSize(info.size);
+    return '<span class="mf-format-badge' + (info.readable ? '' : ' is-locked') + '" title="' +
+      libEscAttr(hint) + '">' + libEsc(label) + '</span>';
+  });
+  if (shown.length < order.length) {
+    out.push('<span class="mf-format-badge">+' + (order.length - shown.length) + '</span>');
+  }
+  return out.join("");
+}
+
+// A cover that fails to load (file moved, unreadable image) must not leave a
+// broken-image icon in the grid -- fall back to the same generated tile a book
+// with no cover at all gets.
+function libBookCoverFailed(img) {
+  var art = img.parentNode;
+  if (!art) return;
+  var title = art.getAttribute("data-book-title") || "";
+  img.remove();
+  art.insertAdjacentHTML("afterbegin", _libFauxArt(title));
+}
+
+// Only the last two path segments. The folder is what tells two copies of the
+// same book apart, and the full path is one hover away in the title attribute.
+function libBookShortPath(path) {
+  var parts = String(path || "").split(/[\\/]/).filter(Boolean);
+  return parts.slice(-2).join("/");
+}
+
+function libPaintBooks(items) {
+  var gridEl  = document.getElementById("libGridView");
+  var listEl  = document.getElementById("libListView");
+  var emptyEl = document.getElementById("libEmptyState");
+  if (!gridEl || !listEl) return;
+
+  if (!items.length) {
+    gridEl.hidden = true;
+    listEl.hidden = true;
+    if (emptyEl) {
+      emptyEl.hidden = false;
+      emptyEl.innerHTML =
+        '<svg class="mf-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ' +
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' +
+        '<p>' + libEsc(libSearchQuery
+          ? t("Keine Bücher gefunden.", "No books found.")
+          : t("Keine Bücher gefunden. Lege EPUB-, MOBI-, AZW3- oder PDF-Dateien in einen deiner Bibliothekspfade.",
+              "No books found. Put EPUB, MOBI, AZW3 or PDF files into one of your library paths.")) + '</p>';
+    }
+    libRenderPagination(0);
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+
+  var isGrid = libViewMode === "grid";
+  gridEl.hidden = !isGrid;
+  listEl.hidden = isGrid;
+  var target = isGrid ? gridEl : listEl;
+
+  var totalP = libTotalPages(items.length);
+  if (libPage >= totalP) libPage = totalP - 1;
+  if (libPage < 0) libPage = 0;
+  var pageStart = libPage * libPerPage;
+  var pageItems = items.slice(pageStart, pageStart + libPerPage);
+
+  var html = [];
+  var openItem = null, openPfx = null;
+  pageItems.forEach(function(it, idx) {
+    var pfx = "libBook" + idx;
+    html.push(isGrid ? libRenderBookCard(it, pfx) : libRenderBookRow(it, pfx));
+    if (_libOpenBookKey && it.book.key === _libOpenBookKey) {
+      html.push(libRenderBookDetail(it, pfx));
+      openItem = it;
+      openPfx = pfx;
+    }
+  });
+  target.innerHTML = html.join("");
+  if (openItem && openPfx) { /* detail is rendered inline, nothing to hydrate */ }
+  libRenderPagination(items.length);
+}
+
+function libRenderBookCard(it, pfx) {
+  var book = it.book;
+  var isOpen = _libOpenBookKey === book.key;
+  var cover = libBookCoverUrl(book);
+  var series = libBookSeriesLabel(book);
+
+  var h = [];
+  h.push('<div class="mf-poster-card mf-book-card' + (isOpen ? ' is-open' : '') + '" id="' + pfx + '">');
+  h.push('<div class="mf-poster-art" data-book-title="' + libEscAttr(book.title || "") +
+         '" onclick="libToggleBook(\'' + pfx + '\')">');
+  if (cover) {
+    h.push('<img class="mf-book-cover" src="' + libEscAttr(cover) + '" alt="" loading="lazy" ' +
+           'decoding="async" onerror="libBookCoverFailed(this)">');
+  } else {
+    h.push(_libFauxArt(book.title || ""));
+  }
+  h.push('<div class="mf-poster-scrim">');
+  h.push('<div class="mf-poster-meta">');
+  if (series) h.push('<span class="mf-type-pill mf-type-pill--outline">' + libEsc(series) + '</span>');
+  h.push(volTagHtml(it.cpLabel));
+  h.push('</div>');
+  h.push('<p class="mf-poster-title">' + libEsc(book.title || "") + '</p>');
+  h.push('<p class="mf-book-author">' + libEsc(libBookAuthorLine(book)) + '</p>');
+  h.push('</div>'); // scrim
+  h.push('</div>'); // art
+  // No size badge here, deliberately. On a film card the file size stands in
+  // for quality; on a book it is noise between 1 and 50 MB, and it was the one
+  // chip too many that wrapped the format row onto a second line. It stays in
+  // the list row and in the detail panel, where it is actually compared.
+  h.push('<div class="mf-poster-foot mf-book-foot">');
+  h.push('<span class="mf-format-badges">' + libBookFormatBadges(book, 2, true) + '</span>');
+  h.push('</div>');
+  h.push('</div>');
+  return h.join("");
+}
+
+function libRenderBookRow(it, pfx) {
+  var book = it.book;
+  var isOpen = _libOpenBookKey === book.key;
+  var series = libBookSeriesLabel(book);
+
+  var h = [];
+  h.push('<div class="lib-title-row lib-hoverable' + (isOpen ? ' is-open' : '') + '" id="' + pfx +
+         '" onclick="libToggleBook(\'' + pfx + '\')">');
+  h.push('<div class="lib-row-left">');
+  h.push('<div class="lib-row-title-line">');
+  h.push('<svg class="lib-arrow' + (isOpen ? ' lib-arrow-open' : '') + '" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>');
+  h.push('<span class="lib-row-title">' + libEsc(book.title || "") + '</span>');
+  h.push('</div>');
+  h.push('<div class="lib-row-pills">');
+  h.push('<span class="mf-book-author">' + libEsc(libBookAuthorLine(book)) + '</span>');
+  if (series) h.push('<span class="mf-type-pill mf-type-pill--outline">' + libEsc(series) + '</span>');
+  h.push(volTagHtml(it.cpLabel));
+  h.push('</div>');
+  h.push('</div>');
+  h.push('<div class="lib-row-right">');
+  h.push('<span class="mf-format-badges">' + libBookFormatBadges(book, 4) + '</span>');
+  h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(book.total_size) + '</span>');
+  h.push('</div>');
+  h.push('</div>');
+  return h.join("");
+}
+
+function libRenderBookDetail(it, pfx) {
+  var book = it.book;
+  var h = [];
+  h.push('<div class="lib-detail-row mf-book-detail" id="' + pfx + 'Detail">');
+  h.push('<div class="lib-detail-header">');
+  h.push('<div>');
+  h.push('<h3 class="lib-detail-title">' + libEsc(book.title || "") + '</h3>');
+  h.push('<p class="mf-book-author">' + libEsc(libBookAuthorLine(book)) + '</p>');
+  h.push('</div>');
+  h.push('<button type="button" class="mf-icon-btn" onclick="libCloseBook()" aria-label="' +
+         libEscAttr(t("Schließen", "Close")) + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+         'stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>');
+  h.push('</div>');
+
+  var facts = [];
+  if (book.series) facts.push([t("Reihe", "Series"), libBookSeriesLabel(book)]);
+  if (book.published) facts.push([t("Erschienen", "Published"), book.published]);
+  if (book.publisher) facts.push([t("Verlag", "Publisher"), book.publisher]);
+  if (book.language) facts.push([t("Sprache", "Language"), book.language]);
+  if (book.isbn) facts.push(["ISBN", book.isbn]);
+  if (facts.length) {
+    h.push('<dl class="mf-book-facts">');
+    facts.forEach(function(pair) {
+      h.push('<dt>' + libEsc(pair[0]) + '</dt><dd>' + libEsc(String(pair[1])) + '</dd>');
+    });
+    h.push('</dl>');
+  }
+  if (book.description) {
+    h.push('<p class="mf-book-desc">' + libEsc(book.description) + '</p>');
+  }
+  if ((book.tags || []).length) {
+    h.push('<div class="mf-book-tags">');
+    book.tags.slice(0, 12).forEach(function(tag) {
+      h.push('<span class="mf-chip-static">' + libEsc(tag) + '</span>');
+    });
+    h.push('</div>');
+  }
+
+  // Every file that belongs to this book. This list is the whole point of the
+  // de-duplication being visible rather than silent: the shelf shows one book,
+  // and here is the evidence for why -- including the two identical EPUBs a
+  // Calibre import can leave behind. Nothing is ever deleted automatically.
+  h.push('<h4 class="mf-book-files-title">' +
+         libEsc(t("Dateien", "Files")) + ' <span class="lib-badge">' + (book.formats || []).length + '</span></h4>');
+  h.push('<div class="mf-book-files">');
+  (book.formats || []).forEach(function(f) {
+    h.push('<div class="mf-book-file">');
+    h.push('<span class="mf-format-badge' + (f.readable ? '' : ' is-locked') + '">' +
+           libEsc((f.ext || "").toUpperCase()) + '</span>');
+    h.push('<span class="mf-book-file-path" title="' + libEscAttr(f.path) + '">' +
+           libEsc(libBookShortPath(f.path)) + '</span>');
+    h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(f.size) + '</span>');
+    if (f.readable) {
+      h.push('<a class="btn-secondary mf-book-open" href="/api/library/book/file?path=' +
+             encodeURIComponent(f.path) + '" target="_blank" rel="noopener">' +
+             libEsc(t("Öffnen", "Open")) + '</a>');
+    } else {
+      h.push('<span class="mf-book-locked" title="' +
+             libEscAttr(t("Dieses Format ist kopiergeschützt und lässt sich nicht öffnen.",
+                          "This format is copy-protected and cannot be opened.")) + '">' +
+             libEsc(t("Geschützt", "Protected")) + '</span>');
+    }
+    h.push('</div>');
+  });
+  h.push('</div>');
+  h.push('</div>');
+  return h.join("");
+}
+
+function libToggleBook(pfx) {
+  var el = document.getElementById(pfx);
+  if (!el) return;
+  var items = libSortBooks(libFlattenBooks(libLocations).filter(function(it) {
+    if (!libSearchQuery) return true;
+    return libBookMatchesQuery(it.book, libSearchQuery.toLowerCase());
+  }));
+  var idx = parseInt(pfx.replace("libBook", ""), 10);
+  var item = items[libPage * libPerPage + idx];
+  if (!item) return;
+  _libOpenBookKey = (_libOpenBookKey === item.book.key) ? null : item.book.key;
+  libRenderBooks();
+}
+
+function libCloseBook() {
+  _libOpenBookKey = null;
+  libRenderBooks();
 }
