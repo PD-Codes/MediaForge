@@ -562,3 +562,282 @@
   .feed-chip-label { flex: none; }
 }
 
+
+/* ── Chip row, second pass ──────────────────────────────────────────────
+   The chips now do both jobs at once: they say whether a source is on,
+   off (Settings) or unreachable (UpTime), and they filter. Which is why a
+   disabled source is a <span> and an available one is a <button> -- there
+   is nothing to toggle about a source you switched off in Settings. */
+.feed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.feed-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: none;
+}
+
+.feed-chip.is-on .feed-chip-dot {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.feed-chip.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.feed-chip.is-down {
+  border-color: rgba(240, 85, 106, 0.45);
+  color: #ff8a99;
+}
+
+.feed-chip.is-down .feed-chip-dot {
+  background: var(--error, #f0556a);
+}
+
+/* ── "A source is not answering" ────────────────────────────────────────
+   An empty row used to be indistinguishable from a dead source. This says
+   which one, and offers the only useful action. */
+.feed-alerts:empty { display: none; }
+
+.feed-alert {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 12px;
+  padding: 11px 14px;
+  border-radius: var(--radius-lg, 14px);
+  background: rgba(240, 85, 106, 0.10);
+  border: 1px solid rgba(240, 85, 106, 0.32);
+}
+
+.feed-alert-text {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+}
+
+.feed-alert-retry {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.feed-alert-retry:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+/* ── Personal rows ──────────────────────────────────────────────────────
+   Continue watching / library / calendar cards are not browse cards: there
+   is no poster to fetch and nothing to enrich, so they get their own, much
+   simpler tile that still sits in a .browse-grid and scrolls with the same
+   buttons. .home-pcard-hit is the <button>/<a> so the whole tile is one
+   keyboard-reachable target. */
+.feed-personal .browse-heading::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.home-pcard {
+  flex: 0 0 auto;
+  width: 168px;
+  scroll-snap-align: start;
+}
+
+.home-pcard-hit {
+  display: block;
+  position: relative;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--bg-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color var(--transition), transform var(--transition);
+}
+
+.home-pcard-hit:hover,
+.home-pcard-hit:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.home-pcard-faux,
+.home-pcard-hit > img {
+  display: block;
+  width: 100%;
+  height: 94px;
+  object-fit: cover;
+}
+
+.home-pcard-play {
+  position: absolute;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 13, 20, 0.72);
+  color: #fff;
+}
+
+.home-pcard-play svg { width: 15px; height: 15px; margin-left: 2px; }
+
+.home-pcard-bar {
+  position: absolute;
+  top: 88px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  display: block;
+}
+
+.home-pcard-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.home-pcard-title,
+.home-pcard-sub {
+  display: block;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-pcard-title {
+  padding-top: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.home-pcard-sub {
+  padding-bottom: 10px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ── Recent searches ────────────────────────────────────────────────────
+   Anchored to .home-search-field, which is why that one is position:
+   relative -- the dropdown has to line up with the input, not the whole
+   search bar (the bar also holds the two buttons). */
+.home-search-field { position: relative; }
+
+.home-suggest {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding: 6px;
+  border-radius: var(--radius-lg, 14px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-modal);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.home-suggest[hidden] { display: none; }
+
+.home-suggest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 8px 8px;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.home-suggest-clear {
+  font: inherit;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.home-suggest-clear:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.home-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md, 10px);
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.home-suggest-item:hover { background: var(--bg-hover); }
+
+.home-suggest-item svg { width: 14px; height: 14px; color: var(--text-muted); flex: none; }
+.home-suggest-item > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.home-suggest-del {
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  flex: none;
+}
+
+.home-suggest-del:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+@media (max-width: 640px) {
+  .home-pcard { width: 142px; }
+  .home-pcard-faux,
+  .home-pcard-hit > img { height: 82px; }
+  .home-pcard-play { top: 24px; }
+  .home-pcard-bar { top: 76px; }
+  .feed-alert-retry { flex: 1 1 auto; }
+}

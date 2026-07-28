@@ -45,7 +45,7 @@ def register(app) -> None:
     # sub-menu + overview surface that replaced the old tab bar. overview_* feed
     # that tile; they are ignored when attaching to a built-in tab instead.
     register_thirdparty(
-        item_id="example_cineinfo_source",
+        item_id=MODULE_ID,
         label="Example CineInfo Source",
         enabled_setting_key=ENABLED_KEY,
         badges=[("Demo", "#2e51a2"), ("CineInfo", "#7c3aed")],
@@ -70,7 +70,10 @@ def register(app) -> None:
     )
 
     # One source per batch form. Both follow the module's master toggle via
-    # their is_enabled() (see sources.py), so nothing extra is needed on
-    # uninstall/disable -- a switched-off module simply stops contributing.
-    register_cineinfo_source(ExampleLoopSource())
-    register_cineinfo_source(ExampleBulkSource())
+    # their is_enabled() (see sources.py), so a switched-off module already
+    # stops contributing. item_id is passed anyway, and always should be: it is
+    # what makes the sources show up as a capability in the module manager and
+    # what lets unregister_module() drop them on uninstall, instead of leaving
+    # them registered for the rest of the process' life.
+    register_cineinfo_source(ExampleLoopSource(), item_id=MODULE_ID)
+    register_cineinfo_source(ExampleBulkSource(), item_id=MODULE_ID)

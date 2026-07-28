@@ -3638,6 +3638,7 @@ CREATE TABLE IF NOT EXISTS user_ui_prefs (
 # browser trusts, so "user-supplied string" is not something to wave through.
 _THEME_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+_HOME_FEED_FILTER_RE = re.compile(r"^[a-z0-9_,;:-]{0,200}$")
 
 
 def _valid_theme_pack(value: str) -> bool:
@@ -3655,6 +3656,12 @@ USER_UI_PREF_KEYS = {
     # silently fell back to the poster grid every single visit.
     "library_view": lambda v: v in ("grid", "list"),
     "library_per_page": lambda v: v in ("10", "20", "50", "100"),
+    # Home feed chip filters, stored as "s:<off sources>;t:<off types>". Same
+    # reasoning as the library layout: a filter that resets on every device is
+    # a filter the user sets again every day. The charset is deliberately
+    # narrow -- the value is only ever parsed, never rendered, but it is still
+    # user input echoed back through window._USER_PREFS.
+    "home_feed_filters": lambda v: bool(_HOME_FEED_FILTER_RE.match(v)),
 }
 
 
@@ -5549,6 +5556,35 @@ def get_watch_progress(file_path: str, username=None) -> dict:
         dur  = float(row["duration_seconds"])
         pct  = round(pos / dur * 100, 1) if dur > 0 else 0.0
         return {"position": pos, "duration": dur, "percent": pct, "watched": bool(row["watched"])}
+    finally:
+        conn.close()
+
+
+def get_recent_watch_progress(username=None, limit: int = 15) -> list:
+    """Most recently touched, *unfinished* playback positions for one user.
+
+    Feeds the home page's "Continue watching" row. The filters are what makes
+    that row useful rather than noisy: anything already marked watched is out,
+    so is a position under 30 s (opened the wrong episode) and anything past
+    95 % of its runtime (finished in practice, even if the player never got to
+    write watched=1 because the tab was closed on the credits).
+    """
+    limit = max(1, min(int(limit or 15), 100))
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT file_path, position_seconds, duration_seconds, watched, updated_at
+                 FROM watch_progress
+                WHERE username = ?
+                  AND watched = 0
+                  AND position_seconds > 30
+                  AND (duration_seconds <= 0
+                       OR position_seconds < duration_seconds * 0.95)
+             ORDER BY updated_at DESC
+                LIMIT ?""",
+            (_normalize_user(username), limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 

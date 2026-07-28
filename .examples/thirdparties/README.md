@@ -1359,7 +1359,7 @@ read top to bottom in a few minutes.
 | `example_advanced/` | Own page, `section="syncplay"` | Just the implicit enable toggle, on a *brand-new* Settings-page tab (`settings_host="settings"`) | `requires_enabled` (soft runtime dependency on `example_own_menu`) and `auth_required="admin"` (admin-only routes) together, plus placing a link under the SyncPlay sidebar category instead of Discover/Management/System. Start here for anything SyncPlay-adjacent, Settings-hosted, dependent on another integration, or admin-only. |
 | `src/mediaforge/web/thirdparties/anime_seasons/` | Own page, `section="discover"` | Extra `toggle` field, on the shared tab | A real, shipped integration (fetches seasonal anime listings from the Jikan/MyAnimeList API) — external HTTP calls with rate-limiting, a persistent cache, and a richer page (a season picker plus a card grid reusing the app's existing browse-card enrichment pipeline). Read this once you've outgrown the demo examples. |
 | `example_ui_components/` | Own page, `section="management"` | Just the implicit enable toggle | Not a placement pattern — a live, click-through gallery of the core UI classes from "Reusable UI components" above, with copyable markup under each one. Enable it and browse it whenever you're building a new page and want it to look native. |
-| `example_content_source/` | None | Its own dynamic tab | Not a sidebar/settings placement pattern — registers a whole demo streaming site (`register_provider` + `register_search_source` + `register_site_mirrors` + `register_monitor_site` together), fully offline (`.invalid` domain, no network calls). Start here if you're adding a new streaming site as a module — see "Content sources" below. |
+| `example_content_source/` | None | Its own dynamic tab | Not a sidebar/settings placement pattern — registers a whole demo streaming site (`register_provider` + `register_search_source` + `register_home_feed_source` + `register_site_mirrors` + `register_monitor_site` together), fully offline (`.invalid` domain, no network calls). Start here if you're adding a new streaming site as a module — see "Content sources" below. |
 | `example_hooks/` | None | Just the implicit enable toggle, on the shared tab | The smallest "settings-only" shape again, but for `register_notification_channel` + `register_event_hook` instead of `extra_settings` — both just log. Start here if your module needs to react to a download/AutoSync event instead of adding a settings field. |
 
 `example_own_menu/` vs. `example_attach_tab/` / `example_new_tab/` is the
@@ -1427,8 +1427,14 @@ Register one instance per source from your `register(app)`:
 from ...cineinfo.registry import register_cineinfo_source
 from .sources import MySource
 
-register_cineinfo_source(MySource())
+register_cineinfo_source(MySource(), item_id=MODULE_ID)
 ```
+
+`item_id` is the id you already gave `register_thirdparty()`, exactly like every
+other secondary registry below. It is optional only for backwards compatibility
+— always pass it. Without it the source works but is orphaned: the Modulmanager
+cannot list it among the module's capabilities, and `unregister_module()` cannot
+drop it on uninstall, so it stays registered until the app restarts.
 
 A source subclasses `web/cineinfo/source.py`'s `CineInfoSource` and declares
 **one** capability flag that decides how the orchestrator fetches — this is the
@@ -1454,8 +1460,8 @@ class MySource(CineInfoSource):
     cache_ttl = 86400.0              # provider-cache TTL (0 disables caching)
 
     def is_enabled(self) -> bool:
-        # Follow your own toggle so a disabled/uninstalled module stops
-        # contributing immediately — no registry cleanup needed.
+        # Follow your own toggle so a disabled module stops contributing
+        # immediately. (Uninstall is handled by the item_id above.)
         return get_setting("myprovider_enabled", "0") == "1"
 
     def fetch_one(self, item: dict, ctx: QueryContext) -> dict:
@@ -1482,7 +1488,7 @@ See **`example_cineinfo_source/`** for a complete, offline-safe reference that
 registers one source of *each* batch form (per-item and bulk) under the CineInfo
 settings tab.
 
-## Content sources (`register_provider` / `register_search_source`)
+## Content sources (`register_provider` / `register_search_source` / `register_home_feed_source`)
 
 A **CineInfo source** (above) adds *metadata* about a title MediaForge
 already knows about. A **content source** is different: it teaches
@@ -1496,6 +1502,7 @@ ones you need:
 ```python
 from mediaforge.providers import Provider, register_provider
 from mediaforge.search import register_search_source
+from mediaforge.home_feed import register_home_feed_source
 from mediaforge.mirrors import register_site_mirrors
 from mediaforge.web.uptime_monitor import register_monitor_site
 import re as _re
@@ -1526,7 +1533,25 @@ def register(app):
     register_site_mirrors("my_source", "my_source",
                            ["mysite.example", "mysite.cc"], label="My Source")
 
-    # 4. Optional: an UpTime dashboard card for this site.
+    # 4. The home page. Without this your source is reachable by URL and by
+    #    search, but never *offered* -- it does not appear on the start page.
+    #    Only the new home page (Settings -> General -> "Use the new home
+    #    page") reads this registry; the classic one has its rows in the
+    #    template.
+    def _browse_new():
+        # Same card shape every built-in browse list returns. Return None to
+        # say "upstream is down" -- the feed then reports your source as
+        # unavailable instead of silently showing nothing.
+        return [{"title": ..., "url": ..., "poster_url": ..., "genre": ...}]
+
+    register_home_feed_source(
+        "my_source", "my_source", "My Source",
+        {"new": _browse_new, "popular": _browse_popular},
+        media_type="series",          # or "movies" / "adult"
+        color="#7c5cff",              # optional chip colour
+    )
+
+    # 5. Optional: an UpTime dashboard card for this site.
     register_monitor_site(
         "my_source", "my_source", "My Source", "https://mysite.example",
         "mysite.example", body_markers=["mysite"],
@@ -1560,6 +1585,22 @@ def register(app):
   route, not the search-bar UI that calls it** — see "Still not automatic"
   below, this is the one piece that needs more than a registration call
   today.
+- **`register_home_feed_source(item_id, source_id, label, fetchers, media_type="series", color=None)`**
+  (`mediaforge/home_feed.py`) puts your source on the start page. `fetchers`
+  is `{"new": fn}` and/or `{"popular": fn}`; each `fn()` returns the same
+  `{"title", "url", "poster_url", "genre"}` cards every built-in browse list
+  returns, and `GET /api/home-feed` caches the result for an hour exactly
+  like the built-in lists, so `fn` may do real network work. Returning
+  `None` means "upstream failed" and is reported to the user as such;
+  returning `[]` means "nothing new", which is a different thing. The feed
+  interleaves your cards with the built-in ones, drops a title you share
+  with another source into a single card that names both, and gives you a
+  chip in the filter row (`color` is its dot; anything that is not a plain
+  hex literal is dropped). `media_type="movies"` also feeds the Movies row,
+  `"adult"` is only ever fetched when the user turned the 18+ chip on.
+  `source_id` must not collide with a built-in one or another registration.
+  Your source is enabled unless `source_enabled_<source_id>` is `"0"`, so an
+  `extra_settings` toggle under that key gives the user a real off switch.
 - **`register_site_mirrors(item_id, site_id, hosts, label=None)`**
   (`mediaforge/mirrors.py`) is optional, for a site that (like most of the
   built-in ones) sometimes moves domains or gets DNS-blocked. It adds an
@@ -1580,11 +1621,12 @@ def register(app):
   blocked-page detection with no other change. `enabled_setting_key` (e.g.
   the same key you passed `register_thirdparty()`) makes the card's
   "enabled_source" badge reflect your actual toggle instead of guessing.
-- **Uninstall is automatic for all four.** Every registration above is keyed
+- **Uninstall is automatic for all five.** Every registration above is keyed
   by `item_id`, the same id you already pass to `register_thirdparty()` —
   `web/thirdparties/registry.py`'s `unregister_module()` calls
   `unregister_provider()` / `unregister_search_source()` /
-  `unregister_site_mirrors()` / `unregister_monitor_site()` for every
+  `unregister_home_feed_source()` / `unregister_site_mirrors()` /
+  `unregister_monitor_site()` for every
   `item_id` a module owned, so disabling/removing the module removes all of
   it, live, no restart.
 - **Still not automatic — read this before assuming a registered source is
@@ -1600,16 +1642,21 @@ def register(app):
     is generalized to ask the backend which sites exist instead of
     hardcoding them. This is a known gap, not something missing from your
     module.
-  - A Discover homepage section (new/popular carousels) and a
-    settings toggle for enabling/disabling the source's own search results
-    the way MegaKino/hanime have also aren't automatic. Build those
-    yourself (a `dashboard_widget_template` or your own page, plus an
-    `extra_settings` toggle you check inside `search_fn`) if you need them;
-    nothing here prevents it, it's just not automatic yet.
+  - **The classic home page still has its rows in the template.**
+    `register_home_feed_source()` fills the *new* home page (Settings →
+    General → "Use the new home page"); with the classic one selected your
+    source has no carousel there, because that page's eleven rows are
+    hardcoded markup in `templates/index.html`. A `dashboard_widget_template`
+    is the workaround for classic-home users.
+  - A settings toggle for enabling/disabling the source's own search results
+    the way MegaKino/hanime have is still yours to build (an
+    `extra_settings` toggle you check inside `search_fn`). Use the key
+    `source_enabled_<site_id>` and the home feed picks the same switch up
+    for free.
 
 See **`example_content_source/`** for a complete, offline-safe reference
 that registers a whole demo streaming site (`example-source.invalid`, one
-series, three episodes, no network calls anywhere) using all four
+series, three episodes, no network calls anywhere) using all five
 registrations above together.
 
 ## Hosters (`register_hoster`)

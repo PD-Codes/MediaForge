@@ -5890,6 +5890,9 @@ msgstr "nichts registriert"
 msgid "running"
 msgstr "läuft"
 
+msgid "CineInfo source"
+msgstr "CineInfo-Quelle"
+
 msgid "search source"
 msgstr "Suchquelle"
 
@@ -5951,3 +5954,57 @@ msgstr "Bild im Bild"
 
 msgid "Playback failed"
 msgstr "Wiedergabe fehlgeschlagen"
+
+# Home page 2.0 (feed rows, chip row, recent searches) --
+# see templates/index.html's __HOME_I18N block and static/home_feed.js.
+
+msgid "home feed source"
+msgstr "Startseiten-Quelle"
+
+msgid "offline"
+msgstr "offline"
+
+msgid "Switched off in Settings"
+msgstr "In den Einstellungen ausgeschaltet"
+
+msgid "Also available from other sources — click to choose"
+msgstr "Auch bei anderen Quellen verfügbar – zum Auswählen klicken"
+
+msgid "{} is not responding right now."
+msgstr "{} antwortet gerade nicht."
+
+msgid "The feed could not be loaded."
+msgstr "Die Startseite konnte nicht geladen werden."
+
+msgid "Try again"
+msgstr "Erneut versuchen"
+
+msgid "Movie"
+msgstr "Film"
+
+msgid "episodes"
+msgstr "Folgen"
+
+msgid "{} min left"
+msgstr "noch {} Min."
+
+msgid "{} h left"
+msgstr "noch {} Std."
+
+msgid "Player loading…"
+msgstr "Player wird geladen…"
+
+msgid "Recent searches"
+msgstr "Zuletzt gesucht"
+
+msgid "Continue watching"
+msgstr "Weiterschauen"
+
+msgid "Your watchlist"
+msgstr "Deine Merkliste"
+
+msgid "New in your library"
+msgstr "Neu in deiner Bibliothek"
+
+msgid "Airing next"
+msgstr "Demnächst"

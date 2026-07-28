@@ -211,7 +211,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             login_required,
             refresh_session_role,
         )
-        from .db import has_any_admin, init_db, init_app_settings_db
+        # NOT init_app_settings_db: it is already imported at module level, and
+        # re-importing it *here* makes the name local to create_app() for the
+        # whole function -- so the unconditional call further down
+        # ("init_app_settings_db()", next to init_queue_db()) raised
+        # UnboundLocalError whenever this branch did not run, i.e. every start
+        # with auth_enabled=False.
+        from .db import has_any_admin, init_db
 
         app.secret_key = get_or_create_secret_key()
         app.config["SESSION_COOKIE_HTTPONLY"] = True

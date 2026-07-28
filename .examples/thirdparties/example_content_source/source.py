@@ -41,6 +41,25 @@ _CATALOG = {
 _DEFAULT_SLUG = "example-series"
 
 
+def browse(row: str = "new") -> list:
+    """The catalog as home-page cards -- registered via
+    home_feed.register_home_feed_source(). Same card shape every built-in
+    browse list returns; `row` is only here to show that "new" and "popular"
+    can be answered by one function. A real module would ask the site for its
+    actual new/popular listing (and may return None to say "upstream is
+    down", which makes the feed report the source instead of silently
+    dropping it)."""
+    cards = []
+    for slug, data in _CATALOG.items():
+        cards.append({
+            "title": data["title"] + ("" if row == "new" else " (popular)"),
+            "url": f"https://example-source.invalid/serie/{slug}",
+            "poster_url": data["poster_url"],
+            "genre": ", ".join(data["genres"]),
+        })
+    return cards
+
+
 def search(keyword: str) -> list:
     """Keyword search over the local catalog -- registered via
     search.register_search_source(). Returns the same {"title", "url"} shape

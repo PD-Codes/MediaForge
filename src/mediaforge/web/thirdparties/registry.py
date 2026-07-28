@@ -794,26 +794,30 @@ def unregister_module(name):
         unregister_background_worker(item_id)
         unregister_notification_channel(item_id)
         unregister_event_hooks(item_id)
-    # Same idea for a registered content source / search source / mirror list
-    # / uptime entry (see providers.register_provider,
-    # search.register_search_source, mirrors.register_site_mirrors,
-    # uptime_monitor.register_monitor_site) -- lazy imports, both to avoid a
-    # core -> web import at module load time and because a module that never
-    # called one of these leaves nothing to clean up.
+    # Same idea for a registered content source / search source / CineInfo
+    # source / mirror list / uptime entry (see providers.register_provider,
+    # search.register_search_source, cineinfo.registry.register_cineinfo_source,
+    # mirrors.register_site_mirrors, uptime_monitor.register_monitor_site) --
+    # lazy imports, both to avoid a core -> web import at module load time and
+    # because a module that never called one of these leaves nothing to clean up.
     try:
+        from ...home_feed import unregister_home_feed_source
         from ...providers import unregister_provider
         from ...search import unregister_search_source
         from ...extractors import unregister_hoster
         from ...mirrors import unregister_site_mirrors
         from ..uptime_monitor import unregister_monitor_site
+        from ..cineinfo.registry import unregister_cineinfo_owner
         for item_id in ids:
             unregister_provider(item_id)
+            unregister_home_feed_source(item_id)
             unregister_search_source(item_id)
             unregister_hoster(item_id)
             unregister_site_mirrors(item_id)
             unregister_monitor_site(item_id)
+            unregister_cineinfo_owner(item_id)
     except Exception:
-        logger.exception("[Registry] Failed to clean up content/search/hoster/mirror/uptime sources for module '%s'", name)
+        logger.exception("[Registry] Failed to clean up content/search/cineinfo/hoster/mirror/uptime sources for module '%s'", name)
     _ITEMS = [item for item in _ITEMS if item["id"] not in ids]
     _MODULES.pop(name, None)
     return sorted(blueprints)
@@ -828,7 +832,8 @@ def unregister_module(name):
 # harmless, an event hook runs on every download.
 #
 # Ownership is read the same way unregister_module() cleans up: every
-# secondary registry (providers, search sources, hosters, mirrors, uptime
+# secondary registry (providers, search sources, CineInfo sources, home feed
+# sources, hosters, mirrors, uptime
 # monitors, notification channels, event hooks, background workers) is keyed
 # by the module's own item_id, which is the documented convention. A module
 # that registers a provider under an id it never passed to
@@ -874,11 +879,25 @@ def module_capabilities(name) -> list:
             logger.debug("[Registry] capability count via %s.%s failed", modpath, func)
             return 0
 
+    # CineInfo is the one registry where a single item may legitimately own more
+    # than one source (a catalog with a bulk and a per-item endpoint is two), so
+    # it is counted by source rather than by owning item like the rest.
+    def _count_cineinfo():
+        try:
+            mod = import_module("..cineinfo.registry", __package__)
+            by_item = mod.thirdparty_cineinfo_sources_by_item()
+            return sum(len(by_item.get(i) or ()) for i in ids)
+        except Exception:
+            logger.debug("[Registry] CineInfo capability count failed")
+            return 0
+
     providers = _count("...providers", "thirdparty_provider_ids")
     searches = _count("...search", "thirdparty_search_source_ids")
+    feed_sources = _count("...home_feed", "thirdparty_home_feed_source_ids")
     hosters = _count("...extractors", "thirdparty_hoster_ids")
     mirrors = _count("...mirrors", "thirdparty_mirror_ids")
     monitors = _count("..uptime_monitor", "thirdparty_monitor_ids")
+    cineinfo_sources = _count_cineinfo()
 
     out = []
     for kind, count, hot in (
@@ -888,6 +907,8 @@ def module_capabilities(name) -> list:
         ("provider_pill", pills, False),
         ("provider", providers, True),
         ("search_source", searches, True),
+        ("cineinfo_source", cineinfo_sources, True),
+        ("home_feed_source", feed_sources, False),
         ("hoster", hosters, True),
         ("mirrors", mirrors, False),
         ("monitor", monitors, False),

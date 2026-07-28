@@ -13,6 +13,9 @@ from .source import CineInfoSource, QueryContext
 from .registry import (
     register_cineinfo_source,
     unregister_cineinfo_source,
+    unregister_cineinfo_owner,
+    thirdparty_cineinfo_source_ids,
+    thirdparty_cineinfo_sources_by_item,
     get_sources,
     enrich,
 )
@@ -22,6 +25,9 @@ __all__ = [
     "QueryContext",
     "register_cineinfo_source",
     "unregister_cineinfo_source",
+    "unregister_cineinfo_owner",
+    "thirdparty_cineinfo_source_ids",
+    "thirdparty_cineinfo_sources_by_item",
     "get_sources",
     "enrich",
 ]

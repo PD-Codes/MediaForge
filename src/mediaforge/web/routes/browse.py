@@ -4,6 +4,7 @@ Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 """
 
+from ...home_feed import iter_home_feed_sources
 from ...providers import resolve_provider
 from ...search import fetch_hanime_new
 from ...search import fetch_hanime_trending
@@ -32,6 +33,7 @@ import time
 from ..tmdb_cache import _tmdb_lookup_cached
 from .image_proxy import _img_pool
 from .image_proxy import _precache_image_bg
+from .image_proxy import _poster_proxy
 from .image_proxy import _proxy_result_list
 from ...logger import get_logger
 
@@ -292,6 +294,108 @@ def ensure_prefetch_worker():
     logger.info("[Prefetch] Background worker started (interval=%d min)", _PREFETCH_INTERVAL // 60)
 
 
+# ── Home feed (the new home page) ────────────────────────────────────────
+# The feed page used to fetch all eleven browse lists separately and assemble
+# the rows in JavaScript. That cost eleven round-trips per visit and, worse,
+# made the row layout a hardcoded list inside home_feed.js -- a module that
+# registers a content source could never show up on the home page. Both have
+# the same fix: build the rows here, from a registry (see
+# mediaforge/home_feed.py's register_home_feed_source).
+
+_FEED_ROW_ORDER = ("new", "popular", "movies")
+_FEED_LIMIT_DEFAULT = 30
+_FEED_LIMIT_MAX = 60
+
+# id -> (label, chip colour). Only the built-ins; module sources bring their
+# own label/colour through the registry.
+_FEED_BUILTIN_META = (
+    ("aniworld",   "AniWorld",     "#6aa9ff"),
+    ("sto",        "SerienStream", "#8b7dff"),
+    ("filmpalast", "FilmPalast",   "#ffb454"),
+    ("megakino",   "MegaKino",     "#4ade80"),
+    ("hanime",     "hanime",       "#ff6b9d"),
+)
+
+
+def _feed_builtin_entries():
+    """(source_id, row, media_type, cache_key, fetch_fn) for every built-in
+    list. The cache keys are the same ones the single-list routes above use,
+    so one scrape feeds both home pages instead of two."""
+    show_c, show_u, suffix = _hanime_censorship_prefs()
+    return [
+        ("aniworld",   "new",     "series", "new_animes",              fetch_new_animes),
+        ("aniworld",   "popular", "series", "popular_animes",          fetch_popular_animes),
+        ("sto",        "new",     "series", "new_series",              fetch_new_series),
+        ("sto",        "popular", "series", "popular_series",          fetch_popular_series),
+        ("filmpalast", "new",     "movies", "new_movies",              _fetch_new_movies),
+        ("megakino",   "new",     "movies", "megakino_new_movies",     fetch_megakino_new_movies),
+        ("megakino",   "popular", "movies", "megakino_popular_movies", fetch_megakino_popular_movies),
+        ("megakino",   "new",     "series", "megakino_new_series",     fetch_megakino_new_series),
+        ("megakino",   "popular", "series", "megakino_popular_series", fetch_megakino_popular_series),
+        ("hanime",     "new",     "adult",  "hanime_new" + suffix,
+         lambda: fetch_hanime_new(show_censored=show_c, show_uncensored=show_u)),
+        ("hanime",     "popular", "adult",  "hanime_trending" + suffix,
+         lambda: fetch_hanime_trending(show_censored=show_c, show_uncensored=show_u)),
+    ]
+
+
+def _feed_source_enabled(source_id):
+    """Same rule the settings page writes: every source is opt-out except the
+    adult one, which is opt-in. Module sources default to on -- a module that
+    registered a source was installed on purpose."""
+    default = "0" if source_id == "hanime" else "1"
+    return get_setting("source_enabled_" + source_id, default) != "0"
+
+
+def _feed_norm_title(value):
+    """Loose title key, so "Re:Zero" and "Re Zero" from two sites collapse
+    into one card instead of two."""
+    return "".join(c for c in str(value or "").lower() if c.isalnum())
+
+
+def _feed_collect(bucket, order_ids, limit, taken, index, labels):
+    """Round-robin one row out of {source_id: [items]}.
+
+    Round-robin so a row never opens with twenty AniWorld cards. `taken`
+    carries across rows, which is what keeps a title from appearing in "New"
+    *and* "Popular" *and* "Movies" -- it lands in the first row it qualifies
+    for and nowhere else. A title that several sources have becomes one card
+    that names the others in `also`, so the click can still go elsewhere.
+    """
+    out = []
+    depth = 0
+    while len(out) < limit:
+        progressed = False
+        for sid in order_ids:
+            items = bucket.get(sid) or []
+            if depth >= len(items):
+                continue
+            progressed = True
+            item = items[depth]
+            key = _feed_norm_title(item.get("title")) + "|" + item.get("media_type", "")
+            if key in taken:
+                first = index.get(key)
+                if first is not None and first.get("source") != sid:
+                    if all(a.get("source") != sid for a in first["also"]):
+                        first["also"].append({
+                            "source": sid,
+                            "label": labels.get(sid, sid),
+                            "url": item.get("url", ""),
+                        })
+                continue
+            taken.add(key)
+            card = dict(item)
+            card["also"] = []
+            index[key] = card
+            out.append(card)
+            if len(out) >= limit:
+                break
+        if not progressed:
+            break
+        depth += 1
+    return out
+
+
 def register_browse_routes(app):
     """Register all browse/discovery routes (anime, series, movie listings,
     hanime, and the local downloaded-folders lookup) on the Flask app."""
@@ -431,6 +535,280 @@ def register_browse_routes(app):
         if results is None:
             return jsonify({"error": "Failed to fetch hanime trending"}), 502
         return jsonify({"results": _proxy_result_list(results)})
+    @app.route("/api/home-feed")
+    def api_home_feed():
+        """Return the complete new-home-page feed in one answer.
+        GET /api/home-feed?adult=0|1&limit=30.
+
+        Called from static/home_feed.js, which used to build this itself out
+        of eleven separate requests. Rows are assembled server-side because
+        that is the only place that knows which sources exist -- built-ins
+        plus whatever modules registered (see mediaforge/home_feed.py).
+
+        `adult=1` is what actually fetches the 18+ source; with the chip off
+        the request never touches it, instead of fetching and hiding it.
+
+        A source that fails upstream is reported in `errors` rather than
+        silently contributing nothing -- "the site is down" and "nothing
+        matches your filters" look identical otherwise, and only one of them
+        is the user's doing.
+        """
+        want_adult = request.args.get("adult", "0") == "1"
+        try:
+            limit = int(request.args.get("limit", _FEED_LIMIT_DEFAULT))
+        except (TypeError, ValueError):
+            limit = _FEED_LIMIT_DEFAULT
+        limit = max(1, min(limit, _FEED_LIMIT_MAX))
+
+        # 1. Everything that could contribute: built-ins + module sources.
+        entries = list(_feed_builtin_entries())
+        meta = {}
+        for sid, label, color in _FEED_BUILTIN_META:
+            meta[sid] = {"id": sid, "label": label, "color": color,
+                         "types": set(), "builtin": True}
+        for src in iter_home_feed_sources():
+            sid = src["source_id"]
+            meta.setdefault(sid, {"id": sid, "label": src["label"],
+                                  "color": src["color"], "types": set(),
+                                  "builtin": False})
+            for row, fn in src["fetchers"].items():
+                entries.append((sid, row, src["media_type"],
+                                "tp_%s_%s" % (sid, row), fn))
+
+        for sid, _row, mtype, _key, _fn in entries:
+            if sid in meta:
+                meta[sid]["types"].add(mtype)
+
+        # 2. Source order: the user's own (Settings -> Sources), unknown ids
+        #    appended so a freshly installed module is visible without the
+        #    user having to re-save the order first.
+        order_raw = get_setting("home_source_order", "") or ""
+        order = [s.strip().lower() for s in order_raw.split(",") if s.strip()]
+        order = [s for s in order if s in meta]
+        for sid in meta:
+            if sid not in order:
+                order.append(sid)
+
+        enabled = {sid: _feed_source_enabled(sid) for sid in meta}
+
+        def _wanted(sid, mtype):
+            if not enabled.get(sid):
+                return False
+            if mtype == "adult" and not want_adult:
+                return False
+            return True
+
+        # 3. Fetch in parallel. _cached_browse() needs no request context (it
+        #    only touches the browse cache and the scrapers), so a worker pool
+        #    is safe here and turns a cold start from "eleven timeouts in a
+        #    row" into one.
+        todo = [e for e in entries if _wanted(e[0], e[2])]
+        fetched = {}
+        failures = {}
+        if todo:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(8, len(todo)),
+                                    thread_name_prefix="home-feed") as pool:
+                futures = {
+                    pool.submit(_cached_browse, key, fn): (sid, row, mtype)
+                    for (sid, row, mtype, key, fn) in todo
+                }
+                for fut, (sid, row, mtype) in futures.items():
+                    try:
+                        results = fut.result()
+                    except Exception as exc:
+                        logger.warning("[HomeFeed] %s/%s failed: %s", sid, row, exc)
+                        results = None
+                    if results is None:
+                        failures.setdefault(sid, []).append(row)
+                        continue
+                    fetched.setdefault((row, sid), []).extend(
+                        dict(r, source=sid, media_type=mtype) for r in results
+                    )
+
+        # 4. Proxy posters + inline cached TMDB, once per source list (both
+        #    read settings, so this stays in the request thread).
+        for key, items in fetched.items():
+            fetched[key] = _proxy_result_list(items)
+
+        # 5. Rows. `taken` spans all three, so nothing is shown twice.
+        labels = {sid: meta[sid]["label"] for sid in meta}
+        taken, index = set(), {}
+        rows = {}
+        for row in _FEED_ROW_ORDER:
+            if row == "movies":
+                bucket = {}
+                for (r, sid), items in fetched.items():
+                    movies = [i for i in items if i.get("media_type") == "movies"]
+                    if movies:
+                        bucket.setdefault(sid, []).extend(movies)
+            else:
+                bucket = {sid: items for (r, sid), items in fetched.items() if r == row}
+            rows[row] = _feed_collect(bucket, order, limit, taken, index, labels)
+
+        return jsonify({
+            "rows": rows,
+            "sources": [
+                {
+                    "id": sid,
+                    "label": meta[sid]["label"],
+                    "color": meta[sid]["color"],
+                    "enabled": bool(enabled.get(sid)),
+                    "types": sorted(meta[sid]["types"]),
+                    "builtin": meta[sid]["builtin"],
+                    "error": sid in failures,
+                }
+                for sid in order
+            ],
+            "errors": [
+                {"source": sid, "label": labels.get(sid, sid), "rows": sorted(set(rws))}
+                for sid, rws in failures.items()
+            ],
+            "adult": want_adult,
+            "generated_at": _time.time(),
+        })
+
+    @app.route("/api/home-feed/personal")
+    def api_home_feed_personal():
+        """Return the personal home rows. GET /api/home-feed/personal.
+
+        Four questions the discovery rows cannot answer, all from data
+        MediaForge already has: what was I watching, what did I mark, what
+        arrived in my library, what airs next. Every one of them is per user
+        and every one degrades to an empty list rather than an error -- a
+        home page must not break because the calendar has no API key.
+
+        Called from static/home_feed.js.
+        """
+        from ..request_context import get_current_user_info
+        try:
+            username, _is_admin = get_current_user_info()
+        except Exception:
+            username = None
+
+        out = {"continue": [], "watchlist": [], "library": [], "upcoming": []}
+
+        # --- the library, once: both "continue watching" (which needs to turn
+        #     a file path back into a title) and "new in your library" read it.
+        lib_titles = []
+        by_path = {}
+        try:
+            from .library import _lib_active_path_keys
+            from ..db import get_all_library_cache
+            active = _lib_active_path_keys()
+            for path_key, entry in (get_all_library_cache() or {}).items():
+                if path_key not in active:
+                    continue          # leftover of a removed scan target
+                for title in entry.get("data") or []:
+                    lib_titles.append(title)
+                    for skey, eps in (title.get("seasons") or {}).items():
+                        for ep in eps:
+                            if ep.get("path"):
+                                by_path[ep["path"]] = (title, skey, ep)
+        except Exception:
+            logger.debug("[HomeFeed] library lookup failed", exc_info=True)
+
+        # --- Continue watching
+        try:
+            from ..db import get_recent_watch_progress
+            for prog in get_recent_watch_progress(username=username, limit=15):
+                path = prog["file_path"]
+                title, skey, ep = by_path.get(path, (None, None, None))
+                if title is None:
+                    continue          # file was deleted or moved since
+                duration = float(prog.get("duration_seconds") or 0)
+                position = float(prog.get("position_seconds") or 0)
+                percent = (position / duration * 100) if duration > 0 else 0
+                out["continue"].append({
+                    "title": title.get("folder", ""),
+                    "path": path,
+                    "file": ep.get("file", ""),
+                    "season": None if skey == "movies" else skey,
+                    "episode": ep.get("episode"),
+                    "is_movie": bool(title.get("is_movie")),
+                    "position": position,
+                    "duration": duration,
+                    "percent": round(percent, 1),
+                })
+        except Exception:
+            logger.debug("[HomeFeed] continue-watching lookup failed", exc_info=True)
+
+        # --- New in your library
+        try:
+            recent = sorted(lib_titles, key=lambda t: t.get("added_at") or 0, reverse=True)
+            for title in recent[:20]:
+                if not title.get("added_at"):
+                    continue
+                out["library"].append({
+                    "title": title.get("folder", ""),
+                    "is_movie": bool(title.get("is_movie")),
+                    "episodes": title.get("total_episodes") or 0,
+                    "added_at": title.get("added_at"),
+                })
+        except Exception:
+            logger.debug("[HomeFeed] library row failed", exc_info=True)
+
+        # --- Watchlist (favourites)
+        try:
+            from ..db import get_favourites
+            for fav in (get_favourites(added_by=username) or [])[:20]:
+                poster = fav.get("poster_url") or ""
+                if poster and not poster.startswith("/api/img"):
+                    poster = _poster_proxy(poster)
+                out["watchlist"].append({
+                    "title": fav.get("title", ""),
+                    "url": fav.get("series_url", ""),
+                    "poster_url": poster,
+                    "provider": fav.get("provider") or "",
+                    "media_type": fav.get("media_type") or "",
+                })
+        except Exception:
+            logger.debug("[HomeFeed] watchlist row failed", exc_info=True)
+
+        # --- Airing next (calendar). Only when the calendar feature is on and
+        #     configured -- collect_calendar_events() is the expensive one here,
+        #     and without an API key it has nothing to say anyway.
+        try:
+            if get_setting("cineinfo_calendar", "0") == "1":
+                api_key = (get_setting("cineinfo_tmdb_api_key", "") or "").strip()
+                if api_key:
+                    from datetime import date, timedelta
+                    from flask import session as _session
+                    from .calendar_routes import collect_calendar_events
+                    from ..request_context import get_current_user_info as _uinfo
+                    _user, _admin = _uinfo()
+                    events, _meta = collect_calendar_events(
+                        api_key, get_setting("cineinfo_country", "DE"),
+                        _session.get("ui_language", "en"), _user, _admin)
+                    today = date.today()
+                    horizon = today + timedelta(days=14)
+                    upcoming = []
+                    for ev in events or []:
+                        raw = str(ev.get("air_date") or "")[:10]
+                        try:
+                            when = date.fromisoformat(raw)
+                        except ValueError:
+                            continue
+                        if today <= when <= horizon:
+                            upcoming.append((when, ev))
+                    upcoming.sort(key=lambda pair: pair[0])
+                    for when, ev in upcoming[:20]:
+                        art = ev.get("still") or ev.get("poster") or ""
+                        out["upcoming"].append({
+                            "title": ev.get("title", ""),
+                            "name": ev.get("name", ""),
+                            "season": ev.get("season"),
+                            "episode": ev.get("episode"),
+                            "air_date": when.isoformat(),
+                            "is_movie": bool(ev.get("is_movie")),
+                            "poster_url": _poster_proxy(
+                                "https://image.tmdb.org/t/p/w300" + art) if art else "",
+                        })
+        except Exception:
+            logger.debug("[HomeFeed] upcoming row failed", exc_info=True)
+
+        return jsonify(out)
+
     @app.route("/api/downloaded-folders")
     def api_downloaded_folders():
         """List folder names present under the download root(s) (and any

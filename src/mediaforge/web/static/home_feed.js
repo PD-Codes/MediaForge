@@ -6,119 +6,201 @@
    eleven rows in total) for this one: rows grouped by *question* instead of
    by source.
 
-     New this week   — every enabled source, interleaved
-     Popular right now — same
-     Movies          — FilmPalast + MegaKino only
+     Continue watching  — unfinished playback positions, from your library
+     Your watchlist     — favourites
+     New in your library— what the library scan picked up recently
+     Airing next        — the calendar's next two weeks
+     New this week      — every enabled source, interleaved
+     Popular right now  — same
+     Movies             — whatever did not already appear above
 
-   Each poster carries a small label naming where it came from, because the
-   row no longer does. Two chip groups above the rows filter sources and
-   media type; the choice is remembered per browser (localStorage), not per
-   account -- it is a viewing preference, not a setting.
+   The rows are built by GET /api/home-feed (one request, not eleven) and
+   GET /api/home-feed/personal. The server owns *which* items end up in
+   which row, because it is the only side that knows which sources exist --
+   a module that registers a source through register_home_feed_source()
+   shows up here without this file knowing its name. What this file owns is
+   the chips, the filtering, and how a card looks.
 
-   Everything below deliberately reuses app.js: renderBrowseCards() (so the
-   "already downloaded" badge, the Auto-Sync badge, TMDB/CineInfo enrichment
-   and the click-through all behave exactly as on the classic home page),
-   renderSkeletons(), renderSourceChips() and applyUptimeStatus(). The only
-   thing this file owns is *which items end up in which row*.
+   Discovery cards deliberately go through app.js's renderBrowseCards(), so
+   the "already downloaded" badge, the Auto-Sync badge, TMDB/CineInfo
+   enrichment and the click-through behave exactly as on the classic page.
    =================================================================== */
 
 (function () {
   const feed = document.getElementById("homeFeed");
   if (!feed) return;                       // classic home page — nothing to do
 
-  const SOURCE_LABELS = {
-    aniworld: "AniWorld",
-    sto: "SerienStream",
-    filmpalast: "FilmPalast",
-    megakino: "MegaKino",
-    hanime: "hanime",
+  // Every visible string comes from the template (index.html renders them
+  // through Flask-Babel), so the feed is translated by the same catalogue as
+  // the rest of the app instead of a hardcoded German/English pair.
+  const I18N = window.__HOME_I18N || {};
+  function HT(key) { return I18N[key] || key; }
+
+  const DISCOVERY_ROWS = ["new", "popular", "movies"];
+  const PERSONAL_ROWS = ["continue", "watchlist", "library", "upcoming"];
+  const ROW_GRIDS = {
+    continue: "feedContinueGrid",
+    watchlist: "feedWatchlistGrid",
+    library: "feedLibraryGrid",
+    upcoming: "feedUpcomingGrid",
+    new: "feedNewGrid",
+    popular: "feedPopularGrid",
+    movies: "feedMoviesGrid",
   };
-  const SOURCE_ORDER = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
+  const ROW_MAX = 30;
+  const PREF_KEY = "home_feed_filters";
+  const LS_KEY = "mf-home-filters";
+  const RELOAD_AFTER = 3600000;            // 1 h, same as the server-side cache
 
-  // [source, row, type, endpoint]. "adult" is its own type so the 18+ chip can
-  // switch hanime off without touching the source chips.
-  const ENDPOINTS = [
-    ["aniworld", "new", "series", "/api/new-animes"],
-    ["aniworld", "popular", "series", "/api/popular-animes"],
-    ["sto", "new", "series", "/api/new-series"],
-    ["sto", "popular", "series", "/api/popular-series"],
-    ["filmpalast", "new", "movies", "/api/new-movies"],
-    ["megakino", "new", "movies", "/api/megakino/new-movies"],
-    ["megakino", "popular", "movies", "/api/megakino/popular-movies"],
-    ["megakino", "new", "series", "/api/megakino/new-series"],
-    ["megakino", "popular", "series", "/api/megakino/popular-series"],
-    ["hanime", "new", "adult", "/api/hanime/new"],
-    ["hanime", "popular", "adult", "/api/hanime/trending"],
-  ];
+  let sources = [];                        // [{id,label,color,enabled,types,error}]
+  let rows = {};                           // row -> [card]
+  let personal = {};
+  let offSources = {};                     // id -> true when switched off
+  let offTypes = { adult: true };          // 18+ starts off
+  let feedError = "";
+  let downIds = [];                        // reported down by the UpTime monitor
 
-  const ROW_GRIDS = { new: "feedNewGrid", popular: "feedPopularGrid", movies: "feedMoviesGrid" };
-  const ROW_MAX = 30;                      // per row, after interleaving
-  const FILTER_KEY = "homeFeedFilters";
-
-  let sourcesSetting = {};
-  let enabledSources = [];                 // ids, in the user's own order
-  let items = [];                          // every fetched item, tagged
-  let filters = { sources: {}, types: { series: true, movies: true, adult: false } };
-
-  // ---------------------------------------------------------------- filters
+  // ------------------------------------------------------------ preferences
+  // Which chips are off is a per-ACCOUNT preference (same reasoning as the
+  // library layout): a filter that resets on every device is a filter the
+  // user sets again every day. localStorage stays as the fallback for the
+  // logged-out / auth-disabled case.
   function loadFilters() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(FILTER_KEY) || "{}");
-      if (raw && raw.sources) filters.sources = raw.sources;
-      if (raw && raw.types) Object.assign(filters.types, raw.types);
-    } catch (e) { /* first visit, or a browser that refuses storage */ }
+    let raw = "";
+    const prefs = window._USER_PREFS || {};
+    if (typeof prefs[PREF_KEY] === "string") {
+      raw = prefs[PREF_KEY];
+    } else {
+      try { raw = localStorage.getItem(LS_KEY) || ""; } catch (e) { raw = ""; }
+    }
+    if (!raw) return;
+    offSources = {};
+    offTypes = {};
+    raw.split(";").forEach(function (part) {
+      const bits = part.split(":");
+      const target = bits[0] === "s" ? offSources : (bits[0] === "t" ? offTypes : null);
+      if (!target) return;
+      (bits[1] || "").split(",").forEach(function (id) { if (id) target[id] = true; });
+    });
   }
 
   function saveFilters() {
-    try { localStorage.setItem(FILTER_KEY, JSON.stringify(filters)); } catch (e) { }
+    const value =
+      "s:" + Object.keys(offSources).filter(function (k) { return offSources[k]; }).join(",") +
+      ";t:" + Object.keys(offTypes).filter(function (k) { return offTypes[k]; }).join(",");
+    try { localStorage.setItem(LS_KEY, value); } catch (e) { /* private mode */ }
+    if (typeof window.mfSaveUserPref === "function") {
+      const patch = {};
+      patch[PREF_KEY] = value;
+      window.mfSaveUserPref(patch);        // fire-and-forget, like the appearance prefs
+    }
   }
 
-  /** A source is shown unless it was explicitly switched off in the chips. */
-  function sourceOn(id) { return filters.sources[id] !== false; }
-  function allSourcesOn() { return enabledSources.every(sourceOn); }
+  // ------------------------------------------------------------ chip helpers
+  function sourceOn(id) { return !offSources[id]; }
+  function typeOn(key) { return !offTypes[key]; }
+  function adultWanted() { return typeOn("adult"); }
 
+  function activeSources() {
+    return sources.filter(function (s) { return s.enabled; });
+  }
+
+  function availableTypes() {
+    const seen = {};
+    sources.forEach(function (s) {
+      if (!s.enabled) return;
+      (s.types || []).forEach(function (ty) { seen[ty] = true; });
+    });
+    return seen;
+  }
+
+  /** One chip row for both jobs. There used to be two rows stacked on top of
+      each other -- a read-only status row and a clickable filter row, both
+      listing the same five names, which is a puzzle rather than a control. */
   function renderFilters() {
     const wrap = document.getElementById("feedFilters");
     if (!wrap) return;
-    const chip = (on, label, kind, value) =>
-      '<button type="button" class="feed-chip' + (on ? " is-on" : "") + '"' +
-      ' data-kind="' + kind + '" data-value="' + escapeHtml(value) + '"' +
-      ' aria-pressed="' + (on ? "true" : "false") + '">' + escapeHtml(label) + "</button>";
+    const types = availableTypes();
+    let html = '<span class="feed-chip-label">' + escapeHtml(HT("sources")) + "</span>";
 
-    let html = '<span class="feed-chip-label">' + escapeHtml(t("Quellen", "Sources")) + "</span>";
-    html += chip(allSourcesOn(), t("Alle", "All"), "all", "all");
-    enabledSources.forEach(function (id) {
-      if (id === "hanime") return;         // reached through the 18+ chip instead
-      html += chip(sourceOn(id), SOURCE_LABELS[id] || id, "source", id);
+    sources.forEach(function (s) {
+      if (!s.enabled) {
+        // Switched off in Settings → shown, but as a fact, not as a filter.
+        html += '<span class="feed-chip is-disabled" title="' +
+          escapeHtml(HT("disabled_in_settings")) + '">' +
+          '<span class="feed-chip-dot"></span>' + escapeHtml(s.label) +
+          ' · ' + escapeHtml(HT("off")) + "</span>";
+        return;
+      }
+      const down = s.error || downIds.indexOf(s.id) !== -1;
+      const on = sourceOn(s.id);
+      const dot = s.color
+        ? ' style="background:' + escapeHtml(s.color) + '"'
+        : "";
+      html += '<button type="button" class="feed-chip' + (on ? " is-on" : "") +
+        (down ? " is-down" : "") + '" data-kind="source" data-value="' +
+        escapeHtml(s.id) + '" aria-pressed="' + (on ? "true" : "false") + '">' +
+        '<span class="feed-chip-dot"' + (down ? "" : dot) + "></span>" +
+        escapeHtml(s.label) +
+        (down ? ' · ' + escapeHtml(HT("offline")) : "") +
+        "</button>";
     });
-    html += '<span class="feed-chip-label feed-chip-label--split">' + escapeHtml(t("Art", "Type")) + "</span>";
-    html += chip(filters.types.series, t("Serien", "Series"), "type", "series");
-    html += chip(filters.types.movies, t("Filme", "Movies"), "type", "movies");
-    if (enabledSources.indexOf("hanime") !== -1) {
-      html += chip(filters.types.adult, "18+", "type", "adult");
+
+    html += '<span class="feed-chip-label feed-chip-label--split">' +
+      escapeHtml(HT("type")) + "</span>";
+    if (types.series) {
+      html += typeChip("series", HT("series"));
+    }
+    if (types.movies) {
+      html += typeChip("movies", HT("movies"));
+    }
+    if (types.adult) {
+      html += typeChip("adult", "18+");
     }
     wrap.innerHTML = html;
   }
 
+  function typeChip(key, label) {
+    const on = typeOn(key);
+    return '<button type="button" class="feed-chip' + (on ? " is-on" : "") +
+      '" data-kind="type" data-value="' + escapeHtml(key) + '" aria-pressed="' +
+      (on ? "true" : "false") + '">' + escapeHtml(label) + "</button>";
+  }
+
+  /** What the UpTime monitor knows, mirrored into the chips. app.js calls
+      this through markSourceChipsDown() so there is still exactly one place
+      that polls /api/uptime/status. */
+  window.mfFeedMarkDown = function (ids) {
+    downIds = Array.isArray(ids) ? ids.slice() : [];
+    if (sources.length) { renderFilters(); renderAlerts(); }
+  };
+
   feed.addEventListener("click", function (ev) {
+    const retry = ev.target.closest(".feed-alert-retry");
+    if (retry) { window.reloadHomeFeed(); return; }
+
     const btn = ev.target.closest(".feed-chip");
-    if (!btn) return;
+    if (!btn || btn.tagName !== "BUTTON") return;
     const kind = btn.dataset.kind;
-    if (kind === "all") {
-      const turnOn = !allSourcesOn();
-      enabledSources.forEach(function (id) { filters.sources[id] = turnOn ? true : (id === enabledSources[0]); });
-    } else if (kind === "source") {
-      const id = btn.dataset.value;
-      const next = !sourceOn(id);
+    const value = btn.dataset.value;
+
+    if (kind === "source") {
+      const on = sourceOn(value);
       // Never leave every source off — that is an empty page, not a filter.
-      if (!next && enabledSources.filter(function (s) { return s !== id && sourceOn(s); }).length === 0) return;
-      filters.sources[id] = next;
+      if (on && activeSources().filter(function (s) {
+        return s.id !== value && sourceOn(s.id);
+      }).length === 0) return;
+      if (on) offSources[value] = true; else delete offSources[value];
     } else if (kind === "type") {
-      const key = btn.dataset.value;
-      const next = !filters.types[key];
-      const others = Object.keys(filters.types).filter(function (k) { return k !== key && filters.types[k]; });
-      if (!next && others.length === 0) return;
-      filters.types[key] = next;
+      const on = typeOn(value);
+      const others = Object.keys(availableTypes()).filter(function (k) {
+        return k !== value && typeOn(k);
+      });
+      if (on && others.length === 0) return;
+      if (on) offTypes[value] = true; else delete offTypes[value];
+      // The 18+ source is only ever *fetched* when the chip is on, so turning
+      // it on has to go back to the server once.
+      if (value === "adult" && !offTypes.adult) { saveFilters(); renderFilters(); reload(); return; }
     } else {
       return;
     }
@@ -127,160 +209,302 @@
     renderRows();
   });
 
-  // ---------------------------------------------------------------- rows
-  /** Round-robin over the sources so a row never opens with 20 AniWorld cards. */
-  function interleave(list) {
-    const buckets = enabledSources.map(function (id) {
-      return list.filter(function (i) { return i._src === id; });
+  // ------------------------------------------------------------ source pill
+  /** The same title from two sources is one card. Clicking its pill says
+      which sources have it and opens the one you pick -- before, the extra
+      sources were a tooltip and the card always opened the first one. */
+  function openSourcePicker(pill) {
+    closeSourcePicker();
+    let entries;
+    try { entries = JSON.parse(pill.dataset.also); } catch (e) { return; }
+    if (!entries || entries.length < 2) return;
+    const menu = document.createElement("div");
+    menu.className = "browse-src-menu";
+    menu.innerHTML = entries.map(function (e) {
+      return '<button type="button" data-url="' + escapeHtml(e.url) + '">' +
+        escapeHtml(e.label) + "</button>";
+    }).join("");
+    menu.addEventListener("click", function (ev) {
+      const b = ev.target.closest("button");
+      if (!b) return;
+      ev.stopPropagation();
+      closeSourcePicker();
+      if (typeof openSeries === "function") openSeries(b.dataset.url);
     });
-    const out = [];
-    for (let n = 0; out.length < ROW_MAX; n++) {
-      let took = false;
-      for (let b = 0; b < buckets.length; b++) {
-        if (buckets[b][n] !== undefined) { out.push(buckets[b][n]); took = true; }
-        if (out.length >= ROW_MAX) break;
-      }
-      if (!took) break;
-    }
-    return out;
+    pill.appendChild(menu);
+    setTimeout(function () {
+      document.addEventListener("click", closeSourcePicker, { once: true });
+    }, 0);
   }
 
-  function normTitle(s) {
-    return String(s || "").toLowerCase().replace(/[\s._:!?,'"()\-]+/g, "");
+  function closeSourcePicker() {
+    const open = feed.querySelector(".browse-src-menu");
+    if (open && open.parentNode) open.parentNode.removeChild(open);
   }
 
-  /** The same title from two sources becomes one card that names both. */
-  function dedupe(list) {
-    const seen = {};
-    const out = [];
-    list.forEach(function (item) {
-      const key = normTitle(item.title) + "|" + item._type;
-      if (seen[key]) {
-        const first = seen[key];
-        if (first._also.indexOf(item._src) === -1 && item._src !== first._src) first._also.push(item._src);
-        return;
-      }
-      item._also = [];
-      seen[key] = item;
-      out.push(item);
-    });
-    return out;
+  // ------------------------------------------------------------ rendering
+  function visibleCards(row) {
+    return (rows[row] || []).filter(function (item) {
+      return sourceOn(item.source) && typeOn(item.media_type);
+    }).slice(0, ROW_MAX);
   }
 
-  function rowItems(row) {
-    return interleave(dedupe(items.filter(function (i) {
-      return i._row === row && sourceOn(i._src) && filters.types[i._type];
-    })));
+  function showSection(row, visible) {
+    const grid = document.getElementById(ROW_GRIDS[row]);
+    const section = grid && grid.closest(".browse-section");
+    if (section) section.style.display = visible ? "" : "none";
+    return grid;
   }
 
-  /** The origin label the row no longer carries. Added after renderBrowseCards()
-      so app.js stays the single owner of what a browse card looks like. */
+  /** The origin label the row no longer carries. Added after
+      renderBrowseCards() so app.js stays the single owner of what a browse
+      card looks like. */
   function addSourcePills(grid, list) {
     if (grid.children.length !== list.length) return;
     for (let i = 0; i < list.length; i++) {
       const item = list[i];
-      const label = SOURCE_LABELS[item._src] || item._src;
-      const extra = (item._also && item._also.length) ? " +" + item._also.length : "";
+      const src = sourceById(item.source);
+      const also = (item.also || []).filter(function (a) { return sourceOn(a.source); });
       const pill = document.createElement("span");
       pill.className = "browse-src-pill";
-      pill.textContent = label + extra;
-      if (extra) {
-        pill.title = [item._src].concat(item._also).map(function (s) {
-          return SOURCE_LABELS[s] || s;
-        }).join(" · ");
+      pill.textContent = (src ? src.label : item.source) + (also.length ? " +" + also.length : "");
+      if (also.length) {
+        pill.classList.add("is-multi");
+        pill.dataset.also = JSON.stringify(
+          [{ label: src ? src.label : item.source, url: item.url || "" }].concat(
+            also.map(function (a) { return { label: a.label, url: a.url }; })));
+        pill.title = HT("also_on");
+      }
+      if (also.length) {
+        // The pill sits inside the card, and the card's own onclick opens the
+        // series. A delegated listener on #homeFeed would fire *after* that,
+        // so the picker is bound here and stops the click where it happens.
+        pill.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openSourcePicker(pill);
+        });
       }
       grid.children[i].appendChild(pill);
     }
   }
 
+  function sourceById(id) {
+    for (let i = 0; i < sources.length; i++) if (sources[i].id === id) return sources[i];
+    return null;
+  }
+
   function renderRows() {
-    Object.keys(ROW_GRIDS).forEach(function (row) {
-      const grid = document.getElementById(ROW_GRIDS[row]);
-      const section = grid && grid.closest(".browse-section");
+    DISCOVERY_ROWS.forEach(function (row) {
+      const list = visibleCards(row);
+      const grid = showSection(row, list.length > 0);
       if (!grid) return;
-      const list = rowItems(row);
-      if (!list.length) {
-        // An empty row is hidden rather than shown empty — with filters on,
-        // three "nothing here" blocks say less than two filled rows.
-        if (section) section.style.display = "none";
-        grid.innerHTML = "";
-        return;
-      }
-      if (section) section.style.display = "";
-      renderBrowseCards(grid, list, { skipTmdb: list.every(function (i) { return i._type === "adult"; }) });
+      if (!list.length) { grid.innerHTML = ""; return; }
+      renderBrowseCards(grid, list, {
+        skipTmdb: list.every(function (i) { return i.media_type === "adult"; }),
+      });
       addSourcePills(grid, list);
     });
+    renderPersonal();
+    renderAlerts();
+
     const anyVisible = Object.keys(ROW_GRIDS).some(function (row) {
       const g = document.getElementById(ROW_GRIDS[row]);
       const s = g && g.closest(".browse-section");
       return s && s.style.display !== "none";
     });
     const empty = document.getElementById("feedEmpty");
-    if (empty) empty.style.display = anyVisible ? "none" : "";
+    if (empty) {
+      empty.style.display = anyVisible ? "none" : "";
+      // "Nothing matches your filters" and "every source is down" are not the
+      // same message, and only one of them is something the user can fix by
+      // clicking a chip.
+      empty.textContent = feedError ? feedError : HT("empty_filters");
+    }
   }
 
-  // ---------------------------------------------------------------- loading
+  // ------------------------------------------------------------ alerts
+  function renderAlerts() {
+    const wrap = document.getElementById("feedAlerts");
+    if (!wrap) return;
+    const broken = sources.filter(function (s) {
+      return s.enabled && (s.error || downIds.indexOf(s.id) !== -1);
+    });
+    if (!broken.length && !feedError) { wrap.innerHTML = ""; return; }
+    const names = broken.map(function (s) { return s.label; }).join(", ");
+    const text = feedError || HT("source_down").replace("{}", names);
+    wrap.innerHTML =
+      '<div class="feed-alert">' +
+      '<span class="feed-alert-text">' + escapeHtml(text) + "</span>" +
+      '<button type="button" class="feed-alert-retry">' +
+      escapeHtml(HT("try_again")) + "</button></div>";
+  }
+
+  // ------------------------------------------------------------ personal rows
+  function fauxArt(name) {
+    // Same hashing the Library page uses for its placeholder art, so a title
+    // has the same colour in both places.
+    let hash = 0;
+    const text = String(name || "");
+    for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+    const h1 = hash % 360, h2 = (h1 + 48) % 360;
+    return '<span class="home-pcard-faux" style="background:linear-gradient(155deg,hsl(' +
+      h1 + ',55%,22%),hsl(' + h2 + ',55%,14%))"></span>';
+  }
+
+  function pcard(inner, cls) {
+    return '<div class="home-pcard' + (cls ? " " + cls : "") + '">' + inner + "</div>";
+  }
+
+  function renderPersonal() {
+    // Continue watching
+    const cont = personal.continue || [];
+    let grid = showSection("continue", cont.length > 0);
+    if (grid && cont.length) {
+      grid.innerHTML = cont.map(function (it, n) {
+        const sub = it.is_movie
+          ? HT("movie")
+          : (it.season ? "S" + it.season + (it.episode ? " · " + HT("episode") + " " + it.episode : "")
+                       : (it.episode ? HT("episode") + " " + it.episode : ""));
+        return pcard(
+          '<button type="button" class="home-pcard-hit" data-play="' + n + '">' +
+          fauxArt(it.title) +
+          '<span class="home-pcard-play" aria-hidden="true">' +
+          '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></span>' +
+          '<span class="home-pcard-bar"><i style="width:' +
+          Math.max(2, Math.min(100, it.percent || 0)) + '%"></i></span>' +
+          '<span class="home-pcard-title">' + escapeHtml(it.title) + "</span>" +
+          '<span class="home-pcard-sub">' + escapeHtml(sub) + " · " +
+          escapeHtml(remaining(it)) + "</span></button>");
+      }).join("");
+      grid.querySelectorAll("[data-play]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          const it = cont[parseInt(btn.dataset.play, 10)];
+          if (!it) return;
+          if (typeof openPlayer === "function") {
+            openPlayer(it.path, it.title, it.position || 0);
+          } else if (typeof showToast === "function") {
+            showToast(HT("player_loading"));
+          }
+        });
+      });
+    }
+
+    // Watchlist — real posters, so these are ordinary browse cards.
+    const wl = personal.watchlist || [];
+    grid = showSection("watchlist", wl.length > 0);
+    if (grid && wl.length) {
+      renderBrowseCards(grid, wl.map(function (f) {
+        return { title: f.title, url: f.url, poster_url: f.poster_url, genre: f.provider || "" };
+      }), {});
+    }
+
+    // New in your library
+    const lib = personal.library || [];
+    grid = showSection("library", lib.length > 0);
+    if (grid && lib.length) {
+      grid.innerHTML = lib.map(function (it) {
+        const sub = it.is_movie ? HT("movie")
+          : it.episodes + " " + HT("episodes_short");
+        return pcard(
+          '<a class="home-pcard-hit" href="/library">' +
+          fauxArt(it.title) +
+          '<span class="home-pcard-title">' + escapeHtml(it.title) + "</span>" +
+          '<span class="home-pcard-sub">' + escapeHtml(sub) + "</span></a>");
+      }).join("");
+    }
+
+    // Airing next
+    const up = personal.upcoming || [];
+    grid = showSection("upcoming", up.length > 0);
+    if (grid && up.length) {
+      grid.innerHTML = up.map(function (ev) {
+        const art = ev.poster_url
+          ? '<img src="' + escapeHtml(ev.poster_url) + '" alt="" loading="lazy">'
+          : fauxArt(ev.title);
+        const ep = ev.is_movie ? HT("movie")
+          : (ev.season ? "S" + ev.season + "E" + (ev.episode || "") : "");
+        return pcard(
+          '<a class="home-pcard-hit" href="/calendar">' + art +
+          '<span class="home-pcard-title">' + escapeHtml(ev.title) + "</span>" +
+          '<span class="home-pcard-sub">' + escapeHtml(formatDate(ev.air_date)) +
+          (ep ? " · " + escapeHtml(ep) : "") + "</span></a>", "has-art");
+      }).join("");
+    }
+  }
+
+  function remaining(item) {
+    const left = Math.max(0, (item.duration || 0) - (item.position || 0));
+    if (!left) return "";
+    const mins = Math.round(left / 60);
+    if (mins < 60) return HT("minutes_left").replace("{}", String(mins));
+    const hours = Math.floor(mins / 60);
+    return HT("hours_left").replace("{}", hours + ":" + String(mins % 60).padStart(2, "0"));
+  }
+
+  function formatDate(iso) {
+    try {
+      const d = new Date(iso + "T00:00:00");
+      return d.toLocaleDateString(window.__LANG === "de" ? "de-DE" : "en-US",
+                                  { weekday: "short", day: "2-digit", month: "2-digit" });
+    } catch (e) { return iso; }
+  }
+
+  // ------------------------------------------------------------ loading
   let loadedAt = 0;
+  let inFlight = false;
 
   async function load() {
-    if (loadedAt && Date.now() - loadedAt < 3600000) return;
-    loadedAt = Date.now();
+    if (inFlight) return;
+    if (loadedAt && Date.now() - loadedAt < RELOAD_AFTER) return;
+    inFlight = true;
+    feedError = "";
 
-    let settings = {};
-    try { settings = await loadGeneralSettings(); } catch (e) { settings = {}; }
-    sourcesSetting = (settings && settings.sources) || {};
-    const on = sourcesSetting.enabled || {};
-    const order = String(sourcesSetting.order || "").split(",")
-      .map(function (s) { return s.trim().toLowerCase(); })
-      .filter(function (s) { return SOURCE_ORDER.indexOf(s) !== -1; });
-    SOURCE_ORDER.forEach(function (s) { if (order.indexOf(s) === -1) order.push(s); });
-    // hanime is opt-in ("1"), every other source is opt-out ("0").
-    enabledSources = order.filter(function (id) {
-      return id === "hanime" ? on[id] === "1" : on[id] !== "0";
-    });
-
-    renderSourceChips(sourcesSetting);
-    applyUptimeStatus();
-    loadFilters();
-    renderFilters();
-
-    Object.keys(ROW_GRIDS).forEach(function (row) {
-      const grid = document.getElementById(ROW_GRIDS[row]);
+    DISCOVERY_ROWS.forEach(function (row) {
+      const grid = showSection(row, true);
       if (grid) renderSkeletons(grid, 12);
     });
 
-    // Badges need their own data before the cards are built, exactly as
-    // loadAniworldBrowse() does it on the classic page.
-    await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs()]);
+    try {
+      // The badges need their own data before any card is built — same order
+      // loadAniworldBrowse() uses on the classic page.
+      const [, , resp] = await Promise.all([
+        loadDownloadedFolders(),
+        loadAutoSyncJobs(),
+        fetch("/api/home-feed?adult=" + (adultWanted() ? "1" : "0") +
+              "&limit=" + ROW_MAX),
+      ]);
+      const data = await resp.json();
+      sources = Array.isArray(data.sources) ? data.sources : [];
+      rows = data.rows || {};
+      loadedAt = Date.now();
+    } catch (err) {
+      feedError = HT("feed_failed");
+      sources = sources || [];
+      rows = {};
+      loadedAt = 0;                        // let the retry button try again
+    } finally {
+      inFlight = false;
+    }
 
-    const wanted = ENDPOINTS.filter(function (e) { return enabledSources.indexOf(e[0]) !== -1; });
-    const results = await Promise.all(wanted.map(async function (e) {
-      try {
-        const resp = await fetch(e[3]);
-        const data = await resp.json();
-        return (data && data.results) || [];
-      } catch (err) {
-        return [];                        // one dead source must not empty the page
-      }
-    }));
-
-    items = [];
-    results.forEach(function (list, n) {
-      const [src, row, type] = wanted[n];
-      list.forEach(function (item) {
-        items.push(Object.assign({}, item, { _src: src, _row: row, _type: type }));
-        // Movies also feed their own row, so "Movies" is complete whether a
-        // title showed up under new or under popular.
-        if (type === "movies" && row !== "movies") {
-          items.push(Object.assign({}, item, { _src: src, _row: "movies", _type: type }));
-        }
-      });
-    });
-
-    if (!items.length) loadedAt = 0;       // let a reload try again
+    renderFilters();
     renderRows();
+    applyUptimeStatus();
+
+    // Personal rows are a second, independent request: they read local data
+    // (library, favourites, calendar) and must not hold up the discovery rows
+    // if the calendar is slow.
+    try {
+      const presp = await fetch("/api/home-feed/personal");
+      personal = await presp.json();
+      renderPersonal();
+    } catch (e) {
+      personal = {};
+    }
   }
 
   window.reloadHomeFeed = function () { loadedAt = 0; load(); };
+
+  loadFilters();
   load();
 })();

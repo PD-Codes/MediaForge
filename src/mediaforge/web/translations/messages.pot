@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-27 15:14+0000\n"
+"POT-Creation-Date: 2026-07-28 13:13+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -20,7 +20,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_encoding_body.html:2
 #: src/mediaforge/web/templates/_settings_menu.html:34
 #: src/mediaforge/web/templates/_settings_menu.html:36
-#: src/mediaforge/web/templates/base.html:653
+#: src/mediaforge/web/templates/base.html:654
 #: src/mediaforge/web/templates/encoding.html:2
 #: src/mediaforge/web/templates/settings.html:75
 msgid "Encoding"
@@ -251,7 +251,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_encoding_body.html:484
 #: src/mediaforge/web/templates/_encoding_body.html:1142
 #: src/mediaforge/web/templates/autosync.html:209
-#: src/mediaforge/web/templates/base.html:664
+#: src/mediaforge/web/templates/base.html:665
 #: src/mediaforge/web/templates/settings.html:924
 msgid "Disabled"
 msgstr ""
@@ -494,16 +494,16 @@ msgstr ""
 
 #: src/mediaforge/web/templates/_extensions_nav.html:14
 #: src/mediaforge/web/templates/_notifications_menu.html:18
-#: src/mediaforge/web/templates/base.html:312
-#: src/mediaforge/web/templates/base.html:400
-#: src/mediaforge/web/templates/base.html:486
-#: src/mediaforge/web/templates/extensions.html:782
+#: src/mediaforge/web/templates/base.html:313
+#: src/mediaforge/web/templates/base.html:401
+#: src/mediaforge/web/templates/base.html:487
+#: src/mediaforge/web/templates/extensions.html:783
 #: src/mediaforge/web/templates/integrations.html:35
 msgid "Modules"
 msgstr ""
 
 #: src/mediaforge/web/templates/_extensions_nav.html:19
-#: src/mediaforge/web/templates/extensions.html:479
+#: src/mediaforge/web/templates/extensions.html:480
 #: src/mediaforge/web/templates/settings.html:518
 msgid "Theme Packs"
 msgstr ""
@@ -514,8 +514,8 @@ msgstr ""
 
 #: src/mediaforge/web/templates/_field_macros.html:152
 #: src/mediaforge/web/templates/autosync.html:46
-#: src/mediaforge/web/templates/extensions.html:180
-#: src/mediaforge/web/templates/extensions.html:218
+#: src/mediaforge/web/templates/extensions.html:181
+#: src/mediaforge/web/templates/extensions.html:219
 #: src/mediaforge/web/templates/settings.html:434
 msgid "Off"
 msgstr ""
@@ -539,6 +539,7 @@ msgid "Export"
 msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:28
+#: src/mediaforge/web/templates/index.html:262
 msgid "Clear history"
 msgstr ""
 
@@ -548,8 +549,8 @@ msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:49
 #: src/mediaforge/web/templates/calendar.html:87
-#: src/mediaforge/web/templates/extensions.html:176
-#: src/mediaforge/web/templates/extensions.html:781
+#: src/mediaforge/web/templates/extensions.html:177
+#: src/mediaforge/web/templates/extensions.html:782
 #: src/mediaforge/web/templates/favourites.html:38
 #: src/mediaforge/web/templates/library.html:45
 #: src/mediaforge/web/templates/seerr.html:48
@@ -570,7 +571,7 @@ msgid "Cancelled"
 msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:53
-#: src/mediaforge/web/templates/extensions.html:216
+#: src/mediaforge/web/templates/extensions.html:217
 msgid "Skipped"
 msgstr ""
 
@@ -591,7 +592,6 @@ msgstr ""
 #: src/mediaforge/web/templates/_history_body.html:64
 #: src/mediaforge/web/templates/autosync.html:49
 #: src/mediaforge/web/templates/autosync.html:184
-#: src/mediaforge/web/templates/base.html:1475
 msgid "Provider"
 msgstr ""
 
@@ -602,7 +602,6 @@ msgstr ""
 #: src/mediaforge/web/templates/_history_body.html:67
 #: src/mediaforge/web/templates/autosync.html:48
 #: src/mediaforge/web/templates/autosync.html:174
-#: src/mediaforge/web/templates/base.html:1471
 #: src/mediaforge/web/templates/settings.html:307
 msgid "Language"
 msgstr ""
@@ -671,6 +670,7 @@ msgid "Title"
 msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:122
+#: src/mediaforge/web/templates/index.html:256
 msgid "Episode"
 msgstr ""
 
@@ -710,11 +710,10 @@ msgstr ""
 #: src/mediaforge/web/templates/advanced_search.html:294
 #: src/mediaforge/web/templates/autosync.html:165
 #: src/mediaforge/web/templates/autosync.html:232
-#: src/mediaforge/web/templates/base.html:631
-#: src/mediaforge/web/templates/base.html:785
-#: src/mediaforge/web/templates/base.html:807
-#: src/mediaforge/web/templates/base.html:1495
-#: src/mediaforge/web/templates/base.html:1545
+#: src/mediaforge/web/templates/base.html:632
+#: src/mediaforge/web/templates/base.html:786
+#: src/mediaforge/web/templates/base.html:808
+#: src/mediaforge/web/templates/base.html:1649
 #: src/mediaforge/web/templates/calendar.html:167
 #: src/mediaforge/web/templates/calendar.html:187
 #: src/mediaforge/web/templates/mf_detail_modal.html:35
@@ -741,8 +740,8 @@ msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:166
 #: src/mediaforge/web/templates/autosync.html:129
-#: src/mediaforge/web/templates/base.html:712
-#: src/mediaforge/web/templates/base.html:1347
+#: src/mediaforge/web/templates/base.html:713
+#: src/mediaforge/web/templates/base.html:1355
 msgid "Delete"
 msgstr ""
 
@@ -765,9 +764,9 @@ msgid "Storage"
 msgstr ""
 
 #: src/mediaforge/web/templates/_notifications_menu.html:20
-#: src/mediaforge/web/templates/base.html:317
-#: src/mediaforge/web/templates/base.html:405
-#: src/mediaforge/web/templates/base.html:491
+#: src/mediaforge/web/templates/base.html:318
+#: src/mediaforge/web/templates/base.html:406
+#: src/mediaforge/web/templates/base.html:492
 #: src/mediaforge/web/templates/integrations.html:37
 #: src/mediaforge/web/templates/integrations.html:128
 msgid "Module"
@@ -776,7 +775,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_settings_card_macro.html:73
 #: src/mediaforge/web/templates/autosync.html:225
 #: src/mediaforge/web/templates/autosync.html:246
-#: src/mediaforge/web/templates/extensions.html:676
+#: src/mediaforge/web/templates/extensions.html:677
 #: src/mediaforge/web/templates/integrations.html:159
 #: src/mediaforge/web/templates/integrations.html:201
 #: src/mediaforge/web/templates/integrations.html:335
@@ -824,6 +823,7 @@ msgid "Design"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:14
+#: src/mediaforge/web/templates/index.html:243
 #: src/mediaforge/web/templates/settings.html:110
 #: src/mediaforge/web/templates/settings.html:604
 #: src/mediaforge/web/templates/settings.html:609
@@ -831,7 +831,7 @@ msgid "Sources"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:15
-#: src/mediaforge/web/templates/base.html:649
+#: src/mediaforge/web/templates/base.html:650
 #: src/mediaforge/web/templates/settings.html:122
 #: src/mediaforge/web/templates/settings.html:675
 msgid "Downloads"
@@ -974,7 +974,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/advanced_search.html:2
 #: src/mediaforge/web/templates/advanced_search.html:32
-#: src/mediaforge/web/templates/base.html:275
+#: src/mediaforge/web/templates/base.html:276
 msgid "Advanced Search"
 msgstr ""
 
@@ -1037,6 +1037,7 @@ msgstr ""
 #: src/mediaforge/web/templates/advanced_search.html:80
 #: src/mediaforge/web/templates/calendar.html:88
 #: src/mediaforge/web/templates/favourites.html:39
+#: src/mediaforge/web/templates/index.html:245
 #: src/mediaforge/web/templates/library.html:46
 #: src/mediaforge/web/templates/seerr.html:66
 #: src/mediaforge/web/templates/syncplay.html:123
@@ -1046,7 +1047,8 @@ msgstr ""
 #: src/mediaforge/web/templates/advanced_search.html:81
 #: src/mediaforge/web/templates/calendar.html:89
 #: src/mediaforge/web/templates/favourites.html:40
-#: src/mediaforge/web/templates/index.html:271
+#: src/mediaforge/web/templates/index.html:246
+#: src/mediaforge/web/templates/index.html:331
 #: src/mediaforge/web/templates/library.html:47
 #: src/mediaforge/web/templates/seerr.html:69
 #: src/mediaforge/web/templates/syncplay.html:124
@@ -1228,14 +1230,14 @@ msgid "Search network (e.g. HBO)..."
 msgstr ""
 
 #: src/mediaforge/web/templates/advanced_search.html:257
-#: src/mediaforge/web/templates/base.html:1443
+#: src/mediaforge/web/templates/base.html:1451
 #: src/mediaforge/web/templates/settings.html:723
 msgid "Reset"
 msgstr ""
 
 #: src/mediaforge/web/templates/advanced_search.html:263
 #: src/mediaforge/web/templates/autosync.html:54
-#: src/mediaforge/web/templates/index.html:230
+#: src/mediaforge/web/templates/index.html:235
 #: src/mediaforge/web/templates/seerr.html:186
 #: src/mediaforge/web/templates/seerr.html:191
 #: src/mediaforge/web/templates/settings.html:639
@@ -1397,6 +1399,7 @@ msgid "Group name"
 msgstr ""
 
 #: src/mediaforge/web/templates/autosync.html:142
+#: src/mediaforge/web/templates/index.html:263
 msgid "Remove"
 msgstr ""
 
@@ -1464,8 +1467,9 @@ msgstr ""
 
 #: src/mediaforge/web/templates/autosync.html:224
 #: src/mediaforge/web/templates/autosync.html:245
-#: src/mediaforge/web/templates/base.html:711
-#: src/mediaforge/web/templates/base.html:757
+#: src/mediaforge/web/templates/base.html:712
+#: src/mediaforge/web/templates/base.html:758
+#: src/mediaforge/web/templates/base.html:1560
 #: src/mediaforge/web/templates/seerr.html:197
 #: src/mediaforge/web/templates/shared_modals.html:279
 msgid "Cancel"
@@ -1475,33 +1479,33 @@ msgstr ""
 msgid "New name"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:232
+#: src/mediaforge/web/templates/base.html:233
 msgid "Collapse / expand menu"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:253
+#: src/mediaforge/web/templates/base.html:254
 msgid "Discover"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:265
+#: src/mediaforge/web/templates/base.html:266
 msgid "Home"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:266
-#: src/mediaforge/web/templates/base.html:313
-#: src/mediaforge/web/templates/base.html:401
-#: src/mediaforge/web/templates/base.html:441
-#: src/mediaforge/web/templates/base.html:487
+#: src/mediaforge/web/templates/base.html:267
+#: src/mediaforge/web/templates/base.html:314
+#: src/mediaforge/web/templates/base.html:402
+#: src/mediaforge/web/templates/base.html:442
+#: src/mediaforge/web/templates/base.html:488
 msgid "Toggle Submenu"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:280
+#: src/mediaforge/web/templates/base.html:281
 #: src/mediaforge/web/templates/favourites.html:2
 #: src/mediaforge/web/templates/favourites.html:12
 msgid "Favorites"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:288
+#: src/mediaforge/web/templates/base.html:289
 #: src/mediaforge/web/templates/integrations.html:278
 #: src/mediaforge/web/templates/integrations.html:402
 #: src/mediaforge/web/templates/library.html:2
@@ -1510,124 +1514,125 @@ msgstr ""
 msgid "Library"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:299
+#: src/mediaforge/web/templates/base.html:300
 #: src/mediaforge/web/templates/calendar.html:2
 #: src/mediaforge/web/templates/calendar.html:16
 msgid "Calendar"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:329
-#: src/mediaforge/web/templates/base.html:338
-#: src/mediaforge/web/templates/base.html:592
-#: src/mediaforge/web/templates/base.html:630
-#: src/mediaforge/web/templates/base.html:642
+#: src/mediaforge/web/templates/base.html:330
+#: src/mediaforge/web/templates/base.html:339
+#: src/mediaforge/web/templates/base.html:593
+#: src/mediaforge/web/templates/base.html:631
+#: src/mediaforge/web/templates/base.html:643
 msgid "Queues"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:359
+#: src/mediaforge/web/templates/base.html:360
 msgid "Management"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:389
+#: src/mediaforge/web/templates/base.html:390
 #: src/mediaforge/web/templates/integrations.html:1127
 msgid "Monitoring"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:416
+#: src/mediaforge/web/templates/base.html:417
 #: src/mediaforge/web/templates/settings.html:365
 msgid "System"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:428
+#: src/mediaforge/web/templates/base.html:429
 #: src/mediaforge/web/templates/notifications.html:1
 #: src/mediaforge/web/templates/notifications.html:19
 msgid "Notifications"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:440
+#: src/mediaforge/web/templates/base.html:441
 #: src/mediaforge/web/templates/extensions.html:1
 #: src/mediaforge/web/templates/extensions.html:18
 msgid "Module Manager"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:448
+#: src/mediaforge/web/templates/base.html:449
 #: src/mediaforge/web/templates/module_settings.html:3
 #: src/mediaforge/web/templates/module_settings.html:13
 msgid "Module Settings"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:461
+#: src/mediaforge/web/templates/base.html:462
 #: src/mediaforge/web/templates/integrations.html:1
 #: src/mediaforge/web/templates/integrations.html:12
 msgid "Integrations"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:474
-#: src/mediaforge/web/templates/extensions.html:408
+#: src/mediaforge/web/templates/base.html:475
+#: src/mediaforge/web/templates/base.html:1621
+#: src/mediaforge/web/templates/extensions.html:409
 #: src/mediaforge/web/templates/settings.html:2
 #: src/mediaforge/web/templates/settings.html:20
 msgid "Settings"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:509
+#: src/mediaforge/web/templates/base.html:510
 msgid "Log out"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:523
+#: src/mediaforge/web/templates/base.html:524
 #: src/mediaforge/web/templates/devinfos.html:2
 #: src/mediaforge/web/templates/devinfos.html:11
 msgid "Dev Infos"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:544
+#: src/mediaforge/web/templates/base.html:545
 msgid "Customize appearance"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:558
+#: src/mediaforge/web/templates/base.html:559
 msgid "Change language"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:583
+#: src/mediaforge/web/templates/base.html:584
 msgid "Open menu"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:645
+#: src/mediaforge/web/templates/base.html:646
 msgid "Everything"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:657
+#: src/mediaforge/web/templates/base.html:658
 msgid "Upscaling"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:662
+#: src/mediaforge/web/templates/base.html:663
 msgid "Inactive"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:666
+#: src/mediaforge/web/templates/base.html:667
 msgid "Remove completed, failed and cancelled entries"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:666
-msgid "Clear finished"
-msgstr ""
-
-#: src/mediaforge/web/templates/base.html:668
-msgid "Pause downloads"
+#: src/mediaforge/web/templates/base.html:667
+msgid "Clear Entries"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:669
+msgid "Pause downloads"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:670
 msgid "Pause all"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:708
+#: src/mediaforge/web/templates/base.html:709
 msgid "Delete title?"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:729
+#: src/mediaforge/web/templates/base.html:730
 msgid "Send crash reports to the developer?"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:731
+#: src/mediaforge/web/templates/base.html:732
 msgid ""
 "If MediaForge crashes unexpectedly, it can automatically send a technical"
 " error report (file/line/error type) plus basic system info (app version,"
@@ -1635,7 +1640,7 @@ msgid ""
 "Passwords, credentials and file contents are never included."
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:734
+#: src/mediaforge/web/templates/base.html:735
 msgid ""
 "You can change this decision at any time under Settings -> Privacy & "
 "Telemetry. More extensive data points (e.g. download titles or watch "
@@ -1643,135 +1648,194 @@ msgid ""
 " -- this question only covers crash reports and basic system info."
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:737
+#: src/mediaforge/web/templates/base.html:738
 msgid "No, thanks"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:738
+#: src/mediaforge/web/templates/base.html:739
 msgid "Yes, send crash reports"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:747
+#: src/mediaforge/web/templates/base.html:748
 msgid "Move title"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:750
-#: src/mediaforge/web/templates/base.html:758
+#: src/mediaforge/web/templates/base.html:751
+#: src/mediaforge/web/templates/base.html:759
 msgid "Move"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:750
+#: src/mediaforge/web/templates/base.html:751
 msgid "to a different location."
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:753
+#: src/mediaforge/web/templates/base.html:754
 msgid "Destination"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:763
+#: src/mediaforge/web/templates/base.html:764
 msgid "Moving"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:773
+#: src/mediaforge/web/templates/base.html:774
 msgid "In background"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:795
+#: src/mediaforge/web/templates/base.html:796
 msgid "Reading media information..."
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:806
+#: src/mediaforge/web/templates/base.html:807
 msgid "Solve Captcha"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:815
+#: src/mediaforge/web/templates/base.html:816
 msgid "Loading browser screenshot..."
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:817
+#: src/mediaforge/web/templates/base.html:818
 msgid "Captcha screenshot"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:930
+#: src/mediaforge/web/templates/base.html:931
 msgid "Purple"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:931
+#: src/mediaforge/web/templates/base.html:932
 msgid "Blue"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:932
+#: src/mediaforge/web/templates/base.html:933
 msgid "Cyan"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:933
+#: src/mediaforge/web/templates/base.html:934
 msgid "Green"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:934
+#: src/mediaforge/web/templates/base.html:935
 msgid "Orange"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:935
+#: src/mediaforge/web/templates/base.html:936
 msgid "Pink"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:936
+#: src/mediaforge/web/templates/base.html:937
 msgid "Red"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:937
+#: src/mediaforge/web/templates/base.html:938
 msgid "Yellow"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:1277
+#: src/mediaforge/web/templates/base.html:1285
 msgid "Menu"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:1407
+#: src/mediaforge/web/templates/base.html:1415
 #: src/mediaforge/web/templates/settings.html:477
 msgid "Appearance"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:1434
+#: src/mediaforge/web/templates/base.html:1442
 #: src/mediaforge/web/templates/settings.html:503
 msgid "Accent Color"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:1462
+#: src/mediaforge/web/templates/base.html:1517
 msgid "Close (Esc)"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:1488
-msgid "Starting transcoder..."
-msgstr ""
-
-#: src/mediaforge/web/templates/base.html:1500
-msgid "Continue watching?"
-msgstr ""
-
-#: src/mediaforge/web/templates/base.html:1505
-msgid "Resume"
-msgstr ""
-
-#: src/mediaforge/web/templates/base.html:1509
-msgid "Start over"
+#: src/mediaforge/web/templates/base.html:1525
+#: src/mediaforge/web/templates/base.html:1579
+msgid "Back 30 seconds"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:1529
+#: src/mediaforge/web/templates/base.html:1583
+msgid "Back 10 seconds"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1533
+#: src/mediaforge/web/templates/base.html:1587
 msgid "Play/Pause (Space)"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:1534
+#: src/mediaforge/web/templates/base.html:1537
+#: src/mediaforge/web/templates/base.html:1591
+msgid "Forward 10 seconds"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1541
+#: src/mediaforge/web/templates/base.html:1595
+msgid "Forward 30 seconds"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1549
+msgid "Skip intro"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1556
+msgid "Up next"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1558
+msgid "Play now"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1566
+msgid "Seek"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1599
+msgid "Next episode"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1604
 msgid "Mute (M)"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:1545
-msgid "Fullscreen"
+#: src/mediaforge/web/templates/base.html:1609
+msgid "Volume"
 msgstr ""
 
-#: src/mediaforge/web/templates/base.html:1547
+#: src/mediaforge/web/templates/base.html:1617
+msgid "CC"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1617
+#: src/mediaforge/web/templates/extensions.html:168
+#: src/mediaforge/web/templates/index.html:247
+msgid "off"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1624
+msgid "Picture in picture"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1627
 msgid "Fullscreen (F)"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1641
+msgid "Starting transcoder..."
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1646
+msgid "Playback failed"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1655
+msgid "Continue watching?"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1660
+msgid "Resume"
+msgstr ""
+
+#: src/mediaforge/web/templates/base.html:1664
+msgid "Start over"
 msgstr ""
 
 #: src/mediaforge/web/templates/calendar.html:17
@@ -1815,7 +1879,7 @@ msgid "Filter titles…"
 msgstr ""
 
 #: src/mediaforge/web/templates/calendar.html:73
-#: src/mediaforge/web/templates/extensions.html:778
+#: src/mediaforge/web/templates/extensions.html:779
 #: src/mediaforge/web/templates/favourites.html:29
 #: src/mediaforge/web/templates/library.html:30
 #: src/mediaforge/web/templates/seerr.html:39
@@ -1887,8 +1951,8 @@ msgid "Subscription URL"
 msgstr ""
 
 #: src/mediaforge/web/templates/calendar.html:180
-#: src/mediaforge/web/templates/extensions.html:338
-#: src/mediaforge/web/templates/extensions.html:345
+#: src/mediaforge/web/templates/extensions.html:339
+#: src/mediaforge/web/templates/extensions.html:346
 #: src/mediaforge/web/templates/settings.html:1338
 #: src/mediaforge/web/templates/settings.html:1445
 #: src/mediaforge/web/templates/settings.html:1542
@@ -1954,7 +2018,7 @@ msgid "Browse the module store"
 msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:42
-#: src/mediaforge/web/templates/extensions.html:632
+#: src/mediaforge/web/templates/extensions.html:633
 msgid "Module Store"
 msgstr ""
 
@@ -2039,295 +2103,298 @@ msgid "content source"
 msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:150
+msgid "CineInfo source"
+msgstr ""
+
 msgid "search source"
 msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:151
-msgid "hoster"
+msgid "home feed source"
 msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:152
-msgid "mirror list"
+msgid "hoster"
 msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:153
-msgid "monitor entry"
+msgid "mirror list"
 msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:154
-msgid "notification channel"
+msgid "monitor entry"
 msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:155
-msgid "event hook"
+msgid "notification channel"
 msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:156
+msgid "event hook"
+msgstr ""
+
+#: src/mediaforge/web/templates/extensions.html:157
 msgid "background worker"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:165
+#: src/mediaforge/web/templates/extensions.html:166
 msgid "modules"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:166
+#: src/mediaforge/web/templates/extensions.html:167
 msgid "running"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:167
-msgid "off"
-msgstr ""
-
-#: src/mediaforge/web/templates/extensions.html:171
+#: src/mediaforge/web/templates/extensions.html:172
 msgid "skipped"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:172
+#: src/mediaforge/web/templates/extensions.html:173
 msgid "with errors"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:175
+#: src/mediaforge/web/templates/extensions.html:176
 msgid "Filter by state"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:178
-#: src/mediaforge/web/templates/extensions.html:217
+#: src/mediaforge/web/templates/extensions.html:179
+#: src/mediaforge/web/templates/extensions.html:218
 msgid "Running"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:183
+#: src/mediaforge/web/templates/extensions.html:184
 msgid "Problems"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:215
+#: src/mediaforge/web/templates/extensions.html:216
 msgid "Error"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:235
-#: src/mediaforge/web/templates/extensions.html:237
-#: src/mediaforge/web/templates/extensions.html:310
-#: src/mediaforge/web/templates/extensions.html:493
-#: src/mediaforge/web/templates/extensions.html:495
+#: src/mediaforge/web/templates/extensions.html:236
+#: src/mediaforge/web/templates/extensions.html:238
+#: src/mediaforge/web/templates/extensions.html:311
+#: src/mediaforge/web/templates/extensions.html:494
+#: src/mediaforge/web/templates/extensions.html:496
 msgid "Signed by"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:235
-#: src/mediaforge/web/templates/extensions.html:493
+#: src/mediaforge/web/templates/extensions.html:236
+#: src/mediaforge/web/templates/extensions.html:494
 msgid "Official"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:237
-#: src/mediaforge/web/templates/extensions.html:495
+#: src/mediaforge/web/templates/extensions.html:238
+#: src/mediaforge/web/templates/extensions.html:496
 msgid "Verified"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:239
-#: src/mediaforge/web/templates/extensions.html:497
+#: src/mediaforge/web/templates/extensions.html:240
+#: src/mediaforge/web/templates/extensions.html:498
 msgid "Signature invalid"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:245
+#: src/mediaforge/web/templates/extensions.html:246
 msgid "Incompatible"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:248
+#: src/mediaforge/web/templates/extensions.html:249
 msgid "DEPENDS_ON"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:264
+#: src/mediaforge/web/templates/extensions.html:265
 msgid "registered nothing"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:282
+#: src/mediaforge/web/templates/extensions.html:283
 msgid "Module ID"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:283
+#: src/mediaforge/web/templates/extensions.html:284
 msgid "Folder"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:284
+#: src/mediaforge/web/templates/extensions.html:285
 msgid "Requires MediaForge"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:285
+#: src/mediaforge/web/templates/extensions.html:286
 msgid "up to"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:286
+#: src/mediaforge/web/templates/extensions.html:287
 msgid "Registry API"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:287
+#: src/mediaforge/web/templates/extensions.html:288
 msgid "Requirements"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:288
+#: src/mediaforge/web/templates/extensions.html:289
 msgid "License"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:305
+#: src/mediaforge/web/templates/extensions.html:306
 msgid "This module carries a signature that does not check out."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:317
+#: src/mediaforge/web/templates/extensions.html:318
 msgid ""
 "This module declares a MediaForge version range the running version is "
 "outside of, so it was not loaded."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:335
+#: src/mediaforge/web/templates/extensions.html:336
 msgid "Show full error"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:361
+#: src/mediaforge/web/templates/extensions.html:362
 msgid "This module needs a Python dependency that is not installed:"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:366
+#: src/mediaforge/web/templates/extensions.html:367
 msgid "Install dependency"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:369
+#: src/mediaforge/web/templates/extensions.html:370
 msgid ""
 "Downloads the package from PyPI into the MediaForge module folder and "
 "loads the module afterwards."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:371
+#: src/mediaforge/web/templates/extensions.html:372
 msgid ""
 "This build cannot install packages itself. Install the dependency into "
 "the environment MediaForge runs in."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:379
+#: src/mediaforge/web/templates/extensions.html:380
 msgid "Install now"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:407
+#: src/mediaforge/web/templates/extensions.html:408
 msgid "Sidebar"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:409
+#: src/mediaforge/web/templates/extensions.html:410
 msgid "Dashboard widget"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:410
+#: src/mediaforge/web/templates/extensions.html:411
 msgid "Provider pill"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:411
+#: src/mediaforge/web/templates/extensions.html:412
 msgid "Requires"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:415
+#: src/mediaforge/web/templates/extensions.html:416
 msgid ""
 "One or more required modules are not currently enabled — this module will"
 " not work until they are."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:422
+#: src/mediaforge/web/templates/extensions.html:423
 msgid "Enable module"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:433
-#: src/mediaforge/web/templates/extensions.html:437
+#: src/mediaforge/web/templates/extensions.html:434
+#: src/mediaforge/web/templates/extensions.html:438
 msgid "Open module"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:434
+#: src/mediaforge/web/templates/extensions.html:435
 msgid "Configure its settings on the"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:434
+#: src/mediaforge/web/templates/extensions.html:435
 msgid "page"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:443
+#: src/mediaforge/web/templates/extensions.html:444
 msgid ""
 "This folder registered no sidebar/settings item — could be a background-"
 "job-only integration, or one that failed before reaching "
 "register_thirdparty()."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:452
+#: src/mediaforge/web/templates/extensions.html:453
 msgid "Uninstall module"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:454
+#: src/mediaforge/web/templates/extensions.html:455
 msgid ""
 "Removes the folder and its namespaced settings on the next start. Data in"
 " its own tables is kept."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:459
-#: src/mediaforge/web/templates/extensions.html:552
+#: src/mediaforge/web/templates/extensions.html:460
+#: src/mediaforge/web/templates/extensions.html:553
 msgid "Uninstall"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:491
+#: src/mediaforge/web/templates/extensions.html:492
 msgid "Theme"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:499
+#: src/mediaforge/web/templates/extensions.html:500
 msgid "No MODULE.sig — nobody vouches for this theme"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:499
+#: src/mediaforge/web/templates/extensions.html:500
 msgid "Unsigned"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:502
+#: src/mediaforge/web/templates/extensions.html:503
 msgid "Author"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:505
+#: src/mediaforge/web/templates/extensions.html:506
 msgid "Invalid"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:508
-#: src/mediaforge/web/templates/extensions.html:530
+#: src/mediaforge/web/templates/extensions.html:509
+#: src/mediaforge/web/templates/extensions.html:531
 #: src/mediaforge/web/templates/settings.html:523
 msgid "Instance default"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:518
+#: src/mediaforge/web/templates/extensions.html:519
 msgid "This theme pack is invalid and will not be offered:"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:532
+#: src/mediaforge/web/templates/extensions.html:533
 msgid ""
 "Make this the theme every user sees unless they picked their own in "
 "Settings → Design."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:537
+#: src/mediaforge/web/templates/extensions.html:538
 msgid "Revert to default look"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:539
+#: src/mediaforge/web/templates/extensions.html:540
 msgid "Set as default"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:545
+#: src/mediaforge/web/templates/extensions.html:546
 msgid "Uninstall theme"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:547
+#: src/mediaforge/web/templates/extensions.html:548
 msgid ""
 "Deletes the theme folder immediately — themes are plain CSS and assets, "
 "no restart needed. Users who selected it fall back to the default look."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:584
+#: src/mediaforge/web/templates/extensions.html:585
 msgid "Build your own module or theme"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:585
+#: src/mediaforge/web/templates/extensions.html:586
 msgid "Open to everyone"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:591
+#: src/mediaforge/web/templates/extensions.html:592
 msgid ""
 "The store is not ours alone: anyone can write a MediaForge module or "
 "theme pack and publish it here. Modules add providers, hosters, "
@@ -2335,63 +2402,63 @@ msgid ""
 " packs are plain CSS, no Python at all."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:594
+#: src/mediaforge/web/templates/extensions.html:595
 msgid ""
 "Start from the ready-made examples — each folder is a working module with"
 " its own README explaining what it registers and why."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:601
+#: src/mediaforge/web/templates/extensions.html:602
 msgid "Module examples"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:605
+#: src/mediaforge/web/templates/extensions.html:606
 msgid "Theme examples"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:609
+#: src/mediaforge/web/templates/extensions.html:610
 msgid "Developer docs"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:618
+#: src/mediaforge/web/templates/extensions.html:619
 msgid "Publish on the developer portal"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:636
+#: src/mediaforge/web/templates/extensions.html:637
 #: src/mediaforge/web/templates/notifications.html:831
 #: src/mediaforge/web/templates/notifications.html:1494
 msgid "Not configured"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:647
+#: src/mediaforge/web/templates/extensions.html:648
 msgid "Official store"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:649
+#: src/mediaforge/web/templates/extensions.html:650
 msgid ""
 "Ships with MediaForge and cannot be changed here — this is the one "
 "repository whose modules this build is willing to call official."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:656
+#: src/mediaforge/web/templates/extensions.html:657
 msgid "This build ships no official store."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:668
+#: src/mediaforge/web/templates/extensions.html:669
 msgid "Additional repositories"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:670
+#: src/mediaforge/web/templates/extensions.html:671
 msgid ""
 "One URL per line. Modules from a third-party repository are unverified "
 "unless they carry a signature this MediaForge trusts."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:688
+#: src/mediaforge/web/templates/extensions.html:689
 msgid "Allow unverified and unreviewed modules"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:690
+#: src/mediaforge/web/templates/extensions.html:691
 msgid ""
 "Unverified entries carry no signature this build trusts, and unreviewed "
 "ones are submissions nobody has read yet — they are shown only while this"
@@ -2399,11 +2466,11 @@ msgid ""
 " data."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:711
+#: src/mediaforge/web/templates/extensions.html:712
 msgid "Module folder"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:713
+#: src/mediaforge/web/templates/extensions.html:714
 msgid ""
 "Installed modules live here, outside MediaForge's program files — next to"
 " your database and cache, so they survive an update. A module installed "
@@ -2411,54 +2478,54 @@ msgid ""
 "start."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:723
+#: src/mediaforge/web/templates/extensions.html:724
 msgid "Theme folder"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:725
+#: src/mediaforge/web/templates/extensions.html:726
 msgid ""
 "Installed theme packs live here. A theme installed by hand is a folder "
 "with a theme.json dropped in here — it shows up on the next page load, no"
 " restart needed."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:735
+#: src/mediaforge/web/templates/extensions.html:736
 msgid "Trusted signing keys"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:737
+#: src/mediaforge/web/templates/extensions.html:738
 msgid ""
 "Built into MediaForge and not configurable. A module is \"Official\" "
 "because one of these keys signed it — neither a store nor a setting can "
 "decide that."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:749
+#: src/mediaforge/web/templates/extensions.html:750
 msgid "This build trusts no signing keys — nothing can be official."
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:765
+#: src/mediaforge/web/templates/extensions.html:766
 msgid "Available modules"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:775
 #: src/mediaforge/web/templates/extensions.html:776
+#: src/mediaforge/web/templates/extensions.html:777
 msgid "Search modules and themes…"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:780
+#: src/mediaforge/web/templates/extensions.html:781
 msgid "Filter by type"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:783
+#: src/mediaforge/web/templates/extensions.html:784
 msgid "Themes"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:786
+#: src/mediaforge/web/templates/extensions.html:787
 msgid "Refresh store"
 msgstr ""
 
-#: src/mediaforge/web/templates/extensions.html:791
+#: src/mediaforge/web/templates/extensions.html:792
 msgid "Loading store…"
 msgstr ""
 
@@ -2531,60 +2598,129 @@ msgstr ""
 msgid "Search anime & series…"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:228
+#: src/mediaforge/web/templates/index.html:233
 #: src/mediaforge/web/templates/shared_modals.html:39
 msgid "Direct Link"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:238
+#: src/mediaforge/web/templates/index.html:244
+msgid "Type"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:248
+msgid "offline"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:249
+msgid "Switched off in Settings"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:250
+msgid "Also available from other sources — click to choose"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:251
+#: src/mediaforge/web/templates/index.html:335
+msgid "Nothing to show with these filters."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:252
+msgid "{} is not responding right now."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:253
+msgid "The feed could not be loaded."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:254
+msgid "Try again"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:255
+msgid "Movie"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:257
+msgid "episodes"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:258
+msgid "{} min left"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:259
+msgid "{} h left"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:260
+msgid "Player loading…"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:261
+msgid "Recent searches"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:277
 #: src/mediaforge/web/templates/shared_modals.html:22
 msgid "Searching..."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:263
+#: src/mediaforge/web/templates/index.html:307
+msgid "Continue watching"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:311
+msgid "Your watchlist"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:315
+msgid "New in your library"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:319
+msgid "Airing next"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:323
 msgid "New this week"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:267
+#: src/mediaforge/web/templates/index.html:327
 msgid "Popular right now"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:275
-msgid "Nothing to show with these filters."
-msgstr ""
-
-#: src/mediaforge/web/templates/index.html:283
+#: src/mediaforge/web/templates/index.html:343
 msgid "New Anime"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:287
+#: src/mediaforge/web/templates/index.html:347
 msgid "Popular Anime"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:294
-#: src/mediaforge/web/templates/index.html:320
+#: src/mediaforge/web/templates/index.html:354
+#: src/mediaforge/web/templates/index.html:380
 msgid "New Series"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:298
-#: src/mediaforge/web/templates/index.html:324
+#: src/mediaforge/web/templates/index.html:358
+#: src/mediaforge/web/templates/index.html:384
 msgid "Popular Series"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:305
-#: src/mediaforge/web/templates/index.html:312
+#: src/mediaforge/web/templates/index.html:365
+#: src/mediaforge/web/templates/index.html:372
 msgid "New Movies"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:316
+#: src/mediaforge/web/templates/index.html:376
 msgid "Popular Movies"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:331
+#: src/mediaforge/web/templates/index.html:391
 msgid "New"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:335
+#: src/mediaforge/web/templates/index.html:395
 msgid "Trending"
 msgstr ""
 

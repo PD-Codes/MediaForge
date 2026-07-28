@@ -695,3 +695,48 @@ body.player-open #playerOverlay * {
   color: #fff;
   pointer-events: none;
 }
+
+/* A card that several sources have carries a "+N" pill; clicking it says
+   which ones and opens the one you pick. Without this the extra sources were
+   a tooltip and the card always opened the first source it happened to be
+   collected from. */
+.browse-src-pill.is-multi {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.browse-src-pill.is-multi:hover {
+  border-color: var(--accent);
+}
+
+.browse-src-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  min-width: 150px;
+  padding: 5px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-modal);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.browse-src-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.browse-src-menu button:hover { background: var(--bg-hover); }

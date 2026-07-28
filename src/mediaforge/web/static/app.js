@@ -618,6 +618,9 @@ function renderSourceChips(sources) {
 // Called from applyUptimeStatus(): a source that is enabled but unreachable is
 // neither "on" nor "off" -- it is temporary and not the user's doing.
 function markSourceChipsDown(ids) {
+  // The new home page renders its own chip row (see home_feed.js) and takes
+  // the same list from here, so /api/uptime/status is still polled once.
+  if (typeof window.mfFeedMarkDown === "function") window.mfFeedMarkDown(ids);
   const wrap = document.getElementById("homeSourceChips");
   if (!wrap) return;
   ids.forEach(function (id) {
@@ -1320,7 +1323,7 @@ function initBrowseScrollButtons() {
       '<button class="browse-scroll-btn" onclick="scrollBrowseGrid(this,-1)" aria-label="' + t("Zurück", "Back") + '">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>' +
       '</button>' +
-      '<button class="browse-scroll-btn" onclick="scrollBrowseGrid(this,1)" aria-label="Weiter">' +
+      '<button class="browse-scroll-btn" onclick="scrollBrowseGrid(this,1)" aria-label="' + t("Weiter", "Next") + '">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
       '</button>';
     row.appendChild(btns);
@@ -1344,9 +1347,130 @@ function scrollBrowseGrid(btn, dir) {
 
 initBrowseScrollButtons();
 
+// ── Recent searches ─────────────────────────────────────────────────────────
+// The search field is the whole point of the home page and used to be the
+// dumbest thing on it: no history, no shortcut, no way back to what you looked
+// up yesterday. The list is per browser on purpose -- it is typing history,
+// not a setting, and it never leaves the device.
+const _RECENT_KEY = "mf-recent-searches";
+const _RECENT_MAX = 8;
+
+function _homeText(key, de, en) {
+  const map = window.__HOME_I18N || {};
+  return map[key] || t(de, en);
+}
+
+function _recentSearches() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(_RECENT_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter(function (x) { return typeof x === "string"; }) : [];
+  } catch (e) { return []; }
+}
+
+function _saveRecentSearches(list) {
+  try { localStorage.setItem(_RECENT_KEY, JSON.stringify(list.slice(0, _RECENT_MAX))); }
+  catch (e) { /* private mode */ }
+}
+
+function pushRecentSearch(keyword) {
+  const kw = String(keyword || "").trim();
+  if (!kw) return;
+  const list = _recentSearches().filter(function (x) { return x.toLowerCase() !== kw.toLowerCase(); });
+  list.unshift(kw);
+  _saveRecentSearches(list);
+}
+
+function _suggestBox() { return document.getElementById("searchSuggest"); }
+
+function closeSearchSuggest() {
+  const box = _suggestBox();
+  if (!box) return;
+  box.hidden = true;
+  box.innerHTML = "";
+  const input = document.getElementById("searchInput");
+  if (input) input.setAttribute("aria-expanded", "false");
+}
+
+function renderSearchSuggest() {
+  const box = _suggestBox();
+  const input = document.getElementById("searchInput");
+  if (!box || !input) return;
+  const typed = input.value.trim().toLowerCase();
+  const list = _recentSearches().filter(function (x) {
+    return !typed || x.toLowerCase().indexOf(typed) !== -1;
+  });
+  if (!list.length) { closeSearchSuggest(); return; }
+  box.innerHTML =
+    '<div class="home-suggest-head">' + escapeHtml(_homeText("recent_searches", "Zuletzt gesucht", "Recent searches")) +
+    '<button type="button" class="home-suggest-clear" data-clear="1">' +
+    escapeHtml(_homeText("clear_history", "Verlauf löschen", "Clear history")) + "</button></div>" +
+    list.map(function (kw) {
+      return '<div class="home-suggest-item" role="option" tabindex="-1" data-kw="' + escapeHtml(kw) + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>' +
+        '<span>' + escapeHtml(kw) + "</span>" +
+        '<button type="button" class="home-suggest-del" data-del="' + escapeHtml(kw) + '" aria-label="' +
+        escapeHtml(_homeText("remove_entry", "Entfernen", "Remove")) + '">&times;</button></div>';
+    }).join("");
+  box.hidden = false;
+  input.setAttribute("aria-expanded", "true");
+}
+
+function initSearchSuggest() {
+  const input = document.getElementById("searchInput");
+  const box = _suggestBox();
+  if (!input || !box) return;
+
+  input.addEventListener("focus", renderSearchSuggest);
+  input.addEventListener("input", renderSearchSuggest);
+  input.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") closeSearchSuggest();
+  });
+  box.addEventListener("mousedown", function (ev) {
+    // mousedown, not click: the input's blur would close the box first.
+    const del = ev.target.closest("[data-del]");
+    if (del) {
+      ev.preventDefault();
+      _saveRecentSearches(_recentSearches().filter(function (x) { return x !== del.dataset.del; }));
+      renderSearchSuggest();
+      return;
+    }
+    if (ev.target.closest("[data-clear]")) {
+      ev.preventDefault();
+      _saveRecentSearches([]);
+      closeSearchSuggest();
+      return;
+    }
+    const item = ev.target.closest(".home-suggest-item");
+    if (!item) return;
+    ev.preventDefault();
+    input.value = item.dataset.kw;
+    closeSearchSuggest();
+    doSearch();
+  });
+  document.addEventListener("click", function (ev) {
+    if (!ev.target.closest(".home-search-field")) closeSearchSuggest();
+  });
+
+  // "/" jumps to the search field, the way every search-first page does it.
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "/" || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const el = document.activeElement;
+    const tag = el && el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el && el.isContentEditable)) return;
+    if (document.querySelector(".queue-overlay[style*='display: flex'], .queue-overlay[style*='display:flex']")) return;
+    ev.preventDefault();
+    input.focus();
+    input.select();
+  });
+}
+
+initSearchSuggest();
+
 async function doSearch() {
   const keyword = searchInput.value.trim().replace(/!+$/, "");
   if (!keyword) return;
+  pushRecentSearch(keyword);
+  if (typeof closeSearchSuggest === "function") closeSearchSuggest();
   searchBtn.disabled = true;
   searchSpinner.style.display = "block";
   // Create a search grid with skeletons

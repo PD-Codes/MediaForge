@@ -29,9 +29,11 @@ if your module's results don't show up there yet.
 from ..registry import register_thirdparty
 from ...providers import Provider, register_provider
 from ...search import register_search_source
+from ...home_feed import register_home_feed_source
 from ...mirrors import register_site_mirrors
 from ..uptime_monitor import register_monitor_site
 from .source import (
+    browse as _browse,
     ExampleSourceSeries,
     ExampleSourceEpisode,
     SERIES_PATTERN,
@@ -48,10 +50,10 @@ ENABLED_KEY = "example_content_source_enabled"
 MODULE_NAME = "Example Content Source"
 MODULE_DESCRIPTION = ("Reference module for adding a whole new streaming site: "
                       "register_provider + register_search_source + register_site_mirrors "
-                      "+ register_monitor_site together. No network calls -- fully offline-safe.")
+                      "+ register_home_feed_source + register_monitor_site together. No network calls -- fully offline-safe.")
 MODULE_DESCRIPTION_DE = ("Referenzmodul zum Hinzufuegen einer komplett neuen Streaming-Seite: "
                          "register_provider + register_search_source + register_site_mirrors "
-                         "+ register_monitor_site zusammen. Keine Netzwerkzugriffe -- komplett offline-sicher.")
+                         "+ register_home_feed_source + register_monitor_site zusammen. Keine Netzwerkzugriffe -- komplett offline-sicher.")
 MODULE_AUTHOR = "Your Name"
 MODULE_ENABLED_DEFAULT = False
 
@@ -120,7 +122,19 @@ def register(app) -> None:
         label="Example Source",
     )
 
-    # 4. UpTime tracking -- also illustrative (the probe will report this
+    # 4. The home page (Settings -> General -> "Use the new home page").
+    #    Without this a registered source is reachable by URL and by search
+    #    but never *offered* -- it simply does not appear on the start page.
+    #    Two rows, one function; the feed caches the result for an hour, so
+    #    this may do real network work.
+    register_home_feed_source(
+        ITEM_ID, "example_source", "Example Source",
+        {"new": lambda: _browse("new"), "popular": lambda: _browse("popular")},
+        media_type="series",
+        color="#7c5cff",
+    )
+
+    # 5. UpTime tracking -- also illustrative (the probe will report this
     #    site as unreachable, since .invalid never resolves); shows the
     #    demo site as its own card on the UpTime dashboard. A real module
     #    points url/expected_domain/body_markers/expected_headers at the

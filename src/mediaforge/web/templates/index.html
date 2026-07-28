@@ -216,7 +216,12 @@
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
       </span>
-      <input type="text" id="searchInput" placeholder="{{ _('Search anime & series…') }}" autofocus />
+      <input type="text" id="searchInput" placeholder="{{ _('Search anime & series…') }}"
+             autocomplete="off" role="combobox" aria-expanded="false"
+             aria-controls="searchSuggest" aria-autocomplete="list" autofocus />
+      {# Recent searches / suggestions. Filled by app.js's search history --
+         empty (and invisible) until the user has searched at least once. #}
+      <div class="home-suggest" id="searchSuggest" role="listbox" hidden></div>
     </div>
     {# Direct Link is the quieter alternative to searching, so it reads as a
        ghost button and the accent pill anchors the right end of the field. #}
@@ -229,9 +234,43 @@
     </button>
     <button id="searchBtn" onclick="doSearch()">{{ _('Search') }}</button>
   </div>
+  {# Every string the home page renders client-side, translated here so it
+     goes through the same Flask-Babel catalogue as the rest of the app
+     instead of a hardcoded de/en pair in JavaScript. Rendered for both home
+     variants -- the search box below is shared. #}
+  <script>
+    window.__HOME_I18N = {{ {
+      'sources': _('Sources'),
+      'type': _('Type'),
+      'series': _('Series'),
+      'movies': _('Movies'),
+      'off': _('off'),
+      'offline': _('offline'),
+      'disabled_in_settings': _('Switched off in Settings'),
+      'also_on': _('Also available from other sources — click to choose'),
+      'empty_filters': _('Nothing to show with these filters.'),
+      'source_down': _('{} is not responding right now.'),
+      'feed_failed': _('The feed could not be loaded.'),
+      'try_again': _('Try again'),
+      'movie': _('Movie'),
+      'episode': _('Episode'),
+      'episodes_short': _('episodes'),
+      'minutes_left': _('{} min left'),
+      'hours_left': _('{} h left'),
+      'player_loading': _('Player loading…'),
+      'recent_searches': _('Recent searches'),
+      'clear_history': _('Clear history'),
+      'remove_entry': _('Remove')
+    }|tojson }};
+  </script>
   {# Which sources a search actually hits. Filled by renderSourceChips() in
-     app.js once /api/settings answered; empty (and invisible) until then. #}
+     app.js once /api/settings answered; empty (and invisible) until then.
+     The new home page does NOT render this: its own chip row (below) says
+     the same thing *and* filters, and two rows of identical source names
+     stacked on top of each other is a puzzle, not a control. #}
+  {% if not new_home %}
   <div class="home-chips" id="homeSourceChips"></div>
+  {% endif %}
   {# Only rendered while something is downloading -- see renderHomeRunStrip(),
      fed by the queue poll that runs anyway. #}
   <div class="home-run" id="homeRunStrip" style="display:none"></div>
@@ -259,6 +298,27 @@
   {% if new_home %}
   <div id="homeFeed" class="home-feed">
     <div class="feed-filters" id="feedFilters"></div>
+    <div class="feed-alerts" id="feedAlerts"></div>
+    {# Personal rows first: what you were doing beats what a site published.
+       Each one hides itself when its source has nothing to say (no playback
+       position yet, no favourites, calendar switched off), so a fresh install
+       shows exactly the discovery rows below and no empty furniture. #}
+    <div class="browse-section feed-section feed-personal" data-feed-row="continue" style="display:none">
+      <h2 class="browse-heading">{{ _('Continue watching') }}</h2>
+      <div class="browse-grid" id="feedContinueGrid"></div>
+    </div>
+    <div class="browse-section feed-section feed-personal" data-feed-row="watchlist" style="display:none">
+      <h2 class="browse-heading">{{ _('Your watchlist') }}</h2>
+      <div class="browse-grid" id="feedWatchlistGrid"></div>
+    </div>
+    <div class="browse-section feed-section feed-personal" data-feed-row="library" style="display:none">
+      <h2 class="browse-heading">{{ _('New in your library') }}</h2>
+      <div class="browse-grid" id="feedLibraryGrid"></div>
+    </div>
+    <div class="browse-section feed-section feed-personal" data-feed-row="upcoming" style="display:none">
+      <h2 class="browse-heading">{{ _('Airing next') }}</h2>
+      <div class="browse-grid" id="feedUpcomingGrid"></div>
+    </div>
     <div class="browse-section feed-section" data-feed-row="new">
       <h2 class="browse-heading">{{ _('New this week') }}</h2>
       <div class="browse-grid" id="feedNewGrid"></div>
