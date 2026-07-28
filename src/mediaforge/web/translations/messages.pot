@@ -6443,7 +6443,7 @@ msgstr ""
 msgid "AniWorld: use absolute episode numbers"
 msgstr ""
 
-msgid "Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that count is used for the file name — and since the whole show is one season in absolute order, the episode is filed under season 1: S01E062 instead of S02E001. Episodes without the marker keep the season the site gives them. Only affects new downloads; files already on disk are not renamed."
+msgid "Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that count is used for the file name: S02E062 instead of S02E001. The season stays the one AniWorld lists the episode in — only the number changes. Episodes without the marker keep their season-relative number. Only affects new downloads; files already on disk are not renamed."
 msgstr ""
 
 msgid "Presets"
@@ -6452,10 +6452,10 @@ msgstr ""
 msgid "Why this matters for Jellyfin"
 msgstr ""
 
-msgid "Jellyfin identifies an episode by its season and episode number and looks that pair up at TMDB/TVDB. AniWorld's seasons do not exist there: what the site calls “Staffel 2, Folge 2” is episode 63 of season 1 everywhere else, so Jellyfin finds no match and the episode stays untitled. Absolute numbering writes the pair Jellyfin expects."
+msgid "Jellyfin identifies an episode by its season and episode number. On a long-running show AniWorld's per-season count is not the number the episode is known by anywhere else: “Staffel 2, Folge 1” is episode 62 of the series, which is exactly what the site puts in the “[Episode 062]” marker. Absolute numbering writes that number into the file name."
 msgstr ""
 
-msgid "Because every episode then belongs to season 1, they all belong in one folder — a naming template without a season subfolder. Language folders are best left off as well; they split one series across several library entries."
+msgid "The preset also puts a series into one folder instead of per-season subfolders, and leaves language folders off — they split one series across several library entries."
 msgstr ""
 
 msgid "Set Jellyfin Defaults"

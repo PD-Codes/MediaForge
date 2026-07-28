@@ -6208,8 +6208,8 @@ msgstr "Papier"
 msgid "AniWorld: use absolute episode numbers"
 msgstr "AniWorld: Absolute Episodennummern verwenden"
 
-msgid "Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that count is used for the file name — and since the whole show is one season in absolute order, the episode is filed under season 1: S01E062 instead of S02E001. Episodes without the marker keep the season the site gives them. Only affects new downloads; files already on disk are not renamed."
-msgstr "Lang laufende Serien werden auf AniWorld in Staffeln aufgeteilt, behalten aber eine durchgehende Zählung, die die Seite als „[Episode 062]“ an den Episodentitel anhängt. Ist die Option aktiv, wird diese Zählung für den Dateinamen verwendet — und da die Serie in absoluter Reihenfolge eine einzige Staffel ist, liegt die Episode in Staffel 1: S01E062 statt S02E001. Episoden ohne Markierung behalten die Staffel, die die Seite ihnen gibt. Gilt nur für neue Downloads; bereits vorhandene Dateien werden nicht umbenannt."
+msgid "Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that count is used for the file name: S02E062 instead of S02E001. The season stays the one AniWorld lists the episode in — only the number changes. Episodes without the marker keep their season-relative number. Only affects new downloads; files already on disk are not renamed."
+msgstr "Lang laufende Serien werden auf AniWorld in Staffeln aufgeteilt, behalten aber eine durchgehende Zählung, die die Seite als „[Episode 062]“ an den Episodentitel anhängt. Ist die Option aktiv, wird diese Zählung für den Dateinamen verwendet: S02E062 statt S02E001. Die Staffel bleibt die, in der AniWorld die Episode führt — es ändert sich nur die Nummer. Episoden ohne Markierung behalten ihre Nummer innerhalb der Staffel. Gilt nur für neue Downloads; bereits vorhandene Dateien werden nicht umbenannt."
 
 msgid "Presets"
 msgstr "Voreinstellungen"
@@ -6217,11 +6217,11 @@ msgstr "Voreinstellungen"
 msgid "Why this matters for Jellyfin"
 msgstr "Warum das für Jellyfin wichtig ist"
 
-msgid "Jellyfin identifies an episode by its season and episode number and looks that pair up at TMDB/TVDB. AniWorld's seasons do not exist there: what the site calls “Staffel 2, Folge 2” is episode 63 of season 1 everywhere else, so Jellyfin finds no match and the episode stays untitled. Absolute numbering writes the pair Jellyfin expects."
-msgstr "Jellyfin erkennt eine Episode an Staffel- und Episodennummer und schlägt dieses Paar bei TMDB/TVDB nach. AniWorlds Staffeln gibt es dort nicht: Was die Seite „Staffel 2, Folge 2“ nennt, ist überall sonst Episode 63 der Staffel 1 — Jellyfin findet keinen Treffer und die Episode bleibt ohne Titel. Mit absoluten Nummern steht genau das Paar in der Datei, das Jellyfin erwartet."
+msgid "Jellyfin identifies an episode by its season and episode number. On a long-running show AniWorld's per-season count is not the number the episode is known by anywhere else: “Staffel 2, Folge 1” is episode 62 of the series, which is exactly what the site puts in the “[Episode 062]” marker. Absolute numbering writes that number into the file name."
+msgstr "Jellyfin erkennt eine Episode an Staffel- und Episodennummer. Bei einer lang laufenden Serie ist AniWorlds Zählung innerhalb der Staffel nicht die Nummer, unter der die Episode sonst überall bekannt ist: „Staffel 2, Folge 1“ ist Episode 62 der Serie — genau das steht in der Markierung „[Episode 062]“. Mit absoluten Nummern landet diese Nummer im Dateinamen."
 
-msgid "Because every episode then belongs to season 1, they all belong in one folder — a naming template without a season subfolder. Language folders are best left off as well; they split one series across several library entries."
-msgstr "Da dann jede Episode zu Staffel 1 gehört, gehören auch alle in einen Ordner — also eine Namensvorlage ohne Staffel-Unterordner. Sprachordner lässt man ebenfalls besser aus; sie zerlegen eine Serie in mehrere Mediathek-Einträge."
+msgid "The preset also puts a series into one folder instead of per-season subfolders, and leaves language folders off — they split one series across several library entries."
+msgstr "Die Voreinstellung legt eine Serie außerdem in einen Ordner statt in Unterordner pro Staffel und lässt Sprachordner aus — sie zerlegen eine Serie in mehrere Mediathek-Einträge."
 
 msgid "Set Jellyfin Defaults"
 msgstr "Jellyfin-Standards setzen"

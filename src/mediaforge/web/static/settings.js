@@ -513,12 +513,11 @@ const DOWNLOAD_PRESETS = {
     disable_english_sub: false,
     movie_subfolder: false,
   },
-  // Jellyfin: one folder per series and no season subfolder (in absolute order
-  // every episode is season 1, so season folders would only ever hold "Season
-  // 01"), absolute episode numbers so anime matches TMDB/TVDB, no language
-  // folders (the language is in the file name instead, which keeps one series
-  // as one library entry), and each movie in its own folder, which is what
-  // Jellyfin's movie scanner expects.
+  // Jellyfin: one folder per series rather than per-season subfolders,
+  // absolute episode numbers so the file carries the number the episode is
+  // known by outside AniWorld, no language folders (the language is in the file
+  // name instead, which keeps one series as one library entry), and each movie
+  // in its own folder, which is what Jellyfin's movie scanner expects.
   //
   // The "- ({language})" suffix is a deliberate trade-off: Jellyfin reads
   // whatever follows the SxxExx marker as the episode title, so it shows

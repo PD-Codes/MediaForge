@@ -486,7 +486,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
         # season_num/ep_num are the pair a NEW download would be named after;
         # name_candidates additionally holds the name an *existing* file may
         # carry. The two differ only for AniWorld with absolute numbering on,
-        # where the same episode is S01E063 now and S02E002 in a library from
+        # where the same episode is S02E062 now and S02E001 in a library from
         # before the switch -- see AniworldEpisode.file_number_candidates.
         online_episodes = []
         for season in series.seasons:
@@ -515,14 +515,14 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                 if not episode_included(_flt, _sn, _en):
                     continue
                 # The episode filter is written against the numbers the site
-                # shows ("Staffel 2 / Folge 1"), but from here on every
-                # comparison is against file names on disk. With AniWorld's
-                # absolute-numbering option on those are not the same pair --
-                # the file says S01E063 -- so the tuple carries the pair the
-                # file actually gets. Equal to the site's own numbering for
-                # every other provider and whenever the option is off.
+                # shows ("Folge 1"), but from here on every comparison is
+                # against file names on disk. With AniWorld's absolute-numbering
+                # option on those are not the same number -- the file says
+                # S02E062 -- so the tuple carries the number the file actually
+                # gets. Equal to the site's own numbering for every other
+                # provider and whenever the option is off.
                 online_episodes.append((
-                    getattr(ep, "file_season_number", _sn),
+                    _sn,
                     getattr(ep, "file_episode_number", _en),
                     ep.url, ep, False,
                     getattr(ep, "file_number_candidates", ((_sn, _en),)),

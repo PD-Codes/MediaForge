@@ -1129,9 +1129,9 @@ def _queue_worker():
                                     # the truth about that file, so it has to describe the
                                     # NAME on disk -- not the URL the episode came from. With
                                     # AniWorld's absolute numbering the two differ: the URL
-                                    # says staffel-2/episode-2, the file says S01E063, and an
-                                    # NFO claiming season 2 episode 2 would relabel the file
-                                    # right back to a mismatch. Names without an SxxExx marker
+                                    # says staffel-2/episode-2, the file says S02E063, and an
+                                    # NFO claiming episode 2 would relabel the file right back
+                                    # to a mismatch. Names without an SxxExx marker
                                     # (movies, exotic templates) fall back to the URL pair.
                                     _nfo_season, _nfo_episode = season_episode_from_name(
                                         getattr(_ep_path, "name", _ep_path)

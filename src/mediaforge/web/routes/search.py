@@ -1421,9 +1421,9 @@ def register_search_routes(app):
             episodes_data = []
             for ep in season.episodes:
                 # Not just (season_number, episode_number): with AniWorld's
-                # absolute-numbering option the same episode is called S01E063
-                # on disk instead of S02E002, and a library from before the
-                # switch still uses the old name. file_number_candidates lists
+                # absolute-numbering option the same episode is called S02E062
+                # on disk instead of S02E001, and a library from before the
+                # switch still uses the old number. file_number_candidates lists
                 # both, so an episode already there is recognised either way --
                 # otherwise the whole show would show up as missing the moment
                 # the setting is flipped. Other providers have one name only.

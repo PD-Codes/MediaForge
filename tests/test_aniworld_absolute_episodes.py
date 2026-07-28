@@ -3,15 +3,12 @@
 AniWorld splits long-running shows into site-side seasons but keeps one
 continuous count, which it appends to the episode title as "[Episode 062]".
 With `aniworld_absolute_episodes` on, that number -- not the season-relative
-one -- is what the file name is built from, and the season collapses to 1 with
-it: the show is one long season in absolute order, which is what TMDB/TVDB and
-therefore Jellyfin expect.
+one -- is what the file name is built from. The season is deliberately left
+alone: the file is S02E063, not S01E063.
 
 The risk this guards is not the regex, it is the fallbacks: an episode without
 a marker, a movie entry, and the setting being off must all keep the old
 S02E002 name, because anything else silently renumbers an existing library.
-And season and episode must always move together -- S01E002 or S02E063 would be
-a library that matches nothing.
 """
 
 import pytest
@@ -62,26 +59,31 @@ def _episode(monkeypatch, enabled, title_en, url=EP_URL):
 def test_off_by_default_keeps_the_season_relative_number(monkeypatch):
     ep = _episode(monkeypatch, False, MARKED_TITLE)
     assert ep.absolute_episode_number == 63     # the fact is still reported
-    assert (ep.file_season_number, ep.file_episode_number) == (2, 2)  # not used
+    assert ep.file_episode_number == 2          # but it is not used
 
 
-def test_on_uses_the_absolute_number_and_season_one(monkeypatch):
+def test_on_uses_the_absolute_number(monkeypatch):
     ep = _episode(monkeypatch, True, MARKED_TITLE)
-    assert (ep.file_season_number, ep.file_episode_number) == (1, 63)
+    assert ep.file_episode_number == 63
+
+
+def test_the_season_is_never_touched(monkeypatch):
+    """Only the number becomes absolute -- S02E063, not S01E063."""
+    ep = _episode(monkeypatch, True, MARKED_TITLE)
+    assert ep.season.season_number == 2
+    assert {season for season, _ep in ep.file_number_candidates} == {2}
 
 
 def test_on_without_a_marker_falls_back(monkeypatch):
     ep = _episode(monkeypatch, True, "A Town that Welcomes Pirates?")
     assert ep.absolute_episode_number is None
-    assert (ep.file_season_number, ep.file_episode_number) == (2, 2)
+    assert ep.file_episode_number == 2
 
 
 def test_movies_are_never_renumbered(monkeypatch):
-    """/filme entries are counted per collection and live in season 0."""
     ep = _episode(monkeypatch, True, MARKED_TITLE, url=FILM_URL)
     assert ep.is_movie
-    assert ep.season.season_number == 0
-    assert (ep.file_season_number, ep.file_episode_number) == (0, 2)
+    assert ep.file_episode_number == 2
 
 
 def test_file_name_follows_the_setting(monkeypatch, tmp_path):
@@ -99,7 +101,7 @@ def test_file_name_follows_the_setting(monkeypatch, tmp_path):
     class _Season:
         season_number = 2
 
-    for enabled, expected in ((False, "One Piece S02E002"), (True, "One Piece S01E063")):
+    for enabled, expected in ((False, "One Piece S02E002"), (True, "One Piece S02E063")):
         ep = _episode(monkeypatch, enabled, MARKED_TITLE)
         ep._series = _Series()
         ep._season = _Season()
@@ -119,12 +121,12 @@ def test_file_name_follows_the_setting(monkeypatch, tmp_path):
 def test_candidates_cover_both_naming_schemes(monkeypatch):
     for enabled in (False, True):
         ep = _episode(monkeypatch, enabled, MARKED_TITLE)
-        assert set(ep.file_number_candidates) == {(2, 2), (1, 63)}, enabled
+        assert set(ep.file_number_candidates) == {(2, 2), (2, 63)}, enabled
 
 
 def test_candidates_start_with_what_a_new_download_gets(monkeypatch):
     """Order matters: the first pair is the name that would be written."""
-    assert _episode(monkeypatch, True, MARKED_TITLE).file_number_candidates[0] == (1, 63)
+    assert _episode(monkeypatch, True, MARKED_TITLE).file_number_candidates[0] == (2, 63)
     assert _episode(monkeypatch, False, MARKED_TITLE).file_number_candidates[0] == (2, 2)
 
 
@@ -139,4 +141,4 @@ def test_an_old_library_is_still_recognised(monkeypatch):
     ep = _episode(monkeypatch, True, MARKED_TITLE)
     assert any(pair in on_disk for pair in ep.file_number_candidates)
     # ...and the file a fresh download would write is still the new name.
-    assert (ep.file_season_number, ep.file_episode_number) == (1, 63)
+    assert ep.file_episode_number == 63
