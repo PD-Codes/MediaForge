@@ -1,0 +1,115 @@
+MediaForge Captcha Solver - Proprietary License
+===============================================
+
+Copyright (c) 2026 PD-Codes Team. All Rights Reserved.
+
+This license applies exclusively to the following component of the MediaForge
+project (the "Software"):
+
+    src/mediaforge/playwright/captcha.py
+
+and to any file that is a copy, translation, port, or derivative work of it.
+
+
+1. Relationship to the MediaForge license
+-----------------------------------------
+
+MediaForge as a whole is distributed under the GNU General Public License
+v3.0 or later (GPL-3.0-or-later), as stated in the LICENSE and COPYRIGHT
+files. The Software is EXPRESSLY EXCLUDED from that grant.
+
+Nothing in the GPL-3.0-or-later license covering the remainder of MediaForge
+shall be construed as granting any right, title, licence, or interest in the
+Software. Obtaining, running, or redistributing MediaForge does not transfer
+any right to the Software beyond those granted in section 2 below.
+
+
+2. Grant of rights
+------------------
+
+Subject to the restrictions in section 3, the PD-Codes Team grants every
+recipient of an official MediaForge distribution a non-exclusive,
+non-transferable, revocable licence to:
+
+  (a) run the Software as an integral part of an unmodified MediaForge
+      installation, for that recipient's own personal or internal use; and
+
+  (b) redistribute the Software verbatim, unmodified, and only as an
+      inseparable part of a complete, unmodified MediaForge distribution,
+      with this license file and the notice header intact.
+
+No other rights are granted, whether expressly, by implication, by estoppel,
+or otherwise.
+
+
+3. Restrictions
+---------------
+
+Except with prior written permission from the PD-Codes Team, or when carried
+out by the PD-Codes Team itself, you may NOT:
+
+  (a) use, copy, or execute the Software outside of MediaForge;
+
+  (b) modify, adapt, translate, port, or create derivative works of the
+      Software;
+
+  (c) extract, isolate, or repackage the Software or any part of it,
+      including individual functions, algorithms, heuristics, selectors, or
+      fingerprint-hardening techniques contained in it;
+
+  (d) distribute, sublicense, rent, lease, lend, sell, or otherwise make the
+      Software available to third parties, whether standalone or as part of
+      another product, service, or software distribution;
+
+  (e) reverse engineer, decompile, or disassemble the Software, except to the
+      extent that such activity is expressly permitted by applicable
+      mandatory law notwithstanding this restriction;
+
+  (f) use the Software, in whole or in part, as training data for, or as
+      input to, machine-learning systems, code-generation tools, or automated
+      code-extraction pipelines; or
+
+  (g) remove, alter, or obscure this license, the notice header in the
+      Software, or any copyright or attribution notice.
+
+
+4. Written permission
+---------------------
+
+Permission under section 3 is valid only if granted in writing (electronic
+form is sufficient) by the PD-Codes Team. Verbal statements, silence,
+inaction, or non-enforcement do not constitute permission or waiver.
+
+Requests may be submitted via https://github.com/PD-Codes/MediaForge or the
+MediaForge Discord server.
+
+Any permission granted is specific to the named recipient and the named
+purpose, is non-transferable, and may be revoked in writing.
+
+
+5. Termination
+--------------
+
+The rights granted in section 2 terminate automatically and immediately upon
+any breach of this license. Upon termination you must cease all use of the
+Software and destroy all copies in your possession or control.
+
+
+6. No warranty
+--------------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+
+7. Severability
+---------------
+
+If any provision of this license is held to be unenforceable, that provision
+shall be modified only to the extent necessary to make it enforceable, and
+the remaining provisions shall remain in full force and effect.

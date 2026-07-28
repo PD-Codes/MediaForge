@@ -52,7 +52,7 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 license = "GPL-3.0-or-later"
-license-files = ["LICENSE", "COPYRIGHT"]
+license-files = ["LICENSE", "COPYRIGHT", "LICENSE-CAPTCHA"]
 
 [project.urls]
 homepage = "https://github.com/PD-Codes/MediaForge"

@@ -11,3 +11,20 @@ Earlier versions of this project — released as "AniWorld Downloader" /
 "MRX-AniWorld-Downloader" before the rename to MediaForge — were distributed
 under the MIT License. That historical license text is preserved in
 LICENSE.old and continues to apply to those earlier releases.
+
+
+Separately licensed component
+-----------------------------
+The MediaForge Captcha Solver
+
+    src/mediaforge/playwright/captcha.py
+
+is NOT covered by the GPL-3.0-or-later grant above. It is proprietary work of
+the PD-Codes Team:
+
+    Copyright (c) 2026 PD-Codes Team. All Rights Reserved.
+
+It may be used only as an integral part of an unmodified MediaForge
+installation. Any use, extraction, modification, or redistribution outside of
+MediaForge requires prior written permission from the PD-Codes Team. The full
+terms are in the file LICENSE-CAPTCHA.

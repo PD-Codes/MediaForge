@@ -67,6 +67,13 @@ input.mf-search-input:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* A search box that is switched off (e.g. a placeholder view with nothing to
+   search) has to look switched off, or the empty result reads as a bug. */
+input.mf-search-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* The UA's own clear affordance would sit next to ours. */
 input.mf-search-input::-webkit-search-cancel-button { display: none; }
 
@@ -110,12 +117,13 @@ input.mf-search-input::-webkit-search-cancel-button { display: none; }
   display: flex;
   flex-direction: column;
   gap: 11px;
-  padding: 14px 0 15px;
+  padding: 14px 12px 15px;
   margin-bottom: 18px;
   background: var(--bg-base);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  border-radius: 15px;
 }
 
 .mf-toolbar-row {
@@ -189,6 +197,18 @@ input.mf-search-input::-webkit-search-cancel-button { display: none; }
 }
 
 .mf-facet[hidden] { display: none; }
+
+/* A class that sets `display` beats the user-agent `[hidden]` rule, so every
+   toolbar block a page may hide via the `hidden` attribute needs its own
+   opt-out — otherwise `el.hidden = true` silently does nothing. Same guard as
+   .mf-pagination-bar[hidden] further down. */
+.mf-toolbar[hidden],
+.mf-toolbar-row[hidden],
+.mf-segmented[hidden],
+.mf-segmented-btn[hidden],
+.mf-toolbar-sep[hidden],
+.mf-search[hidden],
+.mf-icon-btn[hidden] { display: none; }
 
 /* ===================================================================
    Poster grid & card
@@ -777,6 +797,10 @@ body.mf-select-mode .mf-poster-select,
 .mf-empty-icon { width: 40px; height: 40px; opacity: 0.5; }
 .mf-empty-hint { font-size: 0.82rem; max-width: 46ch; opacity: 0.85; }
 .mf-empty.is-error { color: var(--error); border-color: rgba(239, 68, 68, 0.4); }
+/* `display: flex` above outranks the user-agent `[hidden]` rule — without this
+   every caller has to repeat an id-based guard to make `el.hidden = true` work
+   (library.css did exactly that). Fixed once, here. */
+.mf-empty[hidden] { display: none; }
 
 /* ===================================================================
    Pagination bar — "Showing X–Y of Z" count + the numbered
@@ -843,4 +867,110 @@ body.mf-select-mode .mf-poster-select,
   .mf-poster-card:hover .mf-poster-art,
   .mf-poster-card:hover .mf-poster-actions,
   .mf-poster-card:focus-visible .mf-poster-actions { transform: none; }
+}
+
+/* ===================================================================
+   Reorderable list (.mf-order-*)
+   A list whose order is the setting: drag a row, or use the two arrow
+   buttons, and optionally switch each entry on or off. Built for the
+   Start Page settings (which rows the home page shows, in which order)
+   and kept here rather than in that page's stylesheet so a module can
+   use the same object for its own ordered lists.
+
+   Markup:
+     <div class="mf-order-list">
+       <div class="mf-order-row" draggable="true">
+         <span class="mf-order-handle">…grip svg…</span>
+         <label class="chb-main-wrap"><input class="chb-main" type="checkbox"></label>
+         <span class="mf-order-label">Title <small class="mf-order-hint">source</small></span>
+         <span class="mf-order-actions"><button class="mf-order-btn">↑</button>…</span>
+       </div>
+     </div>
+   =================================================================== */
+
+.mf-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mf-order-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-elevated, var(--bg-card));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  transition: border-color var(--transition, .15s ease),
+              box-shadow var(--transition, .15s ease),
+              opacity var(--transition, .15s ease);
+}
+
+.mf-order-row.is-off { opacity: 0.55; }
+.mf-order-row.dragging { opacity: 0.5; border-color: var(--accent); }
+.mf-order-row.drag-over { border-color: var(--accent); box-shadow: 0 -2px 0 0 var(--accent) inset; }
+
+.mf-order-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: grab;
+  flex-shrink: 0;
+  touch-action: none;
+}
+
+.mf-order-handle:active { cursor: grabbing; }
+
+.mf-order-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.mf-order-hint {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.mf-order-hint a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.mf-order-hint a:hover { color: var(--accent); }
+
+.mf-order-actions {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mf-order-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.mf-order-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }
+.mf-order-btn:disabled { opacity: 0.35; cursor: default; }
+
+@media (max-width: 560px) {
+  .mf-order-row { gap: 8px; padding: 9px 10px; }
+  .mf-order-label { font-size: 0.85rem; }
+  /* The grip is a mouse affordance; on touch the arrows are the control. */
+  .mf-order-handle { display: none; }
 }

@@ -1,3 +1,39 @@
+# =============================================================================
+#  NOTICE - SEPARATELY LICENSED COMPONENT - *** NOT COVERED BY THE GPL ***
+# =============================================================================
+#
+#  This file - the "MediaForge Captcha Solver" - is NOT part of the
+#  GPL-3.0-or-later licensed portion of MediaForge.
+#
+#      Copyright (c) 2026 PD-Codes Team. ALL RIGHTS RESERVED.
+#
+#  It is proprietary work of the PD-Codes Team and is licensed SEPARATELY
+#  from the rest of this repository. The full terms are in the file
+#  LICENSE-CAPTCHA in the repository root.
+#
+#  In short:
+#
+#    * NO permission is granted to use, copy, modify, merge, publish,
+#      distribute, sublicense, sell, reverse engineer, or create derivative
+#      works of this file - or of any part of it - outside of MediaForge
+#      itself.
+#    * The GPL grants that cover the rest of MediaForge do NOT extend to
+#      this file. Receiving or redistributing MediaForge transfers no rights
+#      whatsoever to this component.
+#    * Integration into any other project - open source, private, or
+#      commercial - is permitted ONLY with prior WRITTEN permission from the
+#      PD-Codes Team, or when carried out by the PD-Codes Team itself.
+#    * This includes automated reuse: training, extraction, or porting of
+#      this file by machine-learning systems or code-generation tools.
+#
+#  Permission requests: open an issue at
+#  https://github.com/PD-Codes/MediaForge or ask on the MediaForge Discord.
+#
+#  Removing, altering, or obscuring this notice grants no rights and is
+#  itself a violation of these terms.
+#
+# =============================================================================
+
 """Cloudflare Turnstile / CAPTCHA solving via a real (patchright) browser.
 
 Streaming sites fronted by Cloudflare (s.to, aniworld.to, filmpalast.to, ...)

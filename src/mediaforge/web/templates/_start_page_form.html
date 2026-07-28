@@ -1,0 +1,111 @@
+{# ===================================================================
+   Start Page controls — used twice, with two different scopes:
+
+     scope="user"    what I see           -> /api/user/preferences
+     scope="global"  what a new account
+                     sees by default      -> PUT /api/settings (admin)
+
+   Both render the same objects, so learning one teaches the other. The
+   ids carry the scope so the settings page can show both at once, and
+   static/start_page.js drives them from the same code path.
+
+   The row labels/hints are rendered here (through Flask-Babel) and read
+   by the JS from window.__STARTPAGE_I18N -- the row list itself is built
+   client-side from /api/home-feed/sources, because which sources exist
+   depends on which modules are installed.
+   =================================================================== #}
+
+{% macro start_page_i18n() %}
+<script>
+  window.__STARTPAGE_I18N = {{ {
+    'rows': {
+      'continue':  _('Continue watching'),
+      'library':   _('New in your library'),
+      'watchlist': _('Your watchlist'),
+      'upcoming':  _('Airing next'),
+      'new':       _('New this week'),
+      'popular':   _('Popular right now'),
+      'movies':    _('Movies')
+    },
+    'hints': {
+      'playback':   _('from your playback progress'),
+      'library':    _('from your library'),
+      'favourites': _('from your favourites'),
+      'calendar':   _('from the calendar'),
+      'sources':    _('from your sources')
+    },
+    'move_up': _('Move up'),
+    'move_down': _('Move down'),
+    'drag': _('Drag to reorder'),
+    'show_row': _('Show this row'),
+    'saved': _('Saved'),
+    'save_failed': _('Could not be saved'),
+    'reset_done': _('Reset to the instance default'),
+    'using_default': _('Following the instance default'),
+    'using_own': _('You changed this — the instance default no longer applies')
+  }|tojson }};
+</script>
+{% endmacro %}
+
+
+{% macro start_page_form(scope, show_new_home_toggle=False) %}
+<div class="sp-form" data-sp-scope="{{ scope }}">
+
+  <div class="settings-section">
+    <h2>{{ _('Rows') }}</h2>
+    <div class="settings-hint">
+      {% if scope == 'user' %}
+      {{ _('Which rows your home page shows, and in which order. Switch one off and MediaForge stops collecting its data as well.') }}
+      {% else %}
+      {{ _('The order and visibility a new account starts with. Every user can overrule this for themselves.') }}
+      {% endif %}
+    </div>
+    <div class="mf-order-list" id="spRows-{{ scope }}"></div>
+    {% if scope == 'user' %}
+    <div class="settings-hint" id="spState-{{ scope }}"></div>
+    {% endif %}
+  </div>
+
+  <div class="settings-section">
+    <h2>{{ _('Cards per row') }}</h2>
+    <div class="settings-hint">{{ _('How many cards a discovery row holds at most. Fewer cards means less to fetch and a shorter page.') }}</div>
+    <div class="settings-row">
+      <select class="mf-token-input" id="spCards-{{ scope }}">
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="30">30</option>
+        <option value="40">40</option>
+        <option value="60">60</option>
+      </select>
+    </div>
+  </div>
+
+  {% if scope == 'global' %}
+  <div class="settings-section">
+    <h2>{{ _('Default filters') }}</h2>
+    <div class="settings-hint">{{ _('Which chips are off when someone opens the home page for the first time. This is a starting point, not a restriction — every user can switch them back on. To take a source away entirely, disable it under Sources.') }}</div>
+    <h3 class="sp-subhead">{{ _('Sources') }}</h3>
+    <div id="spSources-{{ scope }}" class="sp-checks"></div>
+    <h3 class="sp-subhead">{{ _('Type') }}</h3>
+    <div id="spTypes-{{ scope }}" class="sp-checks"></div>
+  </div>
+  {% endif %}
+
+  {% if show_new_home_toggle %}
+  <div class="settings-section">
+    <h2>{{ _('Layout') }}</h2>
+    <label class="settings-checkbox-row" for="newHomeEnabled">
+      <input type="checkbox" class="chb-main" id="newHomeEnabled" onchange="saveNewHomeEnabled()" />
+      <span>{{ _('Use the new home page') }}</span>
+    </label>
+    <div class="settings-hint">{{ _('Groups the discovery rows by question instead of by source: "New this week" and "Popular right now" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this.') }}</div>
+  </div>
+  {% endif %}
+
+  <div class="settings-section sp-reset">
+    <button type="button" class="btn btn-secondary" id="spReset-{{ scope }}">
+      {% if scope == 'user' %}{{ _('Reset to the instance default') }}{% else %}{{ _('Reset to the factory default') }}{% endif %}
+    </button>
+  </div>
+</div>
+{% endmacro %}

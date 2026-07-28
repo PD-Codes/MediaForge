@@ -41,10 +41,16 @@
     </div>
 
     <div class="mf-toolbar-row">
-      <div class="mf-segmented" id="libFilterToggle" role="group" aria-label="{{ _('Filter by media type') }}">
+      <!-- The last three entries are placeholders for media types that do not
+           exist yet: they carry no data, they only switch the page into the
+           "coming soon" state (see libSetFilter / #libComingSoon). -->
+      <div class="mf-segmented lib-filter-toggle" id="libFilterToggle" role="group" aria-label="{{ _('Filter by media type') }}">
         <button type="button" class="mf-segmented-btn active" id="libFilter-all"    onclick="libSetFilter('all')"    aria-pressed="true"  title="{{ _('Show all') }}">{{ _('All') }}</button>
         <button type="button" class="mf-segmented-btn"        id="libFilter-series" onclick="libSetFilter('series')" aria-pressed="false" title="{{ _('Series only') }}">{{ _('Series') }}</button>
         <button type="button" class="mf-segmented-btn"        id="libFilter-movies" onclick="libSetFilter('movies')" aria-pressed="false" title="{{ _('Movies only') }}">{{ _('Movies') }}</button>
+        <button type="button" class="mf-segmented-btn lib-soon-btn" id="libFilter-ebooks" onclick="libSetFilter('ebooks')" aria-pressed="false" title="{{ _('eBooks — coming soon') }}">{{ _('eBooks') }}<span class="mf-facet lib-soon-badge">{{ _('soon') }}</span></button>
+        <button type="button" class="mf-segmented-btn lib-soon-btn" id="libFilter-manga"  onclick="libSetFilter('manga')"  aria-pressed="false" title="{{ _('Manga — coming soon') }}">{{ _('Manga') }}<span class="mf-facet lib-soon-badge">{{ _('soon') }}</span></button>
+        <button type="button" class="mf-segmented-btn lib-soon-btn" id="libFilter-music"  onclick="libSetFilter('music')"  aria-pressed="false" title="{{ _('Music — coming soon') }}">{{ _('Music') }}<span class="mf-facet lib-soon-badge">{{ _('soon') }}</span></button>
       </div>
 
       <span class="mf-toolbar-sep" aria-hidden="true"></span>
@@ -75,7 +81,7 @@
     </div>
 
     <!-- Status-Zeile -->
-    <div class="lib-status-row">
+    <div class="lib-status-row" id="libStatusRow">
       <!-- Scan-Badge -->
       <span class="lib-scan-badge" id="libScanBadge">
         <span class="lib-scan-spinner"></span>{{ _('Scanning…') }}
@@ -103,6 +109,11 @@
     </svg>
     <p>{{ _('No downloaded content found. Downloads will be shown here automatically.') }}</p>
   </div>
+  <!-- "Coming soon" placeholder for the media types that are not implemented
+       yet (eBooks / Manga / Music). Content is painted by libPaintComingSoon()
+       so the copy stays next to the filter definition in library.js. -->
+  <div id="libComingSoon" class="mf-empty lib-soon" hidden aria-live="polite"></div>
+
   <div id="libGridView" class="mf-poster-grid" hidden></div>
   <div id="libListView" class="lib-list-view" hidden></div>
 

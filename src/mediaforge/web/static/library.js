@@ -126,6 +126,8 @@ async function libFetch() {
       libIdlePollTimer = window.mfPoll(libIdlePoll, 8000);
     }
   } catch (e) {
+    // A placeholder filter owns the viewport — don't paint a load error over it.
+    if (libIsSoonFilter(libFilterMode)) return;
     var gridEl = document.getElementById("libGridView");
     var listEl = document.getElementById("libListView");
     var emptyEl = document.getElementById("libEmptyState");
@@ -280,19 +282,100 @@ function libSetSort(key) {
   libRender(libLocations);
 }
 
+// ---- "Coming soon" placeholder filters ----
+// Media types the library does not index yet. They are real filter buttons so
+// the roadmap is visible where users look for it, but selecting one never
+// touches the item list: libRender() short-circuits into libPaintComingSoon()
+// and the grid/list/pagination stay hidden until a real filter is picked
+// again. Keep the keys in sync with the buttons in library.html.
+var LIB_SOON_FILTERS = {
+  ebooks: {
+    label: function() { return t("eBooks", "eBooks"); },
+    text:  function() { return t("Deine eBooks bekommen hier bald ein eigenes Regal — inklusive Cover, Reihen und Lesefortschritt.",
+                                 "Your eBooks will get their own shelf here soon — covers, series and reading progress included."); },
+    icon:  '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>'
+  },
+  manga: {
+    label: function() { return t("Manga", "Manga"); },
+    text:  function() { return t("Manga und Comics folgen als Nächstes — mit Bänden, Kapiteln und einem Reader.",
+                                 "Manga and comics are next — with volumes, chapters and a reader."); },
+    icon:  '<path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>'
+  },
+  music: {
+    label: function() { return t("Musik", "Music"); },
+    text:  function() { return t("Alben, Interpreten und Playlists ziehen bald hier ein — samt Player.",
+                                 "Albums, artists and playlists are moving in here soon — player included."); },
+    icon:  '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'
+  }
+};
+
+function libIsSoonFilter(mode) {
+  return Object.prototype.hasOwnProperty.call(LIB_SOON_FILTERS, mode || libFilterMode);
+}
+
 function libSetFilter(mode) {
   libFilterMode = mode;
-  ["all", "series", "movies"].forEach(function(k) {
+  ["all", "series", "movies"].concat(Object.keys(LIB_SOON_FILTERS)).forEach(function(k) {
     var btn = document.getElementById("libFilter-" + k);
-    if (btn) btn.classList.toggle("active", k === mode);
+    if (!btn) return;
+    btn.classList.toggle("active", k === mode);
+    btn.setAttribute("aria-pressed", k === mode ? "true" : "false");
   });
   libPage = 0; // result set changed — start back on page 1
   libRender(libLocations);
 }
 
+// Everything that only makes sense for real content (search, sort, layout,
+// scan status) is switched off while a placeholder filter is active, so the
+// page cannot be left in a state where a control silently does nothing.
+function libApplySoonState(soon) {
+  var searchInput = document.getElementById("libSearchInput");
+  if (searchInput) searchInput.disabled = !!soon;
+  if (soon) {
+    // Reset the search inline instead of via libClearSearch(): that one
+    // re-renders (and steals focus), which would recurse straight back here.
+    if (_libSearchTimer) { clearTimeout(_libSearchTimer); _libSearchTimer = null; }
+    libSearchQuery = "";
+    if (searchInput) searchInput.value = "";
+    var clearBtn = document.getElementById("libSearchClear");
+    if (clearBtn) clearBtn.hidden = true;
+  }
+  ["libSortToggle", "libViewToggle", "libStatusRow"].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.hidden = !!soon;
+  });
+  var sep = document.querySelector("#libToolbar .mf-toolbar-sep");
+  if (sep) sep.hidden = !!soon;
+}
+
+function libPaintComingSoon(mode) {
+  var host    = document.getElementById("libComingSoon");
+  var gridEl  = document.getElementById("libGridView");
+  var listEl  = document.getElementById("libListView");
+  var emptyEl = document.getElementById("libEmptyState");
+  var pageRow = document.getElementById("libPaginationRow");
+
+  if (gridEl)  gridEl.hidden  = true;
+  if (listEl)  listEl.hidden  = true;
+  if (emptyEl) emptyEl.hidden = true;
+  if (pageRow) pageRow.hidden = true;
+  if (!host) return;
+
+  var def = LIB_SOON_FILTERS[mode];
+  if (!def) { host.hidden = true; return; }
+  host.innerHTML =
+    '<svg class="mf-empty-icon lib-soon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + def.icon + '</svg>' +
+    '<p class="lib-soon-title">' + libEsc(t("Bald verfügbar", "Coming soon")) + '</p>' +
+    '<p class="mf-empty-hint">' + libEsc(def.text()) + '</p>' +
+    '<span class="lib-soon-tag">' + libEsc(def.label()) + '</span>';
+  host.hidden = false;
+}
+
 // Filter/sort operate on flattened {title, cpId, cpLabel, langFolder} items.
 function libFilterTitles(items) {
   if (libFilterMode === "all") return items;
+  if (libIsSoonFilter(libFilterMode)) return [];
   return items.filter(function(it) {
     return libFilterMode === "movies" ? !!it.title.is_movie : !it.title.is_movie;
   });
@@ -407,6 +490,15 @@ function libTitleMatchesQuery(title, q) {
 // ---- Render ----
 
 function libRender(locations) {
+  // Placeholder filters short-circuit before any item work — this also catches
+  // the background polls (libIdlePoll/libPollScan), which would otherwise paint
+  // the grid back over the "coming soon" panel a few seconds later.
+  var soon = libIsSoonFilter(libFilterMode);
+  libApplySoonState(soon);
+  if (soon) { libPaintComingSoon(libFilterMode); return; }
+  var host = document.getElementById("libComingSoon");
+  if (host) { host.hidden = true; host.innerHTML = ""; }
+
   if (libSearchQuery) { libRenderSearchResults(libSearchQuery); return; }
   var items = libSortTitles(libFilterTitles(libFlattenTitles(locations)));
   libPaintItems(items);

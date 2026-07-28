@@ -398,9 +398,14 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "discover_module_items": resolve_menu_items("discover") + resolve_menu_items("syncplay"),
                 "management_module_items": resolve_menu_items("management"),
                 "system_module_items": resolve_menu_items("system"),
-                # Module Settings page (under the Module Manager) -- all cards a
-                # module registered for settings_host="settings".
-                "module_settings_cards": resolve_module_settings(),
+                # Module Settings page (under the Module Manager) -- every
+                # enabled module's settings card, grouped by the page its card
+                # also lives on. Handed over as the *function*, not its result:
+                # this context processor runs on every template render, and
+                # resolve_module_settings() walks every registered item and
+                # reads a setting per item. module_settings.html is the only
+                # caller, and it calls it once.
+                "get_module_settings": resolve_module_settings,
                 # Back-compat: Integrations page's "Third Party" tab, unchanged.
                 "thirdparty_cards": resolve_settings_cards("integrations", "thirdparty"),
                 # Generic hooks any settings template can call directly to pull
@@ -479,9 +484,14 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "discover_module_items": resolve_menu_items("discover") + resolve_menu_items("syncplay"),
                 "management_module_items": resolve_menu_items("management"),
                 "system_module_items": resolve_menu_items("system"),
-                # Module Settings page (under the Module Manager) -- all cards a
-                # module registered for settings_host="settings".
-                "module_settings_cards": resolve_module_settings(),
+                # Module Settings page (under the Module Manager) -- every
+                # enabled module's settings card, grouped by the page its card
+                # also lives on. Handed over as the *function*, not its result:
+                # this context processor runs on every template render, and
+                # resolve_module_settings() walks every registered item and
+                # reads a setting per item. module_settings.html is the only
+                # caller, and it calls it once.
+                "get_module_settings": resolve_module_settings,
                 "thirdparty_cards": resolve_settings_cards("integrations", "thirdparty"),
                 "get_settings_cards": resolve_settings_cards,
                 "get_dynamic_tabs": resolve_dynamic_tabs,
@@ -1000,8 +1010,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # uninstall buttons. Gate the page, not just the link.
             "extensions_page",
             # Module Settings page under the Module Manager -- hosts every
-            # module's settings_host="settings" card (resolve_module_settings).
-            # Admin-only for the same reason settings_page is.
+            # enabled module's settings card, whichever page it also lives on
+            # (resolve_module_settings). Admin-only for the same reason
+            # settings_page is -- and now also because it is the one place that
+            # shows every module's settings at once, including the Integrations
+            # ones that were already admin-gated on their own page.
             "module_settings_page",
             # Imports and executes arbitrary code found on disk (any new
             # web/thirdparties/<name>/ folder).

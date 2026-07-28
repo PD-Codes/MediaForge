@@ -14,15 +14,29 @@
     <p class="page-subtitle">{{ _('Settings contributed by installed modules') }}</p>
   </div>
 
-  {# Cards come from registry.resolve_module_settings() -- every enabled module
-     that registered settings for settings_host="settings". Rendered with the
-     same shared macro the Integrations page uses, so the generic
-     /api/settings/thirdparty/<id> API (static/extension_cards.js) drives every
-     toggle/field with no extra wiring. #}
-  {% if module_settings_cards %}
+  {# Groups come from registry.resolve_module_settings() -- every enabled
+     module that registered settings, grouped by the page its card also lives
+     on. Rendered with the same shared macro the Integrations page uses, so the
+     generic /api/settings/thirdparty/<id> API (static/extension_cards.js)
+     drives every toggle/field with no extra wiring -- which is also why a card
+     shown here and on its original page is not a copy: both edit the same
+     settings through the same endpoint. #}
+  {% set module_settings_groups = get_module_settings() %}
+  {% if module_settings_groups %}
   <div class="settings-tab-panel active" id="tab-modules">
-    {% for card in module_settings_cards %}
+    {% for group in module_settings_groups %}
+    <div class="integ-subsection-header">
+      <span class="integ-subsection-title">{{ group.label }}</span>
+      <span class="integ-subsection-badge">{{ group.cards|length }}</span>
+    </div>
+    {% if group.host != 'settings' %}
+    <div class="integ-subsection-hint">
+      {{ _('These modules also keep their card on that page. Both places edit the same settings.') }}
+    </div>
+    {% endif %}
+    {% for card in group.cards %}
     {{ ext.render_settings_card(card) }}
+    {% endfor %}
     {% endfor %}
   </div>
   {% else %}

@@ -5893,6 +5893,24 @@ msgstr "läuft"
 msgid "CineInfo source"
 msgstr "CineInfo-Quelle"
 
+msgid "Which source gets to speak first about a title. A provider pill: the first source that knows the title shows its badge, the rest are skipped. A CineInfo source: the first one that knows a field fills it — TMDB always keeps what it already has. Modules that register a pill or a CineInfo source appear here automatically, marked \"Module\"."
+msgstr "Welche Quelle als Erste zu einem Titel etwas sagen darf. Bei einer Provider-Pill zeigt die erste Quelle, die den Titel kennt, ihr Abzeichen — der Rest wird übersprungen. Bei einer CineInfo-Quelle füllt die erste Quelle, die ein Feld kennt, dieses Feld — was TMDB schon hat, bleibt immer stehen. Module, die eine Pill oder eine CineInfo-Quelle registrieren, erscheinen hier automatisch, gekennzeichnet mit „Modul“."
+
+msgid "Own settings"
+msgstr "Eigene Einstellungen"
+
+msgid "Other"
+msgstr "Sonstige"
+
+msgid "These modules also keep their card on that page. Both places edit the same settings."
+msgstr "Diese Module haben ihre Karte zusätzlich auf der jeweiligen Seite. Beide Stellen bearbeiten dieselben Einstellungen."
+
+msgid "These modules also have their card on that tab. Same settings, either place."
+msgstr "Diese Module haben ihre Karte zusätzlich auf dem genannten Tab. Dieselben Einstellungen, egal wo."
+
+msgid "Monitoring module"
+msgstr "Monitoring-Modul"
+
 msgid "search source"
 msgstr "Suchquelle"
 

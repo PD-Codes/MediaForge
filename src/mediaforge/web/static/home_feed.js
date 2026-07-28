@@ -33,11 +33,16 @@
   // Every visible string comes from the template (index.html renders them
   // through Flask-Babel), so the feed is translated by the same catalogue as
   // the rest of the app instead of a hardcoded German/English pair.
+  // mfEscape (mf_escape.js) is the project's only escaper -- it also escapes
+  // quotes, which matters here because several values end up in attributes.
   const I18N = window.__HOME_I18N || {};
   function HT(key) { return I18N[key] || key; }
 
   const DISCOVERY_ROWS = ["new", "popular", "movies"];
   const PERSONAL_ROWS = ["continue", "watchlist", "library", "upcoming"];
+  // Filled from /api/home-feed's `config`: which rows this account wants, in
+  // which order (Settings -> Start Page, or the "Customise" button here).
+  let layout = { order: [], hidden: [], limit: 30, rows: [] };
   const ROW_GRIDS = {
     continue: "feedContinueGrid",
     watchlist: "feedWatchlistGrid",
@@ -47,7 +52,7 @@
     popular: "feedPopularGrid",
     movies: "feedMoviesGrid",
   };
-  const ROW_MAX = 30;
+  let ROW_MAX = 30;
   const PREF_KEY = "home_feed_filters";
   const LS_KEY = "mf-home-filters";
   const RELOAD_AFTER = 3600000;            // 1 h, same as the server-side cache
@@ -65,6 +70,8 @@
   // library layout): a filter that resets on every device is a filter the
   // user sets again every day. localStorage stays as the fallback for the
   // logged-out / auth-disabled case.
+  let hasStoredFilters = false;
+
   function loadFilters() {
     let raw = "";
     const prefs = window._USER_PREFS || {};
@@ -74,6 +81,7 @@
       try { raw = localStorage.getItem(LS_KEY) || ""; } catch (e) { raw = ""; }
     }
     if (!raw) return;
+    hasStoredFilters = true;
     offSources = {};
     offTypes = {};
     raw.split(";").forEach(function (part) {
@@ -121,33 +129,33 @@
     const wrap = document.getElementById("feedFilters");
     if (!wrap) return;
     const types = availableTypes();
-    let html = '<span class="feed-chip-label">' + escapeHtml(HT("sources")) + "</span>";
+    let html = '<span class="feed-chip-label">' + mfEscape(HT("sources")) + "</span>";
 
     sources.forEach(function (s) {
       if (!s.enabled) {
         // Switched off in Settings → shown, but as a fact, not as a filter.
         html += '<span class="feed-chip is-disabled" title="' +
-          escapeHtml(HT("disabled_in_settings")) + '">' +
-          '<span class="feed-chip-dot"></span>' + escapeHtml(s.label) +
-          ' · ' + escapeHtml(HT("off")) + "</span>";
+          mfEscape(HT("disabled_in_settings")) + '">' +
+          '<span class="feed-chip-dot"></span>' + mfEscape(s.label) +
+          ' · ' + mfEscape(HT("off")) + "</span>";
         return;
       }
       const down = s.error || downIds.indexOf(s.id) !== -1;
       const on = sourceOn(s.id);
       const dot = s.color
-        ? ' style="background:' + escapeHtml(s.color) + '"'
+        ? ' style="background:' + mfEscape(s.color) + '"'
         : "";
       html += '<button type="button" class="feed-chip' + (on ? " is-on" : "") +
         (down ? " is-down" : "") + '" data-kind="source" data-value="' +
-        escapeHtml(s.id) + '" aria-pressed="' + (on ? "true" : "false") + '">' +
+        mfEscape(s.id) + '" aria-pressed="' + (on ? "true" : "false") + '">' +
         '<span class="feed-chip-dot"' + (down ? "" : dot) + "></span>" +
-        escapeHtml(s.label) +
-        (down ? ' · ' + escapeHtml(HT("offline")) : "") +
+        mfEscape(s.label) +
+        (down ? ' · ' + mfEscape(HT("offline")) : "") +
         "</button>";
     });
 
     html += '<span class="feed-chip-label feed-chip-label--split">' +
-      escapeHtml(HT("type")) + "</span>";
+      mfEscape(HT("type")) + "</span>";
     if (types.series) {
       html += typeChip("series", HT("series"));
     }
@@ -163,8 +171,8 @@
   function typeChip(key, label) {
     const on = typeOn(key);
     return '<button type="button" class="feed-chip' + (on ? " is-on" : "") +
-      '" data-kind="type" data-value="' + escapeHtml(key) + '" aria-pressed="' +
-      (on ? "true" : "false") + '">' + escapeHtml(label) + "</button>";
+      '" data-kind="type" data-value="' + mfEscape(key) + '" aria-pressed="' +
+      (on ? "true" : "false") + '">' + mfEscape(label) + "</button>";
   }
 
   /** What the UpTime monitor knows, mirrored into the chips. app.js calls
@@ -221,8 +229,8 @@
     const menu = document.createElement("div");
     menu.className = "browse-src-menu";
     menu.innerHTML = entries.map(function (e) {
-      return '<button type="button" data-url="' + escapeHtml(e.url) + '">' +
-        escapeHtml(e.label) + "</button>";
+      return '<button type="button" data-url="' + mfEscape(e.url) + '">' +
+        mfEscape(e.label) + "</button>";
     }).join("");
     menu.addEventListener("click", function (ev) {
       const b = ev.target.closest("button");
@@ -242,6 +250,56 @@
     if (open && open.parentNode) open.parentNode.removeChild(open);
   }
 
+
+  // ------------------------------------------------------------ layout
+  /** Put the sections in the configured order and drop the ones switched
+      off. The DOM order is the template's default; this rewrites it once per
+      load, which is cheaper and far less fragile than rendering seven
+      sections from JavaScript. */
+  function applyLayout() {
+    if (!layout.order || !layout.order.length) return;
+    const empty = document.getElementById("feedEmpty");
+    layout.order.forEach(function (row) {
+      const grid = document.getElementById(ROW_GRIDS[row]);
+      const section = grid && grid.closest(".browse-section");
+      if (!section) return;
+      if (layout.hidden.indexOf(row) !== -1) {
+        section.style.display = "none";
+        section.dataset.feedHidden = "1";
+        return;
+      }
+      delete section.dataset.feedHidden;
+      feed.appendChild(section);            // moves, does not clone
+    });
+    if (empty) feed.appendChild(empty);     // the empty state stays last
+    applyRowHints();
+  }
+
+  /** Say where a row's content comes from, right in its heading -- "from your
+      favourites", linking to the page that owns it. A row whose origin you
+      cannot see is a row you cannot fix. */
+  function applyRowHints() {
+    const strings = window.__STARTPAGE_I18N || {};
+    (layout.rows || []).forEach(function (meta) {
+      const grid = document.getElementById(ROW_GRIDS[meta.id]);
+      const section = grid && grid.closest(".browse-section");
+      if (!section) return;
+      const heading = section.querySelector(".browse-heading");
+      if (!heading || heading.querySelector(".browse-heading-src")) return;
+      const label = (strings.hints || {})[meta.hint];
+      if (!label) return;
+      const hint = document.createElement(meta.link ? "a" : "span");
+      hint.className = "browse-heading-src";
+      hint.textContent = label;
+      if (meta.link) hint.href = meta.link;
+      heading.appendChild(hint);
+    });
+  }
+
+  function rowVisible(row) {
+    return layout.hidden.indexOf(row) === -1;
+  }
+
   // ------------------------------------------------------------ rendering
   function visibleCards(row) {
     return (rows[row] || []).filter(function (item) {
@@ -252,7 +310,7 @@
   function showSection(row, visible) {
     const grid = document.getElementById(ROW_GRIDS[row]);
     const section = grid && grid.closest(".browse-section");
-    if (section) section.style.display = visible ? "" : "none";
+    if (section) section.style.display = (visible && rowVisible(row)) ? "" : "none";
     return grid;
   }
 
@@ -335,9 +393,9 @@
     const text = feedError || HT("source_down").replace("{}", names);
     wrap.innerHTML =
       '<div class="feed-alert">' +
-      '<span class="feed-alert-text">' + escapeHtml(text) + "</span>" +
+      '<span class="feed-alert-text">' + mfEscape(text) + "</span>" +
       '<button type="button" class="feed-alert-retry">' +
-      escapeHtml(HT("try_again")) + "</button></div>";
+      mfEscape(HT("try_again")) + "</button></div>";
   }
 
   // ------------------------------------------------------------ personal rows
@@ -373,9 +431,9 @@
           '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></span>' +
           '<span class="home-pcard-bar"><i style="width:' +
           Math.max(2, Math.min(100, it.percent || 0)) + '%"></i></span>' +
-          '<span class="home-pcard-title">' + escapeHtml(it.title) + "</span>" +
-          '<span class="home-pcard-sub">' + escapeHtml(sub) + " · " +
-          escapeHtml(remaining(it)) + "</span></button>");
+          '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
+          '<span class="home-pcard-sub">' + mfEscape(sub) + " · " +
+          mfEscape(remaining(it)) + "</span></button>");
       }).join("");
       grid.querySelectorAll("[data-play]").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -409,8 +467,8 @@
         return pcard(
           '<a class="home-pcard-hit" href="/library">' +
           fauxArt(it.title) +
-          '<span class="home-pcard-title">' + escapeHtml(it.title) + "</span>" +
-          '<span class="home-pcard-sub">' + escapeHtml(sub) + "</span></a>");
+          '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
+          '<span class="home-pcard-sub">' + mfEscape(sub) + "</span></a>");
       }).join("");
     }
 
@@ -420,15 +478,15 @@
     if (grid && up.length) {
       grid.innerHTML = up.map(function (ev) {
         const art = ev.poster_url
-          ? '<img src="' + escapeHtml(ev.poster_url) + '" alt="" loading="lazy">'
+          ? '<img src="' + mfEscape(ev.poster_url) + '" alt="" loading="lazy">'
           : fauxArt(ev.title);
         const ep = ev.is_movie ? HT("movie")
           : (ev.season ? "S" + ev.season + "E" + (ev.episode || "") : "");
         return pcard(
           '<a class="home-pcard-hit" href="/calendar">' + art +
-          '<span class="home-pcard-title">' + escapeHtml(ev.title) + "</span>" +
-          '<span class="home-pcard-sub">' + escapeHtml(formatDate(ev.air_date)) +
-          (ep ? " · " + escapeHtml(ep) : "") + "</span></a>", "has-art");
+          '<span class="home-pcard-title">' + mfEscape(ev.title) + "</span>" +
+          '<span class="home-pcard-sub">' + mfEscape(formatDate(ev.air_date)) +
+          (ep ? " · " + mfEscape(ep) : "") + "</span></a>", "has-art");
       }).join("");
     }
   }
@@ -477,6 +535,24 @@
       const data = await resp.json();
       sources = Array.isArray(data.sources) ? data.sources : [];
       rows = data.rows || {};
+      if (data.config) {
+        layout = {
+          order: data.config.order || [],
+          hidden: data.config.hidden || [],
+          limit: data.config.limit || 30,
+          rows: data.config.rows || [],
+        };
+        ROW_MAX = layout.limit;
+        // A user who never touched a chip follows the instance default the
+        // admin set under Settings -> Start Page.
+        if (!hasStoredFilters) {
+          offSources = {};
+          offTypes = {};
+          (data.config.sources_off || []).forEach(function (id) { offSources[id] = true; });
+          (data.config.types_off || []).forEach(function (ty) { offTypes[ty] = true; });
+        }
+        applyLayout();
+      }
       loadedAt = Date.now();
     } catch (err) {
       feedError = HT("feed_failed");
@@ -507,4 +583,41 @@
 
   loadFilters();
   load();
+
+  // Opened from the "Customise" button next to the chip row. The controls
+  // themselves are the Settings tab's, rendered into a modal here because
+  // /settings is admin-only and these settings are not.
+  window.openStartPageModal = function () {
+    const overlay = document.getElementById("startPageOverlay");
+    if (!overlay) return;
+    overlay.style.display = "block";
+    if (window.MFScrollLock && typeof window.MFScrollLock.lock === "function") {
+      window.MFScrollLock.lock();
+    } else {
+      document.body.style.overflow = "hidden";
+    }
+    if (window.MFStartPage) window.MFStartPage.reload();
+  };
+
+  window.closeStartPageModal = function () {
+    const overlay = document.getElementById("startPageOverlay");
+    if (!overlay) return;
+    overlay.style.display = "none";
+    if (window.MFScrollLock && typeof window.MFScrollLock.unlock === "function") {
+      window.MFScrollLock.unlock();
+    } else {
+      document.body.style.overflow = "";
+    }
+  };
+
+  window.closeStartPageModalOutside = function (ev) {
+    if (ev.target === document.getElementById("startPageOverlay")) window.closeStartPageModal();
+  };
+
+  document.addEventListener("keydown", function (ev) {
+    const overlay = document.getElementById("startPageOverlay");
+    if (ev.key === "Escape" && overlay && overlay.style.display === "block") {
+      window.closeStartPageModal();
+    }
+  });
 })();

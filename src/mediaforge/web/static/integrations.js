@@ -166,7 +166,7 @@ async function loadCineinfoSettings() {
     if (hRatingEl) hRatingEl.checked = d.show_hover_rating === "1";
     if (hGenresEl) hGenresEl.checked = d.show_hover_genres === "1";
     if (hFskEl) hFskEl.checked = d.show_hover_fsk === "1";
-    _loadPillOrder(d.provider_order || "");
+    _loadPillOrder(d.provider_order || "", d.cineinfo_sources || []);
     if (advancedSearchEl) {
       advancedSearchEl.checked = d.advanced_search === "1";
       const sidebarAdvancedSearch = document.getElementById("sidebarAdvancedSearch");
@@ -1418,16 +1418,29 @@ function _startMediascanPoll() {
   }, 1500);
 }
 
-// ─── CineInfo provider order (pill chain) ────────────────────────────────
-// Which source may show its provider pill on a card / in the detail modal
-// first: TMDB, Crunchyroll, Fernsehserien.de — plus every module that
-// registered its own pill through registerProviderPill() (see
-// web/thirdparties/registry.py's provider_pill_script and static/app.js).
-// Those module resolvers are discovered live from window._providerPillResolvers,
-// so a newly installed module shows up in this list without any code change
-// here. The saved order is a preference, not a whitelist: a source the saved
-// order doesn't mention is still used, just after the ones that are listed
-// (see app.js's _pillSources()).
+// ─── CineInfo source order ───────────────────────────────────────────────
+// One list, answering one question: which source gets to speak first about a
+// title. It holds two kinds of entry, and each backend consumer reads only
+// the prefix it owns and ignores the rest:
+//
+//   "tmdb" / "crunchyroll" / "fernsehserien"  built-in provider pills
+//   "ext:<name>"                              a module's own pill, registered
+//                                             via registerProviderPill()
+//                                             (app.js / provider_pill_script)
+//   "ci:<source id>"                          a module's CineInfo data source
+//                                             (web/cineinfo/registry.py)
+//
+// A pill decides which badge a card shows; a CineInfo source fills the data
+// fields behind it, and its position decides who wins a field two sources both
+// know. Different mechanisms, same user-facing question, so they share a list
+// and each row says which kind it is.
+//
+// Both kinds are discovered live — pills from window._providerPillResolvers,
+// CineInfo sources from the settings payload's cineinfo_sources — so a newly
+// installed module shows up here without any code change. The saved order is a
+// preference, not a whitelist: an entry the saved order doesn't mention is
+// still used, just after the ones that are listed (see app.js's _pillSources()
+// and registry.get_sources()).
 const _PILL_BUILTIN_LABELS = {
   tmdb: "TMDB",
   crunchyroll: "Crunchyroll",
@@ -1435,18 +1448,58 @@ const _PILL_BUILTIN_LABELS = {
 };
 
 let _pillOrder = [];
+// [{id, order_id, label, module_name, supports_bulk}] from the settings GET.
+let _cineinfoSources = [];
+
+function _cineinfoSourceFor(id) {
+  return _cineinfoSources.find(s => s.order_id === id) || null;
+}
 
 function _pillLabel(id) {
   if (_PILL_BUILTIN_LABELS[id]) return _PILL_BUILTIN_LABELS[id];
+  const src = _cineinfoSourceFor(id);
+  if (src) return src.label || src.id;
   return id.startsWith("ext:") ? id.slice(4) : id;
+}
+
+function _isModulePillId(id) {
+  return id.startsWith("ext:") || id.startsWith("ci:");
+}
+
+// Labels and module names in these rows come from a third-party folder's own
+// constants (CineInfoSource.label, MODULE_NAME, the name passed to
+// registerProviderPill()) and are written into innerHTML below, so they are
+// escaped rather than trusted. The ids themselves are already safe -- they are
+// filtered against _knownPillIds() before anything renders.
+function _pillEsc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// Tooltip for the Module badge: which module the row comes from, and which of
+// the two mechanisms it is — a provider pill (the badge on the card) or a
+// CineInfo source (the data behind it).
+function _pillRowHint(id) {
+  const src = _cineinfoSourceFor(id);
+  const kind = src
+    ? t("CineInfo-Quelle", "CineInfo source")
+    : t("Provider-Pill", "Provider pill");
+  const name = src && src.module_name;
+  return name ? kind + " · " + name : kind;
 }
 
 function _knownPillIds() {
   const ext = (window._providerPillResolvers || []).map(e => "ext:" + e.name);
-  return ["tmdb", "crunchyroll", "fernsehserien"].concat(ext);
+  const ci = _cineinfoSources.map(s => s.order_id);
+  return ["tmdb", "crunchyroll", "fernsehserien"].concat(ext).concat(ci);
 }
 
-function _loadPillOrder(raw) {
+function _loadPillOrder(raw, sources) {
+  // Never trust these two for anything but lookup: everything that reaches the
+  // DOM below is filtered against `known` first, so a bogus id in the saved
+  // setting can neither render nor end up in an onclick handler.
+  _cineinfoSources = Array.isArray(sources) ? sources.filter(s => s && s.order_id) : [];
   const known = _knownPillIds();
   const configured = String(raw || "")
     .split(",")
@@ -1469,8 +1522,15 @@ function _renderPillOrder() {
       '<span class="source-drag-handle" title="' + t("Ziehen zum Sortieren", "Drag to reorder") + '" aria-hidden="true">' +
         '<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><circle cx="7" cy="5" r="1.5"/><circle cx="13" cy="5" r="1.5"/><circle cx="7" cy="10" r="1.5"/><circle cx="13" cy="10" r="1.5"/><circle cx="7" cy="15" r="1.5"/><circle cx="13" cy="15" r="1.5"/></svg>' +
       '</span>' +
-      '<span class="source-badge">' + (idx + 1) + '. ' + _pillLabel(id) +
-        (id.startsWith("ext:") ? ' <span class="mirror-active-badge">' + t("Modul", "Module") + '</span>' : '') +
+      '<span class="source-badge">' + (idx + 1) + '. ' + _pillEsc(_pillLabel(id)) +
+        // "Modul" for anything a module contributed — its own pill (ext:) as
+        // well as its CineInfo source (ci:). Deliberately the same badge for
+        // both: from here they answer the same question, and which mechanism a
+        // row actually is lives in its tooltip rather than in a second badge
+        // that would double the visual noise of every module row.
+        (_isModulePillId(id)
+          ? ' <span class="mirror-active-badge" title="' + _pillEsc(_pillRowHint(id)) + '">' + t("Modul", "Module") + '</span>'
+          : '') +
       '</span>' +
       '<div class="source-order-actions">' +
         '<button type="button" class="source-move-btn" title="' + t("Nach oben", "Move up") + '" ' + (idx === 0 ? "disabled" : "") + ' onclick="movePillSource(\'' + id + '\',-1)">' +

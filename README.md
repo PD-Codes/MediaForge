@@ -52,7 +52,7 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **AutoSync** — keep series up to date automatically on an **interval or weekly schedule**, with per-job **season/episode filters** and a separate path for movies/specials
 - **Download queue & history** — a real-time queue plus a searchable, filterable **history** (failed/cancelled/skipped, retry, bulk delete, export, auto-retention)
 - **Media library, favourites & statistics** built in
-- **Home page** — an opt-in start page that leads with *your* rows (continue watching with resume-at-the-second, watchlist, newest library additions, what airs in the next two weeks) and then mixes every enabled source into one *New* / *Popular* / *Movies* row each, deduplicated across the whole page; one chip row says which sources are on, off or unreachable and filters at the same time, and the search box remembers your last searches (<kbd>/</kbd> jumps into it)
+- **Home page** — an opt-in start page that leads with *your* rows (continue watching with resume-at-the-second, watchlist, newest library additions, what airs in the next two weeks) and then mixes every enabled source into one *New* / *Popular* / *Movies* row each, deduplicated across the whole page; one chip row says which sources are on, off or unreachable and filters at the same time, and the search box remembers your last searches (<kbd>/</kbd> jumps into it). Every row says where it comes from, and **Settings → Start Page** decides which rows you get, in which order and how many cards each holds — per account, on top of the default the admin sets
 - **Subtitles** — the subtitles a source offers are downloaded and muxed into the finished file as switchable soft-sub tracks that Jellyfin/Plex list by language (on by default)
 - **Duplicate handling** — optionally replace an already downloaded episode when the hoster offers better quality, or merge an additional language into the existing file as a new audio track instead of creating a near-duplicate (both off by default)
 - **Advanced search** — TMDB Discover with genres (include/exclude), rating & vote-count thresholds, year and runtime ranges, keywords, original language, series status, networks and streaming providers, grouped in a floating filter menu with quick presets
@@ -167,6 +167,23 @@ Builds upon the work of several outstanding open-source projects and individuals
 - **[GitHub Issues](https://github.com/PD-Codes/MediaForge/issues)** — preferred for installation problems, bug reports and feature requests.
 
 If you find MediaForge useful, please ⭐ the repository — it's greatly appreciated and motivates continued development.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## License
+
+MediaForge is licensed under the **GNU General Public License v3.0 or later**
+(GPL-3.0-or-later). See [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT).
+
+> [!IMPORTANT]
+> **One component is licensed separately.** The MediaForge Captcha Solver
+> (`src/mediaforge/playwright/captcha.py`) is **not** covered by the GPL.
+> It is proprietary work of the PD-Codes Team, © 2026, **All Rights
+> Reserved**, and may be used only as an integral part of an unmodified
+> MediaForge installation. Extracting it, porting it, or reusing it in any
+> other project — open source or commercial — requires **prior written
+> permission** from the PD-Codes Team. Full terms:
+> [LICENSE-CAPTCHA](LICENSE-CAPTCHA).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

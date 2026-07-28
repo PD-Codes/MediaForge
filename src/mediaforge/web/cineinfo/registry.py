@@ -44,6 +44,18 @@ _lock = threading.RLock()
 # 0 / False are intentionally NOT here: they are valid values and must survive.
 _EMPTY = (None, "", [], {})
 
+# The user-configurable order lives in the same setting as the provider-pill
+# chain (Integrations -> CineInfo -> "Provider order"), because both answer the
+# same question from a user's point of view -- "which source gets to speak
+# first about this title" -- and two separate drag lists on one tab would be a
+# worse answer than one. The two halves never collide because each consumer
+# only looks at its own prefix: a CineInfo source is "ci:<source id>", a
+# module's provider pill is "ext:<name>", and the built-in pills are bare ids
+# (see static/app.js's _pillSources(), which ignores everything it does not
+# know -- including every "ci:" entry).
+ORDER_SETTING = "cineinfo_provider_order"
+ORDER_PREFIX = "ci:"
+
 
 def register_cineinfo_source(source: CineInfoSource, item_id=None) -> None:
     """Register (or replace) a CineInfo source by its stable id.
@@ -130,8 +142,37 @@ def thirdparty_cineinfo_sources_by_item() -> dict:
                 for item_id, sources in _OWNERS.items() if sources}
 
 
+def configured_order() -> list:
+    """The saved source order, as bare source ids (the ``ci:`` prefix stripped).
+
+    A preference, not a whitelist: :func:`get_sources` appends anything the
+    saved order does not mention, so a source added by a module installed after
+    the order was last saved still runs -- just last.
+    """
+    try:
+        from ..db import get_setting
+        raw = get_setting(ORDER_SETTING, "") or ""
+    except Exception:
+        # No app/DB context (a CLI import, a unit test): fall back to the
+        # historical alphabetical order rather than failing the lookup.
+        return []
+    out = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part.startswith(ORDER_PREFIX):
+            source_id = part[len(ORDER_PREFIX):]
+            if source_id and source_id not in out:
+                out.append(source_id)
+    return out
+
+
 def get_sources(enabled_only: bool = True) -> list:
-    """Registered sources, ordered by id for stable, deterministic merging."""
+    """Registered sources in the order :func:`enrich` should apply them.
+
+    Configured sources first, in the user's saved order; everything else after
+    them, alphabetically by id -- which is exactly the old behaviour when
+    nothing is configured, so an untouched installation merges as before.
+    """
     with _lock:
         sources = list(_SOURCES.values())
     if enabled_only:
@@ -143,7 +184,47 @@ def get_sources(enabled_only: bool = True) -> list:
             except Exception:
                 logger.debug("[CineInfo] is_enabled() raised for %r", s.id, exc_info=True)
         sources = live
-    return sorted(sources, key=lambda s: s.id)
+    order = configured_order()
+
+    def _key(source):
+        try:
+            return (0, order.index(source.id), "")
+        except ValueError:
+            return (1, 0, source.id)
+
+    return sorted(sources, key=_key)
+
+
+def describe_sources(enabled_only: bool = True) -> list:
+    """``[{id, order_id, label, supports_bulk, item_id, module_name}]`` for the
+    settings UI, in the same order :func:`get_sources` returns.
+
+    ``order_id`` is the id the saved order uses (``ci:<id>``), so the frontend
+    never has to know about the prefix convention. ``module_name`` is the
+    folder that registered the source, used for the "Module" pill's tooltip;
+    it is ``None`` for a source registered without an ``item_id``.
+    """
+    with _lock:
+        owner_by_source = {sid: item for item, sids in _OWNERS.items() for sid in sids}
+    out = []
+    for source in get_sources(enabled_only=enabled_only):
+        item_id = owner_by_source.get(source.id)
+        module_name = None
+        if item_id:
+            try:
+                from ..thirdparties.registry import module_name_for_item
+                module_name = module_name_for_item(item_id)
+            except Exception:
+                logger.debug("[CineInfo] module name lookup failed for %r", item_id)
+        out.append({
+            "id": source.id,
+            "order_id": ORDER_PREFIX + source.id,
+            "label": getattr(source, "label", None) or source.id,
+            "supports_bulk": bool(getattr(source, "supports_bulk", False)),
+            "item_id": item_id,
+            "module_name": module_name,
+        })
+    return out
 
 
 def enrich(items: list[dict], base_by_key: dict, ctx: QueryContext) -> dict:
@@ -154,7 +235,9 @@ def enrich(items: list[dict], base_by_key: dict, ctx: QueryContext) -> dict:
     base_by_key: ``{key: base_payload}`` from the built-in TMDB lookup.
 
     Returns a NEW ``{key: merged_payload}``. Base fields always win; a source only
-    fills fields the base is missing or left empty, applied in source-id order.
+    fills fields the base is missing or left empty, applied in the order
+    :func:`get_sources` returns -- so of two sources that both know a field, the
+    one the user put first wins it.
     """
     sources = get_sources(enabled_only=True)
     # Fast path: nothing registered -> return the base untouched, zero overhead.

@@ -111,3 +111,91 @@ def test_personal_rows_answer_even_with_nothing_to_show(as_user):
     data = as_user("user").get("/api/home-feed/personal").get_json()
     assert set(data) == {"continue", "watchlist", "library", "upcoming"}
     assert all(isinstance(v, list) for v in data.values())
+
+
+# ---------------------------------------------------------------------------
+# Start Page settings: the two levels (instance default + per-account
+# override) and what they do to the feed.
+# ---------------------------------------------------------------------------
+
+def test_default_row_order_puts_the_borrowed_rows_last(as_user):
+    """Watchlist and the calendar are other pages in miniature -- they belong
+    below the rows that are only on the home page."""
+    data = as_user("user").get("/api/home-feed/sources").get_json()
+    order = data["config"]["order"]
+    assert order[-2:] == ["watchlist", "upcoming"]
+    assert order[0] == "continue"
+
+
+def test_every_row_says_where_it_comes_from(as_user):
+    rows = {r["id"]: r for r in as_user("user").get("/api/home-feed/sources").get_json()["rows"]}
+    assert rows["watchlist"]["hint"] == "favourites"
+    assert rows["watchlist"]["link"] == "/favourites"
+    assert rows["upcoming"]["hint"] == "calendar"
+    assert rows["continue"]["hint"] == "playback"
+    assert rows["new"]["hint"] == "sources"
+
+
+def test_admin_default_applies_until_the_user_overrides_it(as_user, stub_sources):
+    from mediaforge.web.db import set_setting
+    set_setting("home_rows_order", "movies,new,popular,continue,library,watchlist,upcoming")
+    set_setting("home_rows_hidden", "popular")
+    set_setting("home_cards_per_row", "10")
+    try:
+        client = as_user("user")
+        cfg = client.get("/api/home-feed").get_json()["config"]
+        assert cfg["order"][0] == "movies"
+        assert cfg["hidden"] == ["popular"]
+        assert cfg["limit"] == 10
+        assert cfg["overridden"] == []
+
+        # A hidden row is not just invisible -- it is not collected at all.
+        rows = client.get("/api/home-feed").get_json()["rows"]
+        assert rows["popular"] == []
+        assert len(rows["new"]) <= 10
+
+        # Now the user disagrees, about the order only.
+        client.post("/api/user/preferences",
+                    json={"home_feed_layout": "o:new,popular,movies,continue,library,watchlist,upcoming"})
+        cfg = client.get("/api/home-feed").get_json()["config"]
+        assert cfg["order"][0] == "new"
+        assert cfg["overridden"] == ["order"]
+        # ...so the parts they did not touch still follow the instance default.
+        assert cfg["hidden"] == ["popular"]
+        assert cfg["limit"] == 10
+
+        # And back to the default.
+        client.post("/api/user/preferences", json={"home_feed_layout": ""})
+        assert client.get("/api/home-feed").get_json()["config"]["order"][0] == "movies"
+    finally:
+        for key in ("home_rows_order", "home_rows_hidden", "home_cards_per_row"):
+            set_setting(key, "")
+
+
+def test_a_junk_layout_can_never_lose_a_row(as_user):
+    client = as_user("user")
+    client.post("/api/user/preferences",
+                json={"home_feed_layout": "o:watchlist,not-a-row,watchlist;n:999"})
+    try:
+        cfg = client.get("/api/home-feed/sources").get_json()["config"]
+        assert cfg["order"][0] == "watchlist"
+        assert sorted(cfg["order"]) == sorted(
+            ["continue", "library", "watchlist", "upcoming", "new", "popular", "movies"])
+        assert cfg["limit"] == 30          # 999 is not one of the offered steps
+    finally:
+        client.post("/api/user/preferences", json={"home_feed_layout": ""})
+
+
+def test_start_page_defaults_are_admin_only(as_user):
+    resp = as_user("user").put("/api/settings", json={"home_cards_per_row": "10"})
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_personal_rows_are_skipped_when_hidden(as_user):
+    from mediaforge.web.db import set_setting
+    set_setting("home_rows_hidden", "continue,library,watchlist,upcoming")
+    try:
+        data = as_user("user").get("/api/home-feed/personal").get_json()
+        assert all(v == [] for v in data.values())
+    finally:
+        set_setting("home_rows_hidden", "")

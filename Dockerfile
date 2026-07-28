@@ -111,7 +111,7 @@ ENV TZ=Europe/Berlin \
 # Install dependencies & patchright browsers to a global path accessible by the unprivileged runtime user.
 # This step is intentionally placed BEFORE copying source code so that the heavy
 # dependency resolution and Chromium download are cached independently and only re-run when pyproject.toml / uv.lock change.
-COPY pyproject.toml uv.lock README.md LICENSE MANIFEST.in /app/
+COPY pyproject.toml uv.lock README.md LICENSE COPYRIGHT LICENSE-CAPTCHA MANIFEST.in /app/
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN uv sync --frozen --no-dev --no-install-project && \
     patchright install chromium && \

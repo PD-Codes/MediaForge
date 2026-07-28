@@ -93,7 +93,67 @@ _KNOWN_TABS = {
     "integrations": ("seerr", "mediaplayer", "cineinfo", "thirdparty", "syncplay", "uptime"),
     "notifications": ("webpush", "telegram", "pushover", "ntfy", "discord", "whatsapp", "storage"),
     "settings": ("overview", "general", "design", "sources", "downloads", "autosync", "network", "auth", "api", "privacy", "backup", "updates"),
+    # Monitoring has no hand-written tab a module could attach to: its four
+    # panels (overview/stats/history/uptime) are the page itself. A module here
+    # always gets a tab of its own -- see _placed_tab().
+    "monitoring": ("overview", "stats", "history", "uptime"),
 }
+
+# Where a module may ask for its settings to live.
+_SETTINGS_HOSTS = tuple(_KNOWN_TABS)
+
+# register_thirdparty()'s own settings_tab default. Named because _placed_tab()
+# has to tell "the module chose this tab" apart from "the module never thought
+# about placement", and those two want different answers.
+_DEFAULT_SETTINGS_TAB = "thirdparty"
+
+# One rule per host for *where on that host* a module's card ends up. This is
+# policy, not preference: a card that can land anywhere is a card you have to
+# hunt for, and "which tab did that module choose?" is not a question a user
+# should have to ask.
+#
+#   integrations  -> always the "Third Party" tab. That tab exists to answer
+#                    "what have my modules added to this page", so a module
+#                    hiding on the CineInfo or Seerr tab defeats its purpose.
+#                    settings_tab is ignored here, deliberately and silently:
+#                    a module written for the old behaviour keeps working, its
+#                    card just moves to where users look for it.
+#   notifications -> always a tab of its own, never appended to a built-in
+#                    channel's panel. Telegram's tab is Telegram's.
+#   monitoring    -> same, a tab of its own.
+#   settings      -> the Module Settings page under the Module Manager, which
+#                    ignores settings_tab entirely (resolve_module_settings()).
+#                    Kept as given so a module can still group its own tabs.
+_FORCED_TABS = {"integrations": "thirdparty"}
+_OWN_TAB_HOSTS = ("notifications", "monitoring")
+
+
+def _placed_tab(host, tab, item_id):
+    """The settings_tab a module actually gets on *host*, per the rules above.
+
+    Never raises: a module that asks for the "wrong" tab is not broken, it is
+    simply placed where that host puts modules. Raising would take a working
+    installation down over a cosmetic question.
+    """
+    forced = _FORCED_TABS.get(host)
+    if forced:
+        if tab and tab != forced:
+            logger.debug("[Registry] %s: settings_tab %r ignored, %s always uses %r",
+                         item_id, tab, host, forced)
+        return forced
+    if host in _OWN_TAB_HOSTS:
+        # A built-in channel's tab belongs to that channel. The *default* tab
+        # id is no better: it is what every module that never thought about
+        # placement carries, so honouring it would herd unrelated modules onto
+        # one shared tab. Either way the module gets a tab of its own, named
+        # after it. A genuinely custom id is kept, so one module can still
+        # group several of its own items on one tab.
+        if not tab or tab == _DEFAULT_SETTINGS_TAB or tab in _KNOWN_TABS.get(host, ()):
+            logger.debug("[Registry] %s: settings_tab %r not usable on %s, using an own tab",
+                         item_id, tab, host)
+            return "module_%s" % item_id
+    return tab
+
 
 # Field types _build_card()/the settings-card macro/the generic PUT route
 # understand for extra_settings entries. "toggle" is the original (and
@@ -389,7 +449,7 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
                          page_id=None, extra_settings=None,
                          sensitive_settings=None, admin_endpoints=None,
                          section="discover",
-                         settings_host="integrations", settings_tab="thirdparty",
+                         settings_host="integrations", settings_tab=_DEFAULT_SETTINGS_TAB,
                          settings_tab_label=None,
                          settings_tab_icon_svg=None,
                          overview_description=None,
@@ -479,23 +539,27 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
       renders while SyncPlay itself is enabled (same gating as the built-in
       SyncPlay link). Ignored if endpoint/icon_svg aren't set (no link to
       place).
-    - settings_host: which existing settings page's tab/pill system the
-      settings card should be shown on -- "integrations" (default, the
-      Integrations page's tab bar), "notifications" (the Notifications
-      page's service-pill row), or "settings" (the main Settings page's tab
-      bar, e.g. settings_tab="downloads" to add a card alongside the
-      built-in Downloads tab).
-    - settings_tab: tab/pill id within settings_host to attach to. Matching
-      one of that host's existing ids (see _KNOWN_TABS above) appends the
-      card into that tab/pill's existing content, alongside whatever it
-      already renders by hand -- e.g. settings_host="notifications",
-      settings_tab="discord" adds a card into the existing Discord pill
-      instead of creating a new one. Anything else (default: "thirdparty",
-      preserving the original behaviour) creates a brand-new tab/pill
-      automatically -- see resolve_dynamic_tabs().
+    - settings_host: which page the settings card is shown on -- one of
+      _SETTINGS_HOSTS: "integrations" (default), "notifications",
+      "monitoring" or "settings". An unknown host raises.
+    - settings_tab: tab/pill id within settings_host. **Where the card ends
+      up is the host's decision, not the module's** -- see _placed_tab()
+      above for the rules and the reasoning. In short:
+        * "integrations" -> always the "Third Party" tab; settings_tab is
+          ignored (silently: a module written for the old behaviour keeps
+          working, its card just moves to where users look for it).
+        * "notifications" / "monitoring" -> always a tab of its own. A
+          built-in channel's id, or the default, gets replaced by
+          "module_<item_id>"; a genuinely custom id is kept, so one module
+          can group several of its own items on one tab.
+        * "settings" -> the Module Settings page under the Module Manager,
+          which ignores settings_tab entirely (resolve_module_settings()).
+      The value stored on the item is the *placed* one, so everything
+      downstream (resolve_settings_cards, resolve_dynamic_tabs) sees where
+      the card really is.
     - settings_tab_label / settings_tab_icon_svg: label and (notifications
       pill only) icon for the tab/pill button when settings_tab creates a
-      *new* tab/pill. Both ignored when attaching to an existing one.
+      *new* tab/pill.
       settings_tab_label defaults to label; settings_tab_icon_svg defaults
       to a generic placeholder icon.
     - overview_description / overview_icon_svg: description text and icon
@@ -556,6 +620,11 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
     """
     if section not in _SECTIONS:
         raise ValueError(f"register_thirdparty: unknown section {section!r}, must be one of {_SECTIONS}")
+    if settings_host not in _SETTINGS_HOSTS:
+        raise ValueError(
+            f"register_thirdparty: unknown settings_host {settings_host!r}, "
+            f"must be one of {_SETTINGS_HOSTS}")
+    settings_tab = _placed_tab(settings_host, settings_tab, item_id)
     if bool(endpoint) != bool(icon_svg):
         raise ValueError("register_thirdparty: endpoint and icon_svg must both be set or both omitted")
     if auth_required is not None and auth_required not in _AUTH_LEVELS:
@@ -1642,6 +1711,7 @@ def resolve_settings_cards(host="integrations", tab="thirdparty"):
     return [_build_card(item) for item in items]
 
 
+
 def resolve_module_settings():
     """Every *enabled* registered item whose settings target the main Settings
     page (settings_host="settings"), regardless of settings_tab. Returns the
@@ -1653,19 +1723,61 @@ def resolve_module_settings():
     page under the Module Manager (admin-only) instead. Both variants a
     module can use -- a brand-new settings_tab (previously a dynamic tab) and
     a card attached to a built-in Settings tab -- end up here, so nothing a
-    module registers for settings_host="settings" is lost. settings_host=
-    "integrations" / "notifications" are unaffected and keep their old place.
+    module registers for settings_host="settings" is lost.
 
-    Sorted by priority (registration order among ties); disabled modules are
-    filtered out live, exactly like resolve_settings_cards().
+    It no longer stops there. A module that deliberately hangs its card on an
+    existing page -- Integrations, Notifications -- used to be missing from
+    this page entirely, which made "Module Settings" a page that showed *some*
+    module settings and gave no hint that others existed somewhere else. Every
+    enabled item with settings is now collected here, grouped by where its card
+    also lives, so this page is the one complete list. The card keeps its
+    original place as well; both copies drive the same generic
+    /api/settings/thirdparty/<id> API, so editing either one is the same edit.
+
+    Returns groups rather than a flat list::
+
+        [{"host": "settings", "label": "...", "cards": [...]}, ...]
+
+    Sorted by priority within a group (registration order among ties); disabled
+    modules are filtered out live, exactly like resolve_settings_cards().
+
+    Called lazily from module_settings.html (the context processor hands over
+    the *function*, not its result) -- this walks every registered item and
+    reads a setting per item, and the context processor runs on every single
+    template render, including the pages that never look at this.
     """
     from ..db import get_setting
-    items = sorted(
-        (i for i in _ITEMS if i["settings_host"] == "settings"
-         and get_setting(i["enabled_setting_key"], "0") == "1"),
-        key=lambda i: i["priority"],
-    )
-    return [_build_card(item) for item in items]
+    from flask_babel import gettext as _gt
+
+    # "Own" first: a module that brought its own settings home is the least
+    # surprising thing on this page. The rest follow in the order their pages
+    # appear in the sidebar. "other" catches a host nobody anticipated (a
+    # future settings page, a typo in a module) so its cards are still shown
+    # rather than silently swallowed.
+    labels = [
+        ("settings", _gt("Own settings")),
+        ("integrations", _gt("Integrations")),
+        ("notifications", _gt("Notifications")),
+        ("other", _gt("Other")),
+    ]
+    known = {host for host, _ in labels}
+
+    # One pass, one get_setting per item: the enabled check is a DB read, and
+    # bucketing per host in a loop would multiply it by the number of groups.
+    buckets = {host: [] for host, _ in labels}
+    for item in _ITEMS:
+        if get_setting(item["enabled_setting_key"], "0") != "1":
+            continue
+        host = item["settings_host"] if item["settings_host"] in known else "other"
+        buckets[host].append(item)
+
+    groups = []
+    for host, label in labels:
+        items = sorted(buckets[host], key=lambda i: (i["priority"], i["settings_host"] or ""))
+        if items:
+            groups.append({"host": host, "label": label,
+                           "cards": [_build_card(item) for item in items]})
+    return groups
 
 
 def resolve_dynamic_tabs(host):

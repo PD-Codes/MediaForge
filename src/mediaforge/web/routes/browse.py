@@ -317,6 +317,147 @@ _FEED_BUILTIN_META = (
 )
 
 
+# ── Home feed layout (Settings -> Start Page) ────────────────────────────
+# Two levels, on purpose: the admin sets what a fresh account sees, and every
+# user may then overrule it for themselves. The rows are personal (one user's
+# "Continue watching" says nothing to another), but the instance owner should
+# still be able to decide that, say, the calendar row is off by default
+# because the calendar is not configured.
+
+# Every row the feed knows, and where its data comes from. The "hint" is what
+# the heading shows next to its title ("from your favourites"), and "link" is
+# where that hint points -- a row nobody can trace back to a page is a row
+# people distrust.
+_FEED_ROW_SOURCES = {
+    "continue":  {"hint": "playback", "link": "/library"},
+    "library":   {"hint": "library",  "link": "/library"},
+    "watchlist": {"hint": "favourites", "link": "/favourites"},
+    "upcoming":  {"hint": "calendar", "link": "/calendar"},
+    "new":       {"hint": "sources",  "link": ""},
+    "popular":   {"hint": "sources",  "link": ""},
+    "movies":    {"hint": "sources",  "link": ""},
+}
+_FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming")
+# The default reading order: what you were doing, what arrived, then what is
+# out there -- and the two rows that are really other pages in miniature
+# (watchlist, calendar) at the end.
+_FEED_DEFAULT_ORDER = ("continue", "library", "new", "popular", "movies",
+                       "watchlist", "upcoming")
+_FEED_CARDS_CHOICES = (10, 20, 30, 40, 60)
+
+
+def _feed_clean_order(raw, fallback=None):
+    """Parse a stored order string into a complete, duplicate-free row list.
+
+    Anything unknown is dropped and anything missing is appended, so a stored
+    order from an older build (or a hand-edited setting) can never make a row
+    disappear silently -- it just ends up last.
+    """
+    out = []
+    for part in str(raw or "").split(","):
+        row = part.strip().lower()
+        if row in _FEED_ROW_SOURCES and row not in out:
+            out.append(row)
+    for row in (fallback or _FEED_DEFAULT_ORDER):
+        if row not in out:
+            out.append(row)
+    return out
+
+
+def _feed_clean_list(raw, allowed):
+    """Comma-separated ids, filtered against *allowed*."""
+    out = []
+    for part in str(raw or "").split(","):
+        value = part.strip().lower()
+        if value in allowed and value not in out:
+            out.append(value)
+    return out
+
+
+def _feed_clean_limit(raw, fallback=_FEED_LIMIT_DEFAULT):
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return fallback
+    return value if value in _FEED_CARDS_CHOICES else fallback
+
+
+def feed_global_defaults():
+    """The instance defaults an admin set under Settings -> Start Page."""
+    return {
+        "order": _feed_clean_order(get_setting("home_rows_order", "")),
+        "hidden": _feed_clean_list(get_setting("home_rows_hidden", ""), _FEED_ROW_SOURCES),
+        "limit": _feed_clean_limit(get_setting("home_cards_per_row", "")),
+        "sources_off": _feed_clean_list(get_setting("home_default_sources_off", ""),
+                                        _feed_known_source_ids()),
+        "types_off": _feed_clean_list(get_setting("home_default_types_off", "adult"),
+                                      ("series", "movies", "adult")),
+    }
+
+
+def _feed_user_prefs():
+    """This user's stored UI preferences, or {} when nobody is logged in."""
+    try:
+        from flask import session as _session
+        from ..db import get_user_ui_prefs
+        uid = _session.get("user_id")
+        if uid is None:
+            return {}
+        return get_user_ui_prefs(uid) or {}
+    except Exception:
+        return {}
+
+
+def _feed_parse_layout(raw):
+    """"o:<order>;h:<hidden>;n:<limit>" -> dict of the parts that were set.
+
+    Only the parts actually present are returned, so a user who reordered the
+    rows still follows the instance default for everything else.
+    """
+    out = {}
+    for part in str(raw or "").split(";"):
+        key, _, value = part.partition(":")
+        key = key.strip()
+        if key == "o" and value.strip():
+            out["order"] = _feed_clean_order(value)
+        elif key == "h":
+            out["hidden"] = _feed_clean_list(value, _FEED_ROW_SOURCES)
+        elif key == "n" and value.strip():
+            out["limit"] = _feed_clean_limit(value)
+    return out
+
+
+def feed_effective_config():
+    """What this user's home page actually looks like: the instance defaults
+    with the user's own overrides applied on top. `overridden` names the parts
+    the user changed, so the Start Page settings can say so."""
+    cfg = feed_global_defaults()
+    layout = _feed_parse_layout(_feed_user_prefs().get("home_feed_layout"))
+    overridden = sorted(layout)
+    cfg.update(layout)
+    cfg["overridden"] = overridden
+    cfg["rows"] = [
+        {
+            "id": row,
+            "hint": _FEED_ROW_SOURCES[row]["hint"],
+            "link": _FEED_ROW_SOURCES[row]["link"],
+            "personal": row in _FEED_PERSONAL_ROWS,
+            "visible": row not in cfg["hidden"],
+        }
+        for row in cfg["order"]
+    ]
+    return cfg
+
+
+def _feed_known_source_ids():
+    """Built-in plus module-registered source ids -- used to validate the
+    stored "off by default" list."""
+    ids = {sid for sid, _label, _color in _FEED_BUILTIN_META}
+    for src in iter_home_feed_sources():
+        ids.add(src["source_id"])
+    return ids
+
+
 def _feed_builtin_entries():
     """(source_id, row, media_type, cache_key, fetch_fn) for every built-in
     list. The cache keys are the same ones the single-list routes above use,
@@ -554,11 +695,18 @@ def register_browse_routes(app):
         is the user's doing.
         """
         want_adult = request.args.get("adult", "0") == "1"
-        try:
-            limit = int(request.args.get("limit", _FEED_LIMIT_DEFAULT))
-        except (TypeError, ValueError):
-            limit = _FEED_LIMIT_DEFAULT
+        config = feed_effective_config()
+        # An explicit ?limit wins (the settings page previews with it); the
+        # configured cards-per-row is what the home page itself uses.
+        if request.args.get("limit"):
+            try:
+                limit = int(request.args.get("limit"))
+            except (TypeError, ValueError):
+                limit = config["limit"]
+        else:
+            limit = config["limit"]
         limit = max(1, min(limit, _FEED_LIMIT_MAX))
+        hidden = set(config["hidden"])
 
         # 1. Everything that could contribute: built-ins + module sources.
         entries = list(_feed_builtin_entries())
@@ -636,6 +784,10 @@ def register_browse_routes(app):
         taken, index = set(), {}
         rows = {}
         for row in _FEED_ROW_ORDER:
+            if row in hidden:
+                # A row nobody sees is a row nobody has to pay for.
+                rows[row] = []
+                continue
             if row == "movies":
                 bucket = {}
                 for (r, sid), items in fetched.items():
@@ -665,8 +817,30 @@ def register_browse_routes(app):
                 for sid, rws in failures.items()
             ],
             "adult": want_adult,
+            "config": config,
             "generated_at": _time.time(),
         })
+
+    @app.route("/api/home-feed/sources")
+    def api_home_feed_sources():
+        """Every source the feed knows, without fetching anything.
+        GET /api/home-feed/sources.
+
+        The Start Page settings need the list (built-ins plus whatever
+        modules registered) to offer "off by default" switches; asking
+        /api/home-feed for it would scrape five sites to build a checkbox
+        list."""
+        out = []
+        for sid, label, color in _FEED_BUILTIN_META:
+            out.append({"id": sid, "label": label, "color": color, "builtin": True,
+                        "enabled": _feed_source_enabled(sid)})
+        for src in iter_home_feed_sources():
+            out.append({"id": src["source_id"], "label": src["label"],
+                        "color": src["color"], "builtin": False,
+                        "enabled": _feed_source_enabled(src["source_id"])})
+        config = feed_effective_config()
+        return jsonify({"sources": out, "rows": config["rows"], "config": config,
+                        "defaults": feed_global_defaults()})
 
     @app.route("/api/home-feed/personal")
     def api_home_feed_personal():
@@ -687,12 +861,19 @@ def register_browse_routes(app):
             username = None
 
         out = {"continue": [], "watchlist": [], "library": [], "upcoming": []}
+        hidden = set(feed_effective_config()["hidden"])
+        # Reading the whole library to fill a row the user switched off is
+        # exactly the kind of work a home page should not be doing.
+        if all(row in hidden for row in _FEED_PERSONAL_ROWS):
+            return jsonify(out)
 
         # --- the library, once: both "continue watching" (which needs to turn
         #     a file path back into a title) and "new in your library" read it.
         lib_titles = []
         by_path = {}
         try:
+            if "continue" in hidden and "library" in hidden:
+                raise StopIteration
             from .library import _lib_active_path_keys
             from ..db import get_all_library_cache
             active = _lib_active_path_keys()
@@ -705,11 +886,15 @@ def register_browse_routes(app):
                         for ep in eps:
                             if ep.get("path"):
                                 by_path[ep["path"]] = (title, skey, ep)
+        except StopIteration:
+            pass
         except Exception:
             logger.debug("[HomeFeed] library lookup failed", exc_info=True)
 
         # --- Continue watching
         try:
+            if "continue" in hidden:
+                raise StopIteration
             from ..db import get_recent_watch_progress
             for prog in get_recent_watch_progress(username=username, limit=15):
                 path = prog["file_path"]
@@ -730,11 +915,15 @@ def register_browse_routes(app):
                     "duration": duration,
                     "percent": round(percent, 1),
                 })
+        except StopIteration:
+            pass
         except Exception:
             logger.debug("[HomeFeed] continue-watching lookup failed", exc_info=True)
 
         # --- New in your library
         try:
+            if "library" in hidden:
+                raise StopIteration
             recent = sorted(lib_titles, key=lambda t: t.get("added_at") or 0, reverse=True)
             for title in recent[:20]:
                 if not title.get("added_at"):
@@ -745,11 +934,15 @@ def register_browse_routes(app):
                     "episodes": title.get("total_episodes") or 0,
                     "added_at": title.get("added_at"),
                 })
+        except StopIteration:
+            pass
         except Exception:
             logger.debug("[HomeFeed] library row failed", exc_info=True)
 
         # --- Watchlist (favourites)
         try:
+            if "watchlist" in hidden:
+                raise StopIteration
             from ..db import get_favourites
             for fav in (get_favourites(added_by=username) or [])[:20]:
                 poster = fav.get("poster_url") or ""
@@ -762,6 +955,8 @@ def register_browse_routes(app):
                     "provider": fav.get("provider") or "",
                     "media_type": fav.get("media_type") or "",
                 })
+        except StopIteration:
+            pass
         except Exception:
             logger.debug("[HomeFeed] watchlist row failed", exc_info=True)
 
@@ -769,7 +964,7 @@ def register_browse_routes(app):
         #     configured -- collect_calendar_events() is the expensive one here,
         #     and without an API key it has nothing to say anyway.
         try:
-            if get_setting("cineinfo_calendar", "0") == "1":
+            if "upcoming" not in hidden and get_setting("cineinfo_calendar", "0") == "1":
                 api_key = (get_setting("cineinfo_tmdb_api_key", "") or "").strip()
                 if api_key:
                     from datetime import date, timedelta

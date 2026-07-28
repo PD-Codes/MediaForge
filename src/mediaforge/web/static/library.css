@@ -62,6 +62,9 @@
   flex-wrap: wrap; font-size: 0.76rem;
   padding: 8px 2px 2px;
 }
+/* `display: flex` above outranks the user-agent `[hidden]` rule, so without
+   this the placeholder state (libApplySoonState) could not hide the row. */
+.lib-status-row[hidden] { display: none; }
 
 .lib-watcher-status {
   display: inline-flex; align-items: center; gap: 7px;
@@ -111,7 +114,8 @@
 /* ============================================================
    Empty / grid / list containers
    ============================================================ */
-#libGridView[hidden], #libListView[hidden], #libEmptyState[hidden] { display: none; }
+#libGridView[hidden], #libListView[hidden], #libEmptyState[hidden],
+#libComingSoon[hidden] { display: none; }
 
 .lib-list-view { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .mf-poster-grid { margin-top: 14px; }
@@ -722,4 +726,66 @@
   flex: 0 0 auto;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+/* ── Placeholder media types (eBooks / Manga / Music) ─────────────────
+   The filter buttons are real buttons, so they must not *look* like a
+   dead end — they read one notch quieter than the implemented types and
+   carry a "soon" badge (.mf-facet). Selecting one paints #libComingSoon
+   instead of the grid; see libPaintComingSoon() in library.js. */
+.lib-filter-toggle {
+  flex-wrap: wrap;
+}
+
+.lib-soon-btn {
+  color: var(--text-muted);
+}
+.lib-soon-btn:hover {
+  color: var(--text-secondary);
+}
+/* Selected, it has to read as clearly as any other filter — the muted tone
+   above would otherwise sit on the accent fill and fail contrast. */
+.mf-segmented-btn.lib-soon-btn.active { color: #fff; }
+.mf-segmented-btn.lib-soon-btn.active .lib-soon-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+.lib-soon-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.6rem;
+}
+
+.lib-soon {
+  gap: 8px;
+}
+.lib-soon-icon {
+  opacity: 0.7;
+  color: var(--accent);
+}
+.lib-soon-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.lib-soon-tag {
+  margin-top: 2px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft, rgba(110, 168, 254, 0.15));
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+/* Six filter entries never fit one phone line: let them wrap into a grid
+   of three and drop the badge, which is redundant next to the panel. */
+@media (max-width: 720px) {
+  .mf-toolbar-row > .lib-filter-toggle .mf-segmented-btn {
+    flex: 1 0 28%;
+    padding: 7px 8px;
+  }
+  .lib-soon-badge { display: none; }
+  .lib-soon { padding: 40px 18px; }
 }

@@ -16,8 +16,8 @@
   {# In-page floating side menu. Was hidden (navigation used to happen via the
      sidebar sub-menu); the menu rework moves that sub-navigation into the page
      as a vertical floating menu. switchIntegTab() (integrations.js) is
-     unchanged. Module-contributed integration tabs are grouped under a
-     "Modules" heading at the bottom (see get_dynamic_tabs). #}
+     unchanged. There is no "Modules" group here: this page places every
+     module card on the Third Party tab, so the tab list is fixed. #}
   <div class="settings-tabs floating-side-menu" id="integTabs">
     <button class="settings-tab active" data-tab="overview" onclick="switchIntegTab('overview')">{{ _('Overview') }}</button>
     <button class="settings-tab" data-tab="seerr" onclick="switchIntegTab('seerr')">Seerr</button>
@@ -27,16 +27,11 @@
     <button class="settings-tab" data-tab="jellyfinnfo" onclick="switchIntegTab('jellyfinnfo')">Jellyfin NFO</button>
     <button class="settings-tab" data-tab="syncplay" onclick="switchIntegTab('syncplay')">SyncPlay</button>
     <button class="settings-tab" data-tab="uptime" onclick="switchIntegTab('uptime')">UpTime</button>
-    {# Brand-new tabs requested by a registered extension whose settings_tab
-       doesn't match one of the ids above (see registry.py's
-       resolve_dynamic_tabs / _KNOWN_TABS). Grouped under a "Modules" heading. #}
-    {% set integ_module_tabs = get_dynamic_tabs('integrations') %}
-    {% if integ_module_tabs %}
-    <div class="settings-tab-group-label">{{ _('Modules') }}</div>
-    {% for t in integ_module_tabs %}
-    <button class="settings-tab settings-tab-module" data-tab="{{ t.id }}" onclick="switchIntegTab('{{ t.id }}')">{{ t.label }}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span></button>
-    {% endfor %}
-    {% endif %}
+    {# No module tabs here on purpose: every settings_host="integrations" card
+       goes to the "Third Party" tab above, whatever settings_tab the module
+       asked for (registry.py's _FORCED_TABS / _placed_tab()). Modules that
+       want a tab of their own use settings_host="notifications" or
+       "monitoring", which do give them one. #}
   </div>
 
   <!-- ══════════════════════════════════════════════════════
@@ -121,16 +116,6 @@
         <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
       </div>
 
-      {% for t in get_dynamic_tabs('integrations') %}
-      <div class="settings-overview-card" onclick="switchIntegTab('{{ t.id }}')">
-        <div class="settings-overview-card-header">
-          <div class="settings-overview-icon">{{ t.icon_svg | safe }}</div>
-          <div class="settings-overview-title">{{ t.label }}{% if t.is_module %}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span>{% endif %}</div>
-        </div>
-        <div class="settings-overview-desc">{{ t.description or _('External integration module') }}</div>
-        <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
-      </div>
-      {% endfor %}
     </div>
   </div><!-- /tab-overview -->
 
@@ -601,11 +586,13 @@
         </div>
       </div>
 
-      <!-- ── Provider-Reihenfolge (Pill-Chain) ── -->
+      <!-- ── Quellen-Reihenfolge (Pill-Chain + CineInfo-Quellen) ──
+           One list for both mechanisms; see static/integrations.js's
+           "CineInfo source order" block for why they share it. -->
       <div class="settings-row" style="display:block;">
         <div class="settings-row-left">
-          <div class="settings-row-label">{{ _('Provider order') }}</div>
-          <div class="settings-row-desc">{{ _('Which source may show its provider pill first. The first source that knows the title wins; the others are skipped. Modules that register their own pill appear here automatically.') }}</div>
+          <div class="settings-row-label">{{ _('Source order') }}</div>
+          <div class="settings-row-desc">{{ _('Which source gets to speak first about a title. A provider pill: the first source that knows the title shows its badge, the rest are skipped. A CineInfo source: the first one that knows a field fills it — TMDB always keeps what it already has. Modules that register a pill or a CineInfo source appear here automatically, marked "Module".') }}</div>
         </div>
         <div class="source-order-list" id="cineinfoProviderOrderList" style="margin-top:10px;"></div>
       </div>
@@ -1242,22 +1229,6 @@
     {% endfor %}
   </div><!-- /tab-uptime -->
 
-  <!-- ══════════════════════════════════════════════════════
-       Dynamic tabs — brand-new tabs an extension asked for via
-       settings_tab=<something not in _KNOWN_TABS> (see the button loop
-       in #integTabs above and registry.py's resolve_dynamic_tabs()).
-  ══════════════════════════════════════════════════════ -->
-  {% for t in get_dynamic_tabs('integrations') %}
-  <div class="settings-tab-panel" id="tab-{{ t.id }}">
-    <div class="page-header" style="margin-bottom:20px;">
-      <h1 class="page-title">{{ t.label }}</h1>
-      <p class="page-subtitle">{{ t.description or _('External integration module') }}</p>
-    </div>
-    {% for card in get_settings_cards('integrations', t.id) %}
-    {{ ext.render_settings_card(card) }}
-    {% endfor %}
-  </div><!-- /tab-{{ t.id }} -->
-  {% endfor %}
 
 </div>
 <div id="toast" class="toast"></div>

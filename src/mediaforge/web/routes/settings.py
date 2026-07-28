@@ -45,6 +45,7 @@ from flask import render_template
 from flask import request
 import json
 import os
+import re
 import secrets
 import threading
 from ..request_context import get_current_user_info as _get_current_user_info
@@ -57,6 +58,42 @@ logger = get_logger(__name__)
 # placeholder and the matching PUT skips it, so loading and saving a form
 # unchanged never overwrites the real value with the mask.
 SECRET_PLACEHOLDER = "***"
+
+# Ids accepted in cineinfo_provider_order. The value ends up in a saved
+# setting, is handed back out to the browser and is turned into DOM there, so
+# it is validated on the way in rather than trusted on the way out: lowercase
+# id characters plus the "ext:"/"ci:" namespace separator, nothing else.
+_ORDER_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,63}$")
+# One saved order cannot grow without bound just because something POSTs a
+# long list at it.
+_ORDER_MAX_ENTRIES = 64
+
+
+def _sanitize_provider_order(raw) -> str:
+    """Normalise a cineinfo_provider_order value: known-shaped ids only, no
+    duplicates, bounded length. Returns the comma-joined result (possibly
+    empty, which simply means "no preference")."""
+    parts = raw if isinstance(raw, list) else str(raw or "").split(",")
+    out = []
+    for part in parts:
+        part = str(part).strip().lower()
+        if part and part not in out and _ORDER_ID_RE.match(part):
+            out.append(part)
+        if len(out) >= _ORDER_MAX_ENTRIES:
+            break
+    return ",".join(out)
+
+
+def _cineinfo_sources_payload():
+    """Every currently enabled CineInfo source, for the order list on the
+    CineInfo tab. Lazy import + guarded: a broken or absent registry must cost
+    the settings page nothing more than an empty list."""
+    try:
+        from ..cineinfo.registry import describe_sources
+        return describe_sources(enabled_only=True)
+    except Exception:
+        logger.debug("[Settings] CineInfo source list unavailable", exc_info=True)
+        return []
 
 
 def _language_group_error(language):
@@ -83,6 +120,25 @@ def _normalize_default_sites(value):
         if site in _mirrors.SITE_LABELS and site not in sites:
             sites.append(site)
     return ",".join(sites)
+
+
+def _home_page_defaults():
+    """The Start Page tab's instance defaults, normalised by browse.py so the
+    settings page and the home page can never disagree about what a stored
+    value means."""
+    try:
+        from .browse import feed_global_defaults
+        cfg = feed_global_defaults()
+    except Exception:
+        logger.debug("[Settings] home page defaults unavailable", exc_info=True)
+        return {}
+    return {
+        "order": ",".join(cfg["order"]),
+        "hidden": ",".join(cfg["hidden"]),
+        "cards_per_row": str(cfg["limit"]),
+        "sources_off": ",".join(cfg["sources_off"]),
+        "types_off": ",".join(cfg["types_off"]),
+    }
 
 
 def register_settings_routes(app):
@@ -316,6 +372,14 @@ def register_settings_routes(app):
                     "show_hover_rating": get_setting("cineinfo_show_hover_rating", "0"),
                     "show_hover_genres": get_setting("cineinfo_show_hover_genres", "0"),
                     "show_hover_fsk": get_setting("cineinfo_show_hover_fsk", "0"),
+                    # This block is what static/integrations.js actually reads
+                    # (see _getSettings()), so the order list has to be served
+                    # here as well -- it was only in the dedicated
+                    # /api/settings/cineinfo response, which nothing calls, so
+                    # the drag list silently re-rendered the default order on
+                    # every page load and a saved order never came back.
+                    "provider_order": get_setting("cineinfo_provider_order", "tmdb,crunchyroll,fernsehserien"),
+                    "cineinfo_sources": _cineinfo_sources_payload(),
                     "advanced_search": get_setting("cineinfo_advanced_search", "0"),
                     "calendar":        get_setting("cineinfo_calendar",        "0"),
                     "calendar_seerr":  get_setting("cineinfo_calendar_seerr",  "0"),
@@ -344,6 +408,11 @@ def register_settings_routes(app):
                     "show_providers": get_setting("fernsehserien_show_providers", "1"),
                     "delay":          get_setting("fernsehserien_delay",          "1.5"),
                 },
+                # Start Page tab: the instance defaults for the new home
+                # page. The per-user override lives in user_ui_prefs
+                # ("home_feed_layout"/"home_feed_filters"), not here -- see
+                # routes/browse.py's feed_effective_config().
+                "home_page": _home_page_defaults(),
                 "sources": {
                     "order": get_setting("home_source_order", "aniworld,sto,filmpalast,megakino,hanime"),
                     "section_order": {
@@ -516,12 +585,19 @@ def register_settings_routes(app):
             "show_hover_rating": get_setting("cineinfo_show_hover_rating", "0"),
             "show_hover_genres": get_setting("cineinfo_show_hover_genres", "0"),
             "show_hover_fsk": get_setting("cineinfo_show_hover_fsk", "0"),
-            # Order of the provider-pill sources (TMDB, Crunchyroll,
-            # Fernsehserien.de and any module-registered pill, addressed as
-            # "ext:<name>"). The frontend treats it as a preference, not a
-            # whitelist: unlisted sources are still tried, after the listed
-            # ones. See static/app.js's _pillSources().
+            # One order list, two kinds of entry, each read by the consumer
+            # that owns its prefix and ignored by the other:
+            #   - provider pills: "tmdb"/"crunchyroll"/"fernsehserien", a
+            #     module's own pill as "ext:<name>" -- static/app.js's
+            #     _pillSources()
+            #   - CineInfo data sources: "ci:<source id>" -- web/cineinfo/
+            #     registry.py's get_sources()/enrich()
+            # A preference, not a whitelist on either side: an unlisted entry
+            # is still used, just after the listed ones.
             "provider_order": get_setting("cineinfo_provider_order", "tmdb,crunchyroll,fernsehserien"),
+            # The enabled CineInfo sources, so the order list can render them
+            # (with a "Module" pill) without knowing about the registry.
+            "cineinfo_sources": _cineinfo_sources_payload(),
             "advanced_search": get_setting("cineinfo_advanced_search", "0"),
             "calendar":        get_setting("cineinfo_calendar",        "0"),
             "calendar_seerr":  get_setting("cineinfo_calendar_seerr",  "0"),
@@ -549,6 +625,11 @@ def register_settings_routes(app):
                 _val = str(data[key])
                 if key == "tmdb_api_key" and _val.strip() == SECRET_PLACEHOLDER:
                     continue  # unchanged masked value from the GET above
+                if key == "provider_order":
+                    # Stored, echoed back to the browser and turned into DOM
+                    # there -- validated on the way in, not trusted on the way
+                    # out. See _sanitize_provider_order().
+                    _val = _sanitize_provider_order(data[key])
                 set_setting("cineinfo_" + key, _val)
 
         new_key = get_setting("cineinfo_tmdb_api_key", "")
@@ -1069,6 +1150,31 @@ def register_settings_routes(app):
             val = "1" if str(data["web_console"]).lower() in ("true", "1") else "0"
             set_setting("web_console", val)
             os.environ["MEDIAFORGE_WEB_CONSOLE"] = val
+
+        # Start Page (new home page) instance defaults. Everything is
+        # normalised through browse.py's cleaners, so an unknown row id or a
+        # cards-per-row value that is not one of the offered steps is dropped
+        # rather than stored and puzzled over later.
+        if any(k in data for k in ("home_rows_order", "home_rows_hidden",
+                                   "home_cards_per_row", "home_default_sources_off",
+                                   "home_default_types_off")):
+            from .browse import (_feed_clean_order, _feed_clean_list, _feed_clean_limit,
+                                 _feed_known_source_ids, _FEED_ROW_SOURCES)
+            if "home_rows_order" in data:
+                set_setting("home_rows_order", ",".join(_feed_clean_order(data["home_rows_order"])))
+            if "home_rows_hidden" in data:
+                set_setting("home_rows_hidden",
+                            ",".join(_feed_clean_list(data["home_rows_hidden"], _FEED_ROW_SOURCES)))
+            if "home_cards_per_row" in data:
+                set_setting("home_cards_per_row", str(_feed_clean_limit(data["home_cards_per_row"])))
+            if "home_default_sources_off" in data:
+                set_setting("home_default_sources_off",
+                            ",".join(_feed_clean_list(data["home_default_sources_off"],
+                                                      _feed_known_source_ids())))
+            if "home_default_types_off" in data:
+                set_setting("home_default_types_off",
+                            ",".join(_feed_clean_list(data["home_default_types_off"],
+                                                      ("series", "movies", "adult"))))
 
         if "tray_mode" in data:
             val = "1" if str(data["tray_mode"]).lower() in ("true", "1") else "0"

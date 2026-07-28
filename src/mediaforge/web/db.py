@@ -3662,6 +3662,11 @@ USER_UI_PREF_KEYS = {
     # narrow -- the value is only ever parsed, never rendered, but it is still
     # user input echoed back through window._USER_PREFS.
     "home_feed_filters": lambda v: bool(_HOME_FEED_FILTER_RE.match(v)),
+    # Home feed layout: "o:<row order>;h:<hidden rows>;n:<cards per row>".
+    # Only the parts the user actually changed are stored, so everything else
+    # keeps following the instance default an admin set (Settings -> Start
+    # Page). Empty string = "back to the default", which is why "" validates.
+    "home_feed_layout": lambda v: bool(_HOME_FEED_FILTER_RE.match(v)),
 }
 
 

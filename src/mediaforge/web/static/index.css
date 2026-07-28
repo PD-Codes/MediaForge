@@ -841,3 +841,77 @@
   .home-pcard-bar { top: 76px; }
   .feed-alert-retry { flex: 1 1 auto; }
 }
+
+/* ── Chip row + the way into the Start Page settings ────────────────────
+   /settings is admin-only, so this button is how a normal account reaches
+   its own row order. It sits next to the chips because that is where the
+   other "what do I want to see" controls already are. */
+.feed-toolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+
+.feed-toolbar .feed-filters {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.feed-customize {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.feed-customize:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }
+.feed-customize svg { width: 17px; height: 17px; }
+
+/* Where a row's content comes from, right in its heading. */
+.browse-heading-src {
+  margin-left: 10px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+a.browse-heading-src { text-decoration: underline; text-underline-offset: 2px; }
+a.browse-heading-src:hover { color: var(--accent); }
+
+/* The Start Page controls inside the home page's modal. On the settings
+   page the same markup inherits that page's section styling. */
+.sp-modal {
+  max-width: 620px;
+  max-height: min(82vh, 900px);
+  overflow-y: auto;
+}
+
+.sp-modal .settings-section {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0 0 18px;
+}
+
+.sp-modal .settings-section h2 {
+  font-size: 0.95rem;
+  margin: 0 0 6px;
+}
+
+
+@media (max-width: 640px) {
+  .feed-customize { width: 40px; }
+  .browse-heading-src { display: block; margin: 2px 0 0; }
+}
+

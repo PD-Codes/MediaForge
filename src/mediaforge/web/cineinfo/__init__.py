@@ -16,6 +16,8 @@ from .registry import (
     unregister_cineinfo_owner,
     thirdparty_cineinfo_source_ids,
     thirdparty_cineinfo_sources_by_item,
+    configured_order,
+    describe_sources,
     get_sources,
     enrich,
 )
@@ -28,6 +30,8 @@ __all__ = [
     "unregister_cineinfo_owner",
     "thirdparty_cineinfo_source_ids",
     "thirdparty_cineinfo_sources_by_item",
+    "configured_order",
+    "describe_sources",
     "get_sources",
     "enrich",
 ]

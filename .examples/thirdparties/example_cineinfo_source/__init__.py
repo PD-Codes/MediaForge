@@ -57,9 +57,10 @@ def register(app) -> None:
         ),
         enable_label="Enable Example CineInfo Source",
         enable_desc="Adds two demo CineInfo sources (per-item + bulk).",
+        # No settings_tab / settings_tab_label: the Integrations page places
+        # every module card on its "Third Party" tab. A module that wants a tab
+        # of its own belongs on settings_host="notifications" or "monitoring".
         settings_host="integrations",
-        settings_tab="example_cineinfo",
-        settings_tab_label="Example CineInfo",
         overview_description="Reference module: two CineInfo sources (per-item + bulk), local demo data only.",
         overview_icon_svg=(
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '

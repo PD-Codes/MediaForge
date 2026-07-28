@@ -43,9 +43,11 @@ Guides/
 # LICENSE.old is the MIT licence this project shipped under up to v1.0.0. It
 # stays in the repository as a record of that, but nothing at runtime reads it.
 LICENSE.old
-# NOT excluded: README.md and COPYRIGHT. The Dockerfile copies them at line
-# 114 because pyproject.toml references them (readme = / license-files = ), so
-# `uv sync` fails without them.
+# NOT excluded: README.md, COPYRIGHT and LICENSE-CAPTCHA. The Dockerfile
+# copies them together with LICENSE because pyproject.toml references all of
+# them (readme = / license-files = ), so `uv sync` fails without them.
+# LICENSE-CAPTCHA carries the separate, proprietary licence of
+# src/mediaforge/playwright/captcha.py and must ship with every build.
 
 # Scratch and leftovers that live in the working tree but must never end up in
 # the build context (they are gitignored, but Docker does not read .gitignore).

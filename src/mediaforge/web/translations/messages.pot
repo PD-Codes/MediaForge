@@ -2106,6 +2106,24 @@ msgstr ""
 msgid "CineInfo source"
 msgstr ""
 
+msgid "Which source gets to speak first about a title. A provider pill: the first source that knows the title shows its badge, the rest are skipped. A CineInfo source: the first one that knows a field fills it — TMDB always keeps what it already has. Modules that register a pill or a CineInfo source appear here automatically, marked \"Module\"."
+msgstr ""
+
+msgid "Own settings"
+msgstr ""
+
+msgid "Other"
+msgstr ""
+
+msgid "These modules also keep their card on that page. Both places edit the same settings."
+msgstr ""
+
+msgid "These modules also have their card on that tab. Same settings, either place."
+msgstr ""
+
+msgid "Monitoring module"
+msgstr ""
+
 msgid "search source"
 msgstr ""
 

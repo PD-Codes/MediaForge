@@ -117,7 +117,7 @@ sidebar and a settings page. Its parameters:
 | `enable_label` / `enable_desc`  | Label/description for the card's enable toggle. `enable_label` defaults to `"Enable {label}"`. |
 | `extra_settings`                   | Optional list of additional setting fields below the master toggle — text/number/secret/select, not just booleans. See "Richer settings fields" below. |
 | `section`                        | Which sidebar category your link (if any) appears under: `"discover"` (default), `"management"`, `"syncplay"` or `"system"` — matching base.html's four sidebar categories. A `"syncplay"` entry only ever renders while SyncPlay itself is enabled (`syncplay_enabled` setting), same gating as the built-in SyncPlay link. Ignored if you didn't set `endpoint`/`icon_svg`. |
-| `settings_host` / `settings_tab`   | Which existing settings page and which tab/pill on it your card is shown on. `settings_host` is `"integrations"` (default, the classic Third Party tab), `"notifications"`, or `"settings"` (the main Settings page's tab bar). See "Settings placement" below for the full picture. |
+| `settings_host` / `settings_tab`   | Which settings page your card is shown on: `"integrations"` (default), `"notifications"`, `"monitoring"` or `"settings"`. **Where on that page is the host's decision, not yours** — `settings_tab` is a request the host may override. See "Settings placement" below for the full picture. |
 | `settings_tab_label` / `settings_tab_icon_svg` | Label (and, on the Notifications page only, icon) for the tab/pill button — only used when `settings_tab` creates a *new* tab/pill (see below). Ignored when attaching to an existing one. |
 | `priority`                       | Sort key (lower = earlier) for ordering this item among *other registered items* in the same sidebar section / settings tab / set of new tabs / dashboard widgets. Never reorders MediaForge's own built-in entries. Defaults to `0`; ties keep registration order. |
 | `dashboard_widget_template`          | Optional Jinja template name/path rendered as a widget on the home page. See "Dashboard widgets" below. |
@@ -151,52 +151,56 @@ sidebar and a settings page. Its parameters:
   `get_setting("example_integration_enabled", "0") == "1"`, and redirect
   or 404 if it's off — see `routes.py` in `example_integration/`.
 
-## Settings placement — attach to an existing tab, or create a new one
+## Settings placement — the host decides, not the module
 
-`settings_host` picks *which page* your card shows up on. All three hosts
-render the same way: a vertical **floating side menu** (`.floating-side-menu`,
-sticky on desktop, an off-canvas drawer on mobile) next to the page content —
-see `_settings_menu.html`/`_notifications_menu.html` and `integrations.html`'s
-own in-template menu:
+`settings_host` picks *which page* your card shows up on. Every host renders the
+same way: a vertical **floating side menu** (`.floating-side-menu`, sticky on
+desktop, an off-canvas drawer on mobile) next to the page content — see
+`_settings_menu.html`/`_notifications_menu.html`/`_monitoring_nav.html` and
+`integrations.html`'s own in-template menu.
 
-- `"integrations"` (default) — the Integrations page's floating side menu.
-- `"notifications"` — the Notifications page's floating side menu.
-- `"settings"` — the main Settings page's floating side menu.
+**Where on that page the card lands is the host's decision.** `settings_tab` is
+a request, not an instruction — the placement rules live in
+`web/thirdparties/registry.py`'s `_placed_tab()` and are applied at registration
+time, so everything downstream sees where the card really is:
 
-`settings_tab` then picks *where on that page*:
+| `settings_host` | Where the card ends up | What happens to `settings_tab` |
+|---|---|---|
+| `"integrations"` (default) | Always the **Third Party** tab. | **Ignored**, silently. |
+| `"notifications"` | Always a tab of its own in the Notifications menu. | A built-in channel id (`"discord"`, …) or the bare default is replaced by `module_<item_id>`. A genuinely custom id is kept. |
+| `"monitoring"` | Always a tab of its own in the Monitoring menu. | Same rule as Notifications. |
+| `"settings"` | The **Module Settings** page under the Module Manager. | Ignored there — that page groups by host, not by tab. |
 
-- Match one of that host's existing tab ids and your card is appended into
-  that tab's own content, below whatever it already renders by hand.
-  Existing ids: `"seerr"`, `"mediaplayer"`, `"cineinfo"`, `"thirdparty"`,
-  `"syncplay"`, `"uptime"` for `"integrations"`; `"webpush"`, `"telegram"`,
-  `"pushover"`, `"ntfy"`, `"discord"`, `"whatsapp"`, `"storage"` for
-  `"notifications"`; `"general"`, `"design"`, `"sources"`, `"downloads"`,
-  `"autosync"`, `"network"`, `"auth"`, `"api"`, `"updates"` for `"settings"`.
-  Example: an extension that adds one more toggle to the existing Discord
-  notification tab would use
-  `settings_host="notifications", settings_tab="discord"`.
-- Anything else creates a brand-new tab automatically, titled from
-  `settings_tab_label` (defaults to `label`). No template edit needed
-  either way — both cases are handled generically by
-  `web/thirdparties/registry.py`'s `resolve_dynamic_tabs()`.
+The reason is the question a user actually asks. "What have my modules added to
+this page?" has exactly one answer per page, and it stops being an answer the
+moment a module can hide itself on the CineInfo tab or inside Telegram's panel.
+A module that wants its own tab does not pick a tab id — it picks a host that
+gives it one.
 
-A brand-new tab no longer lives in a horizontal tab bar: it's appended to the
-same floating side menu, grouped under a **"Modules"** heading and carrying
-the module **"M" pill** — plus, on hosts that have one (Integrations,
-Settings; Notifications currently doesn't), a tile in the page's **overview
-grid** — and its own content panel. Feed that tile with two optional info
-fields:
+Nothing breaks if your module was written for the old behaviour: it still
+registers fine, its card just moves to where users look for it.
+
+On top of its own place, **every** module card is listed on the **Module
+Settings** page under the Module Manager, grouped by host ("Own settings",
+"Integrations", "Notifications") — the one complete list of what installed
+modules can be configured to do. That is not a copy: both places render the same
+card through the same generic `/api/settings/thirdparty/<id>` API, so editing
+either one is the same edit.
+
+A module tab is appended to the host's floating side menu, grouped under a
+**"Modules"** heading and carrying the module **"M" pill** — plus, on hosts with
+an overview grid (Settings, Monitoring), a tile there. Feed that tile with two
+optional info fields:
 
 - `overview_description` — text shown on the overview tile (defaults to
   `description`).
 - `overview_icon_svg` — icon for the tile (defaults to `settings_tab_icon_svg`,
   then a generic placeholder).
 
-`resolve_dynamic_tabs()` surfaces `id`, `label`, `icon_svg`, `description`,
+`resolve_dynamic_tabs(host)` surfaces `id`, `label`, `icon_svg`, `description`,
 `module_name` and `is_module` so the template can render all of these places
-(menu entry, overview tile where applicable, panel). See
-`example_cineinfo_source/` for a module that registers its own dynamic tab
-this way.
+(menu entry, overview tile where applicable, panel). Note it has nothing left to
+return for `"integrations"` — that host has no module tabs by design.
 
 This is entirely independent of `section`/the sidebar: an integration can
 have a sidebar link *and* a settings card, just a settings card (no
@@ -1483,6 +1487,15 @@ and **field-merges** its payload onto the TMDB base. **The built-in TMDB data
 wins**; a source only fills fields TMDB is missing or left empty (plus any custom
 fields of its own). With no source registered, `enrich()` is a zero-cost
 pass-through, so default behaviour is unchanged.
+
+Where it shows up: the module manager lists it as `1 × CineInfo source`, and
+**Integrations → CineInfo → "Source order"** gives it a draggable row with a
+"Module" badge next to the provider pills. Both lists live in one setting
+(`cineinfo_provider_order`, `ci:<source id>` for a CineInfo source, `ext:<name>`
+and bare ids for pills; each consumer reads only its own prefix). The position
+decides the order `enrich()` applies the sources in — first source to know a
+field fills it, TMDB's base still wins over all of them. Nothing configured
+means the old alphabetical-by-`id` order, unchanged.
 
 See **`example_cineinfo_source/`** for a complete, offline-safe reference that
 registers one source of *each* batch form (per-item and bulk) under the CineInfo

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_settings_card_macro.html" as ext %}
 {% block title %}Monitoring — MediaForge{% endblock %}
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
@@ -6,6 +7,9 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='history.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='uptime.css') }}">
+{# Module panels below use the shared settings-card markup, which the
+   Integrations page's stylesheet owns. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -57,6 +61,20 @@
         <div class="settings-overview-arrow"><span>{{ _('Open') }}</span> &#8594;</div>
       </div>
       {% endif %}
+      {# Same tile treatment for module tabs, so the overview stays the full
+         table of contents of this page rather than only its built-in half.
+         icon/description come from the module's overview_icon_svg /
+         overview_description (see register_thirdparty). #}
+      {% for t in get_dynamic_tabs('monitoring') %}
+      <div class="settings-overview-card" onclick="switchMonTab('{{ t.id }}')">
+        <div class="settings-overview-card-header">
+          <div class="settings-overview-icon">{{ t.icon_svg|safe }}</div>
+          <div class="settings-overview-title">{{ t.label }}<span class="sidebar-module-pill" title="{{ _('Module') }}: {{ t.module_name }}">M</span></div>
+        </div>
+        <div class="settings-overview-desc">{{ t.description or _('Monitoring module') }}</div>
+        <div class="settings-overview-arrow"><span>{{ _('Open') }}</span> &#8594;</div>
+      </div>
+      {% endfor %}
     </div>
   </div>
 
@@ -73,6 +91,23 @@
     {% include "_uptime_body.html" %}
   </div>
   {% endif %}
+
+  {# Module panels — one per settings_host="monitoring" module (see the
+     "Modules" group in _monitoring_nav.html and registry.py's
+     resolve_dynamic_tabs()). Rendered with the same shared card macro every
+     other settings page uses, so the generic /api/settings/thirdparty/<id>
+     API drives every toggle/field with no extra wiring here. #}
+  {% for t in get_dynamic_tabs('monitoring') %}
+  <div class="settings-tab-panel" id="montab-{{ t.id }}">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ t.label }}</h1>
+      <p class="page-subtitle">{{ t.description or _('Monitoring module') }}</p>
+    </div>
+    {% for card in get_settings_cards('monitoring', t.id) %}
+    {{ ext.render_settings_card(card) }}
+    {% endfor %}
+  </div>
+  {% endfor %}
 </div>
 {% endblock %}
 
@@ -104,4 +139,7 @@
 <script src="{{ url_for('static', filename='stats.js') }}"></script>
 <script src="{{ url_for('static', filename='history.js') }}"></script>
 <script src="{{ url_for('static', filename='uptime.js') }}"></script>
+{# Collapsible behaviour + the generic enable toggle/field saving for the
+   module panels above (see _settings_card_macro.html). #}
+<script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
 {% endblock %}
