@@ -6047,3 +6047,78 @@ msgstr "Manga — bald verfügbar"
 
 msgid "Music — coming soon"
 msgstr "Musik — bald verfügbar"
+
+
+# ── Start Page (settings tab + start_page.js) ──────────────────────
+
+msgid "Rows"
+msgstr "Zeilen"
+
+msgid "Cards per row"
+msgstr "Karten pro Zeile"
+
+msgid "Default filters"
+msgstr "Standardfilter"
+
+msgid "Your home page"
+msgstr "Deine Startseite"
+
+msgid "Default for new accounts"
+msgstr "Standard für neue Konten"
+
+msgid "Reset to the factory default"
+msgstr "Auf Werkseinstellung zurücksetzen"
+
+msgid "Reset to the instance default"
+msgstr "Auf Instanz-Standard zurücksetzen"
+
+msgid "Which rows your home page shows, and in which order. Switch one off and MediaForge stops collecting its data as well."
+msgstr "Welche Zeilen deine Startseite zeigt und in welcher Reihenfolge. Schaltest du eine ab, hört MediaForge auch auf, ihre Daten zu sammeln."
+
+msgid "The order and visibility a new account starts with. Every user can overrule this for themselves."
+msgstr "Reihenfolge und Sichtbarkeit, mit denen ein neues Konto startet. Jeder Benutzer kann das für sich überschreiben."
+
+msgid "How many cards a discovery row holds at most. Fewer cards means less to fetch and a shorter page."
+msgstr "Wie viele Karten eine Entdecken-Zeile höchstens enthält. Weniger Karten heißt weniger zu laden und eine kürzere Seite."
+
+msgid "Which chips are off when someone opens the home page for the first time. This is a starting point, not a restriction — every user can switch them back on. To take a source away entirely, disable it under Sources."
+msgstr "Welche Chips ausgeschaltet sind, wenn jemand die Startseite zum ersten Mal öffnet. Das ist ein Ausgangspunkt, keine Einschränkung — jeder Benutzer kann sie wieder einschalten. Um eine Quelle ganz zu entfernen, schalte sie unter Quellen ab."
+
+msgid "These settings are yours alone. Anything you do not change follows the instance default below."
+msgstr "Diese Einstellungen gehören nur dir. Alles, was du nicht änderst, folgt dem Instanz-Standard weiter unten."
+
+msgid "What someone sees who has never opened these settings. Changing this does not overwrite what a user already chose for themselves."
+msgstr "Was jemand sieht, der diese Einstellungen nie geöffnet hat. Eine Änderung hier überschreibt nicht, was ein Benutzer für sich gewählt hat."
+
+msgid "Drag to reorder"
+msgstr "Zum Umsortieren ziehen"
+
+msgid "Show this row"
+msgstr "Diese Zeile anzeigen"
+
+msgid "Saved"
+msgstr "Gespeichert"
+
+msgid "Could not be saved"
+msgstr "Konnte nicht gespeichert werden"
+
+msgid "Following the instance default"
+msgstr "Folgt dem Instanz-Standard"
+
+msgid "You changed this — the instance default no longer applies"
+msgstr "Du hast das geändert — der Instanz-Standard gilt hier nicht mehr"
+
+msgid "from your playback progress"
+msgstr "aus deinem Wiedergabefortschritt"
+
+msgid "from your library"
+msgstr "aus deiner Bibliothek"
+
+msgid "from your favourites"
+msgstr "aus deinen Favoriten"
+
+msgid "from the calendar"
+msgstr "aus dem Kalender"
+
+msgid "from your sources"
+msgstr "aus deinen Quellen"

@@ -51,6 +51,21 @@
 {% macro start_page_form(scope, show_new_home_toggle=False) %}
 <div class="sp-form" data-sp-scope="{{ scope }}">
 
+  {# Layout comes first: it decides which home page the rows underneath are
+     rendered into at all, so the page reads from the biggest decision to the
+     smallest. It used to sit between the filters and the reset button, where
+     it looked like an afterthought. #}
+  {% if show_new_home_toggle %}
+  <div class="settings-section">
+    <h2>{{ _('Layout') }}</h2>
+    <label class="settings-checkbox-row" for="newHomeEnabled">
+      <input type="checkbox" class="chb-main" id="newHomeEnabled" onchange="saveNewHomeEnabled()" />
+      <span>{{ _('Use the new home page') }}</span>
+    </label>
+    <div class="settings-hint">{{ _('Groups the discovery rows by question instead of by source: "New this week" and "Popular right now" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this.') }}</div>
+  </div>
+  {% endif %}
+
   <div class="settings-section">
     <h2>{{ _('Rows') }}</h2>
     <div class="settings-hint">
@@ -84,21 +99,15 @@
   <div class="settings-section">
     <h2>{{ _('Default filters') }}</h2>
     <div class="settings-hint">{{ _('Which chips are off when someone opens the home page for the first time. This is a starting point, not a restriction — every user can switch them back on. To take a source away entirely, disable it under Sources.') }}</div>
-    <h3 class="sp-subhead">{{ _('Sources') }}</h3>
+    {# .settings-subtitle is the established sub-heading inside a settings
+       card (see the Design and Integrations tabs). The previous .sp-subhead
+       had no stylesheet rule at all, so it fell back to the browser's default
+       <h3>: oversized, and flush against the card edge instead of sharing the
+       22px inset every other row in the card uses. #}
+    <h3 class="settings-subtitle">{{ _('Sources') }}</h3>
     <div id="spSources-{{ scope }}" class="sp-checks"></div>
-    <h3 class="sp-subhead">{{ _('Type') }}</h3>
+    <h3 class="settings-subtitle">{{ _('Type') }}</h3>
     <div id="spTypes-{{ scope }}" class="sp-checks"></div>
-  </div>
-  {% endif %}
-
-  {% if show_new_home_toggle %}
-  <div class="settings-section">
-    <h2>{{ _('Layout') }}</h2>
-    <label class="settings-checkbox-row" for="newHomeEnabled">
-      <input type="checkbox" class="chb-main" id="newHomeEnabled" onchange="saveNewHomeEnabled()" />
-      <span>{{ _('Use the new home page') }}</span>
-    </label>
-    <div class="settings-hint">{{ _('Groups the discovery rows by question instead of by source: "New this week" and "Popular right now" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this.') }}</div>
   </div>
   {% endif %}
 

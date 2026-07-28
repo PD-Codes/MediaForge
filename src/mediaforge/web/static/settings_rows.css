@@ -410,4 +410,48 @@
 .settings-overview-card:hover .settings-overview-arrow {
   opacity: 1;
   transform: translateX(3px);
-}
+}
+/* ── Start Page: filter checkbox groups ───────────────────────────────
+   The source and type lists under "Default filters" grow with the number
+   of installed modules, so a single stacked column turns the card into a
+   scroll exercise as soon as a handful of sources exist. A grid keeps the
+   whole set visible at once and still collapses to one column on a phone.
+   The rows themselves are ordinary .settings-checkbox-row elements; only
+   the spacing is tightened here, because inside a group the rows belong
+   together and the generous 12px top padding read as unrelated items. */
+.sp-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 2px 8px;
+  padding: 4px 22px 16px;
+}
+
+.sp-checks .settings-checkbox-row {
+  padding: 7px 0;
+  border-radius: var(--radius-sm, 8px);
+  transition: background var(--transition, 0.15s), color var(--transition, 0.15s);
+}
+
+.sp-checks .settings-checkbox-row:hover {
+  color: var(--text-primary);
+}
+
+/* A source that is switched off entirely under Sources still shows up, so
+   it is obvious why its chip is missing — but it must not look clickable. */
+.sp-checks .settings-checkbox-row:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sp-checks .settings-checkbox-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .sp-checks {
+    grid-template-columns: 1fr;
+    padding: 4px 14px 14px;
+  }
+}

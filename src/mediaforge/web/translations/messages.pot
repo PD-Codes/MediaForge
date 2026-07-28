@@ -6267,3 +6267,87 @@ msgstr ""
 
 msgid "Music — coming soon"
 msgstr ""
+
+
+# ── Start Page (settings tab + start_page.js) ──────────────────────
+
+msgid "Rows"
+msgstr ""
+
+msgid "Cards per row"
+msgstr ""
+
+msgid "Default filters"
+msgstr ""
+
+msgid "Your home page"
+msgstr ""
+
+msgid "Default for new accounts"
+msgstr ""
+
+msgid "Reset to the factory default"
+msgstr ""
+
+msgid "Reset to the instance default"
+msgstr ""
+
+msgid "Which rows your home page shows, and in which order. Switch one off and MediaForge stops collecting its data as well."
+msgstr ""
+
+msgid "The order and visibility a new account starts with. Every user can overrule this for themselves."
+msgstr ""
+
+msgid "How many cards a discovery row holds at most. Fewer cards means less to fetch and a shorter page."
+msgstr ""
+
+msgid "Which chips are off when someone opens the home page for the first time. This is a starting point, not a restriction — every user can switch them back on. To take a source away entirely, disable it under Sources."
+msgstr ""
+
+msgid "These settings are yours alone. Anything you do not change follows the instance default below."
+msgstr ""
+
+msgid "What someone sees who has never opened these settings. Changing this does not overwrite what a user already chose for themselves."
+msgstr ""
+
+msgid "Move up"
+msgstr ""
+
+msgid "Move down"
+msgstr ""
+
+msgid "Drag to reorder"
+msgstr ""
+
+msgid "Show this row"
+msgstr ""
+
+msgid "Saved"
+msgstr ""
+
+msgid "Could not be saved"
+msgstr ""
+
+msgid "Following the instance default"
+msgstr ""
+
+msgid "You changed this — the instance default no longer applies"
+msgstr ""
+
+msgid "from your playback progress"
+msgstr ""
+
+msgid "from your library"
+msgstr ""
+
+msgid "from your favourites"
+msgstr ""
+
+msgid "from the calendar"
+msgstr ""
+
+msgid "from your sources"
+msgstr ""
+
+msgid "Groups the discovery rows by question instead of by source: \"New this week\" and \"Popular right now\" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this."
+msgstr ""
