@@ -58,7 +58,7 @@ _MAX_ENTRIES = 20_000
 # raising it retires every previously converted book instead of serving the old
 # result forever -- the mistake that let a bad OPF survive a fix during
 # development, because path, mtime and size had of course not changed.
-_CONVERTER_VERSION = "v2"
+_CONVERTER_VERSION = "v3"
 
 _lock = threading.Lock()
 _jobs: dict = {}      # key -> True while a conversion runs
@@ -112,6 +112,84 @@ def _safe_extract_member(name: str, base: Path) -> Path:
     target = (base / name).resolve()
     target.relative_to(base.resolve())  # raises ValueError on zip-slip
     return target
+
+
+# The charset a Mobipocket file declares for itself, injected into the HTML by
+# KindleUnpack: <meta http-equiv="content-type" content="text/html; charset=X">
+_CHARSET_RE = re.compile(rb"""charset\s*=\s*["']?([A-Za-z0-9_.:-]+)""", re.IGNORECASE)
+
+_TEXTUAL_SUFFIXES = frozenset({".html", ".htm", ".xhtml", ".opf", ".ncx", ".css"})
+
+# What the declared name maps to, plus the two spellings that are not real
+# codec names but appear in the wild.
+_CODEC_ALIASES = {
+    "cp1252": "cp1252", "windows-1252": "cp1252", "win-1252": "cp1252",
+    "cp65001": "utf-8", "utf8": "utf-8", "utf-8": "utf-8",
+    "latin1": "latin-1", "iso-8859-1": "latin-1", "iso8859-1": "latin-1",
+}
+
+
+def _normalize_encoding(folder: Path) -> None:
+    """Re-encode the unpacked book to UTF-8.
+
+    KindleUnpack writes the book's text **as raw bytes** and injects a meta tag
+    naming the codepage the MOBI itself declared -- for anything written before
+    roughly 2012 that is windows-1252, not UTF-8. epub.js then reads the file
+    out of the zip as text, which assumes UTF-8, and every umlaut in the book
+    turns into a different character: "Nähe" becomes "N麦", "übertragen"
+    becomes "臈ertragen".
+
+    Declaring the right charset would not help, because the reader never looks
+    at the meta tag -- the decoding happens in JavaScript before the HTML is
+    parsed. So the bytes themselves are converted here, once, and the meta tag
+    is rewritten to match.
+    """
+    for path in folder.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in _TEXTUAL_SUFFIXES:
+            continue
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+
+        declared = ""
+        found = _CHARSET_RE.search(raw[:2048])
+        if found:
+            declared = found.group(1).decode("ascii", "ignore").strip().lower()
+
+        try:
+            text = raw.decode("utf-8")
+            # Already UTF-8. Only the label can still be wrong, and a wrong
+            # label on correct bytes is what makes the NEXT tool guess wrong.
+            if declared and _CODEC_ALIASES.get(declared, declared) != "utf-8":
+                path.write_bytes(_rewrite_charset(raw))
+            continue
+        except UnicodeDecodeError:
+            pass
+
+        codec = _CODEC_ALIASES.get(declared, declared) or "cp1252"
+        for candidate in (codec, "cp1252", "latin-1"):
+            try:
+                text = raw.decode(candidate)
+                break
+            except (UnicodeDecodeError, LookupError):
+                text = None
+        if text is None:
+            # latin-1 cannot fail, so reaching this means something stranger;
+            # leave the file alone rather than writing a worse version of it.
+            continue
+        try:
+            path.write_bytes(_rewrite_charset(text.encode("utf-8")))
+            logger.debug("[Books] Re-encoded %s from %s to UTF-8", path.name, codec)
+        except OSError:
+            continue
+
+
+def _rewrite_charset(raw: bytes) -> bytes:
+    """Point any charset declaration in the first 2 KB at UTF-8."""
+    head, tail = raw[:2048], raw[2048:]
+    head = _CHARSET_RE.sub(b"charset=utf-8", head, count=1)
+    return head + tail
 
 
 def _fix_opf(opf_path: Path) -> None:
@@ -230,6 +308,7 @@ def _convert(src: Path, key: str) -> None:
             work.mkdir(parents=True, exist_ok=True)
             staged = work / folder.name
             shutil.copytree(folder, staged, dirs_exist_ok=True)
+            _normalize_encoding(staged)
             _fix_opf(staged / "content.opf")
             _zip_folder_as_epub(staged, "{}/content.opf".format(folder.name), out)
         (out_dir / "done.json").write_text(

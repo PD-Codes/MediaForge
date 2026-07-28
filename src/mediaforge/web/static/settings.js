@@ -112,7 +112,11 @@ async function loadSettings() {
     if (dlProvEl && data.download_provider) dlProvEl.value = data.download_provider;
 
     const nmTplEl = document.getElementById("namingTemplate");
-    if (nmTplEl) nmTplEl.value = data.naming_template || "{title} - S{season:02d}E{episode:02d}";
+    // Same broken "{season:02d}" spelling as the old Reset button used to
+    // write — the backend formats with strings that are already padded, so the
+    // spec raises on every download. Only reachable if naming_template ever
+    // came back empty, but there is no reason to keep a landmine around.
+    if (nmTplEl) nmTplEl.value = data.naming_template || NAMING_TEMPLATE_DEFAULT;
 
     const rateLimitEl = document.getElementById("downloadRateLimit");
     if (rateLimitEl && data.download_rate_limit !== undefined) rateLimitEl.value = data.download_rate_limit;
@@ -512,10 +516,16 @@ const DOWNLOAD_PRESETS = {
   // Jellyfin: one folder per series and no season subfolder (in absolute order
   // every episode is season 1, so season folders would only ever hold "Season
   // 01"), absolute episode numbers so anime matches TMDB/TVDB, no language
-  // folders (they split one series across several library entries), and each
-  // movie in its own folder, which is what Jellyfin's movie scanner expects.
+  // folders (the language is in the file name instead, which keeps one series
+  // as one library entry), and each movie in its own folder, which is what
+  // Jellyfin's movie scanner expects.
+  //
+  // The "- ({language})" suffix is a deliberate trade-off: Jellyfin reads
+  // whatever follows the SxxExx marker as the episode title, so it shows
+  // "(German Dub)" there unless NFO generation fills the real one in. That is
+  // the accepted cost of telling two language versions apart by file name.
   jellyfin: {
-    naming_template: "{title} ({year}) [imdbid-{imdbid}]/{title} S{season}E{episode}.mkv",
+    naming_template: "{title}/{title} - S{season}E{episode} - ({language}).mkv",
     aniworld_absolute_episodes: true,
     lang_separation: false,
     disable_english_sub: false,
@@ -523,33 +533,88 @@ const DOWNLOAD_PRESETS = {
   },
 };
 
+// showConfirm() renders its message as HTML, and a naming template is free
+// text an admin typed — escape it. app.js's esc() is not loaded on the settings
+// page, so this is the local minimum.
+function _settingsEscHtml(value) {
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 async function _applyDownloadPreset(name, title, okMessage) {
   const preset = DOWNLOAD_PRESETS[name];
   if (!preset) return;
 
-  const msg = t(
-    "Namensvorlage, absolute Episodennummern, Sprachen-Trennung, englische Untertitel und Film-Unterordner werden überschrieben. Bereits heruntergeladene Dateien werden nicht umbenannt.",
-    "The naming template, absolute episode numbers, language separation, English subtitles and movie subfolders will be overwritten. Files already downloaded are not renamed.");
+  const tplEl = document.getElementById("namingTemplate");
+  const currentTemplate = tplEl ? tplEl.value.trim() : "";
+  // The folder and file structure is the one preset field that is a matter of
+  // taste rather than of correctness: someone may want the Jellyfin numbering
+  // without giving up a layout they have built a library around. So it gets
+  // its own opt-out in the dialog instead of being changed in passing. When
+  // the current template already matches there is nothing to decide.
+  const templateDiffers = currentTemplate !== preset.naming_template;
+
+  const intro = t(
+    "Absolute Episodennummern, Sprachen-Trennung, englische Untertitel und Film-Unterordner werden überschrieben. Bereits heruntergeladene Dateien werden nicht umbenannt.",
+    "Absolute episode numbers, language separation, English subtitles and movie subfolders will be overwritten. Files already downloaded are not renamed.");
+
+  let body = "<p>" + _settingsEscHtml(intro) + "</p>";
+  if (templateDiffers) {
+    body +=
+      '<label class="settings-checkbox-row preset-modal-choice" for="presetApplyStructure">' +
+      '<input type="checkbox" class="chb-main" id="presetApplyStructure" checked />' +
+      "<span>" + _settingsEscHtml(t(
+        "Ordner- und Namensstruktur ebenfalls setzen",
+        "Set the folder and file structure as well")) + "</span></label>" +
+      '<div class="preset-modal-tpl"><span>' + _settingsEscHtml(t("Neu", "New")) +
+      "</span><code>" + _settingsEscHtml(preset.naming_template) + "</code></div>" +
+      '<div class="preset-modal-tpl"><span>' + _settingsEscHtml(t("Aktuell", "Current")) +
+      "</span><code>" + _settingsEscHtml(currentTemplate) + "</code></div>" +
+      '<div class="preset-modal-hint">' + _settingsEscHtml(t(
+        "Ohne Haken bleibt deine Namensvorlage unverändert, alles andere wird trotzdem gesetzt.",
+        "Unchecked, your naming template stays as it is and everything else is still applied.")) +
+      "</div>";
+  }
+
   const okLabel = t("Übernehmen", "Apply");
   let confirmed;
   if (typeof showConfirm === "function") {
-    confirmed = await showConfirm(msg, okLabel, title, "btn-primary");
+    confirmed = await showConfirm(body, okLabel, title, "btn-primary");
   } else {
-    confirmed = window.confirm(msg);
+    // Plain-text fallback for a page without the shared modal. No checkbox is
+    // possible here, so it asks the structure question as its own prompt
+    // rather than deciding it silently.
+    confirmed = window.confirm(intro);
   }
   if (!confirmed) return;
+
+  // Read the checkbox, not a captured value: the dialog is the only place the
+  // user can change it, and it is still in the DOM once showConfirm resolves.
+  let applyStructure = true;
+  if (templateDiffers) {
+    const structureCb = document.getElementById("presetApplyStructure");
+    applyStructure = structureCb
+      ? structureCb.checked
+      : window.confirm(t("Auch die Ordner- und Namensstruktur setzen?",
+                         "Set the folder and file structure as well?"));
+  }
+
+  // filmpalast_movie_subfolder is the legacy twin of movie_subfolder and the
+  // backend keeps both in step — send both, exactly like saveMovieSubfolder().
+  const payload = { ...preset, filmpalast_movie_subfolder: preset.movie_subfolder };
+  // The backend only touches the fields it is sent, so leaving the template
+  // out is all that "keep my structure" needs.
+  if (!applyStructure) delete payload.naming_template;
 
   try {
     const resp = await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      // filmpalast_movie_subfolder is the legacy twin of movie_subfolder and
-      // the backend keeps both in step — send both, exactly like
-      // saveMovieSubfolder() does.
-      body: JSON.stringify({
-        ...preset,
-        filmpalast_movie_subfolder: preset.movie_subfolder,
-      }),
+      body: JSON.stringify(payload),
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
@@ -557,7 +622,9 @@ async function _applyDownloadPreset(name, title, okMessage) {
     // on the page can change with it. Re-reading the settings rebuilds all of
     // them instead of patching five fields by hand and missing the sixth.
     await loadSettings();
-    showToast(okMessage);
+    showToast(applyStructure
+      ? okMessage
+      : okMessage + t(" — Namensvorlage beibehalten", " — naming template kept"));
     // Switching language separation off breaks any job that uses a fallback
     // group; the backend counts them and says so.
     if (data.warning) showToast(data.warning);

@@ -292,6 +292,42 @@
    The order of the list IS the setting, so the editor shows the position
    number and the move controls right on each entry rather than relying on
    drag & drop, which the rest of the settings page doesn't use either. */
+/* Body of the preset confirm modal. showConfirm() renders HTML, so the
+   checkbox reuses the page's own .settings-checkbox-row — only its section
+   padding has to go, which is what the doubled class is for (the two rules
+   would otherwise be equally specific and depend on stylesheet order). */
+.settings-checkbox-row.preset-modal-choice {
+  padding: 14px 0 4px;
+}
+
+.preset-modal-tpl {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.preset-modal-tpl > span {
+  flex: 0 0 auto;
+  min-width: 58px;
+}
+
+.preset-modal-tpl code {
+  font-family: monospace;
+  /* Templates are long and have no spaces to break at. */
+  word-break: break-all;
+  color: var(--text-secondary);
+}
+
+.preset-modal-hint {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
 /* Preset block in Settings -> Downloads ("Set Jellyfin Defaults" / "Set
    Defaults"). Carries the section's own horizontal padding, because
    .settings-notice brings only its inner padding. On a phone the two buttons

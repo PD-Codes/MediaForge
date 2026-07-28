@@ -6464,5 +6464,8 @@ msgstr ""
 msgid "Set Defaults"
 msgstr ""
 
-msgid "Both buttons write the same five settings at once: naming template, absolute episode numbers, language separation, English subtitle downloads and movie subfolders. Nothing else is touched, and files already on disk are never renamed."
+msgid "Both buttons write the same five settings at once: naming template, absolute episode numbers, language separation, English subtitle downloads and movie subfolders. The dialog asks whether the folder and file structure should be set too, so you can take the rest and keep your own naming template. Nothing else is touched, and files already on disk are never renamed."
+msgstr ""
+
+msgid "The Jellyfin preset keeps the language in the file name instead. Jellyfin reads whatever follows the SxxExx marker as the episode title, so it will show “(German Dub)” there until a Jellyfin NFO fills in the real one — set a TMDB key under Integrations if you want proper episode titles."
 msgstr ""

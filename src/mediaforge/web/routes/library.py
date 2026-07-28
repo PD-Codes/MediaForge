@@ -10,8 +10,7 @@ from ..db import get_custom_path_by_id
 from ..db import get_custom_paths
 from ..db import get_setting
 from ..lang_folders import LANG_FOLDERS
-from ..episode_marker import EPISODE_MARKER_RE
-from ..episode_marker import FALLBACK_EPISODE_RE
+from ..books.scanner import BOOKS_FORMAT_VERSION
 from ..books.scanner import scan_books
 from ..media_types import BOOK_ALL_EXTS
 from ..media_types import BOOK_CONVERTIBLE_EXTS
@@ -42,11 +41,24 @@ _LIB_LANG_FOLDERS = LANG_FOLDERS
 # now live in web/media_types.py, which is the single source of truth shared
 # with the watcher and the duplicate checker (they used to disagree).
 _LIB_VIDEO_EXTS = VIDEO_EXTS
-# SxxExx episode marker. The pattern (and the truncation bug it fixes) now
-# lives in web/episode_marker.py, because the download dialog and auto-sync
-# have to read a file name exactly the way this scanner does.
-_LIB_EP_RE = EPISODE_MARKER_RE
-_LIB_FALLBACK_EP_RE = FALLBACK_EPISODE_RE
+# SxxExx episode marker.
+#
+# The digit counts matter more than they look. The previous pattern was
+# S(\d{2})E(\d{2,3}), which silently *truncated* longer numbers: "S02E0013"
+# matched as season 2 episode 001 because the episode group stopped after
+# three digits and the trailing "3" was simply left over. Episode 13 was
+# therefore indexed as episode 1 -- identical to the real S02E001, which made
+# the two files look like the same episode (a false duplicate) and corrupted
+# the missing-episode detection at the same time.
+#
+# (?!\d) is what fixes it: the group has to consume the whole number or not
+# match at all, so a number that is too long is left to the fallback rather
+# than being cut short. The season is accepted with 1-4 digits too, so the
+# common "S1E1" spelling is finally recognised.
+_LIB_EP_RE = re.compile(r"S(\d{1,4})E(\d{1,4})(?!\d)", re.IGNORECASE)
+# Season-less fallback ("... E013 ..."). Deliberately still requires at least
+# two digits: a bare "E1" appears inside far too many real titles.
+_LIB_FALLBACK_EP_RE = re.compile(r"\bE(\d{2,4})(?!\d)\b", re.IGNORECASE)
 # Serialises full scans -- see _lib_do_scan(). Declared here since the
 # original code, where it was defined and then never used.
 _lib_scan_lock = threading.Lock()
@@ -724,6 +736,7 @@ def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
         # scan -- a bug that would look like flaky scanning, not like a lost
         # key.
         "books": data.get("books") or [],
+        "books_version": data.get("books_version"),
     })
     if progress.get("probe_incomplete"):
         _LIB_PROBE_PENDING.add(path_key)
@@ -856,14 +869,14 @@ def _lib_do_scan_locked(targets, lang_sep):
                 set_library_cache(path_key, {
                     "label": label, "custom_path_id": cp_id,
                     "lang_folders": loc_lang_folders, "titles": None,
-                    "books": loc_books,
+                    "books": loc_books, "books_version": BOOKS_FORMAT_VERSION,
                 })
             else:
                 loc_titles = _lib_scan_base(base_path, old_cache_lookup, progress)
                 set_library_cache(path_key, {
                     "label": label, "custom_path_id": cp_id,
                     "lang_folders": None, "titles": loc_titles,
-                    "books": loc_books,
+                    "books": loc_books, "books_version": BOOKS_FORMAT_VERSION,
                 })
         except Exception:
             logger.exception("[LibraryScan] Scan of %s (%s) failed", base_path, label)
@@ -1141,7 +1154,19 @@ def register_library_routes(app):
                 if entry["is_scanning"]:
                     any_scanning = True
                 if entry["data"]:
-                    locations.append(entry["data"])
+                    data = entry["data"]
+                    # Books cached by an older scanner are re-read rather than
+                    # served. The scanner's OUTPUT changes with it -- a release
+                    # that starts flattening Calibre's HTML descriptions, or
+                    # normalising language codes, leaves every previously
+                    # scanned book carrying the old shape, and nothing about
+                    # the files on disk has changed to trigger a rescan. The
+                    # user then sees the old bug and reasonably reports it as
+                    # not fixed. Same lesson as the conversion cache version.
+                    if data.get("books") and data.get("books_version") != BOOKS_FORMAT_VERSION:
+                        data = dict(data, books=[])
+                        needs_initial_scan.append((label, cp_id, base_path))
+                    locations.append(data)
             else:
                 # Never scanned yet — trigger once
                 needs_initial_scan.append((label, cp_id, base_path))

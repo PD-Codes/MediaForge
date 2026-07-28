@@ -6229,5 +6229,8 @@ msgstr "Jellyfin-Standards setzen"
 msgid "Set Defaults"
 msgstr "Standardwerte setzen"
 
-msgid "Both buttons write the same five settings at once: naming template, absolute episode numbers, language separation, English subtitle downloads and movie subfolders. Nothing else is touched, and files already on disk are never renamed."
-msgstr "Beide Buttons schreiben dieselben fünf Einstellungen auf einmal: Namensvorlage, absolute Episodennummern, Sprachen-Trennung, englische Untertitel-Downloads und Film-Unterordner. Sonst wird nichts angefasst, und bereits vorhandene Dateien werden nie umbenannt."
+msgid "Both buttons write the same five settings at once: naming template, absolute episode numbers, language separation, English subtitle downloads and movie subfolders. The dialog asks whether the folder and file structure should be set too, so you can take the rest and keep your own naming template. Nothing else is touched, and files already on disk are never renamed."
+msgstr "Beide Buttons schreiben dieselben fünf Einstellungen auf einmal: Namensvorlage, absolute Episodennummern, Sprachen-Trennung, englische Untertitel-Downloads und Film-Unterordner. Der Dialog fragt, ob die Ordner- und Namensstruktur ebenfalls gesetzt werden soll — so kannst du den Rest übernehmen und deine eigene Namensvorlage behalten. Sonst wird nichts angefasst, und bereits vorhandene Dateien werden nie umbenannt."
+
+msgid "The Jellyfin preset keeps the language in the file name instead. Jellyfin reads whatever follows the SxxExx marker as the episode title, so it will show “(German Dub)” there until a Jellyfin NFO fills in the real one — set a TMDB key under Integrations if you want proper episode titles."
+msgstr "Die Jellyfin-Voreinstellung behält die Sprache stattdessen im Dateinamen. Jellyfin liest alles, was hinter dem SxxExx-Marker steht, als Episodentitel — dort steht dann „(German Dub)“, bis eine Jellyfin-NFO den echten Titel nachliefert. Für richtige Episodentitel also unter Integrationen einen TMDB-Key hinterlegen."

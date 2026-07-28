@@ -45,6 +45,14 @@ from .opf import parse_opf
 
 logger = get_logger(__name__)
 
+# Raise whenever the shape or content of a book entry changes. The API compares
+# it against what is in the library cache and re-reads a location whose books
+# were produced by an older scanner -- without it, a fix to (say) how Calibre's
+# HTML descriptions are flattened only reaches books scanned AFTER the update,
+# and every existing shelf keeps showing the bug with nothing on disk changed
+# to trigger a rescan.
+BOOKS_FORMAT_VERSION = 2
+
 # A runaway walk is worse than an incomplete one: the scan holds a lock the
 # whole library shares. 200k book files is far beyond any real collection.
 _MAX_BOOK_FILES = 200_000

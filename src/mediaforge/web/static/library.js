@@ -2487,10 +2487,14 @@ function libRenderBookDetail(it, pfx) {
       // Opens in the reader overlay, the same way a film opens in the player
       // instead of a browser tab. The position is stored against the BOOK, so
       // the format picked here does not start a separate bookmark.
-      h.push('<button type="button" class="btn-secondary mf-book-open" ' +
+      h.push('<button type="button" class="mf-book-open" ' +
              'onclick="libReadBook(\'' + libEscAttr(encodeURIComponent(f.path)) + '\', \'' +
              libEscAttr(f.ext) + '\', \'' + libEscAttr(encodeURIComponent(book.key)) + '\')">' +
-             libEsc(t("Lesen", "Read")) + '</button>');
+             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+             'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+             '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>' +
+             '<path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' +
+             '<span>' + libEsc(t("Lesen", "Read")) + '</span></button>');
       h.push('<a class="mf-book-dl" href="/api/library/book/file?path=' +
              encodeURIComponent(f.path) + '" download title="' +
              libEscAttr(t("Herunterladen", "Download")) + '" aria-label="' +
