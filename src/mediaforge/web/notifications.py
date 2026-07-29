@@ -13,6 +13,12 @@ Storage:
   - Per-user settings/prefs  -> user_notification_prefs table
   - Push subscriptions       -> push_subscriptions table
   - VAPID keys               -> ~/.mediaforge/vapid_keys.json  (auto-generated)
+
+Telemetry: flag.push_notifications is submitted whenever a notification is
+really handed to a transport (every enabled/pref check passed and the send
+thread is started) -- never for the very common "nothing configured, silent
+no-op" path. One notify_all() fan-out counts once, not once per channel: the
+flag means "a push notification went out", not "six services were tried".
 """
 
 from __future__ import annotations
@@ -24,7 +30,43 @@ import threading
 import urllib.request
 import urllib.parse
 
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
+
 logger = logging.getLogger("mediaforge")
+
+
+# ---------------------------------------------------------------------------
+# Telemetry (flag.push_notifications)
+# ---------------------------------------------------------------------------
+# Per-thread fan-out marker. notify_all() runs the guard/build phase of every
+# channel synchronously in the calling thread (only the HTTP call itself is
+# threaded off), so a thread-local is enough to collapse one fan-out into a
+# single flag event. Values: None = no fan-out running (a direct notify_x()
+# call counts on its own), "open" = fan-out running and nothing counted yet,
+# "counted" = this fan-out was already counted.
+_push_telemetry_scope = threading.local()
+
+
+def _report_push_sent():
+    """Submit the flag.push_notifications stage-2 usage counter for one
+    notification that is actually being sent.
+
+    A pure counter -- build_feature_flag_event() takes no metadata at all, so
+    no channel, recipient, title or body is ever involved. Wrapped in its own
+    try/except so a telemetry bug can never affect a notification.
+    """
+    try:
+        state = getattr(_push_telemetry_scope, "fanout", None)
+        if state == "counted":
+            return  # another channel of the same fan-out already counted it
+        if state == "open":
+            _push_telemetry_scope.fanout = "counted"
+        telemetry_client.submit(
+            telemetry_events.build_feature_flag_event("flag.push_notifications"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.push_notifications event",
+                     exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +285,7 @@ def notify_webpush(
         for ep in dead:
             remove_push_subscription(ep)
 
+    _report_push_sent()
     threading.Thread(target=_send_all, daemon=True).start()
 
 
@@ -316,6 +359,7 @@ def notify_discord(title: str, status: str, episode_count: int, errors: list, is
         if code and code not in (200, 204):
             logger.warning("[Discord] Webhook returned HTTP %s", code)
 
+    _report_push_sent()
     threading.Thread(target=_send, daemon=True).start()
 
 
@@ -344,6 +388,7 @@ def notify_discord_autosync(title: str, new_count: int) -> None:
         }]
     }
 
+    _report_push_sent()
     threading.Thread(target=lambda: _post_json(webhook_url, payload), daemon=True).start()
 
 
@@ -376,6 +421,7 @@ def notify_discord_system(title: str, body: str, event: str) -> None:
             "timestamp":   _utc_iso(),
         }]
     }
+    _report_push_sent()
     threading.Thread(target=lambda: _post_json(webhook_url, payload), daemon=True).start()
 
 
@@ -439,6 +485,7 @@ def notify_telegram(
         else:
             logger.warning("[Telegram] sendMessage failed — no HTTP response (event=%s, username=%s)", event, username)
 
+    _report_push_sent()
     threading.Thread(target=_send, daemon=True).start()
 
 
@@ -500,6 +547,7 @@ def notify_pushover(
         if code and code not in (200, 201):
             logger.warning("[Pushover] API returned HTTP %s", code)
 
+    _report_push_sent()
     threading.Thread(target=_send, daemon=True).start()
 
 
@@ -560,6 +608,7 @@ def notify_whatsapp(
         except Exception as exc:
             logger.warning("[WhatsApp] Send failed: %s", exc)
 
+    _report_push_sent()
     threading.Thread(target=_send, daemon=True).start()
 
 
@@ -682,6 +731,7 @@ def notify_ntfy(
         if code and code not in (200, 201, 204):
             logger.warning("[NTFY] send returned HTTP %s", code)
 
+    _report_push_sent()
     threading.Thread(target=_send, daemon=True).start()
 
 
@@ -711,76 +761,90 @@ def notify_all(
     Used by: queue_worker.py (download completion/error/cancel events) and
     autosync_worker.py (auto-sync found episodes / sync hold / resume).
     """
+    # Telemetry: open a fan-out scope so the channels below produce ONE
+    # flag.push_notifications event for this notification instead of one per
+    # channel (see _report_push_sent()). The whole fan-out runs inside a
+    # try/finally so the scope is closed again on every exit path.
+    _push_telemetry_scope.fanout = "open"
     try:
-        notify_webpush(title=title, body=body, event=event, username=username)
-    except Exception as exc:
-        logger.error("[Notif] Webpush notification failed: %s", exc, exc_info=True)
-    try:
-        notify_telegram(title=title, body=body, event=event, username=username, errors=errors)
-    except Exception as exc:
-        logger.error("[Notif] Telegram notification failed: %s", exc, exc_info=True)
-    try:
-        notify_pushover(title=title, body=body, event=event, username=username, errors=errors)
-    except Exception as exc:
-        logger.error("[Notif] Pushover notification failed: %s", exc, exc_info=True)
-    try:
-        notify_ntfy(title=title, body=body, event=event, username=username, errors=errors)
-    except Exception as exc:
-        logger.error("[Notif] NTFY notification failed: %s", exc, exc_info=True)
-    try:
-        notify_whatsapp(title=title, body=body, event=event, username=username, errors=errors)
-    except Exception as exc:
-        logger.error("[Notif] WhatsApp notification failed: %s", exc, exc_info=True)
+        try:
+            notify_webpush(title=title, body=body, event=event, username=username)
+        except Exception as exc:
+            logger.error("[Notif] Webpush notification failed: %s", exc, exc_info=True)
+        try:
+            notify_telegram(title=title, body=body, event=event, username=username, errors=errors)
+        except Exception as exc:
+            logger.error("[Notif] Telegram notification failed: %s", exc, exc_info=True)
+        try:
+            notify_pushover(title=title, body=body, event=event, username=username, errors=errors)
+        except Exception as exc:
+            logger.error("[Notif] Pushover notification failed: %s", exc, exc_info=True)
+        try:
+            notify_ntfy(title=title, body=body, event=event, username=username, errors=errors)
+        except Exception as exc:
+            logger.error("[Notif] NTFY notification failed: %s", exc, exc_info=True)
+        try:
+            notify_whatsapp(title=title, body=body, event=event, username=username, errors=errors)
+        except Exception as exc:
+            logger.error("[Notif] WhatsApp notification failed: %s", exc, exc_info=True)
     
-    try:
-        if event == "on_autosync":
-            notify_discord_autosync(title=title, new_count=episode_count)
-        elif event in ("on_sync_error", "on_disk_space_low", "on_sync_hold", "on_sync_resume"):
-            notify_discord_system(title=title, body=body, event=event)
-        elif status is not None:
-            notify_discord(
-                title=title,
-                status=status,
-                episode_count=episode_count,
-                errors=errors or [],
-                is_movie=is_movie,
-            )
-    except Exception as exc:
-        logger.error("[Notif] Discord notification failed: %s", exc, exc_info=True)
-
-    # Third-party notification channels (see registry.register_notification_channel).
-    try:
-        from .thirdparties.registry import notification_channels
-        for _channel_id, _send_fn in notification_channels().items():
-            try:
-                _send_fn(
+        try:
+            if event == "on_autosync":
+                notify_discord_autosync(title=title, new_count=episode_count)
+            elif event in ("on_sync_error", "on_disk_space_low", "on_sync_hold", "on_sync_resume"):
+                notify_discord_system(title=title, body=body, event=event)
+            elif status is not None:
+                notify_discord(
                     title=title,
-                    body=body,
-                    event=event,
-                    username=username,
                     status=status,
                     episode_count=episode_count,
-                    errors=errors,
+                    errors=errors or [],
                     is_movie=is_movie,
                 )
-            except Exception as exc:
-                logger.error("[Notif] Module channel '%s' failed: %s", _channel_id, exc, exc_info=True)
-    except Exception as exc:
-        logger.error("[Notif] Failed to fan out to module notification channels: %s", exc, exc_info=True)
+        except Exception as exc:
+            logger.error("[Notif] Discord notification failed: %s", exc, exc_info=True)
 
-    # Generic lifecycle event hooks (see registry.register_event_hook) --
-    # for modules reacting to the event itself rather than sending a message.
-    try:
-        from .thirdparties.registry import fire_event_hooks
-        fire_event_hooks(
-            event,
-            title=title,
-            body=body,
-            username=username,
-            status=status,
-            episode_count=episode_count,
-            errors=errors,
-            is_movie=is_movie,
-        )
-    except Exception as exc:
-        logger.error("[Notif] Failed to fire module event hooks: %s", exc, exc_info=True)
+        # Third-party notification channels (see registry.register_notification_channel).
+        try:
+            from .thirdparties.registry import notification_channels
+            for _channel_id, _send_fn in notification_channels().items():
+                try:
+                    _send_fn(
+                        title=title,
+                        body=body,
+                        event=event,
+                        username=username,
+                        status=status,
+                        episode_count=episode_count,
+                        errors=errors,
+                        is_movie=is_movie,
+                    )
+                except Exception as exc:
+                    logger.error("[Notif] Module channel '%s' failed: %s", _channel_id, exc, exc_info=True)
+        except Exception as exc:
+            logger.error("[Notif] Failed to fan out to module notification channels: %s", exc, exc_info=True)
+
+        # Generic lifecycle event hooks (see registry.register_event_hook) --
+        # for modules reacting to the event itself rather than sending a message.
+        try:
+            from .thirdparties.registry import fire_event_hooks
+            fire_event_hooks(
+                event,
+                title=title,
+                body=body,
+                username=username,
+                status=status,
+                episode_count=episode_count,
+                errors=errors,
+                is_movie=is_movie,
+            )
+        except Exception as exc:
+            logger.error("[Notif] Failed to fire module event hooks: %s", exc, exc_info=True)
+    finally:
+        # Telemetry: close the fan-out scope again -- a later direct notify_x()
+        # call on this thread must count on its own. This runs in a finally so
+        # even a BaseException (SystemExit at shutdown, or a module channel
+        # raising a non-Exception) cannot leave the thread-local stuck on
+        # "counted", which would silently disable flag.push_notifications for
+        # the rest of this long-lived worker thread's life.
+        _push_telemetry_scope.fanout = None

@@ -39,6 +39,7 @@ import threading
 
 from ..logger import get_logger
 from . import events
+from .classify import is_user_cancellation
 from .client import get_client
 
 logger = get_logger(__name__)
@@ -54,8 +55,17 @@ _log_handler_lock = threading.Lock()
 def _report_exception(exc_type, exc_value, tb):
     """Build (if enabled) and submit a crash_reports event. Wrapped in its
     own try/except so a bug in the telemetry path itself can never turn one
-    crash report into a second, unrelated crash."""
+    crash report into a second, unrelated crash.
+
+    User-initiated cancellations are dropped before anything is built.
+    events.build_crash_event() enforces the same rule (it is the real gate --
+    every caller goes through it), but doing it here as well keeps the
+    sanitizing/traceback work out of the hot path of a cancelled queue item,
+    where several threads can unwind at once.
+    """
     try:
+        if is_user_cancellation(exc_type, exc_value):
+            return
         event = events.build_crash_event(exc_type, exc_value, tb)
         if event:
             get_client().submit(event)
@@ -138,7 +148,16 @@ class _TelemetryLogHandler(logging.Handler):
         if record.levelno < logging.ERROR:
             return
         try:
+            # Cancellation check on the MESSAGE first, before touching exc_info.
+            # sys.exc_info() below is a live read of whatever exception context
+            # this thread happens to be in -- for a log line that says "download
+            # cancelled" that context IS the cancellation, and reporting it would
+            # file a crash report for a user pressing the Cancel button.
+            if is_user_cancellation(message=record.getMessage()):
+                return
             exc_info = record.exc_info or sys.exc_info()
+            if exc_info and exc_info[0] is not None and is_user_cancellation(exc_info[0], exc_info[1]):
+                return
             if exc_info and exc_info[0] is not None:
                 event = events.build_crash_event(*exc_info)
             else:

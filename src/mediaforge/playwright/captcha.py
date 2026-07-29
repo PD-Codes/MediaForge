@@ -1502,6 +1502,16 @@ def _solve_captcha_cli(url: str) -> bool:
                 challenge_solver = _ChallengeSolver()
 
                 while _time.time() - start < timeout:
+                    # Download cancelled while we were solving: stop here and let
+                    # the browser go, same as the web-UI and s.to-modal solvers.
+                    # Checked first in the loop so tear-down happens within one
+                    # iteration of the click on "Cancel". Before this, the CLI
+                    # solver ignored a cancel entirely and kept a visible browser
+                    # window open for up to five minutes on a job the user had
+                    # already stopped -- and the except CaptchaCancelled clause
+                    # below could never fire.
+                    _raise_if_cancelled()
+
                     # Standard Cloudflare full-page challenge
                     if any(c["name"] == "cf_clearance" for c in context.cookies()):
                         solved = True
@@ -1558,6 +1568,23 @@ def _solve_captcha_cli(url: str) -> bool:
                 browser.close()
 
             return final_url if solved else None
+
+        except CaptchaCancelled:
+            # The user cancelled the download while this solve was running.
+            # Handled exactly like the web-UI and s.to-modal solvers below: an
+            # info-level line, NO telemetry event, and re-raised as the message
+            # the queue worker books as "cancelled". Without this clause the
+            # generic handler underneath caught it and logged it at ERROR level,
+            # which the telemetry log handler turns into a crash report -- a user
+            # pressing Cancel filed as an application defect.
+            #
+            # The visible browser is torn down by the enclosing
+            # "with sync_playwright()" block on the way out, so leaving
+            # browser.close() unreached here does not leak a Chromium process
+            # (same as the generic handler underneath, which never reached it
+            # either).
+            logger.info("CAPTCHA solve aborted — download cancelled by the user")
+            raise RuntimeError("Download cancelled")
 
         except Exception as e:
             logger.error(f"Error while solving CAPTCHA: {e}", exc_info=True)

@@ -86,15 +86,37 @@ def shorten_path(path) -> str:
 
 
 def clean_url(url) -> str:
-    """Return scheme://host/path only -- query string and fragment (where
-    streaming hosters typically embed session tokens) are dropped."""
+    """Return scheme://host[:port]/path only -- query string, fragment AND any
+    embedded credentials are dropped.
+
+    The query string is where streaming hosters put session tokens, which is
+    what this originally existed for. The userinfo part matters just as much:
+    ``urlsplit().netloc`` keeps ``user:password@`` intact, so building the
+    result from netloc handed a NAS/Jellyfin link like
+    ``https://user:secret@nas.local/media/x.m3u8?token=…`` back with username
+    and password still in it -- and nothing downstream redacts that field.
+    Rebuilding from ``hostname`` (+ ``port``) drops the credentials by
+    construction rather than by a pattern that has to guess.
+    """
     try:
         parts = urlsplit(url)
         if not parts.scheme or not parts.netloc:
             return url
-        return f"{parts.scheme}://{parts.netloc}{parts.path}"
+        host = parts.hostname or ""
+        if not host:
+            return f"{parts.scheme}://"
+        if ":" in host:  # IPv6 literal -- urlsplit strips the brackets
+            host = f"[{host}]"
+        try:
+            port = parts.port
+        except ValueError:
+            port = None  # malformed port: drop it rather than echo it back
+        netloc = f"{host}:{port}" if port else host
+        return f"{parts.scheme}://{netloc}{parts.path}"
     except Exception:
-        return url
+        # Never hand back the raw URL on a parse failure -- that is the one case
+        # where it may still carry whatever this function was meant to remove.
+        return "[unparsable-url]"
 
 
 def redact_urls_in_text(text) -> str:

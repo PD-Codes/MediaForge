@@ -1,12 +1,18 @@
 """Source-site monitoring — shared probe (DNS test + UpTime) and the UpTime monitor.
 
-# TODO(telemetry): wire up flag.uptime_monitor (usage counter) -- see
-# telemetry/registry.py. Registry-only for now.
+Telemetry: flag.uptime_monitor ("the built-in uptime monitoring is active")
+is submitted from _uptime_run_round(), throttled to at most once per 24 h per
+process. The monitor polls every few minutes by design, and a flag event
+means "the feature is used", not "the loop turned again" -- an unthrottled
+submit would drown every other data point in the batch.
 """
 
 import threading
+import time
 
 from ..logger import get_logger
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
 from .db import get_setting, prune_uptime_heartbeats, record_uptime_heartbeat, set_setting
 from .dns_patch import _ip_provider
 
@@ -352,6 +358,36 @@ def thirdparty_monitor_ids() -> set:
     return set(_EXTRA_MONITOR_SITES)
 
 
+# Throttle state for flag.uptime_monitor: the monotonic timestamp of the last
+# submitted flag event (None = never submitted in this process). Guarded by its
+# own lock because a manual "run now" from the UI and the scheduled loop can
+# reach _uptime_run_round() at the same time.
+_TELEMETRY_FLAG_INTERVAL = 86400.0  # seconds -- one event per day per process
+_telemetry_flag_last = None
+_telemetry_flag_lock = threading.Lock()
+
+
+def _report_uptime_monitor_active():
+    """Submit the flag.uptime_monitor stage-2 usage counter, at most once per
+    24 h per process (see _TELEMETRY_FLAG_INTERVAL).
+
+    A pure counter -- build_feature_flag_event() takes no metadata at all, so
+    nothing about which sites are tracked is ever sent. Wrapped in its own
+    try/except so a telemetry bug can never affect a monitor round.
+    """
+    global _telemetry_flag_last
+    try:
+        now = time.monotonic()
+        with _telemetry_flag_lock:
+            if (_telemetry_flag_last is not None
+                    and now - _telemetry_flag_last < _TELEMETRY_FLAG_INTERVAL):
+                return
+            _telemetry_flag_last = now
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.uptime_monitor"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.uptime_monitor event", exc_info=True)
+
+
 def _uptime_run_round(cfg=None):
     """Probe every tracked source once and store a heartbeat each; then prune.
 
@@ -359,6 +395,11 @@ def _uptime_run_round(cfg=None):
     below (scheduled loop).
     """
     cfg = cfg or _uptime_config()
+
+    # Telemetry: stage-2 usage counter for "monitoring is actively running".
+    # Throttled inside the helper -- see _report_uptime_monitor_active().
+    _report_uptime_monitor_active()
+
     for _sid, (_label, _url, _domain, _markers, _headers) in _MONITOR_SITES.items():
         if not cfg["tracked"].get(_sid):
             continue

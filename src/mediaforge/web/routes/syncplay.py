@@ -3,10 +3,17 @@
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 
-# TODO(telemetry): wire up flag.syncplay / detail.syncplay (session count,
-# participant-count bucket, no room content) and syncplay.room_content
-# (stage 5 -- which title is playing in a room) -- see registry.py. Not
-# wired in this pass; only the registry entries exist so far.
+Telemetry: flag.syncplay (stage-2 usage counter) is submitted once per
+created/joined session by the join route below; detail.syncplay
+("started"/"ended" plus a coarse participant bracket) lives in
+web/syncplay_rooms.py, which owns the room lifecycle. Nothing is ever
+reported from the SSE stream: it ticks every few seconds for every connected
+member, and a torn-down stream is the user closing a tab, not a failure.
+
+syncplay.room_content (stage 5, the title playing in a room) is reported from
+web/syncplay_rooms.py too, once per actual media change announced by the host
+-- via build_play_event(data_key="syncplay.room_content"), which checks that
+key's own consent toggle rather than stream.play_events'.
 """
 
 from ..db import get_setting
@@ -16,6 +23,13 @@ from flask import render_template
 from flask import request
 from ..request_context import get_current_user_info as _get_current_user_info
 from .. import runtime_state
+from ...logger import get_logger
+from ...telemetry import classify as telemetry_classify
+from ...telemetry import client as telemetry_client
+from ...telemetry import events as telemetry_events
+
+
+logger = get_logger(__name__)
 
 
 _SYNCPLAY_STREAM_OK = {
@@ -55,6 +69,24 @@ def _sp_persist():
 def _sp_tok(data):
     """Extract and trim the ``token`` field from a parsed JSON request body."""
     return (data.get("token") or "").strip()
+
+
+def _report_syncplay_join():
+    """Submit the flag.syncplay stage-2 usage counter for one created/joined
+    session.
+
+    A pure counter -- build_feature_flag_event() takes no metadata at all, so
+    no room name, member name or watched title is involved. Fires once per
+    successful join, never per SSE tick or per control/report call. The
+    session lifecycle detail (detail.syncplay) is reported by
+    syncplay_rooms.join() itself.
+
+    Wrapped in its own try/except so a telemetry bug can never break joining.
+    """
+    try:
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.syncplay"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.syncplay event", exc_info=True)
 
 
 def register_syncplay_routes(app):
@@ -144,6 +176,7 @@ def register_syncplay_routes(app):
             from flask import session as _sess
             _sess["sp_guest"] = token
         _sp_persist()
+        _report_syncplay_join()
         return jsonify({"token": token, "snapshot": snap})
     @app.route("/api/syncplay/stream")
     def api_syncplay_stream():
@@ -160,15 +193,39 @@ def register_syncplay_routes(app):
 
         @stream_with_context
         def gen():
+            # Deliberately silent for telemetry: this loop wakes up every 15s
+            # for every connected member, so anything reported from here would
+            # count heartbeats instead of usage. The session is reported once
+            # at join (flag.syncplay above, detail.syncplay in syncplay_rooms).
             yield "retry: 2000\n\n"
-            while sp.valid_token(token):
-                try:
-                    ev = q.get(timeout=15)
-                    sp.ack_drained(token, 1)
-                    yield "data: " + _json.dumps(ev) + "\n\n"
-                except _queue.Empty:
-                    sp.heartbeat(token)
-                    yield ": ping\n\n"
+            try:
+                while sp.valid_token(token):
+                    try:
+                        ev = q.get(timeout=15)
+                        sp.ack_drained(token, 1)
+                        yield "data: " + _json.dumps(ev) + "\n\n"
+                    except _queue.Empty:
+                        sp.heartbeat(token)
+                        yield ": ping\n\n"
+            except BaseException as exc:
+                # A closed browser tab tears this generator down with
+                # GeneratorExit / ConnectionResetError / BrokenPipeError. That
+                # is the user leaving, never a defect: it must not be logged as
+                # an error (the telemetry log handler turns logger.error() into
+                # a crash report) and must not produce any error-flavoured
+                # event. Only a genuinely unexpected exception is even worth a
+                # debug line; either way the exception is re-raised unchanged so
+                # Flask tears the response down exactly as before.
+                #
+                # is_client_disconnect(), NOT is_user_cancellation(): those three
+                # exception types only mean "the client went away" while writing
+                # a response, which is exactly where this code is. Everywhere
+                # else they are ordinary network failures and must stay
+                # reportable -- see telemetry/classify.py for why the two checks
+                # are deliberately separate.
+                if not telemetry_classify.is_client_disconnect(type(exc), exc):
+                    logger.debug("[SyncPlay] SSE stream ended unexpectedly: %s", exc)
+                raise
         resp = Response(gen(), mimetype="text/event-stream")
         resp.headers["Cache-Control"] = "no-cache"
         resp.headers["X-Accel-Buffering"] = "no"

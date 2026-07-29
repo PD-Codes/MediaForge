@@ -15,6 +15,11 @@ Module map:
                   and the shared, non-secret project key/URLs.
     sanitize.py   Traceback/path/URL sanitizing + the hard-coded
                   ``is_adult_provider()`` guard for the hanime_tv exclusion.
+    classify.py   Dependency-free leaf answering two "is this worth
+                  reporting?" questions: ``is_user_cancellation()`` (a user
+                  aborting their own job is never a crash/error) and
+                  ``is_server_unreachable()`` (an offline devInfo server is
+                  never console output).
     settings.py   Thin wrapper around the existing DB-first settings store
                   (install_id, consent, enabled_keys).
     client.py     Bounded queue + background worker thread that batches and
