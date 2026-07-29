@@ -1884,6 +1884,15 @@ def _report_extensions_loaded():
     when no module registered successfully: an install with no extensions is
     not an install that "uses extensions".
 
+    These two keys are the ONLY telemetry that ever concerns third-party
+    modules, and they are reported by the core *about* the loaded module set
+    (how many, and their folder names) -- never by a module about itself.
+    Modules deliberately get no telemetry interface at all: no data_key of
+    their own, no submit helper handed to them, and none is to be added (see
+    the hard rule in telemetry/registry.py's module docstring). Module code
+    can be written by the user, so its errors and its usage are not this
+    project's business to collect or report.
+
     Telemetry is imported lazily and the whole body is guarded, so neither an
     import cycle nor a telemetry bug can affect module loading.
     """

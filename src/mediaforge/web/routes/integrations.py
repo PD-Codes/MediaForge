@@ -6,11 +6,18 @@ Extracted from create_app as a plain route-registration function
 detail.integrations (per-integration connection errors, no credentials) is
 wired at each "test connection" endpoint below -- see _report_integration_error().
 
-flag.integrations.crunchyroll / .fernsehserien are submitted for a SUCCESSFUL
-manual "test connection" here -- see _report_integration_used(). That action
-exists only on this page, so it cannot double-count with the same flags being
-submitted from crunchyroll_service.py / fernsehserien_service.py for actual
-scraping/API use.
+flag.integrations.crunchyroll / .fernsehserien / .mediaplayer are submitted
+for a SUCCESSFUL manual "test connection" here -- see
+_report_integration_used(). That action exists only on this page, so it cannot
+double-count with the same flags being submitted from crunchyroll_service.py /
+fernsehserien_service.py for actual scraping/API use.
+
+.mediaplayer is its own data point on purpose and must not be folded into
+.mediascan: "mediaplayer" is the Jellyfin/Plex connection itself, "mediascan"
+is the library sync built on top of it, and the two are separate settings
+groups in this app, so they stay separate in the telemetry too. A *failed*
+test is not reported as a flag -- that case belongs to detail.integrations
+above and is already covered there.
 
 The remaining flag.integrations.* keys are deliberately NOT wired in this
 module: the availability endpoints below are thin wrappers around those same
@@ -341,6 +348,11 @@ def register_integrations_routes(app):
 
         Route: POST /api/settings/mediaplayer/test. Called from
         static/integrations.js's `testMediaplayerConnection()`.
+
+        Submits flag.integrations.mediaplayer only on a reachable server (both
+        the Jellyfin and the Plex branch); an incomplete configuration or a
+        failed request reports nothing here -- the failure case is already
+        covered by _report_integration_error() below.
         """
         import urllib.request as _req
         svc = get_setting("mediaplayer_type", "")
@@ -355,6 +367,7 @@ def register_integrations_routes(app):
                 r = _req.Request(f"{url}/System/Info/Public", headers={"X-Emby-Token": key})
                 with _req.urlopen(r, timeout=8) as resp:
                     info = json.loads(resp.read())
+                _report_integration_used("flag.integrations.mediaplayer")
                 return jsonify({"ok": True, "name": info.get("ServerName", "Jellyfin")})
             elif svc == "plex":
                 url = _normalize_media_url(get_setting("mediaplayer_plex_url", "") or "")
@@ -367,6 +380,7 @@ def register_integrations_routes(app):
                 with _req.urlopen(r, timeout=8) as resp:
                     info = json.loads(resp.read())
                 friendly = info.get("MediaContainer", {}).get("friendlyName", "Plex")
+                _report_integration_used("flag.integrations.mediaplayer")
                 return jsonify({"ok": True, "name": friendly})
             else:
                 return jsonify({"ok": False, "error": "Unbekannter Typ"})
