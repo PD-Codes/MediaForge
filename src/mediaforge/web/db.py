@@ -4771,12 +4771,34 @@ def get_queue_badge_info():
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT series_url FROM download_queue "
+            "SELECT id, series_url, title, status, current_episode, total_episodes "
+            "FROM download_queue "
             "WHERE status IN ('queued', 'running') AND hidden = 0"
         ).fetchall()
+        # The home page's run strip needs the running job itself, not just the
+        # count -- and it may not poll /api/queue at all (that endpoint is only
+        # alive while the queue hub is open). These are five scalar columns, so
+        # the reason this query exists (no episodes JSON blob) still holds.
+        running = None
+        queued = 0
+        for r in rows:
+            if r["status"] == "running":
+                if running is None:
+                    running = {
+                        "id": r["id"],
+                        "title": r["title"],
+                        "status": "running",
+                        "series_url": r["series_url"],
+                        "current_episode": r["current_episode"],
+                        "total_episodes": r["total_episodes"],
+                    }
+            else:
+                queued += 1
         return {
             "active": len(rows),
             "urls": [r["series_url"] for r in rows if r["series_url"]],
+            "running": running,
+            "queued": queued,
         }
     finally:
         conn.close()

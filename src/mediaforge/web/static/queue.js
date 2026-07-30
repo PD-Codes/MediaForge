@@ -1131,22 +1131,48 @@ function closeCaptchaModal() {
 // every job's episodes JSON, i.e. a few hundred KB every 5s per open tab for
 // a single number. Paused while the tab is hidden (mf_poll.js).
 (function startBadgePoll() {
+  // The home page's run strip is fed from here. It used to be updated only by
+  // loadQueue(), which is alive exclusively while the queue hub is open -- so
+  // on the start page the strip kept whatever percentage it was rendered with
+  // and only looked right again after a reload. /api/queue/badge now carries
+  // the running job, its progress and the pause flag, so this one poll covers
+  // both the badge and the strip.
+  function hasRunStrip() { return !!document.getElementById("homeRunStrip"); }
+
+  function paintRunStrip(data) {
+    if (typeof window.renderHomeRunStrip !== "function") return;
+    const items = [];
+    if (data && data.running) items.push(data.running);
+    // renderHomeRunStrip counts waiting jobs by status, so hand it stubs
+    // rather than a second, divergent code path.
+    for (let i = 0; i < (data && data.queued || 0); i++) items.push({ status: "queued" });
+    window.renderHomeRunStrip(items, (data && data.ffmpeg_progress) || {}, !!(data && data.paused));
+  }
+
   async function refreshQueueBadge() {
     try {
       const resp = await fetch("/api/queue/badge");
       if (!resp.ok) return;
       const data = await resp.json();
       applyDownloadBadge(data.badge || 0, data.urls || []);
+      paintRunStrip(data);
     } catch (e) { /* ignore */ }
   }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", refreshQueueBadge);
-  } else {
+  // A progress bar at 5s reads as broken, so the page that shows one polls at
+  // 2s -- every other page keeps the cheap 5s badge cadence. Both intervals
+  // pause while the tab is hidden (mf_poll.js). Armed after DOMContentLoaded
+  // because hasRunStrip() has to see the finished document.
+  function start() {
     refreshQueueBadge();
+    badgePollTimer = window.mfPoll(function () {
+      if (!queueModalOpen) refreshQueueBadge();
+    }, hasRunStrip() ? 2000 : 5000);
   }
-  badgePollTimer = window.mfPoll(function () {
-    if (!queueModalOpen) refreshQueueBadge();
-  }, 5000);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
 })();
 
 // Seerr badge — fetch count on every page and keep it fresh

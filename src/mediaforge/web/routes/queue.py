@@ -177,10 +177,26 @@ def register_queue_routes(app):
         GET /api/queue/badge. Polled by queue.js's badge timer on every page.
         Mirrors /api/encoding/queue/badge and /api/upscale/badge; the badge
         used to poll the full /api/queue payload instead.
+
+        Also carries the running job, its ffmpeg progress and the pause flag:
+        the home page's run strip (renderHomeRunStrip in app.js) has no poller
+        of its own, and /api/queue only runs while the queue hub is open, so
+        the strip froze on whatever snapshot it happened to get. This stays
+        cheap -- five scalar columns plus an in-memory progress dict, no
+        episodes JSON and no poster lookup.
         """
+        from ...models.common.common import get_ffmpeg_progress
         from ..db import get_queue_badge_info
         info = get_queue_badge_info()
-        return jsonify({"ok": True, "badge": info["active"], "urls": info["urls"]})
+        return jsonify({
+            "ok": True,
+            "badge": info["active"],
+            "urls": info["urls"],
+            "running": info.get("running"),
+            "queued": info.get("queued", 0),
+            "ffmpeg_progress": get_ffmpeg_progress(),
+            "paused": is_queue_paused(),
+        })
     @app.route("/api/queue/pause", methods=["POST"])
     def api_queue_pause():
         """Pause the download queue worker.
