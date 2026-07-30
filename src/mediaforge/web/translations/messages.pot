@@ -6469,3 +6469,287 @@ msgstr ""
 
 msgid "The Jellyfin preset keeps the language in the file name instead. Jellyfin reads whatever follows the SxxExx marker as the episode title, so it will show “(German Dub)” there until a Jellyfin NFO fills in the real one — set a TMDB key under Integrations if you want proper episode titles."
 msgstr ""
+
+#: templates/extensions.html
+msgid "subtitle source"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Quota"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Fetches subtitles from OpenSubtitles.com for languages the source itself does not offer, and muxes them into the finished file. Runs only after the hoster's own subtitle tracks came up empty, so nothing is downloaded twice. Needs a free API key (opensubtitles.com → Consumers) and an account login; both are stored encrypted. Free accounts have a small daily download limit."
+msgstr ""
+
+#: templates/integrations.html
+msgid "Enable OpenSubtitles lookup"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Off by default: this contacts an external service with your account and spends its daily quota."
+msgstr ""
+
+#: templates/integrations.html
+msgid "API key"
+msgstr ""
+
+#: templates/integrations.html
+msgid "OpenSubtitles account name"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Subtitle languages"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Only these languages are looked up, and only when the download does not already contain them. Every language costs one download from your daily quota."
+msgstr ""
+
+#: templates/integrations.html
+msgid "No language"
+msgstr ""
+
+#: templates/integrations.html
+msgid "languages"
+msgstr ""
+
+#: templates/integrations.html
+msgid "German"
+msgstr ""
+
+#: templates/integrations.html
+msgid "English"
+msgstr ""
+
+#: templates/integrations.html
+msgid "French"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Spanish"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Italian"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Portuguese (Brazil)"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Portuguese"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Dutch"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Polish"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Russian"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Turkish"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Arabic"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Japanese"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Korean"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Chinese (simplified)"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Czech"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Danish"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Finnish"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Swedish"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Norwegian"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Greek"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Hebrew"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Hungarian"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Romanian"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Ukrainian"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Hindi"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Subtitles for the hearing impaired (SDH)"
+msgstr ""
+
+#: templates/integrations.html
+msgid "SDH tracks also describe sounds and name the speaker. Excluded by default."
+msgstr ""
+
+#: templates/integrations.html
+msgid "Exclude"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Include"
+msgstr ""
+
+#: templates/integrations.html
+msgid "Only SDH"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Instance overview"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "This panel is not available right now."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "This panel could not be loaded."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing to show here."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Activity"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Waiting"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Titles"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Fullest volume"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the queue"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the history"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the library"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the settings"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing is downloading right now."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing has been downloaded yet."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Your library is still empty."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "No download path could be read."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing needs your attention."
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Download failed"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "Episode {} of {}"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} of {} used"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "just now"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} min ago"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} h ago"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} d ago"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html
+msgid "home page panel"
+msgstr ""
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Show more"
+msgstr ""
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Show less"
+msgstr ""
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Hoster"
+msgstr ""
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Target folder"
+msgstr ""

@@ -573,13 +573,16 @@
 .modal .modal-header {
   display: flex;
   gap: 18px;
-  margin-bottom: 20px;
-  padding: 0;
+  margin-bottom: 18px;
+  /* Clears the close button in the top-right corner. Without it a long title
+     wraps straight underneath the X -- which the old layout hid by accident,
+     because the title was short and everything else sat below it. */
+  padding: 0 34px 0 0;
   border: none;
 }
 
 .modal .modal-header img {
-  width: 90px;
+  width: 104px;
   border-radius: var(--radius-md);
   object-fit: cover;
   flex-shrink: 0;
@@ -593,11 +596,21 @@
 }
 
 .modal-meta h2 {
-  font-size: 1.2rem;
+  font-size: 1.24rem;
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 8px;
+  /* Was 8px with three more stacked blocks under it. The header is now
+     title -> one meta line -> chips -> text, so the title carries the gap. */
+  margin: 2px 0 5px;
   letter-spacing: -0.02em;
+  line-height: 1.3;
+  /* The rating badge is appended INSIDE the h2 (app.js), so the heading has
+     to behave like a row -- otherwise a long title pushes the badge onto a
+     line of its own with no baseline to sit on. */
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
 }
 
 .genres {
@@ -606,6 +619,12 @@
   gap: 6px;
   margin-bottom: 6px;
 }
+
+/* No genres (source has none and TMDB genres are switched off): no gap either.
+   Same for the provider pill row -- every optional block in this header has to
+   disappear completely rather than leave its margin behind. */
+.genres:empty,
+.tmdb-providers:empty { display: none; margin: 0; }
 
 .genres span,
 .genre-tag {
@@ -618,43 +637,103 @@
   border: 1px solid var(--border);
 }
 
+/* The one line that is always there. Kept as its own element (not merged into
+   the chips) because app.js writes plain text into #modalYear. */
 .year {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 9px;
 }
 
+.year:empty { display: none; }
+
+/* Clamped instead of scrolled: a scrollbar inside a paragraph inside a modal
+   is a second scroll context nobody expects, and it swallowed the wheel. */
 .desc {
-  font-size: 0.82rem;
+  font-size: 0.83rem;
   color: var(--text-secondary);
-  line-height: 1.5;
-  max-height: 80px;
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.desc.expanded {
+  -webkit-line-clamp: unset;
+  display: block;
+  /* Still bounded: a 40-line synopsis must not push the episode list off the
+     screen. This is the only place the old scroll behaviour survives. */
+  max-height: 220px;
   overflow-y: auto;
 }
 
-/* Controls row (language/provider/path selects) */
+.desc-more {
+  margin-top: 5px;
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.desc-more:hover { text-decoration: underline; }
+
+/* One button, two labels -- so both strings go through the template catalogue
+   and no German/English pair ends up hardcoded in JavaScript. */
+.desc-more .dm-less,
+.desc-more[aria-expanded="true"] .dm-more { display: none; }
+.desc-more[aria-expanded="true"] .dm-less { display: inline; }
+
+/* Controls row (language/provider/path selects)
+   Each select sits in a labelled field now. The row is still flex with a
+   min-width floor, so two fields fill the width and three share it -- the
+   target-folder field is missing on most installs, and the row must look
+   deliberate either way. */
 .controls {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
+}
+
+.mf-fld {
+  flex: 1 1 150px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mf-fld-label {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .controls select {
-  flex: 1;
-  min-width: 120px;
+  width: 100%;
+  min-width: 0;
   height: 40px;
   font-size: 0.85rem;
   border-radius: var(--radius-md);
   padding: 0 12px;
 }
 
-/* Language availability banner */
+/* Language availability banner
+   Sits directly under the controls because it describes the language field
+   above it -- with 18px of margin in between it read as a separate section
+   about the episodes below. */
 .lang-avail-banner {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 10px 0 4px;
+  margin: 0 0 6px;
 }
 
 .lang-avail-pill {
@@ -684,8 +763,42 @@
   color: var(--error);
 }
 
+/* Trailer + recommendations, side by side. flex-basis rather than a
+   two-column grid: either one can be switched off in Settings -> CineInfo (or
+   simply have no data), and the survivor should take the full width instead of
+   leaving a hole. Both hidden -> :empty-like collapse via the gap-free row. */
+.modal-extras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.modal-extras > .season-section {
+  flex: 1 1 240px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+/* Open one of them and it takes the whole row. Half a modal is enough for two
+   closed headers and far too little for a 2-column poster grid of
+   recommendations or a 16:9 trailer -- which is exactly what the side-by-side
+   row produced. The row keeps its order, so the other header simply moves to
+   the second line. `:has()` rather than a class, because the expanded state is
+   toggled inline in shared_modals.html and nothing in JS knows about it. */
+.modal-extras > .season-section:has(.expanded) {
+  flex-basis: 100%;
+}
+
+/* Both open: back to one per row rather than a half-width pair. */
+.modal-extras:has(> .season-section .expanded) > .season-section {
+  flex-basis: 100%;
+}
+
 /* Episodes header */
 .episodes-header {
+  /* Was 12px; the header now separates two blocks rather than following one. */
+  margin-top: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -781,13 +894,25 @@
   min-height: 28px;
 }
 
-/* Modal actions (download buttons) */
+/* Modal actions (download buttons)
+   Sticky to the bottom edge of the modal: the episode list of a long-running
+   series is several screens tall, and "Download all" was reachable only after
+   scrolling past all of it. .overlay is the scroll container and .modal has no
+   overflow of its own, so position:sticky works here without wrapping the body
+   in a second scroller. The negative margins bleed the bar to the modal's
+   edges, past the 24px padding. */
 .modal-actions {
+  position: sticky;
+  bottom: -24px;
+  z-index: 2;
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  padding-top: 16px;
+  margin: 16px -24px -24px;
+  padding: 14px 24px 24px;
   border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
 }
 
 .btn-download-selected,
@@ -842,12 +967,42 @@
    floors (180px for the consent buttons, 140px for the download buttons,
    120px for the selects); at 360px minus padding those leave a few pixels
    of slack at best, so below 480px the rows stack instead. */
+@media (max-width: 640px) {
+  /* The series modal had no breakpoint of its own at all -- at 390px the
+     104px poster and the meta column fought over the same row. Poster on top,
+     text below, and the fields stack. */
+  .modal {
+    padding: 18px 16px;
+  }
+
+  .modal .modal-header {
+    gap: 14px;
+  }
+
+  .modal .modal-header img {
+    width: 84px;
+  }
+
+  .modal-meta h2 {
+    font-size: 1.06rem;
+  }
+
+  .mf-fld {
+    flex: 1 1 100%;
+  }
+
+  .modal-actions {
+    bottom: -18px;
+    margin: 14px -16px -18px;
+    padding: 12px 16px 18px;
+  }
+}
+
 @media (max-width: 480px) {
   .telemetry-consent-btn,
   .btn-download-selected,
   .btn-download-all,
-  .btn-download-all-langs,
-  .controls select {
+  .btn-download-all-langs {
     flex: 1 1 100%;
     min-width: 0;
   }

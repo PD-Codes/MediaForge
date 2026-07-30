@@ -499,6 +499,28 @@ def _lib_path_key(cp_id):
     return "default" if cp_id is None else str(cp_id)
 
 
+def lib_iter_cached_titles(data):
+    """Every title in one library_cache entry, language folders included.
+
+    A cache entry is a dict -- {"label", "custom_path_id", "titles",
+    "lang_folders", "books", ...} -- and with language separation switched on
+    the titles live under ``lang_folders[i]["titles"]`` while ``titles`` is
+    None. Every consumer outside this module got that wrong at least once
+    (routes/browse.py iterated the dict itself and quietly got key strings),
+    so the reader lives here, next to the writer, and is exported on purpose.
+
+    Public (no leading underscore): routes/browse.py and routes/home_panels.py
+    both call it.
+    """
+    data = data or {}
+    if not isinstance(data, dict):
+        return []
+    out = list(data.get("titles") or [])
+    for folder in data.get("lang_folders") or []:
+        out.extend((folder or {}).get("titles") or [])
+    return out
+
+
 def _lib_active_path_keys():
     """path_keys of the targets that are currently configured.
 

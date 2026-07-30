@@ -192,51 +192,67 @@
   border-color: rgba(124, 58, 237, 0.3);
 }
 
+/* --- Hover drawer -------------------------------------------------
+   The badge set (FSK, rating, genres) used to fade in over the whole
+   poster with no fixed reading order: on a card with four badges they
+   stacked across the artwork, collided with the "Vorhanden"/Sync
+   markers and hid the face of the poster. They now ride in on a panel
+   anchored to the *bottom edge of the poster* — the artwork above it
+   stays readable and the badges always start in the same place.
+
+   .browse-hover-overlay is now a pure clipping box, not a scrim: it
+   covers exactly the poster area (aspect-ratio 2/3, same as
+   .browse-card img), never the .browse-info title line below it, and
+   paints nothing itself. That is what lets the drawer *translate* out
+   of view at rest instead of merely fading — a faded-out scrim still
+   dulls the artwork wherever opacity gets rounded.
+
+   Hovering the visible title area below still counts as hovering
+   .browse-card (:hover applies to descendants), so the drawer stays
+   open either way. */
 .browse-hover-overlay {
-  /* Covers only the poster (aspect-ratio 2/3, same as .browse-card img),
-     not the whole card — .browse-info (title/genre/badge line) below stays
-     visible and un-darkened on hover, matching the original design. Hovering
-     over that visible title area still counts as hovering .browse-card
-     (CSS :hover applies to the whole element incl. descendants), so the
-     overlay stays engaged either way.
-     overflow:hidden caps this box at the poster's height even if the tag
-     list inside is longer than that — .browse-hover-content below then
-     scrolls internally instead of the overlay growing past the poster (the
-     bug this used to have) or the tags getting silently clipped away. */
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   aspect-ratio: 2 / 3;
   overflow: hidden;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.85) 100%);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 6px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
   pointer-events: none;
   z-index: 10;
 }
 
-.browse-card:hover .browse-hover-overlay {
-  opacity: 1;
-}
-
+/* The drawer itself. Deliberately kept under the old class name: third-party
+   modules that build this overlay markup themselves (see
+   .examples/thirdparties/README.md) pick up the new look without a change. */
 .browse-hover-content {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
   width: 100%;
-  max-height: 100%;
+  box-sizing: border-box;
+  padding: 8px 8px 9px;
+  /* Hard cap. A card is 140px wide, so a tag list is always at risk of
+     wrapping into a wall that covers the artwork the drawer exists to keep
+     visible — anything past this scrolls inside the drawer instead. */
+  max-height: 52%;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Bottom-anchored (justify-content:flex-end on the parent) content that
-     can outgrow the card (long tag lists) scrolls within its own box
-     instead of pushing the overlay taller or getting cut off. */
   scrollbar-width: thin;
+  background: linear-gradient(to top, rgba(10, 10, 18, 0.97) 55%, rgba(10, 10, 18, 0.74) 100%);
+  border-top: 2px solid var(--accent);
+  /* 101%, not 100%: at exactly 100% a sub-pixel rounding error leaves a
+     hairline of the panel visible along the poster's bottom edge. */
+  transform: translateY(101%);
+  transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.browse-card:hover .browse-hover-content,
+.browse-card:focus-within .browse-hover-content {
+  transform: translateY(0);
 }
 
 .browse-hover-content::-webkit-scrollbar {
@@ -250,45 +266,145 @@
   border-radius: 2px;
 }
 
-.browse-hover-content>* {
-  transform: translateX(-15px);
-  opacity: 0;
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease;
-}
-
-.browse-card:hover .browse-hover-content>* {
-  transform: translateX(0);
-  opacity: 1;
-}
-
-.browse-card:hover .browse-hover-content>*:nth-child(1) {
-  transition-delay: 0.05s;
-}
-
-.browse-card:hover .browse-hover-content>*:nth-child(2) {
-  transition-delay: 0.1s;
-}
-
-.hover-genres {
-  display: flex;
-  flex-wrap: wrap;
+/* Pills inside the drawer. One shape for FSK, rating and genres so the row
+   reads as a single line of metadata instead of three competing styles.
+   Always light-on-dark — the drawer paints its own dark ground in both
+   themes, so these need no [data-theme="light"] variant. */
+.browse-hover-pill {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
+  flex-shrink: 0;
   max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  color: #f0f0f8;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: default;
 }
 
-.hover-genres span {
-  background: rgba(255, 255, 255, 0.15);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.65rem;
+.browse-hover-pill--rating {
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+}
+
+.browse-hover-pill--rating svg {
+  flex-shrink: 0;
+}
+
+/* Official FSK (German age-rating) colours — same palette as .tmdb-fsk-* in
+   queue.css, so a title reads the same in the drawer and in the modal. */
+.browse-hover-pill--fsk {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+
+.browse-fsk-0 {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1d5db;
+}
+
+.browse-fsk-6 {
+  border-color: rgba(234, 179, 8, 0.55);
+  background: rgba(234, 179, 8, 0.14);
+  color: #fbbf24;
+}
+
+.browse-fsk-12 {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+}
+
+.browse-fsk-16 {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.14);
+  color: #60a5fa;
+}
+
+.browse-fsk-18 {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+}
+
+/* Genres are a *text line*, not pills. At 140px card width a pill per genre
+   wraps one-per-row and the drawer grows into a wall covering the artwork;
+   "Drama · Action & Adventure · Mystery" says the same thing in two lines.
+   Pill shape stays reserved for the two single facts (FSK, rating), which
+   gives the drawer a hierarchy it did not have before.
+
+   NOTE the .browse-hover-content prefix. The element also carries .genres,
+   and modals.css — which loads AFTER cards.css in base.html — styles
+   `.genres` / `.genres span` at the same specificity, so the unprefixed
+   rules here silently lost every declaration they shared with it (that is
+   why the old hover tags looked like modal tags). The extra class lifts
+   these above modals.css independently of load order. */
+.browse-hover-content .hover-genres {
+  flex-basis: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+  gap: 0;
+  font-size: 0.67rem;
+  line-height: 1.4;
+  color: rgba(228, 228, 245, 0.82);
+}
+
+.browse-hover-content .hover-genres span {
+  display: inline;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
   font-weight: 500;
-  color: #fff;
-  /* A long tag ("Action & Adventure", hanime's multi-word tags, ...) can be
-     wider than the whole card (140px) — let it wrap onto a second line
-     inside its own pill instead of being clipped at the card edge. */
-  white-space: normal;
-  overflow-wrap: break-word;
-  max-width: 100%;
+}
+
+.browse-hover-content .hover-genres span + span::before {
+  content: " · ";
+  color: rgba(228, 228, 245, 0.45);
+}
+
+/* Touch: there is no hover, so the drawer rests open. Before this the badges
+   were unreachable on a phone — FSK/rating/genres were desktop-only. */
+@media (hover: none) {
+  .browse-hover-content {
+    transform: none;
+    max-height: 60%;
+    padding: 6px 7px 7px;
+    gap: 4px;
+  }
+
+  .browse-hover-pill {
+    font-size: 0.64rem;
+    padding: 1px 7px;
+  }
+
+  .browse-hover-content .hover-genres {
+    font-size: 0.63rem;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browse-hover-content {
+    transition: none;
+  }
 }
 
 .browse-card img {

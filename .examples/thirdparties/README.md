@@ -553,14 +553,15 @@ signed it, so give it an honest answer.
 
 The counts come from `registry.module_capabilities()`, which reads the same
 `item_id` convention `unregister_module()` cleans up by: **register your
-provider, hoster, search source, mirror list, monitor site, notification
-channel, event hook and background worker under the `item_id` you passed to
-`register_thirdparty()`**. Use a different id and your capability is invisible on
+provider, hoster, search source, subtitle source, mirror list, monitor site,
+notification channel, event hook and background worker under the `item_id`
+you passed to `register_thirdparty()`**. Use a different id and your capability is invisible on
 the card *and* survives your own uninstall — the two failure modes have the same
 cause. The read-only accessors behind it are
 `providers.thirdparty_provider_ids()`, `search.thirdparty_search_source_ids()`,
-`extractors.thirdparty_hoster_ids()`, `mirrors.thirdparty_mirror_ids()` and
-`uptime_monitor.thirdparty_monitor_ids()`.
+`extractors.thirdparty_hoster_ids()`, `mirrors.thirdparty_mirror_ids()`,
+`uptime_monitor.thirdparty_monitor_ids()` and
+`subtitle_sources.thirdparty_subtitle_source_ids()`.
 
 The card header shows exactly one state — Running / Off / Skipped / Error — and
 sorts problems to the top. Note that **an unsigned module gets no badge**: that
@@ -749,6 +750,69 @@ needs. An unknown key or a value your validator rejects fails the whole
 request with 400 — nothing is stored half-way. `GET /api/user/preferences`
 returns the same dict for clients that need it after page load.
 
+## A button on the home page (`register_home_panel`)
+
+The home page has a row of buttons under the search field and **one** panel
+below it whose content depends on the button — Queue, Activity, Library, plus
+Storage and System for admins. `register_home_panel()` puts yours next to
+them. Use it when your module has a *state* a user would otherwise open
+another page to see; use a dashboard widget instead when you want your own
+markup on the classic home page.
+
+```python
+from mediaforge.home_panels import register_home_panel
+
+def _panel():
+    pending = my_store.count_pending()
+    return {
+        # At most 6. `tone` is "", "ok", "warn" or "err".
+        "stats": [{"label": "Pending", "value": str(pending),
+                   "tone": "warn" if pending else ""}],
+        # At most 12. `percent` draws a bar, `href` makes the whole row a link.
+        "items": [{"title": job.name, "sub": job.when, "percent": job.percent,
+                   "href": "/my-module", "tone": "ok"}
+                  for job in my_store.recent()],
+        "link": {"href": "/my-module", "label": "Open my module"},
+        "empty": "Nothing pending.",
+    }
+
+def register(app):
+    register_thirdparty(item_id="my_module", ...)
+    register_home_panel(
+        item_id="my_module",        # same id as register_thirdparty()
+        panel_id="my_module",       # unique; the built-in ids are reserved
+        label="My module",
+        view=_panel,                # called ONLY when the panel is open
+        badge=my_store.count_pending,   # optional; runs on EVERY home page load
+        admin_only=False,
+        icon="M3 6h18M3 12h18M3 18h12",  # optional 24x24 SVG path data
+    )
+```
+
+Four things that decide whether this behaves well:
+
+- **`badge` must be cheap.** `view` is lazy (fetched when the user opens the
+  panel, refreshed every 20 s while it is open and the tab is in front), but
+  the badge runs on every home page load for every registered panel. A COUNT
+  is fine; a network call is not. Badges are cached ~10 s process-wide and are
+  expected to be instance-wide, not per user.
+- **Send text, not markup.** Everything is escaped by the client, unknown keys
+  are dropped, `percent` is clamped to 0–100, and `href` must be a
+  site-relative path — an absolute or protocol-relative URL is removed, so a
+  panel can never turn into an off-site redirect. For the few things that are
+  modals rather than pages, use `"action": "queue"` instead of an href (there
+  is no `/queue` route); the allowed set is fixed in `PANEL_ACTIONS`.
+- **Translate your own strings.** The built-in panels ship i18n keys that the
+  home page template resolves; the core cannot translate a string it has never
+  seen, so a module sends finished text (use your own catalogue).
+- **`admin_only=True` is a real gate**, checked in the list route *and* in the
+  panel route: a normal account gets 403 rather than a hidden button with the
+  data one fetch away.
+
+A `view` that raises does not take the page down — the bar keeps working and
+the panel reports itself unavailable. Cleanup runs through `item_id`, so
+disabling the module removes the button.
+
 ## Background workers (`register_background_worker`)
 
 Don't build a thread + lock + config-poll + restart path by hand. Hand the core
@@ -776,6 +840,48 @@ For anything beyond "restart me", implement the hook:
 def on_settings_changed(app, keys):
     """A module:<MODULE_ID>:* setting was saved."""
 ```
+
+## TMDB metadata (`lookup_media`)
+
+Don't import `_tmdb_lookup_cached` — it's core-internal, and every caller that
+did re-implemented the same two guards on top of it. Use the public wrapper:
+
+```python
+from ...web.tmdb_cache import lookup_media, is_tmdb_configured
+
+info = lookup_media("Dark", media_type="tv", require_confident=True)
+if info:
+    tmdb_id, plot = info["tmdb_id"], info["overview"]
+```
+
+You get the metadata dict or **`None`** — no `{"found": False}` case to check.
+`media_type` requires a movie/show, `require_confident=True` requires the
+returned title to actually match the one you asked for (TMDB's search answers
+nearly every query with *something*, so turn it on whenever you *display* the
+result instead of just using the ID). The API key, provider country and UI
+language are resolved for you.
+
+Results are cached 24 h and rate-limited process-wide, so a loop is fine — but
+it is blocking network I/O, so bulk lookups belong in a background worker.
+
+## List and dict settings (`get_json_setting`)
+
+Don't wrap `set_setting` in your own `json.dumps`/`json.loads`:
+
+```python
+from ...web.db import get_json_setting, set_json_setting
+
+rooms = get_json_setting("module:my_mod:rooms", [])
+rooms.append(name)
+set_json_setting("module:my_mod:rooms", rooms)
+```
+
+A missing, empty, invalid or wrong-shaped value is logged and returns your
+default, so a corrupt row reads as "unset" rather than raising inside a request.
+
+Each key is written on its own (`set_setting` is a single-key upsert), so saving
+one value can never clear another — there is no bulk "write all my settings"
+call and you don't need one.
 
 ## Admin-only routes
 
@@ -984,6 +1090,7 @@ in your own page is harmless but no longer needed.
 | Charts | `MFCharts` (JS) + `.mfc-chart` container | `mf-charts.js` + `mf-charts.css` (both need their own `<link>`/`<script>`) | Dependency-free inline-SVG charts — no CDN, no bundler, CSP-friendly, and painted from the `variables.css` theme tokens so theme packs restyle them for free. See "Charts (MFCharts)" below |
 | Search field | `.mf-search` / `.mf-search-icon` / `input.mf-search-input` / `.mf-search-clear` | `mf_components.css` | Icon + input + clear button. Note the **element-qualified** `input.mf-search-input`: `forms.css` styles inputs via `input[type="search"]` (specificity 0,1,1), which silently beats any bare class (0,1,0). The clear button is markup only — two listeners of your own, see the gallery |
 | Toolbar | `.mf-toolbar` / `-row` / `-gap` / `-sep` / `.mf-icon-btn` / `.mf-facet` | `mf_components.css` | One `-row` per job: row 1 *finds* (search, navigation), row 2 *shapes the view* (filters left, view options after a `-gap`, which pushes them to the right edge). `.mf-facet` is the count badge inside a `.mf-segmented-btn` |
+| Browse card + hover drawer | `.browse-card` / `.browse-info` / `.browse-title` / `.browse-genre` / `.browse-hover-overlay` / `.browse-hover-content` / `.browse-hover-pill` (+ `--rating`/`--fsk` and `.browse-fsk-0`/`-6`/`-12`/`-16`/`-18`) / `.hover-genres` | `cards.css` | The discovery card both home pages are built from (`renderBrowseCards()` in `app.js` renders it, so a module that registers a `home_feed_source` or `search_source` gets it without writing markup). Since July 2026 the metadata does **not** float over the artwork any more: `.browse-hover-overlay` is a pure clipping box over the poster area, and `.browse-hover-content` is a drawer that slides up from the poster's bottom edge on `:hover`/`:focus-within`. FSK and rating are pills, genres are a `·`-joined text line clamped to two lines — at 140px card width a pill per genre wraps one-per-row and buries the poster. Colours come from the classes, never from inline styles, so a theme pack can restyle them. Under `@media (hover:none)` the drawer rests open, so the badges are reachable on a phone at all |
 | Poster grid | `.mf-poster-grid` / `.mf-poster-card` (+ `.is-selected`) / `-art` / `-flag` (+ `--pending`/`--approved`/`--partial`/`--done`) / `-scrim` / `-meta` / `-title` / `-foot` / `-who` / `-when` / `-actions` / `-select` | `mf_components.css` | Responsive 2:3 poster grid. Status lives in the corner **flag** instead of another pill, attribution in the **foot** — outside the hover overlay, because touch has no hover; `@media (hover:none)` folds the actions out below the card |
 | Type pill / volume tag | `.mf-type-pill` (+ `--series`/`--movie`/`--outline`) / `.mf-vol-tag` | `mf_components.css` | A small inline badge for "what kind of item is this" (`.mf-type-pill`) and "which source location did it come from" (`.mf-vol-tag`, folder icon + label, label text hides below 480px). Drop either into a `.mf-poster-meta` line, a list row, or a detail header — not poster-grid specific. Introduced for the Library page's flattened, multi-volume view |
 | Poster progress / watched badge | `.mf-poster-progress` / `-fill` / `.mf-poster-watched` (+ `.mf-poster-card.is-watched`) | `mf_components.css` | A thin playback-progress bar along a poster card's bottom edge plus a small watched checkmark badge, for when a card already knows a single completion percentage without the user opening it (e.g. Library's eager per-movie progress prefetch) |
@@ -1408,7 +1515,7 @@ which puts it in the same `~/.mediaforge/thirdparties/` on their machine.
 
 ## Reference implementations, by pattern
 
-Seven folders here demonstrate the same contract at different scales. Start
+The folders here demonstrate the same contract at different scales. Start
 with whichever one matches what you're building — each is small enough to
 read top to bottom in a few minutes.
 
@@ -1422,6 +1529,7 @@ read top to bottom in a few minutes.
 | `src/mediaforge/web/thirdparties/anime_seasons/` | Own page, `section="discover"` | Extra `toggle` field, on the shared tab | A real, shipped integration (fetches seasonal anime listings from the Jikan/MyAnimeList API) — external HTTP calls with rate-limiting, a persistent cache, and a richer page (a season picker plus a card grid reusing the app's existing browse-card enrichment pipeline). Read this once you've outgrown the demo examples. |
 | `example_ui_components/` | Own page, `section="management"` | Just the implicit enable toggle | Not a placement pattern — a live, click-through gallery of the core UI classes from "Reusable UI components" above, with copyable markup under each one. Enable it and browse it whenever you're building a new page and want it to look native. |
 | `example_content_source/` | None | Its own dynamic tab | Not a sidebar/settings placement pattern — registers a whole demo streaming site (`register_provider` + `register_search_source` + `register_home_feed_source` + `register_site_mirrors` + `register_monitor_site` together), fully offline (`.invalid` domain, no network calls). Start here if you're adding a new streaming site as a module — see "Content sources" below. |
+| `example_subtitle_source/` | None | Just the implicit enable toggle, on the shared tab | Settings-only again, but for `register_subtitle_source`: one demo external subtitle source, hooked into the last step of the download path's subtitle chain next to the built-in OpenSubtitles lookup. Offline-safe (it only logs and returns `[]`). Start here if your module should supply subtitles — see "Subtitle sources" below. |
 | `example_hooks/` | None | Just the implicit enable toggle, on the shared tab | The smallest "settings-only" shape again, but for `register_notification_channel` + `register_event_hook` instead of `extra_settings` — both just log. Start here if your module needs to react to a download/AutoSync event instead of adding a settings field. |
 
 `example_own_menu/` vs. `example_attach_tab/` / `example_new_tab/` is the
@@ -1558,6 +1666,75 @@ means the old alphabetical-by-`id` order, unchanged.
 See **`example_cineinfo_source/`** for a complete, offline-safe reference that
 registers one source of *each* batch form (per-item and bulk) under the CineInfo
 settings tab.
+
+## Subtitle sources (`register_subtitle_source`)
+
+The download path collects subtitles in three passes, cheapest first: the
+renditions yt-dlp finds in the stream, the tracks the hoster's player config
+carries out of band, and — only for the languages still missing after those two
+— an *external* lookup. OpenSubtitles.com is the built-in implementation of that
+third pass (`models/common/opensubtitles.py`, off by default).
+
+`register_subtitle_source` is what makes that third pass extensible: a module
+can plug its own service (a private server, a fansub index, a paid API) into the
+same step, under the same rules — never asked for a language the file already
+has, always allowed to fail.
+
+Register one callable from your `register(app)`:
+
+```python
+from ....subtitle_sources import register_subtitle_source
+from .source import fetch
+
+register_subtitle_source(MODULE_ID, "myservice", "My Subtitle Service", fetch)
+```
+
+`item_id` is the id you already gave `register_thirdparty()`, exactly like every
+other secondary registry here. Registrations are keyed by it, so
+`unregister_module()` drops them when the module is disabled or uninstalled and
+the Modulmanager can list the capability (`subtitle_source` → "subtitle
+source"); a source registered under any other id keeps running after the module
+is gone. `source_id` must not collide with a built-in
+(`subtitle_sources.RESERVED_SOURCE_IDS`, currently `{"opensubtitles"}`) or with
+another module's source — both raise.
+
+The callable is the whole contract:
+
+```python
+def fetch(video_path, have_langs, meta) -> list:
+    # video_path: the finished (still temporary) video file. Its size and
+    #   content are readable, which is what a hash-based match needs.
+    # have_langs: ISO 639-2/B tags the file ALREADY has. Never fetch these
+    #   again — those tracks are timed to this exact stream.
+    # meta: {"query", "season", "episode", "imdb_id", "tmdb_id"}, each value
+    #   possibly None (a direct-link download knows none of them).
+    wanted = [l for l in ("ger", "eng") if l not in have_langs]
+    if not wanted:
+        return []                     # nothing missing → no request at all
+    path = video_path.with_suffix(".ger.srt")
+    path.write_text(fetch_from_my_api(video_path, meta), encoding="utf-8")
+    return [path]                     # <video stem>.<lang>.<ext>
+```
+
+Return the sidecar paths you wrote, named `<video stem>.<lang>.<ext>`; the
+existing collect/mux path picks them up and muxes them into the `.mkv` as tagged
+soft-sub tracks, indistinguishable from a subtitle the hoster delivered.
+Anything else you return is ignored.
+
+Two rules the core relies on:
+
+- **It runs in the queue worker, between the download and the ffmpeg mux**, so
+  it holds up that one episode. A couple of HTTP requests with short timeouts —
+  no crawling, no retry storms.
+- **It must not raise.** Exceptions are caught and logged, so a throwing source
+  never fails a download; it is just dead weight.
+
+Counterparts, if you manage registrations yourself:
+`unregister_subtitle_source(item_id)`, `thirdparty_subtitle_source_ids()` and
+`iter_subtitle_sources()`.
+
+See **`example_subtitle_source/`** for a complete, offline-safe reference that
+registers one demo source and returns `[]`.
 
 ## Content sources (`register_provider` / `register_search_source` / `register_home_feed_source`)
 

@@ -604,6 +604,47 @@ clear.addEventListener("click", function () { input.value = ""; clear.hidden = t
 Flag modifiers: --pending --approved --partial --done
 Selection: add .is-selected on the card, put your .chb-main in .mf-poster-select</pre>
 
+      <!-- Browse card + hover drawer -->
+      <div class="uic-hint" style="margin-top:18px;">{{ _('Browse card — .browse-card / .browse-hover-content') }}</div>
+      <div class="integ-subsection-hint">{{ _('The discovery card both home pages are built from (cards.css, loaded globally). Metadata does not float over the artwork: the drawer slides up from the poster\'s bottom edge on hover/focus and rests open under @media (hover:none), so the badges are reachable on a phone. FSK and rating are pills, genres are a dot-joined text line clamped to two lines — at 140px card width a pill per genre wraps one per row and buries the poster.') }}</div>
+      <div style="display:flex; gap:14px; flex-wrap:wrap;">
+        <div class="browse-card" style="cursor:default;">
+          <span style="display:block; width:100%; aspect-ratio:2/3; background:linear-gradient(155deg,#2b3a67,#6d3f8f 55%,#c95d8a);"></span>
+          <div class="browse-info">
+            <div class="browse-title">An Example Title</div>
+            <div class="browse-genre">Drama, Action &amp; Adventure</div>
+          </div>
+          <div class="browse-hover-overlay">
+            <div class="browse-hover-content">
+              <span class="browse-hover-pill browse-hover-pill--fsk browse-fsk-16">FSK 16</span>
+              <span class="browse-hover-pill browse-hover-pill--rating">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="#4ade80" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>8.3
+              </span>
+              <div class="genres hover-genres">
+                <span>Drama</span><span>Action &amp; Adventure</span><span>Mystery</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <pre class="uic-snippet">&lt;div class="browse-card"&gt;
+  &lt;img src="…" alt=""&gt;
+  &lt;div class="browse-info"&gt;
+    &lt;div class="browse-title"&gt;An Example Title&lt;/div&gt;
+    &lt;div class="browse-genre"&gt;Drama, Action &amp;amp; Adventure&lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="browse-hover-overlay"&gt;
+    &lt;div class="browse-hover-content"&gt;
+      &lt;span class="browse-hover-pill browse-hover-pill--fsk browse-fsk-16"&gt;FSK 16&lt;/span&gt;
+      &lt;span class="browse-hover-pill browse-hover-pill--rating"&gt;&lt;svg …/&gt;8.3&lt;/span&gt;
+      &lt;div class="genres hover-genres"&gt;&lt;span&gt;Drama&lt;/span&gt;&lt;span&gt;Mystery&lt;/span&gt;&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+FSK modifiers: .browse-fsk-0 -6 -12 -16 -18 (anything else = neutral pill)
+Registering a home_feed_source or search_source? renderBrowseCards() builds all of this for you.</pre>
+
       <!-- Progress track -->
       <div class="uic-hint" style="margin-top:18px;">{{ _('Progress track — .mf-progress') }}</div>
       <div class="integ-subsection-hint">{{ _('A few named stages of one item (requested → approved → downloaded), not a percentage — for that use .progress-wrap above. Hide it below ~1000px: three labels turn into three stumps.') }}</div>

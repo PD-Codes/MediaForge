@@ -34,7 +34,7 @@ import threading
 import time
 from ..request_context import get_current_user_info as _get_current_user_info
 from ..tmdb_cache import _tmdb_calendar_episodes
-from ..tmdb_cache import _tmdb_lookup_cached
+from ..tmdb_cache import lookup_media
 from ..tmdb_cache import _tmdb_movie_release
 from ...logger import get_logger
 from ...telemetry import client as telemetry_client
@@ -226,8 +226,8 @@ def _library_tv_ids(api_key, country, live_budget=0):
         if info is None and spent < live_budget:
             spent += 1
             try:
-                info = _tmdb_lookup_cached(title, None, api_key, country,
-                                           _TITLE_RESOLVE_LANG)
+                info = lookup_media(title, media_type="tv", api_key=api_key,
+                                    country=country, ui_lang=_TITLE_RESOLVE_LANG)
             except Exception as exc:
                 logger.debug("[Calendar] TMDB lookup failed for library folder "
                              "%s: %s", title, exc)
@@ -305,10 +305,11 @@ def _resolve_cr_titles(api_key, country, ui_lang):
         tid = db_id_by_title.get(nt)
         if tid is None:
             try:
-                info = _tmdb_lookup_cached(t, None, api_key, country, ui_lang)
+                info = lookup_media(t, media_type="tv", api_key=api_key,
+                                    country=country, ui_lang=ui_lang)
             except Exception:
                 continue
-            if not (info and info.get("found") and info.get("media_type") == "tv"):
+            if not info:
                 continue
             _t = info.get("tmdb_id")
             if not _t:
@@ -485,8 +486,9 @@ def _calendar_watcher_loop():
             priority_tv_ids = set()
             for title in priority_titles:
                 try:
-                    info = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
-                    if info and info.get("found") and info.get("media_type") == "tv":
+                    info = lookup_media(title, media_type="tv", api_key=api_key,
+                                        country=country, ui_lang=ui_lang)
+                    if info:
                         tid = info.get("tmdb_id")
                         if tid:
                             priority_tv_ids.add(int(tid))
@@ -521,8 +523,9 @@ def _calendar_watcher_loop():
                     elif item.get("title"):
                         title = item.get("title").strip()
                         try:
-                            info = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
-                            if info and info.get("found") and info.get("media_type") == "tv":
+                            info = lookup_media(title, media_type="tv", api_key=api_key,
+                                                country=country, ui_lang=ui_lang)
+                            if info:
                                 tid = info.get("tmdb_id")
                                 if tid:
                                     mediathek_media_targets.append((int(tid), "tv"))
@@ -760,8 +763,9 @@ def collect_calendar_events(api_key, country, ui_lang, username, is_admin):
         if not title:
             continue
         try:
-            info = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
-            if info and info.get("found") and info.get("media_type") == "tv":
+            info = lookup_media(title, media_type="tv", api_key=api_key,
+                                country=country, ui_lang=ui_lang)
+            if info:
                 tid = info.get("tmdb_id")
                 if tid:
                     tid_int = int(tid)
@@ -882,8 +886,9 @@ def collect_calendar_events(api_key, country, ui_lang, username, is_admin):
             elif item.get("title"):
                 title = item.get("title").strip()
                 try:
-                    info = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
-                    if info and info.get("found") and info.get("media_type") == "tv":
+                    info = lookup_media(title, media_type="tv", api_key=api_key,
+                                        country=country, ui_lang=ui_lang)
+                    if info:
                         tid = info.get("tmdb_id")
                         if tid:
                             mediathek_tv_ids.append(int(tid))
@@ -1001,19 +1006,17 @@ _ics_lock = threading.Lock()
 
 def _ics_tokens():
     """Return the {token: user_id} map (empty dict when unset/corrupt)."""
-    try:
-        raw = get_setting(_ICS_TOKENS_SETTING, "") or ""
-        data = json.loads(raw) if raw else {}
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        logger.warning("[Calendar] ICS token map unreadable, treating as empty")
-        return {}
+    # get_json_setting() handles the unset/invalid-JSON/wrong-type cases and
+    # logs them; an unreadable token map has to read as "no valid feed tokens",
+    # never as an exception on a feed request.
+    from ..db import get_json_setting
+    return get_json_setting(_ICS_TOKENS_SETTING, {})
 
 
 def _ics_token_for(user_id, rotate=False):
     """Return this user's feed token, creating (or rotating) it if needed."""
     import secrets
-    from ..db import set_setting
+    from ..db import set_json_setting
 
     with _ics_lock:
         tokens = _ics_tokens()
@@ -1026,7 +1029,7 @@ def _ics_token_for(user_id, rotate=False):
         tokens = {tok: uid for tok, uid in tokens.items() if uid != user_id}
         token = secrets.token_urlsafe(_ICS_TOKEN_BYTES)
         tokens[token] = user_id
-        set_setting(_ICS_TOKENS_SETTING, json.dumps(tokens))
+        set_json_setting(_ICS_TOKENS_SETTING, tokens)
         return token
 
 

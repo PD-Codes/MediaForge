@@ -1116,13 +1116,24 @@ def _queue_worker():
                         # ------ START JELLYFIN NFO HOOK ------
                         try:
                             from .nfo_provider import generate_nfo_for_download
-                            from .tmdb_cache import _tmdb_lookup_cached, _tmdb_fetch_season_and_episode
-                            
+                            from .tmdb_cache import lookup_media, _tmdb_fetch_season_and_episode
+
                             cineinfo_api_key = get_setting("cineinfo_tmdb_api_key", "")
                             cineinfo_country = get_setting("cineinfo_country", "DE")
                             if cineinfo_api_key and _ep_path:
-                                tmdb_data = _tmdb_lookup_cached(item["title"], None, cineinfo_api_key, cineinfo_country)
-                                if tmdb_data and tmdb_data.get("found"):
+                                # require_confident: the NFO is written next to the
+                                # file and Jellyfin treats it as the truth about that
+                                # file. TMDB's /search/multi answers nearly every
+                                # query with *something*, so an unconfident match
+                                # would permanently relabel a download with a
+                                # different show's title and plot. No NFO is the
+                                # better failure mode than a confidently wrong one.
+                                tmdb_data = lookup_media(
+                                    item["title"], require_confident=True,
+                                    api_key=cineinfo_api_key, country=cineinfo_country,
+                                    ui_lang="de",
+                                )
+                                if tmdb_data:
                                     season_data = None
                                     episode_data = None
                                     # The NFO sits next to the file and Jellyfin reads it as

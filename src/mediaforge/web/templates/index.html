@@ -235,6 +235,17 @@
     </button>
     <button id="searchBtn" onclick="doSearch()">{{ _('Search') }}</button>
   </div>
+  {# The panel-bar keys below (panel_*, hp_*) live in this template rather
+     than in routes/home_panels.py because babel.cfg extracts Jinja templates
+     ONLY -- a _() in Python source never reaches a catalogue. The server
+     sends the key, static/home_panels.js looks it up here.
+     Placeholders are written as "{}" and not "%s": Flask-Babel installs
+     newstyle gettext, which rewrites %s to {} in the rendered string while
+     the catalogue keeps %s -- "{}" keeps template, catalogue and JS in step.
+     NOTE: do not put a Jinja comment inside the dict below -- a comment is
+     not allowed inside an expression and takes the whole page down with a
+     TemplateSyntaxError. (Nor inside this one: the closing delimiter of a
+     nested comment ends the outer one and the rest leaks onto the page.) #}
   {# Every string the home page renders client-side, translated here so it
      goes through the same Flask-Babel catalogue as the rest of the app
      instead of a hardcoded de/en pair in JavaScript. Rendered for both home
@@ -261,9 +272,63 @@
       'player_loading': _('Player loading…'),
       'recent_searches': _('Recent searches'),
       'clear_history': _('Clear history'),
-      'remove_entry': _('Remove')
+      'remove_entry': _('Remove'),
+      'panel_loading': _('Loading…'),
+      'panel_failed': _('This panel could not be loaded.'),
+      'panel_unavailable': _('This panel is not available right now.'),
+      'panel_empty': _('Nothing to show here.'),
+      'panel_open': _('Open'),
+      'hp_p_queue': _('Queue'),
+      'hp_p_activity': _('Activity'),
+      'hp_p_library': _('Library'),
+      'hp_p_storage': _('Storage'),
+      'hp_p_system': _('System'),
+      'hp_running': _('Running'),
+      'hp_waiting': _('Waiting'),
+      'hp_failed': _('Failed'),
+      'hp_paused': _('Paused'),
+      'hp_yes': _('Yes'),
+      'hp_no': _('No'),
+      'hp_titles': _('Titles'),
+      'hp_series': _('Series'),
+      'hp_movies': _('Movies'),
+      'hp_episodes': _('Episodes'),
+      'hp_size': _('Size'),
+      'hp_version': _('Version'),
+      'hp_encoding': _('Encoding'),
+      'hp_upscaling': _('Upscaling'),
+      'hp_queue': _('Queue'),
+      'hp_state_running': _('Running'),
+      'hp_state_paused': _('Paused'),
+      'hp_fullest': _('Fullest volume'),
+      'hp_open_queue': _('Open the queue'),
+      'hp_open_history': _('Open the history'),
+      'hp_open_library': _('Open the library'),
+      'hp_open_settings': _('Open the settings'),
+      'hp_empty_queue': _('Nothing is downloading right now.'),
+      'hp_empty_history': _('Nothing has been downloaded yet.'),
+      'hp_empty_library': _('Your library is still empty.'),
+      'hp_empty_storage': _('No download path could be read.'),
+      'hp_empty_system': _('Nothing needs your attention.'),
+      'hp_download_failed': _('Download failed'),
+      'hp_ep_of': _('Episode {} of {}'),
+      'hp_used': _('{} of {} used'),
+      'hp_just_now': _('just now'),
+      'hp_min_ago': _('{} min ago'),
+      'hp_h_ago': _('{} h ago'),
+      'hp_d_ago': _('{} d ago')
     }|tojson }};
   </script>
+  {# The panel bar: buttons under the search field, one panel below them.
+     Both are empty until /api/home-panels answers -- which panels an account
+     may even see is decided server-side (Storage and System are admin-only),
+     so rendering the buttons here would mean rendering buttons that 403. The
+     bar hides itself when nothing is available. #}
+  {% if new_home %}
+  <div class="mf-segmented home-panel-bar" id="homePanelBar" role="group"
+       aria-label="{{ _('Instance overview') }}"></div>
+  <div class="home-panel-body" id="homePanelBody" hidden></div>
+  {% endif %}
   {# Which sources a search actually hits. Filled by renderSourceChips() in
      app.js once /api/settings answered; empty (and invisible) until then.
      The new home page does NOT render this: its own chip row (below) says
@@ -438,7 +503,8 @@
 {% include "shared_modals.html" %}
 {% endblock %} {% block scripts %}
 <script src="{{ url_for('static', filename='app.js') }}"></script>
-{% if new_home %}<script src="{{ url_for('static', filename='home_feed.js') }}"></script>{% endif %}
+{% if new_home %}<script src="{{ url_for('static', filename='home_feed.js') }}"></script>
+<script src="{{ url_for('static', filename='home_panels.js') }}"></script>{% endif %}
 {% if new_home %}{{ startpage.start_page_i18n() }}
 <script src="{{ url_for('static', filename='start_page.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', filename='devinfo_banner.js') }}"></script>

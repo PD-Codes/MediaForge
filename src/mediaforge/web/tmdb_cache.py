@@ -7,13 +7,16 @@ so concurrent requests for the same title don't hammer TMDB.
 Used by: web/routes/search.py, web/routes/calendar_routes.py and
 web/routes/browse.py (prefetch) — kept as one shared module instead of
 being duplicated across those route files.
+
+``lookup_media()`` at the bottom of this file is the public, module-facing
+entry point; everything above it is core-internal (leading underscore).
 """
 import threading
 import time
 
 import requests as _rq_tmdb
 
-from .db import get_tmdb_cache, set_tmdb_cache
+from .db import get_setting, get_tmdb_cache, set_tmdb_cache
 from .autosync_worker import _title_is_confident
 from ..logger import get_logger
 
@@ -425,3 +428,98 @@ def _tmdb_fetch_season_and_episode(tmdb_id, season_num, episode_num, api_key, ui
         logger.debug('[TMDB] Fetch season/episode failed for %s (S%sE%s): %s', tmdb_id, season_num, episode_num, exc)
     return out
 
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+#
+# Everything above is private by name, so both core call sites and third-party
+# modules ended up reaching for _tmdb_lookup_cached() directly -- and then each
+# re-implemented the same two guards on top of the result. That drifted: of the
+# callers that display a TMDB title, only web/routes/search.py ever checked
+# title_confident, while web/routes/calendar_routes.py open-codes
+# ``info.get("found") and info.get("media_type") == "tv"`` in six places.
+#
+# lookup_media() is that shared post-processing, done once. It also resolves the
+# API key, the provider country and the UI language itself, so a caller (and in
+# particular a module, which has no business knowing the
+# "cineinfo_tmdb_api_key" setting name) just passes a title.
+
+
+def is_tmdb_configured() -> bool:
+    """True when a TMDB API key is configured, i.e. lookup_media() can work."""
+    return bool((get_setting("cineinfo_tmdb_api_key", "") or "").strip())
+
+
+def lookup_media(title=None, *, imdb_id=None, media_type=None,
+                 require_confident=False, country=None, ui_lang=None,
+                 api_key=None):
+    """Look up a movie/show on TMDB and return its metadata, or None.
+
+    This is the supported entry point for third-party modules.
+
+    Args:
+        title: Title to search for. Optional when *imdb_id* is given.
+        imdb_id: IMDB ID ("tt..."); more reliable than a title and tried first.
+        media_type: "movie" or "tv" to require that kind of result, None for any.
+        require_confident: Only return a result whose title actually matches the
+            one asked for. TMDB's /search/multi answers almost every query with
+            *something*, so a caller that displays the returned title (rather
+            than just using the ID) wants this on.
+        country: Two-letter country code for streaming-provider data. Defaults
+            to the configured CineInfo country.
+        ui_lang: "de" or "en" for localised text. Defaults to the current
+            request's UI language, or "de" outside a request (background worker).
+        api_key: Pre-resolved TMDB key. Modules leave this None and let the
+            configured one be used; core loops that already read the setting
+            pass it in so a lookup per title doesn't become a DB read per title.
+
+    Returns:
+        A dict with found/tmdb_id/media_type/title/title_confident/overview/
+        genres/providers/fsk/vote_average/trailer_key/recommendations/
+        raw_details, or **None** when TMDB is unconfigured, nothing was found,
+        or the result was rejected by *media_type* / *require_confident*.
+        Returning None rather than a {"found": False} dict means a caller cannot
+        accidentally render an empty hit as a real one.
+
+    Results are cached for 24 h and rate-limited process-wide; calling this in a
+    loop is fine. It performs blocking network I/O, so it must not be called
+    from a request thread that has to answer quickly -- use a background worker
+    (see register_background_worker) for bulk lookups.
+    """
+    api_key = (api_key or get_setting("cineinfo_tmdb_api_key", "") or "").strip()
+    if not api_key:
+        return None
+    title = (title or "").strip()
+    imdb_id = (imdb_id or "").strip()
+    if not title and not imdb_id:
+        return None
+
+    if country is None:
+        country = get_setting("cineinfo_country", "DE")
+    if ui_lang is None:
+        ui_lang = _current_ui_lang()
+
+    info = _tmdb_lookup_cached(title, imdb_id or None, api_key, country, ui_lang)
+    if not info or not info.get("found"):
+        return None
+    if media_type and info.get("media_type") != media_type:
+        return None
+    if require_confident and not info.get("title_confident"):
+        return None
+    return info
+
+
+def _current_ui_lang(default="de"):
+    """UI language of the current request, or *default* outside a request.
+
+    Imported lazily and guarded by has_request_context() so this module stays
+    usable from background workers and from scripts with no Flask app at all.
+    """
+    try:
+        from flask import has_request_context, session
+        if has_request_context():
+            return session.get("ui_language", default) or default
+    except Exception:
+        pass
+    return default

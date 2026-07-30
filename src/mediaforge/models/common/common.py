@@ -89,6 +89,10 @@ try:
         subtitles_enabled,
         ytdlp_subtitle_opts,
     )
+    from .opensubtitles import (
+        fetch_missing_subtitles as _os_fetch_missing_subtitles,
+        opensubtitles_enabled,
+    )
 except ImportError:
     from mediaforge.models.common.subtitles import (
         cleanup_subtitle_files,
@@ -97,6 +101,10 @@ except ImportError:
         is_subtitle_file,
         subtitles_enabled,
         ytdlp_subtitle_opts,
+    )
+    from mediaforge.models.common.opensubtitles import (
+        fetch_missing_subtitles as _os_fetch_missing_subtitles,
+        opensubtitles_enabled,
     )
 
 
@@ -1140,6 +1148,119 @@ def _hoster_subtitle_fallback(episode, raw_path, headers):
         return []
 
 
+def _subtitle_search_meta(episode):
+    """What OpenSubtitles needs to identify the title, from any episode model.
+
+    Every model spells this differently (and a direct link has none of it), so
+    everything is read defensively: a missing field just means one less search
+    parameter, and the moviehash path does not need any of them.
+    """
+    def _attr(*names):
+        for name in names:
+            try:
+                value = getattr(episode, name, None)
+            except Exception:
+                value = None
+            if value not in (None, "", 0):
+                return value
+        return None
+
+    season = _attr("season", "season_number")
+    # ``file_episode_number`` is the number that matches the file on disk; the
+    # plain one can be a page-display number (see the AniWorld absolute-episode
+    # option), and OpenSubtitles indexes by the real broadcast number.
+    episode_no = _attr("file_episode_number", "episode_number")
+    try:
+        season = int(season) if season is not None else None
+    except (TypeError, ValueError):
+        season = None
+    try:
+        episode_no = int(episode_no) if episode_no is not None else None
+    except (TypeError, ValueError):
+        episode_no = None
+
+    return {
+        "query": _attr("series", "title_en", "title_de", "title"),
+        "season": season,
+        "episode": episode_no,
+        "imdb_id": _attr("imdb_id"),
+        "tmdb_id": _attr("tmdb_id"),
+    }
+
+
+def _opensubtitles_fallback(episode, raw_path, found):
+    """Fill the still-missing languages from OpenSubtitles.
+
+    Runs last on purpose: the hoster's own tracks are free, already timed to
+    the exact stream and cost no quota, so anything the previous two steps
+    delivered is kept and only the gaps are bought from the external service.
+    Returns the full list of sidecars afterwards. Never raises.
+    """
+    try:
+        if not opensubtitles_enabled():
+            return found
+        have = {lang for _path, lang in found}
+        written = _os_fetch_missing_subtitles(
+            raw_path, have_langs=have, meta=_subtitle_search_meta(episode)
+        )
+        if not written:
+            return found
+        return collect_subtitle_files(raw_path)
+    except Exception as exc:
+        logger.debug("[OpenSubtitles] fallback failed: %s", exc)
+        return found
+
+
+def _module_subtitle_fallback(episode, raw_path, found):
+    """Ask every subtitle source a third-party module registered.
+
+    Runs after OpenSubtitles for the same reason OpenSubtitles runs after the
+    hoster: by this point only the genuinely missing languages are left, so a
+    module source is never asked for something already on disk. One failing
+    source must not stop the next one, so each is guarded on its own.
+    """
+    try:
+        try:
+            from ...subtitle_sources import iter_subtitle_sources
+        except ImportError:
+            from mediaforge.subtitle_sources import iter_subtitle_sources
+        sources = iter_subtitle_sources()
+    except Exception:
+        return found
+    if not sources:
+        return found
+
+    meta = _subtitle_search_meta(episode)
+    changed = False
+    for source in sources:
+        have = {lang for _path, lang in found}
+        try:
+            written = source["fetch"](raw_path, have, meta)
+        except Exception as exc:
+            logger.warning("[Subtitles] source %r failed: %s", source["source_id"], exc)
+            continue
+        if written:
+            changed = True
+            found = collect_subtitle_files(raw_path)
+    return collect_subtitle_files(raw_path) if changed else found
+
+
+def _gather_subtitles(episode, raw_path, headers, want_hoster=True):
+    """All three subtitle sources for *raw_path*, cheapest first.
+
+    yt-dlp's sidecars -> the hoster's out-of-band player config -> OpenSubtitles.
+    Split out so the three download branches (full / audio-only / video-only)
+    cannot drift apart, which they had already started to do.
+    """
+    found = collect_subtitle_files(raw_path) if want_hoster else []
+    if want_hoster and not found:
+        found = _hoster_subtitle_fallback(episode, raw_path, headers)
+    found = _opensubtitles_fallback(episode, raw_path, found)
+    found = _module_subtitle_fallback(episode, raw_path, found)
+    _log_subtitle_result(getattr(episode, "_file_name", ""), found)
+    return found
+
+
 def _log_subtitle_result(file_name, subs):
     """Say what the subtitle fetch produced — including when it produced nothing.
 
@@ -1500,7 +1621,12 @@ def download(self, cancel_event=None):
         # Subtitle sidecars yt-dlp writes during whichever download branch runs.
         # Collected here and muxed in once, right before the finished file is
         # moved — see _embed_subtitles for why it has to be that late.
-        _want_subs = subtitles_enabled()
+        # Two independent opt-ins: the hoster's own tracks (on by default,
+        # free) and the OpenSubtitles lookup (off by default, external account
+        # and quota). Either one alone is reason enough to run the collect/mux
+        # path, but only the first one makes yt-dlp write sidecars.
+        _want_hoster_subs = subtitles_enabled()
+        _want_subs = _want_hoster_subs or opensubtitles_enabled()
         _subtitle_files = []
 
         if full_stream_needed:
@@ -1510,13 +1636,12 @@ def download(self, cancel_event=None):
             _run_ytdlp_download(
                 _stream_url(), raw_full, headers=headers, label=ep_label,
                 cancel_event=cancel_event, impersonate=_impersonate,
-                audio_lang=audio_code, want_subtitles=_want_subs,
+                audio_lang=audio_code, want_subtitles=_want_hoster_subs,
             )
             if _want_subs:
-                _subtitle_files = collect_subtitle_files(raw_full)
-                if not _subtitle_files:
-                    _subtitle_files = _hoster_subtitle_fallback(self, raw_full, headers)
-                _log_subtitle_result(self._file_name, _subtitle_files)
+                _subtitle_files = _gather_subtitles(
+                    self, raw_full, headers, want_hoster=_want_hoster_subs
+                )
 
             # 2. Apply codec + language metadata via ffmpeg (local file → fast)
             stream_metadata = {"metadata:s:a:0": f"language={audio_code}"}
@@ -1578,14 +1703,13 @@ def download(self, cancel_event=None):
                 _stream_url(), raw_audio, headers=headers,
                 label=ep_label + " [A]", cancel_event=cancel_event,
                 impersonate=_impersonate, audio_lang=audio_code,
-                want_subtitles=_want_subs,
+                want_subtitles=_want_hoster_subs,
             )
             if _want_subs:
-                _found = collect_subtitle_files(raw_audio)
-                if not _found:
-                    _found = _hoster_subtitle_fallback(self, raw_audio, headers)
+                _found = _gather_subtitles(
+                    self, raw_audio, headers, want_hoster=_want_hoster_subs
+                )
                 _subtitle_files.extend(_found)
-                _log_subtitle_result(self._file_name, _found)
             # 2. Extract audio + apply language tag via ffmpeg (local → fast copy)
             _enc_vcodec_a, _enc_acodec_a, _enc_vopts_a, _enc_global_a = _get_ffmpeg_codec_opts_for_download()
             _run_ffmpeg_with_progress(
@@ -1607,14 +1731,13 @@ def download(self, cancel_event=None):
             _run_ytdlp_download(
                 _stream_url(), raw_video, headers=headers,
                 label=ep_label + " [V]", cancel_event=cancel_event,
-                impersonate=_impersonate, want_subtitles=_want_subs,
+                impersonate=_impersonate, want_subtitles=_want_hoster_subs,
             )
             if _want_subs:
-                _found = collect_subtitle_files(raw_video)
-                if not _found:
-                    _found = _hoster_subtitle_fallback(self, raw_video, headers)
+                _found = _gather_subtitles(
+                    self, raw_video, headers, want_hoster=_want_hoster_subs
+                )
                 _subtitle_files.extend(_found)
-                _log_subtitle_result(self._file_name, _found)
             # 2. Extract video + apply language tag via ffmpeg (local → fast copy)
             _enc_vcodec_v, _enc_acodec_v, _enc_vopts_v, _enc_global_v = _get_ffmpeg_codec_opts_for_download()
             _enc_node_v = ffmpeg.input(str(raw_video)).output(

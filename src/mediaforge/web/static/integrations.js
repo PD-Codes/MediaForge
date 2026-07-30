@@ -663,6 +663,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadMediaplayerSettings();
   loadMediascanSettings();
   loadJellyfinNfoSettings();
+  loadOpenSubtitlesSettings();
   // loadThirdpartyToggles() and restoreIntegCollapse() now run on their own
   // from static/extension_cards.js — see the <script> tag in
   // integrations.html.
@@ -1726,3 +1727,186 @@ async function saveJellyfinNfoMovieSubfolder() {
   }
 }
 
+
+
+// ===== OpenSubtitles =====
+//
+// Its own GET/PUT pair rather than the aggregated /api/settings payload: the
+// API key and the password must never travel back to the browser, so the
+// endpoint only reports *whether* one is stored (has_api_key / has_password)
+// and the fields stay empty until the user types a new one.
+
+const OS_LANG_FALLBACK = "de,en";
+
+function _osRoot() {
+  return document.getElementById("osLanguages");
+}
+
+function _osSelectedLanguages() {
+  const root = _osRoot();
+  if (!root) return [];
+  if (window.mfMultiSelect && window.mfMultiSelect.values) {
+    return window.mfMultiSelect.values(root);
+  }
+  return Array.prototype.slice
+    .call(root.querySelectorAll('input[type="checkbox"]:checked'))
+    .map((box) => box.value);
+}
+
+function _applyOpenSubtitlesState() {
+  const enabled = !!document.getElementById("osEnabled")?.checked;
+  ["osApiKey", "osUsername", "osPassword", "osTestBtn", "osHearingImpaired"].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !enabled;
+  });
+  const root = _osRoot();
+  if (root) {
+    root.classList.toggle("is-disabled", !enabled);
+    root.querySelectorAll("input,button").forEach((el) => { el.disabled = !enabled; });
+  }
+}
+
+async function loadOpenSubtitlesSettings() {
+  try {
+    const resp = await fetch("/api/settings/opensubtitles");
+    if (!resp.ok) return;
+    const d = await resp.json();
+
+    const chk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+    chk("osEnabled", d.enabled === "1");
+
+    const user = document.getElementById("osUsername");
+    if (user) user.value = d.username || "";
+
+    // Secrets are write-only: an empty field with a "stored" placeholder means
+    // "keep what is saved", which is what the PUT handler does with a blank.
+    const stored = t("•••••••• (gespeichert)", "•••••••• (saved)");
+    const key = document.getElementById("osApiKey");
+    if (key) { key.value = ""; key.placeholder = d.has_api_key ? stored : t("API-Key", "API key"); }
+    const pw = document.getElementById("osPassword");
+    if (pw) { pw.value = ""; pw.placeholder = d.has_password ? stored : t("Passwort", "Password"); }
+
+    const hi = document.getElementById("osHearingImpaired");
+    if (hi) hi.value = d.hearing_impaired || "exclude";
+
+    const wanted = String(d.languages || OS_LANG_FALLBACK).split(",").map((c) => c.trim().toLowerCase());
+    const root = _osRoot();
+    if (root) {
+      root.querySelectorAll('input[type="checkbox"]').forEach(function (box) {
+        box.checked = wanted.indexOf(String(box.value).toLowerCase()) !== -1;
+      });
+      if (window.mfMultiSelect && window.mfMultiSelect.refresh) window.mfMultiSelect.refresh(root);
+      // Saved on close, not on every tick — one PUT per visit instead of one
+      // per language the user clicks through.
+      if (!root.dataset.osBound) {
+        root.dataset.osBound = "1";
+        root.addEventListener("mf-multiselect-close", saveOpenSubtitlesOptions);
+      }
+    }
+    _applyOpenSubtitlesState();
+  } catch (e) {
+    showToast(t("OpenSubtitles-Einstellungen konnten nicht geladen werden: ", "OpenSubtitles settings could not be loaded: ") + e.message);
+  }
+}
+
+async function _putOpenSubtitles(body) {
+  const resp = await fetch("/api/settings/opensubtitles", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return resp.json();
+}
+
+// Toggles, languages and the SDH filter — persisted immediately on change.
+async function saveOpenSubtitlesOptions() {
+  _applyOpenSubtitlesState();
+  try {
+    await _putOpenSubtitles({
+      enabled: document.getElementById("osEnabled")?.checked ? "1" : "0",
+      languages: _osSelectedLanguages(),
+      hearing_impaired: document.getElementById("osHearingImpaired")?.value || "exclude",
+    });
+  } catch (e) { /* silent — same as the other option toggles */ }
+}
+
+async function saveOpenSubtitlesSettings() {
+  const keyEl = document.getElementById("osApiKey");
+  const pwEl = document.getElementById("osPassword");
+  const apiKey = (keyEl?.value || "").trim();
+  const password = (pwEl?.value || "").trim();
+  const body = { username: (document.getElementById("osUsername")?.value || "").trim() };
+  if (apiKey) body.api_key = apiKey;        // only send when actually typed
+  if (password) body.password = password;
+  try {
+    const data = await _putOpenSubtitles(body);
+    if (data.ok) {
+      showToast(t("OpenSubtitles gespeichert", "OpenSubtitles saved"));
+      const stored = t("•••••••• (gespeichert)", "•••••••• (saved)");
+      if (keyEl && apiKey) { keyEl.value = ""; keyEl.placeholder = stored; }
+      if (pwEl && password) { pwEl.value = ""; pwEl.placeholder = stored; }
+    } else {
+      showToast(data.error || t("Fehler", "Error"));
+    }
+  } catch (e) {
+    showToast(t("Fehler: ", "Error: ") + e.message);
+  }
+}
+
+async function testOpenSubtitles(btn) {
+  const result = document.getElementById("osTestResult");
+  if (btn) { btn.disabled = true; btn.textContent = t("Teste…", "Testing…"); }
+  const body = { username: (document.getElementById("osUsername")?.value || "").trim() };
+  const apiKey = (document.getElementById("osApiKey")?.value || "").trim();
+  const password = (document.getElementById("osPassword")?.value || "").trim();
+  if (apiKey) body.api_key = apiKey;
+  if (password) body.password = password;
+  try {
+    const resp = await fetch("/api/settings/opensubtitles/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await resp.json();
+    if (result) {
+      result.style.display = "block";
+      if (d.ok) {
+        let msg = t("✓ Angemeldet", "✓ Logged in");
+        if (d.allowed_downloads != null) {
+          msg += " · " + t("Downloads pro Tag: ", "Downloads per day: ") + d.allowed_downloads;
+        }
+        if (d.vip) msg += " · VIP";
+        result.textContent = msg;
+        result.style.color = "var(--success, #2ecc71)";
+        showToast(msg, "success");
+      } else {
+        const map = {
+          no_api_key: t("✗ Kein API-Key hinterlegt", "✗ No API key configured"),
+          bad_api_key: t("✗ API-Key ungültig", "✗ API key invalid"),
+          no_credentials: t("✗ Bitte Benutzername und Passwort angeben", "✗ Please enter username and password"),
+          bad_credentials: t("✗ Login fehlgeschlagen — Zugangsdaten prüfen", "✗ Login failed — check credentials"),
+          rate_limited: t("✗ Zu viele Anfragen — später erneut versuchen", "✗ Rate limited — try again later"),
+          unreachable: t("✗ OpenSubtitles nicht erreichbar", "✗ OpenSubtitles unreachable"),
+          requests_missing: t("✗ Abhängigkeit 'requests' fehlt", "✗ Dependency 'requests' is missing"),
+        };
+        const errMsg = map[d.error] || t("✗ Verbindung fehlgeschlagen", "✗ Connection failed");
+        result.textContent = errMsg;
+        result.style.color = "var(--danger, #e74c3c)";
+        showToast(errMsg, "error");
+      }
+    }
+  } catch (e) {
+    if (result) {
+      result.style.display = "block";
+      result.textContent = t("✗ Fehler: ", "✗ Error: ") + e.message;
+      result.style.color = "var(--danger, #e74c3c)";
+    }
+  } finally {
+    if (btn) {
+      setTimeout(() => {
+        btn.textContent = t("Verbindung testen", "Test connection");
+        _applyOpenSubtitlesState();
+      }, 300);
+    }
+  }
+}

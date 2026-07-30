@@ -549,6 +549,11 @@ def _feed_collect(bucket, order_ids, limit, taken, index, labels):
 def register_browse_routes(app):
     """Register all browse/discovery routes (anime, series, movie listings,
     hanime, and the local downloaded-folders lookup) on the Flask app."""
+    # The home page's button bar. Registered from here rather than from
+    # create_app() because it belongs to the same page as the feed above and
+    # ships with it -- one home page, one registration point.
+    from .home_panels import register_home_panel_routes
+    register_home_panel_routes(app)
     # Upstream failures answer 502, not 500: none of these routes is broken
     # when they fire -- the third-party site is unreachable or answered with
     # something unusable. 500 would claim MediaForge itself failed, which also
@@ -883,13 +888,20 @@ def register_browse_routes(app):
         try:
             if "continue" in hidden and "library" in hidden:
                 raise StopIteration
-            from .library import _lib_active_path_keys
+            from .library import _lib_active_path_keys, lib_iter_cached_titles
             from ..db import get_all_library_cache
             active = _lib_active_path_keys()
             for path_key, entry in (get_all_library_cache() or {}).items():
                 if path_key not in active:
                     continue          # leftover of a removed scan target
-                for title in entry.get("data") or []:
+                # A cache entry is a DICT ({"titles": [...], "lang_folders":
+                # [...], "books": [...]}), not a list of titles. Iterating it
+                # directly yielded the KEY STRINGS, so title.get() below raised
+                # AttributeError into the except and BOTH personal rows were
+                # silently empty on every install with a library. Use the same
+                # reader the library page uses -- including lang_folders, which
+                # this never handled at all.
+                for title in lib_iter_cached_titles(entry.get("data")):
                     lib_titles.append(title)
                     for skey, eps in (title.get("seasons") or {}).items():
                         for ep in eps:

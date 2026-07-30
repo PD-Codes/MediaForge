@@ -882,6 +882,166 @@
       </div>
     </div>
 
+    <!-- ══ OpenSubtitles.com (external subtitle lookup, quota-bound) ══ -->
+    <div class="settings-section integ-card collapsed" id="integCard-opensubtitles">
+      <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('opensubtitles')">
+        <span class="integ-collapsible-chevron">▸</span>
+        <span class="integ-subsection-title">OpenSubtitles</span>
+        <span class="integ-subsection-badge" style="background:#00a8e1;color:#fff;">API</span>
+        <span class="integ-subsection-badge" style="background:#ac7001;color:#fff;">{{ _('Quota') }}</span>
+      </div>
+      <div class="integ-collapsible-body">
+      <div class="integ-subsection-hint">
+        {{ _('Fetches subtitles from OpenSubtitles.com for languages the source itself does not offer, and muxes them into the finished file. Runs only after the hoster\'s own subtitle tracks came up empty, so nothing is downloaded twice. Needs a free API key (opensubtitles.com → Consumers) and an account login; both are stored encrypted. Free accounts have a small daily download limit.') }}
+      </div>
+
+      <!-- Master toggle -->
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Enable OpenSubtitles lookup') }}</div>
+          <div class="settings-row-desc">{{ _('Off by default: this contacts an external service with your account and spends its daily quota.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" id="osEnabled" onchange="saveOpenSubtitlesOptions()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Credentials -->
+      <div class="integ-input-row" id="osCredentialsRow">
+        <div class="settings-field">
+          <label class="settings-field-label" for="osApiKey">{{ _('API key') }}</label>
+          <input type="password" id="osApiKey" placeholder="{{ _('Stored encrypted') }}" autocomplete="off" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="osUsername">{{ _('Username') }}</label>
+          <input type="text" id="osUsername" placeholder="{{ _('OpenSubtitles account name') }}" autocomplete="off" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="osPassword">{{ _('Password') }}</label>
+          <input type="password" id="osPassword" placeholder="{{ _('Stored encrypted') }}" autocomplete="new-password" />
+        </div>
+        <button class="btn btn-primary" onclick="saveOpenSubtitlesSettings()">{{ _('Save') }}</button>
+        <button class="btn btn-secondary" id="osTestBtn" onclick="testOpenSubtitles(this)">{{ _('Test connection') }}</button>
+      </div>
+      <div class="settings-row-desc" id="osTestResult" style="display:none;margin-top:-6px;"></div>
+
+      <!-- Languages -->
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Subtitle languages') }}</div>
+          <div class="settings-row-desc">{{ _('Only these languages are looked up, and only when the download does not already contain them. Every language costs one download from your daily quota.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <div class="mf-multiselect" id="osLanguages" data-mf-multiselect
+               data-none-label="{{ _('No language') }}" data-many-label="{{ _('languages') }}">
+            <button type="button" class="mf-multiselect-trigger" aria-expanded="false" aria-haspopup="true">
+              <span class="mf-multiselect-label">{{ _('No language') }}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="mf-multiselect-dropdown">
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="de" /><span>{{ _('German') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="en" /><span>{{ _('English') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="fr" /><span>{{ _('French') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="es" /><span>{{ _('Spanish') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="it" /><span>{{ _('Italian') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="pt-BR" /><span>{{ _('Portuguese (Brazil)') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="pt-PT" /><span>{{ _('Portuguese') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="nl" /><span>{{ _('Dutch') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="pl" /><span>{{ _('Polish') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="ru" /><span>{{ _('Russian') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="tr" /><span>{{ _('Turkish') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="ar" /><span>{{ _('Arabic') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="ja" /><span>{{ _('Japanese') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="ko" /><span>{{ _('Korean') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="zh-CN" /><span>{{ _('Chinese (simplified)') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="cs" /><span>{{ _('Czech') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="da" /><span>{{ _('Danish') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="fi" /><span>{{ _('Finnish') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="sv" /><span>{{ _('Swedish') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="no" /><span>{{ _('Norwegian') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="el" /><span>{{ _('Greek') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="he" /><span>{{ _('Hebrew') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="hu" /><span>{{ _('Hungarian') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="ro" /><span>{{ _('Romanian') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="uk" /><span>{{ _('Ukrainian') }}</span>
+            </label>
+            <label class="mf-multiselect-item">
+              <input type="checkbox" class="chb-main" value="hi" /><span>{{ _('Hindi') }}</span>
+            </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hearing impaired -->
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Subtitles for the hearing impaired (SDH)') }}</div>
+          <div class="settings-row-desc">{{ _('SDH tracks also describe sounds and name the speaker. Excluded by default.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <select id="osHearingImpaired" onchange="saveOpenSubtitlesOptions()">
+            <option value="exclude">{{ _('Exclude') }}</option>
+            <option value="include">{{ _('Include') }}</option>
+            <option value="only">{{ _('Only SDH') }}</option>
+          </select>
+        </div>
+      </div>
+      </div>
+    </div>
+
     <!-- ══ Fernsehserien.de (unofficial scraper, provider pill) ══ -->
     <div class="settings-section integ-card collapsed" id="integCard-fernsehserien">
       <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('fernsehserien')">

@@ -1,0 +1,30 @@
+# German (de-DE) catalog for the Example Subtitle Source module.
+# msgids are the exact English source strings passed to register_thirdparty();
+# flask_babel.gettext looks them up at render time.
+msgid ""
+msgstr ""
+"Project-Id-Version: example_subtitle_source 1.0.0\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: de\n"
+
+msgid "Example Subtitle Source"
+msgstr "Beispiel-Untertitelquelle"
+
+msgid "Enable Example Subtitle Source"
+msgstr "Beispiel-Untertitelquelle aktivieren"
+
+msgid "Adds a demo external subtitle source to the download path."
+msgstr "Fügt dem Download-Pfad eine externe Demo-Untertitelquelle hinzu."
+
+msgid ""
+"Reference module demonstrating the subtitle source extension point: one demo "
+"source, asked in the last step of the subtitle chain and only for languages "
+"the file is still missing. Enabling it only writes a log line -- no external "
+"network calls, no subtitles."
+msgstr ""
+"Referenzmodul, das den Untertitelquellen-Erweiterungspunkt demonstriert: eine "
+"Demo-Quelle, die im letzten Schritt der Untertitel-Kette gefragt wird und nur "
+"nach Sprachen, die der Datei noch fehlen. Beim Aktivieren wird lediglich eine "
+"Logzeile geschrieben -- keine externen Netzwerkaufrufe, keine Untertitel."

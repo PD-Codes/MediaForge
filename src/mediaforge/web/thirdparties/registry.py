@@ -871,18 +871,22 @@ def unregister_module(name):
     # because a module that never called one of these leaves nothing to clean up.
     try:
         from ...home_feed import unregister_home_feed_source
+        from ...home_panels import unregister_home_panel
         from ...providers import unregister_provider
         from ...search import unregister_search_source
         from ...extractors import unregister_hoster
         from ...mirrors import unregister_site_mirrors
+        from ...subtitle_sources import unregister_subtitle_source
         from ..uptime_monitor import unregister_monitor_site
         from ..cineinfo.registry import unregister_cineinfo_owner
         for item_id in ids:
             unregister_provider(item_id)
             unregister_home_feed_source(item_id)
+            unregister_home_panel(item_id)
             unregister_search_source(item_id)
             unregister_hoster(item_id)
             unregister_site_mirrors(item_id)
+            unregister_subtitle_source(item_id)
             unregister_monitor_site(item_id)
             unregister_cineinfo_owner(item_id)
     except Exception:
@@ -963,8 +967,10 @@ def module_capabilities(name) -> list:
     providers = _count("...providers", "thirdparty_provider_ids")
     searches = _count("...search", "thirdparty_search_source_ids")
     feed_sources = _count("...home_feed", "thirdparty_home_feed_source_ids")
+    panels = _count("...home_panels", "thirdparty_home_panel_ids")
     hosters = _count("...extractors", "thirdparty_hoster_ids")
     mirrors = _count("...mirrors", "thirdparty_mirror_ids")
+    subtitle_sources = _count("...subtitle_sources", "thirdparty_subtitle_source_ids")
     monitors = _count("..uptime_monitor", "thirdparty_monitor_ids")
     cineinfo_sources = _count_cineinfo()
 
@@ -978,6 +984,8 @@ def module_capabilities(name) -> list:
         ("search_source", searches, True),
         ("cineinfo_source", cineinfo_sources, True),
         ("home_feed_source", feed_sources, False),
+        ("home_panel", panels, False),
+        ("subtitle_source", subtitle_sources, True),
         ("hoster", hosters, True),
         ("mirrors", mirrors, False),
         ("monitor", monitors, False),

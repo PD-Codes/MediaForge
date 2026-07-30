@@ -17,7 +17,6 @@ key's own consent toggle rather than stream.play_events'.
 """
 
 from ..db import get_setting
-from ..db import set_setting
 from flask import jsonify
 from flask import render_template
 from flask import request
@@ -59,9 +58,9 @@ def _sp_persist():
     """Save the current list of open SyncPlay room names to the settings DB
     so they can be reported/restored across restarts."""
     try:
-        import json as _json
         from .. import syncplay_rooms as _sp
-        set_setting("syncplay_rooms", _json.dumps(_sp.all_room_names()))
+        from ..db import set_json_setting
+        set_json_setting("syncplay_rooms", _sp.all_room_names())
     except Exception:
         pass
 

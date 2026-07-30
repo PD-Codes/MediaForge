@@ -111,6 +111,101 @@ def register_integrations_routes(app):
     def integrations_page():
         """Render the Integrations settings page. Route: GET /integrations."""
         return render_template("integrations.html")
+    @app.route("/api/settings/opensubtitles", methods=["GET"])
+    def api_settings_opensubtitles_get():
+        """Return the stored OpenSubtitles settings. Route: GET /api/settings/opensubtitles.
+
+        Secrets are never sent back — the UI only learns *whether* one is
+        stored, so a re-save without retyping does not wipe it.
+        """
+        return jsonify({
+            "enabled":          get_setting("opensubtitles_enabled", "0"),
+            "username":         get_setting("opensubtitles_username", ""),
+            "has_api_key":      bool(get_setting("opensubtitles_api_key", "")),
+            "has_password":     bool(get_setting("opensubtitles_password", "")),
+            "languages":        get_setting("opensubtitles_languages", "de,en"),
+            "hearing_impaired": get_setting("opensubtitles_hearing_impaired", "exclude"),
+        })
+
+    @app.route("/api/settings/opensubtitles", methods=["PUT"])
+    def api_settings_opensubtitles_put():
+        """Persist OpenSubtitles settings. Route: PUT /api/settings/opensubtitles.
+
+        Called from static/integrations.js's `saveOpenSubtitlesSettings()` and
+        `saveOpenSubtitlesOptions()`.
+        """
+        data = request.get_json(silent=True) or {}
+
+        for key in ("enabled", "username"):
+            if key in data:
+                set_setting("opensubtitles_" + key, str(data[key]))
+
+        if "languages" in data:
+            value = data["languages"]
+            if isinstance(value, (list, tuple)):
+                value = ",".join(str(v) for v in value)
+            # Normalised here rather than in the client so a hand-written API
+            # call cannot store something the download path has to guess at.
+            codes = [c.strip().lower() for c in str(value).replace(";", ",").split(",")]
+            codes = [c for c in codes if c and len(c) <= 5 and c.replace("-", "").isalnum()]
+            set_setting("opensubtitles_languages", ",".join(dict.fromkeys(codes)))
+
+        if "hearing_impaired" in data:
+            value = str(data["hearing_impaired"]).lower()
+            if value not in ("include", "exclude", "only"):
+                value = "exclude"
+            set_setting("opensubtitles_hearing_impaired", value)
+
+        # Secrets: only written when a non-empty, non-placeholder value arrives,
+        # so saving the form with the fields left blank keeps what is stored.
+        for field, key in (("api_key", "opensubtitles_api_key"),
+                           ("password", "opensubtitles_password")):
+            if data.get("clear_" + field):
+                set_setting(key, "")
+            elif field in data:
+                value = str(data[field] or "").strip()
+                if value and value != SECRET_PLACEHOLDER:
+                    set_setting(key, value)
+
+        # Credentials may have changed — drop the cached JWT so the next
+        # download logs in again instead of using a token for the old account.
+        try:
+            from ...models.common import opensubtitles as _os
+            _os.invalidate_session()
+        except Exception:
+            logger.debug("[OpenSubtitles] could not invalidate session", exc_info=True)
+
+        return jsonify({"ok": True})
+
+    @app.route("/api/settings/opensubtitles/test", methods=["POST"])
+    def api_settings_opensubtitles_test():
+        """Validate the OpenSubtitles API key and account.
+
+        Route: POST /api/settings/opensubtitles/test. Called from
+        static/integrations.js's `testOpenSubtitles()`. Falls back to the stored
+        values so the user can re-test without retyping a saved secret.
+        """
+        data = request.get_json(silent=True) or {}
+        api_key = str(data.get("api_key", "") or "").strip()
+        if not api_key or api_key == SECRET_PLACEHOLDER:
+            api_key = get_setting("opensubtitles_api_key", "") or ""
+        username = str(data.get("username", get_setting("opensubtitles_username", "")) or "").strip()
+        password = str(data.get("password", "") or "").strip()
+        if not password or password == SECRET_PLACEHOLDER:
+            password = get_setting("opensubtitles_password", "") or ""
+        try:
+            from ...models.common import opensubtitles as _os
+            result = _os.test_connection(api_key, username, password)
+            if result.get("ok"):
+                _report_integration_used("flag.integrations.opensubtitles")
+            else:
+                _report_integration_error("opensubtitles", reason=result.get("error"))
+        except Exception as exc:
+            logger.debug("[OpenSubtitles] test endpoint error: %s", exc)
+            result = {"ok": False, "error": "unknown", "detail": str(exc)}
+            _report_integration_error("opensubtitles", error_type=type(exc).__name__)
+        return jsonify(result)
+
     @app.route("/api/settings/crunchyroll", methods=["GET"])
     def api_settings_crunchyroll_get():
         """Return the stored Crunchyroll settings. Route: GET /api/settings/crunchyroll."""

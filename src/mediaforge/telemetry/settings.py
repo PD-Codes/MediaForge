@@ -24,13 +24,12 @@ Keys used (all under the app_settings table):
                                      means nothing is enabled.
 """
 
-import json
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
 
-from ..web.db import get_setting, set_setting
+from ..web.db import get_json_setting, get_setting, set_json_setting, set_setting
 
 # Stage 1 default the first-run consent dialog grants on "Ja, Absturzberichte
 # senden" (TELEMETRY_PLAN.md §4.0) -- install_id is always-on/no-toggle (see
@@ -90,14 +89,12 @@ def _read_state():
     else:
         consent = raw_consent == "1"
 
-    raw_keys = get_setting("telemetry_enabled_keys")
-    keys = frozenset()
-    if raw_keys:
-        try:
-            parsed = json.loads(raw_keys)
-            keys = frozenset(k for k in parsed if isinstance(k, str))
-        except (ValueError, TypeError):
-            keys = frozenset()
+    # get_json_setting() already turns a missing/corrupt/wrong-shaped value into
+    # the [] default, so a broken row means "nothing enabled" -- which is the
+    # safe direction for telemetry -- instead of raising in here.
+    keys = frozenset(
+        k for k in get_json_setting("telemetry_enabled_keys", []) if isinstance(k, str)
+    )
 
     with _cache_lock:
         _cache_consent = consent
@@ -167,7 +164,7 @@ def set_enabled_keys(keys):
     """Overwrite the full set of enabled data_keys (not additive -- the
     Settings page always sends the complete desired end state after the
     confirmation dialog, TELEMETRY_IMPLEMENTATION_PLAN.md §3.7)."""
-    set_setting("telemetry_enabled_keys", json.dumps(sorted(set(keys))))
+    set_json_setting("telemetry_enabled_keys", sorted(set(keys)))
     _invalidate_cache()
 
 

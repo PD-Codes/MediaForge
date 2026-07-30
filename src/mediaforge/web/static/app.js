@@ -177,9 +177,18 @@ function _reEnrichPendingCards() {
       cineinfoSettings.show_hover_rating !== '1' &&
       cineinfoSettings.show_hover_genres !== '1' &&
       cineinfoSettings.show_hover_fsk !== '1') return;
+  // Cards that already have their payload only need to be redrawn -- that is
+  // free, and it is what makes a card enriched before the settings arrived
+  // pick up its hover drawer without a second round-trip.
+  document.querySelectorAll('.browse-card').forEach(card => {
+    if (card._mfTmdb) _applyTmdbToCard(card, card._mfTmdb);
+  });
   document.querySelectorAll('[data-tmdb-title]').forEach(card => {
-    const info = card.querySelector('.browse-info');
-    if (info && info.querySelector('.browse-tmdb-meta')) return;
+    if (card._mfTmdb) return;                      // already answered
+    // Pills present but no drawer is exactly the state this pass exists for,
+    // so .browse-tmdb-meta is no longer a reason to skip the card; the queue's
+    // own dataset.tmdbQueued guard stops duplicate requests instead.
+    if (card.dataset.tmdbQueued === "1" && _tmdbPending.size) return;
     const title = card.dataset.tmdbTitle;
     if (title) _queueTmdbEnrich(card, title); // use batched path
   });
@@ -197,7 +206,19 @@ let _tmdbBatchTimer = null;
 async function _flushTmdbBatch() {
   _tmdbBatchTimer = null;
   if (!_tmdbPending.size) return;
-  if (!cineinfoSettings || !cineinfoSettings.tmdb_api_key) return;
+  if (!cineinfoSettings) {
+    // Settings still in flight: the queue is deliberately NOT cleared, so the
+    // cards keep their place in it -- come back when we know whether there is
+    // a key at all.
+    loadGeneralSettings().then(() => {
+      if (cineinfoSettings && cineinfoSettings.tmdb_api_key && _tmdbPending.size) {
+        clearTimeout(_tmdbBatchTimer);
+        _tmdbBatchTimer = setTimeout(_flushTmdbBatch, 0);
+      }
+    });
+    return;
+  }
+  if (!cineinfoSettings.tmdb_api_key) return;
   const batch = [..._tmdbPending.entries()];
   _tmdbPending.clear();
   const titles = batch.map(([t]) => t);
@@ -237,7 +258,12 @@ const _tmdbObserver = ('IntersectionObserver' in window)
       const title = card.dataset.tmdbTitle;
       if (title) {
         _tmdbObserver.unobserve(card);
-        delete card.dataset.tmdbTitle;
+        // The title stays on the card on purpose. It used to be deleted here,
+        // which meant a batch that never completed (settings still loading, a
+        // failed request) left the card invisible to _reEnrichPendingCards --
+        // the one thing that could have rescued it. dataset.tmdbQueued keeps
+        // the queue from asking twice.
+        card.dataset.tmdbQueued = "1";
         _queueTmdbEnrich(card, title);
       }
     });
@@ -245,7 +271,15 @@ const _tmdbObserver = ('IntersectionObserver' in window)
   : null;
 
 function enrichCardWithTmdb(card, title) {
-  if (!cineinfoSettings || !cineinfoSettings.tmdb_api_key) {
+  // Not "no key" but "we do not know yet": search results render before
+  // /api/settings answers, and taking the Crunchyroll-only branch here was
+  // permanent -- the card never got a data-tmdb-title, so even the re-enrich
+  // pass could not find it again.
+  if (!cineinfoSettings) {
+    loadGeneralSettings().then(() => enrichCardWithTmdb(card, title));
+    return;
+  }
+  if (!cineinfoSettings.tmdb_api_key) {
     // No TMDB: the TMDB pipeline never runs, but the Crunchyroll pill doesn't
     // need TMDB — trigger it on its own (lazy) path.
     _crEnrichCard(card, title);
@@ -331,8 +365,43 @@ async function loadAutoSyncJobs() {
 }
 
 
+// ── Modal description: clamped to three lines with a toggle ──────────────
+// The paragraph used to be a scroll box (max-height + overflow-y), which put a
+// second scroll context inside the modal and swallowed the wheel. Both labels
+// of the toggle live in the template, so nothing here needs a translated
+// string, and the button only appears when the text is really cut off.
+function mfToggleDesc() {
+  const desc = document.getElementById("modalDesc");
+  const btn = document.getElementById("modalDescMore");
+  if (!desc || !btn) return;
+  const open = desc.classList.toggle("expanded");
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function mfSyncDescClamp() {
+  const desc = document.getElementById("modalDesc");
+  const btn = document.getElementById("modalDescMore");
+  if (!desc || !btn) return;
+  desc.classList.remove("expanded");
+  btn.setAttribute("aria-expanded", "false");
+  // Measure after layout: called straight after textContent is set, the
+  // element still reports the previous entry's height.
+  requestAnimationFrame(() => {
+    btn.style.display = (desc.scrollHeight > desc.clientHeight + 1) ? "" : "none";
+  });
+}
+
 // Custom paths select
 const customPathSelect = document.getElementById("customPathSelect");
+
+// The select sits in a labelled field now (shared_modals.html), so hiding the
+// select alone would leave its "Target folder" label behind on every install
+// without custom paths. Falls back to the select for any other markup.
+function _customPathFieldDisplay(value) {
+  if (!customPathSelect) return;
+  const field = customPathSelect.closest(".mf-fld") || customPathSelect;
+  field.style.display = value;
+}
 
 async function loadCustomPaths() {
   if (!customPathSelect) return;
@@ -356,9 +425,9 @@ async function loadCustomPaths() {
         if (!defaultForSite && sites.includes(siteKey)) defaultForSite = String(p.id);
       });
       customPathSelect.value = defaultForSite;
-      customPathSelect.style.display = "";
+      _customPathFieldDisplay("");
     } else {
-      customPathSelect.style.display = "none";
+      _customPathFieldDisplay("none");
     }
   } catch (e) {
     /* best-effort */
@@ -982,6 +1051,16 @@ function refreshSyncBadges() {
 
 // Apply already-fetched TMDB data to a browse card synchronously (no network)
 function _applyTmdbToCard(card, d) {
+  // Every branch below reads cineinfoSettings; called before /api/settings
+  // answered, the card silently ended up with no pills and no hover drawer and
+  // nothing ever retried it. Re-run once the settings are in.
+  if (!cineinfoSettings) {
+    loadGeneralSettings().then(() => _applyTmdbToCard(card, d));
+    return;
+  }
+  // Keep the payload on the card so a settings change (or a later re-enrich
+  // pass) can redraw from memory instead of asking TMDB again.
+  if (d) card._mfTmdb = d;
   if (!d || !d.found) {
     // No TMDB data at all — the chain still runs (Crunchyroll, Fernsehserien,
     // module pills can all still know this title).
@@ -1203,10 +1282,14 @@ function renderBrowseCards(grid, items, opts) {
     }
     // If TMDB data came pre-loaded from the server cache → apply instantly (no fetch)
     if (item.tmdb) {
-      if (item.tmdb.found) {
-        // Defer one tick so cineinfoSettings is guaranteed loaded when aniworld tab is first
-        setTimeout(() => _applyTmdbToCard(card, item.tmdb), 0);
-      }
+      // Wait for the settings instead of deferring one tick and hoping: a tick
+      // is not enough while /api/settings is still in flight, and every path
+      // inside _applyTmdbToCard reads cineinfoSettings. Resolved settings make
+      // this a microtask, so nothing is slower in the common case.
+      // `found: false` is passed through on purpose -- the provider chain
+      // (Crunchyroll, Fernsehserien, module pills) still has something to say
+      // about a title TMDB does not know, and used to be skipped entirely.
+      loadGeneralSettings().then(() => _applyTmdbToCard(card, item.tmdb));
     } else {
       // Fall back to lazy loading via IntersectionObserver
       enrichCardWithTmdb(card, item.title);
@@ -1215,18 +1298,63 @@ function renderBrowseCards(grid, items, opts) {
 }
 
 function renderBrowseHoverCards(card, tmdb_voting, tmdb_genres, tmdb_fsk) {
-  if (card.querySelector(".browse-hover-overlay")) return;
+  // The drawer used to be built exactly once ("if it exists, return"), which
+  // made it a snapshot of whatever was known at first paint. CineInfo enriches
+  // LATER (batched /api/tmdb/batch after the IntersectionObserver fires), so
+  // on a cold TMDB cache the first call had nothing to show, bailed at the
+  // "no data" guard below -- and the second call, with the real data, was
+  // blocked by that early return. The only way to see the drawer was a reload,
+  // by which time the server cache answered inline. It now UPDATES.
+  //
+  // Data is merged, not replaced: several paths call this for the same card
+  // (provider chain, re-enrich after settings arrive) and some of them only
+  // know part of it. A later call without a rating must not throw away a
+  // rating that is already on screen.
+  const prev = card._mfHoverData || {};
+  const data = {
+    rating: (tmdb_voting !== undefined && tmdb_voting !== null && tmdb_voting !== "")
+      ? tmdb_voting : prev.rating,
+    genres: (tmdb_genres && tmdb_genres.length) ? tmdb_genres : prev.genres,
+    fsk: (tmdb_fsk !== undefined && tmdb_fsk !== null && tmdb_fsk !== "")
+      ? tmdb_fsk : prev.fsk,
+  };
+  card._mfHoverData = data;
+  tmdb_voting = data.rating;
+  tmdb_genres = data.genres;
+  tmdb_fsk = data.fsk;
 
-  const showRating = cineinfoSettings && cineinfoSettings.show_hover_rating === "1";
-  const showGenres = cineinfoSettings && cineinfoSettings.show_hover_genres === "1";
-  const showFSK = cineinfoSettings && cineinfoSettings.show_hover_fsk === "1";
+  // "Not loaded yet" is not "switched off". The hanime branch of
+  // renderBrowseCards() calls this synchronously, before /api/settings has
+  // answered -- treating that as "all three off" would delete a drawer that is
+  // about to be correct. Come back when we actually know.
+  if (!cineinfoSettings) {
+    loadGeneralSettings().then(() =>
+      renderBrowseHoverCards(card, tmdb_voting, tmdb_genres, tmdb_fsk));
+    return;
+  }
 
-  if (!showRating && !showGenres && !showFSK) return;
+  const showRating = cineinfoSettings.show_hover_rating === "1";
+  const showGenres = cineinfoSettings.show_hover_genres === "1";
+  const showFSK = cineinfoSettings.show_hover_fsk === "1";
 
+  // Nothing switched on in Settings -> CineInfo: no drawer at all, and an
+  // existing one goes away. The three hover switches are the gate for this
+  // whole feature -- it must never render "specially" because data happens to
+  // be there while the user has the option off.
+  if (!showRating && !showGenres && !showFSK) {
+    const stale = card.querySelector(".browse-hover-overlay");
+    if (stale) stale.remove();
+    return;
+  }
+
+  // Colour, size and shape all live in cards.css (.browse-hover-pill and
+  // friends) instead of inline styles: the drawer these pills sit in is a
+  // shared component that third-party modules render too, and inline styles
+  // can neither be themed nor overridden by them.
   let votingHtml = "";
   if (showRating && tmdb_voting) {
     const formattedVote = parseFloat(tmdb_voting).toFixed(1);
-    votingHtml = `<span style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 700; padding: 2px 8px 2px 6px; border-radius: 99px; border: 1px solid rgba(74, 222, 128, 0.4); background: rgba(0, 0, 0, 0.6); color: rgb(74, 222, 128); white-space: nowrap; cursor: default; letter-spacing: 0.01em; flex-shrink: 0; vertical-align: middle;"><svg width="10" height="10" viewBox="0 0 24 24" fill="#4ade80" style="flex-shrink:0"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>${formattedVote}</span>`;
+    votingHtml = `<span class="browse-hover-pill browse-hover-pill--rating"><svg width="10" height="10" viewBox="0 0 24 24" fill="#4ade80" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>${esc(formattedVote)}</span>`;
   }
 
   let genresHtml = "";
@@ -1237,28 +1365,47 @@ function renderBrowseHoverCards(card, tmdb_voting, tmdb_genres, tmdb_fsk) {
 
   let fskHtml = "";
   if (showFSK && tmdb_fsk) {
-    const _fskPalette = {
-      0: { bg: 'rgba(255,255,255,.07)', bc: 'rgba(255,255,255,.3)', c: '#d1d5db' },
-      6: { bg: 'rgba(234,179,8,.12)', bc: 'rgba(234,179,8,.55)', c: '#fbbf24' },
-      12: { bg: 'rgba(34,197,94,.12)', bc: 'rgba(34,197,94,.5)', c: '#4ade80' },
-      16: { bg: 'rgba(59,130,246,.12)', bc: 'rgba(59,130,246,.5)', c: '#60a5fa' },
-      18: { bg: 'rgba(239,68,68,.12)', bc: 'rgba(239,68,68,.5)', c: '#f87171' },
-    };
-    const fp = _fskPalette[tmdb_fsk] || { bg: 'rgba(148,163,184,.1)', bc: 'rgba(148,163,184,.35)', c: '#94a3b8' };
-    fskHtml = `<span style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 700; padding: 2px 8px 2px 6px; border-radius: 99px; border: 1px solid ${fp.bc}; background: ${fp.bg}; color: ${fp.c}; white-space: nowrap; cursor: default; letter-spacing: 0.01em; flex-shrink: 0; vertical-align: middle;">FSK ${tmdb_fsk}</span>`;
+    // Whitelist rather than interpolation: tmdb_fsk comes from an API
+    // response and ends up inside a class attribute — anything unexpected
+    // falls back to the neutral pill instead of reaching the markup.
+    const _fskSteps = [0, 6, 12, 16, 18];
+    const _step = Number(tmdb_fsk);
+    const fskCls = _fskSteps.indexOf(_step) !== -1 ? ` browse-fsk-${_step}` : "";
+    fskHtml = `<span class="browse-hover-pill browse-hover-pill--fsk${fskCls}">FSK ${esc(tmdb_fsk)}</span>`;
   }
 
+  // Still nothing to say (enrichment has not answered yet): leave whatever is
+  // on the card alone and wait for the next call -- which now happens, because
+  // this function no longer refuses to run twice.
   if (!votingHtml && !genresHtml && !fskHtml) return;
 
-  const overlay = document.createElement("div");
+  const inner = fskHtml + votingHtml + genresHtml;
+  let overlay = card.querySelector(".browse-hover-overlay");
+  if (overlay) {
+    const content = overlay.querySelector(".browse-hover-content");
+    // Signature check: an update while the pointer is inside the card would
+    // otherwise rebuild the drawer's DOM on every poll and make it flicker
+    // mid-transition. Same markup in, nothing touched.
+    if (content && content.dataset.mfSig !== inner) {
+      content.dataset.mfSig = inner;
+      content.innerHTML = inner;
+    }
+    return;
+  }
+
+  overlay = document.createElement("div");
   overlay.className = "browse-hover-overlay";
+  // The drawer element itself is created once and only its contents change
+  // afterwards, so the CSS transition in cards.css never restarts.
   overlay.innerHTML = `
-    <div class="browse-hover-content">
+    <div class="browse-hover-content" data-mf-sig="${esc(inner)}">
       ${fskHtml}
       ${votingHtml}
       ${genresHtml}
     </div>
   `;
+  const content = overlay.querySelector(".browse-hover-content");
+  if (content) content.dataset.mfSig = inner;
   card.appendChild(overlay);
 }
 
@@ -1718,6 +1865,7 @@ async function openSeries(url) {
     document.getElementById("modalGenres").textContent = "";
     document.getElementById("modalYear").textContent = "";
     document.getElementById("modalDesc").textContent = "";
+    mfSyncDescClamp();
   }
   const _tp = document.getElementById("tmdbProviders");
   if (_tp) { _tp.innerHTML = ""; _tp.style.display = "none"; }
@@ -1791,6 +1939,7 @@ async function openSeries(url) {
       seriesData.release_year || "";
     document.getElementById("modalDesc").textContent =
       seriesData.description || "";
+    mfSyncDescClamp();
 
     if (modalMeta) modalMeta.classList.add('loaded');
 

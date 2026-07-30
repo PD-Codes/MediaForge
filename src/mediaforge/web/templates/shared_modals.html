@@ -119,12 +119,28 @@
       </div>
       <div class="modal-meta">
         <h2 id="modalTitle"></h2>
+        {# The year moved above the genre chips: it is the one fact that is
+           always there, so it anchors the block whether or not CineInfo has
+           anything to add. Empty (no release year) it collapses on its own. #}
+        <div class="year" id="modalYear"></div>
         <div id="tmdbProviders" class="tmdb-providers"></div>
         <div class="genres" id="modalGenres"></div>
-        <div class="year" id="modalYear"></div>
         <div class="desc" id="modalDesc"></div>
+        {# Clamped to three lines with a toggle. Hidden by default and only
+           shown by mfSyncDescClamp() when the text is actually cut off --
+           a "show more" under two lines of text is noise. #}
+        <button type="button" class="desc-more" id="modalDescMore" aria-expanded="false"
+                aria-controls="modalDesc" onclick="mfToggleDesc()" style="display:none">
+          <span class="dm-more">{{ _('Show more') }}</span>
+          <span class="dm-less">{{ _('Show less') }}</span>
+        </button>
       </div>
     </div>
+    {# Trailer and recommendations sit next to each other on a wide screen and
+       stack below 640px. Both are optional (Settings -> CineInfo), and because
+       this is a flex row with a basis rather than a two-column grid, one of
+       them switched off leaves no empty column behind. #}
+    <div class="modal-extras" id="modalExtras">
     <!-- Trailer  -->
     <div id="trailerSection" class="season-section" style="display:none">
       <div class="season-header trailer-header"
@@ -179,7 +195,14 @@
       </div>
     </div>
     <!-- End Recommendations -->
-    <div class="controls">
+    </div>
+    {# Labelled fields instead of three bare dropdowns: "Standard" said nothing
+       about WHAT was standard. Same three selects, same ids, same handlers --
+       only the label and the box around them are new. The target-folder field
+       is hidden by loadCustomPaths() when the instance has no custom paths. #}
+    <div class="controls mf-ctrls">
+      <div class="mf-fld">
+        <label class="mf-fld-label" for="languageSelect">{{ _('Language') }}</label>
       <select id="languageSelect">
         {% if lang_labels is defined %}
         {% for key, label in lang_labels.items() %}
@@ -187,6 +210,9 @@
         {% endfor %}
         {% endif %}
       </select>
+      </div>
+      <div class="mf-fld">
+        <label class="mf-fld-label" for="providerSelect">{{ _('Hoster') }}</label>
       <select id="providerSelect">
         {% if supported_providers is defined %}
         {% for p in supported_providers %}
@@ -194,9 +220,13 @@
         {% endfor %}
         {% endif %}
       </select>
-      <select id="customPathSelect" style="display: none">
-        <option value="">{{ _('Default') }}</option>
-      </select>
+      </div>
+      <div class="mf-fld" id="customPathField" style="display:none">
+        <label class="mf-fld-label" for="customPathSelect">{{ _('Target folder') }}</label>
+        <select id="customPathSelect">
+          <option value="">{{ _('Default') }}</option>
+        </select>
+      </div>
     </div>
     <script>
       window.ANIWORLD_LANGS = {% if lang_labels is defined %}{{ lang_labels | tojson }}{% else %}{}{% endif %};

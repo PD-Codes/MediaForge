@@ -6252,3 +6252,287 @@ msgstr "Lesezeichen"
 
 msgid "Chapters"
 msgstr "Kapitel"
+
+#: templates/extensions.html
+msgid "subtitle source"
+msgstr "Untertitel-Quelle"
+
+#: templates/integrations.html
+msgid "Quota"
+msgstr "Kontingent"
+
+#: templates/integrations.html
+msgid "Fetches subtitles from OpenSubtitles.com for languages the source itself does not offer, and muxes them into the finished file. Runs only after the hoster's own subtitle tracks came up empty, so nothing is downloaded twice. Needs a free API key (opensubtitles.com → Consumers) and an account login; both are stored encrypted. Free accounts have a small daily download limit."
+msgstr "Holt Untertitel von OpenSubtitles.com für Sprachen, die die Quelle selbst nicht anbietet, und mixt sie in die fertige Datei. Läuft erst, wenn die Untertitelspuren des Hosters nichts ergeben haben — es wird also nichts doppelt geladen. Benötigt einen kostenlosen API-Key (opensubtitles.com → Consumers) und einen Account-Login; beides wird verschlüsselt gespeichert. Kostenlose Accounts haben ein kleines Tageslimit."
+
+#: templates/integrations.html
+msgid "Enable OpenSubtitles lookup"
+msgstr "OpenSubtitles-Suche aktivieren"
+
+#: templates/integrations.html
+msgid "Off by default: this contacts an external service with your account and spends its daily quota."
+msgstr "Standardmäßig aus: Das kontaktiert einen externen Dienst mit deinem Account und verbraucht dessen Tageskontingent."
+
+#: templates/integrations.html
+msgid "API key"
+msgstr "API-Key"
+
+#: templates/integrations.html
+msgid "OpenSubtitles account name"
+msgstr "OpenSubtitles-Benutzername"
+
+#: templates/integrations.html
+msgid "Subtitle languages"
+msgstr "Untertitel-Sprachen"
+
+#: templates/integrations.html
+msgid "Only these languages are looked up, and only when the download does not already contain them. Every language costs one download from your daily quota."
+msgstr "Nur diese Sprachen werden gesucht, und nur wenn der Download sie nicht ohnehin schon enthält. Jede Sprache kostet einen Download aus deinem Tageskontingent."
+
+#: templates/integrations.html
+msgid "No language"
+msgstr "Keine Sprache"
+
+#: templates/integrations.html
+msgid "languages"
+msgstr "Sprachen"
+
+#: templates/integrations.html
+msgid "German"
+msgstr "Deutsch"
+
+#: templates/integrations.html
+msgid "English"
+msgstr "Englisch"
+
+#: templates/integrations.html
+msgid "French"
+msgstr "Französisch"
+
+#: templates/integrations.html
+msgid "Spanish"
+msgstr "Spanisch"
+
+#: templates/integrations.html
+msgid "Italian"
+msgstr "Italienisch"
+
+#: templates/integrations.html
+msgid "Portuguese (Brazil)"
+msgstr "Portugiesisch (Brasilien)"
+
+#: templates/integrations.html
+msgid "Portuguese"
+msgstr "Portugiesisch"
+
+#: templates/integrations.html
+msgid "Dutch"
+msgstr "Niederländisch"
+
+#: templates/integrations.html
+msgid "Polish"
+msgstr "Polnisch"
+
+#: templates/integrations.html
+msgid "Russian"
+msgstr "Russisch"
+
+#: templates/integrations.html
+msgid "Turkish"
+msgstr "Türkisch"
+
+#: templates/integrations.html
+msgid "Arabic"
+msgstr "Arabisch"
+
+#: templates/integrations.html
+msgid "Japanese"
+msgstr "Japanisch"
+
+#: templates/integrations.html
+msgid "Korean"
+msgstr "Koreanisch"
+
+#: templates/integrations.html
+msgid "Chinese (simplified)"
+msgstr "Chinesisch (vereinfacht)"
+
+#: templates/integrations.html
+msgid "Czech"
+msgstr "Tschechisch"
+
+#: templates/integrations.html
+msgid "Danish"
+msgstr "Dänisch"
+
+#: templates/integrations.html
+msgid "Finnish"
+msgstr "Finnisch"
+
+#: templates/integrations.html
+msgid "Swedish"
+msgstr "Schwedisch"
+
+#: templates/integrations.html
+msgid "Norwegian"
+msgstr "Norwegisch"
+
+#: templates/integrations.html
+msgid "Greek"
+msgstr "Griechisch"
+
+#: templates/integrations.html
+msgid "Hebrew"
+msgstr "Hebräisch"
+
+#: templates/integrations.html
+msgid "Hungarian"
+msgstr "Ungarisch"
+
+#: templates/integrations.html
+msgid "Romanian"
+msgstr "Rumänisch"
+
+#: templates/integrations.html
+msgid "Ukrainian"
+msgstr "Ukrainisch"
+
+#: templates/integrations.html
+msgid "Hindi"
+msgstr "Hindi"
+
+#: templates/integrations.html
+msgid "Subtitles for the hearing impaired (SDH)"
+msgstr "Untertitel für Hörgeschädigte (SDH)"
+
+#: templates/integrations.html
+msgid "SDH tracks also describe sounds and name the speaker. Excluded by default."
+msgstr "SDH-Spuren beschreiben zusätzlich Geräusche und nennen den Sprecher. Standardmäßig ausgeschlossen."
+
+#: templates/integrations.html
+msgid "Exclude"
+msgstr "Ausschließen"
+
+#: templates/integrations.html
+msgid "Include"
+msgstr "Einschließen"
+
+#: templates/integrations.html
+msgid "Only SDH"
+msgstr "Nur SDH"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Instance overview"
+msgstr "Übersicht der Instanz"
+
+#: src/mediaforge/web/templates/index.html
+msgid "This panel is not available right now."
+msgstr "Dieses Feld ist gerade nicht verfügbar."
+
+#: src/mediaforge/web/templates/index.html
+msgid "This panel could not be loaded."
+msgstr "Dieses Feld konnte nicht geladen werden."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing to show here."
+msgstr "Hier gibt es nichts zu zeigen."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Activity"
+msgstr "Aktivität"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Waiting"
+msgstr "Wartet"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Titles"
+msgstr "Titel"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Fullest volume"
+msgstr "Vollster Datenträger"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the queue"
+msgstr "Zur Warteschlange"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the history"
+msgstr "Zum Verlauf"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the library"
+msgstr "Zur Bibliothek"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the settings"
+msgstr "Zu den Einstellungen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing is downloading right now."
+msgstr "Gerade wird nichts heruntergeladen."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing has been downloaded yet."
+msgstr "Es wurde noch nichts heruntergeladen."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Your library is still empty."
+msgstr "Deine Bibliothek ist noch leer."
+
+#: src/mediaforge/web/templates/index.html
+msgid "No download path could be read."
+msgstr "Es konnte kein Download-Pfad gelesen werden."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing needs your attention."
+msgstr "Nichts braucht deine Aufmerksamkeit."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Download failed"
+msgstr "Download fehlgeschlagen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Episode {} of {}"
+msgstr "Folge {} von {}"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} of {} used"
+msgstr "{} von {} belegt"
+
+#: src/mediaforge/web/templates/index.html
+msgid "just now"
+msgstr "gerade eben"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} min ago"
+msgstr "vor {} Min."
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} h ago"
+msgstr "vor {} Std."
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} d ago"
+msgstr "vor {} Tagen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "home page panel"
+msgstr "Startseiten-Feld"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Show more"
+msgstr "Mehr anzeigen"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Show less"
+msgstr "Weniger anzeigen"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Hoster"
+msgstr "Hoster"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Target folder"
+msgstr "Zielordner"

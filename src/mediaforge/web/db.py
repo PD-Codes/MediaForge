@@ -16,6 +16,7 @@ WAL mode are handled. Tables are created and migrated lazily by the
 """
 
 import datetime as _dt
+import json
 import os
 import re
 import sqlite3
@@ -112,6 +113,8 @@ SENSITIVE_KEYS: frozenset = frozenset({
     "crunchyroll_email",
     "crunchyroll_password",
     "crunchyroll_session_key",
+    "opensubtitles_api_key",
+    "opensubtitles_password",
 })
 
 # Sensitive keys registered at runtime on top of the frozen core set above --
@@ -3255,6 +3258,60 @@ def set_setting(key: str, value: str) -> None:
     finally:
         conn.close()
     _notify_setting_listeners(key, value)
+
+
+# ---------------------------------------------------------------------------
+# JSON-valued settings
+# ---------------------------------------------------------------------------
+#
+# app_settings stores plain strings, so anything list- or dict-shaped has so far
+# been hand-encoded at the call site: json.dumps() on save, json.loads() on read,
+# each with its own (or no) try/except. A single corrupted value -- a half-written
+# row, a hand-edited DB, a value written by an older version with a different
+# shape -- therefore took down whatever read it, which is exactly the kind of
+# failure a settings read must not have. These two helpers are the supported way
+# for core *and* modules to keep a list/dict in a setting.
+
+
+def get_json_setting(key: str, default=None):
+    """Read a JSON-encoded setting, returning *default* on any problem.
+
+    "Any problem" means: key missing, value empty, value not valid JSON, or the
+    decoded value having a different container type than *default* (a caller
+    that passes ``[]`` and gets a dict back would break one line later). A copy
+    of *default* is returned, never the object itself, so a caller that mutates
+    the result cannot poison the next caller's default.
+
+    Never raises -- a broken value is logged once per read and treated as unset.
+    """
+    raw = get_setting(key)
+    if raw is None or str(raw).strip() == "":
+        return json.loads(json.dumps(default)) if default is not None else default
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Setting %s does not contain valid JSON — falling back to the default", key
+        )
+        return json.loads(json.dumps(default)) if default is not None else default
+    if default is not None and not isinstance(parsed, type(default)):
+        logger.warning(
+            "Setting %s holds %s, expected %s — falling back to the default",
+            key, type(parsed).__name__, type(default).__name__,
+        )
+        return json.loads(json.dumps(default))
+    return parsed
+
+
+def set_json_setting(key: str, value) -> None:
+    """Store *value* (list/dict/scalar) as JSON under *key*.
+
+    ``ensure_ascii=False`` keeps umlauts and non-Latin titles readable in the DB
+    instead of turning them into \\uXXXX escapes. Anything not JSON-serialisable
+    raises TypeError here, at the write, rather than silently landing in the DB
+    as a repr that the matching read cannot parse.
+    """
+    set_setting(key, json.dumps(value, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------------------
