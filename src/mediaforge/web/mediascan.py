@@ -16,8 +16,11 @@ endpoints backed by ``_run_mediascan`` / ``_mediascan_status``.
 detail.library_scan (scan duration, entry count, errors) is wired at the
 end of ``_run_mediascan()``. detail.integrations (media-server connection
 errors) is wired in ``_trigger_mediaplayer_refresh()``'s except block.
-flag.library_scan (pure usage counter) is intentionally NOT wired -- out of
-scope for now, see telemetry/registry.py.
+flag.library_scan (pure usage counter) fires once per scan run that actually
+starts -- a duplicate request that hits the "already running" guard is not a
+second use. flag.integrations.mediascan fires only when a Jellyfin/Plex
+refresh call was really made, not when it was skipped for missing
+credentials. See telemetry/registry.py.
 """
 
 import threading
@@ -280,6 +283,35 @@ def _report_library_scan(source, *, status, duration=None, count=None, error_typ
         logger.debug("[Telemetry] failed to build/submit detail.library_scan event", exc_info=True)
 
 
+def _report_library_scan_started():
+    """Submit the flag.library_scan stage-2 usage counter for one scan run.
+
+    A pure counter -- build_feature_flag_event() takes no metadata at all, the
+    source/duration/count context belongs to detail.library_scan above.
+    Wrapped in its own try/except so a telemetry bug can never affect a scan.
+    """
+    try:
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.library_scan"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.library_scan event", exc_info=True)
+
+
+def _report_mediaplayer_refresh_used():
+    """Submit the flag.integrations.mediascan stage-2 usage counter for one
+    media-server library refresh that was actually sent (see registry.py:
+    "Nur, dass die MediaScan (Jellyfin/Plex-Abgleich)-Integration aktiv
+    verbunden ist"). Not sent when the refresh was skipped for missing
+    credentials -- that is not a use of the integration. Wrapped in its own
+    try/except so a telemetry bug can never affect the refresh call itself.
+    """
+    try:
+        telemetry_client.submit(
+            telemetry_events.build_feature_flag_event("flag.integrations.mediascan"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.integrations.mediascan event",
+                     exc_info=True)
+
+
 def _report_mediaplayer_error(svc, exc):
     """Submit a detail.integrations telemetry event for a failed Jellyfin/Plex
     library-refresh call (see registry.py's "detail.integrations"). Only the
@@ -328,6 +360,11 @@ def _run_mediascan(source: str | None = None) -> None:
             "error":       None,
             "source":      source,
         })
+
+    # Telemetry: stage-2 usage counter -- one event per run that actually
+    # starts, placed after the "already running" guard above so a duplicate
+    # request does not count as a second scan.
+    _report_library_scan_started()
 
     try:
         logger.info("[MediaScan] Starting library fetch from %s", source)
@@ -461,6 +498,7 @@ def _trigger_mediaplayer_refresh(title: str | None = None, selected_path: str | 
             )
             _urllib_req.urlopen(req, timeout=10)
             logger.info("Jellyfin library refresh triggered")
+            _report_mediaplayer_refresh_used()
 
         elif svc == "plex":
             # Plex: refresh the specific section or the whole library
@@ -473,6 +511,7 @@ def _trigger_mediaplayer_refresh(title: str | None = None, selected_path: str | 
             req = _urllib_req.Request(req_url, method="GET")
             _urllib_req.urlopen(req, timeout=10)
             logger.info("Plex library refresh triggered (section=%s)", section or "all")
+            _report_mediaplayer_refresh_used()
 
     except Exception as exc:
         logger.warning("Media-player refresh failed: %s", exc)

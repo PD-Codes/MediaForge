@@ -1,10 +1,15 @@
 """
 Self-update support for **pip** and **pipx** installations.
 
-detail.self_update (success/failure of an update run) is wired at
-finalize_after_restart() -- see _report_self_update() below. flag.self_update
-(pure usage counter) is intentionally NOT wired -- out of scope for now, see
-telemetry/registry.py.
+Both self-update telemetry events are wired at finalize_after_restart(), i.e.
+AFTER the restart: detail.self_update (success/failure of an update run, plus
+the from/to version) and flag.self_update (pure usage counter, once per update
+run that was actually carried out -- successful, interrupted or failed alike).
+Neither is reported from start_update(): that process exits for the update
+helper ~1.5s later and the telemetry worker is a daemon thread without a flush
+at exit, so an event submitted there is usually cut off mid-POST. A pure
+restart (start_restart()) is not an update and does not count as one.
+See telemetry/registry.py.
 
 Capabilities by install type:
 
@@ -471,6 +476,11 @@ def start_update(target_channel: str | None = None) -> dict:
     _write_meta(meta)
     _write_state("installing")
 
+    # Telemetry: nothing is submitted here on purpose. This process exits for
+    # the update helper a moment later and the telemetry worker is a daemon
+    # thread, so a POST started here is cut off mid-flight. flag.self_update
+    # is reported after the restart instead, in finalize_after_restart().
+
     try:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         header = (
@@ -589,6 +599,12 @@ def finalize_after_restart() -> None:
       - ``restarting`` → upgrade succeeded, app came back → ``success``
       - ``failed``     → leave as failed (frontend will show the log)
       - ``installing`` → we never made it through the helper → ``failed``
+
+    This is also where both self-update telemetry events are reported (see the
+    module docstring): the update run is over and this process is here to stay,
+    so the daemon telemetry worker can actually finish the POST. Each of the
+    three branches below reports flag.self_update exactly once -- the flag
+    means "an update was carried out", not "an update succeeded".
     """
     state = _read_state()
     if state == "restarting":
@@ -596,13 +612,26 @@ def finalize_after_restart() -> None:
         meta["to_version"] = _current_version()
         _write_meta(meta)
         _write_state("success")
-        _report_self_update(status="success")
+        # A pure start_restart() ends up in the same "restarting" state but is
+        # not an update, so it must not count as one.
+        if not meta.get("restart_only"):
+            _report_self_update_flag()
+        _report_self_update(status="success",
+                            from_version=meta.get("from_version"),
+                            to_version=meta.get("to_version"))
     elif state == "installing":
         meta = _read_meta()
         meta["error"] = "Update did not complete (process restarted unexpectedly)."
+        # This branch leaves the state at "failed", which is exactly what the
+        # branch below reacts to, so mark the run as reported here as well --
+        # otherwise a second start before the user dismisses the result would
+        # report the very same update run again.
+        meta["telemetry_reported"] = True
         _write_meta(meta)
         _write_state("failed")
-        _report_self_update(status="failed", error_type="interrupted")
+        _report_self_update_flag()
+        _report_self_update(status="failed", error_type="interrupted",
+                            from_version=meta.get("from_version"))
     elif state == "failed":
         # The helper script itself already wrote "failed" (the pip/pipx
         # upgrade command exited non-zero) before relaunching the app -- this
@@ -615,19 +644,43 @@ def finalize_after_restart() -> None:
         if not meta.get("telemetry_reported"):
             meta["telemetry_reported"] = True
             _write_meta(meta)
-            _report_self_update(status="failed", error_type="upgrade_command_failed")
+            _report_self_update_flag()
+            _report_self_update(status="failed", error_type="upgrade_command_failed",
+                                from_version=meta.get("from_version"))
     # 'success' / 'idle' are left untouched.
 
 
-def _report_self_update(*, status, error_type=None):
-    """Submit a detail.self_update telemetry event (see registry.py --
-    "Ob ein Selbst-Update erfolgreich war oder fehlgeschlagen ist"). Only a
-    coarse status/error classifier is sent, never the update log or the raw
-    pip/pipx output (which can contain package index URLs). Wrapped in its
+def _report_self_update_flag():
+    """Submit the flag.self_update stage-2 usage counter for one update run.
+
+    Called from finalize_after_restart() only, i.e. after the update helper
+    has done its work and the app is running again -- submitting it in
+    start_update() lost the event to the process exit that follows there.
+
+    A pure counter -- build_feature_flag_event() takes no metadata at all, the
+    version/result context belongs to detail.self_update below. Wrapped in its
     own try/except so a telemetry bug can never affect the update flow.
     """
     try:
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.self_update"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.self_update event", exc_info=True)
+
+
+def _report_self_update(*, status, error_type=None, from_version=None, to_version=None):
+    """Submit a detail.self_update telemetry event (see registry.py --
+    "Ob ein Selbst-Update erfolgreich war oder fehlgeschlagen ist"). Only a
+    coarse status/error classifier plus the from/to version string is sent,
+    never the update log or the raw pip/pipx output (which can contain package
+    index URLs). Wrapped in its own try/except so a telemetry bug can never
+    affect the update flow.
+    """
+    try:
         metadata = {}
+        if from_version:
+            metadata["from_version"] = str(from_version)[:40]
+        if to_version:
+            metadata["to_version"] = str(to_version)[:40]
         if error_type:
             metadata["error_type"] = error_type
         event = telemetry_events.build_feature_detail_event(

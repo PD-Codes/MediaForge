@@ -20,6 +20,18 @@ same session-based locale ``web/app.py``'s ``get_locale()`` already resolves
 -- keeps this the single place that ever needs updating, instead of a second
 hand-copied English set living in ``static/telemetry.js``.
 
+HARD RULE for future editors of this file -- not a setting, not a toggle:
+``DATA_REGISTRY`` contains data points of MediaForge itself and nothing else.
+No ``data_key`` is ever added here for a third-party module/extension, and no
+telemetry interface is offered to module code. Modules are foreign code that
+the user can write themselves, so their errors and their usage are none of
+this project's business -- reporting them would mean shipping numbers we
+cannot interpret about code we did not write, under MediaForge's install_id.
+The two ``*.extensions`` keys below are not an exception to this: they are
+collected by the core *about* the set of loaded modules (how many, and their
+folder names -- see ``web/thirdparties/registry.py``), never by a module
+about itself.
+
 Also home to the small set of constants that tie the client to the devInfo
 server: the ingest/request endpoints and the shared "project key" anti-spam
 header value.
@@ -306,6 +318,14 @@ DATA_REGISTRY = {
         "explain": {
             "de": "Nur, dass die MediaScan (Jellyfin/Plex-Abgleich)-Integration aktiv verbunden ist.",
             "en": "Only that the MediaScan (Jellyfin/Plex sync) integration is actively connected.",
+        },
+    },
+    "flag.integrations.mediaplayer": {
+        "stage": 2, "group": "integrations",
+        "label": {"de": "Mediaplayer-Anbindung genutzt", "en": "Media player connection used"},
+        "explain": {
+            "de": "Nur, dass eine Jellyfin/Plex-Verbindung eingerichtet ist und getestet/genutzt wurde -- keine Server-URL, kein Servername, keine Bibliotheks- oder Titeldaten.",
+            "en": "Only that a Jellyfin/Plex connection is configured and was tested/used -- no server URL, no server name, no library or title data.",
         },
     },
     "flag.push_notifications": {

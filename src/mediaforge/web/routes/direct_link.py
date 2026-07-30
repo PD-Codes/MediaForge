@@ -3,10 +3,14 @@
 available quality variants, then queue a download using the variant the
 user picked.
 
-TODO(telemetry): wire up flag.direct_link (usage counter) and
-direct_link.urls (the URLs used, query-stripped -- see
-telemetry.events.build_direct_link_event()) -- see telemetry/registry.py.
-Registry-only for now.
+Telemetry: flag.direct_link (stage-2 usage counter) is submitted once per
+download the user actually starts; direct_link.urls (stage-4, the
+query-stripped URL) only when the link's ORIGIN could be established
+server-side and is not the age-gated 18+ provider -- see
+_report_direct_link_download() below. The classify and probe steps stay silent:
+both can run repeatedly for a single link the user is still deciding on, so
+counting them would report "a request came in" instead of "the feature was
+used".
 
 Kept as its own route module rather than folded into routes/queue.py's
 POST /api/download, since this feature has a different data shape (a
@@ -27,6 +31,13 @@ from ..auth import get_current_user
 from ..db import add_to_queue
 from ..db import is_series_queued_or_running
 from ..queue_worker import _dl_lock
+from ...logger import get_logger
+from ...telemetry import client as telemetry_client
+from ...telemetry import events as telemetry_events
+from ...telemetry.sanitize import is_adult_provider
+
+
+logger = get_logger(__name__)
 
 # Provider (site) name as returned by mediaforge.providers.resolve_provider ->
 # the source key the frontend knows (and gates, in hanime's case).
@@ -46,6 +57,125 @@ _SERIES_TRIM = re.compile(
     r"^(https?://[^/]+/(?:anime/stream|serie(?:/stream)?)/[a-zA-Z0-9\-]+)(?:/.*)?$",
     re.IGNORECASE,
 )
+
+
+# mirrors/providers spell the age-gated 18+ site "hanime", and the probe step
+# may label it with its hoster name ("Hanime"). Telemetry's hard-coded guard
+# (sanitize.is_adult_provider) matches the literal "hanime_tv" only, so every
+# spelling that can reach this module is translated below -- otherwise the guard
+# silently never fires.
+_ADULT_SPELLINGS = frozenset({"hanime", "hanime_tv", "hanimetv", "hanime.tv"})
+
+
+def _telemetry_spelling(name):
+    """Normalize a site/provider/hoster label to the spelling the telemetry
+    adult guard uses, or None for an empty label."""
+    key = str(name or "").strip().lower()
+    if not key:
+        return None
+    return "hanime_tv" if key in _ADULT_SPELLINGS else key
+
+
+def _site_source_for(url):
+    """The source key of the MediaForge scraper site *url* belongs to (the same
+    values api_direct_link_classify() returns), or None when the URL is not one
+    of them.
+
+    Deliberately the exact same three steps as that endpoint -- normalize, map a
+    mirror host back to the canonical one, then match through
+    providers.resolve_provider() -- so the origin is decided by one source of
+    truth instead of a second host list that would miss every mirror domain.
+    When no URL pattern matches but mirrors still recognizes the host, that
+    host's site wins: a bare site URL must not read as "origin unknown".
+
+    Fully guarded: if the lookup itself fails the answer is None, i.e. "could
+    not be established" -- never an optimistic guess.
+    """
+    try:
+        from ...mirrors import canonical_host, map_url, site_for_url
+        from ...providers import normalize_url, resolve_provider
+        url = normalize_url(str(url or "").strip())
+        if not url:
+            return None
+        site = site_for_url(url)
+        if site:
+            host = canonical_host(site)
+            if host:
+                url = map_url(url, host)
+        try:
+            provider = resolve_provider(url)
+        except ValueError:
+            return site
+        # A provider outside the map is exactly what classify() answers
+        # "generic" for, so it does not establish an origin on its own either.
+        return _PROVIDER_TO_SOURCE.get(provider.name) or site
+    except Exception:
+        return None
+
+
+def _telemetry_provider_for(url, source_provider=None):
+    """Best-effort ORIGIN of a pasted link, in the spelling the telemetry adult
+    guard uses, or None when the origin cannot be established.
+
+    Two independent signals, both evaluated SERVER-side -- the /classify step
+    runs in the frontend and this route can be POSTed to directly, so nothing
+    the client may or may not have done can be assumed:
+
+      * the URL itself, via _site_source_for(): catches a scraper-site link
+        pasted straight into the Direct Link dialog, mirror domains included;
+      * ``source_provider``: the hoster the probe step detected ("VOE",
+        "Hanime", ...) and the client sent back with the download.
+
+    If EITHER signal names the age-gated site the answer is "hanime_tv", so one
+    signal can never vote the other's 18+ verdict away. If neither names
+    anything, None means "undetermined", which the caller treats as "do not send
+    the URL" and NOT as "safe": Direct Link exists for raw stream/CDN URLs, and a
+    signed hanime .m3u8 is served from a host that has nothing to do with
+    hanime.tv (see extractors/provider/hanime.py and models/hanime_tv/
+    episode.py), so a host-based check alone cannot clear such a link.
+    """
+    site = _telemetry_spelling(_site_source_for(url))
+    hoster = _telemetry_spelling(source_provider)
+    if is_adult_provider(site) or is_adult_provider(hoster):
+        return "hanime_tv"
+    return site or hoster
+
+
+def _report_direct_link_download(url, source_provider=None):
+    """Submit the stage-2 usage counter (flag.direct_link) and -- only for a link
+    whose origin is both established and harmless -- the stage-4 URL event
+    (direct_link.urls) for one queued direct-link download.
+
+    Fires once per download the user actually starts, never for classify/probe.
+    The URL is query-stripped inside events.build_direct_link_event() (that is
+    where hoster session tokens live); no title, path or queue id is sent.
+
+    Three outcomes, decided by _telemetry_provider_for():
+
+      * the age-gated 18+ provider -> nothing at all, since flag.hanime_tv is
+        the only data point that ever exists for it (telemetry/sanitize.py:
+        is_adult_provider);
+      * origin undetermined -> flag.direct_link only. The counter carries no URL
+        and is therefore harmless, while the URL is withheld because an
+        unidentified raw CDN link may well BE that provider's content --
+        build_direct_link_event() takes no provider and cannot run the guard on
+        our behalf (see its docstring). "In doubt, do not send" is the same rule
+        syncplay_rooms._room_content_provider() follows.
+      * a known, non-adult origin -> counter plus URL.
+
+    Wrapped in its own try/except so a telemetry bug can never break the
+    download endpoint.
+    """
+    try:
+        provider = _telemetry_provider_for(url, source_provider)
+        if is_adult_provider(provider):
+            return
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.direct_link"))
+        if not provider:
+            return
+        telemetry_client.submit(telemetry_events.build_direct_link_event(url))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit direct-link events", exc_info=True)
 
 
 def _series_url_for(url, source):
@@ -198,4 +328,7 @@ def register_direct_link_routes(app):
                 format_id=format_id,
                 source_provider=source_provider,
             )
+        # Telemetry: one usage counter per started download, plus the URL only
+        # when the origin could be pinned down server-side.
+        _report_direct_link_download(url, source_provider)
         return jsonify({"queue_id": queue_id})

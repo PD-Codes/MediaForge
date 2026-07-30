@@ -34,6 +34,8 @@ from datetime import date as _date, datetime
 from typing import Any, Dict, List, Optional
 
 from ..config import MEDIAFORGE_CONFIG_DIR
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
 from .db import (
     get_setting,
     set_setting,
@@ -68,6 +70,27 @@ except Exception as _exc:  # pragma: no cover - import guard
     CloudflareBlockError = Exception  # type: ignore
     _IMPORT_OK = False
     _IMPORT_ERR = str(_exc)
+
+def _report_crunchyroll_used() -> None:
+    """Submit the flag.integrations.crunchyroll stage-2 usage counter (see
+    registry.py: "Nur, dass die Crunchyroll-Integration aktiv verbunden ist und
+    genutzt wird").
+
+    Called from get_client() after a login actually succeeded -- that is the
+    one place a real connection to Crunchyroll is established, and it is
+    naturally rate-limited by the _RELOGIN_TTL client cache (at most a handful
+    of events per day), unlike the per-title helpers which run once per browse
+    card. A pure counter: build_feature_flag_event() takes no metadata, so no
+    account, locale or title is ever involved. Wrapped in its own try/except so
+    a telemetry bug can never affect the login path.
+    """
+    try:
+        telemetry_client.submit(
+            telemetry_events.build_feature_flag_event("flag.integrations.crunchyroll"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.integrations.crunchyroll event",
+                     exc_info=True)
+
 
 # ── Session / client cache ────────────────────────────────────────────────────
 _SESSION_FILE = MEDIAFORGE_CONFIG_DIR / ".crunchyroll.session.enc"
@@ -226,6 +249,9 @@ def get_client() -> Any:
             _client_signature = sig
             _client_logged_in_at = now
             logger.info("[Crunchyroll] logged in (%s)", "anonymous" if anon else email)
+            # Telemetry: stage-2 usage counter -- only on a genuinely
+            # established connection, never on a failed login below.
+            _report_crunchyroll_used()
             return _client
         except LoginError:
             logger.warning("[Crunchyroll] login failed — check credentials")

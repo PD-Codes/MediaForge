@@ -5,7 +5,10 @@ Extracted from create_app as a plain route-registration function
 
 detail.integrations (connection errors, no credentials) is wired at the
 Jellyseerr/Overseerr fetch below -- see registry.py. flag.integrations.seerr
-(usage counter) is intentionally NOT wired -- out of scope for now.
+(stage-2 usage counter) is submitted from _report_seerr_used() when the
+requests page, its list endpoint or a moderation action is actually used;
+the list endpoint is paged/re-fetched by infinite scroll, so the counter is
+throttled to at most one event per _FLAG_MIN_INTERVAL per process.
 
 Security / performance notes for this module
 --------------------------------------------
@@ -74,6 +77,38 @@ _STATUS_PENDING = 1
 _STATUS_APPROVED = 2
 # Jellyseerr/Overseerr media status 5 == fully available -> nothing left to do.
 _MEDIA_AVAILABLE = 5
+
+
+# --- Telemetry: flag.integrations.seerr throttle -----------------------------
+# The requests list is re-fetched per infinite-scroll page and on every filter
+# change. The stage-2 flag means "this install uses its Seerr integration", so
+# once per hour is all the resolution it needs -- finer would count requests,
+# not usage.
+_FLAG_MIN_INTERVAL = 3600.0
+_flag_last_sent = None
+_flag_lock = threading.Lock()
+
+
+def _report_seerr_used():
+    """Submit the flag.integrations.seerr stage-2 usage counter, at most once
+    per _FLAG_MIN_INTERVAL per process.
+
+    A pure counter -- build_feature_flag_event() carries no metadata, so no
+    request title, id, Seerr URL or API key is involved. Wrapped in its own
+    try/except so a telemetry bug can never affect the requests page.
+    """
+    global _flag_last_sent
+    try:
+        now = time.monotonic()
+        with _flag_lock:
+            if _flag_last_sent is not None and now - _flag_last_sent < _FLAG_MIN_INTERVAL:
+                return
+            _flag_last_sent = now
+        telemetry_client.submit(
+            telemetry_events.build_feature_flag_event("flag.integrations.seerr"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.integrations.seerr event",
+                     exc_info=True)
 
 
 def _report_seerr_error(exc):
@@ -428,6 +463,9 @@ def register_seerr_routes(app):
             logger.warning("[Seerr] request list unreachable: %s", e)
             return _err("unreachable", 502)
 
+        # Configured, reachable and actually queried -> the integration is in use.
+        _report_seerr_used()
+
         uid = _current_uid()
         hidden_ids = get_hidden_seerr_request_ids(uid)
         visible = [r for r in merged if r["id"] not in hidden_ids]
@@ -552,6 +590,7 @@ def register_seerr_routes(app):
     @app.route("/seerr")
     def seerr_page():
         """Render the Seerr requests page. Route: GET /seerr."""
+        _report_seerr_used()
         sto_lang_labels = {"1": "German Dub", "2": "English Dub", "3": "English Dub (German Sub)"}
         return render_template(
             "seerr.html",
@@ -582,6 +621,7 @@ def register_seerr_routes(app):
         ok, code = _moderate(seerr_url, seerr_key, req_id, "approve")
         if not ok:
             return _err(code, 502)
+        _report_seerr_used()
         invalidate_seerr_list_cache()
         return jsonify({"ok": True})
 
@@ -604,6 +644,7 @@ def register_seerr_routes(app):
         ok, code = _moderate(seerr_url, seerr_key, req_id, "decline")
         if not ok:
             return _err(code, 502)
+        _report_seerr_used()
         invalidate_seerr_list_cache()
         return jsonify({"ok": True})
 
@@ -663,6 +704,9 @@ def register_seerr_routes(app):
         for req_id in ids:
             ok, _code = _moderate(seerr_url, seerr_key, req_id, action)
             (done if ok else failed).append(req_id)
+        if done:
+            # One event for the whole batch, not one per moderated id.
+            _report_seerr_used()
         invalidate_seerr_list_cache()
         return jsonify({"ok": not failed, "done": done, "failed": failed})
 

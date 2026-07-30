@@ -909,6 +909,62 @@ a.browse-heading-src:hover { color: var(--accent); }
   margin: 0 0 6px;
 }
 
+/* The macro splits each scope into .sp-group blocks whose headings are
+   .settings-subtitle -- but both of those classes live in settings_rows.css,
+   and index.html deliberately does not load that file (see
+   advanced_search.html's note on why it is not global). Without the rules
+   below the modal fell back to the browser's default <h3>: oversized, flush
+   against the edge, and with the group spacing gone, because the 18px came
+   from .sp-modal .settings-section above and that no longer matches the
+   groups. Kept here rather than by pulling settings_rows.css into the home
+   page: this is home-page styling, and it belongs in the home page's own
+   stylesheet. */
+.sp-modal .sp-group {
+  margin: 0 0 18px;
+}
+
+.sp-modal .sp-group:last-child {
+  margin-bottom: 0;
+}
+
+/* The hairline separator settings_rows.css draws between groups. */
+.sp-modal .sp-group + .sp-group {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+/* Same character as settings_rows.css's .settings-subtitle (uppercase, muted,
+   tracked) so the shared markup reads the same on both surfaces -- only the
+   22px card inset is dropped, because the modal provides its own padding. */
+.sp-modal .sp-group .settings-subtitle {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.sp-modal .sp-sublabel {
+  padding: 8px 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.sp-modal .sp-reset {
+  padding: 0;
+}
+
+@media (max-width: 640px) {
+  /* Same reasoning as settings_rows.css: at phone width a full-width button
+     is the only comfortable tap target. */
+  .sp-modal .sp-reset button {
+    width: 100%;
+  }
+}
+
 
 @media (max-width: 640px) {
   .feed-customize { width: 40px; }

@@ -154,6 +154,20 @@ def _encode_one_file(input_path, output_path, label, cancel_event):
         raise RuntimeError(f"ffmpeg exited with code {process.returncode}")
 
 
+def _report_transcode_started():
+    """Submit the flag.transcoding stage-2 usage counter for one started job.
+
+    A pure counter -- build_feature_flag_event() takes no metadata at all, the
+    codec/preset context belongs to detail.transcoding below. Fires once per
+    job that actually starts encoding, never per file. Wrapped in its own
+    try/except so a telemetry bug can never affect the encoding worker.
+    """
+    try:
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.transcoding"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.transcoding event", exc_info=True)
+
+
 def _report_transcode_failure(*, status, failed, total):
     """Submit a detail.transcoding telemetry event for a finished job that
     had at least one failed file (see registry.py's "detail.transcoding" --
@@ -226,6 +240,10 @@ def _encoding_worker():
 
             _total_files = max(len(_file_list), 1)
             _overall_failed = 0
+
+            # Telemetry: stage-2 usage counter -- one event per job that
+            # actually starts encoding, not per file and not per loop turn.
+            _report_transcode_started()
 
             with _encoding_progress_lock:
                 _encoding_progress.update(active=True, percent=0.0, time="", speed="", file="")

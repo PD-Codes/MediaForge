@@ -5,8 +5,24 @@ Extracted from create_app as a plain route-registration function
 
 detail.integrations (per-integration connection errors, no credentials) is
 wired at each "test connection" endpoint below -- see _report_integration_error().
-flag.integrations.* (per-service usage counters) are intentionally NOT
-wired -- out of scope for now, see telemetry/registry.py.
+
+flag.integrations.crunchyroll / .fernsehserien / .mediaplayer are submitted
+for a SUCCESSFUL manual "test connection" here -- see
+_report_integration_used(). That action exists only on this page, so it cannot
+double-count with the same flags being submitted from crunchyroll_service.py /
+fernsehserien_service.py for actual scraping/API use.
+
+.mediaplayer is its own data point on purpose and must not be folded into
+.mediascan: "mediaplayer" is the Jellyfin/Plex connection itself, "mediascan"
+is the library sync built on top of it, and the two are separate settings
+groups in this app, so they stay separate in the telemetry too. A *failed*
+test is not reported as a flag -- that case belongs to detail.integrations
+above and is already covered there.
+
+The remaining flag.integrations.* keys are deliberately NOT wired in this
+module: the availability endpoints below are thin wrappers around those same
+services (they would double-count), and MediaScan runs in web/mediascan.py,
+which is where its own usage is counted.
 """
 
 from ..db import get_mediascan_count
@@ -63,6 +79,25 @@ def _report_integration_error(integration, *, error_type=None, reason=None):
             telemetry_client.submit(event)
     except Exception:
         logger.debug("[Telemetry] failed to build/submit detail.integrations event", exc_info=True)
+
+
+def _report_integration_used(feature_key):
+    """Submit a flag.integrations.* stage-2 usage counter (see registry.py:
+    "Nur, dass die ... Integration aktiv verbunden ist und genutzt wird").
+
+    Only called for a manual, successful "test connection" from this settings
+    page -- a user-initiated action, not a polled endpoint, and one that
+    exists nowhere else in the app, so it cannot double-count with the same
+    flag being submitted from the service module that does the actual work.
+
+    A pure counter: build_feature_flag_event() takes no metadata, so no URL,
+    account or credential is involved. Wrapped in its own try/except so a
+    telemetry bug can never affect the connection test.
+    """
+    try:
+        telemetry_client.submit(telemetry_events.build_feature_flag_event(feature_key))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit %s event", feature_key, exc_info=True)
 
 
 _PLEX_CLIENT_ID = "mediaforge-downloader"
@@ -152,7 +187,9 @@ def register_integrations_routes(app):
         try:
             from .. import crunchyroll_service
             result = crunchyroll_service.test_connection(email, password, locale, anon, profile_id)
-            if not result.get("ok"):
+            if result.get("ok"):
+                _report_integration_used("flag.integrations.crunchyroll")
+            else:
                 _report_integration_error("crunchyroll", reason=result.get("error"))
         except Exception as exc:
             logger.debug("[Crunchyroll] test endpoint error: %s", exc)
@@ -232,7 +269,9 @@ def register_integrations_routes(app):
         try:
             from .. import fernsehserien_service
             result = fernsehserien_service.test_connection()
-            if not result.get("ok"):
+            if result.get("ok"):
+                _report_integration_used("flag.integrations.fernsehserien")
+            else:
                 _report_integration_error("fernsehserien", reason=result.get("error"))
         except Exception as exc:
             logger.debug("[Fernsehserien] test endpoint error: %s", exc)
@@ -309,6 +348,11 @@ def register_integrations_routes(app):
 
         Route: POST /api/settings/mediaplayer/test. Called from
         static/integrations.js's `testMediaplayerConnection()`.
+
+        Submits flag.integrations.mediaplayer only on a reachable server (both
+        the Jellyfin and the Plex branch); an incomplete configuration or a
+        failed request reports nothing here -- the failure case is already
+        covered by _report_integration_error() below.
         """
         import urllib.request as _req
         svc = get_setting("mediaplayer_type", "")
@@ -323,6 +367,7 @@ def register_integrations_routes(app):
                 r = _req.Request(f"{url}/System/Info/Public", headers={"X-Emby-Token": key})
                 with _req.urlopen(r, timeout=8) as resp:
                     info = json.loads(resp.read())
+                _report_integration_used("flag.integrations.mediaplayer")
                 return jsonify({"ok": True, "name": info.get("ServerName", "Jellyfin")})
             elif svc == "plex":
                 url = _normalize_media_url(get_setting("mediaplayer_plex_url", "") or "")
@@ -335,6 +380,7 @@ def register_integrations_routes(app):
                 with _req.urlopen(r, timeout=8) as resp:
                     info = json.loads(resp.read())
                 friendly = info.get("MediaContainer", {}).get("friendlyName", "Plex")
+                _report_integration_used("flag.integrations.mediaplayer")
                 return jsonify({"ok": True, "name": friendly})
             else:
                 return jsonify({"ok": False, "error": "Unbekannter Typ"})

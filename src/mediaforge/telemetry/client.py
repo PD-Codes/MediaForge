@@ -100,12 +100,22 @@ class TelemetryClient:
                 "enabled_keys": sorted(settings.get_enabled_keys()),
                 "events": batch,
             }
-            GLOBAL_SESSION.post(
+            resp = GLOBAL_SESSION.post(
                 TELEMETRY_INGEST_URL,
                 json=payload,
                 headers={"X-Project-Key": TELEMETRY_PROJECT_KEY},
                 timeout=_POST_TIMEOUT,
             )
+            # A rejected batch (401 from a project-key mismatch, 429 from the
+            # rate limiter, 5xx from a half-broken deployment) is not an
+            # exception -- without this line it looked exactly like a successful
+            # send, which is how a server-side config problem once went
+            # unnoticed. Still DEBUG: the user can neither see nor fix the
+            # devInfo server, and telemetry failing is by design harmless.
+            status = getattr(resp, "status_code", None)
+            if status is not None and status >= 400:
+                logger.debug("[Telemetry] ingest rejected %d event(s) with HTTP %s (dropped)",
+                             len(batch), status)
         except Exception as e:
             # No retry, no backoff -- see module docstring. Debug-level only
             # since a flaky/offline devInfo server is an expected, harmless

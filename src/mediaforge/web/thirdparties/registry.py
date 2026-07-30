@@ -1864,6 +1864,58 @@ def resolve_provider_pill_scripts():
     return out
 
 
+# Telemetry one-shot guard: flag.extensions / detail.extensions describe the
+# module set this install loaded at startup, so they are submitted exactly once
+# per process even though register_generic_settings_routes() is defensively
+# callable more than once.
+_extensions_telemetry_lock = threading.Lock()
+_extensions_telemetry_done = False
+
+
+def _report_extensions_loaded():
+    """Submit flag.extensions + detail.extensions once, after the startup
+    module load finished.
+
+    flag.extensions is a pure counter ("at least one third-party extension is
+    loaded") -- build_feature_flag_event() takes no metadata, so the number and
+    the folder names go into detail.extensions instead, which the registry
+    explicitly allows to carry them ("Die Namen der geladenen
+    Drittanbieter-Erweiterungsordner (nicht deren Inhalt)"). Nothing is sent
+    when no module registered successfully: an install with no extensions is
+    not an install that "uses extensions".
+
+    These two keys are the ONLY telemetry that ever concerns third-party
+    modules, and they are reported by the core *about* the loaded module set
+    (how many, and their folder names) -- never by a module about itself.
+    Modules deliberately get no telemetry interface at all: no data_key of
+    their own, no submit helper handed to them, and none is to be added (see
+    the hard rule in telemetry/registry.py's module docstring). Module code
+    can be written by the user, so its errors and its usage are not this
+    project's business to collect or report.
+
+    Telemetry is imported lazily and the whole body is guarded, so neither an
+    import cycle nor a telemetry bug can affect module loading.
+    """
+    global _extensions_telemetry_done
+    try:
+        with _extensions_telemetry_lock:
+            if _extensions_telemetry_done:
+                return
+            _extensions_telemetry_done = True
+        names = sorted(registered_module_names())
+        if not names:
+            return
+        from ...telemetry import client as telemetry_client
+        from ...telemetry import events as telemetry_events
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.extensions"))
+        telemetry_client.submit(telemetry_events.build_feature_detail_event(
+            "detail.extensions", action="load", status="success",
+            metadata={"count": len(names), "names": names},
+        ))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit extensions events", exc_info=True)
+
+
 def register_generic_settings_routes(app):
     """One shared GET/PUT pair covering every extra_settings field type
     (see register_thirdparty's docstring) plus the master enable toggle
@@ -1875,6 +1927,12 @@ def register_generic_settings_routes(app):
     """
     from flask import jsonify, request
     from ..db import get_setting, is_sensitive_key, set_setting
+
+    # Telemetry: web/thirdparties/__init__.py's discover_and_register() calls
+    # this exactly once, directly after every discovered module's register(app)
+    # has run -- i.e. the moment the startup module load is complete and the
+    # loaded set is known. Guarded + one-shot inside the helper.
+    _report_extensions_loaded()
 
     @app.route("/api/settings/thirdparty/<item_id>", methods=["GET"])
     def api_thirdparty_settings_get(item_id):

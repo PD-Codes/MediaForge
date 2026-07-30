@@ -3,8 +3,13 @@
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 
-# TODO(telemetry): wire up flag.calendar (usage counter, opened/used) --
-# see telemetry/registry.py. Registry-only for now.
+Telemetry: flag.calendar (stage-2 usage counter) is submitted when the
+calendar is actually opened/used -- the page, the events API and the ICS
+feed all funnel through _report_calendar_used(), which throttles to at most
+one event per _FLAG_MIN_INTERVAL per process. Both /api/calendar and the ICS
+feed are polled endpoints (the page reloads its events, calendar clients
+re-fetch the subscription on their own schedule), so an event per request
+would report "a request came in" instead of "the feature was used".
 """
 
 from ..db import delete_calendar_episodes_except
@@ -32,9 +37,43 @@ from ..tmdb_cache import _tmdb_calendar_episodes
 from ..tmdb_cache import _tmdb_lookup_cached
 from ..tmdb_cache import _tmdb_movie_release
 from ...logger import get_logger
+from ...telemetry import client as telemetry_client
+from ...telemetry import events as telemetry_events
 
 
 logger = get_logger(__name__)
+
+
+# --- Telemetry: flag.calendar throttle --------------------------------------
+# Minimum distance between two flag.calendar events in this process. The
+# calendar page polls /api/calendar and subscribed calendar clients re-fetch
+# the .ics feed on their own (often aggressive) schedule; the stage-2 flag
+# means "this install uses the calendar", so once per hour is all the
+# resolution it needs -- anything finer is just polling noise.
+_FLAG_MIN_INTERVAL = 3600.0
+_flag_last_sent = None
+_flag_lock = threading.Lock()
+
+
+def _report_calendar_used():
+    """Submit the flag.calendar stage-2 usage counter, at most once per
+    _FLAG_MIN_INTERVAL per process.
+
+    A pure counter -- build_feature_flag_event() carries no metadata at all,
+    so nothing about which series/episodes the calendar shows is involved.
+    Wrapped in its own try/except so a telemetry bug can never affect the
+    calendar page, its API or the ICS feed.
+    """
+    global _flag_last_sent
+    try:
+        now = time.monotonic()
+        with _flag_lock:
+            if _flag_last_sent is not None and now - _flag_last_sent < _FLAG_MIN_INTERVAL:
+                return
+            _flag_last_sent = now
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.calendar"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.calendar event", exc_info=True)
 
 
 # Background watcher state (moved verbatim from app.py; this module is
@@ -1117,6 +1156,7 @@ def register_calendar_routes(app):
         if get_setting("cineinfo_calendar", "0") != "1":
             from flask import redirect, url_for
             return redirect(url_for("index"))
+        _report_calendar_used()
         return render_template("calendar.html")
 
     @app.route("/api/calendar")
@@ -1137,6 +1177,9 @@ def register_calendar_routes(app):
         country = get_setting("cineinfo_country", "DE")
         ui_lang = session.get("ui_language", "en")
         username, is_admin = _get_current_user_info()
+
+        # Configured and actually asked for events -> the feature is in use.
+        _report_calendar_used()
 
         events, meta = collect_calendar_events(api_key, country, ui_lang, username, is_admin)
         return jsonify({
@@ -1200,6 +1243,10 @@ def register_calendar_routes(app):
         api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
         if not api_key:
             return Response("Calendar not configured", status=503, mimetype="text/plain")
+
+        # A valid feed token that got this far is a real subscriber pulling the
+        # calendar -- throttled, since clients re-fetch on their own schedule.
+        _report_calendar_used()
 
         # No Flask session here, so the feed owner's identity and language come
         # straight from the users table. uid 0 means auth is disabled: a single

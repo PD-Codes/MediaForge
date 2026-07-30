@@ -68,7 +68,7 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **SyncPlay** — watch together in a room: synchronised playback, chat and an invite link guests can use without an account
 - **Crunchyroll & Fernsehserien.de** as metadata sources — availability pills on search results, plus Crunchyroll simulcast/watchlist entries in the calendar
 - **UpTime monitor & Dev Infos** — a dashboard showing whether each source site is reachable (history, response times, per-source tracking), and release notes from the developers right in the UI
-- **Opt-in telemetry** — off by default, staged consent, every data point listed and individually switchable under Settings → Privacy
+- **Opt-in telemetry** — off by default, staged consent, every data point listed and individually switchable under Settings → Privacy; anything you cancel yourself is never reported as an error, and an unreachable telemetry server stays silent instead of writing to your console
 - **Multi-user auth & OIDC SSO**, a full **REST API**, **Docker**-ready, and a UI in **English & German**
 
 → Full feature tour in the **[Wiki](https://github.com/PD-Codes/MediaForge/wiki/Web-UI)**.

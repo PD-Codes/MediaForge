@@ -281,7 +281,6 @@ try:
         fake_useragent.UserAgent(os=["Windows", "Mac OS X"]).random
     )
 except fake_useragent.errors.FakeUserAgentError:
-    # TODO: fix - currently happens on nuitka builds
     DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
 
 LULUVDO_USER_AGENT = (
@@ -933,8 +932,6 @@ HANIME_EPISODE_PATTERN = re.compile(
 # -----------------------------
 # Directories
 # -----------------------------
-
-# TODO: add many other directories and use them throughout the app
 
 # Determine mpv scripts directory
 # On Linux/macOS: ~/.config/mpv/scripts

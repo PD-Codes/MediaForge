@@ -8,9 +8,11 @@ to enqueue newly-downloaded episodes for upscaling.
 Used by: web/app.py (starts the worker at startup) and web/queue_worker.py
 (enqueues episodes after a download finishes).
 
-# TODO(telemetry): wire up flag.upscale / detail.upscale (preset used,
-# success/failure) at the point a queued job finishes below -- see
-# telemetry/registry.py. Registry-only for now.
+Telemetry: flag.upscale fires once per actually started job (right after a
+job is claimed and its settings are read), detail.upscale once per finished
+job with the preset/engine used and the duration -- never a title or path.
+A job the user cancelled produces no detail event at all (see
+telemetry/classify.py: a cancel is the app working correctly, not an error).
 """
 
 import os
@@ -20,6 +22,9 @@ import uuid
 
 from ..config import MEDIAFORGE_TEMP_DIR
 from ..logger import get_logger
+from ..telemetry import classify as telemetry_classify
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
 from .media_publish import publish_output, sweep_stale_temp_files
 from .db import (
     add_to_upscale_queue,
@@ -51,6 +56,55 @@ _upscale_worker_started = False
 _upscale_lock = threading.Lock()
 
 
+def _report_upscale_started():
+    """Submit the flag.upscale stage-2 usage counter for one started job.
+
+    A pure counter -- build_feature_flag_event() takes no metadata at all.
+    Wrapped in its own try/except so a telemetry bug can never affect the
+    upscale worker itself (same defensive pattern as encoding_worker.py).
+    """
+    try:
+        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.upscale"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.upscale event", exc_info=True)
+
+
+def _report_upscale_detail(settings, *, status, duration=None, failed_files=None,
+                           total_files=None, error_type=None):
+    """Submit a detail.upscale event for one finished job (see registry.py's
+    "detail.upscale" -- "Welches Upscaling-Preset verwendet wurde und ob der
+    Vorgang erfolgreich war").
+
+    Metadata is limited to the shader/engine settings, the duration and the
+    file counts -- never a title or a file path, per the stage-3 "kein
+    Titel/Inhalt" rule. Callers must not pass a cancel status here; a job the
+    user stopped is not reported at all (checked again below as a safety net).
+    """
+    try:
+        if telemetry_classify.is_cancel_status(status):
+            return
+        metadata = {}
+        for key in ("preset", "quality", "resolution", "engine", "out_vcodec"):
+            value = (settings or {}).get(key)
+            if value:
+                metadata[key] = value
+        if duration is not None:
+            metadata["duration_seconds"] = round(duration, 1)
+        if total_files is not None:
+            metadata["total_files"] = total_files
+        if failed_files is not None:
+            metadata["failed_files"] = failed_files
+        if error_type:
+            metadata["error_type"] = error_type
+        event = telemetry_events.build_feature_detail_event(
+            "detail.upscale", action="run", status=status, metadata=metadata,
+        )
+        if event:
+            telemetry_client.submit(event)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.upscale event", exc_info=True)
+
+
 def _upscale_worker():
     """Single global worker loop: claim one queued job, process it fully, repeat.
 
@@ -63,6 +117,11 @@ def _upscale_worker():
         try:
             item = None
             _final_status_set = False
+            # Telemetry bookkeeping for this job: wall-clock start and the
+            # settings actually used. Bound out here because the outer except
+            # handler reads them, and a job can die before they are filled.
+            _job_started = time.monotonic()
+            settings = None
             with _upscale_lock:
                 item = claim_next_upscale_queued()
 
@@ -96,6 +155,12 @@ def _upscale_worker():
                 "out_crf":    int(get_setting("upscaling_out_crf", "18") or "18"),
                 "out_preset": get_setting("upscaling_out_preset", "medium"),
             }
+
+            # Telemetry: stage-2 usage counter -- one event per job that
+            # actually starts processing (not for a job that never got past
+            # the missing-module check above).
+            _job_started = time.monotonic()
+            _report_upscale_started()
 
             # Progress-poll thread: mirrors anime4k live progress -> DB every 2s
             import threading as _th
@@ -236,15 +301,48 @@ def _upscale_worker():
             _poll_stop.set()
             _pt.join(timeout=3)
 
-            if is_upscale_cancelled(item["id"]):
+            _was_cancelled = is_upscale_cancelled(item["id"])
+            if _was_cancelled:
                 set_upscale_status(item["id"], "cancelled")
                 _final_status_set = True
+
+            # Telemetry: stage-3 detail for the finished job. A cancelled job
+            # is the user stopping something, so nothing is reported for it --
+            # neither a success nor an error.
+            if not _was_cancelled:
+                _report_upscale_detail(
+                    settings,
+                    # Any failed file makes the run an "error" -- the exact
+                    # ratio is in failed_files/total_files, so a partial
+                    # failure stays distinguishable from a total one.
+                    status="error" if _overall_failed else "success",
+                    duration=time.monotonic() - _job_started,
+                    failed_files=_overall_failed,
+                    total_files=_done_files,
+                )
 
             with _upscale_cancel_lock:
                 _upscale_active_cancel_events.pop(item["id"], None)
 
         except Exception as e:
             logger.error(f"[Upscale] Worker-Fehler: {e}", exc_info=True)
+            # Telemetry: a crashed job counts as a failed run -- but only when
+            # the exception is a real defect. A user-initiated cancel raised as
+            # an exception must never show up as an error (telemetry/classify.py),
+            # and neither must a crash on a job the user had already stopped.
+            _cancel_seen = False
+            if item is not None:
+                try:
+                    _cancel_seen = bool(is_upscale_cancelled(item["id"]))
+                except Exception:
+                    _cancel_seen = False
+            if (item is not None and settings is not None and not _cancel_seen
+                    and not telemetry_classify.is_user_cancellation(type(e), e)):
+                _report_upscale_detail(
+                    settings, status="error",
+                    duration=time.monotonic() - _job_started,
+                    error_type=type(e).__name__,
+                )
             if item is not None and not _final_status_set:
                 try:
                     if not is_upscale_cancelled(item["id"]):

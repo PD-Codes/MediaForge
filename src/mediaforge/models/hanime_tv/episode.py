@@ -238,6 +238,28 @@ class HanimeEpisode:
         return self.__is_downloaded
 
     # --- actions ---
+    def _report_usage(self):
+        """Bump the ``flag.hanime_tv`` usage counter -- the ONE telemetry data
+        point that is ever collected for this age-gated 18+ provider (see
+        telemetry/sanitize.py's is_adult_provider(), which blocks every other
+        builder for it, and the registry entry's explain text shown to the
+        user).
+
+        A plain "the provider was used, once" counter: no slug, no title, no
+        episode number, no success/failure, no timing. Fired at the START of a
+        download rather than on completion, so the counter does not double as a
+        success/failure signal. Fully guarded -- telemetry must never affect a
+        download.
+        """
+        try:
+            from ...telemetry import client as telemetry_client
+            from ...telemetry import events as telemetry_events
+            telemetry_client.submit(
+                telemetry_events.build_feature_flag_event("flag.hanime_tv")
+            )
+        except Exception:
+            logger.debug("[Telemetry] hanime usage flag failed", exc_info=True)
+
     def download(self, cancel_event=None, **kwargs):
         """Download the single HLS stream for this video. Unlike the other
         site families, this does NOT go through models/common/common.py's
@@ -249,6 +271,7 @@ class HanimeEpisode:
             from mediaforge.extractors.provider.hanime import download_from_hanime
         ep_label = os.path.splitext(self._file_name)[0] if self._file_name else ""
         os.makedirs(self._folder_path, exist_ok=True)
+        self._report_usage()
         stream_url, stream_headers = self._resolve_stream()
         try:
             return download_from_hanime(

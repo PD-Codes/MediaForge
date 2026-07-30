@@ -6093,9 +6093,6 @@ msgstr "Wie viele Karten eine Entdecken-Zeile höchstens enthält. Weniger Karte
 msgid "Which chips are off when someone opens the home page for the first time. This is a starting point, not a restriction — every user can switch them back on. To take a source away entirely, disable it under Sources."
 msgstr "Welche Chips ausgeschaltet sind, wenn jemand die Startseite zum ersten Mal öffnet. Das ist ein Ausgangspunkt, keine Einschränkung — jeder Benutzer kann sie wieder einschalten. Um eine Quelle ganz zu entfernen, schalte sie unter Quellen ab."
 
-msgid "These settings are yours alone. Anything you do not change follows the instance default below."
-msgstr "Diese Einstellungen gehören nur dir. Alles, was du nicht änderst, folgt dem Instanz-Standard weiter unten."
-
 msgid "What someone sees who has never opened these settings. Changing this does not overwrite what a user already chose for themselves."
 msgstr "Was jemand sieht, der diese Einstellungen nie geöffnet hat. Eine Änderung hier überschreibt nicht, was ein Benutzer für sich gewählt hat."
 

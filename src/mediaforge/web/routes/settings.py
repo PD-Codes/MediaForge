@@ -50,6 +50,7 @@ import secrets
 import threading
 from ..request_context import get_current_user_info as _get_current_user_info
 from ...logger import get_logger
+from ...telemetry.classify import is_server_unreachable as _is_server_unreachable
 
 
 logger = get_logger(__name__)
@@ -1652,7 +1653,15 @@ def register_settings_routes(app):
             if resp.status_code >= 400:
                 return jsonify({"ok": False, "error": f"devInfo server returned {resp.status_code}"}), 502
         except Exception as e:
-            logger.warning("[Telemetry] request-from-app call failed: %s", e)
+            # The caller already gets a 502 and the Settings page renders a
+            # visible error for it, so the console line adds nothing -- and the
+            # devInfo server being down for maintenance is routine. DEBUG only
+            # for that case; a genuinely unexpected failure stays at WARNING.
+            if _is_server_unreachable(e):
+                logger.debug("[Telemetry] request-from-app: devInfo server unreachable (%s)",
+                             type(e).__name__)
+            else:
+                logger.warning("[Telemetry] request-from-app call failed: %s", e)
             return jsonify({"ok": False, "error": "devInfo server unreachable"}), 502
         return jsonify({"ok": True})
 
@@ -1678,5 +1687,11 @@ def register_settings_routes(app):
             resp.raise_for_status()
             return jsonify(resp.json())
         except Exception as e:
-            logger.warning("[Telemetry] request-status fetch failed: %s", e)
+            # Same as the POST above: the UI shows the failure, the console
+            # should stay quiet for an unreachable/maintenance server.
+            if _is_server_unreachable(e):
+                logger.debug("[Telemetry] request-status: devInfo server unreachable (%s)",
+                             type(e).__name__)
+            else:
+                logger.warning("[Telemetry] request-status fetch failed: %s", e)
             return jsonify({"requests": [], "error": "devInfo server unreachable"}), 502

@@ -21,6 +21,7 @@ the sanitizing/guard logic.
 from datetime import datetime, timezone
 
 from . import settings
+from .classify import is_cancel_exception_name, is_cancel_status, is_user_cancellation
 from .sanitize import (clean_url, is_adult_provider, redact_secrets, redact_urls_in_text,
                         sanitize_exception, shorten_path)
 
@@ -60,6 +61,14 @@ def build_crash_event(exc_type, exc_value, tb):
     crash_reports."""
     if not settings.is_key_enabled("crash_reports"):
         return None
+    # A user pressing "Cancel" (on a queue item, on a captcha window, Ctrl+C in
+    # CLI mode, or simply closing the browser tab an SSE stream was feeding) is
+    # the app working correctly, not a defect. Those unwind through the very
+    # same excepthooks/log handler a real crash does, so the ONLY place that can
+    # reliably keep them out of the crash channel is right here, before anything
+    # is built -- see telemetry/classify.py for what counts as a cancellation.
+    if is_user_cancellation(exc_type, exc_value):
+        return None
     payload = sanitize_exception(exc_type, exc_value, tb)
     _attach_runtime(payload)
     return _event("crash_reports", payload)
@@ -80,7 +89,14 @@ def build_log_error_event(record):
     alternative every time code logs an error without raising."""
     if not settings.is_key_enabled("crash_reports"):
         return None
-    message = redact_secrets(redact_urls_in_text(record.getMessage()))[:2000]
+    # Same rule as build_crash_event(), but there is no exception object here --
+    # only the formatted text. Cancellations in this codebase carry a fixed
+    # wording ("Download cancelled", "cancelled by the user"), which is exactly
+    # what classify's message patterns match on.
+    raw_message = record.getMessage()
+    if is_user_cancellation(message=raw_message):
+        return None
+    message = redact_secrets(redact_urls_in_text(raw_message))[:2000]
     filename = shorten_path(record.pathname)
     frame = {"filename": filename, "lineno": record.lineno, "name": record.funcName, "line": ""}
     traceback_text = (
@@ -198,9 +214,27 @@ def build_feature_flag_event(feature_key: str, provider=None):
 def build_feature_detail_event(feature_key: str, *, action=None, status=None,
                                 metadata=None, provider=None):
     """Build a detail.* event. Guarded by is_adult_provider() first (stage 3
-    is beyond the hanime_tv exception -- no details are ever built for it)."""
+    is beyond the hanime_tv exception -- no details are ever built for it).
+
+    A cancelled operation produces NOTHING at all: neither a ``status="cancelled"``
+    row nor an ``error_type`` describing the cancellation exception. Stage 3 is
+    "feature details & errors" -- the user aborting their own job is neither. This
+    guard is deliberately here rather than only at the ~20 call sites, so a future
+    call site cannot reintroduce the problem by forgetting it (see
+    telemetry/classify.py).
+    """
     if is_adult_provider(provider):
         return None
+    if is_cancel_status(status):
+        return None
+    if metadata:
+        # Call sites commonly pass metadata={"error_type": type(e).__name__, ...}
+        # -- a cancellation that reached an except block that broad must not slip
+        # through just because the caller stamped it status="error".
+        if is_cancel_exception_name(metadata.get("error_type")) or \
+           is_user_cancellation(message=str(metadata.get("error", ""))) or \
+           is_user_cancellation(message=str(metadata.get("reason", ""))):
+            return None
     data_key = feature_key if feature_key.startswith("detail.") else f"detail.{feature_key}"
     if not settings.is_key_enabled(data_key):
         return None
@@ -230,8 +264,18 @@ def build_download_event(*, provider, media_type, title, season=None, episode=No
     like error_message.
 
     Guarded by is_adult_provider() first -- no download event of any kind is
-    ever built for hanime_tv."""
+    ever built for hanime_tv.
+
+    A cancelled download produces NO event at all -- not even a downloads.titles
+    row with status="cancelled". queue_worker.py already books a cancelled episode
+    on its own branch without calling this builder, but a cancel can also surface
+    as a plain failure deeper down (an ffmpeg process killed by the cancel event,
+    a hoster chain aborted mid-way), and that path DOES arrive here with
+    status="failed" plus a "Download cancelled" message. Both shapes are filtered
+    here so the check lives in exactly one place."""
     if is_adult_provider(provider):
+        return []
+    if is_cancel_status(status) or is_user_cancellation(message=error_message):
         return []
     out = []
     if settings.is_key_enabled("downloads.titles"):
@@ -255,9 +299,14 @@ def build_download_event(*, provider, media_type, title, season=None, episode=No
 
 
 def build_direct_link_event(url: str):
-    """Build a direct_link.urls event. Not currently wired to a live call
-    site (registry-only for now, see routes/direct_link.py TODO) but
-    provided here so the builder exists alongside its data_key."""
+    """Build a direct_link.urls event -- the URL a Direct Link download was
+    started from, with query string, fragment and any userinfo stripped by
+    clean_url().
+
+    Note for callers: this builder takes no provider and therefore CANNOT run
+    the is_adult_provider() guard itself. A caller that cannot establish with
+    certainty that the URL is not 18+ content must not call it at all (see
+    routes/direct_link.py, which then sends only flag.direct_link)."""
     if not settings.is_key_enabled("direct_link.urls"):
         return None
     return _event("direct_link.urls", {"url": clean_url(url)})
@@ -267,14 +316,35 @@ def build_direct_link_event(url: str):
 # Stage 5 — playback context
 # ---------------------------------------------------------------------------
 
-def build_play_event(*, provider, media_type, title, season=None, episode=None, context="direct"):
-    """Build a stream.play_events event -- "this title was started", no
-    watch time. Guarded by is_adult_provider() first."""
+# The two stage-5 data_keys this builder can produce. They are SEPARATE consent
+# toggles (see registry.DATA_REGISTRY), so a caller must name the one that
+# matches what it is reporting -- emitting SyncPlay room content under
+# "stream.play_events" would hand the title to a user who enabled ordinary play
+# events but deliberately left the SyncPlay one off.
+_PLAY_EVENT_KEYS = ("stream.play_events", "syncplay.room_content")
+
+
+def build_play_event(*, provider, media_type, title, season=None, episode=None,
+                      context="direct", data_key="stream.play_events"):
+    """Build a stage-5 playback event -- "this title was started", no watch time.
+
+    ``data_key`` picks which of the two stage-5 keys is used:
+
+      * ``stream.play_events``   -- an ordinary playback start (default).
+      * ``syncplay.room_content`` -- the title currently playing in a SyncPlay
+        room. Same payload shape (the server routes both into PlayEvent and
+        derives context="syncplay" from the key), but its own consent toggle.
+
+    An unknown data_key returns None rather than silently falling back to
+    stream.play_events, so a typo can never widen what gets sent. Guarded by
+    is_adult_provider() first."""
     if is_adult_provider(provider):
         return None
-    if not settings.is_key_enabled("stream.play_events"):
+    if data_key not in _PLAY_EVENT_KEYS:
         return None
-    return _event("stream.play_events", {
+    if not settings.is_key_enabled(data_key):
+        return None
+    return _event(data_key, {
         "provider": provider, "media_type": media_type, "title": title,
         "season": season, "episode": episode, "context": context,
     })

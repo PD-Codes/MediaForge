@@ -58,6 +58,169 @@ class RoomError(Exception):
     """Join refused (banned, full, wrong password)."""
 
 
+# ── Telemetry (stage 3: detail.syncplay) ────────────────────────────────────
+
+def _participant_bracket(count) -> str:
+    """Coarse participant-count category for detail.syncplay: "1", "2-4" or
+    "5+". Deliberately a bracket rather than the exact number -- stage 3 is
+    about how the feature is used, and an exact head count of a small
+    household says more about who is watching than about the feature."""
+    try:
+        n = int(count)
+    except (TypeError, ValueError):
+        return "1"
+    if n <= 1:
+        return "1"
+    if n <= 4:
+        return "2-4"
+    return "5+"
+
+
+def report_session(status: str, count) -> None:
+    """Submit one detail.syncplay event for a member's session lifecycle
+    ("started" at join, "ended" when their participation stops).
+
+    The payload carries the action, the status and the participant bracket and
+    nothing else -- no room name, no member name, no token, no watched title
+    (registry.py: "ohne Rauminhalt/Titel").
+
+    Called once per join and once per member who leaves/is removed -- never
+    from the SSE loop, which ticks every few seconds per connected member.
+
+    MUST be called with no room / registry lock held. build_feature_detail_event()
+    and client.submit() each read app_settings (consent + the enabled data keys)
+    from SQLite, i.e. up to four reads that can block for the full busy_timeout
+    while the queue worker writes. Callers therefore collect the values they need
+    inside their ``with`` block and report afterwards -- see
+    _report_sessions_ended(), which every multi-member path funnels through.
+
+    A member disappearing because the browser tab was closed or the network
+    dropped ENDS a session, it is not a failure: cancel-flavoured statuses are
+    rejected outright below (via telemetry.classify) so no future caller can
+    turn "the user walked away" into an error-looking data point.
+
+    Fully guarded, imports included, so a telemetry problem can never disturb
+    room bookkeeping: a leave/kick/close must not fail because telemetry did.
+    """
+    try:
+        from ..telemetry import client as telemetry_client
+        from ..telemetry import events as telemetry_events
+        from ..telemetry.classify import is_cancel_status
+        if is_cancel_status(status):
+            return
+        telemetry_client.submit(telemetry_events.build_feature_detail_event(
+            "detail.syncplay", action="session", status=status,
+            metadata={"participants_bracket": _participant_bracket(count)},
+        ))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.syncplay event", exc_info=True)
+
+
+def _report_sessions_ended(counts) -> None:
+    """Report one "ended" session per entry in *counts*, after the caller has
+    released its locks.
+
+    The participant counts are gathered while the lock is still held, so each
+    event still carries the bracket the room had at the moment that member's
+    session actually ended -- only the DB-touching submit is deferred (see
+    report_session() for why it must never run inside a lock).
+
+    ``counts`` may be None/empty, which reports nothing. Each entry is submitted
+    independently and report_session() swallows its own errors, so one bad event
+    cannot cost the others.
+    """
+    for count in counts or ():
+        report_session("ended", count)
+
+
+def _room_content_provider(path):
+    """Resolve which SITE a room's media file originally came from, in the
+    spelling the telemetry adult guard uses ("hanime_tv"), or None.
+
+    A room plays a LOCAL library file: the media dict the host announces is
+    {title, is_movie, season, episode, file, subtitle} and carries no provider
+    at all. The origin is recovered the same way routes/progress.py recovers it
+    for watch events -- via the download_history row for that exact file -- but
+    from ``series_url`` rather than the ``provider`` column: ``provider`` holds
+    the HOSTER a download went through (VOE, Doodstream, "Direct"), which never
+    identifies the age-gated site, while ``series_url`` is the page the content
+    was actually taken from and maps cleanly through mirrors.site_for_url()
+    (mirror domains included).
+
+    Returns None whenever the origin cannot be established -- a file that was
+    placed in the library by hand, imported via MediaScan, renamed, or
+    downloaded before the history existed. The caller treats that as "do not
+    send", NOT as "safe": an unknown file could be 18+ content, and for that
+    provider nothing beyond flag.hanime_tv may ever leave the device.
+    """
+    path = (path or "").strip()
+    if not path:
+        return None
+    from .db import get_db
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT series_url FROM download_history "
+            "WHERE target_path = ? AND series_url IS NOT NULL AND series_url != '' "
+            "ORDER BY id DESC LIMIT 1",
+            (path,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    from ..mirrors import site_for_url
+    site = site_for_url(row["series_url"])
+    if not site:
+        return None
+    # mirrors/providers call the 18+ site "hanime"; telemetry's hard-coded
+    # guard (sanitize.is_adult_provider) matches the literal "hanime_tv", so
+    # translate here -- otherwise the guard silently never fires.
+    return "hanime_tv" if site == "hanime" else site
+
+
+def report_room_content(media) -> None:
+    """Submit one syncplay.room_content event (stage 5) for the title a room
+    just switched to.
+
+    Called once per ACTUAL media change announced by the host -- not per SSE
+    tick and not per participant (see set_media()/start_countdown(), which only
+    call this when the file really changed).
+
+    The provider is always passed truthfully, so build_play_event()'s
+    is_adult_provider() guard can do its job; when the origin site cannot be
+    determined the event is dropped here instead of being sent with
+    provider=None, since that would be exactly the hole 18+ content could
+    travel through.
+
+    syncplay.room_content has its own consent toggle -- build_play_event()
+    checks that key (not stream.play_events) and returns None when it is off.
+
+    Fully guarded, imports and DB lookup included, so a telemetry problem can
+    never disturb the room.
+    """
+    try:
+        if not isinstance(media, dict):
+            return
+        provider = _room_content_provider(media.get("file"))
+        if not provider:
+            return
+        from ..telemetry import client as telemetry_client
+        from ..telemetry import events as telemetry_events
+        telemetry_client.submit(telemetry_events.build_play_event(
+            provider=provider,
+            media_type="movie" if media.get("is_movie") else "series",
+            title=media.get("title"),
+            season=media.get("season"),
+            episode=media.get("episode"),
+            context="syncplay",
+            data_key="syncplay.room_content",
+        ))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit syncplay.room_content event",
+                     exc_info=True)
+
+
 # ── Member ──────────────────────────────────────────────────────────────────
 
 class Member:
@@ -173,10 +336,25 @@ class Room:
             i += 1
         return f"{name} ({i})"
 
-    def remove_member(self, token: str) -> None:
+    def remove_member(self, token: str) -> int | None:
+        """Drop a member from this room (host reassigned if needed).
+
+        Returns the participant count at the moment of removal -- the room size
+        the ending session still counted towards -- or None when *token* was not
+        a member and nothing happened.
+
+        The caller uses that number to report the "ended" session (mirroring the
+        "started" reported in join(); covers leaving, being kicked/banned and
+        being reaped after a dropped connection) AFTER releasing the room lock.
+        This method deliberately does not report itself: it only ever runs with
+        room.lock -- and for the reap/close paths with _registry_lock -- held,
+        where a blocking SQLite read would stall every room (see
+        report_session()).
+        """
         m = self.members.pop(token, None)
         if not m:
-            return
+            return None
+        ended_count = len(self.members) + 1
         if token == self.host_token:
             # Transfer host to the longest-present remaining member.
             self.host_token = None
@@ -185,6 +363,7 @@ class Room:
                 self.host_token = oldest.token
         if not self.members:
             self._empty_since = time.time()
+        return ended_count
 
     def is_expired(self, now: float | None = None) -> bool:
         if self.members:
@@ -194,13 +373,23 @@ class Room:
         now = now if now is not None else time.time()
         return now - self._empty_since > ROOM_GRACE
 
-    def reap_idle_members(self, now: float | None = None) -> list[Member]:
+    def reap_idle_members(self, now: float | None = None,
+                          ended_counts: list | None = None) -> list[Member]:
+        """Drop every member that stopped polling, returning those Members.
+
+        ``ended_counts``: optional list that each removal's participant count is
+        appended to, so the caller can report the ended sessions once it has left
+        both locks -- see _reap(), which runs on every join() and every lobby
+        poll while _registry_lock is held.
+        """
         now = now if now is not None else time.time()
         dead = [t for t, m in self.members.items() if now - m.last_seen > MEMBER_TIMEOUT]
         dropped = []
         for t in dead:
             dropped.append(self.members[t])
-            self.remove_member(t)
+            count = self.remove_member(t)
+            if ended_counts is not None and count is not None:
+                ended_counts.append(count)
         return dropped
 
     # -- readiness ----------------------------------------------------------
@@ -286,15 +475,23 @@ _token_index: dict[str, str] = {}
 def _reap() -> None:
     # Reap idle *members* so counts stay accurate, but keep empty rooms alive so
     # people can rejoin them. Rooms are only removed by an explicit close.
-    with _registry_lock:
-        for name in list(_rooms.keys()):
-            room = _rooms[name]
-            with room.lock:
-                dropped = room.reap_idle_members()
-                if dropped:
-                    for m in dropped:
-                        _token_index.pop(m.token, None)
-                    room.broadcast(room.members_event())
+    ended_counts: list[int] = []
+    try:
+        with _registry_lock:
+            for name in list(_rooms.keys()):
+                room = _rooms[name]
+                with room.lock:
+                    dropped = room.reap_idle_members(ended_counts=ended_counts)
+                    if dropped:
+                        for m in dropped:
+                            _token_index.pop(m.token, None)
+                        room.broadcast(room.members_event())
+    finally:
+        # Telemetry only after _registry_lock is gone: this runs on every join()
+        # and every lobby poll, and report_session() reads app_settings from
+        # SQLite. try/finally so an error inside the loop cannot drop reports
+        # already collected.
+        _report_sessions_ended(ended_counts)
 
 
 def join(room_name: str, name: str, is_guest: bool, device: str = "",
@@ -306,6 +503,7 @@ def join(room_name: str, name: str, is_guest: bool, device: str = "",
     if not room_name:
         raise ValueError("room name required")
     desired = (name or "").strip()
+    member_count = 0
     with _registry_lock:
         room = _rooms.get(room_name)
         is_new = room is None
@@ -331,6 +529,10 @@ def join(room_name: str, name: str, is_guest: bool, device: str = "",
             _token_index[member.token] = room_name
             snap = room.snapshot(member.token)
             room.broadcast(room.members_event())
+            member_count = len(room.members)
+    # Telemetry: a session started for this member (the stage-2 counter
+    # flag.syncplay is submitted by the /api/syncplay/join route).
+    report_session("started", member_count)
     return member.token, room, snap
 
 
@@ -383,13 +585,19 @@ def leave(token: str) -> None:
     room = room_for_token(token)
     if not room:
         return
-    with room.lock:
-        name = room.members[token].name if token in room.members else None
-        room.remove_member(token)
-        _token_index.pop(token, None)
-        if name:
-            room.broadcast({"type": "left", "name": name})
-        room.broadcast(room.members_event())
+    ended_count = None
+    try:
+        with room.lock:
+            name = room.members[token].name if token in room.members else None
+            ended_count = room.remove_member(token)
+            _token_index.pop(token, None)
+            if name:
+                room.broadcast({"type": "left", "name": name})
+            room.broadcast(room.members_event())
+    finally:
+        # Outside the room lock, and in a finally so a failing broadcast cannot
+        # swallow the report -- see report_session().
+        _report_sessions_ended([ended_count] if ended_count is not None else None)
 
 
 def control(token: str, action: str, position: float | None) -> bool:
@@ -508,7 +716,12 @@ def chat(token: str, text: str) -> bool:
 
 
 def set_media(token: str, media: dict | None) -> bool:
-    """Host announces the currently selected media / episode."""
+    """Host announces the currently selected media / episode.
+
+    Telemetry: reports syncplay.room_content once, and only when the room
+    really switched to a different file -- re-picking what is already playing
+    is not a new room content (see report_room_content()).
+    """
     room = room_for_token(token)
     if not room:
         return False
@@ -519,17 +732,28 @@ def set_media(token: str, media: dict | None) -> bool:
         m.touch()
         if token != room.host_token:
             return False  # only the host drives media selection
+        previous_file = (room.media or {}).get("file")
         room.media = media
         # New media → reset playstate to the start, paused. History is only
         # recorded once playback actually starts (see control()).
         room.gated = False
         room._set_playstate(0.0, paused=True, set_by=m.name)
         room.broadcast({"type": "media", "media": media, "set_by": m.name})
+        changed = (media or {}).get("file") != previous_file
+    # Outside the room lock on purpose: report_room_content() hits the download
+    # history DB, which must not block the room's broadcasts.
+    if changed:
+        report_room_content(media)
     return True
 
 
 def start_countdown(token: str, media: dict | None, seconds: int = 10) -> bool:
-    """Host queues the next episode with a synced countdown for everyone."""
+    """Host queues the next episode with a synced countdown for everyone.
+
+    Same telemetry as set_media(): this is the other way the room's content
+    changes (the auto-advance / "next episode" path), so it reports the new
+    room content exactly once as well.
+    """
     room = room_for_token(token)
     if not room:
         return False
@@ -540,11 +764,15 @@ def start_countdown(token: str, media: dict | None, seconds: int = 10) -> bool:
         m.touch()
         if token != room.host_token:
             return False
+        previous_file = (room.media or {}).get("file")
         room.media = media
         room.gated = False
         room._set_playstate(0.0, paused=True, set_by=m.name)
         room.broadcast({"type": "countdown", "media": media,
                         "countdown": max(3, int(seconds or 10)), "set_by": m.name})
+        changed = (media or {}).get("file") != previous_file
+    if changed:
+        report_room_content(media)
     return True
 
 
@@ -638,15 +866,19 @@ def kick(host_token: str, target_name: str) -> bool:
     room = _host_room(host_token)
     if not room:
         return False
-    with room.lock:
-        t = _find_by_name(room, target_name)
-        if not t or t.token == host_token:
-            return False
-        room.send_to(t.token, {"type": "kicked", "reason": "kick"})
-        _token_index.pop(t.token, None)
-        room.remove_member(t.token)
-        room.broadcast({"type": "left", "name": target_name})
-        room.broadcast(room.members_event())
+    ended_count = None
+    try:
+        with room.lock:
+            t = _find_by_name(room, target_name)
+            if not t or t.token == host_token:
+                return False
+            room.send_to(t.token, {"type": "kicked", "reason": "kick"})
+            _token_index.pop(t.token, None)
+            ended_count = room.remove_member(t.token)
+            room.broadcast({"type": "left", "name": target_name})
+            room.broadcast(room.members_event())
+    finally:
+        _report_sessions_ended([ended_count] if ended_count is not None else None)
     return True
 
 
@@ -656,18 +888,22 @@ def ban(host_token: str, target_name: str, by_ip: bool = True) -> bool:
     room = _host_room(host_token)
     if not room:
         return False
-    with room.lock:
-        t = _find_by_name(room, target_name)
-        if not t or t.token == host_token:
-            return False
-        room.banned_names.add(t.name)
-        if by_ip and t.ip:
-            room.banned_ips.add(t.ip)
-        room.send_to(t.token, {"type": "kicked", "reason": "ban"})
-        _token_index.pop(t.token, None)
-        room.remove_member(t.token)
-        room.broadcast({"type": "left", "name": target_name})
-        room.broadcast(room.members_event())
+    ended_count = None
+    try:
+        with room.lock:
+            t = _find_by_name(room, target_name)
+            if not t or t.token == host_token:
+                return False
+            room.banned_names.add(t.name)
+            if by_ip and t.ip:
+                room.banned_ips.add(t.ip)
+            room.send_to(t.token, {"type": "kicked", "reason": "ban"})
+            _token_index.pop(t.token, None)
+            ended_count = room.remove_member(t.token)
+            room.broadcast({"type": "left", "name": target_name})
+            room.broadcast(room.members_event())
+    finally:
+        _report_sessions_ended([ended_count] if ended_count is not None else None)
     return True
 
 
@@ -691,13 +927,25 @@ def close_room(host_token: str) -> bool:
     room = _host_room(host_token)
     if not room:
         return False
-    with _registry_lock:
-        with room.lock:
-            room.broadcast({"type": "closed"})
-            for tok in list(room.members.keys()):
-                _token_index.pop(tok, None)
-            room.members.clear()
-            _rooms.pop(room.name, None)
+    ended_counts: list[int] = []
+    try:
+        with _registry_lock:
+            with room.lock:
+                room.broadcast({"type": "closed"})
+                for tok in list(room.members.keys()):
+                    _token_index.pop(tok, None)
+                # Closing evicts everyone without going through remove_member(),
+                # so collect one ended session per member here instead -- all of
+                # them with the room size at close time.
+                ending = len(room.members)
+                ended_counts = [ending] * ending
+                room.members.clear()
+                _rooms.pop(room.name, None)
+    finally:
+        # Reported in one go after BOTH locks are released: a full room used to
+        # mean one blocking DB read per member while _registry_lock was held,
+        # stalling every join/leave/lobby poll of every room.
+        _report_sessions_ended(ended_counts)
     return True
 
 
@@ -829,16 +1077,24 @@ def list_rooms() -> list[dict]:
 def close_by_name(name: str) -> bool:
     """Close/delete a room by name (used by the instance owner from the lobby)."""
     name = (name or "").strip()
-    with _registry_lock:
-        room = _rooms.get(name)
-        if not room:
-            return False
-        with room.lock:
-            room.broadcast({"type": "closed"})
-            for tok in list(room.members.keys()):
-                _token_index.pop(tok, None)
-            room.members.clear()
-            _rooms.pop(name, None)
+    ended_counts: list[int] = []
+    try:
+        with _registry_lock:
+            room = _rooms.get(name)
+            if not room:
+                return False
+            with room.lock:
+                room.broadcast({"type": "closed"})
+                for tok in list(room.members.keys()):
+                    _token_index.pop(tok, None)
+                # Same as close_room(): members are dropped wholesale here, and
+                # the reports are deferred until after both locks are released.
+                ending = len(room.members)
+                ended_counts = [ending] * ending
+                room.members.clear()
+                _rooms.pop(name, None)
+    finally:
+        _report_sessions_ended(ended_counts)
     return True
 
 

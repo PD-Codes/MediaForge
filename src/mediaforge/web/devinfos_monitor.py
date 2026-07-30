@@ -12,13 +12,13 @@ import threading
 import time
 
 from ..logger import get_logger
+from ..telemetry.classify import is_server_unreachable as _is_server_unreachable
 from .db import replace_devinfo_posts
 
 logger = get_logger(__name__)
 
 # Fixed Dev Info server endpoint. Intentionally NOT admin-configurable —
 # do not add a settings UI or DB-backed override for this.
-# TODO: set this to the real deployed Dev Info server base URL once it's live.
 DEVINFOS_SERVER_URL = "https://mediaforge.softarchiv.com"
 DEVINFOS_POLL_INTERVAL_SECONDS = 300
 
@@ -80,8 +80,21 @@ def _devinfos_fetch_and_store():
         # errors around it in 60 lines of noise -- same lesson as the ffmpeg
         # banner drowning out transcoding failures. The stack is still there
         # when debug logging is on.
-        logger.warning("[DevInfos] fetch failed (%s: %s) — keeping cached posts",
-                       type(exc).__name__, str(exc)[:200])
+        # The devInfo server is entirely optional infrastructure (a changelog
+        # feed plus the opt-in telemetry endpoint). It being unreachable -- down
+        # for maintenance, no internet, DNS filtered, behind a captive portal --
+        # is a routine, harmless condition that the user can neither fix nor act
+        # on, and this poller retries every 5 minutes anyway. Printing a warning
+        # each round turned an offline weekend into hundreds of lines of console
+        # noise for a feature nothing depends on, so an unreachable server is
+        # DEBUG-only. Anything else (malformed JSON, a DB write failing, a bug
+        # in this function) is a real problem and stays visible at WARNING.
+        if _is_server_unreachable(exc):
+            logger.debug("[DevInfos] server unreachable (%s) — keeping cached posts",
+                         type(exc).__name__)
+        else:
+            logger.warning("[DevInfos] fetch failed (%s: %s) — keeping cached posts",
+                           type(exc).__name__, str(exc)[:200])
         logger.debug("[DevInfos] fetch failure detail", exc_info=True)
 
 
@@ -107,8 +120,13 @@ def _start_devinfos_poller():
                 continue
             try:
                 _devinfos_fetch_and_store()
-            except Exception:
-                logger.warning("[DevInfos] poller round failed", exc_info=True)
+            except Exception as exc:
+                # Same reasoning as in _devinfos_fetch_and_store(): a server that
+                # simply is not answering must never reach the console.
+                if _is_server_unreachable(exc):
+                    logger.debug("[DevInfos] poller round skipped (server unreachable)")
+                else:
+                    logger.warning("[DevInfos] poller round failed", exc_info=True)
             # Sleep until the next round.
             _devinfos_wake.wait(timeout=DEVINFOS_POLL_INTERVAL_SECONDS)
             _devinfos_wake.clear()

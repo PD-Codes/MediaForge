@@ -3,9 +3,21 @@
 Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 
-# TODO(telemetry): wire up flag.v1_api (usage counter) and detail.v1_api
-# (per-endpoint usage frequency) -- see telemetry/registry.py.
-# Registry-only for now.
+Telemetry: flag.v1_api (stage-2 usage counter) and detail.v1_api (stage-3,
+which endpoint was called and whether it worked) are reported from the
+after-request hook registered at the bottom of register_v1_api_routes().
+
+Two deliberate restrictions there:
+  * Only calls that PASSED the API-key check count. This API is reachable by
+    anything that can open a socket to it; an unauthenticated probe from a
+    port scanner is not "the user used the external API".
+  * Both keys are throttled per process (see _V1_FLAG_INTERVAL /
+    _V1_DETAIL_INTERVAL). /api/v1/status is explicitly a poll-me endpoint
+    (Home Assistant and friends hit it every few seconds), so one event per
+    request would be pure noise.
+
+detail.v1_api carries the Flask ENDPOINT NAME only ("api_v1_queue_item") --
+never the concrete path, query string or any id from it.
 """
 
 from .. import selfupdate
@@ -32,10 +44,102 @@ from ..uptime_monitor import _MONITOR_SITES
 from ..uptime_monitor import _uptime_config
 from ..version_info import _get_display_version
 from flask import Response as _FlaskResponse
+from flask import g
 from flask import jsonify
 from flask import request
 import json
 import secrets
+import threading
+import time
+from ...logger import get_logger
+from ...telemetry import client as telemetry_client
+from ...telemetry import events as telemetry_events
+
+
+logger = get_logger(__name__)
+
+
+# --- Telemetry throttling ---------------------------------------------------
+# The external API exists to be polled. flag.v1_api answers "does this install
+# use the REST API", so once an hour is all the resolution it needs;
+# detail.v1_api answers "which endpoints are used", so it is throttled per
+# endpoint+status on a shorter interval -- enough to collapse a poller's burst
+# without losing a genuinely different endpoint being called in between.
+_V1_FLAG_INTERVAL = 3600.0
+_V1_DETAIL_INTERVAL = 300.0
+_v1_throttle_lock = threading.Lock()
+_v1_last_sent = {}
+
+
+def _v1_throttle_reserve(key, interval):
+    """Reserve the throttle slot for *key* when it has not been reported within
+    the last *interval* seconds in this process.
+
+    Checking and arming happen in the same locked step, so two threads can
+    never both pass for the same key. The event itself is built afterwards,
+    outside the lock (building reads the telemetry settings, so it must not
+    run under this lock). When that build produces nothing -- consent for the
+    data key is missing -- the caller hands the slot back via
+    _v1_throttle_release(), so the throttle only stays armed for calls that
+    really did send something.
+
+    Returns an opaque token to pass to _v1_throttle_release(), or None when
+    the key is still throttled.
+    """
+    now = time.monotonic()
+    with _v1_throttle_lock:
+        last = _v1_last_sent.get(key)
+        if last is not None and now - last < interval:
+            return None
+        _v1_last_sent[key] = now
+        return (now, last)
+
+
+def _v1_throttle_release(key, token):
+    """Undo a reservation that did not produce an event, so the next API call
+    reports immediately once the user enables telemetry."""
+    stamp, previous = token
+    with _v1_throttle_lock:
+        if _v1_last_sent.get(key) != stamp:
+            return  # a later reservation owns the slot now -- leave it alone
+        if previous is None:
+            _v1_last_sent.pop(key, None)
+        else:
+            _v1_last_sent[key] = previous
+
+
+def _report_v1_call(endpoint, status):
+    """Submit flag.v1_api + detail.v1_api for one authenticated API call.
+
+    ``endpoint`` is the Flask endpoint name (a fixed route identifier such as
+    "api_v1_queue_item"), never the request path -- so no queue id, no
+    ?status= filter and no API key can ride along. ``status`` is "ok" or
+    "error"; nothing about the response body is looked at.
+
+    Wrapped in its own try/except so a telemetry bug can never affect the API
+    response itself.
+    """
+    try:
+        token = _v1_throttle_reserve("flag", _V1_FLAG_INTERVAL)
+        if token is not None:
+            event = telemetry_events.build_feature_flag_event("flag.v1_api")
+            if event is not None:
+                telemetry_client.submit(event)
+            else:
+                _v1_throttle_release("flag", token)
+        detail_key = "detail:%s:%s" % (endpoint, status)
+        token = _v1_throttle_reserve(detail_key, _V1_DETAIL_INTERVAL)
+        if token is not None:
+            event = telemetry_events.build_feature_detail_event(
+                "detail.v1_api", action="call", status=status,
+                metadata={"endpoint": endpoint},
+            )
+            if event is not None:
+                telemetry_client.submit(event)
+            else:
+                _v1_throttle_release(detail_key, token)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit v1 API events", exc_info=True)
 
 
 def _v1_json(data, status=200):
@@ -61,6 +165,9 @@ def _check_api_key():
             "error": "Unauthorized",
             "message": "Provide your API key via the X-Api-Key header or an ?apikey= query param.",
         }, status=401)
+    # Marks this request as a genuine API call for the telemetry hook below --
+    # unauthenticated probes must not count as "the REST API was used".
+    g._v1_authenticated = True
     return None
 
 
@@ -358,3 +465,20 @@ def register_v1_api_routes(app):
             limit=limit, offset=offset,
         )
         return _v1_json({"entries": entries, "total": total, "limit": limit, "offset": offset})
+
+    @app.after_request
+    def _v1_api_telemetry(response):
+        """Report an authenticated /api/v1/* call (see the module docstring).
+
+        Registered as a normal after_request hook: it runs for every request,
+        but returns immediately unless _check_api_key() marked this one as an
+        authenticated API call. A client that hangs up mid-response never gets
+        here at all, so a cancelled request cannot produce an "error" event.
+        """
+        try:
+            if getattr(g, "_v1_authenticated", False):
+                _report_v1_call(request.endpoint or "unknown",
+                                "ok" if response.status_code < 400 else "error")
+        except Exception:
+            logger.debug("[Telemetry] v1 API after_request hook failed", exc_info=True)
+        return response

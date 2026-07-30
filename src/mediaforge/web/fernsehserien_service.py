@@ -35,10 +35,13 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import unicodedata
 import re as _re
 from typing import Any, Dict, Optional
 
+from ..telemetry import client as telemetry_client
+from ..telemetry import events as telemetry_events
 from .db import (
     get_setting,
     get_provider_cache,
@@ -78,6 +81,42 @@ _scraper_delay: Optional[float] = None  # delay the cached instance was built wi
 # TMDB cache) so a restart doesn't lose 24h of work and a bad slug guess
 # doesn't get retried on every process start.
 _PROVIDER_CACHE_NS = "fernsehserien_avail"
+
+
+# Throttle state for flag.integrations.fernsehserien: the monotonic timestamp
+# of the last submitted event (None = never in this process). A single browse
+# page renders a provider pill per card, so an unthrottled submit would produce
+# dozens of events for one user action -- a flag means "the integration is
+# used", not "another card was rendered".
+_TELEMETRY_FLAG_INTERVAL = 3600.0  # seconds -- at most one event per hour
+_telemetry_flag_last: Optional[float] = None
+_telemetry_flag_lock = threading.Lock()
+
+
+def _report_fernsehserien_used() -> None:
+    """Submit the flag.integrations.fernsehserien stage-2 usage counter (see
+    registry.py: "Nur, dass die Fernsehserien.de-Integration aktiv verbunden
+    ist und genutzt wird"), throttled to at most once per hour per process.
+
+    Called from get_provider_info() after a live page fetch succeeded -- a
+    cache hit is not a use of the integration. A pure counter:
+    build_feature_flag_event() takes no metadata, so neither the title nor the
+    guessed slug is ever involved. Wrapped in its own try/except so a telemetry
+    bug can never affect a lookup.
+    """
+    global _telemetry_flag_last
+    try:
+        now = time.monotonic()
+        with _telemetry_flag_lock:
+            if (_telemetry_flag_last is not None
+                    and now - _telemetry_flag_last < _TELEMETRY_FLAG_INTERVAL):
+                return
+            _telemetry_flag_last = now
+        telemetry_client.submit(
+            telemetry_events.build_feature_flag_event("flag.integrations.fernsehserien"))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.integrations.fernsehserien event",
+                     exc_info=True)
 
 
 # ── Settings helpers ──────────────────────────────────────────────────────────
@@ -266,6 +305,9 @@ def get_provider_info(title: str) -> Dict[str, Any]:
         if scraper is not None:
             try:
                 info = scraper.show_info(slug)
+                # Telemetry: stage-2 usage counter -- a live fetch from
+                # fernsehserien.de really happened (throttled in the helper).
+                _report_fernsehserien_used()
                 premiere = info.get("german_streaming_premiere")
                 if premiere and premiere.get("provider"):
                     provider = premiere["provider"] or {}
