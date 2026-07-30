@@ -2,7 +2,9 @@
 
 # MediaForge
 
-**MediaForge** is a cross-platform **WebUI** tool for downloading anime from aniworld.to, series from s.to, and movies from filmpalast.to. It runs on Windows, macOS, and Linux.
+**MediaForge** is a free, self-hosted, open-source **media downloader and media server companion** with a modern **web UI** — download anime from **aniworld.to**, series from **s.to**, movies from **filmpalast.to** and **megakino.to**, or any direct video/`.m3u8` link, then browse, stream and manage everything from one place.
+
+It works as an **anime downloader**, **series & movie downloader**, **AutoSync / auto-download manager**, **media library with built-in web player and eBook reader**, and integrates with **Jellyfin, Plex, Jellyseerr and Overseerr**. Runs on **Windows, macOS, Linux, Docker and NAS**, with **multi-user login, OIDC SSO, a REST API** and a UI in **English, German, Spanish, French and Italian**.
 
 > Fork of the original [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader) by [phoenixthrush](https://github.com/phoenixthrush), [SiroxCW](https://github.com/SiroxCW) and [Tmaster055](https://github.com/Tmaster055) — maintained and extended here by [TheMRX13](https://github.com/TheMRX13) and [Domekologe](https://github.com/Domekologe). The legacy CLI has been **removed**; everything runs through the WebUI.
 
@@ -48,7 +50,8 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 
 ## Highlights
 
-- **Browse, search & download** full series, seasons or single episodes from aniworld.to, s.to and filmpalast.to
+- **Browse, search & download** full series, seasons or single episodes from aniworld.to, s.to, filmpalast.to, megakino.to and hanime.tv
+- **Direct Link downloads** — paste any raw media URL (`.m3u8`, MP4 or anything yt-dlp can read), pick a quality variant and queue it like any other download
 - **AutoSync** — keep series up to date automatically on an **interval or weekly schedule**, with per-job **season/episode filters** and a separate path for movies/specials
 - **Download queue & history** — a real-time queue plus a searchable, filterable **history** (failed/cancelled/skipped, retry, bulk delete, export, auto-retention)
 - **Media library, favourites & statistics** built in
@@ -60,7 +63,7 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **Advanced search** — TMDB Discover with genres (include/exclude), rating & vote-count thresholds, year and runtime ranges, keywords, original language, series status, networks and streaming providers, grouped in a floating filter menu with quick presets
 - **CineInfo (TMDB)** metadata and a **Calendar** of upcoming episodes and releases — month, week and agenda views, search and media-type filters, a detail modal on every entry, and an **iCal subscription feed** you can add to Google/Apple Calendar, Thunderbird or DAVx5
 - **Jellyfin/Plex** and **Jellyseerr/Overseerr** integration — the Seerr requests page filters, searches and sorts the whole request set server-side and can approve, decline or hide requests in bulk
-- **Notifications** via Web Push, Telegram, Pushover, Discord or WhatsApp
+- **Notifications** via Web Push, Telegram, Pushover, **ntfy**, Discord or WhatsApp — plus event hooks and extra channels that installed modules can register
 - **Web player** — overlay controls that fade out of the way, 10 s / 30 s jumps, subtitle, audio-track, quality and speed pickers, chapter marks, seek previews, skip-intro, autoplay of the next episode, picture-in-picture, full touch gestures (double tap to jump, swipe for volume/brightness, hold for 2x) and — when streaming without downloading — a **source picker** that shows every hoster with its language, resolution and measured response time, and switches without losing your position
 - **Encoding** (Stream Copy / H.264 / H.265, with NVENC, VAAPI, VideoToolbox) and **Anime4K** upscaling
 - **Full & Selective Backup** — export/import settings and user data as a password-protected file to back up or migrate a MediaForge install (admin only)
@@ -69,7 +72,11 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **Crunchyroll & Fernsehserien.de** as metadata sources — availability pills on search results, plus Crunchyroll simulcast/watchlist entries in the calendar
 - **UpTime monitor & Dev Infos** — a dashboard showing whether each source site is reachable (history, response times, per-source tracking), and release notes from the developers right in the UI
 - **Opt-in telemetry** — off by default, staged consent, every data point listed and individually switchable under Settings → Privacy; anything you cancel yourself is never reported as an error, and an unreachable telemetry server stays silent instead of writing to your console
-- **Multi-user auth & OIDC SSO**, a full **REST API**, **Docker**-ready, and a UI in **English & German**
+- **Automatic library maintenance** — a watcher keeps the index in sync with the folders on disk, writes Kodi/Jellyfin-style **`.nfo` metadata** next to your files and can lay episodes out in per-language folders
+- **Self-update built in** — pip/pipx installs can upgrade themselves from the UI and switch between the **stable and dev release channels**, no shell required
+- **Installable as a PWA** — add MediaForge to your phone's home screen or your desktop and it runs like an app, offline shell included
+- **Guided setup wizard**, an in-app **log viewer**, automatic **ffmpeg/dependency installation**, **autostart on boot** and **mirror-domain handling** that keeps working when a source site moves to a new address
+- **Multi-user auth & OIDC SSO**, a full **REST API**, **Docker**-ready, and a UI in **English, German, Spanish, French and Italian**
 
 → Full feature tour in the **[Wiki](https://github.com/PD-Codes/MediaForge/wiki/Web-UI)**.
 
@@ -113,7 +120,7 @@ Running behind a VPN? A ready-to-use **Gluetun** setup is in [`docker-compose.gl
 
 Actively in development — current work in progress:
 
-- [x] Multi-Language Support — UI available in German and English
+- [x] Multi-Language Support — UI available in English, German, Spanish, French and Italian
 - [ ] More Extractors — additional video host support beyond the current providers
 - [x] Live Transcode / In-Browser Playback — watch downloaded files directly in the UI
 - [ ] Discord Rich Presence — show what you're currently watching on your Discord profile
@@ -126,7 +133,7 @@ Actively in development — current work in progress:
 - [x] Bandwidth Limit / Download Time Window — throttle speed or restrict downloads to specific hours
 - [x] Download History — searchable log of all completed downloads with date, size and duration
 - [ ] Generic Outgoing Webhook — send a configurable POST request on download completion (Home Assistant, n8n, etc.)
-- [ ] Subtitle Support — additional language and subtitle download options
+- [x] Subtitle Support — subtitles are downloaded and muxed in as switchable soft-sub tracks
 - [ ] Integrated VPN/Proxy — download through VPN or proxy servers to increase privacy
 - [x] Adding Pills to Advanced Search if a Media is already downloaded, and more
 - [x] Auto-Sync "Waitlist". If an Auto-Sync Title was not found for X Days, it will be tried again in Y week(s)
@@ -137,7 +144,7 @@ Actively in development — current work in progress:
 
 ## Supported Sites & Extractors
 
-URLs from **aniworld.to**, **s.to**, **filmpalast.to**, **megakino.to** and **hanime.tv** are supported, delivered behind the scenes via hosters such as VOE, Vidoza, Vidmoly, Filemoon, Doodstream, Vidara, Veev, LoadX, Luluvdo, Streamtape and Vidavaca.
+URLs from **aniworld.to**, **s.to**, **filmpalast.to**, **megakino.to** and **hanime.tv** are supported, delivered behind the scenes via hosters such as VOE, Vidoza, Vidmoly, Filemoon, Doodstream, Vidara, Veev, LoadX, Luluvdo, Streamtape, Vidavaca and Hanime. **Direct links** (`.m3u8`, MP4 and everything else yt-dlp understands) work without a source site at all, and installed **modules can register additional sources and search providers**.
 
 → See **[Supported Sites](https://github.com/PD-Codes/MediaForge/wiki/Supported-Sites)** for the live status of each site and extractor, and which hosters are prioritized per site.
 
@@ -186,6 +193,29 @@ MediaForge is licensed under the **GNU General Public License v3.0 or later**
 > other project — open source or commercial — requires **prior written
 > permission** from the PD-Codes Team. Full terms:
 > [LICENSE-CAPTCHA](LICENSE-CAPTCHA).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## What people use MediaForge for
+
+<details>
+<summary><strong>Common questions & use cases</strong> (click to expand)</summary>
+
+**Is there a web UI for AniWorld-Downloader?** — Yes. MediaForge is a maintained fork of AniWorld-Downloader with the CLI replaced by a full self-hosted web interface.
+
+**How do I download a whole anime series automatically?** — AutoSync watches a series and downloads new episodes on an interval or a weekly schedule, with per-season and per-episode filters.
+
+**Can I run it in Docker / on a NAS / behind a VPN?** — Yes: an official `ghcr.io` image, Docker Compose examples, a ready-made Gluetun (VPN) compose file, and reverse-proxy notes. UGREEN and Synology work but are not optimized for.
+
+**Does it work with Jellyfin, Plex, Jellyseerr or Overseerr?** — Yes. It writes Kodi/Jellyfin-compatible `.nfo` metadata, muxes soft subtitles the way those servers expect, and can approve or decline Seerr requests directly.
+
+**Can I watch without downloading?** — Yes. The built-in web player streams straight from the hoster with a source picker, subtitle/audio/quality selection, chapters, skip-intro, autoplay and picture-in-picture, plus SyncPlay for watching together.
+
+**Can it manage eBooks too?** — Yes. EPUB, MOBI, AZW3, AZW and PDF are indexed (including Calibre libraries, read-only) and open in a built-in reader with bookmarks and cross-format reading progress.
+
+**Keywords:** anime downloader · aniworld downloader · aniworld.to downloader · s.to downloader · serienstream downloader · filmpalast downloader · megakino downloader · self-hosted media downloader · open source stream downloader · web UI downloader · m3u8 downloader · yt-dlp web interface · AutoSync auto download series · Jellyfin companion · Plex companion · Jellyseerr / Overseerr integration · self-hosted media library · web video player · EPUB / MOBI / PDF reader · Calibre library viewer · Docker media downloader · NAS media downloader · Anime4K upscaling · H.264 / H.265 / NVENC encoding · TMDB metadata · episode calendar with iCal feed · SyncPlay watch together · multi-user · OIDC SSO · REST API · PWA · Python Flask self-hosted app
+
+</details>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

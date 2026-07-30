@@ -5,7 +5,7 @@ authors = [
   { name = "TheMRX13 (Pascal Keller)", email = "keller.pascal1313@gmail.com" },
   { name = "Domekologe (Domenick Waldvogel)", email = "domenick.waldvogel@domekologe.eu" },
 ]
-description = "MediaForge is a WebUI-only tool for downloading anime and series from AniWorld, SerienStream and FilmPalast. Start it with 'mediaforge' to launch the web interface directly."
+description = "Self-hosted WebUI anime, series and movie downloader with media library, web player, eBook reader, AutoSync scheduling and Jellyfin/Plex integration. Run 'mediaforge' to open the web interface."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -50,9 +50,28 @@ dependencies = [
   "mobi",
 ]
 
+keywords = [
+  "anime", "anime-downloader", "aniworld", "aniworld-downloader", "s.to", "serienstream-downloader", "serienstream", "filmpalast", "filmpalast-downloader", "megakino", "megakino-downloader",
+  "downloader", "video-downloader", "m3u8", "yt-dlp", "streaming", "self-hosted",
+  "webui", "flask", "media-server", "media-library", "jellyfin", "plex",
+  "jellyseerr", "overseerr", "tmdb", "subtitles", "ebook-reader", "epub",
+  "docker", "pwa", "syncplay", "modular", "themes", "python"
+]
+
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Operating System :: OS Independent",
+  "Environment :: Web Environment",
+  "Framework :: Flask",
+  "Intended Audience :: End Users/Desktop",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+  "Natural Language :: English",
+  "Natural Language :: German",
 ]
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE", "COPYRIGHT", "LICENSE-CAPTCHA"]
