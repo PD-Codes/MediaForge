@@ -238,3 +238,5 @@ _to_delete/
 # empty directory sitting untracked in web/static for weeks.
 **/_css_backup_*/
 **/_backup_*/
+/graphify-out
+CLAUDE.md
