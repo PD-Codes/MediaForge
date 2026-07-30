@@ -1848,6 +1848,9 @@ async function openSeries(url) {
   const isSkeleton = document.body.classList.contains("skeleton-loader");
 
   document.getElementById("modalPoster").src = "";
+  // Drop the previous title's backdrop before the next one loads -- otherwise
+  // the modal opens showing the last series' artwork behind the new title.
+  _mfSetBackdrop("");
   const _favBtn = document.getElementById("favouriteBtn");
   if (_favBtn) _favBtn.style.display = "none";
 
@@ -3242,6 +3245,33 @@ async function _modalProviderChain(title, provEl, d, imdbId, staleFn) {
   }
 }
 
+// ── Modal backdrop ───────────────────────────────────────────────────────
+// TMDB already ships the image path inside `raw_details` (see
+// web/tmdb_cache.py), so this costs no extra lookup -- and it goes through the
+// image proxy like every other remote image, which is what keeps the browser
+// from talking to image.tmdb.org directly.
+function _mfSetBackdrop(path) {
+  const el = document.getElementById("modalBackdrop");
+  const modal = document.getElementById("modal");
+  if (!el) return;
+  if (!path) {
+    el.style.backgroundImage = "";
+    el.classList.remove("is-on");
+    if (modal) modal.classList.remove("has-backdrop");
+    return;
+  }
+  const url = proxyImg("https://image.tmdb.org/t/p/w780" + path);
+  // Preload: switching the class before the image is decoded shows an empty
+  // 172px band first and then pops the picture in.
+  const img = new Image();
+  img.onload = function () {
+    el.style.backgroundImage = 'url("' + url.replace(/"/g, "%22") + '")';
+    el.classList.add("is-on");
+    if (modal) modal.classList.add("has-backdrop");
+  };
+  img.src = url;
+}
+
 async function enrichModalWithTmdb(title, imdbId, _seq) {
   const provEl = document.getElementById('tmdbProviders');
   if (!provEl) return;
@@ -3280,6 +3310,13 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
     // redundant or conflicting second pill next to TMDB's own list.
     await _modalProviderChain(title, provEl, d, imdbId, _stale);
     if (_stale()) return;
+    // Backdrop as the modal's header image. Off by option, off without an
+    // image -- and `!== '0'` rather than `=== '1'` because this one defaults
+    // to on, like the trailer and the recommendations.
+    if ((cineinfoSettings.show_backdrop ?? '1') !== '0') {
+      const _bd = (d.raw_details && d.raw_details.backdrop_path) || "";
+      if (_bd) _mfSetBackdrop(_bd);
+    }
     // TMDB Genres — ersetze die Seiten-Genres wenn aktiviert
     if (cineinfoSettings.show_genres === '1' && d.genres && d.genres.length) {
       const genresEl = document.getElementById('modalGenres');

@@ -540,6 +540,60 @@
   animation: modal-in 0.2s ease;
 }
 
+/* TMDB backdrop header. Height 0 until a picture is actually set, so every
+   modal without one (no key, option off, title TMDB has no artwork for) keeps
+   the exact layout it had before this existed. */
+.modal-backdrop {
+  display: none;
+  height: 168px;
+  margin: -24px -24px 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background-position: center 22%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  position: relative;
+}
+
+.modal-backdrop.is-on { display: block; }
+
+/* The fade INTO the modal body -- without it the picture ends on a hard line
+   and the title underneath is unreadable over a bright frame. */
+.modal-backdrop.is-on::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg,
+    rgba(0, 0, 0, 0.25) 0%,
+    rgba(0, 0, 0, 0.1) 35%,
+    var(--bg-elevated) 100%);
+}
+
+/* The poster overlaps the picture, the text starts below it. Pulling the whole
+   header up would drag the description into the gradient too. */
+.modal.has-backdrop .modal-header {
+  margin-top: -56px;
+  position: relative;
+  z-index: 1;
+}
+
+.modal.has-backdrop .modal-meta {
+  padding-top: 58px;
+}
+
+.modal.has-backdrop .modal-header img {
+  /* Reads as a card lying ON the picture rather than in front of it. */
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Over a bright backdrop the close button needs its own ground. */
+.modal.has-backdrop > .close {
+  background: rgba(11, 14, 19, 0.55);
+  backdrop-filter: blur(6px);
+  color: var(--text-primary);
+}
+
 .modal>.close {
   position: absolute;
   top: 16px;
@@ -968,6 +1022,16 @@
    120px for the selects); at 360px minus padding those leave a few pixels
    of slack at best, so below 480px the rows stack instead. */
 @media (max-width: 640px) {
+  /* A 168px picture plus a poster plus the title is most of a phone screen
+     before anything useful starts. */
+  .modal-backdrop {
+    height: 116px;
+    margin: -18px -16px 0;
+  }
+
+  .modal.has-backdrop .modal-header { margin-top: -40px; }
+  .modal.has-backdrop .modal-meta { padding-top: 42px; }
+
   /* The series modal had no breakpoint of its own at all -- at 390px the
      104px poster and the meta column fought over the same row. Poster on top,
      text below, and the fields stack. */

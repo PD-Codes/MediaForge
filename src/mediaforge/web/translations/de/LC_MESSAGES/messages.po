@@ -6536,3 +6536,11 @@ msgstr "Hoster"
 #: src/mediaforge/web/templates/shared_modals.html
 msgid "Target folder"
 msgstr "Zielordner"
+
+#: src/mediaforge/web/templates/integrations.html
+msgid "Show backdrop"
+msgstr "Backdrop anzeigen"
+
+#: src/mediaforge/web/templates/integrations.html
+msgid "Uses the TMDB backdrop as the header image of the title window"
+msgstr "Nutzt das TMDB-Backdrop als Kopfbild des Titelfensters"

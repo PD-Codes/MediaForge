@@ -6753,3 +6753,11 @@ msgstr ""
 #: src/mediaforge/web/templates/shared_modals.html
 msgid "Target folder"
 msgstr ""
+
+#: src/mediaforge/web/templates/integrations.html
+msgid "Show backdrop"
+msgstr ""
+
+#: src/mediaforge/web/templates/integrations.html
+msgid "Uses the TMDB backdrop as the header image of the title window"
+msgstr ""

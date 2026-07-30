@@ -107,6 +107,12 @@
         <line x1="6" y1="6" x2="18" y2="18" />
       </svg>
     </button>
+    {# TMDB backdrop. Empty and hidden until enrichModalWithTmdb() finds one:
+       it needs a TMDB key, the "Show backdrop" option (Integrations ->
+       CineInfo) and an actual image for this title, and if any of the three is
+       missing the modal has to look exactly like it does without the feature
+       -- not like the same modal with a grey hole on top. #}
+    <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true"></div>
     <div class="modal-header">
       <div class="modal-poster-col">
         <div style="position:relative; display:inline-flex;">

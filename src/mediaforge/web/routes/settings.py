@@ -375,6 +375,7 @@ def register_settings_routes(app):
                     "show_rating":    get_setting("cineinfo_show_rating",    "0"),
                     "show_recommendations": get_setting("cineinfo_show_recommendations", "1"),
                     "show_trailer":   get_setting("cineinfo_show_trailer",   "1"),
+                    "show_backdrop":  get_setting("cineinfo_show_backdrop",  "1"),
                     "show_hover_rating": get_setting("cineinfo_show_hover_rating", "0"),
                     "show_hover_genres": get_setting("cineinfo_show_hover_genres", "0"),
                     "show_hover_fsk": get_setting("cineinfo_show_hover_fsk", "0"),
@@ -588,6 +589,7 @@ def register_settings_routes(app):
             "show_rating":    get_setting("cineinfo_show_rating",    "0"),
             "show_recommendations": get_setting("cineinfo_show_recommendations", "1"),
             "show_trailer":   get_setting("cineinfo_show_trailer",   "1"),
+            "show_backdrop":  get_setting("cineinfo_show_backdrop",  "1"),
             "show_hover_rating": get_setting("cineinfo_show_hover_rating", "0"),
             "show_hover_genres": get_setting("cineinfo_show_hover_genres", "0"),
             "show_hover_fsk": get_setting("cineinfo_show_hover_fsk", "0"),
@@ -623,6 +625,7 @@ def register_settings_routes(app):
 
         for key in ["tmdb_api_key", "country", "show_providers",
                     "show_genres", "show_fsk", "show_rating", "show_recommendations", "show_trailer",
+                    "show_backdrop",
                     "show_hover_rating", "show_hover_genres", "show_hover_fsk", "advanced_search",
                     "provider_order",
                     "calendar", "calendar_seerr", "calendar_mediathek", "calendar_library",

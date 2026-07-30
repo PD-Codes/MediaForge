@@ -163,6 +163,8 @@ async function loadCineinfoSettings() {
     if (ratingEl) ratingEl.checked = d.show_rating === "1";
     if (recEl) recEl.checked = d.show_recommendations !== "0";
     if (trailerEl) trailerEl.checked = d.show_trailer !== "0";
+    const backdropEl = document.getElementById("cineinfoShowBackdrop");
+    if (backdropEl) backdropEl.checked = d.show_backdrop !== "0";
     if (hRatingEl) hRatingEl.checked = d.show_hover_rating === "1";
     if (hGenresEl) hGenresEl.checked = d.show_hover_genres === "1";
     if (hFskEl) hFskEl.checked = d.show_hover_fsk === "1";
@@ -243,6 +245,7 @@ async function saveCineinfoDisplayOptions() {
   const show_rating = document.getElementById("cineinfoShowRating")?.checked ? "1" : "0";
   const show_recommendations = document.getElementById("cineinfoShowRecommendations")?.checked ? "1" : "0";
   const show_trailer = document.getElementById("cineinfoShowTrailer")?.checked ? "1" : "0";
+  const show_backdrop = document.getElementById("cineinfoShowBackdrop")?.checked ? "1" : "0";
   const show_hover_rating = document.getElementById("cineinfoShowHoverRating")?.checked ? "1" : "0";
   const show_hover_genres = document.getElementById("cineinfoShowHoverGenres")?.checked ? "1" : "0";
   const show_hover_fsk = document.getElementById("cineinfoShowHoverFsk")?.checked ? "1" : "0";
@@ -277,6 +280,7 @@ async function saveCineinfoDisplayOptions() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         show_providers, show_fsk, show_genres, show_rating, show_recommendations, show_trailer,
+        show_backdrop,
         show_hover_rating, show_hover_genres, show_hover_fsk, advanced_search, calendar,
         calendar_seerr, calendar_mediathek, calendar_library, calendar_refresh_interval
       }),
