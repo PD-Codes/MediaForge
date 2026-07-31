@@ -60,8 +60,41 @@ def base_url():
     return MEGAKINO_BASE_URL.rstrip("/")
 
 
+def _text(value, _depth=0):
+    """Coerce an API field that is DOCUMENTED as text but may arrive as a list.
+
+    megakino.to's /data/* endpoints are not schema-stable: fields the module
+    docstring above lists as plain strings (title, genres, storyline, overview,
+    poster_path) come back as a JSON array for some entries. Every re.* and
+    html.unescape() call in this module expects str, so one such entry raised
+    "TypeError: expected string or bytes-like object, got 'list'" out of
+    parse_meta() -- and because MegakinoMovie.title_de reads the parsed meta
+    lazily, that TypeError surfaced inside the /api/series route and took down
+    the whole response for a single malformed record.
+
+    Lists are joined rather than dropped so the real content survives: a
+    ["Action", "Drama"] genres field then splits back into two genres on the
+    "[/,]" separator in parse_meta(). Anything else is stringified, and
+    None/empty becomes "" so the existing `or ""` idioms keep working.
+    """
+    if isinstance(value, (list, tuple, set)):
+        # Depth-bounded on purpose. This payload arrives over the network from a
+        # third party, and json.loads() happily accepts nesting right up to the
+        # interpreter's recursion limit -- an unbounded walk here would turn a
+        # broken (or hostile) response into a RecursionError instead of a
+        # harmless empty string. No field on this API is legitimately nested
+        # deeper than one level, so two is already generous.
+        if _depth >= 2:
+            return ""
+        return ", ".join(t for t in (_text(v, _depth + 1).strip() for v in value) if t)
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else str(value)
+
+
 def poster_url(path):
     """TMDB poster path -> absolute image URL (served via the app image proxy)."""
+    path = _text(path)
     if not path:
         return ""
     if path.startswith("http"):
@@ -70,7 +103,7 @@ def poster_url(path):
 
 
 def slugify(title):
-    s = unescape(title or "").lower()
+    s = unescape(_text(title)).lower()
     s = re.sub(r"[^a-z0-9]+", "-", s)
     return s.strip("-") or "title"
 
@@ -216,22 +249,15 @@ def _browse(type_="", order_by="releases", keyword="", page=1, limit=24):
     return [_card(it) for it in items]
 
 
-def _genres_str(genres):
-    """Normalise the API's genres field (may be a list or a string) to text."""
-    if isinstance(genres, (list, tuple)):
-        return ", ".join(str(g).strip() for g in genres if g)
-    return str(genres or "").strip()
-
-
 def _card(item):
     poster = item.get("poster_path") or item.get("poster_path_season") or ""
     series = is_series_item(item)
-    title = unescape(item.get("title") or "")
+    title = unescape(_text(item.get("title")))
     return {
         "title": title,
         "url": content_url(item),
         "poster_url": poster_url(poster),
-        "genre": _genres_str(item.get("genres")),
+        "genre": _text(item.get("genres")).strip(),
         "rating": str(item.get("rating") or ""),
         "year": str(item.get("year") or ""),
         "is_series": series,
@@ -272,21 +298,21 @@ def fetch_watch(url_or_id):
 
 def parse_meta(data):
     """Shared metadata from a /data/watch payload (movie or season)."""
-    genres = [g.strip() for g in re.split(r"[/,]", data.get("genres") or "") if g.strip()]
+    genres = [g.strip() for g in re.split(r"[/,]", _text(data.get("genres"))) if g.strip()]
     year = ""
-    ym = re.search(r"\b(19|20)\d{2}\b", str(data.get("year") or ""))
+    ym = re.search(r"\b(19|20)\d{2}\b", _text(data.get("year")))
     if ym:
         year = ym.group(0)
     poster = data.get("poster_path") or data.get("poster_path_season") or ""
     return {
-        "title": unescape(data.get("title") or ""),
+        "title": unescape(_text(data.get("title"))),
         "year": year,
         "genres": genres,
-        "description": unescape(data.get("storyline") or data.get("overview") or ""),
+        "description": unescape(_text(data.get("storyline") or data.get("overview"))),
         "poster_url": poster_url(poster),
-        "imdb_id": (data.get("imdb_id") or "") or None,
-        "rating": str(data.get("rating") or ""),
-        "tv": str(data.get("tv") or "0"),
+        "imdb_id": _text(data.get("imdb_id")) or None,
+        "rating": _text(data.get("rating") or ""),
+        "tv": _text(data.get("tv")) or "0",
     }
 
 
@@ -307,7 +333,7 @@ def season_number(data):
                 return int(v)
             except (TypeError, ValueError):
                 pass
-    m = re.search(r"Staffel\s*(\d+)", data.get("title") or "", re.IGNORECASE)
+    m = re.search(r"Staffel\s*(\d+)", _text(data.get("title")), re.IGNORECASE)
     return int(m.group(1)) if m else 1
 
 
