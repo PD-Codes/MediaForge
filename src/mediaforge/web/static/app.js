@@ -1866,7 +1866,7 @@ async function openSeries(url) {
   if (isSkeleton) {
     modal.classList.add("skeleton");
     document.getElementById("modalPoster").style.opacity = "0";
-    document.getElementById("modalTitle").innerHTML = '<div style="height:28px; width:60%; background:rgba(255,255,255,0.03); border-radius:6px; margin-bottom:8px"></div>';
+    document.getElementById("modalTitle").innerHTML = '<div style="height:28px; width:60%; background:rgba(255,255,255,0.03); border-radius:6px; margin-bottom:8px;"></div>';
     document.getElementById("modalGenres").innerHTML = '<div style="height:14px; width:40%; background:rgba(255,255,255,0.03); border-radius:4px"></div>';
     document.getElementById("modalYear").textContent = "";
     document.getElementById("modalDesc").innerHTML = '<div style="height:14px; width:100%; background:rgba(255,255,255,0.03); border-radius:4px; margin-bottom:6px"></div><div style="height:14px; width:80%; background:rgba(255,255,255,0.03); border-radius:4px"></div>';
@@ -3411,7 +3411,7 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
           'padding:2px 8px 2px 6px',
           'border-radius:99px',
           'border:1px solid ' + brd,
-          'background:rgba(0,0,0,.22)',
+          'background:rgba(0,0,0,.45)',
           'color:' + col,
           'white-space:nowrap',
           'cursor:default',

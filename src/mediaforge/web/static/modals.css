@@ -578,9 +578,9 @@
    scrim has to INVERT per theme: dark text on a light theme needs a *white*
    veil, a black one would make it less readable, not more. */
 .modal-backdrop {
-  --mf-bd-top: rgba(0, 0, 0, 0.3);
-  --mf-bd-mid: rgba(0, 0, 0, 0.66);
-  --mf-bd-low: rgba(0, 0, 0, 0.84);
+    --mf-bd-top: rgba(0, 0, 0, 0.85);
+    --mf-bd-mid: rgba(0, 0, 0, 0.75);
+    --mf-bd-low: rgba(0, 0, 0, 0.65);
 }
 
 [data-theme="light"] .modal-backdrop {
@@ -605,7 +605,6 @@
    above the poster (the old 168px band minus the 56px overlap, minus the
    modal's own 24px top padding). */
 .modal.has-backdrop .modal-header {
-  margin-top: 88px;
   position: relative;
   z-index: 1;
 }
@@ -622,11 +621,20 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Over a bright backdrop the close button needs its own ground. */
+/* Over a bright backdrop the close button needs its own ground. The icon is
+   pinned light rather than following --text-primary: the ground is dark in
+   BOTH themes, so in the light theme the variable produced a near-black glyph
+   on a near-black disc. */
 .modal.has-backdrop > .close {
   background: rgba(11, 14, 19, 0.55);
   backdrop-filter: blur(6px);
-  color: var(--text-primary);
+  color: #f0f0f8;
+  z-index: 2;
+}
+
+.modal.has-backdrop > .close:hover {
+  background: rgba(11, 14, 19, 0.75);
+  color: #fff;
 }
 
 .modal>.close {
@@ -682,6 +690,7 @@
 .modal-meta {
   flex: 1;
   min-width: 0;
+  text-shadow: 1px 1px 1px black;
 }
 
 .modal-meta h2 {
@@ -746,6 +755,7 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-shadow: 0px 1px 0px black;
 }
 
 .desc.expanded {
@@ -767,6 +777,7 @@
   font-weight: 600;
   color: var(--accent);
   cursor: pointer;
+  text-shadow: 1px 1px 1px BLACK;
 }
 
 .desc-more:hover { text-decoration: underline; }
@@ -787,6 +798,8 @@
   gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 14px;
+  z-index: 1;
+  position: relative;
 }
 
 .mf-fld {
@@ -861,6 +874,8 @@
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 4px;
+  z-index: 1;
+  position: relative;
 }
 
 .modal-extras > .season-section {
