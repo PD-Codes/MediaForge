@@ -6785,3 +6785,9 @@ msgstr "{} Downloads laufen oder warten"
 #: src/mediaforge/web/templates/index.html
 msgid "{} things need your attention: failed downloads, plus a paused queue"
 msgstr "{} Dinge brauchen deine Aufmerksamkeit: fehlgeschlagene Downloads, plus eine pausierte Warteschlange"
+
+# --- Reader: shortened fit label ---
+
+msgctxt "reader fit"
+msgid "Original"
+msgstr "Original"

@@ -16,6 +16,7 @@ megakino.to is NOT a server-rendered DLE site — it exposes a clean JSON API:
 Posters are TMDB paths (image.tmdb.org). Streams carry direct hoster embed URLs
 (VOE, Vidara, Firestream, Vidsonic, …); we use VOE by default.
 """
+import json
 import re
 import threading
 from html import unescape
@@ -201,32 +202,63 @@ def _plain_get(url, headers, timeout):
     return _get_session().get(url, headers=headers, timeout=timeout)
 
 
+class MegakinoUnavailable(Exception):
+    """megakino.to did not hand back a usable JSON payload.
+
+    Covers every way this can happen, because to a caller they are the same
+    thing: the host is unreachable, the request timed out, a Cloudflare
+    challenge page came back instead of JSON, or -- as seen in the wild -- the
+    connection dropped mid-body and left a truncated document that raises
+    JSONDecodeError("Unterminated string").
+
+    It exists as its own type so the web routes can tell "the source site had a
+    bad day" apart from "MediaForge is broken" without matching on exception
+    CLASS NAMES, which is what routes/search.py did before: it looked for the
+    substrings "connection"/"timeout"/"protocol"/"ssl" and therefore missed
+    JSONDecodeError, ChunkedEncodingError and IncompleteRead entirely. Those
+    fell through to the generic handler, which answers 500 and logs at ERROR --
+    and an ERROR log is exactly what telemetry/hooks.py turns into a crash
+    report. Every hiccup on megakino.to's side was being filed as a defect in
+    this app. See routes/browse.py's "upstream failures answer 502" note for
+    the convention this follows.
+    """
+
+
 def _api_get_json(path, params=None, timeout=15):
     """Fetch a megakino JSON endpoint, trying the DoH session first (bypasses
     ISP DNS blocks) and the plain requests session as a fallback. The body is
     validated to actually be JSON — a Cloudflare/HTML interstitial from either
-    transport is skipped rather than crashing the JSON parser."""
+    transport is skipped rather than crashing the JSON parser.
+
+    Raises MegakinoUnavailable when neither transport produced usable JSON.
+    """
     url = base_url() + path
     if params:
         url += "?" + urlencode(params)
     headers = dict(_MK_HEADERS, Referer=base_url() + "/")
-    last_exc = None
+    reason = None
     for _get in (_doh_get, _plain_get):
         try:
             resp = _get(url, headers, timeout)
             resp.raise_for_status()
         except Exception as e:
-            last_exc = e
+            reason = f"{type(e).__name__}: {e}"
             continue
         body = (getattr(resp, "text", "") or "").lstrip()
         if body[:1] in ("{", "["):
             try:
-                return resp.json()
-            except Exception as e:
-                last_exc = e
+                # Parsed from the text we already decoded above rather than via
+                # resp.json(), which would decode and scan the whole body a
+                # second time. Same result, one pass less per API call.
+                return json.loads(body)
+            except ValueError as e:
+                # A body that starts with "{" but does not parse means a
+                # truncated/corrupted response, not a challenge page. Record the
+                # size, never the content: it can carry the requested URL.
+                reason = f"malformed JSON after {len(body)} bytes ({e})"
                 continue
-        last_exc = ValueError("non-JSON response from megakino (possible block/challenge page)")
-    raise last_exc or ValueError("megakino: request failed")
+        reason = "non-JSON response (possible block/challenge page)"
+    raise MegakinoUnavailable(f"megakino.to returned no usable response ({reason or 'unknown'})")
 
 
 # ---------------------------------------------------------------------------

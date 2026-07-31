@@ -941,6 +941,7 @@ def register_search_routes(app):
         # MegaKino (movie or series) — the /watch URL is shared; the JSON API's
         # "tv" field decides the type.
         if _is_megakino_url(url):
+            from ...models.megakino_to.scraper import MegakinoUnavailable
             try:
                 _mk_data = _megakino_watch(url)
                 from ..db import get_setting
@@ -1003,11 +1004,14 @@ def register_search_routes(app):
                     "is_movie": True,
                     "available_providers": mv.available_providers,
                 })
+            except MegakinoUnavailable as e:
+                # Upstream had a bad day (unreachable, challenge page, truncated
+                # body) -- 502 and a WARNING, never 500/ERROR: an ERROR here is
+                # picked up by telemetry/hooks.py and filed as a crash report
+                # against MediaForge for a fault on megakino.to's side.
+                logger.warning("MegaKino unavailable: %s", e)
+                return jsonify({"error": "MegaKino is currently unavailable"}), 502
             except Exception as e:
-                _cls = e.__class__.__name__.lower()
-                if any(k in _cls for k in ("connection", "timeout", "protocol", "ssl")):
-                    logger.warning("MegaKino nicht erreichbar (Netzwerk): %s", e)
-                    return jsonify({"error": "MegaKino ist gerade nicht erreichbar"}), 502
                 logger.error(f"MegaKino series/movie fetch failed: {e}", exc_info=True)
                 return jsonify({"error": str(e)}), 500
         try:
@@ -1076,6 +1080,7 @@ def register_search_routes(app):
 
         # MegaKino: movie -> single fake season; series -> the one season post
         if _is_megakino_url(url):
+            from ...models.megakino_to.scraper import MegakinoUnavailable
             try:
                 _mk_data = _megakino_watch(url)
                 if not _megakino_is_series(_mk_data):
@@ -1091,6 +1096,9 @@ def register_search_routes(app):
                         "are_movies": False,
                     })
                 return jsonify({"seasons": seasons_data})
+            except MegakinoUnavailable as e:
+                logger.warning("MegaKino unavailable: %s", e)
+                return jsonify({"error": "MegaKino is currently unavailable"}), 502
             except Exception as e:
                 logger.error(f"MegaKino seasons fetch failed: {e}", exc_info=True)
                 return jsonify({"error": str(e)}), 500

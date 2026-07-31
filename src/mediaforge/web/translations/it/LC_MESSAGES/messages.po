@@ -5337,3 +5337,936 @@ msgstr ""
 
 msgid "Sort by issue count, or by date added in the single-issue view"
 msgstr ""
+
+# --- Reader: shortened fit label ---
+
+msgid "All providers"
+msgstr ""
+
+msgid "All languages"
+msgstr ""
+
+msgid "Reset filters"
+msgstr ""
+
+msgid "Finished"
+msgstr ""
+
+msgid "eBooks"
+msgstr ""
+
+msgid "Manga"
+msgstr ""
+
+msgid "Music"
+msgstr ""
+
+msgid "Start Page"
+msgstr ""
+
+msgid "Library and Statistics"
+msgstr ""
+
+msgid "Network & Access"
+msgstr ""
+
+msgid "Continue watching"
+msgstr ""
+
+msgid "New in your library"
+msgstr ""
+
+msgid "Your watchlist"
+msgstr ""
+
+msgid "Airing next"
+msgstr ""
+
+msgid "New this week"
+msgstr ""
+
+msgid "Popular right now"
+msgstr ""
+
+msgid "from your playback progress"
+msgstr ""
+
+msgid "from your library"
+msgstr ""
+
+msgid "from your favourites"
+msgstr ""
+
+msgid "from the calendar"
+msgstr ""
+
+msgid "from your sources"
+msgstr ""
+
+msgid "Drag to reorder"
+msgstr ""
+
+msgid "Show this row"
+msgstr ""
+
+msgid "Saved"
+msgstr ""
+
+msgid "Could not be saved"
+msgstr ""
+
+msgid "Reset to the instance default"
+msgstr ""
+
+msgid "Following the instance default"
+msgstr ""
+
+msgid "You changed this — the instance default no longer applies"
+msgstr ""
+
+msgid "Use the new home page (Beta)"
+msgstr ""
+
+msgid "Groups the discovery rows by question instead of by source: \"New this week\" and \"Popular right now\" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this."
+msgstr ""
+
+msgid "Rows"
+msgstr ""
+
+msgid "Which rows your home page shows, and in which order. Switch one off and MediaForge stops collecting its data as well."
+msgstr ""
+
+msgid "The order and visibility a new account starts with. Every user can overrule this for themselves."
+msgstr ""
+
+msgid "Cards per row"
+msgstr ""
+
+msgid "How many cards a discovery row holds at most. Fewer cards means less to fetch and a shorter page."
+msgstr ""
+
+msgid "Default filters"
+msgstr ""
+
+msgid "Which chips are off when someone opens the home page for the first time. This is a starting point, not a restriction — every user can switch them back on. To take a source away entirely, disable it under Sources."
+msgstr ""
+
+msgid "Reset to the factory default"
+msgstr ""
+
+msgid "The most recent finished downloads and how fast they ran"
+msgstr ""
+
+msgid "Gaps detected in your library — ignore the ones you do not want to fill"
+msgstr ""
+
+msgid "The same episode or movie stored more than once"
+msgstr ""
+
+msgid "Basics"
+msgstr ""
+
+msgid "Rating & Year"
+msgstr ""
+
+msgid "Streaming"
+msgstr ""
+
+msgid "✨ New this year"
+msgstr ""
+
+msgid "💎 Hidden Gems"
+msgstr ""
+
+msgid "Media type"
+msgstr ""
+
+msgid "Rating (Ascending)"
+msgstr ""
+
+msgid "Number of votes (Descending)"
+msgstr ""
+
+msgid "Exclude genres"
+msgstr ""
+
+msgid "Nothing excluded"
+msgstr ""
+
+msgid "Results must not contain any of these genres."
+msgstr ""
+
+msgid "Min number of votes"
+msgstr ""
+
+msgid "Filters out titles with barely any ratings — recommended when sorting by rating."
+msgstr ""
+
+msgid "Runtime (minutes)"
+msgstr ""
+
+msgid "From (e.g. 20)"
+msgstr ""
+
+msgid "To (e.g. 120)"
+msgstr ""
+
+msgid "For series this is the runtime of a single episode."
+msgstr ""
+
+msgid "Original language"
+msgstr ""
+
+msgid "Any language"
+msgstr ""
+
+msgid "Any status"
+msgstr ""
+
+msgid "Returning Series"
+msgstr ""
+
+msgid "Ended"
+msgstr ""
+
+msgid "Canceled"
+msgstr ""
+
+msgid "In Production"
+msgstr ""
+
+msgid "Planned"
+msgstr ""
+
+msgid "Pilot"
+msgstr ""
+
+msgid "TV network"
+msgstr ""
+
+msgid "Search network (e.g. HBO)..."
+msgstr ""
+
+msgid "Select filters or pick a Quick Preset from the menu to discover series and movies."
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Search streams"
+msgstr ""
+
+msgid "soon"
+msgstr ""
+
+msgid "Everything"
+msgstr ""
+
+msgid "Clear Entries"
+msgstr ""
+
+msgid "Pause all"
+msgstr ""
+
+msgid "Captcha screenshot"
+msgstr ""
+
+msgid "Reader"
+msgstr ""
+
+msgid "Set bookmark"
+msgstr ""
+
+msgid "Contents and bookmarks"
+msgstr ""
+
+msgid "Previous page"
+msgstr ""
+
+msgid "Next page"
+msgstr ""
+
+msgid "Bookmarks"
+msgstr ""
+
+msgid "Chapters"
+msgstr ""
+
+msgid "Reading settings"
+msgstr ""
+
+msgid "Pages"
+msgstr ""
+
+msgctxt "reader fit"
+msgid "Original"
+msgstr ""
+
+msgid "Typeface"
+msgstr ""
+
+msgid "Serif"
+msgstr ""
+
+msgid "Sans"
+msgstr ""
+
+msgid "Original"
+msgstr ""
+
+msgid "Text size"
+msgstr ""
+
+msgid "Smaller text"
+msgstr ""
+
+msgid "Larger text"
+msgstr ""
+
+msgid "Line spacing"
+msgstr ""
+
+msgid "Tight"
+msgstr ""
+
+msgid "Normal"
+msgstr ""
+
+msgid "Loose"
+msgstr ""
+
+msgid "Page width"
+msgstr ""
+
+msgid "Narrow"
+msgstr ""
+
+msgid "Wide"
+msgstr ""
+
+msgid "Paper"
+msgstr ""
+
+msgid "Light"
+msgstr ""
+
+msgid "Sepia"
+msgstr ""
+
+msgid "Dark"
+msgstr ""
+
+msgid "Reading mode"
+msgstr ""
+
+msgid "Scroll"
+msgstr ""
+
+msgid "Subscribe"
+msgstr ""
+
+msgid "Filter titles…"
+msgstr ""
+
+msgid "View range"
+msgstr ""
+
+msgid "Agenda"
+msgstr ""
+
+msgid "Filter by media type"
+msgstr ""
+
+msgid "No entry matches your filters."
+msgstr ""
+
+msgid "Calendar subscription"
+msgstr ""
+
+msgid "Add this URL to Google Calendar, Apple Calendar, Thunderbird or any other app that supports iCal subscriptions. It updates automatically."
+msgstr ""
+
+msgid "Subscription URL"
+msgstr ""
+
+msgid "Anyone who has this URL can read your calendar — treat it like a password. Generate a new one if it leaks."
+msgstr ""
+
+msgid "Generate new URL"
+msgstr ""
+
+msgid "Theme pack installed"
+msgstr ""
+
+msgid "Pick it for your own account under Settings → Design → Theme Packs. Admins can make it the default for everyone with \"Set as default\" on the theme card below."
+msgstr ""
+
+msgid "Choose theme"
+msgstr ""
+
+msgid "menu entry"
+msgstr ""
+
+msgid "settings card"
+msgstr ""
+
+msgid "dashboard widget"
+msgstr ""
+
+msgid "provider pill"
+msgstr ""
+
+msgid "content source"
+msgstr ""
+
+msgid "search source"
+msgstr ""
+
+msgid "CineInfo source"
+msgstr ""
+
+msgid "home feed source"
+msgstr ""
+
+msgid "home page panel"
+msgstr ""
+
+msgid "subtitle source"
+msgstr ""
+
+msgid "hoster"
+msgstr ""
+
+msgid "mirror list"
+msgstr ""
+
+msgid "monitor entry"
+msgstr ""
+
+msgid "notification channel"
+msgstr ""
+
+msgid "event hook"
+msgstr ""
+
+msgid "background worker"
+msgstr ""
+
+msgid "modules"
+msgstr ""
+
+msgid "running"
+msgstr ""
+
+msgid "with errors"
+msgstr ""
+
+msgid "Filter by state"
+msgstr ""
+
+msgid "Problems"
+msgstr ""
+
+msgid "Error"
+msgstr ""
+
+msgid "registered nothing"
+msgstr ""
+
+msgid "Show full error"
+msgstr ""
+
+msgid "Built into MediaForge and not configurable. A module is \"Official\" because one of these keys signed it — neither a store nor a setting can decide that."
+msgstr ""
+
+msgid "Search modules and themes…"
+msgstr ""
+
+msgid "What do you want to download?"
+msgstr ""
+
+msgid "One title is enough — MediaForge asks every active source at once."
+msgstr ""
+
+msgid "offline"
+msgstr ""
+
+msgid "Switched off in Settings"
+msgstr ""
+
+msgid "Also available from other sources — click to choose"
+msgstr ""
+
+msgid "Nothing to show with these filters."
+msgstr ""
+
+msgid "{} is not responding right now."
+msgstr ""
+
+msgid "The feed could not be loaded."
+msgstr ""
+
+msgid "Try again"
+msgstr ""
+
+msgid "Movie"
+msgstr ""
+
+msgid "episodes"
+msgstr ""
+
+msgid "{} min left"
+msgstr ""
+
+msgid "{} h left"
+msgstr ""
+
+msgid "Player loading…"
+msgstr ""
+
+msgid "Recent searches"
+msgstr ""
+
+msgid "This panel could not be loaded."
+msgstr ""
+
+msgid "This panel is not available right now."
+msgstr ""
+
+msgid "Nothing to show here."
+msgstr ""
+
+msgid "Activity"
+msgstr ""
+
+msgid "Waiting"
+msgstr ""
+
+msgid "Titles"
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
+msgid "Fullest volume"
+msgstr ""
+
+msgid "Open the queue"
+msgstr ""
+
+msgid "Open the history"
+msgstr ""
+
+msgid "Open the library"
+msgstr ""
+
+msgid "Open the settings"
+msgstr ""
+
+msgid "Nothing is downloading right now."
+msgstr ""
+
+msgid "Nothing has been downloaded yet."
+msgstr ""
+
+msgid "Your library is still empty."
+msgstr ""
+
+msgid "No download path could be read."
+msgstr ""
+
+msgid "Nothing needs your attention."
+msgstr ""
+
+msgid "Download failed"
+msgstr ""
+
+msgid "{} downloads are running or waiting"
+msgstr ""
+
+msgid "{} things need your attention: failed downloads, plus a paused queue"
+msgstr ""
+
+msgid "Episode {} of {}"
+msgstr ""
+
+msgid "{} of {} used"
+msgstr ""
+
+msgid "just now"
+msgstr ""
+
+msgid "{} min ago"
+msgstr ""
+
+msgid "{} h ago"
+msgstr ""
+
+msgid "{} d ago"
+msgstr ""
+
+msgid "Instance overview"
+msgstr ""
+
+msgid "Your home page"
+msgstr ""
+
+msgid "These settings are yours alone. Anything you do not change follows the instance default."
+msgstr ""
+
+msgid "Automatic NFO metadata for downloaded media."
+msgstr ""
+
+msgid "↳ Show MediaScan series in calendar"
+msgstr ""
+
+msgid "Adds series from the MediaScan inventory comparison (Jellyfin/Plex) to the calendar."
+msgstr ""
+
+msgid "↳ Show your own library in calendar"
+msgstr ""
+
+msgid "Takes the series from your MediaForge library and adds their upcoming episodes to the calendar. Works without Jellyfin/Plex."
+msgstr ""
+
+msgid "Large libraries fill in gradually: the titles have to be matched against TMDB in the background first."
+msgstr ""
+
+msgid "Which source gets to speak first about a title. A provider pill: the first source that knows the title shows its badge, the rest are skipped. A CineInfo source: the first one that knows a field fills it — TMDB always keeps what it already has. Modules that register a pill or a CineInfo source appear here automatically, marked \"Module\"."
+msgstr ""
+
+msgid "Show backdrop"
+msgstr ""
+
+msgid "Uses the TMDB backdrop as the header image of the title window"
+msgstr ""
+
+msgid "Quota"
+msgstr ""
+
+msgid "Fetches subtitles from OpenSubtitles.com for languages the source itself does not offer, and muxes them into the finished file. Runs only after the hoster's own subtitle tracks came up empty, so nothing is downloaded twice. Needs a free API key (opensubtitles.com → Consumers) and an account login; both are stored encrypted. Free accounts have a small daily download limit."
+msgstr ""
+
+msgid "Enable OpenSubtitles lookup"
+msgstr ""
+
+msgid "Off by default: this contacts an external service with your account and spends its daily quota."
+msgstr ""
+
+msgid "API key"
+msgstr ""
+
+msgid "OpenSubtitles account name"
+msgstr ""
+
+msgid "Subtitle languages"
+msgstr ""
+
+msgid "Only these languages are looked up, and only when the download does not already contain them. Every language costs one download from your daily quota."
+msgstr ""
+
+msgid "No language"
+msgstr ""
+
+msgid "languages"
+msgstr ""
+
+msgid "German"
+msgstr ""
+
+msgid "English"
+msgstr ""
+
+msgid "French"
+msgstr ""
+
+msgid "Spanish"
+msgstr ""
+
+msgid "Italian"
+msgstr ""
+
+msgid "Portuguese (Brazil)"
+msgstr ""
+
+msgid "Portuguese"
+msgstr ""
+
+msgid "Dutch"
+msgstr ""
+
+msgid "Polish"
+msgstr ""
+
+msgid "Russian"
+msgstr ""
+
+msgid "Turkish"
+msgstr ""
+
+msgid "Arabic"
+msgstr ""
+
+msgid "Japanese"
+msgstr ""
+
+msgid "Korean"
+msgstr ""
+
+msgid "Chinese (simplified)"
+msgstr ""
+
+msgid "Czech"
+msgstr ""
+
+msgid "Danish"
+msgstr ""
+
+msgid "Finnish"
+msgstr ""
+
+msgid "Swedish"
+msgstr ""
+
+msgid "Norwegian"
+msgstr ""
+
+msgid "Greek"
+msgstr ""
+
+msgid "Hebrew"
+msgstr ""
+
+msgid "Hungarian"
+msgstr ""
+
+msgid "Romanian"
+msgstr ""
+
+msgid "Ukrainian"
+msgstr ""
+
+msgid "Hindi"
+msgstr ""
+
+msgid "Subtitles for the hearing impaired (SDH)"
+msgstr ""
+
+msgid "SDH tracks also describe sounds and name the speaker. Excluded by default."
+msgstr ""
+
+msgid "Exclude"
+msgstr ""
+
+msgid "Include"
+msgstr ""
+
+msgid "Only SDH"
+msgstr ""
+
+msgid "Your media, your disk, your place"
+msgstr ""
+
+msgid "Media management, transcoding, upscaling, calendar. The private server built around your own media management."
+msgstr ""
+
+msgid "Continue to your instance"
+msgstr ""
+
+msgid "These modules also keep their card on that page. Both places edit the same settings."
+msgstr ""
+
+msgid "Monitoring module"
+msgstr ""
+
+msgid "Search requests…"
+msgstr ""
+
+msgid "Filter by status"
+msgstr ""
+
+msgid "Approved"
+msgstr ""
+
+msgid "Request date"
+msgstr ""
+
+msgid "Toggle sort direction"
+msgstr ""
+
+msgid "Poster view"
+msgstr ""
+
+msgid "Select multiple"
+msgstr ""
+
+msgid "Bulk actions"
+msgstr ""
+
+msgid "Select all loaded requests"
+msgstr ""
+
+msgid "Only the first 50 are processed."
+msgstr ""
+
+msgid "Approve"
+msgstr ""
+
+msgid "Search covered only the newest 400 requests."
+msgstr ""
+
+msgid "Which rows the home page shows, in which order, how many cards each holds and the default filters"
+msgstr ""
+
+msgid "Media library scanning schedule, scan performance and statistics visibility"
+msgstr ""
+
+msgid "Home page"
+msgstr ""
+
+msgid "Default for new accounts"
+msgstr ""
+
+msgid "What someone sees who has never opened these settings. Changing this does not overwrite what a user already chose for themselves."
+msgstr ""
+
+msgid "Automatic library rescan"
+msgstr ""
+
+msgid "A location is rescanned once its cached scan is older than this."
+msgstr ""
+
+msgid "Every 6 hours"
+msgstr ""
+
+msgid "Every 12 hours"
+msgstr ""
+
+msgid "Every 24 hours"
+msgstr ""
+
+msgid "Every 2 days"
+msgstr ""
+
+msgid "Every 7 days"
+msgstr ""
+
+msgid "Scan intensity"
+msgstr ""
+
+msgid "Parallel ffprobe workers used to read resolution and codec from files whose name does not reveal them."
+msgstr ""
+
+msgid "Automatic (based on CPU cores)"
+msgstr ""
+
+msgid "gentle (network share)"
+msgstr ""
+
+msgid "fast NVMe"
+msgstr ""
+
+msgid "More workers finish a scan sooner on fast local storage and will push the drive hard while it runs; on a network share they mostly multiply the timeouts. A scan always stops after two minutes of probing regardless, and continues where it left off a few minutes later."
+msgstr ""
+
+msgid "MediaForge no longer rescans everything on every start — on a large library that costs minutes for a result that is almost always identical. While it runs, the file watcher picks up changes live; this interval covers what the watcher cannot, such as files added while MediaForge was closed. Locations that have never been scanned are always read in, and the refresh button on the Library page rescans on demand."
+msgstr ""
+
+msgid "AniWorld: use absolute episode numbers"
+msgstr ""
+
+msgid "Long-running shows are split into seasons on AniWorld but keep one continuous count, which the site appends to the episode title as “[Episode 062]”. With this on, that count is used for the file name: S02E062 instead of S02E001. The season stays the one AniWorld lists the episode in — only the number changes. Episodes without the marker keep their season-relative number. Only affects new downloads; files already on disk are not renamed."
+msgstr ""
+
+msgid "Presets"
+msgstr ""
+
+msgid "Why this matters for Jellyfin"
+msgstr ""
+
+msgid "Jellyfin identifies an episode by its season and episode number. On a long-running show AniWorld's per-season count is not the number the episode is known by anywhere else: “Staffel 2, Folge 1” is episode 62 of the series, which is exactly what the site puts in the “[Episode 062]” marker. Absolute numbering writes that number into the file name."
+msgstr ""
+
+msgid "The preset also puts a series into one folder instead of per-season subfolders, and leaves language folders off — they split one series across several library entries."
+msgstr ""
+
+msgid "The Jellyfin preset keeps the language in the file name instead. Jellyfin reads whatever follows the SxxExx marker as the episode title, so it will show “(German Dub)” there until a Jellyfin NFO fills in the real one — set a TMDB key under Integrations if you want proper episode titles."
+msgstr ""
+
+msgid "Set Jellyfin Defaults"
+msgstr ""
+
+msgid "Set Defaults"
+msgstr ""
+
+msgid "Both buttons write the same five settings at once: naming template, absolute episode numbers, language separation, English subtitle downloads and movie subfolders. The dialog asks whether the folder and file structure should be set too, so you can take the rest and keep your own naming template. Nothing else is touched, and files already on disk are never renamed."
+msgstr ""
+
+msgid "Language Fallback Groups"
+msgstr ""
+
+msgid "An ordered list of languages that can be selected instead of a single language — in the download dialog and in auto-sync. Every episode is fetched in the first language of the list it is actually available in, so a series that switches from dub to sub mid-season no longer needs two jobs."
+msgstr ""
+
+msgid "Auto-sync also upgrades: as soon as an episode you already have becomes available in a language further up the list, it is downloaded again in that language. Whether the previous file is then deleted or kept alongside it is set per group."
+msgstr ""
+
+msgid "Language groups require “Separate languages into folders” above. Only per-language folders make it possible to tell which language an existing episode is in — without them a group can neither skip nor upgrade correctly. You can still define groups here; they become selectable once the setting is on."
+msgstr ""
+
+msgid "Add Group"
+msgstr ""
+
+msgid "Name (e.g. German first)"
+msgstr ""
+
+msgid "Delete the old file after an upgrade"
+msgstr ""
+
+msgid "On: the episode exists only in the better language afterwards. Off: both language versions are kept, each in its own folder — your library then holds the episode twice."
+msgstr ""
+
+msgid "Fallback order"
+msgstr ""
+
+msgid "Delete old file"
+msgstr ""
+
+msgid "A group needs at least two languages. Groups still used by a sync job or a waiting download cannot be deleted."
+msgstr ""
+
+msgid "UUID from the identity provider"
+msgstr ""
+
+msgid "Create the first admin account to get started."
+msgstr ""
+
+msgid "Setup token"
+msgstr ""
+
+msgid "Paste the token here"
+msgstr ""
+
+msgid "You can find the token in your server console or Docker container logs. It stays valid for 30 minutes — after that, restart the instance to get a new one."
+msgstr ""
+
+msgid "Min. 8 characters"
+msgstr ""
+
+msgid "The setup token has expired."
+msgstr ""
+
+msgid "Restart the application to get a new setup token — it stays valid for 30 minutes after each start."
+msgstr ""
+
+msgid "Show more"
+msgstr ""
+
+msgid "Show less"
+msgstr ""
+
+msgid "Hoster"
+msgstr ""
+
+msgid "Target folder"
+msgstr ""

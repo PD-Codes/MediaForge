@@ -621,6 +621,14 @@ body.reader-open { overflow: hidden; }
 .mfr-seg button {
   flex: 1 1 0;
   min-width: 0;
+  /* `min-width: 0` lets a button shrink below its text, and nothing here used
+     to stop the text from spilling out of it: "Originalgröße" in a three-way
+     row ran across its neighbours. Clipping is the honest failure -- a label
+     that is one word too long for the space it has should be cut, not draped
+     over the control next to it. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   padding: 6px 4px;
   background: none;
   border: none;
