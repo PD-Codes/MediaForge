@@ -223,17 +223,26 @@ def _genres_str(genres):
     return str(genres or "").strip()
 
 
+def _text(value):
+    """Coerce an API field to a plain string (the API may return lists)."""
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v).strip() for v in value if v)
+    return str(value).strip()
+
+
 def _card(item):
     poster = item.get("poster_path") or item.get("poster_path_season") or ""
     series = is_series_item(item)
-    title = unescape(item.get("title") or "")
+    title = unescape(_text(item.get("title")))
     return {
         "title": title,
         "url": content_url(item),
         "poster_url": poster_url(poster),
         "genre": _genres_str(item.get("genres")),
-        "rating": str(item.get("rating") or ""),
-        "year": str(item.get("year") or ""),
+        "rating": _text(item.get("rating")),
+        "year": _text(item.get("year")),
         "is_series": series,
     }
 
@@ -272,21 +281,21 @@ def fetch_watch(url_or_id):
 
 def parse_meta(data):
     """Shared metadata from a /data/watch payload (movie or season)."""
-    genres = [g.strip() for g in re.split(r"[/,]", data.get("genres") or "") if g.strip()]
+    genres = [g.strip() for g in re.split(r"[/,]", _genres_str(data.get("genres"))) if g.strip()]
     year = ""
-    ym = re.search(r"\b(19|20)\d{2}\b", str(data.get("year") or ""))
+    ym = re.search(r"\b(19|20)\d{2}\b", _text(data.get("year")))
     if ym:
         year = ym.group(0)
     poster = data.get("poster_path") or data.get("poster_path_season") or ""
     return {
-        "title": unescape(data.get("title") or ""),
+        "title": unescape(_text(data.get("title"))),
         "year": year,
         "genres": genres,
-        "description": unescape(data.get("storyline") or data.get("overview") or ""),
+        "description": unescape(_text(data.get("storyline")) or _text(data.get("overview"))),
         "poster_url": poster_url(poster),
-        "imdb_id": (data.get("imdb_id") or "") or None,
-        "rating": str(data.get("rating") or ""),
-        "tv": str(data.get("tv") or "0"),
+        "imdb_id": _text(data.get("imdb_id")) or None,
+        "rating": _text(data.get("rating")),
+        "tv": _text(data.get("tv")) or "0",
     }
 
 
@@ -307,7 +316,7 @@ def season_number(data):
                 return int(v)
             except (TypeError, ValueError):
                 pass
-    m = re.search(r"Staffel\s*(\d+)", data.get("title") or "", re.IGNORECASE)
+    m = re.search(r"Staffel\s*(\d+)", _text(data.get("title")), re.IGNORECASE)
     return int(m.group(1)) if m else 1
 
 
