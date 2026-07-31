@@ -1152,6 +1152,7 @@ def register_search_routes(app):
 
         # MegaKino: movie -> single episode; series -> all episodes of the season
         if _is_megakino_url(url):
+            from ...models.megakino_to.scraper import MegakinoUnavailable
             try:
                 from pathlib import Path as _P
                 _mk_data = _megakino_watch(url)
@@ -1218,6 +1219,9 @@ def register_search_routes(app):
                         "languages": ["German Dub"],
                     })
                 return jsonify({"episodes": episodes_data})
+            except MegakinoUnavailable as e:
+                logger.warning("MegaKino unavailable: %s", e)
+                return jsonify({"error": "MegaKino is currently unavailable"}), 502
             except Exception as e:
                 logger.error(f"MegaKino episodes fetch failed: {e}", exc_info=True)
                 return jsonify({"error": str(e)}), 500
@@ -1473,6 +1477,7 @@ def register_search_routes(app):
 
         # MegaKino: single German language, direct hoster embeds (VOE etc.)
         if _is_megakino_url(url):
+            from ...models.megakino_to.scraper import MegakinoUnavailable
             try:
                 from ...models.megakino_to.movie import MegakinoMovie
                 prov = resolve_provider(url)
@@ -1487,6 +1492,9 @@ def register_search_routes(app):
                     if working:
                         provider_info[label] = working
                 return jsonify({"providers": provider_info})
+            except MegakinoUnavailable as e:
+                logger.warning("MegaKino unavailable: %s", e)
+                return jsonify({"error": "MegaKino is currently unavailable"}), 502
             except Exception as e:
                 logger.error(f"MegaKino providers fetch failed: {e}", exc_info=True)
                 return jsonify({"error": str(e)}), 500
