@@ -55,14 +55,14 @@ def _new_page(p):
     ``autodeps._ensure_xvfb()`` to provide a virtual display when none is set.
     """
     try:
-        from ...autodeps import _ensure_xvfb
-        _ensure_xvfb()
-    except Exception:
-        pass
-    try:
-        from ...playwright.captcha import _launch_browser_context
+        from ...playwright.captcha import _launch_browser_context, _require_display
     except ImportError:
-        from mediaforge.playwright.captcha import _launch_browser_context
+        from mediaforge.playwright.captcha import _launch_browser_context, _require_display
+
+    # Raises CaptchaEnvironmentError on a Linux host with no usable display,
+    # instead of letting the headed launch below die as an unreadable
+    # TargetClosedError. Same guard the captcha solvers use -- see its docstring.
+    _require_display()
 
     handle = _launch_browser_context(p, offscreen=True)
     context = handle.context

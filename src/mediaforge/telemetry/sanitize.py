@@ -138,10 +138,41 @@ def redact_secrets(text) -> str:
     return text
 
 
+# A failed patchright/Playwright launch raises with the ENTIRE Chromium command
+# line attached, followed by a "Browser logs:" block. That text carries, in one
+# string: every provider domain via --host-resolver-rules (hanime.tv among them,
+# i.e. an adult source this project never reports without an explicit consent
+# check -- see is_adult_provider() above), the resolved IP of each, the absolute
+# browser path and the profile directory. None of it survives redact_urls_in_text(),
+# because none of it is a scheme-qualified URL.
+#
+# It also has no diagnostic value here: playwright/captcha.py's
+# _classify_browser_error() already reduces such a failure to a coarse reason code
+# ("no_display", "missing_lib:libX.so", "target_closed", ...) and reports THAT
+# under detail.captcha. So the blob is dropped rather than partially masked.
+_BROWSER_LOG_RE = re.compile(r"\s*Browser logs:.*", re.IGNORECASE | re.DOTALL)
+_LAUNCHING_RE = re.compile(r"\s*<launching>.*", re.DOTALL)
+# Second line of defence for the same data appearing without either marker.
+_RESOLVER_RULES_RE = re.compile(r"--host-resolver-rules=\S*")
+
+
+def strip_browser_launch_noise(text) -> str:
+    """Drop the Chromium launch command / browser log blob from *text*.
+
+    See the comment above for what it contains and why none of it may be sent.
+    """
+    if not text:
+        return text
+    text = _BROWSER_LOG_RE.sub(" [browser-log removed]", text)
+    text = _LAUNCHING_RE.sub(" [browser-log removed]", text)
+    text = _RESOLVER_RULES_RE.sub("--host-resolver-rules=[REDACTED]", text)
+    return text
+
+
 def _clean_text(text) -> str:
-    """URL-clean + secret-redact, in that order (redact_secrets is a
-    superset safety net so it always runs last)."""
-    return redact_secrets(redact_urls_in_text(text or ""))
+    """Strip browser-launch noise, then URL-clean + secret-redact (redact_secrets
+    is a superset safety net so it always runs last)."""
+    return redact_secrets(redact_urls_in_text(strip_browser_launch_noise(text or "")))
 
 
 def extract_traceback_frames(tb):

@@ -719,6 +719,42 @@ def _sync_session_user_agent(page) -> None:
             pass
 
 
+class CaptchaEnvironmentError(Exception):
+    """This machine cannot run the captcha browser at all.
+
+    Distinct from a solve that simply failed: nothing is wrong with the code or
+    with the site, the host is missing something it needs (on Linux: any usable
+    X display). Raised BEFORE Chromium is launched, because a headless=False
+    launch without a display does not produce a usable error -- it surfaces as
+    "TargetClosedError: Target page, context or browser has been closed" with
+    the whole Chromium command line attached, which tells the user nothing and
+    told telemetry rather too much (see telemetry/sanitize.py's
+    strip_browser_launch_noise).
+
+    Handled at each solver's call site as a WARNING plus a detail.captcha event
+    with reason "no_display" -- never as a crash report. A missing system
+    package is a setup problem, not a defect in MediaForge.
+    """
+
+
+def _require_display() -> None:
+    """Raise CaptchaEnvironmentError unless a display is (or could be) available.
+
+    headless=False is not optional here: Cloudflare/Turnstile detects headless
+    Chromium and never issues a token, so falling back to headless would trade a
+    clear error for a silent, permanent solve failure.
+    """
+    from ..autodeps import _ensure_xvfb
+    if _ensure_xvfb():
+        return
+    raise CaptchaEnvironmentError(
+        "No X display available for the captcha browser. On a headless Linux "
+        "host install Xvfb (Debian/Ubuntu: 'apt install xvfb', Arch: "
+        "'pacman -S xorg-server-xvfb'), or run the official Docker image, "
+        "which ships it. Alternatively set DISPLAY to an existing X server."
+    )
+
+
 class _BrowserHandle:
     """Wraps a patchright context (persistent or ephemeral) + its browser and
     the profile lock, so callers close everything with one call."""
@@ -1486,8 +1522,7 @@ def _solve_captcha_cli(url: str) -> bool:
         logger.warning(f"CAPTCHA detected for {url} — opening browser for manual solving")
 
         try:
-            from ..autodeps import _ensure_xvfb
-            _ensure_xvfb()
+            _require_display()
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=False)
                 context = browser.new_context(ignore_https_errors=True)
@@ -1586,12 +1621,28 @@ def _solve_captcha_cli(url: str) -> bool:
             logger.info("CAPTCHA solve aborted — download cancelled by the user")
             raise RuntimeError("Download cancelled")
 
-        except Exception as e:
-            logger.error(f"Error while solving CAPTCHA: {e}", exc_info=True)
+        except CaptchaEnvironmentError as e:
+            # Host cannot run the browser at all -- actionable for the user,
+            # not a defect, so WARNING and no crash report.
+            logger.warning("Captcha browser unavailable: %s", e)
             telemetry_client.submit(telemetry_events.build_feature_detail_event(
                 "detail.captcha", action="solve", status="error",
                 metadata={"mode": "cli", "error_type": type(e).__name__,
-                          "reason": _classify_browser_error(e)},
+                          "reason": "no_display"},
+            ))
+            return None
+        except Exception as e:
+            # Logged without the exception text and without exc_info: a browser
+            # launch failure carries the full Chromium command line, including
+            # every provider domain from --host-resolver-rules. See the same
+            # handler in solve_sto_modal.
+            _reason = _classify_browser_error(e)
+            logger.error("Error while solving CAPTCHA: %s (%s)", type(e).__name__, _reason)
+            logger.debug("CAPTCHA solve failure detail", exc_info=True)
+            telemetry_client.submit(telemetry_events.build_feature_detail_event(
+                "detail.captcha", action="solve", status="error",
+                metadata={"mode": "cli", "error_type": type(e).__name__,
+                          "reason": _reason},
             ))
             return None
 
@@ -1659,8 +1710,7 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
         # (e.g. extractors/provider/voe.py) can call back in here several times
         # after a cancel, and each of those must not cost a browser start.
         _raise_if_cancelled()
-        from ..autodeps import _ensure_xvfb
-        _ensure_xvfb()
+        _require_display()
         with sync_playwright() as p:
             # headless=False required for Cloudflare/Turnstile to work.
             # Window pushed off-screen to avoid visible popup on server desktops.
@@ -1884,8 +1934,7 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
         # Checked before anything is launched — see the same call in
         # _solve_captcha_interactive for why.
         _raise_if_cancelled()
-        from ..autodeps import _ensure_xvfb
-        _ensure_xvfb()
+        _require_display()
 
         # The Turnstile captcha modal lives on the s.to *episode page* itself.
         # It is shown by the in-page player JS when the provider's play button
@@ -2177,13 +2226,37 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
         logger.info("CAPTCHA solve aborted — download cancelled by the user")
         raise RuntimeError("Download cancelled")
 
-    except Exception as e:
+    except CaptchaEnvironmentError as e:
         from ..logger import get_logger
-        get_logger(__name__).error(f"Fehler in solve_sto_modal: {e}", exc_info=True)
+        get_logger(__name__).warning("Captcha browser unavailable: %s", e)
         telemetry_client.submit(telemetry_events.build_feature_detail_event(
             "detail.captcha", action="solve", status="error",
             metadata={"mode": "sto_modal", "error_type": type(e).__name__,
-                      "reason": _classify_browser_error(e)},
+                      "reason": "no_display"},
+        ))
+        return None
+
+    except Exception as e:
+        from ..logger import get_logger
+        _log = get_logger(__name__)
+        _reason = _classify_browser_error(e)
+        # Logged WITHOUT the exception text and without exc_info. A failed
+        # browser launch raises with the whole Chromium command line attached,
+        # which lists every provider domain via --host-resolver-rules (hanime.tv
+        # included) plus absolute paths -- exactly what _classify_browser_error()
+        # says must never leave this machine. At ERROR level with exc_info the
+        # telemetry log handler would have copied all of it into a crash report;
+        # even the bare f"{e}" put it in the console and in the log file.
+        # telemetry/sanitize.py strips the blob as a second line of defence, but
+        # the cheapest place not to leak it is not to format it in the first place.
+        _log.error("solve_sto_modal failed: %s (%s)", type(e).__name__, _reason)
+        # The full text stays available for local troubleshooting at DEBUG, which
+        # telemetry never reads (the handler only looks at ERROR and above).
+        _log.debug("solve_sto_modal failure detail", exc_info=True)
+        telemetry_client.submit(telemetry_events.build_feature_detail_event(
+            "detail.captcha", action="solve", status="error",
+            metadata={"mode": "sto_modal", "error_type": type(e).__name__,
+                      "reason": _reason},
         ))
         return None
 

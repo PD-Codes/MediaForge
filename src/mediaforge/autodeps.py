@@ -372,31 +372,45 @@ _xvfb_proc = None
 _xvfb_lock = __import__("threading").Lock()
 
 
-def _ensure_xvfb() -> None:
+def _ensure_xvfb() -> bool:
     """Start a background Xvfb on :99 if no DISPLAY is set (Linux only).
 
     In Docker the entrypoint already starts Xvfb and exports DISPLAY=:99, so
     this is a fast no-op.  On a bare Linux desktop/server with no display it
     spins up a virtual framebuffer so headless=False Chromium can run.
 
+    Returns True when a display is available afterwards, False when this is a
+    Linux host with no DISPLAY and no way to create one.  The return value
+    matters: the captcha solvers launch Chromium with headless=False (required
+    for Cloudflare/Turnstile), and without a display that launch does not fail
+    with anything readable -- it dies as
+
+        TargetClosedError: BrowserType.launch: Target page, context or browser
+        has been closed
+
+    with the entire Chromium command line attached.  Callers use the result to
+    stop with an actionable message instead, and to keep a missing system
+    package out of the crash channel: see playwright/captcha.py's
+    _require_display().
+
     Used by: ``playwright/captcha.py`` before launching the visible captcha
-    browser on Linux.
+    browser on Linux, and ``models/hanime_tv/browser.py``.
     """
     global _xvfb_proc
     if platform.system() != "Linux":
-        return
+        return True  # Windows/macOS always have a usable display server
     if os.environ.get("DISPLAY"):
-        return  # already set — Docker / host X11
+        return True  # already set — Docker / host X11
     with _xvfb_lock:
         if os.environ.get("DISPLAY"):
-            return
+            return True
         if _xvfb_proc is not None and _xvfb_proc.poll() is None:
             os.environ.setdefault("DISPLAY", ":99")
-            return
+            return True
         xvfb = shutil.which("Xvfb")
         if not xvfb:
-            logger.warning("Xvfb not found — captcha browser may fail without a display")
-            return
+            logger.warning("Xvfb not found — captcha browser cannot run without a display")
+            return False
         try:
             _xvfb_proc = subprocess.Popen(
                 [xvfb, ":99", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
@@ -406,9 +420,18 @@ def _ensure_xvfb() -> None:
             os.environ["DISPLAY"] = ":99"
             import time as _t
             _t.sleep(0.5)
+            # Popen succeeds even when Xvfb dies immediately (display :99 already
+            # taken, missing font path, ...). Confirm it is actually alive before
+            # promising the caller a display.
+            if _xvfb_proc.poll() is not None:
+                os.environ.pop("DISPLAY", None)
+                logger.warning("Xvfb exited immediately — captcha browser has no display")
+                return False
             logger.debug("Xvfb started on :99")
+            return True
         except Exception as e:
             logger.warning(f"Failed to start Xvfb: {e}")
+            return False
 
 
 # -----------------------------
