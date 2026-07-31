@@ -207,6 +207,64 @@ def build_feature_flag_event(feature_key: str, provider=None):
     return _event(data_key, payload)
 
 
+# The library overview page itself. Every OTHER accepted section name is a
+# media-kind slug straight out of web/media_kinds.py, so this is the only
+# literal that has to live here.
+LIBRARY_HUB_SECTION = "hub"
+
+
+def _library_sections():
+    """The closed set of section names build_library_view_event() accepts.
+
+    web/media_kinds.py is imported LAZILY, inside the function: importing
+    anything under ``mediaforge.web`` at module level executes
+    ``web/__init__.py`` -> ``web/app.py`` and would drag the queue worker,
+    every provider and their third-party dependencies into this leaf package
+    (the same reason registry.py keeps the devInfo URL as its own literal, and
+    the same pattern build_system_info_event() already uses for ``web.db``).
+
+    Returns None when the registry cannot be read at all -- the caller then
+    drops the event instead of sending an unvalidated string, so a future
+    refactor of media_kinds.py can only ever cost a data point, never widen
+    what leaves the device.
+    """
+    try:
+        from ..web.media_kinds import ALL_SLUGS
+    except Exception:
+        return None
+    return frozenset(ALL_SLUGS) | {LIBRARY_HUB_SECTION}
+
+
+def build_library_view_event(section):
+    """Build the stage-2 flag.library usage counter for one library page view.
+
+    ``section`` is either LIBRARY_HUB_SECTION ("hub", the overview page) or a
+    media-kind slug ("video", "book", "manga", ...) -- including the kinds that
+    only render a "coming soon" placeholder today, because "people keep opening
+    the Manga tile" is precisely the signal that page exists to produce.
+
+    The payload is that one word and nothing else. No provider is involved
+    anywhere in this event, so there is no adult-provider dimension to guard
+    against: the library lists local files, and neither the section name nor
+    anything else here can carry a title, a path or a hoster. (Do not add a
+    provider field later -- see sanitize.is_adult_provider().)
+
+    The value is checked against the registry's closed slug set rather than
+    passed through: an unknown/typo'd/attacker-supplied segment (this is fed
+    from a URL path segment) returns None instead of shipping a free-text
+    string to the server.
+    """
+    if not settings.is_key_enabled("flag.library"):
+        return None
+    allowed = _library_sections()
+    if not allowed:
+        return None
+    section = str(section or "").strip().lower()
+    if section not in allowed:
+        return None
+    return _event("flag.library", {"section": section})
+
+
 # ---------------------------------------------------------------------------
 # Stage 3 — feature details & errors
 # ---------------------------------------------------------------------------

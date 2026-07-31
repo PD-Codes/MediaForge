@@ -421,7 +421,7 @@ body.mf-select-mode .mf-poster-select,
    Not poster-grid specific — any module that lists titles pulled from
    more than one storage location (a "volume") can drop these into a
    card, a list row, or a detail header. Introduced for the Library
-   modernization but intentionally kept here, not in library.css.
+   modernization but intentionally kept here, not in the per-shelf CSS.
    =================================================================== */
 .mf-type-pill {
   display: inline-flex;
@@ -799,7 +799,7 @@ body.mf-select-mode .mf-poster-select,
 .mf-empty.is-error { color: var(--error); border-color: rgba(239, 68, 68, 0.4); }
 /* `display: flex` above outranks the user-agent `[hidden]` rule — without this
    every caller has to repeat an id-based guard to make `el.hidden = true` work
-   (library.css did exactly that). Fixed once, here. */
+   (the old library.css did exactly that). Fixed once, here. */
 .mf-empty[hidden] { display: none; }
 
 /* ===================================================================
@@ -808,7 +808,7 @@ body.mf-select-mode .mf-poster-select,
    one row below a list/grid. Markup-only, same convention as
    .mf-pagination: the caller rebuilds the count/pager on every page or
    filter change and wires the per-page <select> itself (see
-   library.js/libRenderPagination for the reference implementation).
+   library_core.js/libRenderPagination for the reference implementation).
    =================================================================== */
 .mf-pagination-bar {
   display: flex; align-items: center; justify-content: space-between;

@@ -888,9 +888,12 @@ def register_browse_routes(app):
         try:
             if "continue" in hidden and "library" in hidden:
                 raise StopIteration
-            from .library import _lib_active_path_keys, lib_iter_cached_titles
+            from .library import lib_path_keys_for_kind, lib_iter_cached_titles
             from ..db import get_all_library_cache
-            active = _lib_active_path_keys()
+            from ..media_kinds import KIND_VIDEO
+            # Video only: "continue watching" and "new in your library"
+            # are about episodes, and a path assigned to eBooks holds none.
+            active = lib_path_keys_for_kind(KIND_VIDEO)
             for path_key, entry in (get_all_library_cache() or {}).items():
                 if path_key not in active:
                     continue          # leftover of a removed scan target

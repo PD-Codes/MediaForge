@@ -234,8 +234,8 @@ def test_library_panel_reads_the_cache_dict_not_its_keys(as_user, app, monkeypat
     }}
     monkeypatch.setattr("mediaforge.web.db.get_all_library_cache",
                         lambda: {"default": entry})
-    monkeypatch.setattr("mediaforge.web.routes.library._lib_active_path_keys",
-                        lambda: {"default"})
+    monkeypatch.setattr("mediaforge.web.routes.library.lib_path_keys_for_kind",
+                        lambda kind: {"default"})
     with app.test_request_context():
         stats = {s["label_key"]: s["value"] for s in R._panel_library()["stats"]}
     assert stats["hp_series"] == "1"
@@ -257,8 +257,8 @@ def test_language_separated_libraries_are_counted_too(app, monkeypatch):
     ]}}
     monkeypatch.setattr("mediaforge.web.db.get_all_library_cache",
                         lambda: {"default": entry})
-    monkeypatch.setattr("mediaforge.web.routes.library._lib_active_path_keys",
-                        lambda: {"default"})
+    monkeypatch.setattr("mediaforge.web.routes.library.lib_path_keys_for_kind",
+                        lambda kind: {"default"})
     with app.test_request_context():
         stats = {s["label_key"]: s["value"] for s in R._panel_library()["stats"]}
     assert stats["hp_series"] == "2"

@@ -400,6 +400,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "discover_module_items": resolve_menu_items("discover") + resolve_menu_items("syncplay"),
                 "management_module_items": resolve_menu_items("management"),
                 "system_module_items": resolve_menu_items("system"),
+                # Shelves contributed by modules, rendered inside the Library
+                # sub-menu (see base.html). A module that indexes a media kind
+                # MediaForge does not ship belongs next to the built-in
+                # shelves, not in a "Modules" group three entries away.
+                "library_module_items": resolve_menu_items("library"),
                 # Module Settings page (under the Module Manager) -- every
                 # enabled module's settings card, grouped by the page its card
                 # also lives on. Handed over as the *function*, not its result:
@@ -486,6 +491,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "discover_module_items": resolve_menu_items("discover") + resolve_menu_items("syncplay"),
                 "management_module_items": resolve_menu_items("management"),
                 "system_module_items": resolve_menu_items("system"),
+                # Shelves contributed by modules, rendered inside the Library
+                # sub-menu (see base.html). A module that indexes a media kind
+                # MediaForge does not ship belongs next to the built-in
+                # shelves, not in a "Modules" group three entries away.
+                "library_module_items": resolve_menu_items("library"),
                 # Module Settings page (under the Module Manager) -- every
                 # enabled module's settings card, grouped by the page its card
                 # also lives on. Handed over as the *function*, not its result:
@@ -1272,6 +1282,19 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # files -- 34 conditional requests, each going through the whole
     # before-request chain, just to be told "not modified".
     app.config.setdefault("SEND_FILE_MAX_AGE_DEFAULT", 31536000)  # 1 year
+
+    @app.context_processor
+    def inject_library_media_kinds():
+        """Make the media-kind registry available to every template.
+
+        The sidebar lives in base.html, which every page extends, so its
+        library sub-menu cannot be fed from one route's context. Injecting the
+        registry here keeps the navigation and the hub reading the same list --
+        the alternative, spelling the five kinds out in base.html, is exactly
+        how a new media type ends up shipped everywhere except the sidebar.
+        """
+        from .media_kinds import MEDIA_KINDS
+        return dict(library_media_kinds=MEDIA_KINDS)
 
     @app.context_processor
     def override_url_for():

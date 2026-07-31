@@ -723,6 +723,24 @@
       </div>
       <div class="settings-hint">{{ _('Changes take effect immediately for new downloads.') }}</div>
 
+      <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Media types') }}</h3>
+      {# The default root has no row in the custom-paths table to carry this,
+         so it is a setting of its own (default_path_media_kinds). Only kinds
+         with a scanner are offered here, same as in that table. #}
+      <div id="defaultPathKinds" style="display:flex;flex-wrap:wrap;gap:6px 22px;">
+        <label class="settings-checkbox-row" for="defaultPathKindVideo">
+          <input type="checkbox" class="chb-main" id="defaultPathKindVideo" data-media-kind="video"
+                 onchange="saveDefaultPathMediaKinds(this)" />
+          <span>{{ _('Movies & Series') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defaultPathKindBook">
+          <input type="checkbox" class="chb-main" id="defaultPathKindBook" data-media-kind="book"
+                 onchange="saveDefaultPathMediaKinds(this)" />
+          <span>{{ _('eBooks') }}</span>
+        </label>
+      </div>
+      <div class="settings-hint">{{ _('Which libraries the default download path feeds. At least one has to stay selected.') }}</div>
+
       <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Default Language') }}</h3>
       <div class="settings-row" style="gap:12px;align-items:flex-end;flex-wrap:wrap;">
         <div class="settings-field">
@@ -834,6 +852,10 @@
       <div class="add-user-row" style="margin-bottom:16px">
         <input type="text" id="newPathName" placeholder="{{ _('Name (e.g. NAS)') }}" />
         <input type="text" id="newPathValue" placeholder="/mnt/nas/anime" />
+        {# Filled in by settings.js (renderNewPathKindSelect) from the kinds the
+           server reports as scannable, so this markup does not have to list
+           them and cannot drift from the registry. #}
+        <div id="newPathKinds"></div>
         <button onclick="addCustomPath()">{{ _('Add') }}</button>
       </div>
       <div class="user-table-wrapper">
@@ -843,6 +865,7 @@
               <th>{{ _('Name') }}</th>
               <th>{{ _('Path') }}</th>
               <th>{{ _('Default for sites') }}</th>
+              <th>{{ _('Media types') }}</th>
               <th>{{ _('Actions') }}</th>
             </tr>
           </thead>
@@ -850,6 +873,7 @@
         </table>
       </div>
       <div class="settings-hint">{{ _('Select the sites for which this path should be preselected as the download folder.') }}</div>
+      <div class="settings-hint">{{ _('The media types decide which library a path shows up in — a folder is only scanned for what is ticked here.') }}</div>
     </div>
 
     <div class="settings-section">

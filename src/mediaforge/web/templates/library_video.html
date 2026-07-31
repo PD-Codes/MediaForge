@@ -1,13 +1,15 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Library') }} — MediaForge{% endblock %}
+{% import "_library_nav.html" as libnav %}
+{% block title %}{{ libnav.kind_label('video') }} — MediaForge{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='library.css') }}">{% endblock %}
+<link rel="stylesheet" href="{{ url_for('static', filename='library_core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='library_video.css') }}">{% endblock %}
 {% block content %}
 <div class="library-container">
 
   <!-- Header -->
   <div class="page-header" style="margin-bottom:18px">
-    <h1 class="page-title">{{ _('Library') }}</h1>
+    <h1 class="page-title">{{ libnav.kind_label('video') }}</h1>
     <div id="libSummaryPills" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"></div>
   </div>
 
@@ -41,16 +43,12 @@
     </div>
 
     <div class="mf-toolbar-row">
-      <!-- eBooks is a real filter and paints from location.books; Manga and
-           Music are still placeholders that only switch the page into the
-           "coming soon" state (see libSetFilter / #libComingSoon). -->
-      <div class="mf-segmented lib-filter-toggle" id="libFilterToggle" role="group" aria-label="{{ _('Filter by media type') }}">
+      <!-- Content filter, not a media-type switch: the other media types are
+           pages of their own now (see web/media_kinds.py). -->
+      <div class="mf-segmented lib-filter-toggle" id="libFilterToggle" role="group" aria-label="{{ _('Filter') }}">
         <button type="button" class="mf-segmented-btn active" id="libFilter-all"    onclick="libSetFilter('all')"    aria-pressed="true"  title="{{ _('Show all') }}">{{ _('All') }}</button>
         <button type="button" class="mf-segmented-btn"        id="libFilter-series" onclick="libSetFilter('series')" aria-pressed="false" title="{{ _('Series only') }}">{{ _('Series') }}</button>
         <button type="button" class="mf-segmented-btn"        id="libFilter-movies" onclick="libSetFilter('movies')" aria-pressed="false" title="{{ _('Movies only') }}">{{ _('Movies') }}</button>
-        <button type="button" class="mf-segmented-btn"        id="libFilter-ebooks" onclick="libSetFilter('ebooks')" aria-pressed="false" title="{{ _('eBooks only') }}">{{ _('eBooks') }}</button>
-        <button type="button" class="mf-segmented-btn lib-soon-btn" id="libFilter-manga"  onclick="libSetFilter('manga')"  aria-pressed="false" title="{{ _('Manga — coming soon') }}">{{ _('Manga') }}<span class="mf-facet lib-soon-badge">{{ _('soon') }}</span></button>
-        <button type="button" class="mf-segmented-btn lib-soon-btn" id="libFilter-music"  onclick="libSetFilter('music')"  aria-pressed="false" title="{{ _('Music — coming soon') }}">{{ _('Music') }}<span class="mf-facet lib-soon-badge">{{ _('soon') }}</span></button>
       </div>
 
       <span class="mf-toolbar-sep" aria-hidden="true"></span>
@@ -109,15 +107,10 @@
     </svg>
     <p>{{ _('No downloaded content found. Downloads will be shown here automatically.') }}</p>
   </div>
-  <!-- "Coming soon" placeholder for the media types that are not implemented
-       yet (eBooks / Manga / Music). Content is painted by libPaintComingSoon()
-       so the copy stays next to the filter definition in library.js. -->
-  <div id="libComingSoon" class="mf-empty lib-soon" hidden aria-live="polite"></div>
-
   <div id="libGridView" class="mf-poster-grid" hidden></div>
   <div id="libListView" class="lib-list-view" hidden></div>
 
-  <!-- Pagination — filled/toggled by libRenderPagination() in library.js.
+  <!-- Pagination — filled/toggled by libRenderPagination() in library_core.js.
        Uses the shared .mf-pagination-bar component (mf_components.css) +
        the numbered .mf-pagination pager (forms.css), same pattern as
        Download History (history.js). -->
@@ -142,5 +135,8 @@
   var libraryCanDelete = {{ 'true' if not auth_enabled or (current_user and current_user.role == 'admin') else 'false' }};
   var libraryCanStream = true;
 </script>
-<script src="{{ url_for('static', filename='library.js') }}"></script>
+<!-- Page module first, core second: library_core.js runs its init on parse
+     and needs LIB_KIND / libRender() / libUpdateSummary() to already exist. -->
+<script src="{{ url_for('static', filename='library_video.js') }}"></script>
+<script src="{{ url_for('static', filename='library_core.js') }}"></script>
 {% endblock %}

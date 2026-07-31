@@ -17,12 +17,21 @@ from ..media_types import BOOK_CONVERTIBLE_EXTS
 from ..media_types import BOOK_COVER_EXTS
 from ..media_types import BOOK_EXTS
 from ..media_types import VIDEO_EXTS
+from ..media_kinds import ALL_SLUGS
+from ..media_kinds import DEFAULT_KINDS_CSV
+from ..media_kinds import KIND_BOOK
+from ..media_kinds import KIND_VIDEO
+from ..media_kinds import parse_kinds
+from ..media_kinds import MEDIA_KINDS
+from ..media_kinds import get_kind_by_url
+from ..media_kinds import kinds_for_api
 from ..db import invalidate_library_cache
 from ..db import prune_library_cache
 from ..db import set_library_cache
 from ..db import set_library_scanning
 from ..runtime_state import _move_jobs
 from ..runtime_state import _move_jobs_lock
+from flask import abort
 from flask import jsonify
 from flask import render_template
 from flask import request
@@ -31,6 +40,9 @@ import re
 import threading
 import time as _time
 from ...logger import get_logger
+from ...telemetry import client as telemetry_client
+from ...telemetry import events as telemetry_events
+from ...telemetry import settings as telemetry_settings
 
 
 logger = get_logger(__name__)
@@ -521,14 +533,54 @@ def lib_iter_cached_titles(data):
     return out
 
 
-def _lib_active_path_keys():
-    """path_keys of the targets that are currently configured.
+# Setting holding the media kinds of the DEFAULT download root. Custom paths
+# carry theirs in a column of their own; the default root has no custom_paths
+# row to hang one on, so it lives here.
+_LIB_DEFAULT_KINDS_SETTING = "default_path_media_kinds"
 
-    Anything else in library_cache is a leftover (a deleted custom path, or a
-    pre-rename install imported by legacy_import). Consumers that iterate the
-    whole cache must filter against this -- see routes/stats.py.
+
+def _lib_kinds_map():
+    """{path_key: [media kind, ...]} for every configured scan target.
+
+    Built in one pass on purpose. The obvious shape -- ask the DB per target --
+    turns the scan loop and every /api/library request into N+1 queries, and
+    the scan loop already holds a lock while it runs.
+
+    Read live rather than taken from the cached scan result: changing a path
+    from "Movies & Series" to "eBooks" in Settings has to take effect on the
+    next page load, not only after the next rescan.
     """
-    return {_lib_path_key(cp_id) for (_label, cp_id, _base) in _lib_build_scan_targets()}
+    out = {"default": parse_kinds(get_setting(_LIB_DEFAULT_KINDS_SETTING,
+                                              DEFAULT_KINDS_CSV))}
+    for cp in get_custom_paths():
+        out[str(cp["id"])] = parse_kinds(cp.get("media_kinds"))
+    return out
+
+
+def _lib_kinds_for(cp_id):
+    """The media kinds of a single scan target."""
+    if cp_id is None:
+        return parse_kinds(get_setting(_LIB_DEFAULT_KINDS_SETTING, DEFAULT_KINDS_CSV))
+    cp = get_custom_path_by_id(cp_id)
+    return parse_kinds((cp or {}).get("media_kinds"))
+
+
+def lib_path_keys_for_kind(kind):
+    """path_keys of the configured targets that feed one library.
+
+    Public because it is the hook every other consumer of library_cache needs:
+    routes/stats.py, routes/browse.py, routes/home_panels.py and
+    routes/calendar_routes.py all iterate the raw cache and all of them mean
+    "the video library" when they say "the library". Without this they would
+    keep counting a path the user has assigned to eBooks only.
+
+    It replaces the former _lib_active_path_keys() and keeps that function's
+    second duty: the map is built from the CONFIGURED targets, so a leftover
+    cache row -- a deleted custom path, or a pre-rename install carried over
+    by legacy_import -- is not in it and is therefore filtered out. Losing
+    that guard is what once made every episode look like a duplicate.
+    """
+    return {pk for pk, kinds in _lib_kinds_map().items() if kind in kinds}
 
 
 # Automatic rescan interval, in hours. 0 disables it entirely; anything else
@@ -688,6 +740,13 @@ def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
         # bookkeeping for the rarer setup -- fall back to a full scan.
         return False
 
+    # This whole function is the *video* fast path -- it rebuilds `titles` and
+    # carries `books` over untouched. On a path the user has not assigned to
+    # the video library there is nothing here to update, and merging a stale
+    # title list back in would resurrect entries the last full scan cleared.
+    if KIND_VIDEO not in _lib_kinds_for(cp_id):
+        return False
+
     # A changed book cannot be merged in incrementally: which files form one
     # book is decided across the WHOLE location at once (a new file may join a
     # group three directories away, or split one), so there is no such thing as
@@ -751,6 +810,7 @@ def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
     titles = sorted(by_folder.values(), key=lambda x: (x.get("folder") or "").lower())
     set_library_cache(path_key, {
         "label": label, "custom_path_id": cp_id,
+        "media_kinds": data.get("media_kinds"),
         "lang_folders": None, "titles": titles,
         # set_library_cache replaces the whole row, so the book list has to be
         # carried over explicitly. Forgetting this would make every video-only
@@ -852,8 +912,18 @@ def _lib_do_scan_locked(targets, lang_sep):
     except Exception as e:
         logger.warning("[LibraryScan] Failed to build resolution cache lookup: %s", e)
 
+    # One lookup for the whole run: which library each target feeds. A path
+    # assigned to "Movies & Series" only must not pay for a book pass, and a
+    # book-only path must not pay for the ffprobe pass -- which is the whole
+    # point of the setting, since those two passes are the expensive half of a
+    # scan on a large library.
+    kinds_map = _lib_kinds_map()
+
     for (label, cp_id, base_path) in targets:
         path_key = "default" if cp_id is None else str(cp_id)
+        kinds = kinds_map.get(path_key) or parse_kinds(None)
+        want_video = KIND_VIDEO in kinds
+        want_books = KIND_BOOK in kinds
 
         # An unreachable location must not overwrite its cache with "empty".
         # _lib_scan_base() returns [] for a path it cannot read, and caching
@@ -881,22 +951,27 @@ def _lib_do_scan_locked(targets, lang_sep):
             # of them is at best a wrong number and at worst a destroyed file.
             # Language separation does not apply: a book has no dub track, so
             # the same list is stored for both shapes.
-            loc_books = _lib_scan_books_safe(base_path, label)
-            if lang_sep:
+            loc_books = _lib_scan_books_safe(base_path, label) if want_books else []
+            if lang_sep and want_video:
                 loc_lang_folders = []
                 for lf in _LIB_LANG_FOLDERS:
                     lf_titles = _lib_scan_base(base_path / lf, old_cache_lookup, progress)
                     if lf_titles:
                         loc_lang_folders.append({"name": lf, "titles": lf_titles})
                 set_library_cache(path_key, {
-                    "label": label, "custom_path_id": cp_id,
+                    "label": label, "custom_path_id": cp_id, "media_kinds": kinds,
                     "lang_folders": loc_lang_folders, "titles": None,
                     "books": loc_books, "books_version": BOOKS_FORMAT_VERSION,
                 })
             else:
-                loc_titles = _lib_scan_base(base_path, old_cache_lookup, progress)
+                loc_titles = (_lib_scan_base(base_path, old_cache_lookup, progress)
+                              if want_video else [])
                 set_library_cache(path_key, {
-                    "label": label, "custom_path_id": cp_id,
+                    "label": label, "custom_path_id": cp_id, "media_kinds": kinds,
+                    # `lang_folders: None` on a book-only path is not a
+                    # degraded shape, it is the correct one: lib_iter_cached_titles
+                    # reads `titles` when lang_folders is None, and an empty
+                    # list there is exactly "this path holds no videos".
                     "lang_folders": None, "titles": loc_titles,
                     "books": loc_books, "books_version": BOOKS_FORMAT_VERSION,
                 })
@@ -1145,29 +1220,265 @@ def _lib_move_loose_files_worker(job_id, file_paths, dst_dir):
             job["status"] = "error"
             job["error"] = str(exc)
 
+def _lib_overview_counts():
+    """Per-kind headline numbers for the library hub tiles.
+
+    Reads the cache that is already there rather than touching the disk: the
+    hub is the first thing shown when the user clicks "Library", and making
+    that click wait on a filesystem walk is exactly the sort of thing that
+    makes an overview page feel worse than the list it replaced. A location
+    that has never been scanned simply contributes nothing.
+    """
+    kinds_map = _lib_kinds_map()
+    cache = get_all_library_cache() or {}
+
+    titles = episodes = books = 0
+    video_size = book_size = 0
+
+    for path_key, entry in cache.items():
+        kinds = kinds_map.get(path_key)
+        if not kinds:
+            continue                      # leftover row of a deleted path
+        data = (entry or {}).get("data") or {}
+        if KIND_VIDEO in kinds:
+            for title in lib_iter_cached_titles(data):
+                titles += 1
+                episodes += int(title.get("total_episodes") or 0)
+                video_size += int(title.get("total_size") or 0)
+        if KIND_BOOK in kinds:
+            for book in data.get("books") or []:
+                books += 1
+                book_size += int(book.get("total_size") or 0)
+
+    return {
+        KIND_VIDEO: {"primary": titles, "secondary": episodes, "size": video_size},
+        KIND_BOOK:  {"primary": books,  "secondary": 0,        "size": book_size},
+    }
+
+
+# --- Telemetry: library usage ------------------------------------------------
+# Two independent, deliberately content-free signals (see telemetry/registry.py
+# for the wording the user is shown for each):
+#
+#   * flag.library   (stage 2) -- WHICH library section was opened. A pure
+#     usage counter; the payload is one word out of the fixed list in
+#     web/media_kinds.py plus "hub".
+#   * detail.library (stage 3) -- HOW the configured download paths are spread
+#     over the media kinds. This is what answers the question the split was
+#     built for: are the separate libraries actually used, or is every path
+#     still assigned to "Movies & Series" only? Counts, nothing else.
+#
+# Neither carries a provider, so the hard hanime_tv limit in
+# telemetry/sanitize.py has nothing to bite on here -- and must not get
+# anything to bite on: do not add a provider/title/path field to either event.
+#
+# Both are throttled per process. The stage-2 counter is throttled PER SECTION
+# rather than globally, because a single global throttle would make the very
+# signal this exists for ("which sections does this install use?") depend on
+# the order the user happened to click things in. Hourly resolution is all a
+# yes/no-plus-counter needs; a page-reload streak is not extra information.
+#
+# NOTHING in here logs above DEBUG, on purpose: telemetry/hooks.py turns every
+# ERROR-level log record anywhere in this app into a crash report, so a
+# telemetry helper that logged its own failure at ERROR would file itself as an
+# application crash.
+_TEL_VIEW_MIN_INTERVAL = 3600.0
+_TEL_PATHS_MIN_INTERVAL = 3600.0
+_tel_view_last = {}
+_tel_paths_last = None
+_tel_lock = threading.Lock()
+
+
+def _report_library_view(section):
+    """Submit the flag.library stage-2 usage counter for one library page view.
+
+    `section` is "hub" or a media-kind slug. The builder validates it against
+    web/media_kinds.py and drops anything else, so a mistyped or probed URL
+    segment can never turn into a free-text field on the server.
+
+    Opening a section that only shows a "coming soon" placeholder is an
+    ordinary page view and is reported exactly like any other -- it is not an
+    error and never produces an error/crash event of any kind. Wrapped in its
+    own try/except (DEBUG only, see the note above) so a telemetry bug can
+    never affect the library pages.
+    """
+    try:
+        section = str(section or "").strip().lower()
+        now = _time.monotonic()
+        with _tel_lock:
+            # The keys come from the media-kind registry (the route 404s before
+            # calling this for anything else), so this dict is bounded by that
+            # list; the length check only keeps a future call site from turning
+            # it into an unbounded map of URL segments.
+            if section not in _tel_view_last and len(_tel_view_last) >= 16:
+                return
+            last = _tel_view_last.get(section)
+            if last is not None and now - last < _TEL_VIEW_MIN_INTERVAL:
+                return
+            _tel_view_last[section] = now
+        telemetry_client.submit(telemetry_events.build_library_view_event(section))
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit flag.library event", exc_info=True)
+
+
+def _report_library_paths():
+    """Submit the detail.library stage-3 event: how the configured download
+    paths are spread over the media kinds.
+
+    Counts only -- one number per kind, the total, and how many paths carry
+    more than one kind. No path, label, drive or share name is read at all
+    (only the `media_kinds` values are looked at), and no file/title counts are
+    involved. An empty, never-scanned or currently unreachable location
+    therefore contributes exactly the same as a fully indexed one, and nothing
+    in here can fail because a NAS happens to be offline.
+
+    The consent check comes FIRST, before the two DB reads _lib_kinds_map()
+    costs -- per TELEMETRY_PLAN.md §3 the gate sits in front of the data
+    collection, not in front of the send. build_feature_detail_event() checks
+    the same key again; that is the real gate, this one only avoids the work.
+
+    Throttled to once per _TEL_PATHS_MIN_INTERVAL per process: this is a
+    configuration snapshot, not an activity signal. Wrapped in its own
+    try/except (DEBUG only) so neither a telemetry bug nor a DB hiccup while
+    reading the paths can affect the library pages.
+    """
+    global _tel_paths_last
+    try:
+        if not telemetry_settings.is_key_enabled("detail.library"):
+            return
+        now = _time.monotonic()
+        with _tel_lock:
+            if _tel_paths_last is not None and now - _tel_paths_last < _TEL_PATHS_MIN_INTERVAL:
+                return
+            _tel_paths_last = now
+        kinds_map = _lib_kinds_map()
+        # Every known kind is reported, including the ones with a count of 0.
+        # "no eBook path configured" and "this client is too old to know about
+        # eBook paths" are different answers, and a fixed key set is the only
+        # way the server can tell them apart.
+        per_kind = {slug: 0 for slug in ALL_SLUGS}
+        multi_kind = 0
+        for kinds in kinds_map.values():
+            for slug in kinds:
+                if slug in per_kind:
+                    per_kind[slug] += 1
+            if len(kinds) > 1:
+                multi_kind += 1
+        event = telemetry_events.build_feature_detail_event(
+            "detail.library", action="paths", status="success",
+            metadata={
+                "paths_total": len(kinds_map),
+                "paths_per_kind": per_kind,
+                "paths_multi_kind": multi_kind,
+            },
+        )
+        if event:
+            telemetry_client.submit(event)
+    except Exception:
+        logger.debug("[Telemetry] failed to build/submit detail.library event", exc_info=True)
+
+
 def register_library_routes(app):
     """Register the Library page and its supporting API routes (listing,
     refresh/status/watcher polling, delete, media info, rename, move) on
     the Flask app."""
     @app.route("/library")
     def library_page():
-        """Render the Library page. GET /library."""
-        return render_template("library.html")
+        """Render the library hub -- one tile per media kind. GET /library.
+
+        Kept under the endpoint name `library_page` although the page it
+        renders changed completely: `url_for('library_page')` appears in the
+        sidebar, in saved third-party module navigation and in the PWA start
+        URL, and renaming the endpoint would 500 every one of them.
+        """
+        _report_library_view(telemetry_events.LIBRARY_HUB_SECTION)
+        _report_library_paths()
+        return render_template("library_hub.html", media_kinds=MEDIA_KINDS)
+
+    @app.route("/library/<kind_url>")
+    def library_kind_page(kind_url):
+        """Render one media kind's library. GET /library/<video|books|...>.
+
+        Unknown segments 404 instead of falling back to the hub: silently
+        serving a different page for a mistyped URL hides broken links in
+        modules and bookmarks rather than surfacing them.
+        """
+        entry = get_kind_by_url(kind_url)
+        if entry is None:
+            abort(404)
+        # Reported AFTER the 404 above, so a mistyped or probed URL never
+        # becomes a data point, and BEFORE the render, so the signal is "the
+        # user asked for this section" rather than "the template happened to
+        # render". A "coming soon" section counts as a view like any other.
+        _report_library_view(entry["slug"])
+        _report_library_paths()
+        if not entry["available"]:
+            # Reachable on purpose -- the sidebar entry is disabled, but the
+            # hub tile and a direct link still have to land somewhere that
+            # explains itself instead of 404ing.
+            return render_template("library_soon.html", kind=entry)
+        # Keyed off the URL segment, not the slug: the template is named after
+        # the page it renders (library_books.html), while the slug names the
+        # data ("book"). Using the slug here silently looked for
+        # library_book.html and 500'd.
+        return render_template(f"library_{entry['url']}.html", kind=entry)
+
+    @app.route("/api/library/kinds")
+    def api_library_kinds():
+        """The media-kind registry. GET /api/library/kinds.
+
+        Exposed so external modules (and the Settings page) do not have to
+        hard-code the list; see web/media_kinds.py.
+        """
+        return jsonify({"kinds": kinds_for_api()})
+
+    @app.route("/api/library/overview")
+    def api_library_overview():
+        """Counters for the hub tiles. GET /api/library/overview.
+
+        Called from static/library_hub.js.
+        """
+        cache = get_library_cache_status()
+        return jsonify({
+            "counts": _lib_overview_counts(),
+            "is_scanning": any(e["is_scanning"] for e in cache.values()),
+            "last_updated": max((e["scanned_at"] for e in cache.values()), default=0),
+        })
     @app.route("/api/library")
     def api_library():
-        """Return the full library listing across all scan targets (default
-        root + custom paths), triggering an initial background scan for any
-        target that has never been scanned yet. GET /api/library.
+        """Return one library's listing across the scan targets that feed it,
+        triggering an initial background scan for any of them that has never
+        been scanned yet. GET /api/library?kind=video|book.
 
-        Called from static/library.js's `libFetch()` and
-        static/syncplay_page.js's inline library loader."""
+        `kind` defaults to "video" so the callers that predate the split --
+        static/syncplay_page.js's inline library loader, and any third-party
+        module hitting this endpoint -- keep getting exactly what they used to
+        get. Paths the user has not assigned to the requested kind are left
+        out entirely, and so is the other kind's payload: a video-only request
+        no longer ships the eBook shelf it never renders, which on a large
+        library is the difference between a few hundred KB and a few MB per
+        page load.
+
+        Called from static/library_core.js's `libFetch()`."""
+        kind = (request.args.get("kind") or KIND_VIDEO).strip().lower()
+        if kind not in (KIND_VIDEO, KIND_BOOK):
+            return jsonify({"error": "unknown media kind"}), 400
+
         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
-        targets = _lib_build_scan_targets()
+        kinds_map = _lib_kinds_map()
+        targets = [t for t in _lib_build_scan_targets()
+                   if kind in (kinds_map.get(_lib_path_key(t[1])) or [])]
         cache = get_all_library_cache()
 
         locations = []
         any_scanning = False
         needs_initial_scan = []
+
+        def _slim(data):
+            """Drop the half of a cache entry this request is not about."""
+            if kind == KIND_VIDEO:
+                return dict(data, books=[])
+            return dict(data, titles=None, lang_folders=None)
 
         for (label, cp_id, base_path) in targets:
             path_key = "default" if cp_id is None else str(cp_id)
@@ -1188,7 +1499,7 @@ def register_library_routes(app):
                     if data.get("books") and data.get("books_version") != BOOKS_FORMAT_VERSION:
                         data = dict(data, books=[])
                         needs_initial_scan.append((label, cp_id, base_path))
-                    locations.append(data)
+                    locations.append(_slim(data))
             else:
                 # Never scanned yet — trigger once
                 needs_initial_scan.append((label, cp_id, base_path))
@@ -1202,6 +1513,7 @@ def register_library_routes(app):
         last_updated = max((e["scanned_at"] for e in cache.values()), default=0)
 
         return jsonify({
+            "kind": kind,
             "lang_sep": lang_sep,
             "locations": locations,
             "is_scanning": any_scanning,
@@ -1218,7 +1530,7 @@ def register_library_routes(app):
         targets, restarting the file watcher against the current target
         list. POST /api/library/refresh.
 
-        Called from static/library.js's `libLoad()`."""
+        Called from static/library_core.js's `libLoad()`."""
         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
         targets = _lib_build_scan_targets()
         invalidate_library_cache()
@@ -1232,7 +1544,7 @@ def register_library_routes(app):
         Used by the UI to detect watcher-triggered rescans without transferring location data.
         GET /api/library/status.
 
-        Called from static/library.js's `libIdlePoll()`/`libPollScan()`."""
+        Called from static/library_core.js's `libIdlePoll()`/`libPollScan()`."""
         # Status only -- get_all_library_cache() would parse the whole cached
         # listing (several MB on a large library) for two numbers.
         cache = get_library_cache_status()
@@ -1345,7 +1657,7 @@ def register_library_routes(app):
         (path-traversal-safe), then invalidate the library cache.
         POST /api/library/delete.
 
-        Called from static/library.js's `libDeleteTitle()`,
+        Called from static/library_video.js's `libDeleteTitle()`,
         `libDeleteSeason()`, and `libDeleteEpisode()` (via `libApiPost()`)."""
         import shutil
         from pathlib import Path
@@ -1456,7 +1768,7 @@ def register_library_routes(app):
         details (codec, resolution, bitrate, HDR range, etc.). Path must
         resolve inside one of the known scan targets. POST /api/library/media_info.
 
-        Called from static/library.js's `libOpenMediaInfo()`."""
+        Called from static/library_video.js's `libOpenMediaInfo()`."""
         import subprocess
         import json
 
@@ -1623,7 +1935,7 @@ def register_library_routes(app):
         (path-traversal-safe), then invalidate the library cache.
         POST /api/library/rename.
 
-        Called from static/library.js's `libStartRename()` and
+        Called from static/library_video.js's `libStartRename()` and
         `libStartEpRename()`."""
         from pathlib import Path
         data = request.get_json(silent=True) or {}
@@ -1710,7 +2022,7 @@ def register_library_routes(app):
         POST /api/library/move. Handles both a title folder (series) and
         loose movie files sitting directly in the base folder, validating
         source/destination paths against traversal before spawning the
-        background worker thread. Called from static/library.js's
+        background worker thread. Called from static/library_video.js's
         `libConfirmMove()`."""
         import uuid
         from pathlib import Path
@@ -1798,7 +2110,7 @@ def register_library_routes(app):
 
         GET /api/library/move_status/<job_id>. Removes the job entry once
         its final (done/error) state has been polled once. Called from
-        static/library.js's `libConfirmMove()`."""
+        static/library_video.js's `libConfirmMove()`."""
         with _move_jobs_lock:
             job = _move_jobs.get(job_id)
             if job is None:

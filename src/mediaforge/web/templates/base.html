@@ -1,3 +1,6 @@
+{# Library sub-menu labels/icons come from one place so the sidebar and the
+   hub can never disagree about what a media kind is called. #}
+{% import "_library_nav.html" as libnav %}
 <!doctype html>
 <html lang="{{ ui_language }}" data-theme="dark">
 
@@ -284,6 +287,12 @@
               <span>{{ _('Favorites') }}</span></a>
           </div>
 
+          {# Library — a group, not a page: /library is an overview and each
+             media kind has a shelf of its own (see web/media_kinds.py). The
+             kinds that are not implemented yet stay listed but disabled, so
+             the sub-menu shows where this is going instead of quietly
+             growing an entry per release. `library_media_kinds` comes from
+             the context processor in web/app.py. #}
           <a href="{{ url_for('library_page') }}" class="sidebar-link" data-page="library">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round">
@@ -291,7 +300,34 @@
             </svg>
             <span>{{ _('Library') }}</span>
             <span class="queue-badge" id="streamBadge" style="display:none">0</span>
+            <span class="sidebar-toggle-chevron collapsed" id="librarySidebarToggle" title="{{ _('Toggle Submenu') }}"
+              onclick="return toggleSidebarSub(event, 'librarySidebarSub', this);">▾</span>
           </a>
+          <div class="sidebar-sub" id="librarySidebarSub">
+            {% for kind in library_media_kinds %}
+            {% if kind.available %}
+            <a href="{{ url_for('library_kind_page', kind_url=kind.url) }}" class="sidebar-sub-link has-icon"
+               data-page="library_{{ kind.slug }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">{{ libnav.kind_icon(kind.slug) }}</svg>
+              <span>{{ libnav.kind_label(kind.slug) }}</span></a>
+            {% else %}
+            {# Still a link: it lands on a page that explains itself. Marked
+               aria-disabled and styled quiet so it does not read as broken. #}
+            <a href="{{ url_for('library_kind_page', kind_url=kind.url) }}"
+               class="sidebar-sub-link has-icon sidebar-sub-soon" data-page="library_{{ kind.slug }}"
+               aria-disabled="true" title="{{ _('Coming soon') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">{{ libnav.kind_icon(kind.slug) }}</svg>
+              <span>{{ libnav.kind_label(kind.slug) }}</span>
+              <span class="sidebar-soon-pill">{{ _('soon') }}</span></a>
+            {% endif %}
+            {% endfor %}
+            {# Shelves added by modules (register_thirdparty(section="library")). #}
+            {% for item in library_module_items %}
+            <a href="{{ item.url }}" class="sidebar-sub-link has-icon" data-page="{{ item.page }}">{{ item.icon|safe }}<span>{{ item.label }}</span><span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span></a>
+            {% endfor %}
+          </div>
 
           <a href="{{ url_for('calendar_page') }}" class="sidebar-link" data-page="calendar" id="sidebarCalendar" style="display: {% if cineinfo_calendar %}flex{% else %}none{% endif %};">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1008,7 +1044,7 @@
     // Shared with the rest of the app (and with modules): any per-account UI
     // preference whitelisted in db.USER_UI_PREF_KEYS can be saved through the
     // same debounced, fire-and-forget path the appearance settings use.
-    // static/library.js stores its grid/list choice this way.
+    // static/library_core.js stores its grid/list choice this way.
     window.mfSaveUserPref = _persistAppearance;
 
     // The accent controls exist TWICE on the settings page: once in the quick

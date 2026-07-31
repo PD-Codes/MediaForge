@@ -59,7 +59,7 @@
 }
 
 /* Generic confirmation dialog (#confirmModal in base.html, shown app-wide via
-   showConfirm()). These styles used to live only in library.css, so on pages
+   showConfirm()). These styles used to live only in the library's own CSS, so on pages
    that don't load it (e.g. Settings) the dialog rendered with no card
    background. Kept here so the dialog looks right everywhere. */
 .confirm-modal {

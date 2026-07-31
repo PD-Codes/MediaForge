@@ -247,6 +247,53 @@
   max-width: 320px;
 }
 
+/* ── "Media types" cell (custom paths table) ───────────────────────────
+   Narrower than the site cell on purpose: the registry offers two
+   scannable kinds today and their labels are short, and the table already
+   has to scroll sideways on a phone (.user-table min-width below). Same
+   component, so the cell stays one line tall as more kinds are added. */
+.path-kind-cell {
+  min-width: 190px;
+}
+
+.path-kind-select {
+  max-width: 260px;
+}
+
+.path-kind-select .mf-multiselect-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.path-kind-select .mf-multiselect-item input:disabled {
+  cursor: not-allowed;
+}
+
+/* The same dropdown in the "Add Path" row, where it sits between two
+   flex:1 inputs. It must not stretch like they do, and on a narrow screen
+   it wraps onto its own line instead of squeezing the inputs. */
+#newPathKinds {
+  flex: 0 0 auto;
+}
+
+#newPathKinds .path-kind-select {
+  min-width: 180px;
+}
+
+#newPathKinds .mf-multiselect-trigger {
+  height: 40px;
+}
+
+@media (max-width: 640px) {
+  #newPathKinds {
+    flex: 1 1 100%;
+  }
+
+  #newPathKinds .path-kind-select {
+    max-width: none;
+  }
+}
+
 /* The dropdown is switched to position:fixed by mf_multiselect.js while it
    is open, because .user-table-wrapper is overflow-x:auto and would
    otherwise clip it to the table. */
@@ -279,6 +326,13 @@
 
 @media (max-width: 640px) {.user-table {
     min-width: 560px;
+  }
+
+  /* The custom-paths table carries two dropdowns on top of its three text
+     columns, so it needs more than the shared minimum before the cells
+     start crushing each other. .user-table-wrapper scrolls it sideways. */
+  #customPathsTable {
+    min-width: 720px;
   }
 
   .user-table th,

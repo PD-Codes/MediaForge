@@ -6544,3 +6544,83 @@ msgstr "Backdrop anzeigen"
 #: src/mediaforge/web/templates/integrations.html
 msgid "Uses the TMDB backdrop as the header image of the title window"
 msgstr "Nutzt das TMDB-Backdrop als Kopfbild des Titelfensters"
+
+# --- Library split: per-media-kind libraries (hub, video, books) ---
+
+msgid "Albums, artists and playlists — player included."
+msgstr "Alben, Interpreten und Playlists — samt Player."
+
+msgid "Back to the library overview"
+msgstr "Zurück zur Mediathek-Übersicht"
+
+msgid "Books that are part of a series"
+msgstr "Bücher, die zu einer Reihe gehören"
+
+msgid "Books that stand alone"
+msgstr "Bücher, die für sich stehen"
+
+msgid "CBZ and CBR issues, sorted into series and runs."
+msgstr "CBZ- und CBR-Ausgaben, nach Reihen und Runs sortiert."
+
+msgid "Comics"
+msgstr "Comics"
+
+msgid "Coming soon"
+msgstr "Bald verfügbar"
+
+msgid "Configure paths"
+msgstr "Pfade einrichten"
+
+msgid "Customise this page"
+msgstr "Diese Seite anpassen"
+
+msgid "EPUB, MOBI, AZW3 and PDF, grouped by title and read in the browser."
+msgstr "EPUB, MOBI, AZW3 und PDF, nach Titel gruppiert und direkt im Browser lesbar."
+
+msgid "Every media type has its own library. Pick one to browse it."
+msgstr "Jede Medienart hat ihre eigene Mediathek. Wähle eine aus, um sie zu durchsuchen."
+
+msgid "Filter"
+msgstr "Filter"
+
+msgid "Grid"
+msgstr "Kacheln"
+
+msgid "In a series"
+msgstr "Teil einer Reihe"
+
+msgid "List"
+msgstr "Liste"
+
+msgid "Media types"
+msgstr "Medienarten"
+
+msgid "Movies & Series"
+msgstr "Filme & Serien"
+
+msgid "Search title, author or series…"
+msgstr "Titel, Autor oder Reihe suchen…"
+
+msgid "Series, seasons and movies from every path assigned to this library."
+msgstr "Serien, Staffeln und Filme aus allen Pfaden, die dieser Mediathek zugeordnet sind."
+
+msgid "Sort by title"
+msgstr "Nach Titel sortieren"
+
+msgid "Standalone"
+msgstr "Einzelband"
+
+msgid "The media types decide which library a path shows up in — a folder is only scanned for what is ticked here."
+msgstr "Die Medienarten entscheiden, in welcher Mediathek ein Pfad auftaucht — ein Ordner wird nur auf das durchsucht, was hier angehakt ist."
+
+msgid "Volumes, chapters and a reader built for page spreads."
+msgstr "Bände, Kapitel und ein Reader für Doppelseiten."
+
+msgid "Which libraries the default download path feeds. At least one has to stay selected."
+msgstr "Welche Mediatheken der Standard-Downloadpfad befüllt. Mindestens eine muss ausgewählt bleiben."
+
+msgid "Which library a folder shows up in is set per download path."
+msgstr "In welcher Mediathek ein Ordner auftaucht, wird pro Downloadpfad festgelegt."
+
+msgid "Which rows the home page shows, in which order, and how many cards each holds now lives in its own tab."
+msgstr "Welche Zeilen die Startseite zeigt, in welcher Reihenfolge und mit wie vielen Karten, liegt jetzt in einem eigenen Tab."

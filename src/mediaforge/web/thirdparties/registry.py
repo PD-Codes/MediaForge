@@ -81,7 +81,11 @@ _MODULES = {}
 # placement (below) is where free-form "new tab" dynamism lives instead.
 # "syncplay" entries only ever render while syncplay_enabled is on (see
 # base.html) — same as the built-in SyncPlay link itself.
-_SECTIONS = ("discover", "management", "syncplay", "system")
+# "library" is where a module hangs a shelf of its own next to the built-in
+# ones (see web/media_kinds.py). It renders inside the sidebar's Library
+# sub-menu rather than as another top-level entry, so a manga or comic
+# module lands where a user already looks for that media.
+_SECTIONS = ("discover", "management", "syncplay", "system", "library")
 
 # Tab/pill ids each settings host already renders by hand in its own
 # template. A registered item whose settings_tab matches one of these is
@@ -534,7 +538,8 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
       wrapping pass, so use whichever reads better. The two compose: an
       endpoint named here AND decorated is simply admin-only once.
     - section: which sidebar category the link (if any) appears under --
-      one of "discover" (default), "management", "syncplay" or "system",
+      one of "discover" (default), "management", "syncplay", "system" or
+      "library" (renders inside the Library sub-menu),
       matching base.html's sidebar categories. A "syncplay" entry only ever
       renders while SyncPlay itself is enabled (same gating as the built-in
       SyncPlay link). Ignored if endpoint/icon_svg aren't set (no link to

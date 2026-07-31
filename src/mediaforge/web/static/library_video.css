@@ -1,0 +1,284 @@
+/* ============================================================
+   Library — Movies & Series
+   ============================================================
+   Only loaded on /library/video. Everything here belongs to actions a video
+   file has and a book does not: the ffprobe media-info modal, the move
+   dialog and the Auto-Sync source picker. Upscaling, encoding and streaming
+   controls reuse the shared button primitives in library_core.css.
+   ============================================================ */
+
+/* ── Media Info Modal ── */
+.lib-media-info-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 12px);
+  padding: 24px;
+  width: min(650px, calc(100vw - 32px));
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.lib-media-info-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  color: var(--text-muted);
+}
+
+.lib-media-info-title {
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 18px 0;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.lib-media-info-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin-bottom: 20px;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.lib-media-info-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.lib-media-info-value {
+  color: var(--text-primary);
+  font-family: ui-monospace, 'SFMono-Regular', monospace;
+  word-break: break-all;
+}
+
+.lib-media-info-sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+
+@media (max-width: 580px) {
+  .lib-media-info-sections {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.lib-media-info-sec-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lib-media-info-sec-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  font-size: 0.82rem;
+}
+
+.lib-media-info-sec-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.lib-media-info-sec-val {
+  color: var(--text-primary);
+  font-family: ui-monospace, 'SFMono-Regular', monospace;
+  word-break: break-all;
+}
+
+.lib-copy-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+  vertical-align: middle;
+}
+.lib-copy-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.lib-copy-btn svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  fill: none;
+}
+
+/* .confirm-modal now lives in modals.css (globally loaded) so the generic
+   confirmation dialog is styled on every page, not just library ones. */
+.lib-move-modal{
+  position: relative;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-modal);
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 24px;
+  animation: modal-in 0.2s ease;
+}
+
+.lib-move-actions{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.confirmModalMsg{
+  padding-bottom:12px;
+}
+
+.lib-move-target{
+  margin-bottom:12px;
+}
+
+.lib-move-title{
+  color: var(--accent);
+  padding-bottom: 12px;
+}
+
+.lib-remove-title{
+  color: var(--error);
+  padding-bottom: 12px;
+}
+
+.btn{
+  flex: 1;
+  min-width: 140px;
+  padding: 11px 18px;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  transition: background var(--transition), box-shadow var(--transition);
+  text-align: center;
+  justify-content: center;
+}
+
+.btn-primary{
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--border);
+  justify-content: center;
+}
+
+.btn-primary:hover{
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary{
+  background: var(--bg-elevated);
+  color: #fff;
+  border: 1px solid var(--border);
+  justify-content: center;
+}
+
+.btn-secondary:hover{
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.btn-danger{
+  background: var(--error);
+  color: white;
+}
+
+.btn-danger:hover{
+  background: var(--error-hover);
+  color: white;
+}
+
+.lib-delete-title {
+  color: var(--accent);
+}
+
+.lib-move-actions {
+  padding: 12px;
+}
+
+.lib-move-subtitle {
+  padding-bottom: 6px;
+}
+/* ── Add to Auto-Sync: source picker ─────────────────────────────── */
+.lib-asp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.lib-asp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+.lib-asp-row:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.lib-asp-site {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft, rgba(110,168,254,0.15));
+  color: var(--accent);
+}
+.lib-asp-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+.lib-asp-score {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+

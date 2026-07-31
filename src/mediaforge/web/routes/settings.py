@@ -28,6 +28,9 @@ from ..language_groups import group_languages_json
 from ..language_groups import is_group_ref
 from ..language_groups import lang_separation_enabled
 from ..language_groups import resolve_chain
+from ..media_kinds import DEFAULT_KINDS_CSV
+from ..media_kinds import kinds_for_api
+from ..media_kinds import normalize_kinds
 from ..dns_patch import _DNS_PRESETS
 from ..dns_patch import _apply_dns_patch
 from .. import dns_patch
@@ -121,6 +124,18 @@ def _normalize_default_sites(value):
         if site in _mirrors.SITE_LABELS and site not in sites:
             sites.append(site)
     return ",".join(sites)
+
+
+def _normalize_media_kinds(value):
+    """Return a validated CSV of media kind slugs (see web/media_kinds.py).
+
+    The counterpart of _normalize_default_sites for the other multiselect in
+    the custom-paths table. The registry does the validating: unknown slugs
+    and kinds nothing can index yet are dropped, and an empty result falls
+    back to the default kind rather than to "none" -- a path assigned to no
+    library at all would silently disappear from every library page.
+    """
+    return normalize_kinds(value)
 
 
 def _home_page_defaults():
@@ -343,6 +358,7 @@ def register_settings_routes(app):
                 "new_home_enabled":          new_home_enabled,
                 "library_rescan_hours":      get_setting("library_rescan_hours", "24"),
                 "library_probe_workers":     get_setting("library_probe_workers", "0"),
+                "default_path_media_kinds":  get_setting("default_path_media_kinds", DEFAULT_KINDS_CSV),
                 "web_console":               web_console,
                 "tray_mode":                 tray_mode,
                 "autostart_enabled":         autostart_enabled,
@@ -1130,6 +1146,7 @@ def register_settings_routes(app):
         if "media_stats_enabled" in data:
             val = "1" if str(data["media_stats_enabled"]).lower() in ("true", "1") else "0"
             set_setting("media_stats_enabled", val)
+            os.environ["MEDIAFORGE_MEDIA_STATS_ENABLED"] = val
         if "new_home_enabled" in data:
             # Which home page layout "/" renders. Read once per request in
             # index(), so the next page load already shows the other layout --
@@ -1158,7 +1175,15 @@ def register_settings_routes(app):
             if workers not in _LIB_PROBE_WORKER_CHOICES:
                 workers = _LIB_PROBE_WORKERS_AUTO
             set_setting("library_probe_workers", str(workers))
-            os.environ["MEDIAFORGE_MEDIA_STATS_ENABLED"] = val
+        if "default_path_media_kinds" in data:
+            # Which libraries the DEFAULT download root feeds. Custom paths
+            # keep theirs in a column; the default root has no row of its own,
+            # so it lives in this setting (routes/library.py reads it through
+            # _LIB_DEFAULT_KINDS_SETTING). Whitelisted like the two above and
+            # validated by the registry, so an unknown or not-yet-scannable
+            # slug can never end up stored.
+            set_setting("default_path_media_kinds",
+                        _normalize_media_kinds(data["default_path_media_kinds"]))
         if "web_console" in data:
             val = "1" if str(data["web_console"]).lower() in ("true", "1") else "0"
             set_setting("web_console", val)
@@ -1350,7 +1375,7 @@ def register_settings_routes(app):
         paths. Called from several frontend files via
         `fetch('/api/custom-paths')`, e.g. static/settings.js's
         `loadCustomPaths()`, static/app.js, static/autosync.js,
-        static/queue.js, static/library.js, and static/seerr.js."""
+        static/queue.js, static/library_video.js, and static/seerr.js."""
         paths = get_custom_paths()
         return jsonify(
             {
@@ -1360,6 +1385,13 @@ def register_settings_routes(app):
                     for key, label in _mirrors.SITE_LABELS.items()
                 ],
                 "current_site": _mirrors.site_for_url(request.args.get("url", "")),
+                # Only the kinds something actually indexes today. The registry
+                # also lists planned ones (manga, comics, music) so the sidebar
+                # can advertise them, but offering a folder to a library that
+                # has no scanner reads as a broken setting, not as a roadmap.
+                "media_kind_options": [
+                    kind for kind in kinds_for_api() if kind["scans"]
+                ],
             }
         )
     @app.route("/api/custom-paths", methods=["POST"])
@@ -1372,7 +1404,17 @@ def register_settings_routes(app):
         if not name or not path:
             return jsonify({"error": "name and path are required"}), 400
         default_sites = _normalize_default_sites(data.get("default_sites"))
-        path_id = add_custom_path(name, path, default_sites)
+        # No key at all means "the client has no opinion": pass None so the
+        # column default applies. Normalising a missing value would turn it
+        # into the default CSV here instead, which works today but would
+        # quietly fork from the DB the moment that default changes.
+        media_kinds = (
+            _normalize_media_kinds(data.get("media_kinds"))
+            if "media_kinds" in data
+            else None
+        )
+        path_id = add_custom_path(name, path, default_sites,
+                                  media_kinds=media_kinds)
         return jsonify({"ok": True, "id": path_id})
     @app.route("/api/custom-paths/<int:path_id>", methods=["PUT"])
     def api_custom_paths_update(path_id):
@@ -1393,11 +1435,17 @@ def register_settings_routes(app):
             if "default_sites" in data
             else None
         )
+        media_kinds = (
+            _normalize_media_kinds(data.get("media_kinds"))
+            if "media_kinds" in data
+            else None
+        )
         update_custom_path(
             path_id,
             name=name.strip() if isinstance(name, str) else None,
             path=path.strip() if isinstance(path, str) else None,
             default_sites=default_sites,
+            media_kinds=media_kinds,
         )
         return jsonify({"ok": True})
     @app.route("/api/custom-paths/<int:path_id>", methods=["DELETE"])

@@ -53,7 +53,7 @@ def register_upscale_routes(app):
     def api_upscale_badge():
         """Return just the upscale queue badge count (pending + running items).
 
-        GET /api/upscale/badge. Polled from upscale_queue.js and library.js
+        GET /api/upscale/badge. Polled from upscale_queue.js and library_video.js
         (libUpscaleTitle()/libUpscaleEpisode()) to refresh the nav badge
         after queuing new upscale jobs.
         """
@@ -111,7 +111,7 @@ def register_upscale_routes(app):
     def api_upscale_add_library():
         """Add library files to the upscale queue as ONE batch entry.
 
-        POST /api/upscale/add-library. Called from library.js's
+        POST /api/upscale/add-library. Called from library_video.js's
         libUpscaleTitle() and libUpscaleEpisode() when the user upscales
         a title or single episode from the library view.
         """

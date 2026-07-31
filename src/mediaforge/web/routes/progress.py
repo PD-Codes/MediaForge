@@ -80,7 +80,7 @@ def register_progress_routes(app):
     def api_progress_bulk():
         """Return saved playback positions for multiple episode paths at once.
 
-        POST /api/progress/bulk. Called from library.js's
+        POST /api/progress/bulk. Called from library_video.js's
         _libFlushProgress() to annotate the library listing with
         "continue watching" progress in one request.
         """

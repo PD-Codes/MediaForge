@@ -272,6 +272,26 @@ DATA_REGISTRY = {
             "en": "Only that video transcoding (codec conversion) is used and how often.",
         },
     },
+    "flag.library": {
+        "stage": 2, "group": "library",
+        "label": {"de": "Mediathek genutzt", "en": "Library used"},
+        "explain": {
+            "de": (
+                "Nur, dass die Mediathek geöffnet wird, wie oft und welcher Bereich davon: die "
+                "Übersicht, \"Filme & Serien\", \"eBooks\" oder einer der noch nicht fertigen "
+                "Bereiche (Manga/Comics/Musik). Übertragen wird ausschließlich der Name des "
+                "Bereichs aus einer festen, im Programm hinterlegten Liste -- keine Titel, keine "
+                "Ordner-, Pfad- oder Dateinamen und keine Angabe, wie viel darin liegt."
+            ),
+            "en": (
+                "Only that the library is opened, how often, and which of its sections: the "
+                "overview, \"Movies & Series\", \"eBooks\" or one of the sections that aren't "
+                "finished yet (manga/comics/music). Nothing but the section name from a fixed list "
+                "built into the program is transmitted -- no titles, no folder, path or file names, "
+                "and no indication of how much is in there."
+            ),
+        },
+    },
     "flag.library_scan": {
         "stage": 2, "group": "library_scan",
         "label": {"de": "Bibliotheks-Scan genutzt", "en": "Library scan used"},
@@ -438,6 +458,26 @@ DATA_REGISTRY = {
         "explain": {
             "de": "Fehlermeldungen, wenn ein Transcoding-Vorgang (Codec-Umwandlung) fehlschlägt.",
             "en": "Error messages when a transcoding operation (codec conversion) fails.",
+        },
+    },
+    "detail.library": {
+        "stage": 3, "group": "library",
+        "label": {"de": "Mediathek-Pfadverteilung", "en": "Library path distribution"},
+        "explain": {
+            "de": (
+                "Wie viele deiner eingerichteten Download-Pfade welcher Medienart zugeordnet sind "
+                "(z. B. \"3 Pfade Filme & Serien, 1 Pfad eBooks\"), dazu die Gesamtzahl der Pfade "
+                "und wie viele davon mehreren Medienarten gleichzeitig zugeordnet sind. "
+                "Ausschließlich diese Zahlen -- keine Pfade, keine Ordner-, Laufwerks- oder "
+                "Freigabenamen, keine Titel und keine Angabe, wie viele Dateien darin liegen."
+            ),
+            "en": (
+                "How many of your configured download paths are assigned to which media kind "
+                "(e.g. \"3 paths movies & series, 1 path eBooks\"), plus the total number of paths "
+                "and how many of them are assigned to more than one kind at once. Those numbers and "
+                "nothing else -- no paths, no folder, drive or share names, no titles, and no "
+                "indication of how many files they hold."
+            ),
         },
     },
     "detail.library_scan": {

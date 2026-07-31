@@ -5109,3 +5109,83 @@ msgstr ""
 
 msgid "off"
 msgstr ""
+
+# --- Library split: per-media-kind libraries (hub, video, books) ---
+
+msgid "Albums, artists and playlists — player included."
+msgstr ""
+
+msgid "Back to the library overview"
+msgstr ""
+
+msgid "Books that are part of a series"
+msgstr ""
+
+msgid "Books that stand alone"
+msgstr ""
+
+msgid "CBZ and CBR issues, sorted into series and runs."
+msgstr ""
+
+msgid "Comics"
+msgstr ""
+
+msgid "Coming soon"
+msgstr ""
+
+msgid "Configure paths"
+msgstr ""
+
+msgid "Customise this page"
+msgstr ""
+
+msgid "EPUB, MOBI, AZW3 and PDF, grouped by title and read in the browser."
+msgstr ""
+
+msgid "Every media type has its own library. Pick one to browse it."
+msgstr ""
+
+msgid "Filter"
+msgstr ""
+
+msgid "Grid"
+msgstr ""
+
+msgid "In a series"
+msgstr ""
+
+msgid "List"
+msgstr ""
+
+msgid "Media types"
+msgstr ""
+
+msgid "Movies & Series"
+msgstr ""
+
+msgid "Search title, author or series…"
+msgstr ""
+
+msgid "Series, seasons and movies from every path assigned to this library."
+msgstr ""
+
+msgid "Sort by title"
+msgstr ""
+
+msgid "Standalone"
+msgstr ""
+
+msgid "The media types decide which library a path shows up in — a folder is only scanned for what is ticked here."
+msgstr ""
+
+msgid "Volumes, chapters and a reader built for page spreads."
+msgstr ""
+
+msgid "Which libraries the default download path feeds. At least one has to stay selected."
+msgstr ""
+
+msgid "Which library a folder shows up in is set per download path."
+msgstr ""
+
+msgid "Which rows the home page shows, in which order, and how many cards each holds now lives in its own tab."
+msgstr ""
