@@ -63,6 +63,11 @@ _PANEL_PREF_KEY = "home_panel"
 # handful of COUNT queries per second for numbers that change every few
 # seconds at best.
 _BADGE_TTL = 10.0
+# How many rows the two "here is what happened" panels list. PANEL_MAX_ITEMS
+# is the registry's hard cap (what a module may not exceed); this is the
+# editorial limit for the built-in history/library lists, which are a glance
+# at the newest entries and have an "open the full page" link right below.
+_RECENT_MAX_ITEMS = 10
 # Disk usage is the one built-in panel that touches the filesystem, and a
 # spinning disk under load can make statvfs take real milliseconds.
 _DISK_TTL = 30.0
@@ -221,24 +226,52 @@ def _download_roots() -> list:
     return roots
 
 
+def _volume_key(path, usage):
+    """Identity of the volume a path lives on.
+
+    ``st_dev`` is the right answer and is stable on both Linux and Windows
+    (where Python fills it from the volume serial number). The size pair is
+    only a fallback for the rare stat() failure -- keying on (total, free)
+    alone was the bug: two roots on two different disks that happen to hold
+    the same amount of data collapsed into one row, so the panel silently
+    dropped configured paths.
+    """
+    try:
+        return ("dev", os.stat(str(path)).st_dev)
+    except OSError:
+        return ("size", usage.total, usage.free)
+
+
 def _disk_rows() -> list:
-    """(label, used, total) per download root, cached -- see _DISK_TTL."""
+    """(label, used, total) per download root, cached -- see _DISK_TTL.
+
+    Every configured root is reported. Roots that share a volume are merged
+    into ONE row rather than dropped, and the row names all of them -- a user
+    who configured five paths must be able to see all five accounted for,
+    while five identical bars would be worse than one bar listing five names.
+    """
     now = time.monotonic()
     with _cache_lock:
         if now - _disk_cache["at"] < _DISK_TTL:
             return list(_disk_cache["value"])
     rows = []
-    seen = set()
+    index = {}
     for label, path in _download_roots():
         try:
             usage = shutil.disk_usage(str(path))
         except OSError:
             continue          # path not mounted right now -- not an error here
-        key = (usage.total, usage.free)
-        if key in seen:
-            continue          # several roots on one volume: report it once
-        seen.add(key)
-        rows.append((label, usage.total - usage.free, usage.total))
+        key = _volume_key(path, usage)
+        if key in index:
+            existing = index[key]
+            if label and label not in existing["labels"]:
+                existing["labels"].append(label)
+            continue
+        entry = {"labels": [label] if label else [],
+                 "used": usage.total - usage.free, "total": usage.total}
+        index[key] = entry
+        rows.append(entry)
+    rows = [(" · ".join(r["labels"]) or "/", r["used"], r["total"]) for r in rows]
     with _cache_lock:
         _disk_cache["at"] = now
         _disk_cache["value"] = list(rows)
@@ -338,7 +371,7 @@ def _panel_queue() -> dict:
 
 
 def _panel_activity() -> dict:
-    entries, _total = get_download_history(username=None, limit=PANEL_MAX_ITEMS)
+    entries, _total = get_download_history(username=None, limit=_RECENT_MAX_ITEMS)
     items = []
     for entry in entries or []:
         status = (entry.get("status") or "").lower()
@@ -392,7 +425,7 @@ def _panel_library() -> dict:
         logger.debug("[HomePanels] library panel failed", exc_info=True)
     newest.sort(key=lambda t: t.get("added_at") or 0, reverse=True)
     items = []
-    for title in newest[:PANEL_MAX_ITEMS]:
+    for title in newest[:_RECENT_MAX_ITEMS]:
         key, args = _ago(title.get("added_at"))
         items.append({"title": title.get("folder") or "", "sub_key": key,
                       "sub_args": args, "href": "/library"})
@@ -512,6 +545,16 @@ _BUILTIN_PANELS = (
      "M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"),
 )
 
+# What a badge number MEANS, as an i18n key the client resolves and hangs on
+# the button as a tooltip. A bare "58" next to "System" is unreadable -- it
+# was read as a version, an uptime and an error code before anyone guessed
+# "failed downloads". Module panels get no entry: their badge is theirs to
+# explain, and this file cannot translate a string it has never seen.
+_BADGE_HINTS = {
+    "queue": "hp_badge_queue",
+    "system": "hp_badge_system",
+}
+
 
 # ── routes ───────────────────────────────────────────────────────────────
 
@@ -534,13 +577,21 @@ def register_home_panel_routes(app):
             if admin_only and not is_admin:
                 continue
             out.append({"id": pid, "label_key": label_key, "label": "",
-                        "badge": badges.get(pid) or 0, "icon": icon, "builtin": True})
+                        "badge": badges.get(pid) or 0,
+                        "badge_key": _BADGE_HINTS.get(pid, ""),
+                        "badge_label": "",
+                        "icon": icon, "builtin": True})
         for panel in iter_home_panels():
             if panel["admin_only"] and not is_admin:
                 continue
             out.append({"id": panel["panel_id"], "label_key": "",
                         "label": _clean_text(panel["label"], 40),
                         "badge": badges.get(panel["panel_id"]) or 0,
+                        # A module owns its own catalogue, so it sends ready-
+                        # made text where a built-in sends a key -- same split
+                        # as label/label_key everywhere else in this payload.
+                        "badge_key": "",
+                        "badge_label": _clean_text(panel.get("badge_label"), 120),
                         "icon": panel["icon"], "builtin": False})
         return jsonify({"panels": out, "active": _stored_panel(out)})
 

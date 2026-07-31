@@ -374,30 +374,121 @@ def _tmdb_calendar_episodes(tmdb_id, api_key, ui_lang="de"):
     set_tmdb_cache(cache_key, out)
     return out
 
-def _tmdb_movie_release(tmdb_id, api_key, ui_lang="de"):
-    """Return {poster, title, release_date} for a movie. Cached 6 h.
+# TMDB release types, in the order the calendar prefers them. A calendar
+# entry answers "when can I watch this", so a digital release outranks a
+# festival premiere that nobody outside the festival attended -- and a
+# theatrical date outranks the physical disc, which is months later and would
+# make an already-streaming film look unreleased.
+#
+#   1 Premiere  2 Theatrical (limited)  3 Theatrical
+#   4 Digital   5 Physical              6 TV
+_TMDB_RELEASE_TYPE_ORDER = (4, 3, 2, 6, 5, 1)
+
+
+def _pick_release_date(payload, country):
+    """The best release date for ``country`` out of a /movie release_dates block.
+
+    The top-level ``release_date`` TMDB returns is the *primary* release for
+    whatever region it resolves the request locale to -- which is why the
+    calendar showed a date that had nothing to do with the configured
+    country, and no way to tell a premiere from a cinema start. This walks
+    the per-country table instead:
+
+      configured country -> the film's own origin country -> US -> anything,
+
+    and inside a country prefers the type the user can actually watch
+    (:data:`_TMDB_RELEASE_TYPE_ORDER`).
+
+    Returns ``(date, country, type)`` with ``date`` as ``YYYY-MM-DD``, or
+    ``(None, "", 0)`` when the table is unusable -- the caller then falls back
+    to the top-level field, because a slightly wrong date beats no entry.
+    """
+    results = ((payload.get("release_dates") or {}).get("results") or [])
+    if not isinstance(results, list):
+        return None, "", 0
+    by_country = {}
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        code = str(entry.get("iso_3166_1") or "").upper()
+        if code:
+            by_country[code] = entry.get("release_dates") or []
+
+    origin = ""
+    for key in ("origin_country", "production_countries"):
+        value = payload.get(key)
+        if isinstance(value, list) and value:
+            first = value[0]
+            origin = str(first.get("iso_3166_1") if isinstance(first, dict) else first or "").upper()
+            if origin:
+                break
+
+    order = [str(country or "").upper(), origin, "US"]
+    order += sorted(by_country)               # deterministic last resort
+    for code in order:
+        entries = by_country.get(code)
+        if not entries:
+            continue
+        best = None
+        for release in entries:
+            if not isinstance(release, dict):
+                continue
+            stamp = str(release.get("release_date") or "")[:10]
+            if len(stamp) != 10:
+                continue
+            try:
+                rank = _TMDB_RELEASE_TYPE_ORDER.index(int(release.get("type") or 0))
+            except (TypeError, ValueError):
+                rank = len(_TMDB_RELEASE_TYPE_ORDER)
+            # Same type twice (a re-release): the earlier date is the one
+            # people mean by "it came out".
+            if best is None or (rank, stamp) < (best[0], best[1]):
+                best = (rank, stamp, int(release.get("type") or 0))
+        if best:
+            return best[1], code, best[2]
+    return None, "", 0
+
+
+def _tmdb_movie_release(tmdb_id, api_key, ui_lang="de", country="DE"):
+    """Return {poster, title, release_date, release_country, release_type}
+    for a movie. Cached 6 h.
+
+    ``country`` is the instance's ``cineinfo_country`` and decides WHICH
+    country's release the calendar shows; ``ui_lang`` still only decides the
+    language of the title. Those were the same knob before, which is the
+    "only the country is used" bug: the date silently followed the UI
+    language and ignored the configured region entirely.
 
     Used by: web/routes/calendar_routes.py.
     """
-    cache_key = f"calmovie|||{tmdb_id}|||{ui_lang}"
+    country = (str(country or "DE").upper() or "DE")[:2]
+    cache_key = f"calmovie|||{tmdb_id}|||{ui_lang}|||{country}"
     cached = get_tmdb_cache(cache_key, ttl=21600.0)
     if cached is not None:
         return cached
     lang = "en-US" if ui_lang == "en" else "de-DE"
-    out = {"poster": None, "title": "", "release_date": None}
+    out = {"poster": None, "title": "", "release_date": None,
+           "release_country": "", "release_type": 0}
     try:
         _tmdb_rl.acquire()
         r = _rq_tmdb.get(
             "https://api.themoviedb.org/3/movie/" + str(tmdb_id),
-            params={"api_key": api_key, "language": lang}, timeout=8,
+            params={"api_key": api_key, "language": lang,
+                    # One request, not two: release_dates is small and the
+                    # calendar syncs a lot of ids behind a rate limiter.
+                    "append_to_response": "release_dates"},
+            timeout=8,
             headers={"User-Agent": "MediaForge/1.0"},
         )
         r.raise_for_status()
         d = r.json()
+        picked, picked_country, picked_type = _pick_release_date(d, country)
         out = {
             "poster": d.get("poster_path"),
             "title": d.get("title") or d.get("original_title") or "",
-            "release_date": d.get("release_date") or None,
+            "release_date": picked or (d.get("release_date") or None),
+            "release_country": picked_country,
+            "release_type": picked_type,
         }
     except Exception as exc:
         logger.debug("[Calendar] movie lookup failed for tmdb %s: %s", tmdb_id, exc)

@@ -102,10 +102,23 @@
     bar.style.display = "";
     bar.innerHTML = panels.map(function (p) {
       const on = p.id === active;
+      const name = text(p.label_key, p.label);
+      // A bare number next to a word explains nothing -- "System 58" was read
+      // as a version and as an error code before anyone guessed "58 failed
+      // downloads". The server sends what the badge counts as an i18n key;
+      // it becomes the button's tooltip and its accessible name.
+      let hint = "";
+      if (p.badge > 0 && (p.badge_key || p.badge_label)) {
+        hint = text(p.badge_key, p.badge_label, [String(p.badge)]);
+        // A module that forgot the "{}" placeholder still gets a usable
+        // tooltip rather than a sentence with the number missing from it.
+        if (hint && hint.indexOf(String(p.badge)) === -1) hint = p.badge + " " + hint;
+      }
       return '<button type="button" class="mf-segmented-btn hp-btn' + (on ? " active" : "") +
         '" data-panel="' + esc(p.id) + '" aria-expanded="' + (on ? "true" : "false") +
-        '" aria-controls="homePanelBody">' + iconSvg(p.icon) +
-        '<span>' + esc(text(p.label_key, p.label)) + '</span>' +
+        '"' + (hint ? ' title="' + esc(hint) + '" aria-label="' + esc(name + " — " + hint) + '"' : '') +
+        ' aria-controls="homePanelBody">' + iconSvg(p.icon) +
+        '<span>' + esc(name) + '</span>' +
         (p.badge > 0 ? '<span class="mf-facet">' + esc(String(p.badge)) + '</span>' : '') +
         '</button>';
     }).join("");

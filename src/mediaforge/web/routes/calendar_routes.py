@@ -424,13 +424,19 @@ def _sync_calendar_item(tmdb_id, media_type, api_key):
             logger.debug("[Calendar Watcher] Synced TV show tmdb_id=%d: %s (%d episodes)", tmdb_id, cal["title"], len(keep_episodes))
 
         elif media_type == "movie":
-            mov = _tmdb_movie_release(tmdb_id, api_key, "de")
+            # The configured region decides WHICH country's release date lands
+            # in the calendar. Before this it did not take part at all: the
+            # date came from TMDB's top-level release_date, which follows the
+            # request locale -- so a German instance got whatever TMDB
+            # considered primary and never a real German cinema/streaming day.
+            country = get_setting("cineinfo_country", "DE")
+            mov = _tmdb_movie_release(tmdb_id, api_key, "de", country)
             if not mov or not mov.get("title") or not mov.get("release_date"):
                 save_calendar_media(tmdb_id, f"TMDB Movie #{tmdb_id}", f"TMDB Movie #{tmdb_id}", "")
                 return
             title_en = mov["title"]
             try:
-                mov_en = _tmdb_movie_release(tmdb_id, api_key, "en") or {}
+                mov_en = _tmdb_movie_release(tmdb_id, api_key, "en", country) or {}
                 title_en = mov_en.get("title") or mov["title"]
             except Exception:
                 pass
@@ -438,7 +444,9 @@ def _sync_calendar_item(tmdb_id, media_type, api_key):
             media_id = save_calendar_media(tmdb_id, mov["title"], title_en, mov.get("poster") or "")
             save_calendar_episode(media_id, None, None, "", "", mov["release_date"], "")
             delete_calendar_episodes_except(media_id, [(None, None)])
-            logger.debug("[Calendar Watcher] Synced Movie tmdb_id=%d: %s (release: %s)", tmdb_id, mov["title"], mov["release_date"])
+            logger.debug("[Calendar Watcher] Synced Movie tmdb_id=%d: %s (release: %s, %s type %s)",
+                         tmdb_id, mov["title"], mov["release_date"],
+                         mov.get("release_country") or "?", mov.get("release_type") or 0)
     except Exception as exc:
         logger.error("[Calendar Watcher] Failed to sync tmdb_id=%d type=%s: %s", tmdb_id, media_type, exc, exc_info=True)
 
@@ -1083,10 +1091,12 @@ def _ics_fold(line):
 def build_ics(events, calendar_name):
     """Render calendar events as an iCalendar document.
 
-    Air dates are plain calendar days with no time-of-day information (and, as
-    the calendar page itself warns, they are in the country of origin), so each
+    Air dates are plain calendar days with no time-of-day information, so each
     event is written as an all-day VEVENT via VALUE=DATE rather than being
-    pinned to a made-up clock time in some timezone.
+    pinned to a made-up clock time in some timezone. Series air dates are the
+    ones TMDB gives for the show; movie dates follow the configured region
+    (``cineinfo_country``) and prefer the release type a viewer can actually
+    watch -- see tmdb_cache._pick_release_date().
     """
     stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     lines = [

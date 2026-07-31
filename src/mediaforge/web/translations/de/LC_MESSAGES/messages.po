@@ -5820,6 +5820,11 @@ msgid "Use the new home page"
 msgstr "Neue Startseite verwenden"
 
 #: src/mediaforge/web/templates/settings.html
+msgid "Use the new home page (Beta)"
+msgstr "Neue Startseite verwenden (Beta)"
+
+
+#: src/mediaforge/web/templates/settings.html
 msgid "Groups the discovery rows by question instead of by source: \"New this week\" and \"Popular right now\" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this."
 msgstr "Gruppiert die Entdecken-Reihen nach Frage statt nach Quelle: \"Neu diese Woche\" und \"Gerade beliebt\" mischen alle aktiven Quellen, und jedes Poster nennt seine Herkunft. Das klassische Layout behält pro Quelle einen Block mit eigenen Reihen. Startseite nach dem Umschalten neu laden."
 
@@ -6544,3 +6549,11 @@ msgstr "Backdrop anzeigen"
 #: src/mediaforge/web/templates/integrations.html
 msgid "Uses the TMDB backdrop as the header image of the title window"
 msgstr "Nutzt das TMDB-Backdrop als Kopfbild des Titelfensters"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} downloads are running or waiting"
+msgstr "{} Downloads laufen oder warten"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} things need your attention: failed downloads, plus a paused queue"
+msgstr "{} Dinge brauchen deine Aufmerksamkeit: fehlgeschlagene Downloads, plus eine pausierte Warteschlange"

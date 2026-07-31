@@ -1374,10 +1374,19 @@ function renderBrowseHoverCards(card, tmdb_voting, tmdb_genres, tmdb_fsk) {
     fskHtml = `<span class="browse-hover-pill browse-hover-pill--fsk${fskCls}">FSK ${esc(tmdb_fsk)}</span>`;
   }
 
-  // Still nothing to say (enrichment has not answered yet): leave whatever is
-  // on the card alone and wait for the next call -- which now happens, because
-  // this function no longer refuses to run twice.
-  if (!votingHtml && !genresHtml && !fskHtml) return;
+  // Still nothing to say. An enrichment that has not answered yet must keep
+  // whatever is already on the card (waiting for the next call), but an
+  // EMPTY drawer has to go: since the badges became a bar at the poster's
+  // bottom edge, a content-less .browse-hover-content still paints its
+  // background and its accent border -- and on touch it rests permanently
+  // open. That is the empty hover strip on rows whose source carries no TMDB
+  // metadata (aniworld "latest" and every other module-fed row).
+  if (!votingHtml && !genresHtml && !fskHtml) {
+    const stale = card.querySelector(".browse-hover-overlay");
+    const staleContent = stale && stale.querySelector(".browse-hover-content");
+    if (stale && (!staleContent || !staleContent.textContent.trim())) stale.remove();
+    return;
+  }
 
   const inner = fskHtml + votingHtml + genresHtml;
   let overlay = card.querySelector(".browse-hover-overlay");

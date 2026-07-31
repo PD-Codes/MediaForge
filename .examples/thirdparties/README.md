@@ -784,13 +784,20 @@ def register(app):
         label="My module",
         view=_panel,                # called ONLY when the panel is open
         badge=my_store.count_pending,   # optional; runs on EVERY home page load
+        badge_label="{} jobs are waiting",  # what the number means (tooltip)
         admin_only=False,
         icon="M3 6h18M3 12h18M3 18h12",  # optional 24x24 SVG path data
     )
 ```
 
-Four things that decide whether this behaves well:
+Five things that decide whether this behaves well:
 
+- **Say what your badge counts.** `badge_label` becomes the button's tooltip
+  and its accessible name, with `{}` replaced by the number. Skip it and the
+  user sees a bare digit next to a word: the built-in System button shipped
+  without one and its "58" was read as a version number and as an error code
+  long before anyone worked out it counted failed downloads. Send it
+  translated, like `label`.
 - **`badge` must be cheap.** `view` is lazy (fetched when the user opens the
   panel, refreshed every 20 s while it is open and the tab is in front), but
   the badge runs on every home page load for every registered panel. A COUNT

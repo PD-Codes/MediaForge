@@ -50,7 +50,8 @@ _EXTRA_HOME_PANELS: dict = {}
 
 
 def register_home_panel(item_id, panel_id, label, view,
-                        badge=None, admin_only=False, icon=None):
+                        badge=None, admin_only=False, icon=None,
+                        badge_label=None):
     """Add a button (and its panel) to the home page's button bar.
 
     - ``item_id``: the id the module already passed to ``register_thirdparty()``.
@@ -67,6 +68,13 @@ def register_home_panel(item_id, panel_id, label, view,
       runs on *every* home page visit for every registered panel, so it must
       be cheap -- a COUNT, not a scrape. Returning ``0``/``None`` shows no
       badge.
+    - ``badge_label``: optional, and strongly recommended whenever ``badge``
+      is set: what the number MEANS, as the button's tooltip. Already
+      translated, like ``label``. A bare number next to a word is guesswork --
+      the built-in System button showed "58" for months and was read as a
+      version and as an error code before anyone worked out it counted failed
+      downloads. Use ``{}`` where the number should appear; without it the
+      count is appended.
     - ``admin_only``: when true the panel is not listed for, and not readable
       by, a non-admin account. Enforced server-side in both routes; hiding a
       button in the template would leave the data one fetch away.
@@ -109,6 +117,7 @@ def register_home_panel(item_id, panel_id, label, view,
         "label": str(label or panel_id),
         "view": view,
         "badge": badge,
+        "badge_label": str(badge_label or "")[:120],
         "admin_only": bool(admin_only),
         "icon": _safe_icon(icon),
     }
@@ -143,6 +152,7 @@ def iter_home_panels() -> list:
             "label": entry["label"],
             "view": entry["view"],
             "badge": entry["badge"],
+            "badge_label": entry["badge_label"],
             "admin_only": entry["admin_only"],
             "icon": entry["icon"],
             "item_id": item_id,

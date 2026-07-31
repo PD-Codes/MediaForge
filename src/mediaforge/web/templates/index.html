@@ -311,6 +311,8 @@
       'hp_empty_storage': _('No download path could be read.'),
       'hp_empty_system': _('Nothing needs your attention.'),
       'hp_download_failed': _('Download failed'),
+      'hp_badge_queue': _('{} downloads are running or waiting'),
+      'hp_badge_system': _('{} things need your attention: failed downloads, plus a paused queue'),
       'hp_ep_of': _('Episode {} of {}'),
       'hp_used': _('{} of {} used'),
       'hp_just_now': _('just now'),
@@ -339,7 +341,7 @@
   {% endif %}
   {# Only rendered while something is downloading -- see renderHomeRunStrip(),
      fed by the queue poll that runs anyway. #}
-  <div class="home-run" id="homeRunStrip" style="display:none"></div>
+  <div class="home-run" id="homeRunStrip" style="display:none; margin-top:10px;"></div>
   <div class="spinner" id="searchSpinner">{{ _('Searching...') }}</div>
   <div class="results" id="results"></div>
   <div id="sourceStatusBanner"></div>

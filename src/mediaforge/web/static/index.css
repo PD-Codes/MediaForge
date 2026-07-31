@@ -361,6 +361,11 @@
   gap: 10px;
 }.browse-heading {
   flex: 1;
+  /* A flex child defaults to min-width:auto, i.e. it refuses to shrink below
+     its content. With the source hint appended ("from your playback
+     progress") this heading became wider than the phone viewport and took
+     the whole page -- and every overlay sized against it -- with it. */
+  min-width: 0;
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-primary);
@@ -968,7 +973,23 @@ a.browse-heading-src:hover { color: var(--accent); }
 
 @media (max-width: 640px) {
   .feed-customize { width: 40px; }
-  .browse-heading-src { display: block; margin: 2px 0 0; }
+  /* `display:block` alone did nothing: a flex child is blockified back into a
+     flex item, so the hint stayed on the heading's line and kept its
+     `white-space:nowrap`. Wrapping the heading and letting the hint break is
+     what actually moves it onto its own line. */
+  .browse-heading {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .browse-heading-src {
+    flex-basis: 100%;
+    margin: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* The decorative rule would otherwise claim the first line's leftover
+     width and push the title itself out of view. */
+  .browse-heading::after { display: none; }
 }
 
 

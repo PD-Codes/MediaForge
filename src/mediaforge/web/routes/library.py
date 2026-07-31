@@ -59,6 +59,136 @@ _LIB_EP_RE = re.compile(r"S(\d{1,4})E(\d{1,4})(?!\d)", re.IGNORECASE)
 # Season-less fallback ("... E013 ..."). Deliberately still requires at least
 # two digits: a bare "E1" appears inside far too many real titles.
 _LIB_FALLBACK_EP_RE = re.compile(r"\bE(\d{2,4})(?!\d)\b", re.IGNORECASE)
+
+# ── episode parsing ──────────────────────────────────────────────────────
+#
+# Everything below exists because "does the name contain SxxExx" was the
+# WHOLE of the series/movie decision, and scene names have never spelled it
+# only that way. A file that matched nothing was filed as a movie, which is
+# how half-German, half-anime libraries ended up with series listed as films.
+#
+# Two rules keep this from over-matching in the other direction:
+#   * release tags are removed BEFORE the loose patterns run -- "x264",
+#     "H.265", "1080p", "DDP5.1" and a bare year are the four things that
+#     otherwise look exactly like an episode number,
+#   * the loose patterns that carry no "E"/"Episode" marker at all (anime's
+#     "Title - 062 - ...") only run for a file that already sits inside a
+#     season/specials folder. Outside one, "Rocky - 2 - ...' is a film.
+
+# Release metadata, stripped to a space before any loose pattern is tried.
+_LIB_TAG_RE = re.compile(
+    r"\b(?:[xh]\.?26[45]|hevc|avc|xvid|divx"
+    r"|\d{3,4}[pi]|4k|uhd|hdr10\+?|hdr|dv|sdr|(?:8|10|12)bits?"
+    r"|aac|ac3|eac3|ddp?|dts(?:-hd)?|truehd|flac|opus|mp3|atmos|\d\.\d(?=\b)"
+    r"|web-?dl|web-?rip|bd-?rip|br-?rip|blu-?ray|hdtv|dvdrip|remux|repack|proper"
+    r"|multi|dual|dl|ger|eng|jap|sub(?:bed|s)?|dub(?:bed)?|omu"
+    r")\b",
+    re.IGNORECASE,
+)
+# A four-digit year, with or without brackets. Removed for the same reason.
+_LIB_YEAR_RE = re.compile(r"[(\[]?\b(?:19|20)\d{2}\b[)\]]?")
+
+# season + episode, in descending order of how explicit they are
+_LIB_SE_PATTERNS = (
+    # S01E05, S1E5, S01.E05, S01_E05, S01 E05, S01EP05
+    re.compile(r"S(\d{1,4})\s*[._\- ]?\s*E(?:P|PISODE)?\.?\s*(\d{1,4})(?!\d)", re.IGNORECASE),
+    # 1x05, 01x05
+    re.compile(r"(?<!\d)(\d{1,4})\s*x\s*(\d{1,4})(?!\d)", re.IGNORECASE),
+    # Season 1 ... Episode 5 / Staffel 1 ... Folge 5
+    re.compile(r"(?:SEASON|STAFFEL)\s*[._\- ]?\s*(\d{1,4})\D{0,16}?"
+               r"(?:EPISODE|FOLGE|EP)\s*[._\- ]?\s*(\d{1,4})(?!\d)", re.IGNORECASE),
+)
+# episode only -- the season comes from the folder (or 1)
+_LIB_E_PATTERNS = (
+    re.compile(r"(?:EPISODE|FOLGE)\s*[._\- ]?\s*(\d{1,4})(?!\d)", re.IGNORECASE),
+    re.compile(r"\bEP\.?\s*[._\- ]?\s*(\d{1,4})(?!\d)", re.IGNORECASE),
+    _LIB_FALLBACK_EP_RE,
+)
+# episode only and WITHOUT any marker: anime's "[Group] Show - 062 [1080p]".
+# Only consulted inside a season/specials folder, see above.
+_LIB_BARE_EP_RE = re.compile(r"(?:^|[\s._\]\)-])-\s*(\d{1,4})(?!\d)(?:$|[\s._\[\(-])")
+
+# "Season 2" / "Staffel 02" / "S2" / "Series 2" as a FOLDER name.
+_LIB_SEASON_DIR_RE = re.compile(
+    r"^(?:S|SEASON|STAFFEL|SERIES)\s*[._\- ]?\s*(\d{1,4})(?!\d)", re.IGNORECASE)
+# Season 0 by another name. Both spellings are what the scrapers write.
+_LIB_SPECIALS_DIR_RE = re.compile(r"^(?:SPECIALS?|EXTRAS?|OVAS?|SPECIALS?_\w+)$", re.IGNORECASE)
+
+
+def _lib_strip_tags(name):
+    """The file name with release metadata and the year blanked out."""
+    return _LIB_YEAR_RE.sub(" ", _LIB_TAG_RE.sub(" ", name))
+
+
+def _lib_looks_like_year(value):
+    """True for a 4-digit number that is far more likely a year.
+
+    Only consulted for the season-less patterns: "Show.Title.E2019.mkv" has
+    no season to disagree with, so nothing else could catch it -- and there is
+    no series on earth with a 2019th episode of season 1. An explicit
+    ``S01E2019`` is left alone; if somebody spells it out, they mean it.
+    """
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return False
+    return 1900 <= number <= 2099
+
+
+def _lib_dir_season(dir_name):
+    """Season number a folder name declares, or ``None``.
+
+    ``Specials``/``Extras``/``OVA`` answer 0 -- that is the season number
+    every scraper and every player uses for them, and filing them as season 1
+    (which the old season-less fallback did unconditionally) put them in the
+    middle of the real episode list.
+    """
+    text = str(dir_name or "").strip()
+    if not text:
+        return None
+    if _LIB_SPECIALS_DIR_RE.match(text):
+        return 0
+    m = _LIB_SEASON_DIR_RE.match(text)
+    return int(m.group(1)) if m else None
+
+
+def _lib_parse_episode(file_name, dir_name=""):
+    """``(season, episode)`` for one file name, or ``None`` when it is not an
+    episode at all -- which is what makes it a movie.
+
+    ``dir_name`` is the name of the folder the file sits in (not the title
+    folder): it supplies the season for the many naming schemes that put the
+    season in the path and only the episode in the file, and it is the gate
+    for the marker-less anime pattern.
+
+    Deliberately returns the FIRST match of a multi-episode file
+    ("S01E01-E02"): the rest of the library model is one row per episode, so
+    inventing a second row for a file that does not exist would break the
+    missing-episode detection it is meant to help.
+    """
+    name = str(file_name or "")
+    dir_season = _lib_dir_season(dir_name)
+
+    # Explicit S..E.. first, on the RAW name: it is unambiguous enough that
+    # tag stripping could only ever hurt it.
+    m = _LIB_EP_RE.search(name)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+
+    cleaned = _lib_strip_tags(name)
+    for pattern in _LIB_SE_PATTERNS:
+        m = pattern.search(cleaned)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    for pattern in _LIB_E_PATTERNS:
+        m = pattern.search(cleaned)
+        if m and not _lib_looks_like_year(m.group(1)):
+            return (dir_season if dir_season is not None else 1), int(m.group(1))
+    if dir_season is not None:
+        m = _LIB_BARE_EP_RE.search(cleaned)
+        if m and not _lib_looks_like_year(m.group(1)):
+            return dir_season, int(m.group(1))
+    return None
 # Serialises full scans -- see _lib_do_scan(). Declared here since the
 # original code, where it was defined and then never used.
 _lib_scan_lock = threading.Lock()
@@ -203,7 +333,10 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
     if not only_folder:
         for f in base.iterdir():
             if is_video_file(f):
-                if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
+                # Same question, same answer as the build pass below -- when
+                # these two disagree a file is built into the tree without
+                # ever having been probed, and shows up with no resolution.
+                if _lib_parse_episode(f.name, base.name) is not None:
                     continue
                 all_videos.append(f)
 
@@ -225,12 +358,12 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
             continue
         for f in folder.iterdir():
             if is_video_file(f):
-                if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
+                if _lib_parse_episode(f.name, folder.name) is not None:
                     continue
                 all_videos.append(f)
         for f in folder.rglob("*"):
             if is_video_file(f):
-                if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
+                if _lib_parse_episode(f.name, f.parent.name) is not None:
                     all_videos.append(f)
 
     # Remove duplicates while preserving order
@@ -376,7 +509,7 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
     for f in (base.iterdir() if not only_folder else []):
         if not is_video_file(f):
             continue
-        if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
+        if _lib_parse_episode(f.name, base.name) is not None:
             continue
         title_name = f.stem
         try:
@@ -418,7 +551,7 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
         for f in folder.iterdir():
             if not is_video_file(f):
                 continue
-            if _LIB_EP_RE.search(f.name) or _LIB_FALLBACK_EP_RE.search(f.name):
+            if _lib_parse_episode(f.name, folder.name) is not None:
                 continue
             try:
                 _st = f.stat()
@@ -447,17 +580,10 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
         for f in folder.rglob("*"):
             if not is_video_file(f):
                 continue
-            m = _LIB_EP_RE.search(f.name)
-            if m:
-                snum = int(m.group(1))
-                enum = int(m.group(2))
-            else:
-                m2 = _LIB_FALLBACK_EP_RE.search(f.name)
-                if m2:
-                    snum = 1
-                    enum = int(m2.group(1))
-                else:
-                    continue
+            parsed = _lib_parse_episode(f.name, f.parent.name)
+            if parsed is None:
+                continue
+            snum, enum = parsed
             try:
                 _st = f.stat()
                 fsize = _st.st_size
@@ -488,9 +614,17 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
         for skey in entry["seasons"]:
             if skey != "movies":
                 entry["seasons"][skey].sort(key=lambda e: e["episode"])
+        # is_movie was set by the two movie passes and never cleared again, so
+        # ONE unparseable extra in a series folder (a trailer, a "Making
+        # Of", a folder.mp4) turned the whole series into a film for good --
+        # and the Library page's filter, Auto-Sync's "series only" check and
+        # the missing-episode detection all read this flag. A title that has
+        # real numbered episodes is a series, whatever else sits next to them.
+        is_movie = entry["is_movie"] and not any(
+            key != "movies" and eps for key, eps in entry["seasons"].items())
         result.append({"folder": entry["folder"], "seasons": entry["seasons"],
                        "total_episodes": total_eps, "total_size": entry["total_size"],
-                       "is_movie": entry["is_movie"], "added_at": entry.get("_added_at", 0)})
+                       "is_movie": is_movie, "added_at": entry.get("_added_at", 0)})
     return result
 
 
@@ -1415,16 +1549,24 @@ def register_library_routes(app):
                 shutil.rmtree(title_path, ignore_errors=True)
                 deleted += 1
             else:
-                # Build regex pattern
-                if episode is not None:
-                    pat = re.compile(
-                        rf"S{int(season):02d}E{int(episode):03d}(?!\d)", re.IGNORECASE
-                    )
-                else:
-                    pat = re.compile(rf"S{int(season):02d}E\d{{2,3}}", re.IGNORECASE)
+                # Which files belong to this season/episode is decided by the
+                # SAME parser the scan used. It used to be a second, narrower
+                # regex built here with fixed zero-padding (S01E001), so every
+                # spelling the scanner accepts but that one does not -- "S1E1",
+                # "1x05", "Staffel 2/Folge 7" -- was listed on the page and
+                # then silently not deleted. One parser, one answer.
+                season_num = int(season)
+                episode_num = int(episode) if episode is not None else None
+
+                def _matches(path):
+                    parsed = _lib_parse_episode(path.name, path.parent.name)
+                    if parsed is None:
+                        return False
+                    return parsed[0] == season_num and (
+                        episode_num is None or parsed[1] == episode_num)
 
                 for f in list(title_path.rglob("*")):
-                    if f.is_file() and pat.search(f.name):
+                    if f.is_file() and _matches(f):
                         try:
                             f.unlink()
                             deleted += 1

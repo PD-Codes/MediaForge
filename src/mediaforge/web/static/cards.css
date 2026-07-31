@@ -255,6 +255,26 @@
   transform: translateY(0);
 }
 
+/* A drawer with no pills in it must not paint anything. While the badges
+   were individually positioned pills an empty overlay was invisible on its
+   own; as a bar with a background and an accent border it shows up as a
+   stripe over the artwork -- permanently open on touch, where the drawer
+   does not slide away. Third-party modules emit this markup themselves (see
+   .examples/thirdparties/README.md) and cannot be expected to omit the
+   wrapper, so the guard belongs here rather than in every caller. */
+.browse-hover-content:empty,
+.browse-hover-overlay:empty {
+  display: none;
+}
+
+/* :empty alone is not enough -- a template that indents its markup leaves a
+   whitespace text node behind, and that already defeats :empty. "no element
+   children" is the condition that actually holds. */
+.browse-hover-content:not(:has(*)),
+.browse-hover-overlay:not(:has(*)) {
+  display: none;
+}
+
 .browse-hover-content::-webkit-scrollbar {
   width: 4px;
 }
