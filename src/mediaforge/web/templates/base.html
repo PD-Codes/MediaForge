@@ -1,3 +1,6 @@
+{# Library sub-menu labels/icons come from one place so the sidebar and the
+   hub can never disagree about what a media kind is called. #}
+{% import "_library_nav.html" as libnav %}
 <!doctype html>
 <html lang="{{ ui_language }}" data-theme="dark">
 
@@ -284,6 +287,12 @@
               <span>{{ _('Favorites') }}</span></a>
           </div>
 
+          {# Library — a group, not a page: /library is an overview and each
+             media kind has a shelf of its own (see web/media_kinds.py). The
+             kinds that are not implemented yet stay listed but disabled, so
+             the sub-menu shows where this is going instead of quietly
+             growing an entry per release. `library_media_kinds` comes from
+             the context processor in web/app.py. #}
           <a href="{{ url_for('library_page') }}" class="sidebar-link" data-page="library">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round">
@@ -291,7 +300,34 @@
             </svg>
             <span>{{ _('Library') }}</span>
             <span class="queue-badge" id="streamBadge" style="display:none">0</span>
+            <span class="sidebar-toggle-chevron collapsed" id="librarySidebarToggle" title="{{ _('Toggle Submenu') }}"
+              onclick="return toggleSidebarSub(event, 'librarySidebarSub', this);">▾</span>
           </a>
+          <div class="sidebar-sub" id="librarySidebarSub">
+            {% for kind in library_media_kinds %}
+            {% if kind.available %}
+            <a href="{{ url_for('library_kind_page', kind_url=kind.url) }}" class="sidebar-sub-link has-icon"
+               data-page="library_{{ kind.slug }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">{{ libnav.kind_icon(kind.slug) }}</svg>
+              <span>{{ libnav.kind_label(kind.slug) }}</span></a>
+            {% else %}
+            {# Still a link: it lands on a page that explains itself. Marked
+               aria-disabled and styled quiet so it does not read as broken. #}
+            <a href="{{ url_for('library_kind_page', kind_url=kind.url) }}"
+               class="sidebar-sub-link has-icon sidebar-sub-soon" data-page="library_{{ kind.slug }}"
+               aria-disabled="true" title="{{ _('Coming soon') }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">{{ libnav.kind_icon(kind.slug) }}</svg>
+              <span>{{ libnav.kind_label(kind.slug) }}</span>
+              <span class="sidebar-soon-pill">{{ _('soon') }}</span></a>
+            {% endif %}
+            {% endfor %}
+            {# Shelves added by modules (register_thirdparty(section="library")). #}
+            {% for item in library_module_items %}
+            <a href="{{ item.url }}" class="sidebar-sub-link has-icon" data-page="{{ item.page }}">{{ item.icon|safe }}<span>{{ item.label }}</span><span class="sidebar-module-pill" title="{{ _('Module') }}: {{ item.module_name }}">M</span></a>
+            {% endfor %}
+          </div>
 
           <a href="{{ url_for('calendar_page') }}" class="sidebar-link" data-page="calendar" id="sidebarCalendar" style="display: {% if cineinfo_calendar %}flex{% else %}none{% endif %};">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1008,7 +1044,7 @@
     // Shared with the rest of the app (and with modules): any per-account UI
     // preference whitelisted in db.USER_UI_PREF_KEYS can be saved through the
     // same debounced, fire-and-forget path the appearance settings use.
-    // static/library.js stores its grid/list choice this way.
+    // static/library_core.js stores its grid/list choice this way.
     window.mfSaveUserPref = _persistAppearance;
 
     // The accent controls exist TWICE on the settings page: once in the quick
@@ -1772,6 +1808,9 @@
           <div id="readerEpub" hidden></div>
         </div>
         <div id="readerPdf" hidden></div>
+        {# The comic stage. Filled entirely from reader.js -- one or two <img>
+           elements that are reused across page turns, never rebuilt. #}
+        <div id="readerComic" hidden data-fit="height"></div>
         <button type="button" class="mfr-tap mfr-tap--next" id="readerNext"
                 aria-label="{{ _('Next page') }}"></button>
 
@@ -1803,7 +1842,40 @@
       <!-- Everything about how the page looks lives in one panel; the footer
            keeps only where-am-I and how-do-I-turn-the-page. -->
       <div class="mfr-sheet" id="readerSheet" hidden role="group" aria-label="{{ _('Reading settings') }}">
-        <div class="mfr-sheet-row">
+        {# Comic-only controls. They sit first because in comic mode every row
+           below them except Paper is hidden, and a panel that opens on its one
+           relevant control beats a panel that opens on a gap. #}
+        <div class="mfr-sheet-row" data-reader-comic-only hidden>
+          <span class="mfr-sheet-label">{{ _('Pages') }}</span>
+          <div class="mfr-seg" id="readerComicPages">
+            <button type="button" data-comic-spread="single">{{ _('Single') }}</button>
+            <button type="button" data-comic-spread="double">{{ _('Double') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-comic-only id="readerComicCoverRow" hidden>
+          <span class="mfr-sheet-label">{{ _('Cover') }}</span>
+          <div class="mfr-seg" id="readerComicCover">
+            <button type="button" data-comic-cover="alone">{{ _('Alone') }}</button>
+            <button type="button" data-comic-cover="paired">{{ _('Paired') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-comic-only hidden>
+          <span class="mfr-sheet-label">{{ _('Zoom') }}</span>
+          <div class="mfr-seg" id="readerComicZoom">
+            <button type="button" data-comic-zoom="-10" aria-label="{{ _('Zoom out') }}">&minus;</button>
+            <button type="button" data-comic-zoom="reset" id="readerComicZoomLabel">100%</button>
+            <button type="button" data-comic-zoom="10" aria-label="{{ _('Zoom in') }}">+</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-comic-only hidden>
+          <span class="mfr-sheet-label">{{ _('Fit') }}</span>
+          <div class="mfr-seg" id="readerComicFit">
+            <button type="button" data-comic-fit="width">{{ _('Width') }}</button>
+            <button type="button" data-comic-fit="height">{{ _('Height') }}</button>
+            <button type="button" data-comic-fit="native">{{ _('Original size') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-text-only>
           <span class="mfr-sheet-label">{{ _('Typeface') }}</span>
           <div class="mfr-seg mfr-seg--font" id="readerFont">
             <button type="button" data-font="serif">{{ _('Serif') }}</button>
@@ -1811,7 +1883,7 @@
             <button type="button" data-font="original">{{ _('Original') }}</button>
           </div>
         </div>
-        <div class="mfr-sheet-row">
+        <div class="mfr-sheet-row" data-reader-text-only>
           <span class="mfr-sheet-label">{{ _('Text size') }}</span>
           <div class="mfr-seg" id="readerSize">
             <button type="button" data-size="-10" aria-label="{{ _('Smaller text') }}">A&minus;</button>
@@ -1819,7 +1891,7 @@
             <button type="button" data-size="10" aria-label="{{ _('Larger text') }}">A+</button>
           </div>
         </div>
-        <div class="mfr-sheet-row">
+        <div class="mfr-sheet-row" data-reader-text-only>
           <span class="mfr-sheet-label">{{ _('Line spacing') }}</span>
           <div class="mfr-seg" id="readerLead">
             <button type="button" data-lead="1.4">{{ _('Tight') }}</button>
@@ -1827,7 +1899,7 @@
             <button type="button" data-lead="1.95">{{ _('Loose') }}</button>
           </div>
         </div>
-        <div class="mfr-sheet-row">
+        <div class="mfr-sheet-row" data-reader-text-only>
           <span class="mfr-sheet-label">{{ _('Page width') }}</span>
           <div class="mfr-seg" id="readerWidth">
             <button type="button" data-width="34">{{ _('Narrow') }}</button>

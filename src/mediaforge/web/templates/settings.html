@@ -496,6 +496,70 @@
       <div class="settings-hint" style="padding:0 22px 14px;">{{ _('More workers finish a scan sooner on fast local storage and will push the drive hard while it runs; on a network share they mostly multiply the timeouts. A scan always stops after two minutes of probing regardless, and continues where it left off a few minutes later.') }}</div>
       <div class="settings-hint" style="padding:0 22px 14px;">{{ _('MediaForge no longer rescans everything on every start — on a large library that costs minutes for a result that is almost always identical. While it runs, the file watcher picks up changes live; this interval covers what the watcher cannot, such as files added while MediaForge was closed. Locations that have never been scanned are always read in, and the refresh button on the Library page rescans on demand.') }}</div>
     </div>
+
+    <!-- Comics.
+         Three switches and the two caches behind them. The first two are
+         ordinary preferences; the third one replaces a file the user owns,
+         so it sits in its own block at the bottom behind a confirmation
+         (saveComicReplaceOriginal() in settings.js) rather than in the list
+         above, where a stray click would be enough. -->
+    <div class="settings-section">
+      <h2>{{ _('Comics') }}</h2>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Covers are always prepared: MediaForge reads the first page of each series in the background and keeps it, so the shelf shows pictures instead of blank tiles. Only CBR and CBA have to be unpacked for this, which is what the option below is about.') }}</div>
+      <div class="settings-row">
+        <label class="settings-checkbox-row" for="comicAutoPrepareAll">
+          <input type="checkbox" class="chb-main" id="comicAutoPrepareAll" onchange="saveComicAutoPrepareAll()" />
+          <span>{{ _('Prepare every issue in the background') }}</span>
+        </label>
+      </div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Converts every CBR and CBA file in the library instead of doing it the first time an issue is opened. This takes a noticeable amount of time and disk space — the cache ends up holding a second copy of every affected comic — so it is only worthwhile for small collections.') }}</div>
+
+      <h3 class="settings-subtitle">{{ _('Cache') }}</h3>
+      <div class="settings-row comic-cache-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Cover cache') }}</div>
+          <div class="settings-row-desc" id="comicCoverCacheSize">…</div>
+        </div>
+        <div class="settings-row-right">
+          <button type="button" class="btn btn-secondary" onclick="clearComicCache('covers')">{{ _('Clear cover cache') }}</button>
+        </div>
+      </div>
+      <div class="settings-row comic-cache-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Converted archives') }}</div>
+          <div class="settings-row-desc" id="comicConvertCacheSize">…</div>
+        </div>
+        <div class="settings-row-right">
+          <button type="button" class="btn btn-secondary" onclick="clearComicCache('converted')">{{ _('Clear converted archives') }}</button>
+        </div>
+      </div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Both caches hold derived data only — your comic files are never touched. A cover is read again the next time the shelf is drawn, and a converted archive is rebuilt the next time that issue is opened.') }}</div>
+
+      <h3 class="settings-subtitle">{{ _('Diagnostics') }}</h3>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Unpacker for CBR (RAR)') }}</div>
+          <div class="settings-row-desc" id="comicExtractorRar">…</div>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Unpacker for CBA (ACE)') }}</div>
+          <div class="settings-row-desc" id="comicExtractorAce">…</div>
+        </div>
+      </div>
+      <div class="settings-hint" id="comicExtractorHint" style="display:none;padding:0 22px 14px;">{{ _('No unpacker was found here, so CBR and CBA files cannot be opened on this machine. Every other comic format is unaffected.') }}</div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Windows 10 and newer as well as macOS already bring bsdtar along as “tar”, and the MediaForge Docker image contains libarchive-tools.') }}</div>
+
+      <h3 class="settings-subtitle">{{ _('Replacing originals') }}</h3>
+      <div class="integ-hint-box integ-warn-box comic-danger-box">{{ _('This option deletes data. Once an archive has been converted, the original CBR or CBA file is replaced by the new CBZ — the original is gone afterwards and MediaForge cannot bring it back. Leave this switched off unless you are certain you no longer need the original files.') }}</div>
+      <div class="settings-row">
+        <label class="settings-checkbox-row" for="comicReplaceOriginal">
+          <input type="checkbox" class="chb-main" id="comicReplaceOriginal" onchange="saveComicReplaceOriginal(this)" />
+          <span>{{ _('Replace the original with the CBZ after conversion') }}</span>
+        </label>
+      </div>
+    </div>
   </div><!-- /tab-library -->
 
   <!-- ══════════════════════════════════════════════════════
@@ -723,6 +787,24 @@
       </div>
       <div class="settings-hint">{{ _('Changes take effect immediately for new downloads.') }}</div>
 
+      <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Media types') }}</h3>
+      {# The default root has no row in the custom-paths table to carry this,
+         so it is a setting of its own (default_path_media_kinds). Only kinds
+         with a scanner are offered here, same as in that table. #}
+      <div id="defaultPathKinds" style="display:flex;flex-wrap:wrap;gap:6px 22px;">
+        <label class="settings-checkbox-row" for="defaultPathKindVideo">
+          <input type="checkbox" class="chb-main" id="defaultPathKindVideo" data-media-kind="video"
+                 onchange="saveDefaultPathMediaKinds(this)" />
+          <span>{{ _('Movies & Series') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defaultPathKindBook">
+          <input type="checkbox" class="chb-main" id="defaultPathKindBook" data-media-kind="book"
+                 onchange="saveDefaultPathMediaKinds(this)" />
+          <span>{{ _('eBooks') }}</span>
+        </label>
+      </div>
+      <div class="settings-hint">{{ _('Which libraries the default download path feeds. At least one has to stay selected.') }}</div>
+
       <h3 class="settings-subtitle" style="margin-top:18px;">{{ _('Default Language') }}</h3>
       <div class="settings-row" style="gap:12px;align-items:flex-end;flex-wrap:wrap;">
         <div class="settings-field">
@@ -834,6 +916,10 @@
       <div class="add-user-row" style="margin-bottom:16px">
         <input type="text" id="newPathName" placeholder="{{ _('Name (e.g. NAS)') }}" />
         <input type="text" id="newPathValue" placeholder="/mnt/nas/anime" />
+        {# Filled in by settings.js (renderNewPathKindSelect) from the kinds the
+           server reports as scannable, so this markup does not have to list
+           them and cannot drift from the registry. #}
+        <div id="newPathKinds"></div>
         <button onclick="addCustomPath()">{{ _('Add') }}</button>
       </div>
       <div class="user-table-wrapper">
@@ -843,6 +929,7 @@
               <th>{{ _('Name') }}</th>
               <th>{{ _('Path') }}</th>
               <th>{{ _('Default for sites') }}</th>
+              <th>{{ _('Media types') }}</th>
               <th>{{ _('Actions') }}</th>
             </tr>
           </thead>
@@ -850,6 +937,7 @@
         </table>
       </div>
       <div class="settings-hint">{{ _('Select the sites for which this path should be preselected as the download folder.') }}</div>
+      <div class="settings-hint">{{ _('The media types decide which library a path shows up in — a folder is only scanned for what is ticked here.') }}</div>
     </div>
 
     <div class="settings-section">

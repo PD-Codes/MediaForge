@@ -6,9 +6,11 @@
 // `openReader()` / `closeReader()` are the whole public surface, and the body
 // gets a class while it is open so the page behind stops animating.
 //
-// Two engines behind one set of controls:
+// Three engines behind one set of controls:
 //   PDF          -> pdf.js, one canvas per page, rendered on demand
 //   EPUB         -> epub.js, paginated or scrolled, reflows to the viewport
+//   COMIC        -> CBZ/CBR/CBT/CB7/CBA, one image per page, served by the
+//                   server out of the archive and turned like a printed book
 // MOBI/AZW3 are recognised but cannot be rendered in a browser; they are
 // offered as a download until the server-side conversion exists, and the
 // reader says so rather than opening an empty frame.
@@ -23,9 +25,15 @@
   var PDF_RENDER_AHEAD = 2;     // pages kept rendered around the current one
   // Formats the server converts to EPUB before the reader can show them.
   var CONVERTIBLE = ["mobi", "azw3", "azw"];
+  // Comic archives: a zip/rar/tar/7z of images with a different extension.
+  var COMIC_EXTS = ["cbz", "cbr", "cbt", "cb7", "cba"];
+  // Pages fetched ahead of the one on screen, in the same spirit as
+  // PDF_RENDER_AHEAD: enough that a page turn is instant, few enough that a
+  // 300-page comic never asks the server for 300 images.
+  var COMIC_PRELOAD = 2;
 
   var _open = false;
-  var _kind = "";               // "pdf" | "epub"
+  var _kind = "";               // "pdf" | "epub" | "comic"
   var _bookKey = "";
   var _title = "";
   var _saveTimer = null;
@@ -38,6 +46,14 @@
   var _epubLocation = "";
   var _percent = 0;
   var _prefs = null;
+  var _comicPath = "";          // absolute path of the archive, for the API
+  var _comicPages = [];         // page names, as the archive lists them
+  var _comicCount = 0;
+  var _comicPage = 0;           // 0-based index of the LEFT page on screen
+  var _comicPreload = {};       // index -> detached Image, warming the cache
+  // Display only -- the reading position never lives here, it lives in the
+  // reading API like every other format's.
+  var _comicPrefs = { spread: false, cover: "alone", fit: "height", zoom: "100" };
 
   function $id(id) { return document.getElementById(id); }
   function esc(s) { return (window.mfEscape || String)(s == null ? "" : s); }
@@ -71,6 +87,7 @@
       }
       _prefs[key] = value || PREF_DEFAULTS[key];
     });
+    loadComicPrefs();
   }
 
   function savePref(key, value) {
@@ -93,7 +110,7 @@
 
   function savePosition() {
     if (!_open || !_bookKey) return Promise.resolve();
-    var location = _kind === "pdf" ? String(_pdfPage) : _epubLocation;
+    var location = currentLocation();
     if (!location) return Promise.resolve();
     return fetch("/api/reading/save", {
       method: "POST",
@@ -260,9 +277,9 @@
     var pct = Math.max(0, Math.min(100, Math.round(_percent)));
     if (bar) bar.style.width = pct + "%";
     if (label) {
-      label.textContent = _kind === "pdf" && _pdf
-        ? tr(_pdfPage + " / " + _pdf.numPages, _pdfPage + " / " + _pdf.numPages)
-        : pct + "%";
+      if (_kind === "pdf" && _pdf) label.textContent = _pdfPage + " / " + _pdf.numPages;
+      else if (_kind === "comic" && _comicCount) label.textContent = comicPageLabel();
+      else label.textContent = pct + "%";
     }
     // Where you are beats how far you are: a chapter name is the answer to
     // "where was I", a percentage is only the answer to "how much is left".
@@ -395,6 +412,475 @@
       renderPdfWindow();
       updateProgressUi();
     }, 120);
+  }
+
+  // ---- COMIC (CBZ / CBR / CBT / CB7 / CBA) ----------------------------
+  // A comic archive is a folder of images with a lid on it. The server does
+  // the unpacking and hands out one page per request, so unlike the PDF the
+  // reader never holds the document -- only the page on screen and the two it
+  // expects to be asked for next. That is the whole reason a 300-page scan is
+  // openable at all: 300 canvases up front would be 300 requests and a gigabyte
+  // of decoded bitmaps.
+  //
+  // Page numbers are 0-based inside this section (they are indexes into the
+  // archive listing) and 1-based the moment they leave it, because that is what
+  // a reader counts and what currentLocation() stores.
+
+  // Below this width a spread is not a spread, it is two half-size pages. The
+  // setting is still remembered -- it simply is not applied until there is room.
+  var COMIC_SPREAD_MIN_W = 700;
+  var COMIC_PAD = 16;           // fallback only; the real padding is measured
+  var COMIC_SWIPE_MIN = 45;     // px of horizontal travel that counts as a turn
+
+  function comicApi(route, path, extra) {
+    // The path is a real filesystem path and routinely contains spaces, '&'
+    // and '#'; anything less than encodeURIComponent loses half of them.
+    return "/api/library/comic/" + route + "?path=" + encodeURIComponent(path) + (extra || "");
+  }
+
+  function comicPageUrl(index) {
+    return comicApi("page", _comicPath, "&n=" + encodeURIComponent(String(index)));
+  }
+
+  // ---- display settings (localStorage only) ----
+  // Deliberately not on the reading API and not in the account preferences:
+  // "one page or two" is a property of the screen you happen to be holding, the
+  // same way the library keeps its grid/list choice locally. The position is
+  // the only thing that belongs to the account.
+
+  function comicStore(key) {
+    try { return localStorage.getItem("mf-comic-" + key); } catch (e) { return null; }
+  }
+  function comicSave(key, value) {
+    try { localStorage.setItem("mf-comic-" + key, String(value)); } catch (e) { /* private mode */ }
+  }
+
+  function loadComicPrefs() {
+    var stored = comicStore("spread");
+    var fit = comicStore("fit");
+    var wide = window.innerWidth >= COMIC_SPREAD_MIN_W && window.innerWidth > window.innerHeight;
+    _comicPrefs = {
+      // Nothing stored yet: a wide landscape window gets the spread the pages
+      // were drawn as, a phone gets the single page it has room for.
+      spread: stored === null ? wide : stored === "1",
+      cover: comicStore("cover") === "paired" ? "paired" : "alone",
+      // Same idea for the fit. On a phone, filling the width and scrolling down
+      // the page is how a comic is actually read; on a desktop the whole page
+      // fits at once and turning it beats scrolling it.
+      fit: (fit === "width" || fit === "height" || fit === "native")
+        ? fit
+        : (window.innerWidth < COMIC_SPREAD_MIN_W ? "width" : "height"),
+      zoom: comicStore("zoom") || "100"
+    };
+  }
+
+  function comicSpreadOn() {
+    return !!_comicPrefs.spread && window.innerWidth >= COMIC_SPREAD_MIN_W;
+  }
+
+  /** Index of the left-hand page of the spread that `index` belongs to. */
+  function comicSpreadStart(index) {
+    if (!comicSpreadOn()) return index;
+    if (_comicPrefs.cover === "alone") {
+      // The cover stands on its own, so the pairs start on the odd indexes:
+      // [0] [1,2] [3,4] ... which is how the printed book falls open, and why
+      // it is the default. It is a setting all the same, because scanners are
+      // inconsistent about whether page 1 is the cover or the first story page,
+      // and a half-page offset ruins every double spread in the book.
+      return index <= 0 ? 0 : (index % 2 === 1 ? index : index - 1);
+    }
+    return index - (index % 2);
+  }
+
+  /** How many pages the spread starting at `start` actually shows: 1 or 2. */
+  function comicSpreadSpan(start) {
+    if (!comicSpreadOn()) return 1;
+    if (_comicPrefs.cover === "alone" && start === 0) return 1;
+    return start + 1 < _comicCount ? 2 : 1;
+  }
+
+  function comicPageLabel() {
+    var span = comicSpreadSpan(_comicPage);
+    var left = _comicPage + 1;
+    return (span > 1 ? left + "–" + (left + 1) : String(left)) + " / " + _comicCount;
+  }
+
+  // ---- lazy loading ----
+
+  function preloadComic(from) {
+    var i;
+    for (i = from; i < from + COMIC_PRELOAD && i < _comicCount; i++) {
+      if (_comicPreload[i]) continue;
+      var img = new Image();
+      img.decoding = "async";
+      img.src = comicPageUrl(i);
+      _comicPreload[i] = img;
+    }
+    // Let go of everything outside the window. An Image the page still refers
+    // to is a decoded bitmap in memory, and reading a long comic front to back
+    // would otherwise end with all of it resident at once.
+    var keepFrom = _comicPage - 2;
+    var keepTo = from + COMIC_PRELOAD;
+    Object.keys(_comicPreload).forEach(function (key) {
+      var n = parseInt(key, 10);
+      if (n < keepFrom || n > keepTo) delete _comicPreload[key];
+    });
+  }
+
+  // ---- layout ----
+  // Sized in JS rather than in CSS, for the same reason sizePdfPlaceholders()
+  // is: the answer depends on the page's own aspect ratio, which only the
+  // browser knows and only once the image has arrived. Every img calls back in
+  // here on load, so a page that lands late still lands correctly.
+
+  function layoutComic() {
+    var host = $id("readerComic");
+    if (!host || host.hidden) return;
+    var imgs = host.querySelectorAll(".mfr-comic-img");
+    if (!imgs.length) return;
+    var zoom = Math.max(0.25, (parseInt(_comicPrefs.zoom, 10) || 100) / 100);
+    // Read the gutter rather than repeat it: the phone breakpoint gives most
+    // of it back, and a hard-coded number there costs a dozen pixels of page
+    // on the screen that can least afford them.
+    var view = host.querySelector(".mfr-comic-view");
+    var padX = COMIC_PAD, padY = COMIC_PAD;
+    if (view) {
+      var cs = window.getComputedStyle(view);
+      padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    }
+    var boxW = Math.max(80, (host.clientWidth - padX) / imgs.length - (imgs.length > 1 ? 2 : 0));
+    var boxH = Math.max(80, host.clientHeight - padY);
+    Array.prototype.forEach.call(imgs, function (img) {
+      if (!img.naturalWidth || !img.naturalHeight) {
+        // Nothing to scale yet. Leaving the box empty rather than guessing
+        // stops the page from jumping once the real size arrives.
+        img.style.width = ""; img.style.height = "";
+        return;
+      }
+      var ratio = img.naturalWidth / img.naturalHeight;
+      var width;
+      if (_comicPrefs.fit === "native") width = img.naturalWidth;
+      else if (_comicPrefs.fit === "width") width = boxW;
+      else width = Math.min(boxW, boxH * ratio);   // whole page, both edges inside
+      width *= zoom;
+      img.style.width = Math.round(width) + "px";
+      img.style.height = Math.round(width / ratio) + "px";
+    });
+  }
+
+  var _comicResizeTimer = null;
+  function onComicResize() {
+    if (_kind !== "comic") return;
+    if (_comicResizeTimer) clearTimeout(_comicResizeTimer);
+    _comicResizeTimer = setTimeout(function () {
+      _comicResizeTimer = null;
+      // Turning a phone can switch the spread on or off, and that changes WHICH
+      // pages are on screen -- so this goes through comicGoTo rather than
+      // renderComic: the page count on the footer has to follow the change.
+      // Quietly, because a rotation is not the reader asking for the chrome.
+      comicGoTo(_comicPage, true);
+    }, 150);
+  }
+
+  // ---- rendering ----
+
+  function onComicImgLoad() {
+    this.classList.remove("is-broken");
+    this.classList.add("is-ready");
+    layoutComic();
+  }
+  function onComicImgError() {
+    this.classList.remove("is-ready");
+    this.classList.add("is-broken");
+  }
+
+  function renderComic() {
+    var host = $id("readerComic");
+    if (!host || !_comicCount) return;
+    var view = host.querySelector(".mfr-comic-view");
+    if (!view) {
+      view = document.createElement("div");
+      view.className = "mfr-comic-view";
+      host.appendChild(view);
+    }
+    _comicPage = comicSpreadStart(_comicPage);
+    var span = comicSpreadSpan(_comicPage);
+    view.classList.toggle("is-spread", span > 1);
+    host.setAttribute("data-fit", _comicPrefs.fit);
+
+    // The <img> elements are reused instead of rebuilt: a fresh element starts
+    // a fresh request even when the bytes are already cached, and that is
+    // exactly what makes a page turn flash empty.
+    var imgs = Array.prototype.slice.call(view.querySelectorAll(".mfr-comic-img"));
+    while (imgs.length > span) {
+      var gone = imgs.pop();
+      if (gone.parentNode) gone.parentNode.removeChild(gone);
+    }
+    while (imgs.length < span) {
+      var img = document.createElement("img");
+      img.className = "mfr-comic-img";
+      img.alt = "";
+      img.decoding = "async";
+      img.addEventListener("load", onComicImgLoad);
+      img.addEventListener("error", onComicImgError);
+      view.appendChild(img);
+      imgs.push(img);
+    }
+    for (var i = 0; i < span; i++) {
+      var n = _comicPage + i;
+      var url = comicPageUrl(n);
+      if (imgs[i].getAttribute("data-src") === url) continue;
+      imgs[i].classList.remove("is-ready");
+      imgs[i].classList.remove("is-broken");
+      imgs[i].setAttribute("data-src", url);
+      imgs[i].setAttribute("data-page", String(n));
+      // A name out of the archive is untrusted text. Assigning it as a
+      // property never parses as markup -- the escaping rule holds by
+      // construction here, and esc() covers the places that build HTML.
+      imgs[i].title = _comicPages[n] || "";
+      imgs[i].src = url;
+    }
+    host.scrollTop = 0;
+    host.scrollLeft = 0;
+    layoutComic();
+    preloadComic(_comicPage + span);
+  }
+
+  // ---- navigation ----
+
+  function comicGoTo(index, quiet) {
+    if (!_comicCount) return;
+    index = Math.max(0, Math.min(_comicCount - 1, index));
+    _comicPage = comicSpreadStart(index);
+    _percent = ((_comicPage + 1) / _comicCount) * 100;
+    renderComic();
+    updateProgressUi();
+    if (!quiet) wakeChrome();
+  }
+
+  function comicNext() {
+    var span = comicSpreadSpan(_comicPage);
+    if (_comicPage + span >= _comicCount) { wakeChrome(); return; }
+    comicGoTo(_comicPage + span);
+  }
+
+  function comicPrev() {
+    if (_comicPage <= 0) { wakeChrome(); return; }
+    comicGoTo(comicSpreadStart(_comicPage - 1));
+  }
+
+  // ---- pointer and touch ----
+
+  var _comicTouch = null;
+  var _comicSwipeAt = 0;
+
+  function onComicClick(ev) {
+    if (_kind !== "comic" || !_comicCount) return;
+    // A swipe ends in a click on most touch browsers; turning the page twice
+    // for one gesture is the classic version of this bug.
+    if (Date.now() - _comicSwipeAt < 500) return;
+    var host = $id("readerComic");
+    if (!host) return;
+    var rect = host.getBoundingClientRect();
+    if (ev.clientX - rect.left < rect.width / 2) comicPrev();
+    else comicNext();
+  }
+
+  function onComicTouchStart(ev) {
+    if (_kind !== "comic" || !ev.touches || ev.touches.length !== 1) { _comicTouch = null; return; }
+    _comicTouch = { x: ev.touches[0].clientX, y: ev.touches[0].clientY };
+  }
+
+  function onComicTouchEnd(ev) {
+    var start = _comicTouch;
+    _comicTouch = null;
+    if (!start || _kind !== "comic") return;
+    var touch = ev.changedTouches && ev.changedTouches[0];
+    if (!touch) return;
+    var dx = touch.clientX - start.x;
+    var dy = touch.clientY - start.y;
+    // Horizontal, and clearly so. A diagonal drag on a page zoomed past the
+    // screen is panning; turning the page out from under that finger is worse
+    // than asking for a second, straighter swipe.
+    if (Math.abs(dx) < COMIC_SWIPE_MIN || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    _comicSwipeAt = Date.now();
+    if (dx < 0) comicNext(); else comicPrev();
+  }
+
+  // ---- settings ----
+
+  function setComicSpread(mode) {
+    _comicPrefs.spread = mode === "double";
+    comicSave("spread", _comicPrefs.spread ? "1" : "0");
+    applyModeVisibility();
+    syncSheet();
+    comicGoTo(_comicPage, true);
+  }
+
+  function setComicCover(mode) {
+    _comicPrefs.cover = mode === "paired" ? "paired" : "alone";
+    comicSave("cover", _comicPrefs.cover);
+    syncSheet();
+    comicGoTo(_comicPage, true);
+  }
+
+  function setComicFit(fit) {
+    if (fit !== "width" && fit !== "height" && fit !== "native") return;
+    _comicPrefs.fit = fit;
+    comicSave("fit", fit);
+    syncSheet();
+    var host = $id("readerComic");
+    if (host) { host.setAttribute("data-fit", fit); host.scrollTop = 0; host.scrollLeft = 0; }
+    layoutComic();
+  }
+
+  function setComicZoom(delta) {
+    var zoom = delta === "reset"
+      ? 100
+      : Math.max(25, Math.min(400, (parseInt(_comicPrefs.zoom, 10) || 100) + delta));
+    _comicPrefs.zoom = String(zoom);
+    comicSave("zoom", zoom);
+    syncSheet();
+    layoutComic();
+  }
+
+  // ---- opening ----
+
+  function openComic(path, startPage) {
+    _comicPath = path;
+    setStatus('<div class="mfr-spinner"></div>' +
+              esc(tr("Comic wird geöffnet…", "Opening comic…")));
+    fetch(comicApi("pages", path, ""))
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!_open || _kind !== "comic") return;
+        if (!res || !res.ok || res.readable === false) {
+          showComicBlocked(path, res || {});
+          return;
+        }
+        _comicPages = (res.pages || []).map(String);
+        _comicCount = parseInt(res.count, 10) || _comicPages.length;
+        if (!_comicCount) { showComicBlocked(path, { reason: "unreadable" }); return; }
+        var host = $id("readerComic");
+        if (host) host.hidden = false;
+        setStatus("");
+        // Quietly: restoring a position is not the reader doing something, so
+        // it must not count as activity and pull the chrome back out.
+        comicGoTo(Math.max(0, (parseInt(startPage, 10) || 1) - 1), true);
+        startSaveTimer();
+      })
+      .catch(function () {
+        if (!_open || _kind !== "comic") return;
+        showComicBlocked(path, { reason: "network" });
+      });
+  }
+
+  /** The archive cannot be shown. Say why, and offer the way out if there is one. */
+  function showComicBlocked(path, res) {
+    var reason = String((res && res.reason) || "unreadable");
+    var download = ' <a class="mfr-download" href="/api/library/book/file?path=' +
+      encodeURIComponent(path) + '" download>' +
+      esc(tr("Herunterladen", "Download")) + "</a>";
+
+    if (reason === "needs_conversion") {
+      setStatus(
+        esc(tr("Dieses Archiv muss einmalig für die Anzeige vorbereitet werden.",
+               "This archive has to be prepared once before it can be shown.")) +
+        '<div class="mfr-status-note">' +
+        esc(tr("Das passiert nur beim ersten Öffnen. Die Originaldatei bleibt unverändert.",
+               "This happens only the first time. The original file is left untouched.")) +
+        "</div>" +
+        '<button type="button" class="mfr-btn" id="readerComicPrep">' +
+        esc(tr("Für die Anzeige vorbereiten", "Prepare for viewing")) + "</button>" +
+        // Told here rather than only in Settings: this is the moment the
+        // waiting is actually felt, and it is the only moment at which anyone
+        // wonders whether it could happen ahead of time.
+        '<div class="mfr-status-note mfr-status-tip">' +
+        esc(tr("MediaForge kann das auch für die ganze Bibliothek im Voraus erledigen — " +
+               "Einstellungen › Mediathek › Comics.",
+               "MediaForge can also do this for the whole library up front — " +
+               "Settings › Library › Comics.")) +
+        "</div>");
+      var btn = $id("readerComicPrep");
+      if (btn) btn.addEventListener("click", function () { startComicConvert(path); });
+      return;
+    }
+    if (reason === "no_extractor") {
+      // Nothing here is the reader's doing and nothing is wrong with the file:
+      // the server simply has no program that can open this kind of archive.
+      // Naming the missing piece is what turns a dead end into a fixable one.
+      setStatus(
+        esc(tr("Auf dem Server fehlt ein Programm, das dieses Archiv entpacken kann.",
+               "The server is missing a program that can unpack this archive.")) +
+        '<div class="mfr-status-note">' +
+        esc(tr("CBR und CBA brauchen unrar oder 7-Zip, CB7 braucht 7-Zip. Sobald eines " +
+               "davon installiert ist, öffnet sich der Comic hier.",
+               "CBR and CBA need unrar or 7-Zip, CB7 needs 7-Zip. Once one of them is " +
+               "installed, the comic opens right here.")) +
+        "</div>" + download, true);
+      return;
+    }
+    setStatus(esc(tr("Dieses Comic-Archiv lässt sich nicht lesen.",
+                     "This comic archive cannot be read.")) + download, true);
+  }
+
+  // ---- CBR / CBA -> CBZ, once, on the server ----
+
+  var COMIC_CONVERT_POLL_MS = 1500;
+  // Unpacking and repacking a few hundred megabytes of scans is minutes, not
+  // seconds -- the give-up line is generous on purpose.
+  var COMIC_CONVERT_MAX_WAIT_MS = 600000;
+
+  function startComicConvert(path) {
+    var started = Date.now();
+    setStatus('<div class="mfr-spinner"></div>' +
+      esc(tr("Archiv wird vorbereitet…", "Preparing the archive…")) +
+      '<div class="mfr-status-note">' +
+      esc(tr("Der Comic öffnet sich von selbst, sobald das fertig ist.",
+             "The comic opens by itself as soon as this is done.")) + "</div>");
+
+    fetch("/api/library/comic/convert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: path })
+    }).catch(function () { /* the poll below reports what actually happened */ });
+
+    function fail(reason) {
+      // The one failure that has a better sentence than its own name already.
+      if (String(reason || "") === "no_extractor") {
+        showComicBlocked(path, { reason: "no_extractor" });
+        return;
+      }
+      setStatus(
+        esc(tr("Das Archiv konnte nicht vorbereitet werden.",
+               "The archive could not be prepared.")) +
+        (reason ? '<div class="mfr-status-note">' + esc(String(reason)) + "</div>" : "") +
+        ' <a class="mfr-download" href="/api/library/book/file?path=' + encodeURIComponent(path) +
+        '" download>' + esc(tr("Herunterladen", "Download")) + "</a>", true);
+    }
+
+    function poll() {
+      if (!_open || _kind !== "comic") return;
+      fetch(comicApi("convert/status", path, ""))
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (!_open || _kind !== "comic") return;
+          var state = String((res && res.state) || "idle");
+          if (state === "done") {
+            loadPosition(_bookKey).then(function (pos) {
+              if (!_open || _kind !== "comic") return;
+              openComic(path, parseInt(pos.location, 10) || 1);
+            });
+            return;
+          }
+          if (state === "failed") { fail(res && res.reason); return; }
+          if (Date.now() - started > COMIC_CONVERT_MAX_WAIT_MS) { fail("timeout"); return; }
+          _convertTimer = setTimeout(poll, COMIC_CONVERT_POLL_MS);
+        })
+        .catch(function () { fail("network"); });
+    }
+    _convertTimer = setTimeout(poll, COMIC_CONVERT_POLL_MS);
   }
 
   // ---- EPUB ----
@@ -641,7 +1127,12 @@
   var _bookmarks = [];
 
   function currentLocation() {
-    return _kind === "pdf" ? String(_pdfPage) : _epubLocation;
+    if (_kind === "pdf") return String(_pdfPage);
+    // A comic's position is a page NUMBER, 1-based, exactly like the PDF's --
+    // so a novel read as a PDF and a scan read as a CBZ speak the same
+    // language, and a bookmark from one still means something in the other.
+    if (_kind === "comic") return _comicCount ? String(_comicPage + 1) : "";
+    return _epubLocation;
   }
 
   function bookmarkAt(location) {
@@ -682,7 +1173,8 @@
     if (bookmarkAt(location)) { removeBookmark(location); return; }
 
     var label = _chapterLabel ||
-      (_kind === "pdf" ? tr("Seite ", "Page ") + _pdfPage : "");
+      (_kind === "pdf" ? tr("Seite ", "Page ") + _pdfPage :
+       _kind === "comic" ? tr("Seite ", "Page ") + (_comicPage + 1) : "");
     var entry = {
       location: location, kind: _kind, label: label,
       percent: Math.max(0, Math.min(100, _percent))
@@ -733,6 +1225,7 @@
 
   function goToBookmark(entry) {
     if (entry.kind === "pdf") pdfGoTo(parseInt(entry.location, 10) || 1);
+    else if (entry.kind === "comic") comicGoTo((parseInt(entry.location, 10) || 1) - 1);
     else if (_rendition) _rendition.display(entry.location).catch(function () {});
     toggleToc(false);
   }
@@ -780,11 +1273,13 @@
   // ---- navigation ----
 
   function next() {
-    if (_kind === "epub" && _rendition) _rendition.next();
+    if (_kind === "comic") comicNext();
+    else if (_kind === "epub" && _rendition) _rendition.next();
     else if (_kind === "pdf") pdfGoTo(_pdfPage + 1);
   }
   function prev() {
-    if (_kind === "epub" && _rendition) _rendition.prev();
+    if (_kind === "comic") comicPrev();
+    else if (_kind === "epub" && _rendition) _rendition.prev();
     else if (_kind === "pdf") pdfGoTo(_pdfPage - 1);
   }
 
@@ -807,7 +1302,11 @@
       ["#readerLead [data-lead]", "data-lead", _prefs.reader_lead],
       ["#readerWidth [data-width]", "data-width", _prefs.reader_width],
       ["#readerThemes [data-theme]", "data-theme", _prefs.reader_theme],
-      ["#readerFlow [data-flow]", "data-flow", _prefs.reader_flow]
+      ["#readerFlow [data-flow]", "data-flow", _prefs.reader_flow],
+      ["#readerComicPages [data-comic-spread]", "data-comic-spread",
+        _comicPrefs.spread ? "double" : "single"],
+      ["#readerComicCover [data-comic-cover]", "data-comic-cover", _comicPrefs.cover],
+      ["#readerComicFit [data-comic-fit]", "data-comic-fit", _comicPrefs.fit]
     ];
     pairs.forEach(function (p) {
       Array.prototype.forEach.call(document.querySelectorAll(p[0]), function (b) {
@@ -816,6 +1315,27 @@
     });
     var label = $id("readerSizeLabel");
     if (label) label.textContent = _prefs.reader_font + "%";
+    var zoomLabel = $id("readerComicZoomLabel");
+    if (zoomLabel) zoomLabel.textContent = _comicPrefs.zoom + "%";
+  }
+
+  /** Which controls this engine actually has. */
+  function applyModeVisibility() {
+    // The chapter list and the flow switch only mean something for reflowable
+    // text; a PDF has fixed pages and its own outline, a comic has neither.
+    Array.prototype.forEach.call(document.querySelectorAll("[data-reader-epub-only]"),
+      function (el) { el.hidden = _kind !== "epub"; });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-reader-comic-only]"),
+      function (el) { el.hidden = _kind !== "comic"; });
+    // Typeface, size, spacing and measure are decisions about running text. A
+    // scanned page has none of them, and offering them there is offering
+    // controls that visibly do nothing.
+    Array.prototype.forEach.call(document.querySelectorAll("[data-reader-text-only]"),
+      function (el) { el.hidden = _kind === "comic"; });
+    // Where the cover sits is only a question once there are two pages to sit
+    // between.
+    var coverRow = $id("readerComicCoverRow");
+    if (coverRow) coverRow.hidden = _kind !== "comic" || !_comicPrefs.spread;
   }
 
   function toggleToc(force) {
@@ -831,6 +1351,9 @@
   }
 
   function setFont(delta) {
+    // In a comic the same control zooms the page. There is no text to resize,
+    // and "+ makes it bigger" is what the key means either way.
+    if (_kind === "comic") { setComicZoom(delta); return; }
     var size = delta === "reset"
       ? 100
       : Math.max(70, Math.min(220, parseInt(_prefs.reader_font, 10) + delta));
@@ -906,6 +1429,13 @@
         break;
       case "ArrowRight": case "PageDown": next(); break;
       case "ArrowLeft":  case "PageUp":   prev(); break;
+      case " ": case "Spacebar":
+        // Comic only. A PDF and a scrolled EPUB both scroll on space, and
+        // taking that away to turn a page would be a regression in two
+        // formats to gain a shortcut in one.
+        if (_kind !== "comic") return;
+        if (ev.shiftKey) prev(); else next();
+        break;
       case "+": case "=": setFont(10); break;
       case "-": setFont(-10); break;
       case "b": case "B": toggleBookmark(); break;
@@ -970,6 +1500,39 @@
       });
     });
 
+    // The comic's own segmented controls, wired the same way as the ones above.
+    var comicGroups = [
+      ["#readerComicPages [data-comic-spread]", "data-comic-spread", setComicSpread],
+      ["#readerComicCover [data-comic-cover]", "data-comic-cover", setComicCover],
+      ["#readerComicFit [data-comic-fit]", "data-comic-fit", setComicFit]
+    ];
+    comicGroups.forEach(function (g) {
+      Array.prototype.forEach.call(document.querySelectorAll(g[0]), function (b) {
+        b.addEventListener("click", function () { g[2](b.getAttribute(g[1])); });
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("#readerComicZoom [data-comic-zoom]"),
+      function (b) {
+        var raw = b.getAttribute("data-comic-zoom");
+        b.addEventListener("click", function () {
+          setComicZoom(raw === "reset" ? "reset" : parseInt(raw, 10));
+        });
+      });
+
+    var comicHost = $id("readerComic");
+    if (comicHost) {
+      // Clicking the left or right half of the page turns it. The tap zones at
+      // the very edge stay as they are -- they are the one-handed phone
+      // gesture; this is the one a mouse user expects from any comic reader.
+      comicHost.addEventListener("click", onComicClick);
+      comicHost.addEventListener("touchstart", onComicTouchStart, { passive: true });
+      comicHost.addEventListener("touchend", onComicTouchEnd, { passive: true });
+    }
+    // Rotating a phone can change how many pages fit, so the comic re-lays
+    // itself out; nothing else in the reader needs to hear about a resize.
+    window.addEventListener("resize", onComicResize, { passive: true });
+    window.addEventListener("orientationchange", onComicResize, { passive: true });
+
     var overlay = $id("readerOverlay");
     if (overlay) {
       overlay.addEventListener("click", function (ev) {
@@ -1007,6 +1570,14 @@
     }
     var epubHost = $id("readerEpub");
     if (epubHost) { epubHost.innerHTML = ""; epubHost.hidden = true; }
+    _comicPages = []; _comicCount = 0; _comicPage = 0; _comicPath = "";
+    _comicPreload = {}; _comicTouch = null; _comicSwipeAt = 0;
+    if (_comicResizeTimer) { clearTimeout(_comicResizeTimer); _comicResizeTimer = null; }
+    var comicHost = $id("readerComic");
+    if (comicHost) {
+      comicHost.innerHTML = ""; comicHost.hidden = true;
+      comicHost.scrollTop = 0; comicHost.scrollLeft = 0;
+    }
     var chapters = $id("readerChapters");
     if (chapters) chapters.innerHTML = "";
     var chaptersHead = $id("readerChaptersHead");
@@ -1031,7 +1602,8 @@
     bindOnce();
     reset();
 
-    _kind = ext === "pdf" ? "pdf" : "epub";
+    _kind = ext === "pdf" ? "pdf"
+      : (COMIC_EXTS.indexOf(ext) !== -1 ? "comic" : "epub");
     _title = title || "";
     _bookKey = bookKey || path;
     _open = true;
@@ -1046,10 +1618,18 @@
     syncSheet();
     wakeChrome();
     loadBookmarks();
-    // The chapter list and the flow switch only mean something for reflowable
-    // text; a PDF has fixed pages and its own outline.
-    var epubOnly = document.querySelectorAll("[data-reader-epub-only]");
-    Array.prototype.forEach.call(epubOnly, function (el) { el.hidden = _kind !== "epub"; });
+    applyModeVisibility();
+
+    if (_kind === "comic") {
+      // The listing, the pages and the failure states all live behind the
+      // comic API; nothing about a comic goes through /api/library/book/file
+      // except the download link on a dead end.
+      loadPosition(_bookKey).then(function (pos) {
+        if (!_open) return;
+        openComic(path, parseInt(pos.location, 10) || 1);
+      });
+      return;
+    }
 
     if (CONVERTIBLE.indexOf(ext) !== -1) {
       // No browser renders Mobipocket. The server turns it into an EPUB once

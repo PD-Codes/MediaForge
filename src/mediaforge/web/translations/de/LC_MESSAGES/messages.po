@@ -6550,6 +6550,234 @@ msgstr "Backdrop anzeigen"
 msgid "Uses the TMDB backdrop as the header image of the title window"
 msgstr "Nutzt das TMDB-Backdrop als Kopfbild des Titelfensters"
 
+# --- Library split: per-media-kind libraries (hub, video, books) ---
+
+msgid "Albums, artists and playlists — player included."
+msgstr "Alben, Interpreten und Playlists — samt Player."
+
+msgid "Back to the library overview"
+msgstr "Zurück zur Mediathek-Übersicht"
+
+msgid "Books that are part of a series"
+msgstr "Bücher, die zu einer Reihe gehören"
+
+msgid "Books that stand alone"
+msgstr "Bücher, die für sich stehen"
+
+msgid "CBZ and CBR issues, sorted into series and runs."
+msgstr "CBZ- und CBR-Ausgaben, nach Reihen und Runs sortiert."
+
+msgid "Comics"
+msgstr "Comics"
+
+msgid "Coming soon"
+msgstr "Bald verfügbar"
+
+msgid "Configure paths"
+msgstr "Pfade einrichten"
+
+msgid "Customise this page"
+msgstr "Diese Seite anpassen"
+
+msgid "EPUB, MOBI, AZW3 and PDF, grouped by title and read in the browser."
+msgstr "EPUB, MOBI, AZW3 und PDF, nach Titel gruppiert und direkt im Browser lesbar."
+
+msgid "Every media type has its own library. Pick one to browse it."
+msgstr "Jede Medienart hat ihre eigene Mediathek. Wähle eine aus, um sie zu durchsuchen."
+
+msgid "Filter"
+msgstr "Filter"
+
+msgid "Grid"
+msgstr "Kacheln"
+
+msgid "In a series"
+msgstr "Teil einer Reihe"
+
+msgid "List"
+msgstr "Liste"
+
+msgid "Media types"
+msgstr "Medienarten"
+
+msgid "Movies & Series"
+msgstr "Filme & Serien"
+
+msgid "Search title, author or series…"
+msgstr "Titel, Autor oder Reihe suchen…"
+
+msgid "Series, seasons and movies from every path assigned to this library."
+msgstr "Serien, Staffeln und Filme aus allen Pfaden, die dieser Mediathek zugeordnet sind."
+
+msgid "Sort by title"
+msgstr "Nach Titel sortieren"
+
+msgid "Standalone"
+msgstr "Einzelband"
+
+msgid "The media types decide which library a path shows up in — a folder is only scanned for what is ticked here."
+msgstr "Die Medienarten entscheiden, in welcher Mediathek ein Pfad auftaucht — ein Ordner wird nur auf das durchsucht, was hier angehakt ist."
+
+msgid "Volumes, chapters and a reader built for page spreads."
+msgstr "Bände, Kapitel und ein Reader für Doppelseiten."
+
+msgid "Which libraries the default download path feeds. At least one has to stay selected."
+msgstr "Welche Mediatheken der Standard-Downloadpfad befüllt. Mindestens eine muss ausgewählt bleiben."
+
+msgid "Which library a folder shows up in is set per download path."
+msgstr "In welcher Mediathek ein Ordner auftaucht, wird pro Downloadpfad festgelegt."
+
+msgid "Which rows the home page shows, in which order, and how many cards each holds now lives in its own tab."
+msgstr "Welche Zeilen die Startseite zeigt, in welcher Reihenfolge und mit wie vielen Karten, liegt jetzt in einem eigenen Tab."
+
+# --- Comic library: shelf, reader and ComicVine enrichment ---
+
+msgid "Adds publisher, plot, cover art and character lists to the comic library, looked up on comicvine.gamespot.com. Comics are always identified locally first (ComicInfo.xml and the file name) — this only fills in fields the files themselves do not carry and never overwrites them. Needs a free API key (comicvine.gamespot.com → API), stored encrypted. ComicVine allows 200 requests per hour and locks the key out on violation, so MediaForge caps itself below that: a large library is enriched over several hours instead of all at once."
+msgstr "Ergänzt Verlag, Handlung, Cover und Figurenlisten in der Comic-Mediathek, nachgeschlagen auf comicvine.gamespot.com. Comics werden immer zuerst lokal erkannt (ComicInfo.xml und Dateiname) — das hier füllt nur Felder, die die Dateien selbst nicht mitbringen, und überschreibt nie etwas. Braucht einen kostenlosen API-Key (comicvine.gamespot.com → API), verschlüsselt gespeichert. ComicVine erlaubt 200 Anfragen pro Stunde und sperrt den Key bei Verstoß, deshalb drosselt MediaForge sich darunter: eine große Bibliothek wird über mehrere Stunden angereichert statt auf einmal."
+
+msgid "Alone"
+msgstr "Einzeln"
+
+msgid "Cover"
+msgstr "Cover"
+
+msgid "Double"
+msgstr "Doppelseite"
+
+msgid "Enable ComicVine enrichment"
+msgstr "ComicVine-Anreicherung aktivieren"
+
+msgid "Fit"
+msgstr "Anpassen"
+
+msgid "Height"
+msgstr "Höhe"
+
+msgid "Issues"
+msgstr "Ausgaben"
+
+msgid "Off by default: this sends the series name and issue number of your comics to an external service."
+msgstr "Standardmäßig aus: dabei werden Reihenname und Ausgabennummer deiner Comics an einen externen Dienst gesendet."
+
+msgid "One-shots"
+msgstr "Einzelausgaben"
+
+msgid "Paired"
+msgstr "Paarweise"
+
+msgid "Rate limit"
+msgstr "Anfragelimit"
+
+msgid "Runs with more than one issue"
+msgstr "Reihen mit mehr als einer Ausgabe"
+
+msgid "Search series, publisher or issue…"
+msgstr "Reihe, Verlag oder Ausgabe suchen…"
+
+msgid "Single"
+msgstr "Einzelseite"
+
+msgid "Single issues and one-shots"
+msgstr "Einzelausgaben und One-Shots"
+
+msgid "Sort by issue count"
+msgstr "Nach Anzahl der Ausgaben sortieren"
+
+msgid "Sort by series"
+msgstr "Nach Reihe sortieren"
+
+msgid "Width"
+msgstr "Breite"
+
+msgid "Zoom"
+msgstr "Zoom"
+
+msgid "Zoom in"
+msgstr "Vergrößern"
+
+msgid "Zoom out"
+msgstr "Verkleinern"
+
+# On the comic shelf "Series" means a RUN of issues, not a TV series --
+# German needs "Reihen" here and "Serien" on the video shelf.
+
+msgctxt "comics"
+msgid "Series"
+msgstr "Reihen"
+
+# --- Comic settings: cover preparation, caches, diagnostics ---
+
+msgid "After a scan MediaForge reads the first page of each series in the background and keeps it as a cover, so the comic shelf is already illustrated the first time you open it."
+msgstr "Nach einem Scan liest MediaForge im Hintergrund die erste Seite jeder Reihe und behält sie als Cover, damit das Comic-Regal schon beim ersten Öffnen bebildert ist."
+
+msgid "Both caches hold derived data only — your comic files are never touched. A cover is read again the next time the shelf is drawn, and a converted archive is rebuilt the next time that issue is opened."
+msgstr "Beide Zwischenspeicher enthalten nur abgeleitete Daten — deine Comic-Dateien werden nie angefasst. Ein Cover wird beim nächsten Aufbau des Regals neu gelesen, ein umgewandeltes Archiv beim nächsten Öffnen der Ausgabe neu erzeugt."
+
+msgid "Cache"
+msgstr "Zwischenspeicher"
+
+msgid "Clear converted archives"
+msgstr "Umgewandelte Archive leeren"
+
+msgid "Clear cover cache"
+msgstr "Cover-Zwischenspeicher leeren"
+
+msgid "Converted archives"
+msgstr "Umgewandelte Archive"
+
+msgid "Converts every CBR and CBA file in the library instead of doing it the first time an issue is opened. This takes a noticeable amount of time and disk space — the cache ends up holding a second copy of every affected comic — so it is only worthwhile for small collections."
+msgstr "Wandelt jede CBR- und CBA-Datei der Bibliothek um, statt erst beim ersten Öffnen einer Ausgabe. Das kostet spürbar Zeit und Plattenplatz — der Zwischenspeicher hält am Ende eine zweite Kopie jedes betroffenen Comics — und lohnt sich deshalb nur bei kleinen Sammlungen."
+
+msgid "Cover cache"
+msgstr "Cover-Zwischenspeicher"
+
+msgid "Diagnostics"
+msgstr "Diagnose"
+
+msgid "No unpacker was found here, so CBR and CBA files cannot be opened on this machine. Every other comic format is unaffected."
+msgstr "Hier wurde kein Entpacker gefunden, deshalb lassen sich CBR- und CBA-Dateien auf diesem Rechner nicht öffnen. Alle anderen Comic-Formate sind davon nicht betroffen."
+
+msgid "Prepare covers automatically"
+msgstr "Cover automatisch vorbereiten"
+
+msgid "Prepare every issue in the background"
+msgstr "Alle Ausgaben im Hintergrund vorbereiten"
+
+msgid "Replace the original with the CBZ after conversion"
+msgstr "Original nach der Umwandlung durch die CBZ ersetzen"
+
+msgid "Replacing originals"
+msgstr "Originale ersetzen"
+
+msgid "This option deletes data. Once an archive has been converted, the original CBR or CBA file is replaced by the new CBZ — the original is gone afterwards and MediaForge cannot bring it back. Leave this switched off unless you are certain you no longer need the original files."
+msgstr "Diese Option löscht Daten. Sobald ein Archiv umgewandelt wurde, wird die ursprüngliche CBR- oder CBA-Datei durch die neue CBZ ersetzt — das Original ist danach weg und MediaForge kann es nicht zurückholen. Lass das ausgeschaltet, außer du bist sicher, dass du die Originaldateien nicht mehr brauchst."
+
+msgid "Unpacker for CBA (ACE)"
+msgstr "Entpacker für CBA (ACE)"
+
+msgid "Unpacker for CBR (RAR)"
+msgstr "Entpacker für CBR (RAR)"
+
+msgid "Windows 10 and newer as well as macOS already bring bsdtar along as “tar”, and the MediaForge Docker image contains libarchive-tools."
+msgstr "Windows 10 und neuer sowie macOS bringen bsdtar bereits als „tar\" mit, und das MediaForge-Docker-Image enthält libarchive-tools."
+
+# --- Comic shelf: single-issue view, reader hint ---
+
+msgid "Covers are always prepared: MediaForge reads the first page of each series in the background and keeps it, so the shelf shows pictures instead of blank tiles. Only CBR and CBA have to be unpacked for this, which is what the option below is about."
+msgstr "Cover werden immer vorbereitet: MediaForge liest im Hintergrund die erste Seite jeder Reihe und behält sie, damit das Regal Bilder statt leerer Kacheln zeigt. Nur CBR und CBA müssen dafür entpackt werden — darum geht es in der Option darunter."
+
+msgid "Every issue on its own card"
+msgstr "Jede Ausgabe auf einer eigenen Karte"
+
+msgid "One card per series"
+msgstr "Eine Karte je Reihe"
+
+msgid "Single issues"
+msgstr "Einzelausgaben"
+
+msgid "Sort by issue count, or by date added in the single-issue view"
+msgstr "Nach Anzahl der Ausgaben sortieren, in der Einzelansicht nach Hinzufügedatum"
+
 #: src/mediaforge/web/templates/index.html
 msgid "{} downloads are running or waiting"
 msgstr "{} Downloads laufen oder warten"

@@ -128,7 +128,12 @@ def register_reading_routes(app):
         location = str(data.get("location") or "")[:_MAX_LOCATION_LEN]
         if not book or not location:
             return jsonify({"error": "book and location are required"}), 400
-        kind = "pdf" if str(data.get("kind") or "") == "pdf" else "epub"
+        # The engine the location came from. A CFI is only meaningful to
+        # epub.js; a page number is meaningful to the PDF and the comic
+        # reader alike -- and the reader filters the list by this, so an
+        # unknown value here is a bookmark that silently never shows up.
+        raw_kind = str(data.get("kind") or "")
+        kind = raw_kind if raw_kind in ("pdf", "comic") else "epub"
         label = str(data.get("label") or "")[:_MAX_LABEL_LEN]
         try:
             percent = float(data.get("percent") or 0)

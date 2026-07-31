@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% import "_library_nav.html" as libnav %}
+{% block title %}{{ libnav.kind_label('book') }} — MediaForge{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='library_core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='library_books.css') }}">{% endblock %}
+{% block content %}
+<div class="library-container">
+
+  <div class="page-header" style="margin-bottom:18px">
+    <h1 class="page-title">{{ libnav.kind_label('book') }}</h1>
+    <div id="libSummaryPills" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"></div>
+  </div>
+
+  {# Same two-row toolbar rhythm as the video shelf, minus the controls a book
+     has no answer for: there is no episode count to sort by. #}
+  <div class="mf-toolbar" id="libToolbar">
+
+    <div class="mf-toolbar-row">
+      <div class="mf-search lib-search">
+        <svg class="mf-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" class="mf-search-input" id="libSearchInput"
+               placeholder="{{ _('Search title, author or series…') }}"
+               aria-label="{{ _('Search title, author or series…') }}"
+               oninput="libOnSearch(this.value)" autocomplete="off">
+        <button type="button" class="mf-search-clear" id="libSearchClear"
+                onclick="libClearSearch()" aria-label="{{ _('Clear search') }}" hidden>&times;</button>
+      </div>
+
+      <div class="mf-toolbar-gap"></div>
+
+      <button class="mf-icon-btn" id="libRefreshBtn" onclick="libLoad(true)" title="{{ _('Refresh') }}" aria-label="{{ _('Refresh') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="mf-toolbar-row">
+      <div class="mf-segmented lib-filter-toggle" id="libFilterToggle" role="group" aria-label="{{ _('Filter') }}">
+        <button type="button" class="mf-segmented-btn active" id="libFilter-all"    onclick="libSetFilter('all')"    aria-pressed="true"  title="{{ _('Show all') }}">{{ _('All') }}</button>
+        <button type="button" class="mf-segmented-btn"        id="libFilter-series" onclick="libSetFilter('series')" aria-pressed="false" title="{{ _('Books that are part of a series') }}">{{ _('In a series') }}</button>
+        <button type="button" class="mf-segmented-btn"        id="libFilter-single" onclick="libSetFilter('single')" aria-pressed="false" title="{{ _('Books that stand alone') }}">{{ _('Standalone') }}</button>
+      </div>
+
+      <span class="mf-toolbar-sep" aria-hidden="true"></span>
+
+      <div class="mf-segmented" id="libSortToggle" role="group" aria-label="{{ _('Sort') }}">
+        <button type="button" class="mf-segmented-btn active" id="libSort-name" onclick="libSetSort('name')" title="{{ _('Sort by title') }}">A–Z <span id="libSortDir-name" style="font-size:0.7rem;opacity:0.8">↑</span></button>
+        <button type="button" class="mf-segmented-btn"        id="libSort-size" onclick="libSetSort('size')" title="{{ _('Sort by size') }}">{{ _('Size') }} <span id="libSortDir-size" style="font-size:0.7rem;opacity:0.8"></span></button>
+      </div>
+
+      <div class="mf-toolbar-gap"></div>
+
+      <div class="mf-segmented" id="libViewToggle" role="group" aria-label="{{ _('Layout') }}">
+        <button type="button" class="mf-segmented-btn active" id="libViewGrid" onclick="libSetView('grid')"
+                aria-pressed="true" title="{{ _('Grid') }}" aria-label="{{ _('Grid') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+          </svg>
+        </button>
+        <button type="button" class="mf-segmented-btn" id="libViewList" onclick="libSetView('list')"
+                aria-pressed="false" title="{{ _('List') }}" aria-label="{{ _('List') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="lib-status-row" id="libStatusRow">
+      <span class="lib-scan-badge" id="libScanBadge">
+        <span class="lib-scan-spinner"></span>{{ _('Scanning…') }}
+      </span>
+      <span class="lib-watcher-status" id="libWatcherTip" title="">
+        <span class="lib-watcher-dot" id="libWatcherDot"></span>
+        <span class="lib-watcher-label" id="libWatcherLabel">{{ _('Watcher…') }}</span>
+      </span>
+      <span class="lib-last-scanned" id="libLastScanned"></span>
+    </div>
+  </div>
+
+  {# Empty state is painted by libPaintBooks(): it has to distinguish "no
+     search hits" from "no books at all", and the second case needs the hint
+     below, which the first must not show. #}
+  <div id="libEmptyState" class="mf-empty" hidden></div>
+
+  <div id="libGridView" class="mf-poster-grid" hidden></div>
+  <div id="libListView" class="lib-list-view" hidden></div>
+
+  <div id="libPaginationRow" class="mf-pagination-bar" hidden>
+    <span class="mf-pagination-count" id="libPageCount"></span>
+    <div id="libPagination"></div>
+    <label class="mf-pagination-perpage">
+      <span>{{ _('Results per page') }}</span>
+      <select id="libPerPageSelect" onchange="libSetPerPage(this.value)">
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </label>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+  var libraryCanDelete = {{ 'true' if not auth_enabled or (current_user and current_user.role == 'admin') else 'false' }};
+</script>
+<!-- Page module first, core second: library_core.js runs its init on parse
+     and needs LIB_KIND / libRender() / libUpdateSummary() to already exist. -->
+<script src="{{ url_for('static', filename='library_books.js') }}"></script>
+<script src="{{ url_for('static', filename='library_core.js') }}"></script>
+{% endblock %}

@@ -5,7 +5,7 @@
 // file only fetches /api/upscale/queue (+ progress), keeps the two badges
 // fresh and hands the result to QHub.put("upscaling", …).
 // openUpscaleModal() / closeUpscaleModal() are defined in queue.js and open
-// the hub on this segment. library.js calls _updateUpscaleBadges() by name.
+// the hub on this segment. library_video.js calls _updateUpscaleBadges() by name.
 // =====================================================================
 
 let _lastUpscaleProgress = {};

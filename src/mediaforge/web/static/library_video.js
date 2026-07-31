@@ -1,234 +1,21 @@
 // ============================================================
-// Mediathek — File Explorer
+// Library — Movies & Series
 // ============================================================
-// Render architecture (2026-07 modernization): every title, across every
-// location/lang-folder, is flattened into one list of
-// {title, cpId, cpLabel, langFolder} items and painted as a single
-// mf-poster-grid (or list) instead of nested location/lang-folder shells.
-// Clicking a card/row expands its detail INLINE, directly below it in DOM
-// order (grid-column: 1 / -1), instead of opening a panel elsewhere on the
-// page. Only one item is open at a time. Season/episode rendering, the
-// kebab menu system, and every mutating action (rename/delete/move/
-// upscale/auto-sync) are unchanged from the previous implementation —
-// only how titles are grouped and painted changed.
+// The video shelf. Depends on library_core.js for fetching, sorting,
+// pagination and the kebab-menu framework; see the contract in that file's
+// header. Loaded BEFORE the core, because the core's init runs on parse.
+//
+// Render architecture: every title, across every location/lang-folder, is
+// flattened into one list of {title, cpId, cpLabel, langFolder} items and
+// painted as a single mf-poster-grid (or list) instead of nested
+// location/lang-folder shells. Clicking a card/row expands its detail INLINE,
+// directly below it in DOM order (grid-column: 1 / -1). Only one item is open
+// at a time.
 
-var libLangSep       = false;
-var libLocations     = [];
-var libAllTargets    = [];
-var libScanPollTimer = null;
-var libIdlePollTimer = null;  // slow background poll to catch watcher-triggered rescans
-var libLastUpdated   = 0;     // scanned_at timestamp of the last full render
-var libSearchQuery   = "";    // current search filter
-var _libSearchTimer  = null;  // debounce timer for search input
-var libSortKey       = "name"; // "name" | "size" | "episodes"
-var libSortAsc       = true;   // ascending = true
-var libFilterMode    = "all";  // "all" | "series" | "movies"
-var libViewMode      = "grid"; // "grid" | "list"  (restored below)
+var LIB_KIND      = "video";
+var LIB_SORT_KEYS = ["name", "size", "episodes"];
 
-// Pagination — purely client-side: the whole filtered/sorted item list is
-// already in memory (libFlattenTitles/libFilterTitles/libSortTitles), so
-// paging is just a slice, no extra network round-trip. Mirrors the
-// .mf-pagination usage pattern from history.js (numbered pager + a
-// 10/20/50/100 "results per page" <select>, persisted in localStorage).
-var LIB_PER_PAGE_OPTIONS = [10, 20, 50, 100];
-
-// How the library is displayed is a per-ACCOUNT preference, not a per-browser
-// one: window._USER_PREFS is rendered into <head> server-side (see base.html)
-// and saved back through /api/user/preferences, so the layout a user picked on
-// their desktop is the one they get on their phone. localStorage stays as the
-// fallback for the logged-out / no-auth case and as the value used on the very
-// first paint before anything is fetched.
-function _libPref(key, lsKey, valid, fallback) {
-  var prefs = window._USER_PREFS || {};
-  if (valid(prefs[key])) return prefs[key];
-  try {
-    var saved = localStorage.getItem(lsKey);
-    if (valid(saved)) return saved;
-  } catch (e) { /* private mode */ }
-  return fallback;
-}
-
-function _libSavePref(key, lsKey, value) {
-  try { localStorage.setItem(lsKey, String(value)); } catch (e) { /* private mode */ }
-  // Fire-and-forget, exactly like the appearance settings: the change has
-  // already been applied locally, so a failed save (or a 401 with auth on and
-  // the session expired) must not interrupt anything.
-  if (typeof window.mfSaveUserPref === "function") {
-    window.mfSaveUserPref(_libPrefPatch(key, String(value)));
-  }
-}
-function _libPrefPatch(key, value) { var o = {}; o[key] = value; return o; }
-
-function _libInitialPerPage() {
-  var v = _libPref("library_per_page", "mf-lib-perpage",
-                   function (x) { return LIB_PER_PAGE_OPTIONS.indexOf(parseInt(x, 10)) !== -1; },
-                   "20");
-  return parseInt(v, 10);
-}
-function _libInitialView() {
-  return _libPref("library_view", "mf-lib-view",
-                  function (x) { return x === "grid" || x === "list"; }, "grid");
-}
-var libPerPage = _libInitialPerPage();
-var libPage    = 0; // 0-based
-libViewMode = _libInitialView();
-
-// Single-open accordion state — which flattened item (by stable key) is
-// currently expanded, and which of its seasons are expanded. Survives
-// re-renders triggered by the idle poll / watcher so a background refresh
-// never silently collapses what the user has open.
-var _libOpenKey     = null;        // _libTitleKey() of the open item, or null
-var _libOpenSeasons = new Set();   // "sN" keys open within the current item
-
-// ---- Boot ----
-
-async function libLoad(forceRefresh) {
-  if (forceRefresh) {
-    var refreshResp = await fetch("/api/library/refresh", { method: "POST" });
-    var refreshData = await refreshResp.json();
-  }
-  await libFetch();
-}
-
-async function libFetch() {
-  try {
-    var resp = await fetch("/api/library");
-    var data = await resp.json();
-    libLangSep   = !!data.lang_sep;
-    libLocations = data.locations || [];
-    libAllTargets = libLocations.map(function(loc) {
-      return { label: loc.label, custom_path_id: loc.custom_path_id };
-    });
-
-    // Track when we last rendered so the idle poll can detect watcher updates
-    libLastUpdated = data.last_updated || 0;
-
-    libRender(libLocations);
-    libUpdateWatcherStatus(data.watcher || {});
-    libUpdateTotalSize(libLocations);
-
-    if (data.is_scanning) {
-      libShowScanBadge(true);
-      if (!libScanPollTimer) {
-        libScanPollTimer = window.mfPoll(libPollScan, 2500);
-      }
-    } else {
-      libShowScanBadge(false);
-      if (libScanPollTimer) {
-        window.mfPollStop(libScanPollTimer);
-        libScanPollTimer = null;
-      }
-      libUpdateTimestamp();
-    }
-
-    // Start idle poll if not already running
-    if (!libIdlePollTimer) {
-      libIdlePollTimer = window.mfPoll(libIdlePoll, 8000);
-    }
-  } catch (e) {
-    // A placeholder filter owns the viewport — don't paint a load error over it.
-    if (libIsSoonFilter(libFilterMode)) return;
-    var gridEl = document.getElementById("libGridView");
-    var listEl = document.getElementById("libListView");
-    var emptyEl = document.getElementById("libEmptyState");
-    if (gridEl) gridEl.hidden = true;
-    if (listEl) listEl.hidden = true;
-    if (emptyEl) {
-      emptyEl.hidden = false;
-      emptyEl.innerHTML = '<p>' + t("Bibliothek konnte nicht geladen werden.", "Could not load the library.") + '</p>';
-    }
-  }
-}
-
-// Cheap background check: only reads a tiny status object from DB (no disk scan).
-// Re-renders only when the watcher has updated the cache since last render.
-async function libIdlePoll() {
-  // Skip if a scan poll is already running (it will handle the update)
-  if (libScanPollTimer) return;
-  try {
-    var resp = await fetch("/api/library/status");
-    var status = await resp.json();
-    if (status.is_scanning) {
-      // Watcher just triggered a scan — hand off to scan poller
-      libShowScanBadge(true);
-      if (!libScanPollTimer) {
-        libScanPollTimer = window.mfPoll(libPollScan, 2500);
-      }
-    } else if (status.last_updated > libLastUpdated) {
-      // Cache was updated since our last render — fetch and re-render
-      await libFetch();
-    }
-  } catch (e) { /* ignore network errors */ }
-}
-
-// Poll only while a scan is running — stops itself when done
-async function libPollScan() {
-  try {
-    var resp = await fetch("/api/library");
-    var data = await resp.json();
-    libUpdateWatcherStatus(data.watcher || {});
-    if (!data.is_scanning) {
-      libLangSep   = !!data.lang_sep;
-      libLocations = data.locations || [];
-      libAllTargets = libLocations.map(function(loc) {
-        return { label: loc.label, custom_path_id: loc.custom_path_id };
-      });
-      libLastUpdated = data.last_updated || 0;
-      libRender(libLocations);
-      libUpdateTotalSize(libLocations);
-      libShowScanBadge(false);
-      window.mfPollStop(libScanPollTimer);
-      libScanPollTimer = null;
-      libUpdateTimestamp();
-    }
-  } catch (e) {}
-}
-
-function libUpdateTimestamp() {
-  var el = document.getElementById("libLastScanned");
-  if (el) el.textContent = t("Aktualisiert: ", "Updated: ") + new Date().toLocaleTimeString(window.__LANG === 'de' ? 'de-DE' : 'en-US', { hour: "2-digit", minute: "2-digit" });
-}
-
-function libShowScanBadge(visible) {
-  var badge = document.getElementById("libScanBadge");
-  var btn   = document.getElementById("libRefreshBtn");
-  if (badge) {
-    badge.style.display = visible ? "inline-flex" : "none";
-  }
-  if (btn) {
-    btn.disabled = visible;
-    btn.classList.toggle("spin", visible);
-  }
-}
-
-function libUpdateWatcherStatus(watcher) {
-  var dot   = document.getElementById("libWatcherDot");
-  var label = document.getElementById("libWatcherLabel");
-  var tip   = document.getElementById("libWatcherTip");
-  if (!dot || !label) return;
-
-  if (!watcher.available) {
-    dot.className   = "lib-watcher-dot lib-watcher-off";
-    label.textContent = t("Watcher inaktiv", "Watcher inactive");
-    if (tip) tip.title = t("watchdog nicht installiert (pip install watchdog)",
-                           "watchdog not installed (pip install watchdog)");
-    return;
-  }
-  if (watcher.active) {
-    dot.className   = "lib-watcher-dot lib-watcher-on";
-    label.textContent = t("Watcher aktiv", "Watcher active");
-    if (tip && watcher.watched && watcher.watched.length) {
-      tip.title = t("Überwacht: ", "Watching: ") + watcher.watched.map(function(w){ return w.path; }).join(", ");
-    }
-  } else {
-    dot.className   = "lib-watcher-dot lib-watcher-starting";
-    label.textContent = "Watcher startet…";
-  }
-}
-
-// ---- Total size ----
-
-function libUpdateTotalSize(locations) {
+function libUpdateSummary(locations) {
   var total = 0, totalEps = 0, totalMovies = 0, totalSeries = 0;
   locations.forEach(function(loc) {
     var titles = [];
@@ -257,63 +44,13 @@ function libUpdateTotalSize(locations) {
 
 // ---- Sort / Filter ----
 
-function libSetSort(key) {
-  if (libSortKey === key) {
-    libSortAsc = !libSortAsc; // toggle direction on second click
-  } else {
-    libSortKey = key;
-    libSortAsc = key === "name"; // name defaults A→Z, others default big→small
-  }
-  // Update button active state + direction arrows
-  ["name", "size", "episodes"].forEach(function(k) {
-    var btn = document.getElementById("libSort-" + k);
-    var dir = document.getElementById("libSortDir-" + k);
-    if (!btn) return;
-    btn.classList.toggle("active", k === libSortKey);
-    if (dir) dir.textContent = (k === libSortKey) ? (libSortAsc ? "↑" : "↓") : "";
-    if (k === libSortKey) {
-      btn.title = (k === "name")
-        ? (libSortAsc ? t("A–Z (klicken für Z–A)", "A–Z (click for Z–A)")
-                      : t("Z–A (klicken für A–Z)", "Z–A (click for A–Z)"))
-        : (libSortAsc ? t("Aufsteigend", "Ascending") : t("Absteigend", "Descending"));
-    }
-  });
-  libPage = 0; // sort order changed — start back on page 1
-  libRender(libLocations);
-}
 
-// ---- "Coming soon" placeholder filters ----
-// Media types the library does not index yet. They are real filter buttons so
-// the roadmap is visible where users look for it, but selecting one never
-// touches the item list: libRender() short-circuits into libPaintComingSoon()
-// and the grid/list/pagination stay hidden until a real filter is picked
-// again. Keep the keys in sync with the buttons in library.html.
-var LIB_SOON_FILTERS = {
-  manga: {
-    label: function() { return t("Manga", "Manga"); },
-    text:  function() { return t("Manga und Comics folgen als Nächstes — mit Bänden, Kapiteln und einem Reader.",
-                                 "Manga and comics are next — with volumes, chapters and a reader."); },
-    icon:  '<path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>'
-  },
-  music: {
-    label: function() { return t("Musik", "Music"); },
-    text:  function() { return t("Alben, Interpreten und Playlists ziehen bald hier ein — samt Player.",
-                                 "Albums, artists and playlists are moving in here soon — player included."); },
-    icon:  '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'
-  }
-};
-
-function libIsSoonFilter(mode) {
-  return Object.prototype.hasOwnProperty.call(LIB_SOON_FILTERS, mode || libFilterMode);
-}
-
-function libIsBookFilter(mode) {
-  return (mode || libFilterMode) === "ebooks";
-}
-
+// "all" | "series" | "movies". The old page also carried "ebooks", "manga"
+// and "music" here -- media types that are now pages of their own, so a
+// filter that had to disable half the toolbar to work is simply gone.
 function libSetFilter(mode) {
   libFilterMode = mode;
-  ["all", "series", "movies", "ebooks"].concat(Object.keys(LIB_SOON_FILTERS)).forEach(function(k) {
+  ["all", "series", "movies"].forEach(function(k) {
     var btn = document.getElementById("libFilter-" + k);
     if (!btn) return;
     btn.classList.toggle("active", k === mode);
@@ -326,62 +63,10 @@ function libSetFilter(mode) {
 // Everything that only makes sense for real content (search, sort, layout,
 // scan status) is switched off while a placeholder filter is active, so the
 // page cannot be left in a state where a control silently does nothing.
-function libApplySoonState(soon) {
-  var searchInput = document.getElementById("libSearchInput");
-  if (searchInput) searchInput.disabled = !!soon;
-  if (soon) {
-    // Reset the search inline instead of via libClearSearch(): that one
-    // re-renders (and steals focus), which would recurse straight back here.
-    if (_libSearchTimer) { clearTimeout(_libSearchTimer); _libSearchTimer = null; }
-    libSearchQuery = "";
-    if (searchInput) searchInput.value = "";
-    var clearBtn = document.getElementById("libSearchClear");
-    if (clearBtn) clearBtn.hidden = true;
-  }
-  ["libSortToggle", "libViewToggle", "libStatusRow"].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.hidden = !!soon;
-  });
-  // Sorting by episode count is meaningless for books; the button is hidden
-  // rather than disabled so it cannot be the active sort with no effect.
-  var epBtn = document.getElementById("libSort-episodes");
-  if (epBtn) {
-    var hideEp = libIsBookFilter(libFilterMode);
-    epBtn.hidden = hideEp;
-    if (hideEp && libSortKey === "episodes") { libSortKey = "name"; libSortAsc = true; }
-  }
-  var sep = document.querySelector("#libToolbar .mf-toolbar-sep");
-  if (sep) sep.hidden = !!soon;
-}
-
-function libPaintComingSoon(mode) {
-  var host    = document.getElementById("libComingSoon");
-  var gridEl  = document.getElementById("libGridView");
-  var listEl  = document.getElementById("libListView");
-  var emptyEl = document.getElementById("libEmptyState");
-  var pageRow = document.getElementById("libPaginationRow");
-
-  if (gridEl)  gridEl.hidden  = true;
-  if (listEl)  listEl.hidden  = true;
-  if (emptyEl) emptyEl.hidden = true;
-  if (pageRow) pageRow.hidden = true;
-  if (!host) return;
-
-  var def = LIB_SOON_FILTERS[mode];
-  if (!def) { host.hidden = true; return; }
-  host.innerHTML =
-    '<svg class="mf-empty-icon lib-soon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + def.icon + '</svg>' +
-    '<p class="lib-soon-title">' + libEsc(t("Bald verfügbar", "Coming soon")) + '</p>' +
-    '<p class="mf-empty-hint">' + libEsc(def.text()) + '</p>' +
-    '<span class="lib-soon-tag">' + libEsc(def.label()) + '</span>';
-  host.hidden = false;
-}
 
 // Filter/sort operate on flattened {title, cpId, cpLabel, langFolder} items.
 function libFilterTitles(items) {
   if (libFilterMode === "all") return items;
-  if (libIsSoonFilter(libFilterMode)) return [];
   return items.filter(function(it) {
     return libFilterMode === "movies" ? !!it.title.is_movie : !it.title.is_movie;
   });
@@ -399,47 +84,6 @@ function libSortTitles(items) {
 
 // ---- Search ----
 
-function libOnSearch(value) {
-  if (_libSearchTimer) clearTimeout(_libSearchTimer);
-  _libSearchTimer = setTimeout(function() {
-    libSearchQuery = value.trim();
-    var clearBtn = document.getElementById("libSearchClear");
-    if (clearBtn) clearBtn.hidden = !libSearchQuery;
-    libPage = 0; // result set changed — start back on page 1
-    requestAnimationFrame(function() { libRender(libLocations); });
-  }, 200);
-}
-
-function libClearSearch() {
-  var input = document.getElementById("libSearchInput");
-  if (input) { input.value = ""; input.focus(); }
-  libSearchQuery = "";
-  var clearBtn = document.getElementById("libSearchClear");
-  if (clearBtn) clearBtn.hidden = true;
-  libPage = 0; // result set changed — start back on page 1
-  libRender(libLocations);
-}
-
-function _libSyncViewButtons() {
-  var gBtn = document.getElementById("libViewGrid");
-  var lBtn = document.getElementById("libViewList");
-  var grid = libViewMode === "grid";
-  if (gBtn) { gBtn.classList.toggle("active", grid); gBtn.setAttribute("aria-pressed", grid); }
-  if (lBtn) { lBtn.classList.toggle("active", !grid); lBtn.setAttribute("aria-pressed", !grid); }
-}
-
-function libSetView(mode) {
-  if (mode !== "grid" && mode !== "list") return;
-  libViewMode = mode;
-  _libSavePref("library_view", "mf-lib-view", mode);
-  _libSyncViewButtons();
-  libRender(libLocations);
-}
-
-// ---- Flatten ----
-// Every title across every location/lang-folder becomes one flat item, so
-// the whole library paints as a single poster grid / list regardless of
-// how many volumes (custom paths) or language folders it spans.
 
 var _libLazy = {};          // bodyId → {title, cpId, langFolder, pfx, ...} for the lazy detail fill
 var _libUpscaleTitles = {}; // upscaleKey → title object (read by libUpscaleTitle)
@@ -496,20 +140,6 @@ function libTitleMatchesQuery(title, q) {
 // ---- Render ----
 
 function libRender(locations) {
-  // Placeholder filters short-circuit before any item work — this also catches
-  // the background polls (libIdlePoll/libPollScan), which would otherwise paint
-  // the grid back over the "coming soon" panel a few seconds later.
-  var soon = libIsSoonFilter(libFilterMode);
-  libApplySoonState(soon);
-  if (soon) { libPaintComingSoon(libFilterMode); return; }
-  var host = document.getElementById("libComingSoon");
-  if (host) { host.hidden = true; host.innerHTML = ""; }
-
-  // Books live under their own key in every location blob and never mix into
-  // `titles`, so they get their own paint path rather than a branch inside the
-  // title renderer.
-  if (libIsBookFilter(libFilterMode)) { libRenderBooks(); return; }
-
   if (libSearchQuery) { libRenderSearchResults(libSearchQuery); return; }
   var items = libSortTitles(libFilterTitles(libFlattenTitles(locations)));
   libPaintItems(items);
@@ -526,9 +156,6 @@ function libRenderSearchResults(query) {
 // Re-paint using the data already in memory (no network round-trip) —
 // used when opening/closing a card or switching filter/sort/view locally
 // would otherwise require duplicating the fetch-then-render flow.
-function libRepaint() {
-  libRender(libLocations);
-}
 
 function libPaintItems(items) {
   var gridEl  = document.getElementById("libGridView");
@@ -590,118 +217,20 @@ function libPaintItems(items) {
 
 // ---- Pagination ----
 
-function libTotalPages(total) {
-  return Math.max(1, Math.ceil(total / libPerPage));
-}
-
-function libPageNumbers(current, total) {
-  if (total <= 7) return Array.from({ length: total }, function (_, i) { return i + 1; });
-  var out = [1];
-  var from = Math.max(2, current - 1), to = Math.min(total - 1, current + 1);
-  if (from > 2) out.push("…");
-  for (var i = from; i <= to; i++) out.push(i);
-  if (to < total - 1) out.push("…");
-  out.push(total);
-  return out;
-}
-
-// Rebuilds the pager + "Showing X–Y of Z" text + per-page <select> every
-// time it's called (cheap — the pager is a handful of buttons), same
-// convention as history.js's renderPagination(). Clicks are delegated via
-// data-page since the whole pager is replaced on every page change.
-function libRenderPagination(totalItems) {
-  var row    = document.getElementById("libPaginationRow");
-  var host   = document.getElementById("libPagination");
-  var cnt    = document.getElementById("libPageCount");
-  var perSel = document.getElementById("libPerPageSelect");
-
-  if (perSel && perSel.value !== String(libPerPage)) perSel.value = String(libPerPage);
-  if (row) row.hidden = totalItems === 0;
-
-  if (cnt) {
-    var from = totalItems ? libPage * libPerPage + 1 : 0;
-    var to = Math.min(totalItems, (libPage + 1) * libPerPage);
-    cnt.textContent = t("Zeige " + from + "–" + to + " von " + totalItems,
-      "Showing " + from + "–" + to + " of " + totalItems);
-  }
-  if (!host) return;
-
-  var totalP = libTotalPages(totalItems);
-  var current = libPage + 1;
-  if (totalP <= 1) { host.innerHTML = ""; return; }
-
-  var btn = function (page, label, disabled, title) {
-    return '<button type="button" class="mf-pagination-btn" data-page="' + page + '"' +
-      (disabled ? " disabled" : "") + ' title="' + libEscAttr(title) + '">' + label + "</button>";
-  };
-  var html = '<div class="mf-pagination">';
-  html += btn(1, "&laquo;", current === 1, t("Erste Seite", "First page"));
-  html += btn(current - 1, "&lsaquo;", current === 1, t("Zurück", "Back"));
-  libPageNumbers(current, totalP).forEach(function (entry) {
-    if (entry === "…") { html += '<span class="mf-pagination-ellipsis">…</span>'; return; }
-    html += '<button type="button" class="mf-pagination-page' + (entry === current ? " active" : "") +
-      '" data-page="' + entry + '"' + (entry === current ? " disabled" : "") + ">" + entry + "</button>";
-  });
-  html += btn(current + 1, "&rsaquo;", current === totalP, t("Weiter", "Next"));
-  html += btn(totalP, "&raquo;", current === totalP, t("Letzte Seite", "Last page"));
-  html += "</div>";
-  host.innerHTML = html;
-  host.querySelectorAll("[data-page]").forEach(function (b) {
-    b.addEventListener("click", function () { libGoToPage(parseInt(b.getAttribute("data-page"), 10) - 1); });
-  });
-}
-
-function libGoToPage(n) {
-  n = Math.max(0, n);
-  if (n === libPage) return;
-  libPage = n;
-  libRepaint();
-  var toolbar = document.getElementById("libToolbar");
-  if (toolbar && toolbar.scrollIntoView) toolbar.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function libSetPerPage(value) {
-  var n = parseInt(value, 10);
-  if (LIB_PER_PAGE_OPTIONS.indexOf(n) === -1) n = 20;
-  libPerPage = n;
-  _libSavePref("library_per_page", "mf-lib-perpage", n);
-  libPage = 0;
-  libRepaint();
-}
-
-// ---- Shared card/row/detail markup helpers ----
 
 function typePillHtml(isMovie) {
   return '<span class="mf-type-pill' + (isMovie ? ' mf-type-pill--movie' : ' mf-type-pill--series') + '">' +
     (isMovie ? t('Film', 'Movie') : t('Serie', 'Series')) + '</span>';
 }
 
-function volTagHtml(cpLabel) {
-  if (!cpLabel) return '';
-  return '<span class="mf-vol-tag" title="' + libEscAttr(cpLabel) + '">' +
-    '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>' +
-    '<span>' + libEsc(cpLabel) + '</span></span>';
-}
 
-// "Neu" flag: title was written to disk within the last N days.
-// Backed by title.added_at (Unix seconds), populated server-side in
-// _lib_scan_base() from the newest st_mtime among the title's files.
 var LIB_NEW_DAYS = 14;
 function isNewTitle(title) {
   if (!title.added_at) return false;
   return (Date.now() / 1000 - title.added_at) < (LIB_NEW_DAYS * 86400);
 }
 
-function _libFauxArt(name) {
-  var hash = 0;
-  for (var i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  var hue1 = hash % 360, hue2 = (hue1 + 48) % 360;
-  var style = 'background:linear-gradient(155deg,hsl(' + hue1 + ',55%,22%),hsl(' + hue2 + ',55%,14%))';
-  return '<div class="lib-fauxart" style="' + style + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></div>';
-}
 
-// Primary/first file of a title — used for the card-level "Details" menu
-// item (movies) and the eager card-level watch-progress prefetch.
 function _libFirstFile(title) {
   if (title.seasons && title.seasons.movies && title.seasons.movies.length) return title.seasons.movies[0];
   return null;
@@ -1062,143 +591,6 @@ function libRenderEpisode(ep, title, skey, cpId, langFolder) {
 // ================================================================
 
 // Context registry (avoids null-byte attribute encoding issues)
-var _libMenuContexts = {};
-var _libMenuCtxIdx   = 0;
-function libRegMenuCtx(data) {
-  var key = 'lmc' + (_libMenuCtxIdx++);
-  _libMenuContexts[key] = data;
-  return key;
-}
-
-// Attribute-safe escaping. Same implementation as libEsc now -- the shared
-// escaper (static/mf_escape.js) is safe in both text and attribute context,
-// so the two names only survive to keep the call sites readable.
-function libEscAttr(s) {
-  return window.mfEscape(s);
-}
-
-var _libMenuEl     = null;
-var _libMenuAnchor = null;
-
-function _libBuildMenu() {
-  _libMenuEl = document.createElement('div');
-  _libMenuEl.className = 'lib-menu';
-  document.body.appendChild(_libMenuEl);
-  document.addEventListener('click', function(e) {
-    if (!_libMenuEl || !_libMenuEl.classList.contains('lib-menu-show')) return;
-    if (!e.target.closest('.lib-menu') && !e.target.closest('.lib-kebab-btn')) libCloseMenu();
-  });
-  window.addEventListener('scroll', libCloseMenu, true);
-  window.addEventListener('resize',  libCloseMenu);
-  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') libCloseMenu(); });
-}
-
-function libCloseMenu() {
-  if (_libMenuEl) _libMenuEl.classList.remove('lib-menu-show');
-  _libMenuAnchor = null;
-}
-
-function libOpenMenu(btn) {
-  if (!_libMenuEl) _libBuildMenu();
-  if (_libMenuAnchor === btn && _libMenuEl.classList.contains('lib-menu-show')) { libCloseMenu(); return; }
-  _libMenuAnchor = btn;
-
-  // Read context from registry — avoids HTML attribute encoding issues
-  var key = btn.getAttribute('data-libkey') || '';
-  var ctx = _libMenuContexts[key];
-  if (!ctx) { console.warn('[lib] No menu context for key:', key); return; }
-
-  var type   = ctx.type   || '';
-  var folder = ctx.folder || '';
-  var cpId   = (ctx.cpId !== null && ctx.cpId !== undefined) ? ctx.cpId : null;
-  var lf     = ctx.lf    || null;
-
-  var ICO_RENAME  = '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
-  var ICO_MOVE    = '<svg viewBox="0 0 24 24"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>';
-  var ICO_UPSCALE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
-  var ICO_TRASH   = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>';
-  var ICO_INFO    = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
-  var ICO_SYNC    = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>';
-
-  var items = [];
-
-  if (type === 'title' || type === 'movie') {
-    var pfx = ctx.pfx || '', upscaleKey = ctx.upscaleKey || '';
-    var isMovieTitle = (type === 'movie') || !!ctx.isMovie;
-    if (libraryCanDelete) {
-      items.push({ label:t('Umbenennen', 'Rename'),  icon:ICO_RENAME,  fn:function(){ libStartRename(pfx, folder, cpId, lf); } });
-      if (libAllTargets.length > 1)
-        items.push({ label:t('Verschieben', 'Move'), icon:ICO_MOVE, fn:function(){ libOpenMove(folder, cpId, lf); } });
-    }
-    // Auto-Sync only applies to series (new episodes), not movies.
-    if (!isMovieTitle) {
-      items.push({ label:t('Zu Auto-Sync hinzufügen', 'Add to Auto-Sync'), icon:ICO_SYNC, fn:function(){ libAddToAutosync(folder); } });
-    }
-    items.push({ label:t('Upscalen', 'Upscale'), icon:ICO_UPSCALE, fn:function(){ libUpscaleTitle(null, upscaleKey, cpId, lf); } });
-    if (type === 'movie' && ctx.epPath) {
-      items.push({ label:t('Details', 'Details'), icon:ICO_INFO, fn:function(){ libOpenMediaInfo(ctx.epPath, folder); } });
-    }
-    if (libraryCanDelete) {
-      items.push({ sep:true });
-      items.push({ label:(type==='movie' ? t('Film löschen','Delete movie') : t('Titel löschen','Delete title')), icon:ICO_TRASH, danger:true,
-        fn:function(){ libDeleteTitle(folder, cpId, lf); } });
-    }
-
-  } else if (type === 'season') {
-    var sk = ctx.skey;
-    if (libraryCanDelete)
-      items.push({ label:t('Staffel löschen', 'Delete season'), icon:ICO_TRASH, danger:true,
-        fn:function(){ libDeleteSeason(folder, parseInt(sk,10), cpId, lf); } });
-
-  } else if (type === 'ep') {
-    var esk = ctx.skey, eNum = ctx.epNum, eFile = ctx.epFile || '', ePath = ctx.epPath || '';
-    if (libraryCanDelete)
-      items.push({ label:t('Umbenennen', 'Rename'), icon:ICO_RENAME,
-        fn:function(){ libStartEpRename(folder, esk, eNum, eFile, cpId, lf); } });
-    if (ePath)
-      items.push({ label:t('Folge upscalen', 'Upscale episode'), icon:ICO_UPSCALE,
-        fn:function(){ libUpscaleEpisode(null, ePath, folder+' – '+eFile); } });
-    if (ePath) {
-      var displayTitle = folder + ' – E' + String(eNum).padStart(2,'0') + ' – ' + eFile;
-      items.push({ label:t('Details', 'Details'), icon:ICO_INFO, fn:function(){ libOpenMediaInfo(ePath, displayTitle); } });
-    }
-    if (libraryCanDelete) {
-      items.push({ sep:true });
-      items.push({ label:t('Episode löschen', 'Delete episode'), icon:ICO_TRASH, danger:true,
-        fn:function(){ libDeleteEpisode(folder, esk, eNum, cpId, lf); } });
-    }
-  }
-
-  if (!items.length) return;
-
-  var html = [], actionItems = [];
-  items.forEach(function(it) {
-    if (it.sep) { html.push('<div class="lib-menu-sep"></div>'); return; }
-    actionItems.push(it);
-    html.push('<button class="' + (it.danger ? 'lib-menu-danger' : '') + '">' +
-      it.icon + '<span>' + libEsc(it.label) + '</span></button>');
-  });
-  _libMenuEl.innerHTML = html.join('');
-  _libMenuEl.querySelectorAll('button').forEach(function(b, i) {
-    b.addEventListener('click', function(e) {
-      e.stopPropagation(); libCloseMenu();
-      if (actionItems[i] && actionItems[i].fn) actionItems[i].fn();
-    });
-  });
-
-  _libMenuEl.style.visibility = 'hidden';
-  _libMenuEl.classList.add('lib-menu-show');
-  var r  = btn.getBoundingClientRect();
-  var mw = _libMenuEl.offsetWidth, mh = _libMenuEl.offsetHeight;
-  var left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
-  var top  = r.bottom + 6;
-  if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
-  _libMenuEl.style.left = left + 'px';
-  _libMenuEl.style.top  = top  + 'px';
-  _libMenuEl.style.visibility = '';
-}
-
-// ---- Toggle (season expand/collapse within an open detail) ----
 
 function libToggle(bodyId, headerEl) {
   var body = document.getElementById(bodyId);
@@ -1540,40 +932,7 @@ async function libConfirmMove() {
 
 // ---- Shared API helper ----
 
-async function libApiPost(url, body, successMsg) {
-  try {
-    var resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    var data = await resp.json();
-    if (data.error) showToast(data.error);
-    else { showToast(successMsg); libLoad(false); }
-  } catch(e) { showToast(t("Aktion fehlgeschlagen", "Action failed")); }
-}
 
-// ---- Utilities ----
-
-function libFmtSize(bytes) {
-  if (!bytes) return "—";
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1048576) return Math.round(bytes / 1024) + " KB";
-  if (bytes < 1073741824) return Math.round(bytes / 1048576) + " MB";
-  var gb = bytes / 1073741824;
-  var val = gb >= 10 ? Math.round(gb) : parseFloat(gb.toFixed(1));
-  return String(val).replace('.', ',') + " GB";
-}
-
-// Both names now point at the same shared, quote-safe escaper
-// (static/mf_escape.js). libEsc() used to escape & < > only, and libEscJs()
-// escaped for a JS string but not for HTML -- a file name containing a double
-// quote therefore closed the onclick attribute it was interpolated into and
-// the rest was parsed as markup.
-var libEsc = window.mfEscape;
-
-// Click handlers for the buttons that carry their payload in data-*
-// attributes rather than in an interpolated onclick string.
 function libPlayFromButton(event, btn) {
   libPlayEpisode(event, btn.dataset.libplay || "", btn.dataset.libplaytitle || "");
 }
@@ -1582,17 +941,6 @@ function libCopyFromButton(btn) {
   libCopyToClipboard(btn.dataset.libcopy || "", btn);
 }
 
-// ---- Init ----
-
-// The template renders the grid button as the active one; move the highlight
-// to the stored choice before the first fetch, so the toolbar and the layout
-// agree even while the library is still loading. Only the buttons — calling
-// libSetView() here would render an empty library and write the value it just
-// read straight back.
-_libSyncViewButtons();
-libLoad(false);
-
-// ── Upscaling ────────────────────────────────────────────────────────
 async function libUpscaleTitle(event, titleKey, cpId, langFolder) {
   if (event) event.stopPropagation();
   var title = _libUpscaleTitles[titleKey];
@@ -1842,19 +1190,6 @@ function libCloseMediaInfoModal() {
   if (modal) modal.style.display = 'none';
 }
 
-function libCopyToClipboard(text, btn) {
-  navigator.clipboard.writeText(text).then(function() {
-    if (btn) {
-      var oldHtml = btn.innerHTML;
-      btn.innerHTML = '<span style="font-size:0.75rem;font-weight:bold;color:var(--text-success)">Kopiert!</span>';
-      setTimeout(function() {
-        btn.innerHTML = oldHtml;
-      }, 1500);
-    }
-  }).catch(function() {
-    if (typeof showToast === 'function') showToast(t("Kopieren fehlgeschlagen", "Copy failed"));
-  });
-}
 
 async function libOpenMediaInfo(path, title) {
   var modal = document.getElementById('libMediaInfoModal');
@@ -2143,413 +1478,72 @@ function _libShowAutosyncPicker(folder, results) {
 // squeeze it into the title shape would need a branch in code that is load
 // bearing for video.
 
-var _libOpenBookKey = null;   // key of the currently expanded book
 
-// True when books come from more than one library path. With a single path the
-// volume tag is the same word on every row -- noise that costs the title space
-// it needs, so it is only shown when it actually distinguishes anything.
-function libBooksSpanLocations(locations) {
-  var seen = 0;
-  (locations || []).forEach(function(loc) { if ((loc.books || []).length) seen++; });
-  return seen > 1;
-}
+// ---- Kebab menu items ----
+// The core owns the menu widget (library_core.js); this is the half that
+// knows what a title, a season and an episode can have done to them. Called
+// by libOpenMenu() with the context registered on the clicked button.
+function libMenuItemsFor(ctx) {
+  var type   = ctx.type   || '';
+  var folder = ctx.folder || '';
+  var cpId   = (ctx.cpId !== null && ctx.cpId !== undefined) ? ctx.cpId : null;
+  var lf     = ctx.lf    || null;
 
-function libFlattenBooks(locations) {
+  var ICO_RENAME  = '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+  var ICO_MOVE    = '<svg viewBox="0 0 24 24"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>';
+  var ICO_UPSCALE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+  var ICO_TRASH   = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>';
+  var ICO_INFO    = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+  var ICO_SYNC    = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>';
+
   var items = [];
-  (locations || []).forEach(function(loc) {
-    (loc.books || []).forEach(function(book) {
-      items.push({ book: book, cpId: loc.custom_path_id, cpLabel: loc.label });
-    });
-  });
+
+  if (type === 'title' || type === 'movie') {
+    var pfx = ctx.pfx || '', upscaleKey = ctx.upscaleKey || '';
+    var isMovieTitle = (type === 'movie') || !!ctx.isMovie;
+    if (libraryCanDelete) {
+      items.push({ label:t('Umbenennen', 'Rename'),  icon:ICO_RENAME,  fn:function(){ libStartRename(pfx, folder, cpId, lf); } });
+      if (libAllTargets.length > 1)
+        items.push({ label:t('Verschieben', 'Move'), icon:ICO_MOVE, fn:function(){ libOpenMove(folder, cpId, lf); } });
+    }
+    // Auto-Sync only applies to series (new episodes), not movies.
+    if (!isMovieTitle) {
+      items.push({ label:t('Zu Auto-Sync hinzufügen', 'Add to Auto-Sync'), icon:ICO_SYNC, fn:function(){ libAddToAutosync(folder); } });
+    }
+    items.push({ label:t('Upscalen', 'Upscale'), icon:ICO_UPSCALE, fn:function(){ libUpscaleTitle(null, upscaleKey, cpId, lf); } });
+    if (type === 'movie' && ctx.epPath) {
+      items.push({ label:t('Details', 'Details'), icon:ICO_INFO, fn:function(){ libOpenMediaInfo(ctx.epPath, folder); } });
+    }
+    if (libraryCanDelete) {
+      items.push({ sep:true });
+      items.push({ label:(type==='movie' ? t('Film löschen','Delete movie') : t('Titel löschen','Delete title')), icon:ICO_TRASH, danger:true,
+        fn:function(){ libDeleteTitle(folder, cpId, lf); } });
+    }
+
+  } else if (type === 'season') {
+    var sk = ctx.skey;
+    if (libraryCanDelete)
+      items.push({ label:t('Staffel löschen', 'Delete season'), icon:ICO_TRASH, danger:true,
+        fn:function(){ libDeleteSeason(folder, parseInt(sk,10), cpId, lf); } });
+
+  } else if (type === 'ep') {
+    var esk = ctx.skey, eNum = ctx.epNum, eFile = ctx.epFile || '', ePath = ctx.epPath || '';
+    if (libraryCanDelete)
+      items.push({ label:t('Umbenennen', 'Rename'), icon:ICO_RENAME,
+        fn:function(){ libStartEpRename(folder, esk, eNum, eFile, cpId, lf); } });
+    if (ePath)
+      items.push({ label:t('Folge upscalen', 'Upscale episode'), icon:ICO_UPSCALE,
+        fn:function(){ libUpscaleEpisode(null, ePath, folder+' – '+eFile); } });
+    if (ePath) {
+      var displayTitle = folder + ' – E' + String(eNum).padStart(2,'0') + ' – ' + eFile;
+      items.push({ label:t('Details', 'Details'), icon:ICO_INFO, fn:function(){ libOpenMediaInfo(ePath, displayTitle); } });
+    }
+    if (libraryCanDelete) {
+      items.push({ sep:true });
+      items.push({ label:t('Episode löschen', 'Delete episode'), icon:ICO_TRASH, danger:true,
+        fn:function(){ libDeleteEpisode(folder, esk, eNum, cpId, lf); } });
+    }
+  }
+
   return items;
-}
-
-function libBookMatchesQuery(book, q) {
-  if ((book.title || "").toLowerCase().includes(q)) return true;
-  if ((book.series || "").toLowerCase().includes(q)) return true;
-  for (var i = 0; i < (book.authors || []).length; i++) {
-    if ((book.authors[i] || "").toLowerCase().includes(q)) return true;
-  }
-  for (var f = 0; f < (book.formats || []).length; f++) {
-    if ((book.formats[f].path || "").toLowerCase().includes(q)) return true;
-  }
-  return false;
-}
-
-function libSortBooks(items) {
-  return items.slice().sort(function(a, b) {
-    var v;
-    if (libSortKey === "size") {
-      v = (a.book.total_size || 0) - (b.book.total_size || 0);
-    } else {
-      // Inside a series, volume order beats alphabetical order: "Band 2"
-      // must not sort between "Band 11" and "Band 12".
-      var sa = (a.book.series || "").toLowerCase(), sb = (b.book.series || "").toLowerCase();
-      if (sa && sa === sb) {
-        v = (a.book.series_index || 0) - (b.book.series_index || 0);
-      } else {
-        v = (a.book.sort_title || a.book.title || "")
-              .localeCompare(b.book.sort_title || b.book.title || "", "de", { sensitivity: "base" });
-      }
-    }
-    return libSortAsc ? v : -v;
-  });
-}
-
-function libRenderBooks() {
-  var items = libFlattenBooks(libLocations);
-  if (libSearchQuery) {
-    var q = libSearchQuery.toLowerCase();
-    items = items.filter(function(it) { return libBookMatchesQuery(it.book, q); });
-  }
-  libPaintBooks(libSortBooks(items));
-}
-
-function libBookCoverUrl(book) {
-  if (!book.cover_path) return "";
-  return "/api/library/book/cover?path=" + encodeURIComponent(book.cover_path);
-}
-
-// The scanner normalises whatever the metadata carried ("deu", "de-DE") to a
-// two-letter code; the shelf shows the language the way a person names it.
-var LIB_LANGUAGE_NAMES = {
-  de: ["Deutsch", "German"],   en: ["Englisch", "English"],
-  fr: ["Französisch", "French"], es: ["Spanisch", "Spanish"],
-  it: ["Italienisch", "Italian"], nl: ["Niederländisch", "Dutch"],
-  pt: ["Portugiesisch", "Portuguese"], ru: ["Russisch", "Russian"],
-  ja: ["Japanisch", "Japanese"], zh: ["Chinesisch", "Chinese"],
-  ko: ["Koreanisch", "Korean"], pl: ["Polnisch", "Polish"],
-  sv: ["Schwedisch", "Swedish"], da: ["Dänisch", "Danish"],
-  no: ["Norwegisch", "Norwegian"], fi: ["Finnisch", "Finnish"],
-  cs: ["Tschechisch", "Czech"], tr: ["Türkisch", "Turkish"],
-  el: ["Griechisch", "Greek"], hu: ["Ungarisch", "Hungarian"],
-  ro: ["Rumänisch", "Romanian"], uk: ["Ukrainisch", "Ukrainian"],
-  ar: ["Arabisch", "Arabic"], he: ["Hebräisch", "Hebrew"], la: ["Latein", "Latin"]
-};
-
-// A book has a publication year. The day and month a publisher records are
-// usually the day a file was made, and a full date invites the reader to
-// believe a precision that is not there.
-function libBookYear(raw) {
-  var match = /(\d{4})/.exec(String(raw || ""));
-  return match ? match[1] : String(raw || "");
-}
-
-function libLanguageName(code) {
-  var pair = LIB_LANGUAGE_NAMES[(code || "").toLowerCase()];
-  // An unknown code is shown as it came, in upper case: better an honest
-  // "XYZ" than a wrong guess at what the file meant.
-  return pair ? t(pair[0], pair[1]) : String(code || "").toUpperCase();
-}
-
-function libBookAuthorLine(book) {
-  var authors = book.authors || [];
-  if (!authors.length) return t("Unbekannter Autor", "Unknown author");
-  return authors.slice(0, 2).join(", ") + (authors.length > 2 ? " …" : "");
-}
-
-function libBookSeriesLabel(book) {
-  if (!book.series) return "";
-  var idx = Number(book.series_index);
-  // Volume 0 does not exist: where it appears the number came from something
-  // that is not a volume ("Industrie 4.0"), and a "#0" badge advertises the
-  // bad guess. Show the series without a number instead.
-  if (!book.series_index || !isFinite(idx) || idx < 1) return book.series;
-  // 2.0 reads as a volume number, 2.5 as a side story -- keep the decimal only
-  // when it carries information.
-  var shown = (idx % 1 === 0) ? String(Math.round(idx)) : String(idx);
-  return book.series + " " + shown;
-}
-
-// One badge per FORMAT, not per file. A book kept as two EPUBs plus a MOBI
-// reads as "EPUB ×2 · MOBI": three separate chips would re-introduce on the
-// card exactly the duplication this whole grouping pass exists to remove, and
-// they pushed the size badge onto a third line on a narrow card.
-function libBookFormatBadges(book, limit, compact) {
-  var order = [], byExt = {};
-  (book.formats || []).forEach(function(f) {
-    var ext = (f.ext || "").toUpperCase();
-    if (!byExt[ext]) { byExt[ext] = { count: 0, readable: !!f.readable, size: 0 }; order.push(ext); }
-    byExt[ext].count++;
-    byExt[ext].size += f.size || 0;
-    if (f.readable) byExt[ext].readable = true;
-  });
-  var shown = (limit && order.length > limit) ? order.slice(0, limit) : order;
-  var out = shown.map(function(ext) {
-    var info = byExt[ext];
-    // On a poster card the "×2" is what tips the badge row onto a second
-    // line and pushes the size badge off it; the count survives in the
-    // tooltip and in the detail panel, where there is room for it.
-    var label = (info.count > 1 && !compact) ? (ext + " ×" + info.count) : ext;
-    var hint = info.count > 1
-      ? t(info.count + " Dateien", info.count + " files") + " · " + libFmtSize(info.size)
-      : libFmtSize(info.size);
-    return '<span class="mf-format-badge' + (info.readable ? '' : ' is-locked') + '" title="' +
-      libEscAttr(hint) + '">' + libEsc(label) + '</span>';
-  });
-  if (shown.length < order.length) {
-    out.push('<span class="mf-format-badge">+' + (order.length - shown.length) + '</span>');
-  }
-  return out.join("");
-}
-
-// A cover that fails to load (file moved, unreadable image) must not leave a
-// broken-image icon in the grid -- fall back to the same generated tile a book
-// with no cover at all gets.
-function libBookCoverFailed(img) {
-  var art = img.parentNode;
-  if (!art) return;
-  var title = art.getAttribute("data-book-title") || "";
-  img.remove();
-  art.insertAdjacentHTML("afterbegin", _libFauxArt(title));
-}
-
-// Only the last two path segments. The folder is what tells two copies of the
-// same book apart, and the full path is one hover away in the title attribute.
-function libBookShortPath(path) {
-  var parts = String(path || "").split(/[\\/]/).filter(Boolean);
-  return parts.slice(-2).join("/");
-}
-
-function libPaintBooks(items) {
-  var gridEl  = document.getElementById("libGridView");
-  var listEl  = document.getElementById("libListView");
-  var emptyEl = document.getElementById("libEmptyState");
-  if (!gridEl || !listEl) return;
-
-  if (!items.length) {
-    gridEl.hidden = true;
-    listEl.hidden = true;
-    if (emptyEl) {
-      emptyEl.hidden = false;
-      emptyEl.innerHTML =
-        '<svg class="mf-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ' +
-        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-        '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' +
-        '<p>' + libEsc(libSearchQuery
-          ? t("Keine Bücher gefunden.", "No books found.")
-          : t("Keine Bücher gefunden. Lege EPUB-, MOBI-, AZW3- oder PDF-Dateien in einen deiner Bibliothekspfade.",
-              "No books found. Put EPUB, MOBI, AZW3 or PDF files into one of your library paths.")) + '</p>';
-    }
-    libRenderPagination(0);
-    return;
-  }
-  if (emptyEl) emptyEl.hidden = true;
-
-  var isGrid = libViewMode === "grid";
-  gridEl.hidden = !isGrid;
-  listEl.hidden = isGrid;
-  var target = isGrid ? gridEl : listEl;
-
-  var totalP = libTotalPages(items.length);
-  if (libPage >= totalP) libPage = totalP - 1;
-  if (libPage < 0) libPage = 0;
-  var pageStart = libPage * libPerPage;
-  var pageItems = items.slice(pageStart, pageStart + libPerPage);
-
-  var html = [];
-  var openItem = null, openPfx = null;
-  pageItems.forEach(function(it, idx) {
-    var pfx = "libBook" + idx;
-    html.push(isGrid ? libRenderBookCard(it, pfx) : libRenderBookRow(it, pfx));
-    if (_libOpenBookKey && it.book.key === _libOpenBookKey) {
-      html.push(libRenderBookDetail(it, pfx));
-      openItem = it;
-      openPfx = pfx;
-    }
-  });
-  target.innerHTML = html.join("");
-  if (openItem && openPfx) { /* detail is rendered inline, nothing to hydrate */ }
-  libRenderPagination(items.length);
-}
-
-function libRenderBookCard(it, pfx) {
-  var book = it.book;
-  var isOpen = _libOpenBookKey === book.key;
-  var cover = libBookCoverUrl(book);
-  var series = libBookSeriesLabel(book);
-
-  var h = [];
-  h.push('<div class="mf-poster-card mf-book-card' + (isOpen ? ' is-open' : '') + '" id="' + pfx + '">');
-  h.push('<div class="mf-poster-art" data-book-title="' + libEscAttr(book.title || "") +
-         '" onclick="libToggleBook(\'' + pfx + '\')">');
-  if (cover) {
-    h.push('<img class="mf-book-cover" src="' + libEscAttr(cover) + '" alt="" loading="lazy" ' +
-           'decoding="async" onerror="libBookCoverFailed(this)">');
-  } else {
-    h.push(_libFauxArt(book.title || ""));
-  }
-  h.push('<div class="mf-poster-scrim">');
-  h.push('<div class="mf-poster-meta">');
-  if (series) h.push('<span class="mf-type-pill mf-type-pill--outline">' + libEsc(series) + '</span>');
-  if (libBooksSpanLocations(libLocations)) h.push(volTagHtml(it.cpLabel));
-  h.push('</div>');
-  h.push('<p class="mf-poster-title">' + libEsc(book.title || "") + '</p>');
-  h.push('<p class="mf-book-author">' + libEsc(libBookAuthorLine(book)) + '</p>');
-  h.push('</div>'); // scrim
-  h.push('</div>'); // art
-  // No size badge here, deliberately. On a film card the file size stands in
-  // for quality; on a book it is noise between 1 and 50 MB, and it was the one
-  // chip too many that wrapped the format row onto a second line. It stays in
-  // the list row and in the detail panel, where it is actually compared.
-  h.push('<div class="mf-poster-foot mf-book-foot">');
-  h.push('<span class="mf-format-badges">' + libBookFormatBadges(book, 2, true) + '</span>');
-  h.push('</div>');
-  h.push('</div>');
-  return h.join("");
-}
-
-function libRenderBookRow(it, pfx) {
-  var book = it.book;
-  var isOpen = _libOpenBookKey === book.key;
-  var series = libBookSeriesLabel(book);
-  var multi = libBooksSpanLocations(libLocations);
-
-  // Author and series belong under the title, not at the far right of the row:
-  // a book is identified by title AND author together, and separating them by
-  // 600px of empty row makes the reader pair them by eye on every line.
-  var sub = [];
-  sub.push('<span class="mf-book-row-author">' + libEsc(libBookAuthorLine(book)) + '</span>');
-  if (series) sub.push('<span class="mf-book-row-series">' + libEsc(series) + '</span>');
-  if (multi && it.cpLabel) sub.push('<span class="mf-book-row-vol">' + libEsc(it.cpLabel) + '</span>');
-
-  var h = [];
-  h.push('<div class="lib-title-row mf-book-row' + (isOpen ? ' is-open' : '') + '" id="' + pfx +
-         '" onclick="libToggleBook(\'' + pfx + '\')">');
-  h.push('<div class="mf-book-row-main">');
-  h.push('<span class="mf-book-row-title">' + libEsc(book.title || "") + '</span>');
-  h.push('<span class="mf-book-row-sub">' + sub.join('<span class="mf-book-row-dot">·</span>') + '</span>');
-  h.push('</div>');
-  h.push('<div class="mf-book-row-facts">');
-  h.push('<span class="mf-format-badges">' + libBookFormatBadges(book, 3, true) + '</span>');
-  h.push('<span class="mf-book-row-size">' + libFmtSize(book.total_size) + '</span>');
-  h.push('<svg class="mf-book-row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-         'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-         '<path d="M9 18l6-6-6-6"/></svg>');
-  h.push('</div>');
-  h.push('</div>');
-  return h.join("");
-}
-
-function libRenderBookDetail(it, pfx) {
-  var book = it.book;
-  var h = [];
-  h.push('<div class="lib-detail-row mf-book-detail" id="' + pfx + 'Detail">');
-  h.push('<div class="lib-detail-header">');
-  h.push('<div>');
-  h.push('<h3 class="lib-detail-title">' + libEsc(book.title || "") + '</h3>');
-  h.push('<p class="mf-book-author">' + libEsc(libBookAuthorLine(book)) + '</p>');
-  h.push('</div>');
-  h.push('<button type="button" class="mf-icon-btn" onclick="libCloseBook()" aria-label="' +
-         libEscAttr(t("Schließen", "Close")) + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-         'stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>');
-  h.push('</div>');
-
-  var facts = [];
-  if (book.series) facts.push([t("Reihe", "Series"), libBookSeriesLabel(book)]);
-  if (book.published) facts.push([t("Erschienen", "Published"), libBookYear(book.published)]);
-  if (book.publisher) facts.push([t("Verlag", "Publisher"), book.publisher]);
-  if (book.language) facts.push([t("Sprache", "Language"), libLanguageName(book.language)]);
-  if (book.isbn) facts.push(["ISBN", book.isbn]);
-  if (facts.length) {
-    h.push('<dl class="mf-book-facts">');
-    facts.forEach(function(pair) {
-      h.push('<dt>' + libEsc(pair[0]) + '</dt><dd>' + libEsc(String(pair[1])) + '</dd>');
-    });
-    h.push('</dl>');
-  }
-  if (book.description) {
-    h.push('<p class="mf-book-desc">' + libEsc(book.description) + '</p>');
-  }
-  if ((book.tags || []).length) {
-    h.push('<div class="mf-book-tags">');
-    book.tags.slice(0, 12).forEach(function(tag) {
-      h.push('<span class="mf-chip-static">' + libEsc(tag) + '</span>');
-    });
-    h.push('</div>');
-  }
-
-  // Every file that belongs to this book. This list is the whole point of the
-  // de-duplication being visible rather than silent: the shelf shows one book,
-  // and here is the evidence for why -- including the two identical EPUBs a
-  // Calibre import can leave behind. Nothing is ever deleted automatically.
-  h.push('<h4 class="mf-book-files-title">' +
-         libEsc(t("Dateien", "Files")) + ' <span class="lib-badge">' + (book.formats || []).length + '</span></h4>');
-  h.push('<div class="mf-book-files">');
-  (book.formats || []).forEach(function(f) {
-    h.push('<div class="mf-book-file">');
-    h.push('<span class="mf-format-badge' + (f.readable ? '' : ' is-locked') + '">' +
-           libEsc((f.ext || "").toUpperCase()) + '</span>');
-    h.push('<span class="mf-book-file-path" title="' + libEscAttr(f.path) + '">' +
-           libEsc(libBookShortPath(f.path)) + '</span>');
-    h.push('<span class="mf-book-file-size">' + libFmtSize(f.size) + '</span>');
-    if (f.readable) {
-      // Opens in the reader overlay, the same way a film opens in the player
-      // instead of a browser tab. The position is stored against the BOOK, so
-      // the format picked here does not start a separate bookmark.
-      h.push('<button type="button" class="mf-book-open" ' +
-             'onclick="libReadBook(\'' + libEscAttr(encodeURIComponent(f.path)) + '\', \'' +
-             libEscAttr(f.ext) + '\', \'' + libEscAttr(encodeURIComponent(book.key)) + '\')">' +
-             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-             'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-             '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>' +
-             '<path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' +
-             '<span>' + libEsc(t("Lesen", "Read")) + '</span></button>');
-      h.push('<a class="mf-book-dl" href="/api/library/book/file?path=' +
-             encodeURIComponent(f.path) + '" download title="' +
-             libEscAttr(t("Herunterladen", "Download")) + '" aria-label="' +
-             libEscAttr(t("Herunterladen", "Download")) + '">' +
-             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-             'stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>' +
-             '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>');
-    } else {
-      h.push('<span class="mf-book-locked" title="' +
-             libEscAttr(t("Dieses Format ist kopiergeschützt und lässt sich nicht öffnen.",
-                          "This format is copy-protected and cannot be opened.")) + '">' +
-             libEsc(t("Geschützt", "Protected")) + '</span>');
-    }
-    h.push('</div>');
-  });
-  h.push('</div>');
-  h.push('</div>');
-  return h.join("");
-}
-
-function libToggleBook(pfx) {
-  var el = document.getElementById(pfx);
-  if (!el) return;
-  var items = libSortBooks(libFlattenBooks(libLocations).filter(function(it) {
-    if (!libSearchQuery) return true;
-    return libBookMatchesQuery(it.book, libSearchQuery.toLowerCase());
-  }));
-  var idx = parseInt(pfx.replace("libBook", ""), 10);
-  var item = items[libPage * libPerPage + idx];
-  if (!item) return;
-  _libOpenBookKey = (_libOpenBookKey === item.book.key) ? null : item.book.key;
-  libRenderBooks();
-}
-
-function libCloseBook() {
-  _libOpenBookKey = null;
-  libRenderBooks();
-}
-
-// Open a book in the reader overlay. Path and key arrive URI-encoded because
-// they travel through an inline onclick attribute, where a quote or a backslash
-// in a filename would otherwise break out of the handler.
-function libReadBook(encodedPath, ext, encodedKey) {
-  var path = decodeURIComponent(encodedPath);
-  var key = decodeURIComponent(encodedKey || "");
-  var title = "";
-  var items = libFlattenBooks(libLocations);
-  for (var i = 0; i < items.length; i++) {
-    if (items[i].book.key === key) { title = items[i].book.title; break; }
-  }
-  if (typeof window.openReader !== "function") {
-    // Should not happen -- reader.js loads from base.html on every page -- but
-    // a missing reader must not swallow the click without explanation.
-    window.open("/api/library/book/file?path=" + encodeURIComponent(path), "_blank", "noopener");
-    return;
-  }
-  window.openReader(path, ext, title, key);
 }

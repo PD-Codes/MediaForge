@@ -206,6 +206,88 @@ def register_integrations_routes(app):
             _report_integration_error("opensubtitles", error_type=type(exc).__name__)
         return jsonify(result)
 
+    @app.route("/api/settings/comicvine", methods=["GET"])
+    def api_settings_comicvine_get():
+        """Return the stored ComicVine settings. Route: GET /api/settings/comicvine.
+
+        The API key is never sent back — the UI only learns *whether* one is
+        stored (has_api_key), exactly like the OpenSubtitles card above, so a
+        re-save without retyping cannot wipe it and the key never reaches a
+        browser, a proxy log or a bug report screenshot.
+
+        The throttle numbers are included because they are the one thing a
+        user needs to understand why enrichment "stopped": ComicVine allows
+        200 requests per resource and hour and locks the key out on violation,
+        so MediaForge caps itself below that.
+        """
+        from .. import comicvine_service
+        return jsonify({
+            "enabled":     get_setting(comicvine_service.SETTING_ENABLED, "0"),
+            "has_api_key": bool(get_setting(comicvine_service.SETTING_API_KEY, "")),
+            "throttle":    comicvine_service.throttle_status(),
+        })
+
+    @app.route("/api/settings/comicvine", methods=["PUT"])
+    def api_settings_comicvine_put():
+        """Persist ComicVine settings. Route: PUT /api/settings/comicvine.
+
+        Called from static/integrations.js's `saveComicvineSettings()` and
+        `saveComicvineOptions()`.
+        """
+        from .. import comicvine_service
+        data = request.get_json(silent=True) or {}
+
+        if "enabled" in data:
+            set_setting(comicvine_service.SETTING_ENABLED,
+                        "1" if str(data["enabled"]) in ("1", "true", "True") else "0")
+
+        # Secret: written only when a real, non-placeholder value arrives, so
+        # saving the form with the field left blank keeps what is stored.
+        key_changed = False
+        if data.get("clear_api_key"):
+            set_setting(comicvine_service.SETTING_API_KEY, "")
+            key_changed = True
+        elif "api_key" in data:
+            value = str(data["api_key"] or "").strip()
+            if value and value != SECRET_PLACEHOLDER:
+                set_setting(comicvine_service.SETTING_API_KEY, value)
+                key_changed = True
+
+        # A different key may see different data (and a cleared one must not
+        # keep serving results fetched with the old one).
+        if key_changed:
+            comicvine_service.invalidate_cache()
+
+        return jsonify({"ok": True})
+
+    @app.route("/api/settings/comicvine/test", methods=["POST"])
+    def api_settings_comicvine_test():
+        """Validate the ComicVine API key. Route: POST /api/settings/comicvine/test.
+
+        Called from static/integrations.js's `testComicvine()`. Falls back to
+        the stored key so the user can re-test without retyping it. The test
+        request counts against the same hourly budget as a scan — it is a real
+        API call, and pretending otherwise is how a key gets banned.
+        """
+        from .. import comicvine_service
+        data = request.get_json(silent=True) or {}
+        api_key = str(data.get("api_key", "") or "").strip()
+        if api_key == SECRET_PLACEHOLDER:
+            api_key = ""
+        try:
+            result = comicvine_service.test_connection(api_key)
+            if result.get("ok"):
+                _report_integration_used("flag.integrations.comicvine")
+            else:
+                _report_integration_error("comicvine", reason=result.get("error"))
+        except Exception as exc:
+            # No detail field here: an HTTP exception message carries the
+            # request URL, and for this API the key is a query parameter.
+            logger.debug("[ComicVine] test endpoint error: %s", type(exc).__name__)
+            result = {"ok": False, "error": "unknown"}
+            _report_integration_error("comicvine", error_type=type(exc).__name__)
+        return jsonify(result)
+
     @app.route("/api/settings/crunchyroll", methods=["GET"])
     def api_settings_crunchyroll_get():
         """Return the stored Crunchyroll settings. Route: GET /api/settings/crunchyroll."""

@@ -247,6 +247,53 @@
   max-width: 320px;
 }
 
+/* ── "Media types" cell (custom paths table) ───────────────────────────
+   Narrower than the site cell on purpose: the registry offers two
+   scannable kinds today and their labels are short, and the table already
+   has to scroll sideways on a phone (.user-table min-width below). Same
+   component, so the cell stays one line tall as more kinds are added. */
+.path-kind-cell {
+  min-width: 190px;
+}
+
+.path-kind-select {
+  max-width: 260px;
+}
+
+.path-kind-select .mf-multiselect-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.path-kind-select .mf-multiselect-item input:disabled {
+  cursor: not-allowed;
+}
+
+/* The same dropdown in the "Add Path" row, where it sits between two
+   flex:1 inputs. It must not stretch like they do, and on a narrow screen
+   it wraps onto its own line instead of squeezing the inputs. */
+#newPathKinds {
+  flex: 0 0 auto;
+}
+
+#newPathKinds .path-kind-select {
+  min-width: 180px;
+}
+
+#newPathKinds .mf-multiselect-trigger {
+  height: 40px;
+}
+
+@media (max-width: 640px) {
+  #newPathKinds {
+    flex: 1 1 100%;
+  }
+
+  #newPathKinds .path-kind-select {
+    max-width: none;
+  }
+}
+
 /* The dropdown is switched to position:fixed by mf_multiselect.js while it
    is open, because .user-table-wrapper is overflow-x:auto and would
    otherwise clip it to the table. */
@@ -279,6 +326,13 @@
 
 @media (max-width: 640px) {.user-table {
     min-width: 560px;
+  }
+
+  /* The custom-paths table carries two dropdowns on top of its three text
+     columns, so it needs more than the shared minimum before the cells
+     start crushing each other. .user-table-wrapper scrolls it sideways. */
+  #customPathsTable {
+    min-width: 720px;
   }
 
   .user-table th,
@@ -523,5 +577,38 @@
   .backup-file-btn {
     width: 100%;
     justify-content: flex-start;
+  }
+}
+
+/* ── Comics block (Library tab) ───────────────────────────────────────
+   Layout only. The rows, buttons, hints and the warning box are the
+   page's existing components (settings_rows.css, buttons.css and
+   integrations.css, all three already loaded by settings.html); what is
+   needed here is the two-column cache row not collapsing into an
+   unreadable squeeze on a phone. */
+.comic-cache-row {
+  flex-wrap: wrap;
+}
+
+/* The size line changes on every refresh -- tabular figures keep it from
+   jittering while the numbers change width. */
+.comic-cache-row .settings-row-desc {
+  font-variant-numeric: tabular-nums;
+}
+
+.comic-danger-box {
+  margin-top: 8px;
+  margin-bottom: 6px;
+}
+
+@media (max-width: 640px) {
+  /* Sharing a line with a two-line label leaves the button about as wide
+     as its own caption; give it the whole row instead. */
+  .comic-cache-row .settings-row-right {
+    width: 100%;
+  }
+
+  .comic-cache-row .settings-row-right .btn {
+    width: 100%;
   }
 }

@@ -19,7 +19,8 @@ from ...languages import LANG_FOLDER_MAP
 from ...languages import LANG_PAIR_TO_LABEL
 from ..db import remove_media_ignore
 from ..runtime_state import SYNC_SCHEDULE_MAP
-from .library import _lib_active_path_keys
+from ..media_kinds import KIND_VIDEO
+from .library import lib_path_keys_for_kind
 from .library import _lib_build_scan_targets
 from .library import _lib_trigger_scan_async
 from flask import jsonify
@@ -161,8 +162,13 @@ def _active_library_cache(cache):
     The scan itself prunes those rows now; this is the second line of defence
     for the window before the next scan runs, and for a cache written by an
     older version.
+
+    Paths the user has assigned to another library are dropped here too. Every
+    caller of this helper -- media statistics, the duplicate check, the
+    calendar's series list -- is about VIDEO, and a path holding only eBooks
+    has nothing any of them can use.
     """
-    active = _lib_active_path_keys()
+    active = lib_path_keys_for_kind(KIND_VIDEO)
     return {k: v for k, v in (cache or {}).items() if k in active}
 
 

@@ -423,7 +423,7 @@ def _panel_activity() -> dict:
 
 def _panel_library() -> dict:
     """Series, episodes, movies and total size -- deliberately counted the same
-    way the library page's own summary pills count them (static/library.js,
+    way the library page's own summary pills count them (static/library_video.js,
     libUpdateTotalSize): per title, `total_size` summed, movies and series told
     apart by `is_movie`. Two places showing two different totals for the same
     library is worse than either number being slightly off, and stats.py's
@@ -431,12 +431,13 @@ def _panel_library() -> dict:
     agree with the page.
     """
     from ..db import get_all_library_cache
-    from .library import _lib_active_path_keys, lib_iter_cached_titles
+    from ..media_kinds import KIND_VIDEO
+    from .library import lib_path_keys_for_kind, lib_iter_cached_titles
     series = movies = episodes = 0
     total_size = 0
     newest = []
     try:
-        active = _lib_active_path_keys()
+        active = lib_path_keys_for_kind(KIND_VIDEO)
         for path_key, entry in (get_all_library_cache() or {}).items():
             if path_key not in active:
                 continue          # leftover of a removed scan target

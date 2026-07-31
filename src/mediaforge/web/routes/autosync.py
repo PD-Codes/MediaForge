@@ -49,7 +49,7 @@ def find_site_candidates(title: str) -> list:
 
     Extracted out of api_autosync_site_search's body (see that route,
     still the only in-app caller reachable over HTTP, via
-    static/library.js's libAddToAutosync()) so other code that needs the
+    static/library_video.js's libAddToAutosync()) so other code that needs the
     same "is this actually findable on a site" check can call it directly
     in-process instead of round-tripping through HTTP -- see
     web/thirdparties/mediacalendar/service.py's planned-download worker,
@@ -234,7 +234,7 @@ def register_autosync_routes(app):
         a site" check, and returns every match (with its source site) so the
         caller can let the user choose when more than one is found.
 
-        Route: POST /api/autosync/site-search. Called from static/library.js's
+        Route: POST /api/autosync/site-search. Called from static/library_video.js's
         `libAddToAutosync()`.
         """
         data = request.get_json(silent=True) or {}

@@ -10,7 +10,7 @@
    any page that renders MFCharts.
 
    Used by: templates/stats.html + static/stats.js (primary),
-            templates/library.html + static/library.js (stat-sub only).
+            templates/library_video.html + static/library_video.js (stat-sub only).
    =================================================================== */
 
 /* ===== Page layout ===== */

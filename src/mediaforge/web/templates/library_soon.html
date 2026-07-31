@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "_library_nav.html" as libnav %}
+{% block title %}{{ libnav.kind_label(kind.slug) }} — MediaForge{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='library_hub.css') }}">{% endblock %}
+{% block content %}
+{# Reached from a hub tile or a direct link. The sidebar entry for these kinds
+   is disabled, but a page that 404s would read as a broken build rather than
+   as a planned feature -- so it explains itself instead. #}
+<div class="library-container">
+  <div class="page-header">
+    <h1 class="page-title">{{ libnav.kind_label(kind.slug) }}</h1>
+  </div>
+
+  <div class="mf-empty lib-soon">
+    <svg class="mf-empty-icon lib-soon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      {{ libnav.kind_icon(kind.slug) }}
+    </svg>
+    <p class="lib-soon-title">{{ _('Coming soon') }}</p>
+    <p class="mf-empty-hint">{{ libnav.kind_blurb(kind.slug) }}</p>
+    <a class="mf-btn mf-btn-secondary lib-soon-back" href="{{ url_for('library_page') }}">
+      {{ _('Back to the library overview') }}
+    </a>
+  </div>
+</div>
+{% endblock %}

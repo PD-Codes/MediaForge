@@ -217,6 +217,24 @@ async function loadSettings() {
     if (rescanEl && data.library_rescan_hours != null) rescanEl.value = String(data.library_rescan_hours);
     const probeEl = document.getElementById("libraryProbeWorkers");
     if (probeEl && data.library_probe_workers != null) probeEl.value = String(data.library_probe_workers);
+    // Comics. The fallbacks repeat the server's defaults on purpose: a
+    // response from an instance that predates these keys must render the same
+    // state the server would store, not an empty checkbox for a setting that
+    // is actually on.
+    const comicPrepareEl = document.getElementById("comicAutoPrepareAll");
+    if (comicPrepareEl) comicPrepareEl.checked = (data.comic_auto_prepare_all ?? "0") === "1";
+    const comicReplaceEl = document.getElementById("comicReplaceOriginal");
+    if (comicReplaceEl) comicReplaceEl.checked = (data.comic_replace_original ?? "0") === "1";
+    // Which libraries the DEFAULT download root feeds. Custom paths carry
+    // theirs in the paths table; the default root has no row there, so it is a
+    // plain setting (see routes/library.py's _LIB_DEFAULT_KINDS_SETTING).
+    const defaultKindBoxes = defaultPathKindBoxes();
+    if (defaultKindBoxes.length && data.default_path_media_kinds != null) {
+      const activeKinds = String(data.default_path_media_kinds).split(",").map((k) => k.trim());
+      defaultKindBoxes.forEach(function (box) {
+        box.checked = activeKinds.indexOf(box.dataset.mediaKind) !== -1;
+      });
+    }
 
     const webConsoleEl = document.getElementById("webConsole");
     if (webConsoleEl) {
@@ -1057,6 +1075,184 @@ async function saveLibraryProbeWorkers() {
   }
 }
 
+// ─── Comics (Library tab) ───────────────────────────────────────────────────
+// The three switches ride on the ordinary settings mechanism (PUT
+// /api/settings, validated there); the two cache buttons and the extractor
+// diagnostics have their own admin-only endpoints in routes/comics.py.
+
+async function _saveComicToggle(key, on) {
+  const payload = {};
+  payload[key] = on ? "1" : "0";
+  const resp = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error);
+}
+
+async function saveComicAutoPrepareAll() {
+  const el = document.getElementById("comicAutoPrepareAll");
+  if (!el) return;
+  try {
+    await _saveComicToggle("comic_auto_prepare_all", el.checked);
+    showToast(el.checked
+      ? t("Alle Ausgaben werden im Hintergrund vorbereitet", "Every issue is prepared in the background")
+      : t("Ausgaben werden erst beim Öffnen vorbereitet", "Issues are prepared when they are opened"), "success");
+  } catch (e) {
+    el.checked = !el.checked;
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message, "error");
+  }
+}
+
+// The one switch here that destroys something the user owns. Switching it ON
+// therefore costs a deliberate confirmation (the project's showConfirm(), same
+// as clearBrowserProfile/deleteEnvFile) and the box springs back if the answer
+// is no. Switching it OFF is never guarded -- stopping a destructive setting
+// must always be one click.
+async function saveComicReplaceOriginal(el) {
+  el = el || document.getElementById("comicReplaceOriginal");
+  if (!el) return;
+  const enabling = el.checked;
+  if (enabling) {
+    const message = t(
+      "Nach jeder erfolgreichen Umwandlung wird die Originaldatei (CBR/CBA) durch die neue CBZ ersetzt. Die Originaldatei ist danach weg — MediaForge kann sie nicht wiederherstellen, und es gibt keinen Papierkorb.",
+      "After every successful conversion the original file (CBR/CBA) is replaced by the new CBZ. The original file is gone afterwards — MediaForge cannot restore it, and there is no recycle bin.");
+    const ok = (typeof showConfirm === "function")
+      ? await showConfirm(message,
+          t("Originale ersetzen", "Replace originals"),
+          t("Originaldateien wirklich ersetzen?", "Really replace original files?"),
+          "btn-danger")
+      : window.confirm(message);
+    if (!ok) { el.checked = false; return; }
+  }
+  try {
+    await _saveComicToggle("comic_replace_original", enabling);
+    showToast(enabling
+      ? t("Originale werden nach der Umwandlung ersetzt", "Originals are replaced after conversion")
+      : t("Originale bleiben unangetastet", "Originals are left untouched"), enabling ? "warning" : "success");
+  } catch (e) {
+    el.checked = !enabling;
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message, "error");
+  }
+}
+
+function _comicFormatBytes(bytes) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Number(bytes) || 0;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return (unit === 0 ? String(Math.round(value)) : value.toFixed(value < 10 ? 1 : 0)) + " " + units[unit];
+}
+
+function _comicCacheLine(stats) {
+  const files = (stats && stats.files) || 0;
+  if (!files) return t("leer", "empty");
+  const label = files === 1 ? t("Datei", "file") : t("Dateien", "files");
+  return files + " " + label + " · " + _comicFormatBytes(stats.bytes);
+}
+
+function _comicApplyCacheData(data) {
+  const coverEl = document.getElementById("comicCoverCacheSize");
+  const convertEl = document.getElementById("comicConvertCacheSize");
+  if (coverEl) coverEl.textContent = _comicCacheLine(data.covers);
+  if (convertEl) convertEl.textContent = _comicCacheLine(data.converted);
+
+  const extractors = data.extractors || {};
+  const missing = t("nicht gefunden", "not found");
+  const rarEl = document.getElementById("comicExtractorRar");
+  const aceEl = document.getElementById("comicExtractorAce");
+  if (rarEl) rarEl.textContent = extractors.rar || missing;
+  if (aceEl) aceEl.textContent = extractors.ace || missing;
+  const hint = document.getElementById("comicExtractorHint");
+  if (hint) {
+    const anyFound = Object.keys(extractors).some(function (k) { return !!extractors[k]; });
+    hint.style.display = anyFound ? "none" : "";
+  }
+}
+
+async function loadComicCacheStats() {
+  if (!document.getElementById("comicCoverCacheSize")) return;
+  try {
+    const resp = await fetch("/api/library/comic/cache");
+    // 401/403 for a non-admin account is a normal answer here, not an error
+    // worth a toast -- the panel simply keeps its placeholders.
+    if (!resp.ok) return;
+    _comicApplyCacheData(await resp.json());
+  } catch (e) { /* offline or mid-restart: leave the placeholders alone */ }
+}
+
+async function clearComicCache(which) {
+  const label = which === "covers"
+    ? t("Cover-Cache", "cover cache")
+    : t("umgewandelte Archive", "converted archives");
+  const message = which === "covers"
+    ? t("Alle zwischengespeicherten Cover werden gelöscht. Sie werden beim nächsten Öffnen der Comic-Bibliothek neu erzeugt. Deine Comic-Dateien bleiben unangetastet.",
+        "Every cached cover is deleted. They are created again the next time the comic library is opened. Your comic files are left untouched.")
+    : t("Alle umgewandelten Archive werden gelöscht. Eine CBR/CBA-Ausgabe wird beim nächsten Öffnen erneut umgewandelt. Deine Comic-Dateien bleiben unangetastet.",
+        "Every converted archive is deleted. A CBR/CBA issue is converted again the next time it is opened. Your comic files are left untouched.");
+  const ok = (typeof showConfirm === "function")
+    ? await showConfirm(message, t("Leeren", "Clear"),
+        t("Cache leeren?", "Clear cache?"), "btn-danger")
+    : window.confirm(message);
+  if (!ok) return;
+  try {
+    const resp = await fetch("/api/library/comic/cache/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cache: which }),
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      showToast(data.error || t("Fehler beim Leeren", "Error while clearing"), "error");
+      return;
+    }
+    showToast(label + ": " + data.removed + " " + t("Einträge entfernt", "entries removed"), "success");
+    loadComicCacheStats();
+  } catch (e) {
+    showToast(t("Fehler: ", "Error: ") + e.message, "error");
+  }
+}
+
+function defaultPathKindBoxes() {
+  return Array.prototype.slice.call(
+    document.querySelectorAll("#defaultPathKinds input[data-media-kind]")
+  );
+}
+
+async function saveDefaultPathMediaKinds(changed) {
+  const boxes = defaultPathKindBoxes();
+  if (!boxes.length) return;
+  const kinds = boxes.filter((box) => box.checked).map((box) => box.dataset.mediaKind);
+  if (!kinds.length) {
+    // The server falls back to its default kind on an empty list, so an empty
+    // selection would leave the page showing something other than what is
+    // stored. Put the box back instead of saving a value nobody asked for.
+    if (changed) changed.checked = true;
+    showToast(t("Mindestens eine Media-Art muss ausgewählt bleiben",
+                "At least one media type must stay selected"), "error");
+    return;
+  }
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ default_path_media_kinds: kinds }),
+    });
+    const data = await resp.json();
+    if (data.error) {
+      if (changed) changed.checked = !changed.checked;
+      showToast(data.error, "error");
+      return;
+    }
+    showToast(t("Media-Arten des Standardpfads gespeichert", "Media types of the default path saved"));
+  } catch (e) {
+    if (changed) changed.checked = !changed.checked;
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
 async function saveNewHomeEnabled() {
   const el = document.getElementById("newHomeEnabled");
   if (!el) return;
@@ -1565,6 +1761,10 @@ const customPathsBody = document.getElementById("customPathsBody");
 const customPathsTable = document.getElementById("customPathsTable");
 let customPathsCache = [];
 let customPathSiteOptions = [];
+// The media kinds a path may be assigned to. Server-filtered to the ones that
+// actually have a scanner (see web/media_kinds.py), so the list here is
+// whatever the backend can index today -- never hard-coded.
+let customPathKindOptions = [];
 
 if (customPathsBody) loadCustomPaths();
 
@@ -1575,7 +1775,9 @@ async function loadCustomPaths() {
     const data = await resp.json();
     customPathsCache = data.paths || [];
     customPathSiteOptions = data.site_options || [];
+    customPathKindOptions = data.media_kind_options || [];
     renderCustomPaths(customPathsCache);
+    renderNewPathKindSelect();
   } catch (e) {
     showToast(t("Benutzerdefinierte Pfade konnten nicht geladen werden: " + e.message, "Custom paths could not be loaded: " + e.message));
   }
@@ -1585,8 +1787,24 @@ function customPathsCanEdit() {
   return typeof settingsCanEdit === "undefined" || settingsCanEdit;
 }
 
+// Splits either of the row's CSV columns (default_sites, media_kinds) into a
+// list. Both are stored the same way, so one splitter serves both.
 function parsePathSites(value) {
   return String(value || "").split(",").map((site) => site.trim()).filter(Boolean);
+}
+
+// The registry only carries an English fallback label -- translations live in
+// the templates, which this file is not (see the docstring of
+// web/media_kinds.py). A slug this map does not know still renders, with the
+// English label the server sent.
+const PATH_KIND_LABELS = {
+  video: ["Filme & Serien", "Movies & Series"],
+  book: ["eBooks", "eBooks"],
+};
+
+function pathKindLabel(kind) {
+  const pair = PATH_KIND_LABELS[kind.slug];
+  return pair ? t(pair[0], pair[1]) : kind.label_en || kind.slug;
 }
 
 // The "default for sites" column used to be a row of loose checkboxes, one per
@@ -1618,11 +1836,46 @@ function renderPathSiteSelect(p) {
   "</div>";
 }
 
+// Which libraries this folder feeds. Same component as the site column above:
+// the registry grows (manga, comics, music are already listed as planned), and
+// a row of loose checkboxes would push the table wider with every one of them.
+function renderPathKindSelect(p, extraClass) {
+  const active = parsePathSites(p.media_kinds);
+  const disabled = customPathsCanEdit() ? "" : "disabled";
+  const items = customPathKindOptions.length
+    ? customPathKindOptions.map(function (kind) {
+        return '<label class="mf-multiselect-item"><input type="checkbox" class="chb-main" value="' +
+          esc(kind.slug) + '"' + (active.includes(kind.slug) ? " checked" : "") + " " + disabled +
+          "><span>" + esc(pathKindLabel(kind)) + "</span></label>";
+      }).join("")
+    : '<div class="mf-multiselect-empty">' + esc(t("Keine Media-Arten verfügbar", "No media types available")) + "</div>";
+  return '<div class="mf-multiselect path-kind-select' + (extraClass ? " " + extraClass : "") + '" data-mf-multiselect' +
+    ' data-custom-path-id="' + esc(String(p.id)) + '"' +
+    ' data-none-label="' + esc(t("Keine Media-Art", "No media type")) + '"' +
+    ' data-many-label="' + esc(t("Media-Arten", "media types")) + '">' +
+    '<button type="button" class="mf-multiselect-trigger" aria-haspopup="true" aria-expanded="false"' +
+      ' aria-label="' + esc(t("Media-Arten für ", "Media types for ") + p.name) + '" ' + disabled + ">" +
+      '<span class="mf-multiselect-label"></span>' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>' +
+    "</button>" +
+    '<div class="mf-multiselect-dropdown">' + items + "</div>" +
+  "</div>";
+}
+
+// Re-tick the boxes of one dropdown from a list of values without re-rendering
+// the table, which would close the dropdown the user is still working in.
+function restorePathSelection(root, values) {
+  root.querySelectorAll('.mf-multiselect-dropdown input[type="checkbox"]').forEach(function (box) {
+    box.checked = values.indexOf(box.value) !== -1;
+  });
+  if (window.mfMultiSelect) window.mfMultiSelect.refresh(root);
+}
+
 function renderCustomPaths(paths) {
   customPathsBody.innerHTML = "";
   if (!paths.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = t('<td colspan="4" style="color:#6b7280;text-align:center">Keine benutzerdefinierten Pfade</td>','<td colspan="4" style="color:#6b7280;text-align:center">No custom paths</td>');
+    tr.innerHTML = t('<td colspan="5" style="color:#6b7280;text-align:center">Keine benutzerdefinierten Pfade</td>','<td colspan="5" style="color:#6b7280;text-align:center">No custom paths</td>');
     customPathsBody.appendChild(tr);
     return;
   }
@@ -1635,92 +1888,186 @@ function renderCustomPaths(paths) {
       "<td>" + esc(p.name) + "</td>" +
       "<td style=\"font-family:'SF Mono','Fira Code',monospace;font-size:.82rem\">" + esc(p.path) + "</td>" +
       '<td class="path-site-cell">' + renderPathSiteSelect(p) + "</td>" +
+      '<td class="path-kind-cell">' + renderPathKindSelect(p) + "</td>" +
       delCell;
     customPathsBody.appendChild(tr);
   });
   // The trigger label is derived from the checked boxes, so it is filled in
   // after the rows are in the DOM rather than duplicated into the markup.
-  customPathsBody.querySelectorAll(".path-site-select").forEach(function (root) {
+  customPathsBody.querySelectorAll(".path-site-select, .path-kind-select").forEach(function (root) {
     window.mfMultiSelect.refresh(root);
   });
 }
 
-// Ticking three sites used to fire three PUTs. Collapse a burst of changes
+// The kind dropdown of the "Add Path" form. Rendered from JS like the table
+// cells so both use the same markup and the same translated labels; an
+// installation whose registry only knows one kind simply gets one entry.
+function renderNewPathKindSelect() {
+  const host = document.getElementById("newPathKinds");
+  if (!host) return;
+  const preset = customPathKindOptions.length ? customPathKindOptions[0].slug : "";
+  host.innerHTML = renderPathKindSelect(
+    { id: "new", name: t("neuer Pfad", "new path"), media_kinds: preset },
+    "new-path-kind-select"
+  );
+  const root = host.querySelector(".path-kind-select");
+  if (root) window.mfMultiSelect.refresh(root);
+}
+
+function newPathKindValues() {
+  const root = document.querySelector("#newPathKinds .path-kind-select");
+  if (!root || !window.mfMultiSelect) return null;
+  const values = window.mfMultiSelect.values(root);
+  return values.length ? values : null;
+}
+
+// Ticking three boxes used to fire three PUTs. Collapse a burst of changes
 // into one request, and flush immediately when the dropdown closes so a
 // selection is never left unsaved for longer than the debounce.
 const customPathSaveTimers = new Map();
 const customPathSaveInflight = new Set();
 const PATH_SITES_SAVE_DELAY = 400;
 
+// Both editable columns of the table are .mf-multiselect dropdowns that PUT a
+// single field of the row. Everything but the field name, the CSS hook and the
+// wording of the failure differs, so the debounce/rollback machinery below is
+// driven by this table instead of existing once per column.
+const PATH_MULTISELECT_COLUMNS = [
+  {
+    field: "default_sites",
+    selectClass: "path-site-select",
+    // A path may legitimately be the default for no site at all.
+    requireOne: false,
+    saveError: function (message) {
+      return t("Standardseiten konnten nicht aktualisiert werden: " + message,
+               "Default sites could not be updated: " + message);
+    },
+  },
+  {
+    field: "media_kinds",
+    selectClass: "path-kind-select",
+    // An empty list makes the server fall back to its default kind, so the
+    // table would end up showing something other than what is stored.
+    requireOne: true,
+    requireOneError: function () {
+      return t("Mindestens eine Media-Art muss ausgewählt bleiben",
+               "At least one media type must stay selected");
+    },
+    saveError: function (message) {
+      return t("Media-Arten konnten nicht aktualisiert werden: " + message,
+               "Media types could not be updated: " + message);
+    },
+  },
+];
+
+function pathColumnFor(root) {
+  if (!root || !root.classList) return null;
+  return PATH_MULTISELECT_COLUMNS.find(function (col) {
+    return root.classList.contains(col.selectClass);
+  }) || null;
+}
+
+function pathSaveKey(col, pathId) {
+  return col.field + ":" + pathId;
+}
+
 if (customPathsBody) {
   customPathsBody.addEventListener("mf-multiselect-change", function (ev) {
     const root = ev.target;
-    if (!root.classList || !root.classList.contains("path-site-select")) return;
-    queuePathSitesSave(Number(root.dataset.customPathId), ev.detail.values);
+    const col = pathColumnFor(root);
+    if (!col) return;
+    const pathId = Number(root.dataset.customPathId);
+    if (col.requireOne && !ev.detail.values.length) {
+      const path = customPathsCache.find((item) => item.id === pathId);
+      restorePathSelection(root, parsePathSites(path ? path[col.field] : ""));
+      showToast(col.requireOneError(), "error");
+      return;
+    }
+    queuePathFieldSave(col, pathId, ev.detail.values);
   });
   customPathsBody.addEventListener("mf-multiselect-close", function (ev) {
-    const root = ev.target;
-    if (!root.classList || !root.classList.contains("path-site-select")) return;
-    flushPathSitesSave(Number(root.dataset.customPathId));
+    const col = pathColumnFor(ev.target);
+    if (!col) return;
+    flushPathFieldSave(col, Number(ev.target.dataset.customPathId));
   });
 }
 
-function queuePathSitesSave(pathId, siteKeys) {
+function queuePathFieldSave(col, pathId, values) {
   const path = customPathsCache.find((item) => item.id === pathId);
   if (!path) return;
-  if (path._savedSites === undefined) path._savedSites = path.default_sites || "";
-  path.default_sites = siteKeys.join(",");
-  clearTimeout(customPathSaveTimers.get(pathId));
-  customPathSaveTimers.set(pathId, setTimeout(function () {
-    customPathSaveTimers.delete(pathId);
-    savePathSites(pathId);
+  // Remembered per field: the value to go back to if the PUT fails.
+  if (!path._saved) path._saved = {};
+  if (path._saved[col.field] === undefined) path._saved[col.field] = path[col.field] || "";
+  path[col.field] = values.join(",");
+  const key = pathSaveKey(col, pathId);
+  clearTimeout(customPathSaveTimers.get(key));
+  customPathSaveTimers.set(key, setTimeout(function () {
+    customPathSaveTimers.delete(key);
+    savePathField(col, pathId);
   }, PATH_SITES_SAVE_DELAY));
 }
 
-function flushPathSitesSave(pathId) {
-  if (!customPathSaveTimers.has(pathId)) return;
-  clearTimeout(customPathSaveTimers.get(pathId));
-  customPathSaveTimers.delete(pathId);
-  savePathSites(pathId);
+function flushPathFieldSave(col, pathId) {
+  const key = pathSaveKey(col, pathId);
+  if (!customPathSaveTimers.has(key)) return;
+  clearTimeout(customPathSaveTimers.get(key));
+  customPathSaveTimers.delete(key);
+  savePathField(col, pathId);
 }
 
-async function savePathSites(pathId) {
+async function savePathField(col, pathId) {
   const path = customPathsCache.find((item) => item.id === pathId);
   if (!path) return;
-  // Never let two PUTs for the same path overlap: they both send the full
-  // list, so an out-of-order response would resurrect a stale selection.
-  // Re-queue instead and let the debounce fire again once this one is done.
-  if (customPathSaveInflight.has(pathId)) {
-    queuePathSitesSave(pathId, parsePathSites(path.default_sites));
+  const key = pathSaveKey(col, pathId);
+  // Never let two PUTs for the same field of the same path overlap: they both
+  // send the full list, so an out-of-order response would resurrect a stale
+  // selection. Re-queue instead and let the debounce fire again once this one
+  // is done. Keyed per field, so the two columns do not block each other.
+  if (customPathSaveInflight.has(key)) {
+    queuePathFieldSave(col, pathId, parsePathSites(path[col.field]));
     return;
   }
-  customPathSaveInflight.add(pathId);
-  const previousDefaultSites = path._savedSites || "";
-  const siteKeys = parsePathSites(path.default_sites);
+  customPathSaveInflight.add(key);
+  const previous = (path._saved && path._saved[col.field]) || "";
+  const values = parsePathSites(path[col.field]);
+  const body = {};
+  body[col.field] = values;
 
   try {
     const save = await fetch("/api/custom-paths/" + pathId, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ default_sites: siteKeys }),
+      body: JSON.stringify(body),
     });
     const result = await save.json();
     if (result.error) {
-      path.default_sites = previousDefaultSites;
-      delete path._savedSites;
+      path[col.field] = previous;
+      if (path._saved) delete path._saved[col.field];
       renderCustomPaths(customPathsCache);
       showToast(result.error, "error");
       return;
     }
-    path._savedSites = path.default_sites;
+    path._saved[col.field] = path[col.field];
   } catch (e) {
-    path.default_sites = previousDefaultSites;
-    delete path._savedSites;
+    path[col.field] = previous;
+    if (path._saved) delete path._saved[col.field];
     renderCustomPaths(customPathsCache);
-    showToast(t("Standardseiten konnten nicht aktualisiert werden: " + e.message, "Default sites could not be updated: " + e.message), "error");
+    showToast(col.saveError(e.message), "error");
   } finally {
-    customPathSaveInflight.delete(pathId);
+    customPathSaveInflight.delete(key);
   }
+}
+
+// The "Add Path" dropdown saves nothing on its own — it is read once when the
+// row is submitted — but the same "at least one" rule applies to it.
+const newPathKindsHost = document.getElementById("newPathKinds");
+if (newPathKindsHost) {
+  newPathKindsHost.addEventListener("mf-multiselect-change", function (ev) {
+    if (ev.detail.values.length || !customPathKindOptions.length) return;
+    restorePathSelection(ev.target, [customPathKindOptions[0].slug]);
+    showToast(t("Mindestens eine Media-Art muss ausgewählt bleiben",
+                "At least one media type must stay selected"), "error");
+  });
 }
 
 async function addCustomPath() {
@@ -1728,10 +2075,13 @@ async function addCustomPath() {
   const path = document.getElementById("newPathValue").value.trim();
   if (!name || !path) { showToast(t("Name und Pfad sind erforderlich", "Name and path required")); return; }
   try {
+    // Omitted entirely when the form has no dropdown (or nothing is ticked),
+    // so the server's column default applies instead of a guess made here.
+    const kinds = newPathKindValues();
     const resp = await fetch("/api/custom-paths", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, path }),
+      body: JSON.stringify(kinds ? { name, path, media_kinds: kinds } : { name, path }),
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
@@ -2425,6 +2775,9 @@ const esc = window.mfEscape;
 
 // ─── Kick off ─────────────────────────────────────────────────────────────────
 loadSettings();
+// Cache sizes and extractor diagnostics for the Comics block on the Library
+// tab. Its own request: /api/settings carries settings, not measurements.
+loadComicCacheStats();
 
 // ─── .env migration banner ───────────────────────────────────────────────────
 

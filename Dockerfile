@@ -8,6 +8,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     mpv \
+    # bsdtar (libarchive) reads RAR4 and RAR5, which is what .cbr comic
+    # archives are; web/comics/convert.py repacks them into a cached CBZ.
+    # Chosen over unrar-free, which cannot read RAR5, and over the non-free
+    # unrar, which is not in Debian main.
+    libarchive-tools \
     xvfb \
     xauth \
     x11-utils \

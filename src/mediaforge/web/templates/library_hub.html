@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% import "_library_nav.html" as libnav %}
+{% block title %}{{ _('Library') }} — MediaForge{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='library_hub.css') }}">{% endblock %}
+{% block content %}
+<div class="library-container lib-hub">
+
+  <div class="page-header">
+    <h1 class="page-title">{{ _('Library') }}</h1>
+    <p class="page-subtitle">{{ _('Every media type has its own library. Pick one to browse it.') }}</p>
+  </div>
+
+  {# Counters are filled by library_hub.js from /api/library/overview. They are
+     rendered empty rather than server-side so the page paints immediately and
+     a slow cache read never delays the navigation the user came here for. #}
+  <div class="lib-hub-grid">
+    {% for kind in media_kinds %}
+    {% set soon = not kind.available %}
+    <a class="lib-hub-tile{{ ' lib-hub-tile--soon' if soon }}"
+       href="{{ url_for('library_kind_page', kind_url=kind.url) }}"
+       data-kind="{{ kind.slug }}"
+       {% if soon %}aria-disabled="true"{% endif %}>
+      <span class="lib-hub-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+             stroke-linecap="round" stroke-linejoin="round">{{ libnav.kind_icon(kind.slug) }}</svg>
+      </span>
+      <span class="lib-hub-body">
+        <span class="lib-hub-title">
+          {{ libnav.kind_label(kind.slug) }}
+          {% if soon %}<span class="mf-facet lib-hub-soon">{{ _('soon') }}</span>{% endif %}
+        </span>
+        <span class="lib-hub-blurb">{{ libnav.kind_blurb(kind.slug) }}</span>
+        {% if not soon %}
+        <span class="lib-hub-stats" id="libHubStats-{{ kind.slug }}" aria-live="polite">
+          <span class="lib-hub-stat lib-hub-stat--placeholder">{{ _('Loading…') }}</span>
+        </span>
+        {% endif %}
+      </span>
+      {% if not soon %}
+      <svg class="lib-hub-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+
+  <p class="lib-hub-foot">
+    {{ _('Which library a folder shows up in is set per download path.') }}
+    <a href="{{ url_for('settings_page') }}#paths">{{ _('Configure paths') }}</a>
+  </p>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='library_hub.js') }}"></script>
+{% endblock %}

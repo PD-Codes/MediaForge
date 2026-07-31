@@ -25,6 +25,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from ..config import MEDIAFORGE_CONFIG_DIR
 from ..logger import get_logger
+from .media_kinds import DEFAULT_KINDS_CSV as _DEFAULT_MEDIA_KINDS
 
 logger = get_logger(__name__)
 
@@ -115,6 +116,7 @@ SENSITIVE_KEYS: frozenset = frozenset({
     "crunchyroll_session_key",
     "opensubtitles_api_key",
     "opensubtitles_password",
+    "comicvine_api_key",
 })
 
 # Sensitive keys registered at runtime on top of the frozen core set above --
@@ -1279,7 +1281,8 @@ CREATE TABLE IF NOT EXISTS custom_paths (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     path TEXT NOT NULL,
-    default_sites TEXT NOT NULL DEFAULT ''
+    default_sites TEXT NOT NULL DEFAULT '',
+    media_kinds TEXT NOT NULL DEFAULT 'video'
 );
 """
 
@@ -1298,6 +1301,16 @@ def init_custom_paths_db():
             conn.execute(
                 "ALTER TABLE custom_paths ADD COLUMN default_sites TEXT NOT NULL DEFAULT ''"
             )
+        # Which libraries a path feeds (see web/media_kinds.py). SQLite fills
+        # every existing row with the column default, so an instance updating
+        # into this release finds all of its paths assigned to "video" -- a
+        # path that also holds eBooks has to be ticked once in Settings. The
+        # book library's empty state links there for exactly this reason.
+        if "media_kinds" not in columns:
+            conn.execute(
+                "ALTER TABLE custom_paths ADD COLUMN media_kinds TEXT NOT NULL "
+                f"DEFAULT '{_DEFAULT_MEDIA_KINDS}'"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -1307,19 +1320,20 @@ def get_custom_paths():
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, name, path, default_sites FROM custom_paths ORDER BY id"
+            "SELECT id, name, path, default_sites, media_kinds FROM custom_paths ORDER BY id"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 
-def add_custom_path(name, path, default_sites=""):
+def add_custom_path(name, path, default_sites="", media_kinds=None):
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO custom_paths (name, path, default_sites) VALUES (?, ?, ?)",
-            (name, path, default_sites),
+            "INSERT INTO custom_paths (name, path, default_sites, media_kinds) "
+            "VALUES (?, ?, ?, ?)",
+            (name, path, default_sites, media_kinds or _DEFAULT_MEDIA_KINDS),
         )
         conn.commit()
         return cur.lastrowid
@@ -1327,7 +1341,8 @@ def add_custom_path(name, path, default_sites=""):
         conn.close()
 
 
-def update_custom_path(path_id, name=None, path=None, default_sites=None):
+def update_custom_path(path_id, name=None, path=None, default_sites=None,
+                       media_kinds=None):
     """Update the supplied fields of a custom download path."""
     fields = []
     values = []
@@ -1340,6 +1355,9 @@ def update_custom_path(path_id, name=None, path=None, default_sites=None):
     if default_sites is not None:
         fields.append("default_sites = ?")
         values.append(default_sites)
+    if media_kinds is not None:
+        fields.append("media_kinds = ?")
+        values.append(media_kinds)
     if not fields:
         return
 
@@ -1400,7 +1418,8 @@ def get_custom_path_by_id(path_id):
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT id, name, path, default_sites FROM custom_paths WHERE id = ?", (path_id,)
+            "SELECT id, name, path, default_sites, media_kinds FROM custom_paths WHERE id = ?",
+            (path_id,),
         ).fetchone()
         return dict(row) if row else None
     finally:

@@ -782,6 +782,39 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   cursor: default;
 }
 
+/* ── Library sub-menu: media kinds that are not implemented yet ───────
+   Listed rather than hidden, so the sub-menu shows where the library is
+   going. They still navigate (to a page that explains itself), but must not
+   compete with the shelves that actually hold something: no hover accent,
+   quieter text, and a "soon" tag carrying the meaning so the styling alone
+   never has to. Kept legible on purpose -- a greyed entry that fails
+   contrast reads as a rendering bug, not as a plan. */
+.sidebar-sub-link.sidebar-sub-soon {
+  color: var(--text-muted);
+  cursor: default;
+}
+.sidebar-sub-link.sidebar-sub-soon:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+.sidebar-sub-link.sidebar-sub-soon:hover::before { opacity: 0; }
+.sidebar-sub-link.sidebar-sub-soon svg { opacity: 0.6; }
+
+.sidebar-soon-pill {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0 5px;
+  height: 15px;
+  line-height: 15px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 /* Small ringed dot before the "M", drawn in the accent colour */
 .sidebar-module-pill::before {
   content: '';
