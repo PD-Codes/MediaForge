@@ -452,7 +452,21 @@ class _YtdlpQuietLogger:
             logger.warning(f"[yt-dlp] {msg}")
 
     def error(self, msg):
-        logger.error(f"[yt-dlp] {msg}")
+        # WARNING, not ERROR, on purpose. yt-dlp reports every dead or blocked
+        # hoster link as an error ("HTTP Error 404: Not Found", "Unable to
+        # download webpage", "Unable to extract ..."), and download() walks
+        # through the hosters a post lists until one works -- so even a download
+        # that ultimately SUCCEEDS routes several of these through here. At
+        # ERROR level telemetry/hooks.py turned each one into a crash report
+        # against MediaForge, which was by far the largest source of noise in
+        # the crash channel.
+        #
+        # No signal is lost: a download that really fails still ends in
+        # `raise RuntimeError(f"yt-dlp download failed (rc={ret})")` below, and
+        # the queue worker reports THAT -- one report per actual failure instead
+        # of one per attempted hoster. The line stays fully visible in the
+        # user's console either way.
+        logger.warning(f"[yt-dlp] {msg}")
 
 
 # Thread-safe global for current ffmpeg download progress (used by web UI)

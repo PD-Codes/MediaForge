@@ -39,7 +39,7 @@ import threading
 
 from ..logger import get_logger
 from . import events
-from .classify import is_user_cancellation
+from .classify import is_transport_failure, is_user_cancellation
 from .client import get_client
 
 logger = get_logger(__name__)
@@ -153,10 +153,21 @@ class _TelemetryLogHandler(logging.Handler):
             # this thread happens to be in -- for a log line that says "download
             # cancelled" that context IS the cancellation, and reporting it would
             # file a crash report for a user pressing the Cancel button.
-            if is_user_cancellation(message=record.getMessage()):
+            raw_message = record.getMessage()
+            if is_user_cancellation(message=raw_message):
+                return
+            # "The remote side never answered" -- a DNS failure, a read timeout
+            # against a source site, a refused connection. The code that logged
+            # this already handled it; it is the network being the network, not
+            # a defect. Checked on the message first for the same reason as the
+            # cancellation check above: most of these are logged as plain text
+            # with no exception object attached.
+            if is_transport_failure(message=raw_message):
                 return
             exc_info = record.exc_info or sys.exc_info()
             if exc_info and exc_info[0] is not None and is_user_cancellation(exc_info[0], exc_info[1]):
+                return
+            if exc_info and exc_info[0] is not None and is_transport_failure(exc_info[0], exc_info[1]):
                 return
             if exc_info and exc_info[0] is not None:
                 event = events.build_crash_event(*exc_info)

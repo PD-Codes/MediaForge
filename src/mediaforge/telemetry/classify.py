@@ -13,12 +13,14 @@ event builders can both use it without an import cycle:
      reporting it buries actual bugs in noise and inflates every install's
      crash count.
 
-  2. ``is_server_unreachable()`` -- is this exception just "the devInfo
-     server is not answering right now"? Maintenance windows, a filtered
-     DNS, no internet at all: all completely routine for an optional,
-     entirely non-essential side channel. Those must never produce console
-     output, so the callers that talk to the devInfo server log them at
-     DEBUG instead of WARNING/ERROR.
+  2. ``is_server_unreachable()`` / ``is_transport_failure()`` -- did the
+     remote side simply never answer? Maintenance windows, a filtered DNS, a
+     read timeout, no internet at all. Two callers, two purposes, one shared
+     pair of tables: ``is_server_unreachable()`` decides the LOG LEVEL for the
+     optional devInfo side channel (those must never produce console output,
+     so its callers log at DEBUG), while ``is_transport_failure()`` decides
+     whether the crash channel reports it at all -- a source site timing out
+     is the network being the network, not a defect in this app.
 
 Both functions are deliberately generous in what they match: a false
 positive here means one report is not sent (harmless), a false negative
@@ -191,7 +193,7 @@ def is_cancel_status(status) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 2. devInfo server simply not reachable
+# 2. Remote side simply not reachable (devInfo server or a source site)
 # ---------------------------------------------------------------------------
 
 # Again by class name: niquests/urllib3/socket all raise their own types and
@@ -235,6 +237,47 @@ _UNREACHABLE_MESSAGE_PATTERNS = (
     re.compile(r"service (temporarily )?unavailable", re.IGNORECASE),
     re.compile(r"gateway time-?out", re.IGNORECASE),
 )
+
+
+def is_transport_failure(exc_type=None, exc_value=None, message=None) -> bool:
+    """True when this error is "the remote side never answered properly".
+
+    Same matching as is_server_unreachable() below and deliberately sharing its
+    two tables, but with a different CALLER and a different signature: this one
+    is used by the crash channel (hooks._TelemetryLogHandler) and therefore has
+    to work from a formatted log MESSAGE alone, because the majority of these
+    never carry an exception object at the point they are logged.
+
+    Why the crash channel needs it at all: a DNS failure, a read timeout against
+    a source site, a refused connection -- none of them is a defect in this app.
+    They are the normal weather of scraping third-party sites over whatever
+    network the user happens to be on. Every one of them was being filed as a
+    crash report, e.g.
+
+        HTTPSConnectionPool(host='serienstream.to', port=443): Read timed out.
+
+    Source-site reachability is already tracked properly and separately (the
+    UpTime monitor and the DNS check), so nothing is lost by keeping it out of
+    the crash list -- that channel exists for real defects.
+
+    Applied ONLY where code caught the failure and logged it, never to an
+    uncaught exception: a read timeout that kills an entire worker thread means
+    a missing error path, which IS a defect worth reporting. See
+    hooks._report_exception, which deliberately does not call this.
+    """
+    try:
+        if exc_type is not None and getattr(exc_type, "__name__", "") in _UNREACHABLE_EXCEPTION_NAMES:
+            return True
+        if exc_value is not None and is_server_unreachable(exc_value):
+            return True
+        if message:
+            text = str(message)
+            for pattern in _UNREACHABLE_MESSAGE_PATTERNS:
+                if pattern.search(text):
+                    return True
+    except Exception:
+        return False
+    return False
 
 
 def is_server_unreachable(exc) -> bool:
