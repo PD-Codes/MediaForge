@@ -791,10 +791,24 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             for p in get_devinfo_posts()
             if (p.get("type") or "").strip().lower() == "warning"
         ]
-        # Settings -> General -> "Use the new home page". Read per request so
-        # the switch takes effect on the next load instead of at startup.
-        _new_home = (get_setting("new_home_enabled")
-                     or os.environ.get("MEDIAFORGE_NEW_HOME_ENABLED", "0")) == "1"
+        # Which home page layout this request gets. Read per request so the
+        # switch takes effect on the next load instead of at startup.
+        #
+        # The account wins over the instance: Settings -> Start Page sets the
+        # DEFAULT (and is what a fresh account sees), and a user who tried the
+        # other layout for themselves keeps their choice. Same relationship the
+        # rows and filters of that page have had since Start Page 2.0 -- before
+        # this, one admin looking at the new layout switched it for everyone.
+        _prefs = _resolve_user_ui_prefs()
+        _default_new_home = (get_setting("new_home_enabled")
+                             or os.environ.get("MEDIAFORGE_NEW_HOME_ENABLED", "0")) == "1"
+        _own = str(_prefs.get("new_home") or "")
+        _new_home = (_own == "1") if _own in ("0", "1") else _default_new_home
+        # The banner on the classic page that offers the new one. Shown only
+        # where it is actionable and only while it is news: never on the new
+        # layout itself, and never again once the user dismissed it or tried
+        # the new page at least once (both write new_home_promo_done).
+        _show_promo = not _new_home and str(_prefs.get("new_home_promo_done") or "") != "1"
         return render_template(
             "index.html",
             lang_labels=LANG_LABELS,
@@ -802,6 +816,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             supported_providers=WORKING_PROVIDERS,
             devinfo_warnings=_devinfo_warnings,
             new_home=_new_home,
+            show_new_home_promo=_show_promo,
         )
 
 

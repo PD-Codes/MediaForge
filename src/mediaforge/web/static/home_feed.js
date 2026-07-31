@@ -584,40 +584,10 @@
   loadFilters();
   load();
 
-  // Opened from the "Customise" button next to the chip row. The controls
-  // themselves are the Settings tab's, rendered into a modal here because
-  // /settings is admin-only and these settings are not.
-  window.openStartPageModal = function () {
-    const overlay = document.getElementById("startPageOverlay");
-    if (!overlay) return;
-    overlay.style.display = "block";
-    if (window.MFScrollLock && typeof window.MFScrollLock.lock === "function") {
-      window.MFScrollLock.lock();
-    } else {
-      document.body.style.overflow = "hidden";
-    }
-    if (window.MFStartPage) window.MFStartPage.reload();
-  };
+  // The Start Page modal (openStartPageModal and friends) used to live here.
+  // It moved to static/start_page.js, which is the file that owns the form
+  // inside it -- and, unlike this one, is loaded on BOTH home page layouts.
+  // The classic page needs the modal too: /settings redirects a non-admin, so
+  // it is the only place a normal account can switch layouts at all.
 
-  window.closeStartPageModal = function () {
-    const overlay = document.getElementById("startPageOverlay");
-    if (!overlay) return;
-    overlay.style.display = "none";
-    if (window.MFScrollLock && typeof window.MFScrollLock.unlock === "function") {
-      window.MFScrollLock.unlock();
-    } else {
-      document.body.style.overflow = "";
-    }
-  };
-
-  window.closeStartPageModalOutside = function (ev) {
-    if (ev.target === document.getElementById("startPageOverlay")) window.closeStartPageModal();
-  };
-
-  document.addEventListener("keydown", function (ev) {
-    const overlay = document.getElementById("startPageOverlay");
-    if (ev.key === "Escape" && overlay && overlay.style.display === "block") {
-      window.closeStartPageModal();
-    }
-  });
 })();

@@ -1231,3 +1231,154 @@ a.hp-item:focus-visible {
   .hp-item,
   .hp-item-bar i { transition: none; }
 }
+
+
+/* ===================================================================
+   "Try the new home page" banner (.nh-promo)
+   -------------------------------------------------------------------
+   Rendered by index.html only on the CLASSIC layout, and only until the
+   account has dismissed it or switched over once — the server decides
+   (app.py, show_new_home_promo), so there is nothing here to hide after
+   the fact and nothing that flashes on a slow paint.
+
+   Sits above the hero on purpose: below the search field it would compete
+   with the poster rows, and inside the hero it would read as part of the
+   product name. Styled as an invitation, not as a warning — .src-alert
+   right above is the red one, and two banners that look alike teach people
+   to ignore both.
+   =================================================================== */
+.nh-promo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  position: relative;
+  margin: 4px 0 22px;
+  padding: 14px 44px 14px 16px;      /* right: room for the × */
+  border-radius: var(--radius-lg, 14px);
+  border: 1px solid var(--accent);
+  /* color-mix keeps this on the accent whatever theme pack is active; the
+     second colour is the fallback for a browser without it. */
+  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+  color: var(--text-primary);
+}
+
+.nh-promo-badge {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* flex-basis, not width: the body takes the middle and gives way to the
+   buttons before it wraps them onto their own line. min-width:0 because a
+   flex child otherwise refuses to shrink below its longest word. */
+.nh-promo-body { flex: 1 1 280px; min-width: 0; }
+.nh-promo-title { font-weight: 700; font-size: 0.98rem; margin-bottom: 2px; }
+.nh-promo-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #b9c0cc);
+  line-height: 1.45;
+}
+
+.nh-promo-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.nh-promo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.nh-promo-btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+.nh-promo-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+.nh-promo-btn.primary:hover { background: var(--accent-hover); }
+.nh-promo-btn[disabled] { opacity: 0.6; cursor: default; }
+
+.nh-promo-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  /* 32px, not the 20px the glyph needs: this is the one control people hit
+     on a phone, and a target smaller than this is the reason banners feel
+     impossible to close. */
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.nh-promo-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+@media (max-width: 640px) {
+  /* The badge would otherwise eat a whole row of its own next to a title
+     that has nowhere left to go. */
+  .nh-promo { padding-right: 16px; gap: 8px 12px; }
+  .nh-promo-badge { order: -1; }
+  .nh-promo-actions { width: 100%; }
+  .nh-promo-btn { flex: 1 1 auto; }
+  .nh-promo-close { position: static; align-self: flex-start; order: -1; margin-left: auto; }
+}
+
+
+/* The classic layout's way into "Your home page". Reuses .feed-customize so
+   the two layouts offer the same control, but with its label showing: on the
+   new page the gear sits in a toolbar that explains it, here it stands alone
+   under the source chips and an unlabelled icon would be a guess.
+
+   The width and the fixed 40px the phone breakpoint gives .feed-customize are
+   both undone -- they size an icon-only button. */
+.home-customize-row {
+  display: flex;
+  justify-content: center;
+  margin: -14px 0 26px;
+}
+
+/* Declared after the phone breakpoint's `.feed-customize { width: 40px }`
+   further up the file, so this wins on equal specificity without !important. */
+.home-customize-row .feed-customize {
+  width: auto;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+}
+
+.home-customize-row .feed-customize svg { width: 15px; height: 15px; }

@@ -3778,6 +3778,22 @@ USER_UI_PREF_KEYS = {
     "reader_face": lambda v: v in ("serif", "sans", "original"),
     "reader_lead": lambda v: v in ("1.4", "1.65", "1.95"),
     "reader_width": lambda v: v in ("34", "44", "62"),
+    # Which home page layout THIS account sees. "" means "follow the instance
+    # default" (Settings -> Start Page, new_home_enabled), "1"/"0" overrule it.
+    #
+    # Per account and not just instance-wide, because the switch is an
+    # invitation to try something: an admin who wanted to look at the new
+    # layout for five minutes changed it for every account on the instance,
+    # so nobody could try it without imposing it. The rows and filters of the
+    # same page have worked this way (own value, falling back to the
+    # instance default) since Start Page 2.0 -- this is the layout catching up.
+    "new_home": lambda v: v in ("", "0", "1"),
+    # The v1 banner that advertises the new layout: "1" once the user has
+    # dismissed it, or has tried the new page at least once. Stored on the
+    # account rather than in localStorage so "go away" survives the next
+    # device -- the whole complaint about banners is having to close them
+    # again and again.
+    "new_home_promo_done": lambda v: v in ("", "0", "1"),
 }
 
 

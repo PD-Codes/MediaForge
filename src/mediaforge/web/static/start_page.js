@@ -284,6 +284,29 @@
         save(scope);
       });
     }
+    // Which layout THIS account sees. Deliberately not part of save(scope):
+    // the rows/filters live in one packed home_feed_layout string, while this
+    // is its own preference key that the server reads before the page is even
+    // built (app.py's index()). Changing it means a reload, not a repaint.
+    const layout = document.getElementById("spLayout-" + scope);
+    if (layout) {
+      layout.addEventListener("change", function () {
+        const value = ["", "0", "1"].indexOf(layout.value) === -1 ? "" : layout.value;
+        layout.disabled = true;
+        fetch("/api/user/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_home: value }),
+        }).then(function (r) {
+          if (!r.ok) throw new Error("save failed");
+          if (window._USER_PREFS) window._USER_PREFS.new_home = value;
+          toast(txt("layout_saved", "Saved — reload the home page"));
+        }).catch(function () {
+          toast(txt("save_failed", "Could not be saved"));
+        }).then(function () { layout.disabled = false; });
+      });
+    }
+
     const resetBtn = document.getElementById("spReset-" + scope);
     if (resetBtn) resetBtn.addEventListener("click", function () { reset(scope); });
   }
@@ -317,6 +340,16 @@
       };
       const cards = document.getElementById("spCards-" + scope);
       if (cards) cards.value = String(state[scope].limit);
+      // Straight from window._USER_PREFS rather than from the feed catalogue:
+      // the layout is not part of the feed config, and "" (follow the
+      // instance default) has to survive as its own value here -- reading a
+      // missing key as "0" would silently pin every account to the classic
+      // page the first time they opened this form.
+      const layoutSel = document.getElementById("spLayout-" + scope);
+      if (layoutSel) {
+        const stored = String((window._USER_PREFS || {}).new_home || "");
+        layoutSel.value = ["0", "1"].indexOf(stored) === -1 ? "" : stored;
+      }
       renderRows(scope);
       renderChecks(scope);
     });
@@ -330,6 +363,49 @@
   }
 
   window.MFStartPage = { init: init, reload: function () { catalogue = null; load(); } };
+
+  // ------------------------------------------------------------- the modal
+  // Opened from the "Customise" button on the new layout and from "Your home
+  // page" on the classic one. The controls inside are the Settings tab's,
+  // rendered into a modal here because /settings redirects a non-admin and
+  // these settings are not admin business.
+  //
+  // Lives here rather than in home_feed.js (where it started) because that
+  // file only loads on the new layout -- which left the classic page with a
+  // button calling a function that did not exist.
+  window.openStartPageModal = function () {
+    const overlay = document.getElementById("startPageOverlay");
+    if (!overlay) return;
+    overlay.style.display = "block";
+    if (window.MFScrollLock && typeof window.MFScrollLock.lock === "function") {
+      window.MFScrollLock.lock();
+    } else {
+      document.body.style.overflow = "hidden";
+    }
+    if (window.MFStartPage) window.MFStartPage.reload();
+  };
+
+  window.closeStartPageModal = function () {
+    const overlay = document.getElementById("startPageOverlay");
+    if (!overlay) return;
+    overlay.style.display = "none";
+    if (window.MFScrollLock && typeof window.MFScrollLock.unlock === "function") {
+      window.MFScrollLock.unlock();
+    } else {
+      document.body.style.overflow = "";
+    }
+  };
+
+  window.closeStartPageModalOutside = function (ev) {
+    if (ev.target === document.getElementById("startPageOverlay")) window.closeStartPageModal();
+  };
+
+  document.addEventListener("keydown", function (ev) {
+    const overlay = document.getElementById("startPageOverlay");
+    if (ev.key === "Escape" && overlay && overlay.style.display === "block") {
+      window.closeStartPageModal();
+    }
+  });
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

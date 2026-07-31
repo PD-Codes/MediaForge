@@ -46,6 +46,7 @@
     'show_row': _('Show this row'),
     'saved': _('Saved'),
     'save_failed': _('Could not be saved'),
+    'layout_saved': _('Saved — reload the home page'),
     'reset_done': _('Reset to the instance default'),
     'using_default': _('Following the instance default'),
     'using_own': _('You changed this — the instance default no longer applies')
@@ -75,6 +76,26 @@
       <span>{{ _('Use the new home page (Beta)') }}</span>
     </label>
     <div class="settings-hint">{{ _('Groups the discovery rows by question instead of by source: "New this week" and "Popular right now" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this.') }}</div>
+    <div class="settings-hint">{{ _('This is the default for accounts that have not picked a layout themselves — everyone can overrule it under "Your home page".') }}</div>
+  </div>
+  {% endif %}
+
+  {# The same decision for THIS account. A select and not a checkbox, because
+     "follow whatever the admin set" is a real third state and a checkbox
+     cannot say it: switching to the new layout and switching back are two
+     different things, and only one of them should keep following the
+     instance default afterwards. #}
+  {% if scope == 'user' %}
+  <div class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Layout') }}</h3>
+    <div class="settings-hint">{{ _('Which home page you see. Only you — nobody else on this instance is affected.') }}</div>
+    <div class="settings-row">
+      <select class="mf-token-input" id="spLayout-user">
+        <option value="">{{ _('Follow the instance default') }}</option>
+        <option value="0">{{ _('Classic home page') }}</option>
+        <option value="1">{{ _('New home page (Beta)') }}</option>
+      </select>
+    </div>
   </div>
   {% endif %}
 

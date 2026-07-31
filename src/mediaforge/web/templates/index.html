@@ -204,6 +204,36 @@
 </div>
 {% endif %}
 <div class="container">
+  {# ── "try the new home page" ───────────────────────────────────────────
+     Only rendered on the classic layout, and only until this account has
+     either dismissed it or switched over once (app.py decides, see
+     show_new_home_promo). Not rendered at all otherwise: a banner that the
+     client hides after the fact still ships its text to everyone and still
+     flashes on a slow paint.
+
+     The switch is per ACCOUNT. Trying the new layout does not change what
+     anybody else sees, which is the whole reason this is an invitation and
+     not an announcement. #}
+  {% if show_new_home_promo %}
+  <div class="nh-promo" id="newHomePromo" role="region"
+       aria-label="{{ _('New home page') }}">
+    <span class="nh-promo-badge">{{ _('Beta') }}</span>
+    <div class="nh-promo-body">
+      <div class="nh-promo-title">{{ _('Try the new home page') }}</div>
+      <div class="nh-promo-text">{{ _('Rows grouped by question instead of by source, with your watch progress and watchlist on top. Only you see the change — switch back at any time in Settings.') }}</div>
+    </div>
+    <div class="nh-promo-actions">
+      <button type="button" class="nh-promo-btn primary" id="newHomePromoTry">
+        {{ _('Try it now') }}
+      </button>
+      <button type="button" class="nh-promo-btn" id="newHomePromoHide">
+        {{ _("Don't show again") }}
+      </button>
+    </div>
+    <button type="button" class="nh-promo-close" id="newHomePromoClose"
+            aria-label="{{ _("Don't show again") }}" title="{{ _("Don't show again") }}">&times;</button>
+  </div>
+  {% endif %}
   <div class="site-hero home-hero">
     <h1 id="pageHeading">{{ _('What do you want to download?') }}</h1>
     <p class="hero-sub" id="pageSubtitle">{{ _('One title is enough — MediaForge asks every active source at once.') }}</p>
@@ -339,6 +369,26 @@
      stacked on top of each other is a puzzle, not a control. #}
   {% if not new_home %}
   <div class="home-chips" id="homeSourceChips"></div>
+  {# The way in to "which home page do I want", on the classic layout too.
+     Not optional politeness: /settings redirects a non-admin to "/", so this
+     modal is the ONLY place a normal account can pick a layout -- and the
+     promo banner above is gone for good once it has been answered. Without
+     this, dismissing the banner would be a one-way door onto v1. #}
+  <div class="home-customize-row">
+    <button type="button" class="feed-customize" id="homeCustomize"
+            onclick="openStartPageModal()" title="{{ _('Customise this page') }}"
+            aria-label="{{ _('Customise this page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+        <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+        <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/>
+        <line x1="17" y1="16" x2="23" y2="16"/>
+      </svg>
+      <span>{{ _('Your home page') }}</span>
+    </button>
+  </div>
   {% endif %}
   {# Only rendered while something is downloading -- see renderHomeRunStrip(),
      fed by the queue poll that runs anyway. #}
@@ -485,10 +535,10 @@
   </div>
   {% endif %}
 </div>
-{% if new_home %}
 {# Start Page settings for this account. Same macro the Settings tab uses --
    an admin sees the instance defaults there as well, everyone sees their own
-   here. #}
+   here. Rendered on BOTH layouts: /settings redirects a non-admin, so this is
+   the only place a normal account can switch between them at all. #}
 <div class="directlink-overlay" id="startPageOverlay" onclick="closeStartPageModalOutside(event)" style="display:none">
   <div class="directlink-modal sp-modal">
     <button class="close" onclick="closeStartPageModal()" aria-label="{{ _('Close') }}">
@@ -502,13 +552,62 @@
     {{ startpage.start_page_form('user') }}
   </div>
 </div>
-{% endif %}
 {% include "shared_modals.html" %}
 {% endblock %} {% block scripts %}
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% if new_home %}<script src="{{ url_for('static', filename='home_feed.js') }}"></script>
 <script src="{{ url_for('static', filename='home_panels.js') }}"></script>{% endif %}
-{% if new_home %}{{ startpage.start_page_i18n() }}
-<script src="{{ url_for('static', filename='start_page.js') }}"></script>{% endif %}
+{{ startpage.start_page_i18n() }}
+<script src="{{ url_for('static', filename='start_page.js') }}"></script>
 <script src="{{ url_for('static', filename='devinfo_banner.js') }}"></script>
+{% if show_new_home_promo %}
+<script>
+  /* "Try the new home page" — see .nh-promo in index.css.
+     Inline and not a static file because the whole thing is three handlers
+     that only ever exist on the classic layout, and only until this account
+     has answered once. Both answers write the same preference, so neither
+     path can leave the banner coming back.
+     Both buttons also write new_home_promo_done, because "I tried it" is an
+     answer too -- coming back to v1 later must not re-open the pitch. */
+  (function () {
+    var promo = document.getElementById("newHomePromo");
+    if (!promo) return;
+
+    function save(prefs) {
+      return fetch("/api/user/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(prefs),
+      }).then(function (r) {
+        if (!r.ok) throw new Error("save failed");
+        if (window._USER_PREFS) Object.assign(window._USER_PREFS, prefs);
+      });
+    }
+
+    function dismiss() {
+      /* Optimistic: the banner is gone the moment it is clicked. A failed
+         save is not worth a message here -- the worst case is that it shows
+         up again on the next visit, which is exactly what the user asked to
+         avoid but not something they need to read about now. */
+      promo.remove();
+      save({ new_home_promo_done: "1" }).catch(function () {});
+    }
+
+    document.getElementById("newHomePromoHide").addEventListener("click", dismiss);
+    document.getElementById("newHomePromoClose").addEventListener("click", dismiss);
+
+    document.getElementById("newHomePromoTry").addEventListener("click", function () {
+      var btn = this;
+      /* NOT optimistic, unlike dismiss(): this one reloads into a different
+         layout, so a save that did not land would drop the user back on the
+         classic page with no explanation. Wait for the answer, and stay put
+         with the button re-enabled if it never comes. */
+      btn.disabled = true;
+      save({ new_home: "1", new_home_promo_done: "1" })
+        .then(function () { window.location.reload(); })
+        .catch(function () { btn.disabled = false; });
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}

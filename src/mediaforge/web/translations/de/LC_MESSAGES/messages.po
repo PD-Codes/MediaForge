@@ -6791,3 +6791,51 @@ msgstr "{} Dinge brauchen deine Aufmerksamkeit: fehlgeschlagene Downloads, plus 
 msgctxt "reader fit"
 msgid "Original"
 msgstr "Original"
+
+#: src/mediaforge/web/templates/_start_page_form.html
+msgid "Saved — reload the home page"
+msgstr "Gespeichert — Startseite neu laden"
+
+#: src/mediaforge/web/templates/_start_page_form.html
+msgid "This is the default for accounts that have not picked a layout themselves — everyone can overrule it under \"Your home page\"."
+msgstr "Das ist der Standard für Konten, die selbst kein Layout gewählt haben — überstimmen kann ihn jeder unter „Deine Startseite\"."
+
+#: src/mediaforge/web/templates/_start_page_form.html
+msgid "Which home page you see. Only you — nobody else on this instance is affected."
+msgstr "Welche Startseite du siehst. Nur du — für alle anderen auf dieser Instanz ändert sich nichts."
+
+#: src/mediaforge/web/templates/_start_page_form.html
+msgid "Follow the instance default"
+msgstr "Dem Instanz-Standard folgen"
+
+#: src/mediaforge/web/templates/_start_page_form.html
+msgid "Classic home page"
+msgstr "Klassische Startseite"
+
+#: src/mediaforge/web/templates/_start_page_form.html
+msgid "New home page (Beta)"
+msgstr "Neue Startseite (Beta)"
+
+#: src/mediaforge/web/templates/index.html
+msgid "New home page"
+msgstr "Neue Startseite"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Beta"
+msgstr "Beta"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Try the new home page"
+msgstr "Teste die neue Startseite"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Rows grouped by question instead of by source, with your watch progress and watchlist on top. Only you see the change — switch back at any time in Settings."
+msgstr "Reihen nach Frage gruppiert statt nach Quelle, mit deinem Wiedergabefortschritt und deiner Merkliste ganz oben. Die Änderung sieht nur du — zurückwechseln kannst du jederzeit in den Einstellungen."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Try it now"
+msgstr "Jetzt ausprobieren"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Don't show again"
+msgstr "Nicht mehr anzeigen"
