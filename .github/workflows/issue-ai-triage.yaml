@@ -71,6 +71,7 @@ jobs:
               "(e.g., `src/mediaforge/extractors/...`, `src/mediaforge/providers.py`, or Docker/WebUI layer).\n"
               f"5. Start your response with an appropriate header like '🤖 **AI Triage Assistant**' (translated into the user's language).\n"
               f"6. End your response with `---` and an italic disclaimer in the user's language stating that this is an automated preliminary AI analysis (Model: {model}) to assist troubleshooting, and that developers will review it soon.\n\n"
+              "If the issue is a about a module then tell me that we are not maintaining the modules who are not from PD-Codes. Tag the user who createded the module to help.\n\n"
               "CRITICAL RULE: You MUST write your entire response (including header, greeting, analysis, and disclaimer) "
               "in the EXACT same language that the user wrote their issue in (e.g. German, English, French, Spanish, etc.). "
               "Format your response in clean GitHub Markdown."
