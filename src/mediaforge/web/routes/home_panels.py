@@ -226,51 +226,79 @@ def _download_roots() -> list:
     return roots
 
 
-def _volume_key(path, usage):
-    """Identity of the volume a path lives on.
+def _device_id(path):
+    """``st_dev`` of a path, or ``None`` when it cannot be read.
 
-    ``st_dev`` is the right answer and is stable on both Linux and Windows
-    (where Python fills it from the volume serial number). The size pair is
-    only a fallback for the rare stat() failure -- keying on (total, free)
-    alone was the bug: two roots on two different disks that happen to hold
-    the same amount of data collapsed into one row, so the panel silently
-    dropped configured paths.
+    ``st_dev`` identifies the SUPERBLOCK, not the mount point, which is
+    exactly the question this panel asks. In Docker that is what makes six
+    bind mounts of one NAS export
+
+        /mnt/nas/X/Anime:/app/downloads-main
+        /mnt/nas/X/Filme:/app/downloads-movies
+        ...
+
+    answer with one id: a bind mount does not create a filesystem, it grafts
+    the existing one into a second place, so every one of those paths reports
+    the device of the filesystem holding /mnt/nas. Mount the shares
+    SEPARATELY on the host (one NFS/CIFS mount per share) and they are
+    genuinely different superblocks with their own free space -- different
+    ids, and rightly so, even though one NAS is behind all of them.
+
+    On Windows Python fills st_dev from the volume serial number, so the same
+    reasoning holds there.
     """
     try:
-        return ("dev", os.stat(str(path)).st_dev)
+        return os.stat(str(path)).st_dev
     except OSError:
-        return ("size", usage.total, usage.free)
+        return None
 
 
 def _disk_rows() -> list:
     """(label, used, total) per download root, cached -- see _DISK_TTL.
 
-    Every configured root is reported. Roots that share a volume are merged
-    into ONE row rather than dropped, and the row names all of them -- a user
-    who configured five paths must be able to see all five accounted for,
-    while five identical bars would be worse than one bar listing five names.
+    Every configured root is accounted for. Roots that turn out to sit on the
+    same storage are merged into ONE row that names all of them, rather than
+    all but the first being dropped -- that silent drop was the bug: someone
+    with six configured paths saw three bars and no way to tell which three.
+
+    Two roots count as the same storage when EITHER holds:
+
+      * they report the same ``st_dev`` -- one filesystem, however many mount
+        points (the Docker bind-mount case above), or
+      * they report byte-identical total AND free space. This second test is
+        not redundant: ZFS datasets and btrfs subvolumes each get their own
+        st_dev while sharing one pool's free space, so a NAS would otherwise
+        draw six identical bars claiming to be six independent disks.
+
+    Merging two genuinely separate disks needs them to agree to the byte on
+    both numbers, and even then it costs nothing but a combined label -- no
+    path can go missing, which is the property that actually matters here.
     """
     now = time.monotonic()
     with _cache_lock:
         if now - _disk_cache["at"] < _DISK_TTL:
             return list(_disk_cache["value"])
     rows = []
-    index = {}
+    by_dev = {}
+    by_size = {}
     for label, path in _download_roots():
         try:
             usage = shutil.disk_usage(str(path))
         except OSError:
             continue          # path not mounted right now -- not an error here
-        key = _volume_key(path, usage)
-        if key in index:
-            existing = index[key]
+        dev = _device_id(path)
+        size_key = (usage.total, usage.free)
+        existing = (by_dev.get(dev) if dev is not None else None) or by_size.get(size_key)
+        if existing is not None:
             if label and label not in existing["labels"]:
                 existing["labels"].append(label)
-            continue
-        entry = {"labels": [label] if label else [],
-                 "used": usage.total - usage.free, "total": usage.total}
-        index[key] = entry
-        rows.append(entry)
+        else:
+            existing = {"labels": [label] if label else [],
+                        "used": usage.total - usage.free, "total": usage.total}
+            rows.append(existing)
+        if dev is not None:
+            by_dev.setdefault(dev, existing)
+        by_size.setdefault(size_key, existing)
     rows = [(" · ".join(r["labels"]) or "/", r["used"], r["total"]) for r in rows]
     with _cache_lock:
         _disk_cache["at"] = now

@@ -3259,6 +3259,42 @@ async function _modalProviderChain(title, provEl, d, imdbId, staleFn) {
 // web/tmdb_cache.py), so this costs no extra lookup -- and it goes through the
 // image proxy like every other remote image, which is what keeps the browser
 // from talking to image.tmdb.org directly.
+// The picture reaches down to the bottom of the header text, so its height is
+// whatever that text happens to need -- which CSS cannot express: the header
+// grows when the genre chips and provider pills arrive from TMDB, when the
+// user expands "show more", and on every resize. So measure it, publish the
+// result as --mf-backdrop-h (modals.css reads it), and keep watching.
+let _mfBackdropRO = null;
+
+function _mfSyncBackdropHeight() {
+  const modal = document.getElementById("modal");
+  const header = modal && modal.querySelector(".modal-header");
+  if (!modal || !header || !modal.classList.contains("has-backdrop")) return;
+  const top = modal.getBoundingClientRect().top;
+  const bottom = header.getBoundingClientRect().bottom;
+  // A closed modal measures 0 -- leave the CSS fallback in place rather than
+  // writing a 0px height that would hide the picture on the next open.
+  if (bottom <= top) return;
+  // +10px so the gradient's final fade lands just below the last line of text
+  // instead of cutting through it.
+  modal.style.setProperty("--mf-backdrop-h", Math.round(bottom - top + 10) + "px");
+}
+
+function _mfWatchBackdropHeight(on) {
+  const modal = document.getElementById("modal");
+  const header = modal && modal.querySelector(".modal-header");
+  if (_mfBackdropRO) {
+    _mfBackdropRO.disconnect();
+    _mfBackdropRO = null;
+  }
+  if (!on || !header) return;
+  if (typeof ResizeObserver === "function") {
+    _mfBackdropRO = new ResizeObserver(_mfSyncBackdropHeight);
+    _mfBackdropRO.observe(header);
+  }
+  _mfSyncBackdropHeight();
+}
+
 function _mfSetBackdrop(path) {
   const el = document.getElementById("modalBackdrop");
   const modal = document.getElementById("modal");
@@ -3266,17 +3302,24 @@ function _mfSetBackdrop(path) {
   if (!path) {
     el.style.backgroundImage = "";
     el.classList.remove("is-on");
-    if (modal) modal.classList.remove("has-backdrop");
+    if (modal) {
+      modal.classList.remove("has-backdrop");
+      // Drop the measured height too: a later title whose header is shorter
+      // would otherwise inherit this one's picture height for a frame.
+      modal.style.removeProperty("--mf-backdrop-h");
+    }
+    _mfWatchBackdropHeight(false);
     return;
   }
   const url = proxyImg("https://image.tmdb.org/t/p/w780" + path);
   // Preload: switching the class before the image is decoded shows an empty
-  // 172px band first and then pops the picture in.
+  // band first and then pops the picture in.
   const img = new Image();
   img.onload = function () {
     el.style.backgroundImage = 'url("' + url.replace(/"/g, "%22") + '")';
     el.classList.add("is-on");
     if (modal) modal.classList.add("has-backdrop");
+    _mfWatchBackdropHeight(true);
   };
   img.src = url;
 }

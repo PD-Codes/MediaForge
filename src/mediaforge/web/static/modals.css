@@ -540,45 +540,80 @@
   animation: modal-in 0.2s ease;
 }
 
-/* TMDB backdrop header. Height 0 until a picture is actually set, so every
+/* TMDB backdrop header. Hidden until a picture is actually set, so every
    modal without one (no key, option off, title TMDB has no artwork for) keeps
-   the exact layout it had before this existed. */
+   the exact layout it had before this existed.
+
+   The picture is taken OUT OF FLOW and reaches down to the bottom of the
+   header text instead of ending in a band above it: a 168px strip that stops
+   right where the title starts reads as a banner glued on top of a dialog,
+   not as the title's own artwork. Its height comes from --mf-backdrop-h,
+   which _mfSetBackdrop() in app.js measures off the header (see there for why
+   this cannot be a CSS length). The fallback keeps the old band if the
+   measurement never runs. */
 .modal-backdrop {
   display: none;
-  height: 168px;
-  margin: -24px -24px 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--mf-backdrop-h, 168px);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background-position: center 22%;
   background-size: cover;
   background-repeat: no-repeat;
-  position: relative;
+  /* Purely decorative: clicks belong to the poster/buttons lying on top. */
+  pointer-events: none;
+  z-index: 0;
 }
 
 .modal-backdrop.is-on { display: block; }
 
-/* The fade INTO the modal body -- without it the picture ends on a hard line
-   and the title underneath is unreadable over a bright frame. */
+/* Two jobs in one gradient: a scrim that keeps the text readable over a bright
+   or busy frame, and the fade INTO the modal body so the picture does not end
+   on a hard line. Light at the top (the hero strip stays a picture), dense
+   where the text sits, then --bg-elevated at the very bottom.
+
+   The stops are variables so a theme pack can retune them, and because the
+   scrim has to INVERT per theme: dark text on a light theme needs a *white*
+   veil, a black one would make it less readable, not more. */
+.modal-backdrop {
+  --mf-bd-top: rgba(0, 0, 0, 0.3);
+  --mf-bd-mid: rgba(0, 0, 0, 0.66);
+  --mf-bd-low: rgba(0, 0, 0, 0.84);
+}
+
+[data-theme="light"] .modal-backdrop {
+  --mf-bd-top: rgba(255, 255, 255, 0.45);
+  --mf-bd-mid: rgba(255, 255, 255, 0.82);
+  --mf-bd-low: rgba(255, 255, 255, 0.93);
+}
+
 .modal-backdrop.is-on::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   background: linear-gradient(180deg,
-    rgba(0, 0, 0, 0.25) 0%,
-    rgba(0, 0, 0, 0.1) 35%,
+    var(--mf-bd-top) 0%,
+    var(--mf-bd-mid) 42%,
+    var(--mf-bd-low) 74%,
     var(--bg-elevated) 100%);
 }
 
-/* The poster overlaps the picture, the text starts below it. Pulling the whole
-   header up would drag the description into the gradient too. */
+/* The header sits ON the picture now, so it only has to reserve the strip
+   above the poster (the old 168px band minus the 56px overlap, minus the
+   modal's own 24px top padding). */
 .modal.has-backdrop .modal-header {
-  margin-top: -56px;
+  margin-top: 88px;
   position: relative;
   z-index: 1;
 }
 
+/* Was 58px to push the title clear of the band. The title is meant to be on
+   the picture now, so it aligns with the top of the poster again. */
 .modal.has-backdrop .modal-meta {
-  padding-top: 58px;
+  padding-top: 0;
 }
 
 .modal.has-backdrop .modal-header img {
@@ -1025,12 +1060,13 @@
   /* A 168px picture plus a poster plus the title is most of a phone screen
      before anything useful starts. */
   .modal-backdrop {
-    height: 116px;
-    margin: -18px -16px 0;
+    /* Only the fallback band shrinks -- once measured, the height follows the
+       header, which is taller here because everything wraps. */
+    height: var(--mf-backdrop-h, 116px);
   }
 
-  .modal.has-backdrop .modal-header { margin-top: -40px; }
-  .modal.has-backdrop .modal-meta { padding-top: 42px; }
+  .modal.has-backdrop .modal-header { margin-top: 58px; }
+  .modal.has-backdrop .modal-meta { padding-top: 0; }
 
   /* The series modal had no breakpoint of its own at all -- at 390px the
      104px poster and the meta column fought over the same row. Poster on top,

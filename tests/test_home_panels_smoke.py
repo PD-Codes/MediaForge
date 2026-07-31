@@ -310,3 +310,95 @@ def test_cleared_entries_stop_counting_towards_the_badges(app):
     assert R._queue_badge() - before_queue == 1
     # The statistics still see every row -- that is why they are kept.
     assert (DB.get_queue_stats()["by_status"] or {}).get("failed", 0) - before_all == 3
+
+
+# ── storage: which paths count as one disk ───────────────────────────────
+
+@pytest.fixture()
+def fresh_disk_cache():
+    from mediaforge.web.routes import home_panels as R
+    R._disk_cache["at"] = 0.0
+    R._disk_cache["value"] = []
+    yield R
+    R._disk_cache["at"] = 0.0
+    R._disk_cache["value"] = []
+
+
+class _Usage:
+    def __init__(self, total, free):
+        self.total, self.free = total, free
+        self.used = total - free
+
+
+def _fake_storage(monkeypatch, roots, usage_by_path, dev_by_path):
+    from mediaforge.web.routes import home_panels as R
+    monkeypatch.setattr(R, "_download_roots", lambda: roots)
+    monkeypatch.setattr(R.shutil, "disk_usage",
+                        lambda p: _Usage(*usage_by_path[str(p)]))
+    monkeypatch.setattr(R, "_device_id", lambda p: dev_by_path.get(str(p)))
+
+
+def test_docker_bind_mounts_of_one_export_are_one_row_naming_all_of_them(
+        fresh_disk_cache, monkeypatch):
+    """Six bind mounts of /mnt/nas/... are one filesystem, so they share an
+    st_dev. They must collapse to one bar that still names all six -- the old
+    code kept only the first label and the other five vanished."""
+    R = fresh_disk_cache
+    names = ["Downloads", "Anime", "Serien", "XXX", "Filme", "Books"]
+    roots = [(n, "/app/" + n) for n in names]
+    usage = {"/app/" + n: (7 * 1024 ** 4, 3 * 1024 ** 4) for n in names}
+    devs = {"/app/" + n: 2049 for n in names}       # one superblock
+    _fake_storage(monkeypatch, roots, usage, devs)
+
+    rows = R._disk_rows()
+    assert len(rows) == 1
+    for name in names:
+        assert name in rows[0][0]
+
+
+def test_datasets_sharing_a_pool_are_one_row_despite_different_st_dev(
+        fresh_disk_cache, monkeypatch):
+    """ZFS datasets and btrfs subvolumes get their own st_dev but share the
+    pool's free space. Keying on st_dev alone would draw one identical bar
+    per dataset and claim they are independent disks."""
+    R = fresh_disk_cache
+    roots = [("Filme", "/a"), ("Serien", "/b")]
+    usage = {"/a": (7 * 1024 ** 4, 3 * 1024 ** 4),
+             "/b": (7 * 1024 ** 4, 3 * 1024 ** 4)}
+    _fake_storage(monkeypatch, roots, usage, {"/a": 60, "/b": 61})
+
+    rows = R._disk_rows()
+    assert len(rows) == 1
+    assert "Filme" in rows[0][0] and "Serien" in rows[0][0]
+
+
+def test_separately_mounted_shares_stay_separate(fresh_disk_cache, monkeypatch):
+    """One NAS, but each share mounted on its own on the host: different
+    superblocks AND different free space, so they are different rows."""
+    R = fresh_disk_cache
+    roots = [("Downloads", "/a"), ("Filme NAS", "/b"), ("eBooks", "/c")]
+    usage = {"/a": (930 * 1024 ** 3, 155 * 1024 ** 3),
+             "/b": (7 * 1024 ** 4, 3 * 1024 ** 4),
+             "/c": (3 * 1024 ** 4, 1 * 1024 ** 4)}
+    _fake_storage(monkeypatch, roots, usage, {"/a": 60, "/b": 61, "/c": 62})
+
+    rows = R._disk_rows()
+    assert [r[0] for r in rows] == ["Downloads", "Filme NAS", "eBooks"]
+
+
+def test_an_unreadable_path_does_not_take_the_others_down(
+        fresh_disk_cache, monkeypatch):
+    """A path that is not mounted right now is skipped, not an error."""
+    R = fresh_disk_cache
+    monkeypatch.setattr(R, "_download_roots",
+                        lambda: [("Gone", "/gone"), ("Here", "/here")])
+
+    def _usage(path):
+        if str(path) == "/gone":
+            raise OSError("not mounted")
+        return _Usage(1000, 400)
+    monkeypatch.setattr(R.shutil, "disk_usage", _usage)
+    monkeypatch.setattr(R, "_device_id", lambda p: 7)
+
+    rows = R._disk_rows()
+    assert [r[0] for r in rows] == ["Here"]
