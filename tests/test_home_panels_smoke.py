@@ -263,3 +263,50 @@ def test_language_separated_libraries_are_counted_too(app, monkeypatch):
         stats = {s["label_key"]: s["value"] for s in R._panel_library()["stats"]}
     assert stats["hp_series"] == "2"
     assert stats["hp_episodes"] == "7"
+
+
+# ── badges count the queue, not its archive ──────────────────────────────
+
+def _queue_row(status, hidden):
+    """One queue row through the real API, then forced into the state we want.
+
+    Deliberately not a hand-written INSERT: download_queue has a dozen NOT
+    NULL columns and a test that spells them out itself goes red the next
+    time one is added, for a reason that has nothing to do with badges.
+    """
+    from mediaforge.web import db as DB
+    qid = DB.add_to_queue("T", "https://example.invalid/x", [{"episode": 1}],
+                          "German", "aniworld")
+    conn = DB.get_db()
+    try:
+        conn.execute("UPDATE download_queue SET status = ?, hidden = ? WHERE id = ?",
+                     (status, hidden, qid))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_cleared_entries_stop_counting_towards_the_badges(app):
+    """Removing a finished entry sets hidden = 1 instead of deleting the row,
+    so the download still counts towards the statistics. The badges must NOT
+    follow that: a badge is a to-do list, and counting cleared failures made
+    the System button climb forever while its panel stayed empty."""
+    from mediaforge.web import db as DB
+    from mediaforge.web.routes import home_panels as R
+
+    # Deltas, not absolutes: the session database is shared with every other
+    # test in the run, and a test that empties download_queue to get a clean
+    # number decides what the tests after it see.
+    before_failed = R._failed_count()
+    before_queue = R._queue_badge()
+    before_all = (DB.get_queue_stats()["by_status"] or {}).get("failed", 0)
+
+    _queue_row("failed", 0)      # still in the queue
+    _queue_row("failed", 1)      # cleared away by the user
+    _queue_row("failed", 1)
+    _queue_row("queued", 0)
+
+    assert R._failed_count() - before_failed == 1
+    assert R._queue_badge() - before_queue == 1
+    # The statistics still see every row -- that is why they are kept.
+    assert (DB.get_queue_stats()["by_status"] or {}).get("failed", 0) - before_all == 3

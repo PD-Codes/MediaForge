@@ -333,7 +333,10 @@ def _safe_count(fn) -> int:
 # ── built-in panels ──────────────────────────────────────────────────────
 
 def _panel_queue() -> dict:
-    stats = get_queue_stats()
+    # visible_only, because the item list below comes from get_queue(), which
+    # skips hidden rows. Counting differently from the list you are printing
+    # next to it is how this panel said "3 failed" over an empty list.
+    stats = get_queue_stats(visible_only=True)
     by_status = stats.get("by_status") or {}
     paused = is_queue_paused()
     items = []
@@ -504,12 +507,19 @@ def _panel_system() -> dict:
 
 
 def _queue_badge() -> int:
-    by_status = get_queue_stats().get("by_status") or {}
+    by_status = get_queue_stats(visible_only=True).get("by_status") or {}
     return int(by_status.get("running", 0)) + int(by_status.get("queued", 0))
 
 
 def _failed_count() -> int:
-    """Queue items that ended in failure.
+    """Queue items that ended in failure AND are still in the queue.
+
+    ``visible_only`` is the whole point of this counter. Clearing a failed
+    entry sets ``hidden = 1`` instead of deleting the row, so the download
+    keeps counting towards the statistics -- but a badge is not a statistic,
+    it is a to-do list. Without the flag the number only ever grew: every
+    failure that was ever cleared away stayed in it for the lifetime of the
+    installation, which is why it sat at 58 with nothing to act on.
 
     Deliberately NOT "monitored sites that are down": the live status of a
     monitor is not held in memory (_MONITOR_SITES is the *configuration*), so
@@ -517,7 +527,8 @@ def _failed_count() -> int:
     that runs on every home page visit. UpTime has its own page for that.
     """
     try:
-        return int((get_queue_stats().get("by_status") or {}).get("failed", 0))
+        stats = get_queue_stats(visible_only=True)
+        return int((stats.get("by_status") or {}).get("failed", 0))
     except Exception:
         return 0
 

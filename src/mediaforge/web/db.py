@@ -2296,20 +2296,39 @@ def get_sync_stats():
         conn.close()
 
 
-def get_queue_stats():
+def get_queue_stats(visible_only=False):
+    """Counts over download_queue.
+
+    ``visible_only=True`` counts only what get_queue() would return, i.e. what
+    the user can actually SEE in the queue.
+
+    That distinction is not cosmetic. Removing a finished, failed or cancelled
+    entry does not delete the row -- it sets ``hidden = 1``, so the download
+    still counts towards the statistics (see remove_from_queue() and
+    clear_completed()). Every counter here ignored that flag, so a badge built
+    on ``by_status["failed"]`` kept counting downloads the user had already
+    cleared away, and no amount of clearing ever brought it down while the
+    list next to it was empty.
+
+    The default stays ``False`` on purpose: /api/stats and /api/v1/status want
+    the historical numbers, which is the entire reason the rows are kept.
+    """
+    where = " WHERE hidden = 0" if visible_only else ""
     conn = get_db()
     try:
-        total = conn.execute("SELECT COUNT(*) AS cnt FROM download_queue").fetchone()[
-            "cnt"
-        ]
+        total = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM download_queue" + where
+        ).fetchone()["cnt"]
         by_status = {}
         for row in conn.execute(
-            "SELECT status, COUNT(*) AS cnt FROM download_queue GROUP BY status"
+            "SELECT status, COUNT(*) AS cnt FROM download_queue" + where
+            + " GROUP BY status"
         ).fetchall():
             by_status[row["status"]] = row["cnt"]
         running = conn.execute(
             "SELECT id, title, current_episode, total_episodes, language, provider, source "
-            "FROM download_queue WHERE status = 'running' LIMIT 1"
+            "FROM download_queue WHERE status = 'running'"
+            + (" AND hidden = 0" if visible_only else "") + " LIMIT 1"
         ).fetchone()
         if running:
             r = dict(running)
