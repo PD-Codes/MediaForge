@@ -58,6 +58,44 @@ BOOK_DIRECT_EXTS = frozenset({".epub", ".pdf"})
 # layout that cannot reflow to a phone screen.
 BOOK_FORMAT_RANK = {".epub": 0, ".azw3": 1, ".mobi": 2, ".azw": 3, ".pdf": 4, ".kfx": 9}
 
+# ---------------------------------------------------------------------------
+# Comics
+#
+# Six extensions, five different containers, and the extension is NOT to be
+# trusted: a large share of the .cbr files in circulation are plain ZIPs that
+# someone renamed, because "CBR" became the generic word for "comic archive".
+# comics/archive.py therefore sniffs the magic bytes and treats the extension
+# as a hint only -- which is also what makes those mislabelled files readable
+# without any RAR tooling at all.
+#
+#   .cbz  ZIP    -- stdlib zipfile
+#   .cbt  TAR    -- stdlib tarfile
+#   .cb7  7-Zip  -- py7zr, pure Python, no binary
+#   .cbr  RAR    -- needs an external unrar/bsdtar; converted to CBZ once
+#   .cba  ACE    -- needs an external unace; see comics/convert.py for why
+#                   this one is best-effort and deliberately not installed
+COMIC_ARCHIVE_EXTS = frozenset({".cbz", ".cbt", ".cb7", ".cbr", ".cba"})
+
+# Containers a comic can be read from with no external tool.
+COMIC_NATIVE_EXTS = frozenset({".cbz", ".cbt", ".cb7"})
+
+# PDF is deliberately in BOTH the book and the comic set. The file itself does
+# not say which it is -- a scanned graphic novel and a novel are the same
+# container -- so the answer comes from the library the path is assigned to
+# (see web/media_kinds.py). A PDF in a comics-only path is a comic; in a
+# books-only path it is a book; in a path assigned to both it is listed on
+# both shelves, which is the honest answer when nothing on disk decides it.
+COMIC_EXTS = frozenset(COMIC_ARCHIVE_EXTS | {".pdf"})
+
+# Page images served out of a comic archive. Narrow on purpose: this set gates
+# what the page route will hand to a browser, so it must not grow into
+# "anything that might be an image".
+COMIC_PAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"})
+
+# Files that sit INSIDE a comic archive but are not pages.
+COMIC_SIDECAR_NAMES = frozenset({"comicinfo.xml"})
+
+
 # Image formats accepted when a cover is served straight from the library
 # folder. Deliberately narrow: this set gates a route that reads a file the
 # client named, so it must not grow into "anything the browser might render".
@@ -67,6 +105,15 @@ BOOK_COVER_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 BOOK_SIDECAR_NAMES = frozenset(
     {"cover.jpg", "cover.jpeg", "cover.png", "metadata.opf", "metadata.db"}
 )
+
+
+def is_comic_file(path) -> bool:
+    """True if this path is a comic container, by extension alone.
+
+    Only a first filter: the scanner still sniffs the container, because the
+    extension routinely lies (see COMIC_ARCHIVE_EXTS above).
+    """
+    return Path(path).suffix.lower() in COMIC_EXTS
 
 
 def media_type_for(path) -> str:
@@ -86,7 +133,9 @@ def media_type_for(path) -> str:
 def is_watchable(path) -> bool:
     """True if a filesystem event for this path should trigger a rescan."""
     suffix = Path(path).suffix.lower()
-    return suffix in VIDEO_WATCH_EXTS or suffix in BOOK_ALL_EXTS
+    return (suffix in VIDEO_WATCH_EXTS
+            or suffix in BOOK_ALL_EXTS
+            or suffix in COMIC_EXTS)
 
 
 def book_format_sort_key(ext: str) -> int:

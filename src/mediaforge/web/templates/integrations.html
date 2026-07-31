@@ -1104,6 +1104,47 @@
       </div>
     </div>
 
+    <!-- ══ ComicVine (optional online enrichment for the comic library) ══ -->
+    <div class="settings-section integ-card collapsed" id="integCard-comicvine">
+      <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('comicvine')">
+        <span class="integ-collapsible-chevron">▸</span>
+        <span class="integ-subsection-title">ComicVine</span>
+        <span class="integ-subsection-badge" style="background:#00a8e1;color:#fff;">API</span>
+        <span class="integ-subsection-badge" style="background:#ac7001;color:#fff;">{{ _('Rate limit') }}</span>
+      </div>
+      <div class="integ-collapsible-body">
+      <div class="integ-subsection-hint">
+        {{ _('Adds publisher, plot, cover art and character lists to the comic library, looked up on comicvine.gamespot.com. Comics are always identified locally first (ComicInfo.xml and the file name) — this only fills in fields the files themselves do not carry and never overwrites them. Needs a free API key (comicvine.gamespot.com → API), stored encrypted. ComicVine allows 200 requests per hour and locks the key out on violation, so MediaForge caps itself below that: a large library is enriched over several hours instead of all at once.') }}
+      </div>
+
+      <!-- Master toggle -->
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Enable ComicVine enrichment') }}</div>
+          <div class="settings-row-desc">{{ _('Off by default: this sends the series name and issue number of your comics to an external service.') }}</div>
+        </div>
+        <div class="settings-row-right">
+          <label class="toggle">
+            <input type="checkbox" id="cvEnabled" onchange="saveComicvineOptions()" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- API key -->
+      <div class="integ-input-row" id="cvCredentialsRow">
+        <div class="settings-field">
+          <label class="settings-field-label" for="cvApiKey">{{ _('API key') }}</label>
+          <input type="password" id="cvApiKey" placeholder="{{ _('Stored encrypted') }}" autocomplete="off" />
+        </div>
+        <button class="btn btn-primary" id="cvSaveBtn" onclick="saveComicvineSettings()">{{ _('Save') }}</button>
+        <button class="btn btn-secondary" id="cvTestBtn" onclick="testComicvine(this)">{{ _('Test connection') }}</button>
+      </div>
+      <div class="settings-row-desc" id="cvTestResult" style="display:none;margin-top:-6px;"></div>
+      <div class="settings-row-desc" id="cvThrottle" style="display:none;margin-top:-6px;"></div>
+      </div>
+    </div>
+
     <!-- Card moved to separate tab -->
 
     <!-- ══ Auto-registered third-party integrations (web/thirdparties/<name>/) ══

@@ -293,9 +293,12 @@ function libRenderBookCard(it, pfx) {
   var series = libBookSeriesLabel(book);
 
   var h = [];
-  h.push('<div class="mf-poster-card mf-book-card' + (isOpen ? ' is-open' : '') + '" id="' + pfx + '">');
-  h.push('<div class="mf-poster-art" data-book-title="' + libEscAttr(book.title || "") +
-         '" onclick="libToggleBook(\'' + pfx + '\')">');
+  // Whole card, not just the cover -- see the note in library_comics.js.
+  h.push('<div class="mf-poster-card mf-book-card' + (isOpen ? ' is-open' : '') + '" id="' + pfx + '"' +
+         ' role="button" tabindex="0" aria-expanded="' + (isOpen ? "true" : "false") + '"' +
+         ' onclick="libToggleBook(\'' + pfx + '\')"' +
+         ' onkeydown="libBookCardKey(event, \'' + pfx + '\')">');
+  h.push('<div class="mf-poster-art" data-book-title="' + libEscAttr(book.title || "") + '">');
   if (cover) {
     h.push('<img class="mf-book-cover" src="' + libEscAttr(cover) + '" alt="" loading="lazy" ' +
            'decoding="async" onerror="libBookCoverFailed(this)">');
@@ -436,6 +439,14 @@ function libRenderBookDetail(it, pfx) {
   h.push('</div>');
   h.push('</div>');
   return h.join("");
+}
+
+function libBookCardKey(ev, pfx) {
+  if (!ev) return;
+  if (ev.key === "Enter" || ev.key === " " || ev.key === "Spacebar") {
+    ev.preventDefault();
+    libToggleBook(pfx);
+  }
 }
 
 function libToggleBook(pfx) {

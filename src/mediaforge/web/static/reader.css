@@ -210,6 +210,85 @@ body.reader-open { overflow: hidden; }
   border-radius: 2px;
 }
 
+/* ---- comic stage ---------------------------------------------------
+   A comic is not a scrolling document: it is one or two pages at a time,
+   turned. So this stage holds exactly the pages on screen and nothing
+   else, and every size on the images is written by reader.js from the
+   page's own aspect ratio -- the same division of labour the PDF stage
+   uses, and for the same reason: only the browser knows how big a page
+   is, and only once it has arrived.
+
+   It scrolls in both directions because two of the three fit modes
+   deliberately overflow: filling the width of a phone means scrolling
+   down a tall page, and original size means panning a scan that is
+   larger than any screen. */
+#readerComic {
+  position: absolute;
+  top: var(--mfr-head-h);
+  bottom: var(--mfr-foot-h);
+  left: 0;
+  right: 0;
+  overflow: auto;
+  background: var(--mfr-bg);
+  -webkit-overflow-scrolling: touch;
+  /* A page turn must not also scroll the page behind the reader. */
+  overscroll-behavior: contain;
+}
+#readerComic[hidden] { display: none; }
+
+/* `width: fit-content` with `min-width: 100%` is what lets the row both
+   centre when it is narrower than the stage and stay fully reachable when
+   it is wider -- plain `justify-content: center` puts the left edge of an
+   overflowing row out of the scroll container's reach. */
+.mfr-comic-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: fit-content;
+  min-width: 100%;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.mfr-comic-img {
+  display: block;
+  flex: 0 0 auto;
+  /* Nothing here sets a size: reader.js does, in pixels, once it knows the
+     page's ratio. Until then the element has no box and nothing jumps. */
+  background: rgba(128, 128, 128, 0.08);
+  border-radius: 2px;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+  /* A page arriving mid-read should appear, not snap in. */
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.mfr-comic-img.is-ready { opacity: 1; }
+/* A page the archive has but the browser cannot decode: show the gap rather
+   than an empty stage, so the reader can tell which page is missing. */
+.mfr-comic-img.is-broken {
+  opacity: 1;
+  min-width: 120px;
+  min-height: 160px;
+  border: 1px dashed var(--mfr-line);
+}
+
+/* In a spread the two pages meet in the middle like a bound book, so the
+   inner corners lose their radius and the outer shadow stays. */
+.mfr-comic-view.is-spread .mfr-comic-img:first-child { border-radius: 2px 0 0 2px; }
+.mfr-comic-view.is-spread .mfr-comic-img:last-child  { border-radius: 0 2px 2px 0; }
+
+/* Fitting to the width means the page is expected to be taller than the
+   stage, so the row starts at the top instead of centring a page whose
+   bottom half is below the fold. */
+#readerComic[data-fit="width"] .mfr-comic-view,
+#readerComic[data-fit="native"] .mfr-comic-view { align-items: flex-start; }
+
 /* Tap zones for turning pages -- a phone has no keyboard and the buttons in
    the footer are a long reach with one hand. */
 .mfr-tap {
@@ -674,4 +753,26 @@ body.reader-open { overflow: hidden; }
   .mfr-sheet { right: 8px; left: 8px; width: auto; bottom: calc(var(--mfr-foot-h) - 2px); }
   .mfr-sheet-label { width: 4.6rem; font-size: 0.73rem; }
   .mfr-chapter { display: none; }
+
+  /* Every pixel of a phone screen belongs to the page. reader.js already
+     refuses to lay out a spread this narrow, so the gutter is the only
+     thing left to give back. */
+  .mfr-comic-view { padding: 2px; gap: 0; }
+  .mfr-comic-img { border-radius: 0; box-shadow: none; }
+}
+
+/* The one-page-at-a-time stage has no scroll animation to inherit, but the
+   fade a page arrives with is still motion. */
+@media (prefers-reduced-motion: reduce) {
+  .mfr-comic-img { transition: none; }
+}
+
+/* A pointer to a setting, not part of the message above it -- quieter, and
+   separated so it cannot be mistaken for another instruction. */
+.mfr-status-tip {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  opacity: 0.75;
 }

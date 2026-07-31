@@ -217,6 +217,14 @@ async function loadSettings() {
     if (rescanEl && data.library_rescan_hours != null) rescanEl.value = String(data.library_rescan_hours);
     const probeEl = document.getElementById("libraryProbeWorkers");
     if (probeEl && data.library_probe_workers != null) probeEl.value = String(data.library_probe_workers);
+    // Comics. The fallbacks repeat the server's defaults on purpose: a
+    // response from an instance that predates these keys must render the same
+    // state the server would store, not an empty checkbox for a setting that
+    // is actually on.
+    const comicPrepareEl = document.getElementById("comicAutoPrepareAll");
+    if (comicPrepareEl) comicPrepareEl.checked = (data.comic_auto_prepare_all ?? "0") === "1";
+    const comicReplaceEl = document.getElementById("comicReplaceOriginal");
+    if (comicReplaceEl) comicReplaceEl.checked = (data.comic_replace_original ?? "0") === "1";
     // Which libraries the DEFAULT download root feeds. Custom paths carry
     // theirs in the paths table; the default root has no row there, so it is a
     // plain setting (see routes/library.py's _LIB_DEFAULT_KINDS_SETTING).
@@ -1064,6 +1072,146 @@ async function saveLibraryProbeWorkers() {
       : t("Scan-Intensität: ", "Scan intensity: ") + el.value);
   } catch (e) {
     showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+// ─── Comics (Library tab) ───────────────────────────────────────────────────
+// The three switches ride on the ordinary settings mechanism (PUT
+// /api/settings, validated there); the two cache buttons and the extractor
+// diagnostics have their own admin-only endpoints in routes/comics.py.
+
+async function _saveComicToggle(key, on) {
+  const payload = {};
+  payload[key] = on ? "1" : "0";
+  const resp = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json();
+  if (data.error) throw new Error(data.error);
+}
+
+async function saveComicAutoPrepareAll() {
+  const el = document.getElementById("comicAutoPrepareAll");
+  if (!el) return;
+  try {
+    await _saveComicToggle("comic_auto_prepare_all", el.checked);
+    showToast(el.checked
+      ? t("Alle Ausgaben werden im Hintergrund vorbereitet", "Every issue is prepared in the background")
+      : t("Ausgaben werden erst beim Öffnen vorbereitet", "Issues are prepared when they are opened"), "success");
+  } catch (e) {
+    el.checked = !el.checked;
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message, "error");
+  }
+}
+
+// The one switch here that destroys something the user owns. Switching it ON
+// therefore costs a deliberate confirmation (the project's showConfirm(), same
+// as clearBrowserProfile/deleteEnvFile) and the box springs back if the answer
+// is no. Switching it OFF is never guarded -- stopping a destructive setting
+// must always be one click.
+async function saveComicReplaceOriginal(el) {
+  el = el || document.getElementById("comicReplaceOriginal");
+  if (!el) return;
+  const enabling = el.checked;
+  if (enabling) {
+    const message = t(
+      "Nach jeder erfolgreichen Umwandlung wird die Originaldatei (CBR/CBA) durch die neue CBZ ersetzt. Die Originaldatei ist danach weg — MediaForge kann sie nicht wiederherstellen, und es gibt keinen Papierkorb.",
+      "After every successful conversion the original file (CBR/CBA) is replaced by the new CBZ. The original file is gone afterwards — MediaForge cannot restore it, and there is no recycle bin.");
+    const ok = (typeof showConfirm === "function")
+      ? await showConfirm(message,
+          t("Originale ersetzen", "Replace originals"),
+          t("Originaldateien wirklich ersetzen?", "Really replace original files?"),
+          "btn-danger")
+      : window.confirm(message);
+    if (!ok) { el.checked = false; return; }
+  }
+  try {
+    await _saveComicToggle("comic_replace_original", enabling);
+    showToast(enabling
+      ? t("Originale werden nach der Umwandlung ersetzt", "Originals are replaced after conversion")
+      : t("Originale bleiben unangetastet", "Originals are left untouched"), enabling ? "warning" : "success");
+  } catch (e) {
+    el.checked = !enabling;
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message, "error");
+  }
+}
+
+function _comicFormatBytes(bytes) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Number(bytes) || 0;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return (unit === 0 ? String(Math.round(value)) : value.toFixed(value < 10 ? 1 : 0)) + " " + units[unit];
+}
+
+function _comicCacheLine(stats) {
+  const files = (stats && stats.files) || 0;
+  if (!files) return t("leer", "empty");
+  const label = files === 1 ? t("Datei", "file") : t("Dateien", "files");
+  return files + " " + label + " · " + _comicFormatBytes(stats.bytes);
+}
+
+function _comicApplyCacheData(data) {
+  const coverEl = document.getElementById("comicCoverCacheSize");
+  const convertEl = document.getElementById("comicConvertCacheSize");
+  if (coverEl) coverEl.textContent = _comicCacheLine(data.covers);
+  if (convertEl) convertEl.textContent = _comicCacheLine(data.converted);
+
+  const extractors = data.extractors || {};
+  const missing = t("nicht gefunden", "not found");
+  const rarEl = document.getElementById("comicExtractorRar");
+  const aceEl = document.getElementById("comicExtractorAce");
+  if (rarEl) rarEl.textContent = extractors.rar || missing;
+  if (aceEl) aceEl.textContent = extractors.ace || missing;
+  const hint = document.getElementById("comicExtractorHint");
+  if (hint) {
+    const anyFound = Object.keys(extractors).some(function (k) { return !!extractors[k]; });
+    hint.style.display = anyFound ? "none" : "";
+  }
+}
+
+async function loadComicCacheStats() {
+  if (!document.getElementById("comicCoverCacheSize")) return;
+  try {
+    const resp = await fetch("/api/library/comic/cache");
+    // 401/403 for a non-admin account is a normal answer here, not an error
+    // worth a toast -- the panel simply keeps its placeholders.
+    if (!resp.ok) return;
+    _comicApplyCacheData(await resp.json());
+  } catch (e) { /* offline or mid-restart: leave the placeholders alone */ }
+}
+
+async function clearComicCache(which) {
+  const label = which === "covers"
+    ? t("Cover-Cache", "cover cache")
+    : t("umgewandelte Archive", "converted archives");
+  const message = which === "covers"
+    ? t("Alle zwischengespeicherten Cover werden gelöscht. Sie werden beim nächsten Öffnen der Comic-Bibliothek neu erzeugt. Deine Comic-Dateien bleiben unangetastet.",
+        "Every cached cover is deleted. They are created again the next time the comic library is opened. Your comic files are left untouched.")
+    : t("Alle umgewandelten Archive werden gelöscht. Eine CBR/CBA-Ausgabe wird beim nächsten Öffnen erneut umgewandelt. Deine Comic-Dateien bleiben unangetastet.",
+        "Every converted archive is deleted. A CBR/CBA issue is converted again the next time it is opened. Your comic files are left untouched.");
+  const ok = (typeof showConfirm === "function")
+    ? await showConfirm(message, t("Leeren", "Clear"),
+        t("Cache leeren?", "Clear cache?"), "btn-danger")
+    : window.confirm(message);
+  if (!ok) return;
+  try {
+    const resp = await fetch("/api/library/comic/cache/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cache: which }),
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      showToast(data.error || t("Fehler beim Leeren", "Error while clearing"), "error");
+      return;
+    }
+    showToast(label + ": " + data.removed + " " + t("Einträge entfernt", "entries removed"), "success");
+    loadComicCacheStats();
+  } catch (e) {
+    showToast(t("Fehler: ", "Error: ") + e.message, "error");
   }
 }
 
@@ -2627,6 +2775,9 @@ const esc = window.mfEscape;
 
 // ─── Kick off ─────────────────────────────────────────────────────────────────
 loadSettings();
+// Cache sizes and extractor diagnostics for the Comics block on the Library
+// tab. Its own request: /api/settings carries settings, not measurements.
+loadComicCacheStats();
 
 // ─── .env migration banner ───────────────────────────────────────────────────
 

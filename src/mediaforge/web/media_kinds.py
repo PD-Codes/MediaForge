@@ -47,7 +47,7 @@ MEDIA_KINDS = (
     {"slug": KIND_VIDEO, "url": "video",  "label_en": "Movies & Series", "available": True,  "scans": True},
     {"slug": KIND_BOOK,  "url": "books",  "label_en": "eBooks",          "available": True,  "scans": True},
     {"slug": KIND_MANGA, "url": "manga",  "label_en": "Manga",           "available": False, "scans": False},
-    {"slug": KIND_COMIC, "url": "comics", "label_en": "Comics",          "available": False, "scans": False},
+    {"slug": KIND_COMIC, "url": "comics", "label_en": "Comics",          "available": True,  "scans": True},
     {"slug": KIND_MUSIC, "url": "music",  "label_en": "Music",           "available": False, "scans": False},
 )
 

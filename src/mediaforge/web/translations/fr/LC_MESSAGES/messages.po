@@ -5189,3 +5189,151 @@ msgstr ""
 
 msgid "Which rows the home page shows, in which order, and how many cards each holds now lives in its own tab."
 msgstr ""
+
+# --- Comic library: shelf, reader and ComicVine enrichment ---
+
+msgid "Adds publisher, plot, cover art and character lists to the comic library, looked up on comicvine.gamespot.com. Comics are always identified locally first (ComicInfo.xml and the file name) — this only fills in fields the files themselves do not carry and never overwrites them. Needs a free API key (comicvine.gamespot.com → API), stored encrypted. ComicVine allows 200 requests per hour and locks the key out on violation, so MediaForge caps itself below that: a large library is enriched over several hours instead of all at once."
+msgstr ""
+
+msgid "Alone"
+msgstr ""
+
+msgid "Cover"
+msgstr ""
+
+msgid "Double"
+msgstr ""
+
+msgid "Enable ComicVine enrichment"
+msgstr ""
+
+msgid "Fit"
+msgstr ""
+
+msgid "Height"
+msgstr ""
+
+msgid "Issues"
+msgstr ""
+
+msgid "Off by default: this sends the series name and issue number of your comics to an external service."
+msgstr ""
+
+msgid "One-shots"
+msgstr ""
+
+msgid "Paired"
+msgstr ""
+
+msgid "Rate limit"
+msgstr ""
+
+msgid "Runs with more than one issue"
+msgstr ""
+
+msgid "Search series, publisher or issue…"
+msgstr ""
+
+msgid "Single"
+msgstr ""
+
+msgid "Single issues and one-shots"
+msgstr ""
+
+msgid "Sort by issue count"
+msgstr ""
+
+msgid "Sort by series"
+msgstr ""
+
+msgid "Width"
+msgstr ""
+
+msgid "Zoom"
+msgstr ""
+
+msgid "Zoom in"
+msgstr ""
+
+msgid "Zoom out"
+msgstr ""
+
+# On the comic shelf "Series" means a RUN of issues, not a TV series --
+# German needs "Reihen" here and "Serien" on the video shelf.
+
+msgctxt "comics"
+msgid "Series"
+msgstr ""
+
+# --- Comic settings: cover preparation, caches, diagnostics ---
+
+msgid "After a scan MediaForge reads the first page of each series in the background and keeps it as a cover, so the comic shelf is already illustrated the first time you open it."
+msgstr ""
+
+msgid "Both caches hold derived data only — your comic files are never touched. A cover is read again the next time the shelf is drawn, and a converted archive is rebuilt the next time that issue is opened."
+msgstr ""
+
+msgid "Cache"
+msgstr ""
+
+msgid "Clear converted archives"
+msgstr ""
+
+msgid "Clear cover cache"
+msgstr ""
+
+msgid "Converted archives"
+msgstr ""
+
+msgid "Converts every CBR and CBA file in the library instead of doing it the first time an issue is opened. This takes a noticeable amount of time and disk space — the cache ends up holding a second copy of every affected comic — so it is only worthwhile for small collections."
+msgstr ""
+
+msgid "Cover cache"
+msgstr ""
+
+msgid "Diagnostics"
+msgstr ""
+
+msgid "No unpacker was found here, so CBR and CBA files cannot be opened on this machine. Every other comic format is unaffected."
+msgstr ""
+
+msgid "Prepare covers automatically"
+msgstr ""
+
+msgid "Prepare every issue in the background"
+msgstr ""
+
+msgid "Replace the original with the CBZ after conversion"
+msgstr ""
+
+msgid "Replacing originals"
+msgstr ""
+
+msgid "This option deletes data. Once an archive has been converted, the original CBR or CBA file is replaced by the new CBZ — the original is gone afterwards and MediaForge cannot bring it back. Leave this switched off unless you are certain you no longer need the original files."
+msgstr ""
+
+msgid "Unpacker for CBA (ACE)"
+msgstr ""
+
+msgid "Unpacker for CBR (RAR)"
+msgstr ""
+
+msgid "Windows 10 and newer as well as macOS already bring bsdtar along as “tar”, and the MediaForge Docker image contains libarchive-tools."
+msgstr ""
+
+# --- Comic shelf: single-issue view, reader hint ---
+
+msgid "Covers are always prepared: MediaForge reads the first page of each series in the background and keeps it, so the shelf shows pictures instead of blank tiles. Only CBR and CBA have to be unpacked for this, which is what the option below is about."
+msgstr ""
+
+msgid "Every issue on its own card"
+msgstr ""
+
+msgid "One card per series"
+msgstr ""
+
+msgid "Single issues"
+msgstr ""
+
+msgid "Sort by issue count, or by date added in the single-issue view"
+msgstr ""

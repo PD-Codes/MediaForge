@@ -1808,6 +1808,9 @@
           <div id="readerEpub" hidden></div>
         </div>
         <div id="readerPdf" hidden></div>
+        {# The comic stage. Filled entirely from reader.js -- one or two <img>
+           elements that are reused across page turns, never rebuilt. #}
+        <div id="readerComic" hidden data-fit="height"></div>
         <button type="button" class="mfr-tap mfr-tap--next" id="readerNext"
                 aria-label="{{ _('Next page') }}"></button>
 
@@ -1839,7 +1842,40 @@
       <!-- Everything about how the page looks lives in one panel; the footer
            keeps only where-am-I and how-do-I-turn-the-page. -->
       <div class="mfr-sheet" id="readerSheet" hidden role="group" aria-label="{{ _('Reading settings') }}">
-        <div class="mfr-sheet-row">
+        {# Comic-only controls. They sit first because in comic mode every row
+           below them except Paper is hidden, and a panel that opens on its one
+           relevant control beats a panel that opens on a gap. #}
+        <div class="mfr-sheet-row" data-reader-comic-only hidden>
+          <span class="mfr-sheet-label">{{ _('Pages') }}</span>
+          <div class="mfr-seg" id="readerComicPages">
+            <button type="button" data-comic-spread="single">{{ _('Single') }}</button>
+            <button type="button" data-comic-spread="double">{{ _('Double') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-comic-only id="readerComicCoverRow" hidden>
+          <span class="mfr-sheet-label">{{ _('Cover') }}</span>
+          <div class="mfr-seg" id="readerComicCover">
+            <button type="button" data-comic-cover="alone">{{ _('Alone') }}</button>
+            <button type="button" data-comic-cover="paired">{{ _('Paired') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-comic-only hidden>
+          <span class="mfr-sheet-label">{{ _('Zoom') }}</span>
+          <div class="mfr-seg" id="readerComicZoom">
+            <button type="button" data-comic-zoom="-10" aria-label="{{ _('Zoom out') }}">&minus;</button>
+            <button type="button" data-comic-zoom="reset" id="readerComicZoomLabel">100%</button>
+            <button type="button" data-comic-zoom="10" aria-label="{{ _('Zoom in') }}">+</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-comic-only hidden>
+          <span class="mfr-sheet-label">{{ _('Fit') }}</span>
+          <div class="mfr-seg" id="readerComicFit">
+            <button type="button" data-comic-fit="width">{{ _('Width') }}</button>
+            <button type="button" data-comic-fit="height">{{ _('Height') }}</button>
+            <button type="button" data-comic-fit="native">{{ _('Original size') }}</button>
+          </div>
+        </div>
+        <div class="mfr-sheet-row" data-reader-text-only>
           <span class="mfr-sheet-label">{{ _('Typeface') }}</span>
           <div class="mfr-seg mfr-seg--font" id="readerFont">
             <button type="button" data-font="serif">{{ _('Serif') }}</button>
@@ -1847,7 +1883,7 @@
             <button type="button" data-font="original">{{ _('Original') }}</button>
           </div>
         </div>
-        <div class="mfr-sheet-row">
+        <div class="mfr-sheet-row" data-reader-text-only>
           <span class="mfr-sheet-label">{{ _('Text size') }}</span>
           <div class="mfr-seg" id="readerSize">
             <button type="button" data-size="-10" aria-label="{{ _('Smaller text') }}">A&minus;</button>
@@ -1855,7 +1891,7 @@
             <button type="button" data-size="10" aria-label="{{ _('Larger text') }}">A+</button>
           </div>
         </div>
-        <div class="mfr-sheet-row">
+        <div class="mfr-sheet-row" data-reader-text-only>
           <span class="mfr-sheet-label">{{ _('Line spacing') }}</span>
           <div class="mfr-seg" id="readerLead">
             <button type="button" data-lead="1.4">{{ _('Tight') }}</button>
@@ -1863,7 +1899,7 @@
             <button type="button" data-lead="1.95">{{ _('Loose') }}</button>
           </div>
         </div>
-        <div class="mfr-sheet-row">
+        <div class="mfr-sheet-row" data-reader-text-only>
           <span class="mfr-sheet-label">{{ _('Page width') }}</span>
           <div class="mfr-seg" id="readerWidth">
             <button type="button" data-width="34">{{ _('Narrow') }}</button>

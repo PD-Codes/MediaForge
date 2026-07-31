@@ -668,6 +668,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadMediascanSettings();
   loadJellyfinNfoSettings();
   loadOpenSubtitlesSettings();
+  loadComicvineSettings();
   // loadThirdpartyToggles() and restoreIntegCollapse() now run on their own
   // from static/extension_cards.js — see the <script> tag in
   // integrations.html.
@@ -1912,5 +1913,168 @@ async function testOpenSubtitles(btn) {
         _applyOpenSubtitlesState();
       }, 300);
     }
+  }
+}
+// ===== ComicVine (comic library enrichment) =====
+//
+// Its own GET/PUT pair rather than the aggregated /api/settings payload, for
+// the same reason OpenSubtitles has one: the API key must never travel back to
+// the browser. The GET reports only has_api_key, the field stays empty, and a
+// save without typing anything keeps the stored key.
+//
+// The GET also returns the throttle status. ComicVine allows 200 requests per
+// resource and hour and bans the key on violation, so MediaForge caps itself
+// below that — and when enrichment goes quiet mid-scan, "budget spent, resumes
+// next hour" is the answer the user needs, not a silent nothing.
+
+function _applyComicvineState() {
+  const enabled = !!document.getElementById("cvEnabled")?.checked;
+  ["cvApiKey", "cvSaveBtn", "cvTestBtn"].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !enabled;
+  });
+}
+
+function _renderComicvineThrottle(th) {
+  const el = document.getElementById("cvThrottle");
+  if (!el) return;
+  if (!th) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  if (th.cooldown_seconds > 0) {
+    const mins = Math.ceil(th.cooldown_seconds / 60);
+    el.textContent = t(
+      "ComicVine hat das Limit gemeldet — pausiert für noch " + mins + " Min.",
+      "ComicVine reported the rate limit — paused for another " + mins + " min."
+    );
+    el.style.color = "var(--warning, #f39c12)";
+    return;
+  }
+  const left = Math.min(th.remaining_volumes, th.remaining_issues);
+  el.textContent = t(
+    "Abfragen in dieser Stunde übrig: " + left + " von " + th.limit,
+    "Requests left this hour: " + left + " of " + th.limit
+  );
+  el.style.color = "var(--text-secondary, #999)";
+}
+
+async function loadComicvineSettings() {
+  try {
+    const resp = await fetch("/api/settings/comicvine");
+    if (!resp.ok) return;
+    const d = await resp.json();
+
+    const chk = document.getElementById("cvEnabled");
+    if (chk) chk.checked = d.enabled === "1";
+
+    // Write-only secret: an empty field with a "stored" placeholder means
+    // "keep what is saved", which is what the PUT handler does with a blank.
+    const key = document.getElementById("cvApiKey");
+    if (key) {
+      key.value = "";
+      key.placeholder = d.has_api_key
+        ? t("•••••••• (gespeichert)", "•••••••• (saved)")
+        : t("API-Key", "API key");
+    }
+    _renderComicvineThrottle(d.throttle);
+    _applyComicvineState();
+  } catch (e) {
+    showToast(t("ComicVine-Einstellungen konnten nicht geladen werden: ", "ComicVine settings could not be loaded: ") + e.message);
+  }
+}
+
+async function _putComicvine(body) {
+  const resp = await fetch("/api/settings/comicvine", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return resp.json();
+}
+
+// The master toggle — persisted immediately on change.
+async function saveComicvineOptions() {
+  _applyComicvineState();
+  try {
+    await _putComicvine({ enabled: document.getElementById("cvEnabled")?.checked ? "1" : "0" });
+  } catch (e) { /* silent — same as the other option toggles */ }
+}
+
+async function saveComicvineSettings() {
+  const keyEl = document.getElementById("cvApiKey");
+  const apiKey = (keyEl?.value || "").trim();
+  const body = {};
+  if (apiKey) body.api_key = apiKey;   // only sent when actually typed
+  try {
+    const data = await _putComicvine(body);
+    if (data.ok) {
+      showToast(t("ComicVine gespeichert", "ComicVine saved"));
+      if (keyEl && apiKey) {
+        keyEl.value = "";
+        keyEl.placeholder = t("•••••••• (gespeichert)", "•••••••• (saved)");
+      }
+    } else {
+      showToast(data.error || t("Fehler", "Error"));
+    }
+  } catch (e) {
+    showToast(t("Fehler: ", "Error: ") + e.message);
+  }
+}
+
+async function testComicvine(btn) {
+  const result = document.getElementById("cvTestResult");
+  if (btn) { btn.disabled = true; btn.textContent = t("Teste…", "Testing…"); }
+  const body = {};
+  const apiKey = (document.getElementById("cvApiKey")?.value || "").trim();
+  if (apiKey) body.api_key = apiKey;
+  try {
+    const resp = await fetch("/api/settings/comicvine/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await resp.json();
+    if (result) {
+      result.style.display = "block";
+      if (d.ok) {
+        const msg = t("✓ Verbunden", "✓ Connected") + " · " +
+          t("Abfragen übrig: ", "Requests left: ") + d.remaining + "/" + d.limit;
+        result.textContent = msg;
+        result.style.color = "var(--success, #2ecc71)";
+        showToast(msg, "success");
+      } else {
+        const map = {
+          no_api_key: t("✗ Kein API-Key hinterlegt", "✗ No API key configured"),
+          invalid_key: t("✗ API-Key ungültig", "✗ API key invalid"),
+          not_found: t("✗ Keine Ergebnisse — API-Key prüfen", "✗ No results — check the API key"),
+          rate_limited: t("✗ Limit erreicht — ComicVine pausiert für eine Stunde", "✗ Rate limited — ComicVine paused for an hour"),
+          cooldown: t("✗ Pausiert nach Limit-Überschreitung — später erneut versuchen", "✗ Paused after a rate-limit hit — try again later"),
+          throttled: t("✗ Stundenkontingent aufgebraucht — später erneut versuchen", "✗ Hourly budget spent — try again later"),
+          unreachable: t("✗ ComicVine nicht erreichbar", "✗ ComicVine unreachable"),
+          bad_response: t("✗ Unerwartete Antwort von ComicVine", "✗ Unexpected response from ComicVine"),
+        };
+        const errMsg = map[d.error] || t("✗ Verbindung fehlgeschlagen", "✗ Connection failed");
+        result.textContent = errMsg;
+        result.style.color = "var(--danger, #e74c3c)";
+        showToast(errMsg, "error");
+      }
+    }
+  } catch (e) {
+    if (result) {
+      result.style.display = "block";
+      result.textContent = t("✗ Fehler: ", "✗ Error: ") + e.message;
+      result.style.color = "var(--danger, #e74c3c)";
+    }
+  } finally {
+    if (btn) {
+      setTimeout(() => {
+        btn.textContent = t("Verbindung testen", "Test connection");
+        _applyComicvineState();
+      }, 300);
+    }
+    // The test spends one request — refresh the counter shown under it.
+    try {
+      const r = await fetch("/api/settings/comicvine");
+      if (r.ok) _renderComicvineThrottle((await r.json()).throttle);
+    } catch (e) { /* the counter is informational */ }
   }
 }

@@ -12,6 +12,9 @@ from ..db import get_setting
 from ..lang_folders import LANG_FOLDERS
 from ..books.scanner import BOOKS_FORMAT_VERSION
 from ..books.scanner import scan_books
+from ..comics.scanner import COMICS_FORMAT_VERSION
+from ..comics.scanner import scan_comics
+from ..comics import covers as comic_covers
 from ..media_types import BOOK_ALL_EXTS
 from ..media_types import BOOK_CONVERTIBLE_EXTS
 from ..media_types import BOOK_COVER_EXTS
@@ -20,6 +23,7 @@ from ..media_types import VIDEO_EXTS
 from ..media_kinds import ALL_SLUGS
 from ..media_kinds import DEFAULT_KINDS_CSV
 from ..media_kinds import KIND_BOOK
+from ..media_kinds import KIND_COMIC
 from ..media_kinds import KIND_VIDEO
 from ..media_kinds import parse_kinds
 from ..media_kinds import MEDIA_KINDS
@@ -819,6 +823,11 @@ def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
         # key.
         "books": data.get("books") or [],
         "books_version": data.get("books_version"),
+        # Carried over for the same reason as the book list above:
+        # set_library_cache replaces the whole row, so a video-only partial
+        # update would otherwise empty the comic shelf until the next full scan.
+        "comics": data.get("comics") or [],
+        "comics_version": data.get("comics_version"),
     })
     if progress.get("probe_incomplete"):
         _LIB_PROBE_PENDING.add(path_key)
@@ -854,6 +863,73 @@ def _lib_scan_books_safe(base_path, label):
     except Exception:
         logger.exception("[LibraryScan] Book scan of %s (%s) failed", base_path, label)
         return []
+
+
+def _lib_scan_comics_safe(base_path, label):
+    """Run the comic pass for one location, swallowing its failures.
+
+    Same isolation as the book pass and for the same reason: a single
+    malformed archive must not cost a location its films. Comics add one
+    failure mode books do not have -- five container formats, two of which
+    need an external tool -- so this is if anything more likely to trip.
+    """
+    try:
+        return scan_comics(base_path)
+    except Exception:
+        logger.exception("[LibraryScan] Comic scan of %s (%s) failed", base_path, label)
+        return []
+
+
+def _lib_queue_comic_covers(series_list):
+    """Ask the background worker for the covers this shelf needs.
+
+    Covers are NOT behind a setting. A shelf of blank tiles reads as a broken
+    scan, so getting a picture onto each card is part of showing the shelf at
+    all -- the same way the video shelf probes resolutions without asking.
+    What IS optional is repacking every issue in the library; that is
+    `comic_auto_prepare_all` below, and it is off by default because it costs
+    real time and disk.
+
+    Called from the scan AND from every /api/library?kind=comic request. Only
+    the scan used to call it, so a library that had already been indexed never
+    got a single cover: the work was queued exactly once, at a moment that had
+    already passed. The worker de-duplicates, so calling it on every shelf
+    load costs a set lookup per series.
+    """
+    try:
+        # EVERY issue, not just the one each series card shows. The shelf has a
+        # single-issue view where every one of them is a card of its own, and a
+        # grid of blank tiles there is exactly the state this whole mechanism
+        # exists to avoid.
+        #
+        # Affordable because a cover is only the FIRST PAGE: comics/convert.py
+        # pulls that one member out of the archive instead of unpacking it, so
+        # this is one cheap read per issue rather than a full repack. The
+        # covers are ordered series-first so the grouped view -- the default,
+        # and what the user is looking at while this runs -- fills in first.
+        sources = [s.get("cover_source") for s in series_list if s.get("cover_source")]
+        seen = set(sources)
+        for entry in series_list:
+            for issue in entry.get("issues") or []:
+                path = issue.get("path")
+                if path and path not in seen:
+                    seen.add(path)
+                    sources.append(path)
+        if sources:
+            comic_covers.prepare_async(sources)
+
+        # Opt-in and separate: repacking a whole archive is what costs real
+        # time and a second copy on disk. Covers above do not need it.
+        if get_setting("comic_auto_prepare_all", "0") == "1":
+            issues = [i.get("path")
+                      for entry in series_list
+                      for i in (entry.get("issues") or [])
+                      if i.get("path") and i.get("needs_conversion")]
+            if issues:
+                comic_covers.prepare_full_async(issues)
+    except Exception:
+        # A cover is decoration. Never let it cost the scan or the request.
+        logger.debug("[Comics] Could not queue cover preparation", exc_info=True)
 
 
 def _lib_do_scan(targets, lang_sep):
@@ -924,6 +1000,7 @@ def _lib_do_scan_locked(targets, lang_sep):
         kinds = kinds_map.get(path_key) or parse_kinds(None)
         want_video = KIND_VIDEO in kinds
         want_books = KIND_BOOK in kinds
+        want_comics = KIND_COMIC in kinds
 
         # An unreachable location must not overwrite its cache with "empty".
         # _lib_scan_base() returns [] for a path it cannot read, and caching
@@ -952,6 +1029,9 @@ def _lib_do_scan_locked(targets, lang_sep):
             # Language separation does not apply: a book has no dub track, so
             # the same list is stored for both shapes.
             loc_books = _lib_scan_books_safe(base_path, label) if want_books else []
+            loc_comics = _lib_scan_comics_safe(base_path, label) if want_comics else []
+            if loc_comics:
+                _lib_queue_comic_covers(loc_comics)
             if lang_sep and want_video:
                 loc_lang_folders = []
                 for lf in _LIB_LANG_FOLDERS:
@@ -962,6 +1042,7 @@ def _lib_do_scan_locked(targets, lang_sep):
                     "label": label, "custom_path_id": cp_id, "media_kinds": kinds,
                     "lang_folders": loc_lang_folders, "titles": None,
                     "books": loc_books, "books_version": BOOKS_FORMAT_VERSION,
+                    "comics": loc_comics, "comics_version": COMICS_FORMAT_VERSION,
                 })
             else:
                 loc_titles = (_lib_scan_base(base_path, old_cache_lookup, progress)
@@ -974,6 +1055,7 @@ def _lib_do_scan_locked(targets, lang_sep):
                     # list there is exactly "this path holds no videos".
                     "lang_folders": None, "titles": loc_titles,
                     "books": loc_books, "books_version": BOOKS_FORMAT_VERSION,
+                    "comics": loc_comics, "comics_version": COMICS_FORMAT_VERSION,
                 })
         except Exception:
             logger.exception("[LibraryScan] Scan of %s (%s) failed", base_path, label)
@@ -1232,8 +1314,8 @@ def _lib_overview_counts():
     kinds_map = _lib_kinds_map()
     cache = get_all_library_cache() or {}
 
-    titles = episodes = books = 0
-    video_size = book_size = 0
+    titles = episodes = books = series = issues = 0
+    video_size = book_size = comic_size = 0
 
     for path_key, entry in cache.items():
         kinds = kinds_map.get(path_key)
@@ -1249,10 +1331,19 @@ def _lib_overview_counts():
             for book in data.get("books") or []:
                 books += 1
                 book_size += int(book.get("total_size") or 0)
+        if KIND_COMIC in kinds:
+            # A comic tile counts series first and issues second, the way the
+            # shelf is grouped -- "12 series" is what a reader recognises,
+            # "1,480 issues" is the detail under it.
+            for entry in data.get("comics") or []:
+                series += 1
+                issues += int(entry.get("issue_count") or 0)
+                comic_size += int(entry.get("total_size") or 0)
 
     return {
         KIND_VIDEO: {"primary": titles, "secondary": episodes, "size": video_size},
         KIND_BOOK:  {"primary": books,  "secondary": 0,        "size": book_size},
+        KIND_COMIC: {"primary": series, "secondary": issues,   "size": comic_size},
     }
 
 
@@ -1461,7 +1552,7 @@ def register_library_routes(app):
 
         Called from static/library_core.js's `libFetch()`."""
         kind = (request.args.get("kind") or KIND_VIDEO).strip().lower()
-        if kind not in (KIND_VIDEO, KIND_BOOK):
+        if kind not in (KIND_VIDEO, KIND_BOOK, KIND_COMIC):
             return jsonify({"error": "unknown media kind"}), 400
 
         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
@@ -1475,10 +1566,17 @@ def register_library_routes(app):
         needs_initial_scan = []
 
         def _slim(data):
-            """Drop the half of a cache entry this request is not about."""
+            """Keep only the shelf this request is about.
+
+            Three lists live in one cache row now, and a request for one of
+            them has no use for the other two. On a location that holds films
+            *and* a comic run this is most of the payload.
+            """
             if kind == KIND_VIDEO:
-                return dict(data, books=[])
-            return dict(data, titles=None, lang_folders=None)
+                return dict(data, books=[], comics=[])
+            if kind == KIND_BOOK:
+                return dict(data, titles=None, lang_folders=None, comics=[])
+            return dict(data, titles=None, lang_folders=None, books=[])
 
         for (label, cp_id, base_path) in targets:
             path_key = "default" if cp_id is None else str(cp_id)
@@ -1499,6 +1597,11 @@ def register_library_routes(app):
                     if data.get("books") and data.get("books_version") != BOOKS_FORMAT_VERSION:
                         data = dict(data, books=[])
                         needs_initial_scan.append((label, cp_id, base_path))
+                    if data.get("comics") and data.get("comics_version") != COMICS_FORMAT_VERSION:
+                        data = dict(data, comics=[])
+                        needs_initial_scan.append((label, cp_id, base_path))
+                    if kind == KIND_COMIC:
+                        _lib_queue_comic_covers(data.get("comics") or [])
                     locations.append(_slim(data))
             else:
                 # Never scanned yet — trigger once

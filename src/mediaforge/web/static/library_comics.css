@@ -1,0 +1,213 @@
+/* ============================================================
+   Library — Comics
+   ============================================================
+   Only loaded on /library/comics. The shelf reuses the poster grid and the
+   row/badge primitives from library_core.css; what is here is what a comic
+   run has and a film or a novel does not: an issue count on the cover, a
+   series subtitle (volume · year · publisher), the expanded issue list, and
+   the "has to be prepared once" state that CBR/CBA files carry.
+   ============================================================ */
+
+.mf-comic-card .mf-poster-art { cursor: pointer; }
+
+.mf-comic-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Issue count over the cover. A comic cover is busy, so this needs its own
+   contrast rather than relying on the artwork underneath being dark. */
+.mf-comic-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  backdrop-filter: blur(2px);
+}
+
+.mf-comic-sub {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-comic-facts {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+
+/* ── Not readable yet ─────────────────────────────────────────────────
+   A CBR without an unpacker on the server is not an error and must not read
+   like one -- it is a one-off preparation step. Warning colour, not error
+   colour, and the badge says what to do rather than what went wrong. */
+.lib-badge-pending {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning, #f59e0b);
+  white-space: nowrap;
+}
+
+.lib-summary-pill--issues {
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.07);
+}
+.lib-summary-pill--pending {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+/* ── Expanded series ── */
+.mf-comic-desc {
+  padding: 2px 12px 8px;
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.mf-comic-credits {
+  padding: 0 12px 8px;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.mf-comic-issues {
+  display: flex;
+  flex-direction: column;
+}
+
+.mf-comic-issue {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  min-height: 46px;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+.mf-comic-issue:hover { background: var(--bg-hover); }
+
+/* Tabular figures and a fixed width so the numbers form a column instead of
+   jittering with each issue's digit count. */
+.mf-comic-issue-num {
+  flex-shrink: 0;
+  min-width: 52px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.mf-comic-issue-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+}
+
+.mf-comic-issue-muted { color: var(--text-muted); }
+
+/* ── Cover preparation ────────────────────────────────────────────────
+   A CBR has to be repacked before its first page can be read, so on such a
+   library the shelf fills in over the first minute. The spinner sits ON the
+   card rather than replacing it: the series, the issue count and the click
+   target are all already correct, only the picture is missing. */
+.mf-comic-preparing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+}
+
+.lib-prep-spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: lib-prep-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.mf-comic-preparing .lib-prep-spinner {
+  width: 26px;
+  height: 26px;
+  border-width: 3px;
+  color: #fff;
+}
+
+@keyframes lib-prep-spin { to { transform: rotate(360deg); } }
+
+/* Respect a user who has asked for less motion: the spinner still reads as
+   "busy" through its gap, it just stops turning. */
+@media (prefers-reduced-motion: reduce) {
+  .lib-prep-spinner { animation: none; }
+}
+
+/* ── Flat issue view ── */
+.mf-issue-card .mf-poster-art { cursor: pointer; }
+
+/* The "needs preparing" marker on an issue card. Deliberately not the same
+   pill as on a series card: here it is one file, so a short mark is enough
+   and the space belongs to the cover. */
+.mf-issue-flag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--warning, #f59e0b);
+  color: #1a1a1a;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.lib-summary-pill--prep {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.08);
+  color: var(--text-secondary);
+}
+
+.mf-comic-open svg { width: 13px; height: 13px; fill: currentColor; stroke: none; }
+
+/* ── Mobile ──────────────────────────────────────────────────────────
+   The issue row carries number, title, format, pages, size and a button.
+   On a phone that is three too many, and the title is the one that has to
+   survive -- so the counts drop out and the number moves above the title
+   rather than competing with it for the same line. */
+@media (max-width: 560px) {
+  .mf-comic-issue { gap: 8px; padding: 6px 8px; }
+  .mf-comic-issue-num { min-width: 42px; font-size: 0.78rem; }
+  .mf-comic-issue .lib-badge-size,
+  .mf-comic-issue .lib-badge:not(.lib-badge-pending) { display: none; }
+  .mf-comic-issue .mf-format-badge { font-size: 0.6rem; }
+  .mf-comic-open { width: 40px; height: 40px; }
+  .mf-comic-desc { font-size: 0.8rem; }
+  .mf-comic-count { top: 6px; right: 6px; font-size: 0.68rem; }
+}

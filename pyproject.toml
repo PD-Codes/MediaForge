@@ -48,6 +48,9 @@ dependencies = [
   # MOBI/AZW3/AZW -> EPUB for the built-in reader (web/books/convert.py).
   # Pure Python, a KindleUnpack derivative; GPL-3.0, same as MediaForge.
   "mobi",
+  # .cb7 comic archives (web/comics/archive.py). Pure Python, so unlike RAR
+  # and ACE this format needs no external binary on the host.
+  "py7zr",
 ]
 
 keywords = [
@@ -55,7 +58,8 @@ keywords = [
   "downloader", "video-downloader", "m3u8", "yt-dlp", "streaming", "self-hosted",
   "webui", "flask", "media-server", "media-library", "jellyfin", "plex",
   "jellyseerr", "overseerr", "tmdb", "subtitles", "ebook-reader", "epub",
-  "docker", "pwa", "syncplay", "modular", "themes", "python"
+  "docker", "pwa", "syncplay", "modular", "themes", "python",
+  "comic-reader", "cbz", "cbr", "comicvine"
 ]
 
 classifiers = [

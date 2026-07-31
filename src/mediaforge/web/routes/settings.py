@@ -359,6 +359,12 @@ def register_settings_routes(app):
                 "library_rescan_hours":      get_setting("library_rescan_hours", "24"),
                 "library_probe_workers":     get_setting("library_probe_workers", "0"),
                 "default_path_media_kinds":  get_setting("default_path_media_kinds", DEFAULT_KINDS_CSV),
+                # Comics (Library tab). Covers on by default -- a shelf
+                # without covers is a list of file names; the other two off,
+                # because they cost disk (every CBR repacked) respectively
+                # data (the original replaced by its CBZ).
+                "comic_auto_prepare_all":    get_setting("comic_auto_prepare_all", "0"),
+                "comic_replace_original":    get_setting("comic_replace_original", "0"),
                 "web_console":               web_console,
                 "tray_mode":                 tray_mode,
                 "autostart_enabled":         autostart_enabled,
@@ -1175,6 +1181,15 @@ def register_settings_routes(app):
             if workers not in _LIB_PROBE_WORKER_CHOICES:
                 workers = _LIB_PROBE_WORKERS_AUTO
             set_setting("library_probe_workers", str(workers))
+        # Comics. Three plain booleans, normalised here rather than trusted
+        # from the client: the third one gates a destructive action, so
+        # "anything that is not truthy is off" has to be decided on the server
+        # -- a request that sends "maybe" must store "0", never "maybe".
+        for _comic_key in ("comic_auto_prepare_all",
+                           "comic_replace_original"):
+            if _comic_key in data:
+                val = "1" if str(data[_comic_key]).strip().lower() in ("true", "1", "on", "yes") else "0"
+                set_setting(_comic_key, val)
         if "default_path_media_kinds" in data:
             # Which libraries the DEFAULT download root feeds. Custom paths
             # keep theirs in a column; the default root has no row of its own,

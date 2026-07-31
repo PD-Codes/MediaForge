@@ -40,6 +40,13 @@ function libHubStatParts(slug, c) {
   } else if (slug === "book") {
     if (c.primary)   parts.push(libHubNum(c.primary) + " " +
                                 (c.primary === 1 ? t("Buch", "book") : t("Bücher", "books")));
+  } else if (slug === "comic") {
+    // Series first, issues second -- the same order the shelf groups them in,
+    // so the tile and the page agree about what the headline number counts.
+    if (c.primary)   parts.push(libHubNum(c.primary) + " " +
+                                (c.primary === 1 ? t("Reihe", "series") : t("Reihen", "series")));
+    if (c.secondary) parts.push(libHubNum(c.secondary) + " " +
+                                (c.secondary === 1 ? t("Ausgabe", "issue") : t("Ausgaben", "issues")));
   }
   if (c.size) parts.push(libHubFmtSize(c.size));
   return parts;

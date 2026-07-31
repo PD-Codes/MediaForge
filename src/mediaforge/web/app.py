@@ -836,6 +836,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     from .routes.queue import register_queue_routes
     from .routes.push_notifications import register_push_notifications_routes
     from .routes.library import register_library_routes
+    from .routes.comics import register_comic_routes
     from .routes.settings import register_settings_routes
     from .routes.integrations import register_integrations_routes
     from .routes.extensions import register_extensions_routes
@@ -868,6 +869,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     register_direct_link_routes(app)
     register_push_notifications_routes(app)
     register_library_routes(app)
+    register_comic_routes(app)
     register_settings_routes(app)
     register_integrations_routes(app)
     register_syncplay_routes(app)
@@ -970,6 +972,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_settings_opensubtitles_get",
             "api_settings_opensubtitles_put",
             "api_settings_opensubtitles_test",
+            "api_settings_comicvine_get",
+            "api_settings_comicvine_put",
+            "api_settings_comicvine_test",
             "api_settings_fernsehserien_get",
             "api_settings_fernsehserien_put",
             "api_settings_fernsehserien_test",
@@ -1017,6 +1022,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # Replaces files in place (upscaling_replace_original defaults to
             # on), so it belongs in the same tier as library delete/rename/move.
             "api_upscale_add_library",
+            # The comic caches (routes/comics.py): one endpoint reports
+            # server-wide state (cache sizes, which unpacker this host has),
+            # the other deletes every file in one of the two caches. Both are
+            # instance-wide, not per-account -- same tier as the rest of the
+            # settings page they are shown on.
+            "api_comic_cache",
+            "api_comic_cache_clear",
             "api_library_delete",
             "api_library_rename",
             "api_library_move",

@@ -116,6 +116,7 @@ SENSITIVE_KEYS: frozenset = frozenset({
     "crunchyroll_session_key",
     "opensubtitles_api_key",
     "opensubtitles_password",
+    "comicvine_api_key",
 })
 
 # Sensitive keys registered at runtime on top of the frozen core set above --
