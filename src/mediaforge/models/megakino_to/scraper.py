@@ -290,8 +290,8 @@ def _card(item):
         "url": content_url(item),
         "poster_url": poster_url(poster),
         "genre": _text(item.get("genres")).strip(),
-        "rating": str(item.get("rating") or ""),
-        "year": str(item.get("year") or ""),
+        "rating": _text(item.get("rating") or ""),
+        "year": _text(item.get("year") or ""),
         "is_series": series,
     }
 
@@ -340,7 +340,7 @@ def parse_meta(data):
         "title": unescape(_text(data.get("title"))),
         "year": year,
         "genres": genres,
-        "description": unescape(_text(data.get("storyline") or data.get("overview"))),
+        "description": unescape(_text(data.get("storyline")) or _text(data.get("overview"))),
         "poster_url": poster_url(poster),
         "imdb_id": _text(data.get("imdb_id")) or None,
         "rating": _text(data.get("rating") or ""),
