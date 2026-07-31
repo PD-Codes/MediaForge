@@ -1829,6 +1829,19 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
         logger.info("CAPTCHA solve aborted — download cancelled by the user")
         raise RuntimeError("Download cancelled")
 
+    except CaptchaEnvironmentError as e:
+        # This function has no generic except on purpose, so without this branch
+        # a missing display would travel up into the extractor's retry loop and
+        # be logged there as an ERROR -- a crash report for a missing system
+        # package. Same handling as the other two solvers.
+        logger.warning("Captcha browser unavailable: %s", e)
+        telemetry_client.submit(telemetry_events.build_feature_detail_event(
+            "detail.captcha", action="solve", status="error",
+            metadata={"mode": "interactive", "error_type": type(e).__name__,
+                      "reason": "no_display"},
+        ))
+        return False
+
     finally:
         if _on_captcha_end is not None:
             try:
