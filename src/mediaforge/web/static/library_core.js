@@ -31,6 +31,12 @@ var libLangSep       = false;
 var libLocations     = [];
 var libAllTargets    = [];
 var libScanPollTimer = null;
+// Whether the server says a scan is running right now. Read by each shelf's
+// empty state: "no books found" is a wrong and alarming thing to say while
+// the library is still being read, and after a format-version bump (which
+// empties the cached list on purpose and re-reads it) that is exactly the
+// moment the user is looking at the page.
+var libIsScanning = false;
 var libIdlePollTimer = null;  // slow background poll to catch watcher-triggered rescans
 var libLastUpdated   = 0;     // scanned_at timestamp of the last full render
 var libSearchQuery   = "";    // current search filter
@@ -119,6 +125,7 @@ async function libFetch() {
     // Track when we last rendered so the idle poll can detect watcher updates
     libLastUpdated = data.last_updated || 0;
 
+    libIsScanning = !!data.is_scanning;
     libRender(libLocations);
     libUpdateWatcherStatus(data.watcher || {});
     libUpdateSummary(libLocations);
@@ -164,6 +171,7 @@ async function libIdlePoll() {
     var status = await resp.json();
     if (status.is_scanning) {
       // Watcher just triggered a scan — hand off to scan poller
+      libIsScanning = true;
       libShowScanBadge(true);
       if (!libScanPollTimer) {
         libScanPollTimer = window.mfPoll(libPollScan, 2500);
@@ -181,6 +189,7 @@ async function libPollScan() {
     var resp = await fetch("/api/library?kind=" + encodeURIComponent(LIB_KIND));
     var data = await resp.json();
     libUpdateWatcherStatus(data.watcher || {});
+    libIsScanning = !!data.is_scanning;
     if (!data.is_scanning) {
       libLangSep   = !!data.lang_sep;
       libLocations = data.locations || [];

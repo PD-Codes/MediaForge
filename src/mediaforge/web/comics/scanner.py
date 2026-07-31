@@ -11,8 +11,15 @@ Metadata precedence, highest first:
   1. ComicInfo.xml inside the archive (comicinfo.py) -- states series and
      issue number as separate fields, so nothing has to be guessed
   2. the filename (identity.py)
-  3. ComicVine, if the user enabled it (comicvine_service) -- fills gaps only,
-     never overwrites 1 or 2
+
+ComicVine is NOT part of this. The service exists (web/comicvine_service.py)
+and is configurable under Integrations, but nothing here imports or calls it:
+this docstring claimed a third stage that was never wired up, which is worse
+than the gap itself -- it is what a reader checks against when a comic comes
+out with the wrong publisher. A remote lookup also does not belong in a scan
+that walks a whole library under a time budget; if it is added, it belongs
+where the video side puts it, as an on-demand enrichment behind the detail
+panel.
 
 Covers are NOT extracted here. Opening every archive to pull its first image
 would make the first scan of a large library take minutes for data that most

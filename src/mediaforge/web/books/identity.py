@@ -90,6 +90,53 @@ _SERIES_IN_TITLE_RE = re.compile(
 )
 
 
+# "%f6" for "ö": a filename that has been through a web download keeps the
+# percent-encoding of whatever produced it, so "In der H%f6lle der Sioux.epub"
+# went onto the shelf spelled exactly like that. Decoded here rather than in
+# the scanner for the same reason the comic side does it here -- two spellings
+# of one title have to normalise to one, or the two files never merge into one
+# card. Same implementation, deliberately: comics/identity.py:_decode_percent.
+_PERCENT_RE = re.compile(r"%([0-9A-Fa-f]{2})")
+
+# A four-digit year in brackets, at the end: "Der Report (2019)". Recovered
+# rather than thrown away -- _BRACKET_GROUP_RE deletes every bracketed group,
+# which is right for "(GER)(KAZE)" and wrong for the one piece of information
+# in there that is worth keeping. Also matches a publisher that shares the
+# brackets: "(Heyne 2019)".
+_TITLE_YEAR_RE = re.compile(r"[\(\[]\s*(?:[^()\[\]]{0,40}?[\s\-])?((?:19|20)\d{2})\s*[\)\]]\s*$")
+
+
+def decode_percent(value: str) -> str:
+    """Undo percent-escapes in a filename. Unchanged when that is not possible.
+
+    latin-1 first: these names come from Windows tooling, where the escaped
+    byte is cp1252/latin-1 far more often than UTF-8. A wrong guess would turn
+    one mojibake into another, so anything that does not decode cleanly is
+    left exactly as it was.
+    """
+    if "%" not in (value or ""):
+        return value or ""
+    try:
+        return _PERCENT_RE.sub(lambda m: chr(int(m.group(1), 16)), value)
+    except (ValueError, OverflowError):
+        return value
+
+
+def extract_year(raw: str):
+    """``(text without the trailing bracketed year, year)`` -- year may be None.
+
+    Only a TRAILING bracketed group is considered. A year in the middle of a
+    title is part of the title ("1984", "Sommer 1944"), and guessing otherwise
+    costs more than the year is worth.
+    """
+    text = raw or ""
+    match = _TITLE_YEAR_RE.search(text)
+    if not match:
+        return text, None
+    year = int(match.group(1))
+    return text[:match.start()].rstrip(" -_.") , year
+
+
 def strip_diacritics(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", text or "")
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
@@ -103,7 +150,10 @@ def normalize(text: str) -> str:
     space. "Vol'Jin: Schatten der Horde (2)" and "voljin schatten der horde"
     end up identical.
     """
-    value = strip_diacritics(text or "")
+    value = strip_diacritics(decode_percent(text or ""))
+    # "Fire & Blood" and "Fire and Blood" are one book. Taken from
+    # comics/identity.py, which has needed it for the same reason.
+    value = value.replace("&", " and ")
     value = _ASIN_SUFFIX_RE.sub("", value)
     value = _CALIBRE_ID_SUFFIX_RE.sub("", value)
     value = _BRACKET_GROUP_RE.sub(" ", value)
@@ -117,7 +167,7 @@ def normalize(text: str) -> str:
 
 def clean_title(raw: str) -> str:
     """Human-facing title: keep the original casing, drop only the noise."""
-    value = _ASIN_SUFFIX_RE.sub("", raw or "")
+    value = _ASIN_SUFFIX_RE.sub("", decode_percent(raw or ""))
     value = _CALIBRE_ID_SUFFIX_RE.sub("", value)
     value = _BRACKET_GROUP_RE.sub(" ", value)
     value = re.sub(r"\s+", " ", value).strip(" -_.")

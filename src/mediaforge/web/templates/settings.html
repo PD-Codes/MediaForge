@@ -497,6 +497,38 @@
       <div class="settings-hint" style="padding:0 22px 14px;">{{ _('MediaForge no longer rescans everything on every start — on a large library that costs minutes for a result that is almost always identical. While it runs, the file watcher picks up changes live; this interval covers what the watcher cannot, such as files added while MediaForge was closed. Locations that have never been scanned are always read in, and the refresh button on the Library page rescans on demand.') }}</div>
     </div>
 
+    <!-- eBooks.
+         Two caches, both derived data, both previously invisible: there was
+         no way to see what the MOBI conversions cost or to get rid of them.
+         Deliberately its own block next to the comic one and NOT merged with
+         it -- the two libraries have their own directories on disk and their
+         own sizes, and clearing one must not throw away the other's work. -->
+    <div class="settings-section">
+      <h2>{{ _('eBooks') }}</h2>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Covers are always prepared: MediaForge reads the cover out of each book in the background and keeps a small copy, so the shelf shows pictures instead of blank tiles. An EPUB carries its cover inside it; MOBI and AZW3 have to be converted first, which is what the second cache below holds.') }}</div>
+
+      <h3 class="settings-subtitle">{{ _('Cache') }}</h3>
+      <div class="settings-row comic-cache-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Cover cache') }}</div>
+          <div class="settings-row-desc" id="bookCoverCacheSize">…</div>
+        </div>
+        <div class="settings-row-right">
+          <button type="button" class="btn btn-secondary" onclick="clearBookCache('covers')">{{ _('Clear cover cache') }}</button>
+        </div>
+      </div>
+      <div class="settings-row comic-cache-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Converted books') }}</div>
+          <div class="settings-row-desc" id="bookConvertCacheSize">…</div>
+        </div>
+        <div class="settings-row-right">
+          <button type="button" class="btn btn-secondary" onclick="clearBookCache('converted')">{{ _('Clear converted books') }}</button>
+        </div>
+      </div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Both caches hold derived data only — your book files are never touched. A cover is read again the next time the shelf is drawn, and a converted book is rebuilt the next time it is opened. These are separate from the comic caches above.') }}</div>
+    </div>
+
     <!-- Comics.
          Three switches and the two caches behind them. The first two are
          ordinary preferences; the third one replaces a file the user owns,

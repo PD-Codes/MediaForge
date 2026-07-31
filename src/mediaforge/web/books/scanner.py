@@ -35,6 +35,7 @@ from ..media_types import (
 from . import calibre_db
 from .identity import (
     clean_title,
+    extract_year,
     looks_like_author_folder,
     merge_groups,
     normalize,
@@ -51,7 +52,7 @@ logger = get_logger(__name__)
 # HTML descriptions are flattened only reaches books scanned AFTER the update,
 # and every existing shelf keeps showing the bug with nothing on disk changed
 # to trigger a rescan.
-BOOKS_FORMAT_VERSION = 2
+BOOKS_FORMAT_VERSION = 3   # v3: percent-escapes decoded, bracketed year kept
 
 # A runaway walk is worse than an incomplete one: the scan holds a lock the
 # whole library shares. 200k book files is far beyond any real collection.
@@ -160,18 +161,37 @@ def _candidate_for(path: Path, stat_result, opf_cache: dict, base: Path = None) 
     if not series:
         series, series_index = split_series(title)
 
+    # A trailing "(2019)" is the one part of a bracketed group worth keeping.
+    # clean_title() deletes EVERY bracketed group -- right for "(GER)(KAZE)",
+    # wrong for the only date many downloads carry -- so the year has to come
+    # out of the RAW title. Running extract_year() on the cleaned one, which is
+    # what this did at first, finds nothing: the brackets it looks for are
+    # already gone by then.
+    _raw_without_year, file_year = extract_year(title)
+    display_title = clean_title(_raw_without_year or title)
+
     return {
         "path": str(path),
         "ext": path.suffix.lower(),
         "size": int(getattr(stat_result, "st_size", 0) or 0),
         "mtime": float(getattr(stat_result, "st_mtime", 0) or 0),
         "folder": str(folder),
-        "title": clean_title(title),
+        "title": display_title or clean_title(title),
+        "file_year": file_year,
         "authors": authors,
         "series": series,
         "series_index": series_index,
         "opf": opf,
     }
+
+
+def _first_file_year(bucket: list) -> str:
+    """The first year read out of a filename in this bucket, as a string."""
+    for cand in bucket:
+        year = cand.get("file_year")
+        if year:
+            return str(year)
+    return ""
 
 
 def _pick(bucket: list, key: str, default=None):
@@ -251,7 +271,11 @@ def _build_book(bucket: list, cover_by_folder: dict, catalogue: dict) -> dict:
         "series_index": series_index,
         "language": _pick(bucket, "language", ""),
         "isbn": _pick(bucket, "isbn") or record.get("isbn") or "",
-        "published": _pick(bucket, "published") or record.get("published") or "",
+        # Real metadata first; the filename's year is the fallback, so a
+        # shelf sorted or filtered by date is not empty for everything that
+        # was downloaded rather than imported.
+        "published": (_pick(bucket, "published") or record.get("published")
+                      or _first_file_year(bucket) or ""),
         "publisher": _pick(bucket, "publisher", ""),
         "rating": _pick(bucket, "rating"),
         "description": (description or "")[:_DESCRIPTION_LIMIT],

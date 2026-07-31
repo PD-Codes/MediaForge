@@ -138,16 +138,6 @@
   pointer-events: none;
 }
 
-.lib-prep-spinner {
-  display: inline-block;
-  width: 15px;
-  height: 15px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: lib-prep-spin 0.8s linear infinite;
-  flex-shrink: 0;
-}
 .mf-comic-preparing .lib-prep-spinner {
   width: 26px;
   height: 26px;
@@ -155,13 +145,9 @@
   color: #fff;
 }
 
-@keyframes lib-prep-spin { to { transform: rotate(360deg); } }
-
-/* Respect a user who has asked for less motion: the spinner still reads as
-   "busy" through its gap, it just stops turning. */
-@media (prefers-reduced-motion: reduce) {
-  .lib-prep-spinner { animation: none; }
-}
+/* .lib-prep-spinner, its keyframes and .lib-summary-pill--prep moved to
+   library_core.css: the book shelf prepares covers the same way and needs the
+   same two marks, and library_core.css is the sheet both pages load. */
 
 /* ── Flat issue view ── */
 .mf-issue-card .mf-poster-art { cursor: pointer; }
@@ -183,15 +169,6 @@
   color: #1a1a1a;
   font-size: 0.72rem;
   font-weight: 800;
-}
-
-.lib-summary-pill--prep {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border-color: rgba(96, 165, 250, 0.35);
-  background: rgba(96, 165, 250, 0.08);
-  color: var(--text-secondary);
 }
 
 .mf-comic-open svg { width: 13px; height: 13px; fill: currentColor; stroke: none; }

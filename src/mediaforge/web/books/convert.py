@@ -639,3 +639,87 @@ def cleanup_converted(max_age_days: int = 30) -> int:
     if removed:
         logger.info("[Books] Removed %s stale conversion(s)", removed)
     return removed
+
+
+def cache_stats() -> dict:
+    """How much room the conversion cache takes up: ``{"files": n, "bytes": n}``.
+
+    The counterpart of covers.cache_stats(), and the same promise: purely
+    informational, never raises, a directory that cannot be listed reads as
+    empty. It is what the settings page shows next to the button that empties
+    this cache, so that pressing it is an informed decision rather than a leap
+    in the dark -- and a MOBI library's conversions are the larger of the two
+    caches by a wide margin.
+
+    One entry is a DIRECTORY here (``<key>/book.epub`` plus whatever the
+    converter unpacked next to it), not a single file as it is for covers, so
+    this walks each one rather than calling stat() on it.
+    """
+    files = 0
+    total = 0
+    try:
+        entries = list(_cache_root().iterdir())
+    except OSError:
+        return {"files": 0, "bytes": 0}
+    for entry in entries:
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+                files += 1
+                continue
+            if not entry.is_dir():
+                continue
+            files += 1
+            for inner in entry.rglob("*"):
+                try:
+                    if inner.is_file():
+                        total += inner.stat().st_size
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return {"files": files, "bytes": total}
+
+
+def purge_orphans(known_paths) -> int:
+    """Remove conversions that no longer belong to anything.
+
+    *known_paths* is every book the library currently holds. Each existing one
+    is turned into its cache key, and every cache directory whose name is not
+    one of those keys goes -- which covers the source being deleted, leaving
+    the library, or being replaced (its mtime changed, so its old key is no
+    longer produced by anything).
+
+    This trusts the caller: an empty *known_paths* means an empty library and
+    empties the cache. Deliberate and harmless -- a conversion is derived data
+    and is redone on the next read -- but it does mean this must be called with
+    a complete list, never with a partial scan.
+    """
+    keep = set()
+    for candidate in known_paths or ():
+        try:
+            path = Path(candidate)
+            if path.is_file():
+                keep.add(cache_key(path))
+        except OSError:
+            continue
+
+    removed = 0
+    try:
+        entries = list(_cache_root().iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        try:
+            if entry.name in keep:
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink()
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info("[Books] Removed %s orphaned conversion(s)", removed)
+    return removed

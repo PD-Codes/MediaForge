@@ -456,3 +456,57 @@ def test_the_reader_size_range_matches_the_clients_clamp():
     valid = USER_UI_PREF_KEYS["reader_font"]
     assert valid("70") and valid("220")
     assert not valid("69") and not valid("221")
+
+
+# ── filename parsing brought in line with the comic side ─────────────────
+
+def test_percent_escapes_are_decoded():
+    """A filename that has been through a web download keeps the encoding of
+    whatever produced it, and "In der H%f6lle der Sioux" went onto the shelf
+    spelled exactly like that."""
+    from mediaforge.web.books.identity import clean_title, normalize
+    assert clean_title("In der H%f6lle der Sioux") == "In der Hölle der Sioux"
+    # And, more importantly, the two spellings merge into one card.
+    assert normalize("In der H%f6lle der Sioux") == normalize("In der Hölle der Sioux")
+
+
+def test_an_undecodable_escape_is_left_alone():
+    """Better one odd title than a second kind of mojibake."""
+    from mediaforge.web.books.identity import clean_title
+    assert "100%" in clean_title("100% Sicherheit")
+
+
+def test_ampersand_and_and_are_the_same_book():
+    from mediaforge.web.books.identity import normalize
+    assert normalize("Fire & Blood") == normalize("Fire and Blood")
+
+
+def test_a_trailing_bracketed_year_is_recovered():
+    """clean_title() deletes every bracketed group -- right for "(GER)(KAZE)",
+    wrong for the only date most downloads carry."""
+    from mediaforge.web.books.identity import extract_year
+    assert extract_year("Der Report (2019)") == ("Der Report", 2019)
+    assert extract_year("Der Report (Heyne 2019)") == ("Der Report", 2019)
+
+
+def test_a_year_inside_the_title_stays_in_the_title():
+    """"1984" is a novel, not a date."""
+    from mediaforge.web.books.identity import extract_year
+    assert extract_year("1984") == ("1984", None)
+    assert extract_year("Sommer 1944 im Osten") == ("Sommer 1944 im Osten", None)
+    assert extract_year("Some Title (GER)(KAZE)")[1] is None
+
+
+def test_a_trailing_year_survives_clean_title():
+    """extract_year() has to run on the RAW title.
+
+    clean_title() deletes every bracketed group, so running the year search on
+    its output finds nothing -- which is exactly the bug this guards: the
+    scanner did that at first and every "(2019)" was silently dropped instead
+    of becoming the published date.
+    """
+    from mediaforge.web.books.identity import clean_title, extract_year
+    assert extract_year(clean_title("Der Wuestenplanet (2019)")) == ("Der Wuestenplanet", None)
+    raw_without_year, year = extract_year("Der Wuestenplanet (2019)")
+    assert year == 2019
+    assert clean_title(raw_without_year) == "Der Wuestenplanet"

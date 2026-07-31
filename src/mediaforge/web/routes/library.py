@@ -14,6 +14,7 @@ from ..books.scanner import BOOKS_FORMAT_VERSION
 from ..books.scanner import scan_books
 from ..comics.scanner import COMICS_FORMAT_VERSION
 from ..comics.scanner import scan_comics
+from ..comics import convert as comic_convert
 from ..comics import covers as comic_covers
 from ..media_types import BOOK_ALL_EXTS
 from ..media_types import BOOK_CONVERTIBLE_EXTS
@@ -1014,6 +1015,48 @@ def _lib_scan_comics_safe(base_path, label):
         return []
 
 
+def _lib_queue_book_covers(books):
+    """Ask the background worker for the covers this book shelf needs.
+
+    Same contract as _lib_queue_comic_covers below, and here for the same
+    reason: before this the book shelf only ever showed a cover when a
+    `cover.jpg` happened to lie next to the file, so most libraries were a
+    wall of grey placeholders even though every EPUB carries its cover inside
+    it.
+
+    Queued per BOOK, not per format: a title held as both EPUB and MOBI is one
+    card, and the EPUB is the cheap one to read. The list is therefore ordered
+    readable-first, so the worker gets its answer from a zip member rather
+    than by waiting for a conversion whenever it has the choice.
+
+    Called from the scan AND from every /api/library?kind=book request -- a
+    library that was indexed before this existed would otherwise never get a
+    single cover, because the work was queued once at a moment that had
+    already passed. The worker de-duplicates, so a shelf load costs a set
+    lookup per book.
+    """
+    try:
+        from ..books import covers as book_covers
+        sources = []
+        for book in books or ():
+            if book.get("cover_path"):
+                continue        # a sidecar image; the cover route caches that
+            formats = book.get("formats") or []
+            # .epub first, then anything else readable, then the rest.
+            ranked = sorted(
+                (f for f in formats if f.get("path")),
+                key=lambda f: (0 if (f.get("ext") or "").lower() == "epub"
+                               else (1 if f.get("readable") else 2)),
+            )
+            if ranked:
+                sources.append(ranked[0]["path"])
+        if sources:
+            book_covers.prepare_async(sources)
+    except Exception:
+        # A cover is decoration. Never let it cost the scan or the request.
+        logger.debug("[Books] Could not queue cover preparation", exc_info=True)
+
+
 def _lib_queue_comic_covers(series_list):
     """Ask the background worker for the covers this shelf needs.
 
@@ -1060,7 +1103,27 @@ def _lib_queue_comic_covers(series_list):
                       for i in (entry.get("issues") or [])
                       if i.get("path") and i.get("needs_conversion")]
             if issues:
-                comic_covers.prepare_full_async(issues)
+                # request_conversion(), not a covers.* call: this setting is
+                # about repacking the archives, which is convert.py's job --
+                # covers.py only ever wanted one page out of them.
+                #
+                # It used to call comic_covers.prepare_full_async(), which does
+                # not exist and never did. The AttributeError landed in the
+                # `except Exception` below and was logged at debug, so the
+                # setting silently did nothing at all while reporting success.
+                # convert.py caps how many run at once and refuses duplicates,
+                # so handing it the whole list is safe.
+                from pathlib import Path as _Path
+                queued = 0
+                for path in issues:
+                    try:
+                        state = comic_convert.request_conversion(_Path(path))
+                        queued += 1 if state.get("pending") else 0
+                    except Exception:
+                        logger.debug("[Comics] Could not queue %s for conversion",
+                                     path, exc_info=True)
+                logger.info("[Comics] Queued %s of %s issue(s) for full preparation",
+                            queued, len(issues))
     except Exception:
         # A cover is decoration. Never let it cost the scan or the request.
         logger.debug("[Comics] Could not queue cover preparation", exc_info=True)
@@ -1164,6 +1227,8 @@ def _lib_do_scan_locked(targets, lang_sep):
             # the same list is stored for both shapes.
             loc_books = _lib_scan_books_safe(base_path, label) if want_books else []
             loc_comics = _lib_scan_comics_safe(base_path, label) if want_comics else []
+            if loc_books:
+                _lib_queue_book_covers(loc_books)
             if loc_comics:
                 _lib_queue_comic_covers(loc_comics)
             if lang_sep and want_video:
@@ -1734,6 +1799,8 @@ def register_library_routes(app):
                     if data.get("comics") and data.get("comics_version") != COMICS_FORMAT_VERSION:
                         data = dict(data, comics=[])
                         needs_initial_scan.append((label, cp_id, base_path))
+                    if kind == KIND_BOOK:
+                        _lib_queue_book_covers(data.get("books") or [])
                     if kind == KIND_COMIC:
                         _lib_queue_comic_covers(data.get("comics") or [])
                     locations.append(_slim(data))
@@ -1741,9 +1808,24 @@ def register_library_routes(app):
                 # Never scanned yet — trigger once
                 needs_initial_scan.append((label, cp_id, base_path))
 
+        # `not any_scanning` is a guard against starting a second scan while
+        # one runs, and _lib_do_scan holds a lock anyway. But any_scanning is
+        # true for a location that is CURRENTLY scanning OR whose is_scanning
+        # flag was left set by a crashed run -- and in the second case this
+        # skips the rescan on every request, forever. A location whose books
+        # were emptied above (a scanner-version bump) then shows "no books
+        # found" permanently, with nothing on disk changed to fix it.
+        #
+        # Retried on the next request rather than forced through here: this
+        # runs on a page load, and a stuck flag is cleared by the scan that
+        # eventually starts, not by a second one queued on top of it.
         if needs_initial_scan and not any_scanning:
             _lib_trigger_scan_async(needs_initial_scan, lang_sep)
             any_scanning = True
+        elif needs_initial_scan:
+            logger.info("[Library] %s location(s) need a rescan but a scan is "
+                        "already flagged as running -- retrying on the next request",
+                        len(needs_initial_scan))
 
         # Watcher status
         watcher = _get_lib_watcher()
@@ -1813,17 +1895,127 @@ def register_library_routes(app):
         one of a short list of image types. Without the second check this would
         be "read any file inside the library and hand it to the browser".
 
+        The image is served THROUGH the cover cache rather than straight off
+        the disk, so a sidecar cover is downscaled once instead of being sent
+        at full size on every card -- a Calibre cover.jpg is routinely three
+        megabytes for a tile 160 pixels wide. If the cache cannot take it, the
+        original is still served: a large cover beats no cover.
+
         Not cached forever on purpose: `private` keeps it out of shared proxies
         because a library path is not public, and a day is long enough that
         scrolling the shelf costs nothing.
         """
         from flask import send_file
+        from ..books import covers as book_covers
         resolved = lib_resolve_library_file(request.args.get("path", ""), exts=BOOK_COVER_EXTS)
         if resolved is None:
             return jsonify({"error": "not found"}), 404
-        response = send_file(str(resolved), conditional=True)
+        served, mimetype = resolved, None
+        try:
+            key = book_covers.cache_key(resolved)
+            cached = book_covers._CACHE.cached(key)
+            if cached is None:
+                cached = book_covers._CACHE.store_image(
+                    key, resolved, resolved.name, resolved.read_bytes())
+            if cached is not None:
+                served, mimetype = cached, book_covers.cover_mimetype(cached)
+        except (OSError, MemoryError):
+            logger.debug("[Books] Serving %s uncached", resolved.name, exc_info=True)
+        response = send_file(str(served), mimetype=mimetype, conditional=True)
         response.headers["Cache-Control"] = "private, max-age=86400"
         return response
+
+    @app.route("/api/library/book/embedded-cover")
+    def api_library_book_embedded_cover():
+        """Serve the cover from INSIDE a book. GET …?path=<path to the book>
+
+        The counterpart of the route above: that one takes a picture the
+        library already has as a file, this one takes the one an EPUB carries
+        inside itself. Both answer with a cached, downscaled image; the shelf
+        asks for this one whenever a book has no sidecar cover, which is most
+        of them.
+
+        start_conversion=False, always: a shelf render must never kick off two
+        hundred MOBI conversions because it drew two hundred cards. The
+        background worker (books/covers.py) is what fills those in, and the
+        shelf polls its progress.
+        """
+        from flask import send_file
+        from ..books import covers as book_covers
+        resolved = lib_resolve_library_file(request.args.get("path", ""), exts=BOOK_ALL_EXTS)
+        if resolved is None:
+            return jsonify({"error": "not found"}), 404
+        cached = book_covers.cover_path(resolved, start_conversion=False)
+        if cached is None:
+            return jsonify({"error": "no cover"}), 404
+        response = send_file(str(cached), mimetype=book_covers.cover_mimetype(cached),
+                             conditional=True)
+        response.headers["Cache-Control"] = "private, max-age=86400"
+        return response
+
+    @app.route("/api/library/book/covers/status")
+    def api_library_book_covers_status():
+        """How far the background cover preparation has got.
+
+        GET /api/library/book/covers/status
+        -> {running, total, done, failed, pending, current, finished_at}
+
+        Read-only and cheap: the shelf polls it while covers are still being
+        made, so it must not start anything or touch the disk.
+        """
+        from ..books import covers as book_covers
+        return jsonify(book_covers.preparation_status())
+
+    @app.route("/api/library/book/cache")
+    def api_library_book_cache():
+        """What the book caches cost. GET /api/library/book/cache
+
+        One request for the whole eBooks block on the Library settings tab, so
+        "clear" is pressed with a number in view rather than blind. Admin only
+        -- it reports server-wide state and its sibling deletes files.
+        """
+        from ..books import convert as book_convert
+        from ..books import covers as book_covers
+        return jsonify({
+            "ok": True,
+            "covers": book_covers.cache_stats(),
+            "converted": book_convert.cache_stats(),
+        })
+
+    @app.route("/api/library/book/cache/clear", methods=["POST"])
+    def api_library_book_cache_clear():
+        """Empty one of the two book caches.
+
+        POST /api/library/book/cache/clear  {"cache": "covers"|"converted"}
+
+        Both hold nothing but derived data: a cover is re-extracted the next
+        time the shelf is drawn, a conversion redone the next time the book is
+        opened. The book files themselves are never touched -- the cleanup
+        functions only ever look inside the config directory.
+
+        A whitelist of two names rather than a path: nothing the client sends
+        may decide *what* gets deleted. Admin only.
+
+        Deliberately separate from the comic caches, which have their own
+        endpoint and their own directory. They share an implementation
+        (web/covercache.py), never a cache: clearing one must not throw away
+        the other's work, and the two libraries can be very different sizes.
+        """
+        from ..books import convert as book_convert
+        from ..books import covers as book_covers
+        data = request.get_json(silent=True) or {}
+        which = str(data.get("cache", "") or "").strip().lower()
+        if which == "covers":
+            removed = book_covers.cleanup_covers(max_age_days=0)
+            book_covers.reset_preparation()
+            stats = book_covers.cache_stats()
+        elif which == "converted":
+            removed = book_convert.cleanup_converted(max_age_days=0)
+            stats = book_convert.cache_stats()
+        else:
+            return jsonify({"ok": False, "error": "unknown cache"}), 400
+        logger.info("[Books] Cleared the %s cache (%s entries removed)", which, removed)
+        return jsonify({"ok": True, "cache": which, "removed": removed, "stats": stats})
 
     @app.route("/api/library/book/file")
     def api_library_book_file():

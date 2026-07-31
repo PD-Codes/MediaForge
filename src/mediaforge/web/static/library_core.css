@@ -458,3 +458,44 @@
   border-color: rgba(96, 165, 250, 0.35);
   background: rgba(96, 165, 250, 0.07);
 }
+
+
+/* ── Cover preparation, shared by the comic and book shelves ──────────
+   Some covers cannot be produced on the spot: a CBR has to be repacked
+   first, a MOBI converted, and even an EPUB is a zip that has to be opened
+   once. Both shelves therefore fill in over the first seconds and both say
+   so the same way -- a pill in the header with a count, and a spinner over
+   the cards that are still waiting.
+
+   These three rules live here rather than in either shelf's own sheet
+   because the second copy was the moment to stop: library_core.css is what
+   both pages load. What stays shelf-specific is only the overlay itself
+   (.mf-comic-preparing / .mf-book-preparing), because those size themselves
+   against different cards. */
+.lib-prep-spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: lib-prep-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes lib-prep-spin { to { transform: rotate(360deg); } }
+
+/* Respect a user who has asked for less motion: the spinner still reads as
+   "busy" through its gap, it just stops turning. */
+@media (prefers-reduced-motion: reduce) {
+  .lib-prep-spinner { animation: none; }
+}
+
+.lib-summary-pill--prep {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.08);
+  color: var(--text-secondary);
+}

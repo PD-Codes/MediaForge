@@ -308,3 +308,29 @@
   .mf-book-open span { display: none; }
 }
 
+
+
+/* ── Cover preparation ────────────────────────────────────────────────
+   Most book covers live inside the file and a MOBI has to be converted
+   before one can be read at all, so a fresh shelf fills in over the first
+   seconds. The spinner sits ON the card rather than replacing it: the title,
+   the author and the click target are already correct, only the picture is
+   missing. The spinner itself and the header pill are in library_core.css --
+   the comic shelf shows exactly the same two marks. */
+.mf-book-preparing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+}
+
+.mf-book-preparing .lib-prep-spinner {
+  width: 26px;
+  height: 26px;
+  border-width: 3px;
+  color: #fff;
+}

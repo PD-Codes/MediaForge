@@ -370,10 +370,14 @@ function libPaintComics(items) {
         'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h4v4H7z"/><path d="M14 8h3"/>' +
         '<path d="M14 12h3"/><path d="M7 16h10"/></svg>' +
+        // Same reasoning as the book shelf: an empty list during a scan is
+        // not a finding, and "no comics found" reads like one.
         "<p>" + libEsc(libSearchQuery
           ? t("Keine Comics gefunden.", "No comics found.")
-          : t("Keine Comics gefunden. Lege CBZ-, CBR-, CBT-, CB7-, CBA- oder PDF-Dateien in einen Pfad, der der Comic-Mediathek zugeordnet ist — am besten ein Ordner je Reihe.",
-              "No comics found. Put CBZ, CBR, CBT, CB7, CBA or PDF files into a path assigned to the comic library — one folder per series works best.")) + "</p>";
+          : (window.libIsScanning
+             ? t("Bibliothek wird eingelesen …", "Reading the library …")
+             : t("Keine Comics gefunden. Lege CBZ-, CBR-, CBT-, CB7-, CBA- oder PDF-Dateien in einen Pfad, der der Comic-Mediathek zugeordnet ist — am besten ein Ordner je Reihe.",
+                 "No comics found. Put CBZ, CBR, CBT, CB7, CBA or PDF files into a path assigned to the comic library — one folder per series works best."))) + "</p>";
     }
     libRenderPagination(0);
     return;

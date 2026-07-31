@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-31 18:47+0200\n"
+"POT-Creation-Date: 2026-07-31 19:28+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -240,7 +240,7 @@ msgid ""
 msgstr ""
 
 #: src/mediaforge/web/templates/_encoding_body.html:347
-#: src/mediaforge/web/templates/settings.html:1059
+#: src/mediaforge/web/templates/settings.html:1091
 msgid "Mode"
 msgstr ""
 
@@ -253,7 +253,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_encoding_body.html:1142
 #: src/mediaforge/web/templates/autosync.html:209
 #: src/mediaforge/web/templates/base.html:704
-#: src/mediaforge/web/templates/settings.html:1068
+#: src/mediaforge/web/templates/settings.html:1100
 msgid "Disabled"
 msgstr ""
 
@@ -413,7 +413,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_encoding_body.html:1025
 #: src/mediaforge/web/templates/_encoding_body.html:1048
 #: src/mediaforge/web/templates/_encoding_body.html:1090
-#: src/mediaforge/web/templates/settings.html:1662
+#: src/mediaforge/web/templates/settings.html:1694
 msgid "unknown"
 msgstr ""
 
@@ -506,7 +506,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/_extensions_nav.html:19
 #: src/mediaforge/web/templates/extensions.html:483
-#: src/mediaforge/web/templates/settings.html:617
+#: src/mediaforge/web/templates/settings.html:649
 msgid "Theme Packs"
 msgstr ""
 
@@ -526,7 +526,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_monitoring_nav.html:8
 #: src/mediaforge/web/templates/history.html:2
 #: src/mediaforge/web/templates/monitoring.html:47
-#: src/mediaforge/web/templates/settings.html:1025
+#: src/mediaforge/web/templates/settings.html:1057
 msgid "Download History"
 msgstr ""
 
@@ -761,12 +761,13 @@ msgid "Delete"
 msgstr ""
 
 #: src/mediaforge/web/templates/_library_nav.html:15
-#: src/mediaforge/web/templates/settings.html:798
+#: src/mediaforge/web/templates/settings.html:830
 msgid "Movies & Series"
 msgstr ""
 
 #: src/mediaforge/web/templates/_library_nav.html:16
-#: src/mediaforge/web/templates/settings.html:803
+#: src/mediaforge/web/templates/settings.html:507
+#: src/mediaforge/web/templates/settings.html:835
 msgid "eBooks"
 msgstr ""
 
@@ -775,7 +776,7 @@ msgid "Manga"
 msgstr ""
 
 #: src/mediaforge/web/templates/_library_nav.html:18
-#: src/mediaforge/web/templates/settings.html:507
+#: src/mediaforge/web/templates/settings.html:539
 msgid "Comics"
 msgstr ""
 
@@ -857,12 +858,12 @@ msgstr ""
 #: src/mediaforge/web/templates/notifications.html:889
 #: src/mediaforge/web/templates/notifications.html:928
 #: src/mediaforge/web/templates/notifications.html:1053
-#: src/mediaforge/web/templates/settings.html:786
-#: src/mediaforge/web/templates/settings.html:839
-#: src/mediaforge/web/templates/settings.html:991
-#: src/mediaforge/web/templates/settings.html:1234
-#: src/mediaforge/web/templates/settings.html:1342
-#: src/mediaforge/web/templates/settings.html:1640
+#: src/mediaforge/web/templates/settings.html:818
+#: src/mediaforge/web/templates/settings.html:871
+#: src/mediaforge/web/templates/settings.html:1023
+#: src/mediaforge/web/templates/settings.html:1266
+#: src/mediaforge/web/templates/settings.html:1374
+#: src/mediaforge/web/templates/settings.html:1672
 msgid "Save"
 msgstr ""
 
@@ -885,8 +886,8 @@ msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:14
 #: src/mediaforge/web/templates/settings.html:112
-#: src/mediaforge/web/templates/settings.html:570
-#: src/mediaforge/web/templates/settings.html:575
+#: src/mediaforge/web/templates/settings.html:602
+#: src/mediaforge/web/templates/settings.html:607
 msgid "Design"
 msgstr ""
 
@@ -894,46 +895,46 @@ msgstr ""
 #: src/mediaforge/web/templates/_start_page_form.html:138
 #: src/mediaforge/web/templates/index.html:286
 #: src/mediaforge/web/templates/settings.html:124
-#: src/mediaforge/web/templates/settings.html:703
-#: src/mediaforge/web/templates/settings.html:708
+#: src/mediaforge/web/templates/settings.html:735
+#: src/mediaforge/web/templates/settings.html:740
 msgid "Sources"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:16
 #: src/mediaforge/web/templates/base.html:689
 #: src/mediaforge/web/templates/settings.html:136
-#: src/mediaforge/web/templates/settings.html:774
+#: src/mediaforge/web/templates/settings.html:806
 msgid "Downloads"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:18
 #: src/mediaforge/web/templates/settings.html:158
-#: src/mediaforge/web/templates/settings.html:1212
+#: src/mediaforge/web/templates/settings.html:1244
 msgid "Network & Access"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:19
 #: src/mediaforge/web/templates/settings.html:170
-#: src/mediaforge/web/templates/settings.html:1358
-#: src/mediaforge/web/templates/settings.html:1384
+#: src/mediaforge/web/templates/settings.html:1390
+#: src/mediaforge/web/templates/settings.html:1416
 msgid "Authentication"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:21
 #: src/mediaforge/web/templates/settings.html:192
-#: src/mediaforge/web/templates/settings.html:1575
+#: src/mediaforge/web/templates/settings.html:1607
 msgid "Privacy & Telemetry"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:22
 #: src/mediaforge/web/templates/settings.html:203
-#: src/mediaforge/web/templates/settings.html:1748
+#: src/mediaforge/web/templates/settings.html:1780
 msgid "Backup"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:23
 #: src/mediaforge/web/templates/settings.html:215
-#: src/mediaforge/web/templates/settings.html:1653
+#: src/mediaforge/web/templates/settings.html:1685
 msgid "Updates"
 msgstr ""
 
@@ -1197,7 +1198,7 @@ msgid ""
 msgstr ""
 
 #: src/mediaforge/web/templates/_uptime_body.html:9
-#: src/mediaforge/web/templates/settings.html:1668
+#: src/mediaforge/web/templates/settings.html:1700
 msgid "Check now"
 msgstr ""
 
@@ -1222,7 +1223,7 @@ msgid "Custom"
 msgstr ""
 
 #: src/mediaforge/web/templates/_uptime_body.html:24
-#: src/mediaforge/web/templates/settings.html:1013
+#: src/mediaforge/web/templates/settings.html:1045
 msgid "From"
 msgstr ""
 
@@ -1238,7 +1239,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_uptime_body.html:34
 #: src/mediaforge/web/templates/index.html:307
 #: src/mediaforge/web/templates/library_hub.html:35
-#: src/mediaforge/web/templates/settings.html:1759
+#: src/mediaforge/web/templates/settings.html:1791
 msgid "Loading…"
 msgstr ""
 
@@ -1491,7 +1492,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/advanced_search.html:257
 #: src/mediaforge/web/templates/base.html:1517
-#: src/mediaforge/web/templates/settings.html:840
+#: src/mediaforge/web/templates/settings.html:872
 msgid "Reset"
 msgstr ""
 
@@ -1500,7 +1501,7 @@ msgstr ""
 #: src/mediaforge/web/templates/index.html:267
 #: src/mediaforge/web/templates/seerr.html:186
 #: src/mediaforge/web/templates/seerr.html:191
-#: src/mediaforge/web/templates/settings.html:738
+#: src/mediaforge/web/templates/settings.html:770
 #: src/mediaforge/web/templates/shared_modals.html:43
 msgid "Search"
 msgstr ""
@@ -1550,12 +1551,12 @@ msgstr ""
 
 #: src/mediaforge/web/templates/autosync.html:47
 #: src/mediaforge/web/templates/autosync.html:192
-#: src/mediaforge/web/templates/settings.html:930
+#: src/mediaforge/web/templates/settings.html:962
 msgid "Path"
 msgstr ""
 
 #: src/mediaforge/web/templates/autosync.html:50
-#: src/mediaforge/web/templates/settings.html:1371
+#: src/mediaforge/web/templates/settings.html:1403
 msgid "User"
 msgstr ""
 
@@ -1692,12 +1693,12 @@ msgid "Path unavailable"
 msgstr ""
 
 #: src/mediaforge/web/templates/autosync.html:215
-#: src/mediaforge/web/templates/settings.html:1101
+#: src/mediaforge/web/templates/settings.html:1133
 msgid "Skip sync"
 msgstr ""
 
 #: src/mediaforge/web/templates/autosync.html:216
-#: src/mediaforge/web/templates/settings.html:1102
+#: src/mediaforge/web/templates/settings.html:1134
 msgid "Wait (Hold)"
 msgstr ""
 
@@ -2004,12 +2005,12 @@ msgid "Menu"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:1481
-#: src/mediaforge/web/templates/settings.html:576
+#: src/mediaforge/web/templates/settings.html:608
 msgid "Appearance"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:1508
-#: src/mediaforge/web/templates/settings.html:602
+#: src/mediaforge/web/templates/settings.html:634
 msgid "Accent Color"
 msgstr ""
 
@@ -2404,10 +2405,10 @@ msgstr ""
 #: src/mediaforge/web/templates/calendar.html:180
 #: src/mediaforge/web/templates/extensions.html:342
 #: src/mediaforge/web/templates/extensions.html:349
-#: src/mediaforge/web/templates/settings.html:1482
-#: src/mediaforge/web/templates/settings.html:1589
-#: src/mediaforge/web/templates/settings.html:1686
-#: src/mediaforge/web/templates/settings.html:1712
+#: src/mediaforge/web/templates/settings.html:1514
+#: src/mediaforge/web/templates/settings.html:1621
+#: src/mediaforge/web/templates/settings.html:1718
+#: src/mediaforge/web/templates/settings.html:1744
 #: src/mediaforge/web/templates/syncplay.html:142
 msgid "Copy"
 msgstr ""
@@ -2816,7 +2817,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:512
 #: src/mediaforge/web/templates/extensions.html:534
-#: src/mediaforge/web/templates/settings.html:622
+#: src/mediaforge/web/templates/settings.html:654
 msgid "Instance default"
 msgstr ""
 
@@ -3189,12 +3190,12 @@ msgid "Paused"
 msgstr ""
 
 #: src/mediaforge/web/templates/index.html:321
-#: src/mediaforge/web/templates/settings.html:1867
+#: src/mediaforge/web/templates/settings.html:1899
 msgid "Yes"
 msgstr ""
 
 #: src/mediaforge/web/templates/index.html:322
-#: src/mediaforge/web/templates/settings.html:1868
+#: src/mediaforge/web/templates/settings.html:1900
 msgid "No"
 msgstr ""
 
@@ -3710,7 +3711,7 @@ msgid "1 provider on the card · all in the modal below the title"
 msgstr ""
 
 #: src/mediaforge/web/templates/integrations.html:594
-#: src/mediaforge/web/templates/settings.html:733
+#: src/mediaforge/web/templates/settings.html:765
 msgid "Source order"
 msgstr ""
 
@@ -3867,7 +3868,7 @@ msgstr ""
 #: src/mediaforge/web/templates/integrations.html:794
 #: src/mediaforge/web/templates/integrations.html:937
 #: src/mediaforge/web/templates/login.html:88
-#: src/mediaforge/web/templates/settings.html:1369
+#: src/mediaforge/web/templates/settings.html:1401
 #: src/mediaforge/web/templates/setup.html:123
 msgid "Password"
 msgstr ""
@@ -3979,9 +3980,9 @@ msgstr ""
 
 #: src/mediaforge/web/templates/integrations.html:933
 #: src/mediaforge/web/templates/login.html:76
-#: src/mediaforge/web/templates/settings.html:1368
-#: src/mediaforge/web/templates/settings.html:1382
-#: src/mediaforge/web/templates/settings.html:1602
+#: src/mediaforge/web/templates/settings.html:1400
+#: src/mediaforge/web/templates/settings.html:1414
+#: src/mediaforge/web/templates/settings.html:1634
 msgid "Username"
 msgstr ""
 
@@ -4340,11 +4341,11 @@ msgid "How long heartbeats are kept. Maximum 7 days."
 msgstr ""
 
 #: src/mediaforge/web/templates/integrations.html:1369
-#: src/mediaforge/web/templates/settings.html:1031
-#: src/mediaforge/web/templates/settings.html:1032
-#: src/mediaforge/web/templates/settings.html:1033
-#: src/mediaforge/web/templates/settings.html:1034
-#: src/mediaforge/web/templates/settings.html:1035
+#: src/mediaforge/web/templates/settings.html:1063
+#: src/mediaforge/web/templates/settings.html:1064
+#: src/mediaforge/web/templates/settings.html:1065
+#: src/mediaforge/web/templates/settings.html:1066
+#: src/mediaforge/web/templates/settings.html:1067
 msgid "days"
 msgstr ""
 
@@ -4522,12 +4523,12 @@ msgid "Search series, movie or file…"
 msgstr ""
 
 #: src/mediaforge/web/templates/library_video.html:50
-#: src/mediaforge/web/templates/settings.html:1519
+#: src/mediaforge/web/templates/settings.html:1551
 msgid "Series only"
 msgstr ""
 
 #: src/mediaforge/web/templates/library_video.html:51
-#: src/mediaforge/web/templates/settings.html:1524
+#: src/mediaforge/web/templates/settings.html:1556
 msgid "Movies only"
 msgstr ""
 
@@ -5436,54 +5437,54 @@ msgid ""
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:114
-#: src/mediaforge/web/templates/settings.html:571
+#: src/mediaforge/web/templates/settings.html:603
 msgid "Appearance themes, accent color, visual effects and layout options"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:126
-#: src/mediaforge/web/templates/settings.html:704
+#: src/mediaforge/web/templates/settings.html:736
 msgid "Configure streaming providers, mirrors and search order"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:138
-#: src/mediaforge/web/templates/settings.html:775
+#: src/mediaforge/web/templates/settings.html:807
 msgid "Download paths, naming template, language preferences and bandwidth limits"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:149
-#: src/mediaforge/web/templates/settings.html:1051
+#: src/mediaforge/web/templates/settings.html:1083
 msgid "Automatic synchronization, schedules, weekly blocks and adaptive intervals"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:160
-#: src/mediaforge/web/templates/settings.html:1213
+#: src/mediaforge/web/templates/settings.html:1245
 msgid ""
 "DNS server configuration, Captcha solver behavior and reverse proxy base "
 "URL"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:172
-#: src/mediaforge/web/templates/settings.html:1359
+#: src/mediaforge/web/templates/settings.html:1391
 msgid "User management, roles, passwords and Single Sign-On (SSO/OIDC)"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:183
-#: src/mediaforge/web/templates/settings.html:1466
+#: src/mediaforge/web/templates/settings.html:1498
 msgid "External REST API key, endpoint reference and integration documentation"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:194
-#: src/mediaforge/web/templates/settings.html:1576
+#: src/mediaforge/web/templates/settings.html:1608
 msgid "Crash reports, diagnostic telemetry and data privacy controls"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:205
-#: src/mediaforge/web/templates/settings.html:1749
+#: src/mediaforge/web/templates/settings.html:1781
 msgid "Create, download and restore full system backups"
 msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:217
-#: src/mediaforge/web/templates/settings.html:1654
+#: src/mediaforge/web/templates/settings.html:1686
 msgid "Check for updates, switch release channels and configure automatic updates"
 msgstr ""
 
@@ -5737,17 +5738,57 @@ msgstr ""
 
 #: src/mediaforge/web/templates/settings.html:508
 msgid ""
+"Covers are always prepared: MediaForge reads the cover out of each book "
+"in the background and keeps a small copy, so the shelf shows pictures "
+"instead of blank tiles. An EPUB carries its cover inside it; MOBI and "
+"AZW3 have to be converted first, which is what the second cache below "
+"holds."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html:510
+#: src/mediaforge/web/templates/settings.html:549
+msgid "Cache"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html:513
+#: src/mediaforge/web/templates/settings.html:552
+msgid "Cover cache"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html:517
+#: src/mediaforge/web/templates/settings.html:556
+msgid "Clear cover cache"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html:522
+msgid "Converted books"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html:526
+msgid "Clear converted books"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html:529
+msgid ""
+"Both caches hold derived data only — your book files are never touched. A"
+" cover is read again the next time the shelf is drawn, and a converted "
+"book is rebuilt the next time it is opened. These are separate from the "
+"comic caches above."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html:540
+msgid ""
 "Covers are always prepared: MediaForge reads the first page of each "
 "series in the background and keeps it, so the shelf shows pictures "
 "instead of blank tiles. Only CBR and CBA have to be unpacked for this, "
 "which is what the option below is about."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:512
+#: src/mediaforge/web/templates/settings.html:544
 msgid "Prepare every issue in the background"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:515
+#: src/mediaforge/web/templates/settings.html:547
 msgid ""
 "Converts every CBR and CBA file in the library instead of doing it the "
 "first time an issue is opened. This takes a noticeable amount of time and"
@@ -5755,62 +5796,50 @@ msgid ""
 "comic — so it is only worthwhile for small collections."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:517
-msgid "Cache"
-msgstr ""
-
-#: src/mediaforge/web/templates/settings.html:520
-msgid "Cover cache"
-msgstr ""
-
-#: src/mediaforge/web/templates/settings.html:524
-msgid "Clear cover cache"
-msgstr ""
-
-#: src/mediaforge/web/templates/settings.html:529
+#: src/mediaforge/web/templates/settings.html:561
 msgid "Converted archives"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:533
+#: src/mediaforge/web/templates/settings.html:565
 msgid "Clear converted archives"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:536
+#: src/mediaforge/web/templates/settings.html:568
 msgid ""
 "Both caches hold derived data only — your comic files are never touched. "
 "A cover is read again the next time the shelf is drawn, and a converted "
 "archive is rebuilt the next time that issue is opened."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:538
+#: src/mediaforge/web/templates/settings.html:570
 msgid "Diagnostics"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:541
+#: src/mediaforge/web/templates/settings.html:573
 msgid "Unpacker for CBR (RAR)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:547
+#: src/mediaforge/web/templates/settings.html:579
 msgid "Unpacker for CBA (ACE)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:551
+#: src/mediaforge/web/templates/settings.html:583
 msgid ""
 "No unpacker was found here, so CBR and CBA files cannot be opened on this"
 " machine. Every other comic format is unaffected."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:552
+#: src/mediaforge/web/templates/settings.html:584
 msgid ""
 "Windows 10 and newer as well as macOS already bring bsdtar along as "
 "“tar”, and the MediaForge Docker image contains libarchive-tools."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:554
+#: src/mediaforge/web/templates/settings.html:586
 msgid "Replacing originals"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:555
+#: src/mediaforge/web/templates/settings.html:587
 msgid ""
 "This option deletes data. Once an archive has been converted, the "
 "original CBR or CBA file is replaced by the new CBZ — the original is "
@@ -5818,156 +5847,156 @@ msgid ""
 "off unless you are certain you no longer need the original files."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:559
+#: src/mediaforge/web/templates/settings.html:591
 msgid "Replace the original with the CBZ after conversion"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:606
+#: src/mediaforge/web/templates/settings.html:638
 msgid "Custom Color"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:613
+#: src/mediaforge/web/templates/settings.html:645
 msgid "Reset appearance"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:618
+#: src/mediaforge/web/templates/settings.html:650
 msgid ""
 "Theme packs restyle the whole interface — fonts, animations, checkboxes, "
 "inputs, the calendar and more. New theme packs can be installed from the "
 "Module Store."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:619
+#: src/mediaforge/web/templates/settings.html:651
 msgid "Your theme"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:623
-#: src/mediaforge/web/templates/settings.html:634
+#: src/mediaforge/web/templates/settings.html:655
+#: src/mediaforge/web/templates/settings.html:666
 msgid "MediaForge default look"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:629
+#: src/mediaforge/web/templates/settings.html:661
 msgid ""
 "Only changes the look on this device. The dark/light switch above keeps "
 "working within a theme pack."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:631
+#: src/mediaforge/web/templates/settings.html:663
 msgid "Instance default (all users)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:639
+#: src/mediaforge/web/templates/settings.html:671
 msgid "Get more themes"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:641
+#: src/mediaforge/web/templates/settings.html:673
 msgid ""
 "The theme every user sees unless they pick their own above. Installed and"
 " managed in the Module Manager."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:645
+#: src/mediaforge/web/templates/settings.html:677
 msgid "Advanced Settings"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:646
+#: src/mediaforge/web/templates/settings.html:678
 msgid "These settings only change the design minimally."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:650
+#: src/mediaforge/web/templates/settings.html:682
 msgid "Add glow effect"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:652
+#: src/mediaforge/web/templates/settings.html:684
 msgid "A glow highlight for active menu items in the accent color"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:656
-#: src/mediaforge/web/templates/settings.html:658
+#: src/mediaforge/web/templates/settings.html:688
+#: src/mediaforge/web/templates/settings.html:690
 msgid "Change header color with accent color"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:661
+#: src/mediaforge/web/templates/settings.html:693
 msgid "Fade header color for easier readability"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:663
+#: src/mediaforge/web/templates/settings.html:695
 msgid "Invert header color"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:667
+#: src/mediaforge/web/templates/settings.html:699
 msgid "Skeleton Loader"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:669
+#: src/mediaforge/web/templates/settings.html:701
 msgid "An animated loading indicator for items not yet loaded in the overview"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:673
+#: src/mediaforge/web/templates/settings.html:705
 msgid "Color highlight for selection"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:675
+#: src/mediaforge/web/templates/settings.html:707
 msgid "A highlight when hovering over a movie or series in the accent color"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:679
+#: src/mediaforge/web/templates/settings.html:711
 msgid "Color highlight for currently downloading items"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:681
+#: src/mediaforge/web/templates/settings.html:713
 msgid "A highlight for currently downloading items in the accent color"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:685
+#: src/mediaforge/web/templates/settings.html:717
 msgid "\"Button Press\" animation when clicking a button or link"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:687
+#: src/mediaforge/web/templates/settings.html:719
 #, python-format
 msgid "Button becomes slightly brighter and 5%% smaller on click"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:691
+#: src/mediaforge/web/templates/settings.html:723
 msgid "Icon animations"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:693
+#: src/mediaforge/web/templates/settings.html:725
 msgid "Icons animate on hover in menus"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:709
+#: src/mediaforge/web/templates/settings.html:741
 msgid ""
 "Enable or disable the available sources. Disabled sources are hidden on "
 "the start page and are no longer loaded there."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:730
+#: src/mediaforge/web/templates/settings.html:762
 msgid ""
 "hanime.tv is an adult source (18+) for sexually explicit animated content"
 " (hentai). Disabled by default; enabling requires an age confirmation."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:734
+#: src/mediaforge/web/templates/settings.html:766
 msgid ""
 "Set the order in which sources appear on the start page. Drag the rows or"
 " use the arrows. For each source you can also choose whether new or "
 "popular items are shown first."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:741
+#: src/mediaforge/web/templates/settings.html:773
 msgid "Also hide disabled sources from search results"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:743
+#: src/mediaforge/web/templates/settings.html:775
 msgid "When enabled, disabled sources are also skipped in the search results."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:748
+#: src/mediaforge/web/templates/settings.html:780
 msgid "Provider order"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:749
+#: src/mediaforge/web/templates/settings.html:781
 msgid ""
 "Order in which hosters are tried. If the hoster selected for a download "
 "fails (dead link, hoster not offered for that episode), MediaForge "
@@ -5975,21 +6004,21 @@ msgid ""
 "use the arrows."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:752
+#: src/mediaforge/web/templates/settings.html:784
 msgid "Automatic provider fallback"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:754
+#: src/mediaforge/web/templates/settings.html:786
 msgid ""
 "When disabled, only the selected hoster is used and a download fails if "
 "it is unavailable."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:760
+#: src/mediaforge/web/templates/settings.html:792
 msgid "Domain fallback (mirrors)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:761
+#: src/mediaforge/web/templates/settings.html:793
 msgid ""
 "Alternative domains per site, tried top to bottom whenever a domain is "
 "unreachable or blocked (e.g. s.to → serienstream.to → 186.2.175.5). The "
@@ -5997,84 +6026,84 @@ msgid ""
 " called with the primary domain as its Host header. One entry per line."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:781
+#: src/mediaforge/web/templates/settings.html:813
 msgid "Download Settings"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:783
+#: src/mediaforge/web/templates/settings.html:815
 msgid "Download Path"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:788
+#: src/mediaforge/web/templates/settings.html:820
 msgid "Changes take effect immediately for new downloads."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:790
-#: src/mediaforge/web/templates/settings.html:932
+#: src/mediaforge/web/templates/settings.html:822
+#: src/mediaforge/web/templates/settings.html:964
 msgid "Media types"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:806
+#: src/mediaforge/web/templates/settings.html:838
 msgid ""
 "Which libraries the default download path feeds. At least one has to stay"
 " selected."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:808
-#: src/mediaforge/web/templates/settings.html:1081
+#: src/mediaforge/web/templates/settings.html:840
+#: src/mediaforge/web/templates/settings.html:1113
 msgid "Default Language"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:811
+#: src/mediaforge/web/templates/settings.html:843
 msgid "Download Language"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:821
-#: src/mediaforge/web/templates/settings.html:1091
+#: src/mediaforge/web/templates/settings.html:853
+#: src/mediaforge/web/templates/settings.html:1123
 msgid "Default Provider"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:832
+#: src/mediaforge/web/templates/settings.html:864
 msgid "Used as default when adding a new download."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:834
+#: src/mediaforge/web/templates/settings.html:866
 msgid "File Naming Template"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:843
+#: src/mediaforge/web/templates/settings.html:875
 msgid "Placeholders:"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:850
+#: src/mediaforge/web/templates/settings.html:882
 msgid "Separate languages into folders"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:852
+#: src/mediaforge/web/templates/settings.html:884
 msgid "Downloads are sorted by language (e.g. german-dub/, english-sub/)."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:856
+#: src/mediaforge/web/templates/settings.html:888
 msgid "Disable English subtitle downloads"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:858
+#: src/mediaforge/web/templates/settings.html:890
 msgid "Hides English Sub from the language selection."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:862
+#: src/mediaforge/web/templates/settings.html:894
 msgid "Enable movie subfolders"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:864
+#: src/mediaforge/web/templates/settings.html:896
 msgid "Each movie gets its own subfolder — recommended for Jellyfin."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:868
+#: src/mediaforge/web/templates/settings.html:900
 msgid "AniWorld: use absolute episode numbers"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:870
+#: src/mediaforge/web/templates/settings.html:902
 msgid ""
 "Long-running shows are split into seasons on AniWorld but keep one "
 "continuous count, which the site appends to the episode title as "
@@ -6085,15 +6114,15 @@ msgid ""
 "on disk are not renamed."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:873
+#: src/mediaforge/web/templates/settings.html:905
 msgid "Presets"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:876
+#: src/mediaforge/web/templates/settings.html:908
 msgid "Why this matters for Jellyfin"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:877
+#: src/mediaforge/web/templates/settings.html:909
 msgid ""
 "Jellyfin identifies an episode by its season and episode number. On a "
 "long-running show AniWorld's per-season count is not the number the "
@@ -6102,14 +6131,14 @@ msgid ""
 "marker. Absolute numbering writes that number into the file name."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:878
+#: src/mediaforge/web/templates/settings.html:910
 msgid ""
 "The preset also puts a series into one folder instead of per-season "
 "subfolders, and leaves language folders off — they split one series "
 "across several library entries."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:879
+#: src/mediaforge/web/templates/settings.html:911
 msgid ""
 "The Jellyfin preset keeps the language in the file name instead. Jellyfin"
 " reads whatever follows the SxxExx marker as the episode title, so it "
@@ -6117,15 +6146,15 @@ msgid ""
 " — set a TMDB key under Integrations if you want proper episode titles."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:882
+#: src/mediaforge/web/templates/settings.html:914
 msgid "Set Jellyfin Defaults"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:883
+#: src/mediaforge/web/templates/settings.html:915
 msgid "Set Defaults"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:885
+#: src/mediaforge/web/templates/settings.html:917
 msgid ""
 "Both buttons write the same five settings at once: naming template, "
 "absolute episode numbers, language separation, English subtitle downloads"
@@ -6135,96 +6164,96 @@ msgid ""
 "never renamed."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:888
+#: src/mediaforge/web/templates/settings.html:920
 msgid "Subtitles"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:892
+#: src/mediaforge/web/templates/settings.html:924
 msgid "Download subtitles"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:894
+#: src/mediaforge/web/templates/settings.html:926
 msgid ""
 "Every subtitle track the source offers is downloaded and muxed into the "
 "video file as a selectable track. Only affects sources that provide real "
 "subtitle tracks — burned-in subtitles are part of the picture."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:897
+#: src/mediaforge/web/templates/settings.html:929
 msgid "Duplicate Handling"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:901
+#: src/mediaforge/web/templates/settings.html:933
 msgid "Replace with better quality"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:903
+#: src/mediaforge/web/templates/settings.html:935
 msgid ""
 "If the episode already exists, the source is checked first. A higher "
 "resolution (or a clearly higher bitrate at the same resolution) is "
 "downloaded and replaces the old file."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:907
+#: src/mediaforge/web/templates/settings.html:939
 msgid "Merge additional languages into the existing file"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:909
+#: src/mediaforge/web/templates/settings.html:941
 msgid ""
 "An episode already downloaded as German Dub gets a new English Dub added "
 "as a second audio track instead of being saved a second time."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:914
+#: src/mediaforge/web/templates/settings.html:946
 msgid "Custom Paths"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:915
+#: src/mediaforge/web/templates/settings.html:947
 msgid "Add Path"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:917
+#: src/mediaforge/web/templates/settings.html:949
 msgid "Name (e.g. NAS)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:923
-#: src/mediaforge/web/templates/settings.html:956
-#: src/mediaforge/web/templates/settings.html:1374
+#: src/mediaforge/web/templates/settings.html:955
+#: src/mediaforge/web/templates/settings.html:988
+#: src/mediaforge/web/templates/settings.html:1406
 msgid "Add"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:929
-#: src/mediaforge/web/templates/settings.html:969
+#: src/mediaforge/web/templates/settings.html:961
+#: src/mediaforge/web/templates/settings.html:1001
 msgid "Name"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:931
+#: src/mediaforge/web/templates/settings.html:963
 msgid "Default for sites"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:933
-#: src/mediaforge/web/templates/settings.html:972
-#: src/mediaforge/web/templates/settings.html:1386
+#: src/mediaforge/web/templates/settings.html:965
+#: src/mediaforge/web/templates/settings.html:1004
+#: src/mediaforge/web/templates/settings.html:1418
 msgid "Actions"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:939
+#: src/mediaforge/web/templates/settings.html:971
 msgid ""
 "Select the sites for which this path should be preselected as the "
 "download folder."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:940
+#: src/mediaforge/web/templates/settings.html:972
 msgid ""
 "The media types decide which library a path shows up in — a folder is "
 "only scanned for what is ticked here."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:944
+#: src/mediaforge/web/templates/settings.html:976
 msgid "Language Fallback Groups"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:946
+#: src/mediaforge/web/templates/settings.html:978
 msgid ""
 "An ordered list of languages that can be selected instead of a single "
 "language — in the download dialog and in auto-sync. Every episode is "
@@ -6233,7 +6262,7 @@ msgid ""
 "jobs."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:947
+#: src/mediaforge/web/templates/settings.html:979
 msgid ""
 "Auto-sync also upgrades: as soon as an episode you already have becomes "
 "available in a language further up the list, it is downloaded again in "
@@ -6241,7 +6270,7 @@ msgid ""
 "alongside it is set per group."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:950
+#: src/mediaforge/web/templates/settings.html:982
 msgid ""
 "Language groups require “Separate languages into folders” above. Only "
 "per-language folders make it possible to tell which language an existing "
@@ -6250,358 +6279,358 @@ msgid ""
 "the setting is on."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:953
+#: src/mediaforge/web/templates/settings.html:985
 msgid "Add Group"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:955
+#: src/mediaforge/web/templates/settings.html:987
 msgid "Name (e.g. German first)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:961
+#: src/mediaforge/web/templates/settings.html:993
 msgid "Delete the old file after an upgrade"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:963
+#: src/mediaforge/web/templates/settings.html:995
 msgid ""
 "On: the episode exists only in the better language afterwards. Off: both "
 "language versions are kept, each in its own folder — your library then "
 "holds the episode twice."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:970
+#: src/mediaforge/web/templates/settings.html:1002
 msgid "Fallback order"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:971
+#: src/mediaforge/web/templates/settings.html:1003
 msgid "Delete old file"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:978
+#: src/mediaforge/web/templates/settings.html:1010
 msgid ""
 "A group needs at least two languages. Groups still used by a sync job or "
 "a waiting download cannot be deleted."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:982
+#: src/mediaforge/web/templates/settings.html:1014
 msgid "Bandwidth & Schedule"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:984
+#: src/mediaforge/web/templates/settings.html:1016
 msgid "Bandwidth Limit"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:987
+#: src/mediaforge/web/templates/settings.html:1019
 msgid "Max download speed (KB/s)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:993
+#: src/mediaforge/web/templates/settings.html:1025
 msgid ""
 "Throttles all downloads to this speed. 0 = unlimited. Applies to new "
 "downloads."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:996
+#: src/mediaforge/web/templates/settings.html:1028
 msgid "Download Time Window"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:998
+#: src/mediaforge/web/templates/settings.html:1030
 msgid "Time Format"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1008
+#: src/mediaforge/web/templates/settings.html:1040
 msgid "Only download during a specific time window"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1017
+#: src/mediaforge/web/templates/settings.html:1049
 msgid "Until"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1021
+#: src/mediaforge/web/templates/settings.html:1053
 msgid ""
 "New downloads only start within this window (server local time). "
 "Overnight windows like 22:00–06:00 are supported. Running downloads are "
 "not interrupted."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1028
+#: src/mediaforge/web/templates/settings.html:1060
 msgid "Keep history for"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1030
+#: src/mediaforge/web/templates/settings.html:1062
 msgid "Unlimited"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1039
+#: src/mediaforge/web/templates/settings.html:1071
 msgid ""
 "Automatically delete download-history entries older than the selected "
 "period. Runs about hourly."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1056
+#: src/mediaforge/web/templates/settings.html:1088
 msgid "Auto-Sync Defaults"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1061
+#: src/mediaforge/web/templates/settings.html:1093
 msgid "Interval"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1062
+#: src/mediaforge/web/templates/settings.html:1094
 msgid "Weekly schedule"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1066
+#: src/mediaforge/web/templates/settings.html:1098
 msgid "Schedule"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1071
+#: src/mediaforge/web/templates/settings.html:1103
 msgid "1 hour"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1072
+#: src/mediaforge/web/templates/settings.html:1104
 msgid "2 hours"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1073
+#: src/mediaforge/web/templates/settings.html:1105
 msgid "4 hours"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1074
+#: src/mediaforge/web/templates/settings.html:1106
 msgid "8 hours"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1075
+#: src/mediaforge/web/templates/settings.html:1107
 msgid "12 hours"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1076
+#: src/mediaforge/web/templates/settings.html:1108
 msgid "16 hours"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1077
+#: src/mediaforge/web/templates/settings.html:1109
 msgid "24 hours"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1099
+#: src/mediaforge/web/templates/settings.html:1131
 msgid "Custom path unavailable"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1108
-#: src/mediaforge/web/templates/settings.html:1727
+#: src/mediaforge/web/templates/settings.html:1140
+#: src/mediaforge/web/templates/settings.html:1759
 msgid "Weekdays"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1112
+#: src/mediaforge/web/templates/settings.html:1144
 msgid "Times"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1114
+#: src/mediaforge/web/templates/settings.html:1146
 msgid "Add time"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1118
+#: src/mediaforge/web/templates/settings.html:1150
 msgid ""
 "How often Auto-Sync checks for new episodes. Language and provider are "
 "defaults for new sync jobs."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1119
+#: src/mediaforge/web/templates/settings.html:1151
 msgid "Custom path unavailable:"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1119
+#: src/mediaforge/web/templates/settings.html:1151
 msgid ""
 "Defines what Auto-Sync should do when the assigned custom path is not "
 "available. This is the default for all new jobs but can be overridden per"
 " job."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1123
+#: src/mediaforge/web/templates/settings.html:1155
 msgid "Auto-Sync Error Handling"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1126
+#: src/mediaforge/web/templates/settings.html:1158
 msgid "Retries on error"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1128
+#: src/mediaforge/web/templates/settings.html:1160
 msgid "No retries"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1129
+#: src/mediaforge/web/templates/settings.html:1161
 msgid "1 retry"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1130
+#: src/mediaforge/web/templates/settings.html:1162
 msgid "2 retries"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1131
+#: src/mediaforge/web/templates/settings.html:1163
 msgid "3 retries"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1135
+#: src/mediaforge/web/templates/settings.html:1167
 msgid "Time between attempts"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1137
+#: src/mediaforge/web/templates/settings.html:1169
 msgid "No delay"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1138
+#: src/mediaforge/web/templates/settings.html:1170
 msgid "1 minute"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1139
+#: src/mediaforge/web/templates/settings.html:1171
 msgid "2 minutes"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1140
+#: src/mediaforge/web/templates/settings.html:1172
 msgid "3 minutes"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1141
+#: src/mediaforge/web/templates/settings.html:1173
 msgid "4 minutes"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1142
+#: src/mediaforge/web/templates/settings.html:1174
 msgid "5 minutes"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1147
+#: src/mediaforge/web/templates/settings.html:1179
 msgid ""
 "Defines how often and at what interval a failed Auto-Sync is retried "
 "before it is considered permanently failed."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1151
+#: src/mediaforge/web/templates/settings.html:1183
 msgid "Adaptive Auto-Sync"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1155
+#: src/mediaforge/web/templates/settings.html:1187
 msgid "Enable Adaptive Auto-Sync"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1160
+#: src/mediaforge/web/templates/settings.html:1192
 msgid "Pause after"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1162
+#: src/mediaforge/web/templates/settings.html:1194
 msgid "2 weeks"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1163
+#: src/mediaforge/web/templates/settings.html:1195
 msgid "3 weeks"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1164
+#: src/mediaforge/web/templates/settings.html:1196
 msgid "4 weeks"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1165
+#: src/mediaforge/web/templates/settings.html:1197
 msgid "5 weeks"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1166
+#: src/mediaforge/web/templates/settings.html:1198
 msgid "6 weeks"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1167
+#: src/mediaforge/web/templates/settings.html:1199
 msgid "7 weeks"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1168
+#: src/mediaforge/web/templates/settings.html:1200
 msgid "8 weeks"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1172
+#: src/mediaforge/web/templates/settings.html:1204
 msgid "Retry after"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1190
+#: src/mediaforge/web/templates/settings.html:1222
 msgid "Days"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1191
+#: src/mediaforge/web/templates/settings.html:1223
 msgid "Weeks"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1192
+#: src/mediaforge/web/templates/settings.html:1224
 msgid "Months"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1197
+#: src/mediaforge/web/templates/settings.html:1229
 msgid ""
 "When an Auto-Sync job finds no new episodes for the selected period, it "
 "enters pause mode and is only re-checked at the wider interval below. As "
 "soon as a new episode is found again, it returns to the normal cycle."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1202
+#: src/mediaforge/web/templates/settings.html:1234
 msgid "Only administrators can change Auto-Sync settings."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1217
+#: src/mediaforge/web/templates/settings.html:1249
 msgid "Network / DNS"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1221
+#: src/mediaforge/web/templates/settings.html:1253
 msgid "DNS Mode"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1223
+#: src/mediaforge/web/templates/settings.html:1255
 msgid "System (Default)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1227
+#: src/mediaforge/web/templates/settings.html:1259
 msgid "Custom..."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1231
+#: src/mediaforge/web/templates/settings.html:1263
 msgid "DNS Server IP"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1238
+#: src/mediaforge/web/templates/settings.html:1270
 msgid ""
 "Defines which DNS server resolves domains. Useful if your ISP blocks "
 "AniWorld or SerienStream."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1241
+#: src/mediaforge/web/templates/settings.html:1273
 msgid "Test DNS"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1245
+#: src/mediaforge/web/templates/settings.html:1277
 msgid "DNS Diagnostics"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1246
+#: src/mediaforge/web/templates/settings.html:1278
 msgid "Test"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1249
+#: src/mediaforge/web/templates/settings.html:1281
 msgid "DNS Status"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1251
+#: src/mediaforge/web/templates/settings.html:1283
 msgid "— Not tested yet"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1255
+#: src/mediaforge/web/templates/settings.html:1287
 msgid "Reachability"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1282
+#: src/mediaforge/web/templates/settings.html:1314
 msgid "Captcha / Browser"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1286
+#: src/mediaforge/web/templates/settings.html:1318
 msgid ""
 "Persistent browser profile (keeps a warm Cloudflare trust for captcha "
 "solving)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1290
+#: src/mediaforge/web/templates/settings.html:1322
 msgid ""
 "Reuses one Chromium profile across captcha solves so a once-earned "
 "Cloudflare trust (cf_clearance) and browser fingerprint survive. This "
@@ -6609,220 +6638,220 @@ msgid ""
 " guarantees a clean state."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1292
+#: src/mediaforge/web/templates/settings.html:1324
 msgid "Captcha options"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1296
+#: src/mediaforge/web/templates/settings.html:1328
 msgid ""
 "Solve manually (no auto-click) — only your own click on the checkbox "
 "counts"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1300
+#: src/mediaforge/web/templates/settings.html:1332
 msgid "Show the captcha window on screen (do not move it off-screen)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1304
+#: src/mediaforge/web/templates/settings.html:1336
 msgid "Network ad-blocker active (turn off if the captcha does not load)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1308
+#: src/mediaforge/web/templates/settings.html:1340
 msgid "Ad-tab guard active (auto-closes pop-up ad tabs)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1312
+#: src/mediaforge/web/templates/settings.html:1344
 msgid "Ad-overlay remover active (recommended — off can let clicks be hijacked)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1316
+#: src/mediaforge/web/templates/settings.html:1348
 msgid "User-agent sync active (recommended — keeps the cf_clearance cookie valid)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1320
+#: src/mediaforge/web/templates/settings.html:1352
 msgid "WebGL renderer spoof (only useful on servers/Docker without a GPU)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1323
+#: src/mediaforge/web/templates/settings.html:1355
 msgid "Captcha timeout (seconds, empty = default)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1328
+#: src/mediaforge/web/templates/settings.html:1360
 msgid "Clear browser profile"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1331
+#: src/mediaforge/web/templates/settings.html:1363
 msgid ""
 "If Turnstile keeps failing (red cross), delete the profile and solve one "
 "captcha manually in the web UI to seed a fresh trust."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1338
+#: src/mediaforge/web/templates/settings.html:1370
 msgid "Web Server"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1339
+#: src/mediaforge/web/templates/settings.html:1371
 msgid "Base URL (Reverse Proxy)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1345
+#: src/mediaforge/web/templates/settings.html:1377
 msgid ""
 "Public URL when MediaForge runs behind a reverse proxy (e.g. Nginx, "
 "Traefik). Required for OIDC callbacks and absolute links. Leave empty if "
 "no proxy is used."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1346
+#: src/mediaforge/web/templates/settings.html:1378
 msgid "Changes take effect after the next restart."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1364
+#: src/mediaforge/web/templates/settings.html:1396
 msgid "User Management"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1366
+#: src/mediaforge/web/templates/settings.html:1398
 msgid "Add User"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1372
+#: src/mediaforge/web/templates/settings.html:1404
 msgid "Administrator"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1383
+#: src/mediaforge/web/templates/settings.html:1415
 msgid "Role"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1385
+#: src/mediaforge/web/templates/settings.html:1417
 msgid "Created"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1395
+#: src/mediaforge/web/templates/settings.html:1427
 msgid "Single Sign-On (SSO / OIDC)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1397
+#: src/mediaforge/web/templates/settings.html:1429
 msgid ""
 "Connect MediaForge with an external identity provider (Keycloak, "
 "Authentik, Google, etc.)."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1398
+#: src/mediaforge/web/templates/settings.html:1430
 msgid "Changes require a server restart."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1404
+#: src/mediaforge/web/templates/settings.html:1436
 msgid "Enable SSO login"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1408
+#: src/mediaforge/web/templates/settings.html:1440
 msgid "SSO only (disable local logins)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1435
+#: src/mediaforge/web/templates/settings.html:1467
 msgid "Admin username (SSO)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1439
+#: src/mediaforge/web/templates/settings.html:1471
 msgid "Admin subject (sub claim)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1440
+#: src/mediaforge/web/templates/settings.html:1472
 msgid "UUID from the identity provider"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1444
+#: src/mediaforge/web/templates/settings.html:1476
 msgid ""
 "The sub claim is more secure than the username. Found in server logs "
 "after the first SSO login."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1449
+#: src/mediaforge/web/templates/settings.html:1481
 msgid "Save SSO settings"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1451
+#: src/mediaforge/web/templates/settings.html:1483
 msgid "✓ Saved — restart required"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1472
+#: src/mediaforge/web/templates/settings.html:1504
 msgid ""
 "External REST API for Home Assistant & Co. Auth via X-Api-Key header or "
 "?apikey=."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1479
+#: src/mediaforge/web/templates/settings.html:1511
 msgid "Loading..."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1481
+#: src/mediaforge/web/templates/settings.html:1513
 msgid "Show"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1483
+#: src/mediaforge/web/templates/settings.html:1515
 msgid "Regenerate"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1489
+#: src/mediaforge/web/templates/settings.html:1521
 msgid "Base URL"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1493
+#: src/mediaforge/web/templates/settings.html:1525
 msgid "Endpoints"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1499
+#: src/mediaforge/web/templates/settings.html:1531
 msgid "Status & queue overview"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1504
+#: src/mediaforge/web/templates/settings.html:1536
 msgid "Download queue"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1509
+#: src/mediaforge/web/templates/settings.html:1541
 msgid "Single queue item"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1514
+#: src/mediaforge/web/templates/settings.html:1546
 msgid "Library — all titles"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1529
+#: src/mediaforge/web/templates/settings.html:1561
 msgid "Download statistics"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1534
+#: src/mediaforge/web/templates/settings.html:1566
 msgid "AutoSync jobs — status overview (all users)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1539
+#: src/mediaforge/web/templates/settings.html:1571
 msgid "UpTime monitor — current status per source"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1544
+#: src/mediaforge/web/templates/settings.html:1576
 msgid "Self-update progress / state"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1549
+#: src/mediaforge/web/templates/settings.html:1581
 msgid "MediaScan run status"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1554
+#: src/mediaforge/web/templates/settings.html:1586
 msgid "Upscale queue, badge count & progress"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1559
+#: src/mediaforge/web/templates/settings.html:1591
 msgid "Download history — all users"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1565
+#: src/mediaforge/web/templates/settings.html:1597
 msgid "Example:"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1580
+#: src/mediaforge/web/templates/settings.html:1612
 msgid "Your installation"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1582
+#: src/mediaforge/web/templates/settings.html:1614
 msgid ""
 "This ID is generated once per installation and is pseudonymous, not "
 "anonymous, from stage 2 onward -- it lets usage over time be linked to "
@@ -6830,19 +6859,19 @@ msgid ""
 "username."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1586
+#: src/mediaforge/web/templates/settings.html:1618
 msgid "Installation ID"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1590
+#: src/mediaforge/web/templates/settings.html:1622
 msgid "Reset identity"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1596
+#: src/mediaforge/web/templates/settings.html:1628
 msgid "Manage my data"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1598
+#: src/mediaforge/web/templates/settings.html:1630
 msgid ""
 "Request deletion or export of any data already sent under your "
 "installation ID -- available whether or not telemetry is currently "
@@ -6850,27 +6879,27 @@ msgid ""
 "attached automatically (never typed by hand)."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1603
+#: src/mediaforge/web/templates/settings.html:1635
 msgid "Your name"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1606
+#: src/mediaforge/web/templates/settings.html:1638
 msgid "Email (for contact only)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1611
+#: src/mediaforge/web/templates/settings.html:1643
 msgid "Request data export"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1612
+#: src/mediaforge/web/templates/settings.html:1644
 msgid "Request data deletion"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1618
+#: src/mediaforge/web/templates/settings.html:1650
 msgid "Data collection stages"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1620
+#: src/mediaforge/web/templates/settings.html:1652
 msgid ""
 "Nothing here is sent unless you actively enable it. Turning a stage on "
 "enables every data point in it at once; you can then switch individual "
@@ -6878,81 +6907,81 @@ msgid ""
 " its data points."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1624
+#: src/mediaforge/web/templates/settings.html:1656
 msgid "Telemetry active at all"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1661
+#: src/mediaforge/web/templates/settings.html:1693
 msgid "Installed"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1665
+#: src/mediaforge/web/templates/settings.html:1697
 msgid "Available"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1674
+#: src/mediaforge/web/templates/settings.html:1706
 msgid "Open release"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1677
+#: src/mediaforge/web/templates/settings.html:1709
 msgid "Install update now"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1682
+#: src/mediaforge/web/templates/settings.html:1714
 msgid "Install update"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1693
+#: src/mediaforge/web/templates/settings.html:1725
 msgid "Update channel"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1695
+#: src/mediaforge/web/templates/settings.html:1727
 msgid "Stable"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1699
+#: src/mediaforge/web/templates/settings.html:1731
 msgid ""
 "Switch between the stable release and the development channel (latest "
 "commits from the models branch — may be unstable). Switching installs the"
 " selected version right away."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1705
+#: src/mediaforge/web/templates/settings.html:1737
 msgid "Development channel"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1707
+#: src/mediaforge/web/templates/settings.html:1739
 msgid ""
 "You are using a stable release. The development channel contains the "
 "latest commits directly from the models branch — it may be unstable or "
 "contain unfinished features."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1718
+#: src/mediaforge/web/templates/settings.html:1750
 msgid "Automatic updates"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1722
+#: src/mediaforge/web/templates/settings.html:1754
 msgid "Install available updates automatically"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1731
+#: src/mediaforge/web/templates/settings.html:1763
 msgid "Time"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1736
+#: src/mediaforge/web/templates/settings.html:1768
 msgid ""
 "When enabled, an available update is installed automatically at the "
 "selected time on the chosen weekdays. The app restarts itself and running"
 " downloads resume afterwards."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1754
-#: src/mediaforge/web/templates/settings.html:1776
+#: src/mediaforge/web/templates/settings.html:1786
+#: src/mediaforge/web/templates/settings.html:1808
 msgid "Create backup"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1756
+#: src/mediaforge/web/templates/settings.html:1788
 msgid ""
 "Export your settings and data to a single backup file. Choose which "
 "categories to include. A password is required — it encrypts sensitive "
@@ -6960,82 +6989,82 @@ msgid ""
 "cannot be restored."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1763
+#: src/mediaforge/web/templates/settings.html:1795
 msgid "Save backup without a password (insecure)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1767
-#: src/mediaforge/web/templates/settings.html:1797
+#: src/mediaforge/web/templates/settings.html:1799
+#: src/mediaforge/web/templates/settings.html:1829
 msgid "Backup password"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1771
+#: src/mediaforge/web/templates/settings.html:1803
 msgid "Repeat password"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1783
+#: src/mediaforge/web/templates/settings.html:1815
 msgid "Restore backup"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1785
+#: src/mediaforge/web/templates/settings.html:1817
 msgid ""
 "Restore a backup file. Select the file and enter its password to preview "
 "the contents, then choose which categories to restore."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1789
+#: src/mediaforge/web/templates/settings.html:1821
 msgid "Backup file"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1790
+#: src/mediaforge/web/templates/settings.html:1822
 msgid "Choose backup file"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1792
+#: src/mediaforge/web/templates/settings.html:1824
 msgid "Choose file…"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1801
+#: src/mediaforge/web/templates/settings.html:1833
 msgid "Preview"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1811
+#: src/mediaforge/web/templates/settings.html:1843
 msgid "Merge (keep existing, add/overwrite from backup)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1815
+#: src/mediaforge/web/templates/settings.html:1847
 msgid "Replace (clear selected data first)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1819
+#: src/mediaforge/web/templates/settings.html:1851
 msgid "Restore"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1846
-#: src/mediaforge/web/templates/settings.html:1860
+#: src/mediaforge/web/templates/settings.html:1878
+#: src/mediaforge/web/templates/settings.html:1892
 msgid "Enable hanime (18+)"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1848
-#: src/mediaforge/web/templates/settings.html:1862
+#: src/mediaforge/web/templates/settings.html:1880
+#: src/mediaforge/web/templates/settings.html:1894
 msgid ""
 "hanime.tv is a source for adult, sexually explicit animated content "
 "(hentai) and is only permitted for users aged 18 or older."
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1850
+#: src/mediaforge/web/templates/settings.html:1882
 msgid "Are you UNDER 18 years old?"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1853
+#: src/mediaforge/web/templates/settings.html:1885
 msgid "Yes, I am under 18"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1854
+#: src/mediaforge/web/templates/settings.html:1886
 msgid "No, I am 18 or older"
 msgstr ""
 
-#: src/mediaforge/web/templates/settings.html:1864
+#: src/mediaforge/web/templates/settings.html:1896
 msgid "Should we really believe you are at least 18?"
 msgstr ""
 

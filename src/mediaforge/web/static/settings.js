@@ -1172,6 +1172,60 @@ function _comicApplyCacheData(data) {
   }
 }
 
+// ── eBook caches ─────────────────────────────────────────────────────────
+// Same two questions as the comic block right below ("what does this cost"
+// and "get rid of it"), against the BOOK caches -- separate directories,
+// separate endpoint, separate button. They share an implementation on the
+// server (web/covercache.py) and nothing else; clearing one must not throw
+// away the other's work. The formatting helpers are reused as they are.
+
+async function loadBookCacheStats() {
+  if (!document.getElementById("bookCoverCacheSize")) return;
+  try {
+    const resp = await fetch("/api/library/book/cache");
+    // 401/403 for a non-admin account is a normal answer here, not an error
+    // worth a toast -- the panel simply keeps its placeholders.
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const coverEl = document.getElementById("bookCoverCacheSize");
+    const convertEl = document.getElementById("bookConvertCacheSize");
+    if (coverEl) coverEl.textContent = _comicCacheLine(data.covers);
+    if (convertEl) convertEl.textContent = _comicCacheLine(data.converted);
+  } catch (e) { /* offline or mid-restart: leave the placeholders alone */ }
+}
+
+async function clearBookCache(which) {
+  const label = which === "covers"
+    ? t("Cover-Cache", "cover cache")
+    : t("umgewandelte Bücher", "converted books");
+  const message = which === "covers"
+    ? t("Alle zwischengespeicherten Buchcover werden gelöscht. Sie werden beim nächsten Öffnen der eBook-Bibliothek neu erzeugt. Deine Buchdateien bleiben unangetastet.",
+        "Every cached book cover is deleted. They are created again the next time the eBook library is opened. Your book files are left untouched.")
+    : t("Alle umgewandelten Bücher werden gelöscht. Ein MOBI/AZW3 wird beim nächsten Öffnen erneut umgewandelt. Deine Buchdateien bleiben unangetastet.",
+        "Every converted book is deleted. A MOBI/AZW3 is converted again the next time it is opened. Your book files are left untouched.");
+  const ok = (typeof showConfirm === "function")
+    ? await showConfirm(message, t("Leeren", "Clear"),
+        t("Cache leeren?", "Clear cache?"), "btn-danger")
+    : window.confirm(message);
+  if (!ok) return;
+  try {
+    const resp = await fetch("/api/library/book/cache/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cache: which }),
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      showToast(data.error || t("Fehler beim Leeren", "Error while clearing"), "error");
+      return;
+    }
+    showToast(label + ": " + data.removed + " " + t("Einträge entfernt", "entries removed"), "success");
+    loadBookCacheStats();
+  } catch (e) {
+    showToast(t("Fehler: ", "Error: ") + e.message, "error");
+  }
+}
+
 async function loadComicCacheStats() {
   if (!document.getElementById("comicCoverCacheSize")) return;
   try {
@@ -2775,9 +2829,11 @@ const esc = window.mfEscape;
 
 // ─── Kick off ─────────────────────────────────────────────────────────────────
 loadSettings();
-// Cache sizes and extractor diagnostics for the Comics block on the Library
-// tab. Its own request: /api/settings carries settings, not measurements.
+// Cache sizes and extractor diagnostics for the Comics and eBooks blocks on
+// the Library tab. Their own requests: /api/settings carries settings, not
+// measurements, and the two libraries have separate caches.
 loadComicCacheStats();
+loadBookCacheStats();
 
 // ─── .env migration banner ───────────────────────────────────────────────────
 

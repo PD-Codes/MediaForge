@@ -70,7 +70,11 @@ def caches(tmp_path, monkeypatch):
     convert_root.mkdir(parents=True)
     cover_root.mkdir(parents=True)
     monkeypatch.setattr(convert, "_cache_root", lambda: convert_root)
-    monkeypatch.setattr(covers, "_cache_root", lambda: cover_root)
+    # The cover cache moved into web/covercache.py (shared with the book
+    # shelf), so the directory is now the CoverCache instance's, not the
+    # module's. comics/covers.py keeps the same public functions -- they are
+    # bound methods of this object.
+    monkeypatch.setattr(covers._CACHE, "root", lambda: cover_root)
     convert._jobs.clear()
     convert._failures.clear()
     convert.refresh_extractors()
@@ -417,7 +421,7 @@ def test_cache_stats_never_raises_without_a_cache(caches, monkeypatch, tmp_path)
     not there (or not readable) has to read as empty rather than as a 500."""
     missing = tmp_path / "nothing-here"
     monkeypatch.setattr(convert, "_cache_root", lambda: missing)
-    monkeypatch.setattr(covers, "_cache_root", lambda: missing)
+    monkeypatch.setattr(covers._CACHE, "root", lambda: missing)
     assert convert.cache_stats() == {"files": 0, "bytes": 0}
     assert covers.cache_stats() == {"files": 0, "bytes": 0}
 
@@ -502,7 +506,7 @@ def test_an_oversized_first_page_is_not_cached(caches, tmp_path, monkeypatch):
     """The ceiling is about memory, not about pictures: the page is read into
     RAM in one piece on a route any logged-in user can hit."""
     comic = _cbz(tmp_path / "issue.cbz", ["p1.png"])
-    monkeypatch.setattr(covers, "_MAX_COVER_BYTES", 4)
+    monkeypatch.setattr(covers._CACHE, "max_bytes", 4)
     assert covers.cover_path(comic) is None
     assert list(caches["covers"].iterdir()) == []
 
@@ -845,9 +849,9 @@ def test_walking_a_library_neither_peeks_nor_converts(caches, tmp_path, monkeypa
 
 def test_a_peeked_cover_that_is_too_large_is_not_cached(caches, tmp_path, monkeypatch):
     """The same ceiling as for a native archive -- both routes into the cache
-    go through _store_page, so neither can quietly lose the limit."""
+    go through CoverCache.store_image(), so neither can quietly lose it."""
     comic = _fake_rar(tmp_path / "issue.cbr")
-    monkeypatch.setattr(covers, "_MAX_COVER_BYTES", 4)
+    monkeypatch.setattr(covers._CACHE, "max_bytes", 4)
     monkeypatch.setattr(convert, "extract_first_image",
                         lambda src, fmt=None: ("page1.png", PNG))
     assert covers.cover_path(comic) is None

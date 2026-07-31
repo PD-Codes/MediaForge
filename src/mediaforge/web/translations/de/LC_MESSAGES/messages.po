@@ -6839,3 +6839,19 @@ msgstr "Jetzt ausprobieren"
 #: src/mediaforge/web/templates/index.html
 msgid "Don't show again"
 msgstr "Nicht mehr anzeigen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Covers are always prepared: MediaForge reads the cover out of each book in the background and keeps a small copy, so the shelf shows pictures instead of blank tiles. An EPUB carries its cover inside it; MOBI and AZW3 have to be converted first, which is what the second cache below holds."
+msgstr "Cover werden immer vorbereitet: MediaForge liest das Cover jedes Buches im Hintergrund heraus und behält eine kleine Kopie, damit das Regal Bilder statt leerer Kacheln zeigt. Ein EPUB trägt sein Cover in sich; MOBI und AZW3 müssen erst umgewandelt werden — dafür ist der zweite Cache unten da."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Converted books"
+msgstr "Umgewandelte Bücher"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Clear converted books"
+msgstr "Umgewandelte Bücher löschen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Both caches hold derived data only — your book files are never touched. A cover is read again the next time the shelf is drawn, and a converted book is rebuilt the next time it is opened. These are separate from the comic caches above."
+msgstr "Beide Caches enthalten nur abgeleitete Daten — deine Buchdateien werden nie angefasst. Ein Cover wird beim nächsten Zeichnen des Regals erneut gelesen, ein umgewandeltes Buch beim nächsten Öffnen neu erzeugt. Sie sind von den Comic-Caches oben getrennt."

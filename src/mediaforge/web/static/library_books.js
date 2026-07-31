@@ -106,9 +106,30 @@ function libRenderBooks() {
   libRender(libLocations);
 }
 
+// Cover preparation. Most book covers live INSIDE the file (an EPUB carries
+// its own), and a MOBI has to be converted before one can be read at all, so
+// on a fresh library the shelf starts with placeholder tiles and fills in over
+// the following seconds. Saying so beats leaving grey cards that look like the
+// scan found nothing -- which is exactly what this shelf did before.
+var _libCoverPrep  = { running: false, done: 0, total: 0 };
+var _libCoverPoll  = null;
+var _libCoverBust  = 0;
+
 // Contract with library_core.js: fill the header pills.
 function libUpdateSummary(locations) {
-  var items = libFlattenBooks(locations);
+  libPaintSummaryPills(locations);
+  libCoverPollStart();
+}
+
+// Split out of libUpdateSummary so the progress pill can be repainted on its
+// own while covers trickle in -- rebuilding the whole grid every two seconds
+// would reset the scroll position under the reader's hands and collapse an
+// open book.
+var _libSummaryLocations = null;
+
+function libPaintSummaryPills(locations) {
+  if (locations) _libSummaryLocations = locations;
+  var items = libFlattenBooks(_libSummaryLocations || []);
   var size = 0, series = {};
   items.forEach(function(it) {
     size += it.book.total_size || 0;
@@ -125,12 +146,104 @@ function libUpdateSummary(locations) {
                                 libEsc(t("Reihen", "Series")) + '</span>');
   if (size)          parts.push('<span class="lib-summary-pill"><b>' + libFmtSize(size) + '</b> ' +
                                 libEsc(t("gesamt", "total")) + '</span>');
+  if (_libCoverPrep.running) {
+    parts.push('<span class="lib-summary-pill lib-summary-pill--prep">' +
+      '<span class="lib-prep-spinner" aria-hidden="true"></span>' +
+      libEsc(t("Cover werden vorbereitet", "Preparing covers")) +
+      " <b>" + (_libCoverPrep.done || 0) + "/" + (_libCoverPrep.total || 0) + "</b></span>");
+  }
   pillsEl.innerHTML = parts.join("");
 }
 
+async function libCoverPollTick() {
+  try {
+    var resp = await fetch("/api/library/book/covers/status");
+    var st = await resp.json();
+    var moved = (st.done !== _libCoverPrep.done) || (st.running !== _libCoverPrep.running);
+    _libCoverPrep = st;
+    if (moved) {
+      libPaintSummaryPills();
+      libRefreshMissingCovers();
+    }
+    if (!st.running && _libCoverPoll) {
+      window.mfPollStop(_libCoverPoll);
+      _libCoverPoll = null;
+      libPaintSummaryPills();
+      libRefreshMissingCovers();      // one last sweep for the final few
+    }
+  } catch (e) { /* a failed status check is not worth telling anyone about */ }
+}
+
+// Started after every fetch, so a scan kicked off by the watcher starts the
+// indicator too and not just the first page load.
+function libCoverPollStart() {
+  if (_libCoverPoll) return;
+  if (typeof window.mfPoll !== "function") return;
+  _libCoverPoll = window.mfPoll(libCoverPollTick, 2000);
+  // mfPoll is setInterval underneath, so the first status would only arrive
+  // two seconds from now -- long enough that a short run is over before the
+  // indicator ever appears, which is how "it never shows me anything" happens.
+  libCoverPollTick();
+}
+
+// Re-request the covers that were not there yet. Cards whose image 404'd are
+// marked by libBookCoverFailed(); this puts a fresh <img> back with a
+// cache-busting query, because the browser would otherwise keep serving the
+// miss it cached a moment ago.
+function libRefreshMissingCovers() {
+  var stale = document.querySelectorAll(".mf-poster-art.mf-book-nocover[data-cover-src]");
+  if (!stale.length) return;
+  var bust = Date.now();
+  _libCoverBust = bust;
+  Array.prototype.forEach.call(stale, function (art) {
+    art.classList.remove("mf-book-nocover");
+    if (!_libCoverPrep.running) {
+      var spin = art.querySelector(".mf-book-preparing");
+      if (spin) spin.remove();
+    }
+    var faux = art.querySelector(".lib-fauxart");
+    if (faux) faux.remove();
+    var img = document.createElement("img");
+    img.className = "mf-book-cover";
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.onerror = function () { libBookCoverFailed(img); };
+    img.src = art.getAttribute("data-cover-src") + "&v=" + bust;
+    art.insertBefore(img, art.firstChild);
+  });
+}
+
+// Where a book's cover comes from. A sidecar image next to the file wins --
+// it is the one the user (or Calibre) chose deliberately. Otherwise the cover
+// is read out of the book itself, which is where all of them actually live.
 function libBookCoverUrl(book) {
-  if (!book.cover_path) return "";
-  return "/api/library/book/cover?path=" + encodeURIComponent(book.cover_path);
+  var url;
+  if (book.cover_path) {
+    url = "/api/library/book/cover?path=" + encodeURIComponent(book.cover_path);
+  } else {
+    var src = libBookCoverSource(book);
+    if (!src) return "";
+    url = "/api/library/book/embedded-cover?path=" + encodeURIComponent(src);
+  }
+  // Without this the browser keeps serving the 404 it cached before the cover
+  // existed, and the shelf stays blank until a hard reload.
+  return _libCoverBust ? url + "&v=" + _libCoverBust : url;
+}
+
+// Which file to read the cover out of: the EPUB if there is one, because that
+// is a zip member away, and only then a format that needs converting first.
+// Mirrors the order _lib_queue_book_covers() queues them in -- the two must
+// agree or the shelf asks for a cover nothing was ever asked to prepare.
+function libBookCoverSource(book) {
+  var formats = book.formats || [];
+  var best = null, bestRank = 99;
+  formats.forEach(function (f) {
+    if (!f.path) return;
+    var rank = String(f.ext || "").toLowerCase() === "epub" ? 0 : (f.readable ? 1 : 2);
+    if (rank < bestRank) { bestRank = rank; best = f; }
+  });
+  return best ? best.path : "";
 }
 
 // The scanner normalises whatever the metadata carried ("deu", "de-DE") to a
@@ -225,6 +338,12 @@ function libBookCoverFailed(img) {
   var title = art.getAttribute("data-book-title") || "";
   img.remove();
   art.insertAdjacentHTML("afterbegin", _libFauxArt(title));
+  // Marked, not forgotten: a 404 here usually means "not extracted yet", not
+  // "there is none". libRefreshMissingCovers comes back for these.
+  art.classList.add("mf-book-nocover");
+  if (_libCoverPrep.running && !art.querySelector(".mf-book-preparing")) {
+    art.insertAdjacentHTML("beforeend", '<span class="mf-book-preparing" aria-hidden="true"></span>');
+  }
 }
 
 // Only the last two path segments. The folder is what tells two copies of the
@@ -249,10 +368,16 @@ function libPaintBooks(items) {
         '<svg class="mf-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" ' +
         'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>' +
+        // While a scan runs the list is legitimately empty and saying "no
+        // books found" is both wrong and alarming -- after a scanner-version
+        // bump the cached list is emptied on purpose and re-read, which is
+        // exactly when someone is looking at this page.
         '<p>' + libEsc(libSearchQuery
           ? t("Keine Bücher gefunden.", "No books found.")
-          : t("Keine Bücher gefunden. Lege EPUB-, MOBI-, AZW3- oder PDF-Dateien in einen deiner Bibliothekspfade.",
-              "No books found. Put EPUB, MOBI, AZW3 or PDF files into one of your library paths.")) + '</p>';
+          : (window.libIsScanning
+             ? t("Bibliothek wird eingelesen …", "Reading the library …")
+             : t("Keine Bücher gefunden. Lege EPUB-, MOBI-, AZW3- oder PDF-Dateien in einen deiner Bibliothekspfade.",
+                 "No books found. Put EPUB, MOBI, AZW3 or PDF files into one of your library paths."))) + '</p>';
     }
     libRenderPagination(0);
     return;
@@ -298,12 +423,22 @@ function libRenderBookCard(it, pfx) {
          ' role="button" tabindex="0" aria-expanded="' + (isOpen ? "true" : "false") + '"' +
          ' onclick="libToggleBook(\'' + pfx + '\')"' +
          ' onkeydown="libBookCardKey(event, \'' + pfx + '\')">');
-  h.push('<div class="mf-poster-art" data-book-title="' + libEscAttr(book.title || "") + '">');
+  // data-cover-src is what lets a cover arrive LATE: when the image 404s
+  // (nothing extracted yet) the card keeps the URL, and libRefreshMissingCovers
+  // swaps a fresh <img> back in as the background worker reports progress --
+  // in place, so the grid is never repainted under the reader.
+  h.push('<div class="mf-poster-art" data-book-title="' + libEscAttr(book.title || "") + '"' +
+         (cover ? ' data-cover-src="' + libEscAttr(cover) + '"' : '') + '>');
   if (cover) {
     h.push('<img class="mf-book-cover" src="' + libEscAttr(cover) + '" alt="" loading="lazy" ' +
            'decoding="async" onerror="libBookCoverFailed(this)">');
   } else {
     h.push(_libFauxArt(book.title || ""));
+  }
+  // Only while something is actually being prepared. A book that simply has
+  // no cover to find must not spin forever.
+  if (!cover && _libCoverPrep.running) {
+    h.push('<span class="mf-book-preparing" aria-hidden="true"></span>');
   }
   h.push('<div class="mf-poster-scrim">');
   h.push('<div class="mf-poster-meta">');
