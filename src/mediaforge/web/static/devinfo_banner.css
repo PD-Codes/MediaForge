@@ -1,7 +1,9 @@
 /* -- Homepage Dev Info warning banners ------------------------------------
-   Shown at the top of the homepage (index.html) for every cached Dev Info
-   post whose type is "warning" (see app.py's index() view). Styled to match
-   the rest of the dark/light theme via variables.css tokens. */
+   Shown at the top of the homepage (index.html) for every cached Dev Info post
+   whose type is "warning", "important" or "release" (see app.py's index()
+   view). Styled to match the rest of the dark/light theme via variables.css
+   tokens. The class names still say "warning" because this is one shared
+   banner component -- the per-type variants below only change the accent. */
 
 .devinfo-warning-banners {
   display: flex;
@@ -42,7 +44,7 @@
 
 /* "important" posts share this banner but are the louder variant: red instead
    of orange, and paired with a modal (devinfo_important.js). See app.py's
-   index(), which feeds both types into devinfo_warnings. */
+   index(), which feeds warning/important/release into devinfo_banners. */
 .devinfo-warning-banner-important {
   border-left-color: var(--danger, #ef4444);
 }
@@ -64,6 +66,81 @@
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+
+/* "release" announces a version. Informational, not an alarm -- hence the
+   accent colour rather than orange/red. See app.py's index(). */
+.devinfo-warning-banner-release {
+  border-left-color: var(--accent, #7c3aed);
+}
+
+.devinfo-warning-banner-release .devinfo-warning-icon {
+  color: var(--accent, #7c3aed);
+}
+
+.devinfo-warning-flag-release {
+  background: rgba(124, 58, 237, 0.16);
+  color: var(--accent, #7c3aed);
+}
+
+.devinfo-release-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.devinfo-release-version {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--accent, #7c3aed);
+  word-break: break-word;
+}
+
+.devinfo-release-tag {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.devinfo-release-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.devinfo-release-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 40px keeps this a comfortable tap target on a phone. */
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--accent, #7c3aed);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: filter var(--transition, .15s);
+}
+
+.devinfo-release-btn:hover,
+.devinfo-release-btn:focus-visible { filter: brightness(1.12); }
+
+.devinfo-release-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-link, #8b8bff);
+  text-decoration: none;
+}
+
+.devinfo-release-link:hover { text-decoration: underline; }
 
 .devinfo-warning-content {
   flex: 1 1 auto;
@@ -119,6 +196,13 @@
 }
 
 @media (max-width: 560px) {
+  /* Stack the two actions full width instead of letting them wrap into a
+     ragged row on a narrow phone. */
+  .devinfo-release-actions { flex-direction: column; align-items: stretch; gap: 8px; }
+  .devinfo-release-btn,
+  .devinfo-release-link { width: 100%; justify-content: center; }
+  .devinfo-release-version { font-size: 1rem; }
+
   .devinfo-warning-banner {
     flex-direction: column;
     align-items: flex-start;

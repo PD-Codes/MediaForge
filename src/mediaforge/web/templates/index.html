@@ -184,17 +184,26 @@
 
 {% block content %}
 {# ── Dev Info banners ──────────────────────────────────────────────────
-   Both "warning" and "important" posts land here (app.py's index() builds
-   devinfo_warnings from both). "important" additionally raises the modal
-   further down; the banner is what remains on the page after the modal has
-   been confirmed, so the message stays visible instead of vanishing. #}
-{% if devinfo_warnings %}
+   "warning", "important" and "release" posts all land here (app.py's index()
+   builds devinfo_banners from the three). "important" additionally raises the
+   modal further down; the banner is what remains on the page after the modal
+   has been confirmed, so the message stays visible instead of vanishing.
+   "release" shows the announced version and a shortcut into Settings ->
+   Updates; the full text and the changelog live on the Dev Infos page. #}
+{% if devinfo_banners %}
 <div id="devinfoWarningBanners" class="devinfo-warning-banners">
-  {% for w in devinfo_warnings %}
-  <div class="devinfo-warning-banner{% if w.type == 'important' %} devinfo-warning-banner-important{% endif %}"
+  {% for w in devinfo_banners %}
+  <div class="devinfo-warning-banner{% if w.type == 'important' %} devinfo-warning-banner-important{% elif w.type == 'release' %} devinfo-warning-banner-release{% endif %}"
        data-devinfo-id="{{ w.id }}" data-devinfo-type="{{ w.type }}">
     <div class="devinfo-warning-icon">
-      {% if w.type == 'important' %}
+      {% if w.type == 'release' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+        <polyline points="21 3 21 9 15 9" />
+        <polyline points="8.5 12 11 14.5 15.5 10" />
+      </svg>
+      {% elif w.type == 'important' %}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -213,9 +222,31 @@
     <div class="devinfo-warning-content">
       {% if w.type == 'important' %}
       <span class="devinfo-warning-flag">{{ _('Important') }}</span>
+      {% elif w.type == 'release' %}
+      <span class="devinfo-warning-flag devinfo-warning-flag-release">{{ _('Release') }}</span>
       {% endif %}
       <div class="devinfo-warning-title">{{ w.title }}</div>
+      {# A release banner stays deliberately short: the headline plus the version
+         it announces. The text of the post and the changelog are one click away
+         on the Dev Infos page -- a home page banner is not the place for release
+         notes. #}
+      {% if w.type == 'release' %}
+      <div class="devinfo-release-line">
+        <span class="devinfo-release-version">{{ w.release_name or w.release_tag }}</span>
+        {% if w.release_name and w.release_tag and w.release_name != w.release_tag %}
+        <span class="devinfo-release-tag">{{ w.release_tag }}</span>
+        {% endif %}
+      </div>
+      <div class="devinfo-release-actions">
+        {# Deep link into the Updates tab: settings.js's restoreTab() reads the
+           hash and opens that panel, so this lands the user on the update
+           check/install controls rather than the top of Settings. #}
+        <a class="devinfo-release-btn" href="{{ url_for('settings_page') }}#updates">{{ _('Go to updates') }}</a>
+        <a class="devinfo-release-link" href="{{ url_for('devinfos_page') }}">{{ _('Read changelog') }}</a>
+      </div>
+      {% else %}
       <div class="devinfo-warning-body devinfo-markdown">{{ w.body_html|safe }}</div>
+      {% endif %}
     </div>
     <button type="button" class="devinfo-warning-dismiss" aria-label="{{ _('Dismiss') }}" title="{{ _('Dismiss') }}">&times;</button>
   </div>

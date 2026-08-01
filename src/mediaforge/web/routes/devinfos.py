@@ -39,6 +39,29 @@ def _format_devinfo_timestamp(raw):
         return str(raw)
 
 
+def _safe_release_url(raw):
+    """Return ``raw`` only if it is an ordinary http(s) URL, else "".
+
+    The Dev Info feed is untrusted (see markdown_utils.py) and this value ends
+    up in an ``href``. Jinja's autoescaping stops it from breaking *out* of the
+    attribute, but it does not stop ``javascript:``/``data:`` from running when
+    the link is clicked -- the body Markdown gets this protection from bleach,
+    a raw field like this one has to ask for it. Anything unparseable or with a
+    scheme other than http/https is dropped, and the link simply is not
+    rendered.
+    """
+    if not raw:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(str(raw).strip())
+    except (ValueError, TypeError):
+        return ""
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return parsed.geturl()
+    return ""
+
+
 def _posts_with_rendered_html():
     """Return cached Dev Info posts with an extra ``body_html`` key holding
     the sanitized Markdown-rendered HTML for ``body`` (alongside the
@@ -50,6 +73,19 @@ def _posts_with_rendered_html():
             **post,
             "body_html": render_markdown(post.get("body")),
             "formatted_time": _format_devinfo_timestamp(post.get("remote_created_at")),
+            # Release posts carry the announced version's notes (raw Markdown,
+            # cached with the post by devinfos_monitor.py). Rendered through the
+            # same sanitizer as the body -- it originates from GitHub via the
+            # devInfo server and is no more trusted than anything else in the
+            # feed. Empty for every other post type, and for release posts whose
+            # notes could not be resolved.
+            "release_notes_html": (render_markdown(post.get("release_notes"))
+                                   if post.get("release_notes") else ""),
+            "release_published": _format_devinfo_timestamp(post.get("release_published_at")),
+            # Scheme-checked before it can reach an href -- see above. Overrides
+            # the raw cached value under the same key so no template or script
+            # can accidentally reach for the unchecked one.
+            "release_url": _safe_release_url(post.get("release_url")),
         }
         for post in get_devinfo_posts()
     ]

@@ -6872,3 +6872,25 @@ msgstr "Mit dem Bestätigen wird dieser Hinweis als gelesen markiert und die Dev
 #: src/mediaforge/web/templates/index.html
 msgid "Understood — open Dev Infos"
 msgstr "Verstanden — Dev Infos öffnen"
+
+#: src/mediaforge/web/templates/devinfos.html
+#: src/mediaforge/web/templates/index.html
+msgid "Release"
+msgstr "Release"
+
+#: src/mediaforge/web/templates/devinfos.html
+#: src/mediaforge/web/templates/index.html
+msgid "Go to updates"
+msgstr "Zu den Updates"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Read changelog"
+msgstr "Changelog lesen"
+
+#: src/mediaforge/web/templates/devinfos.html
+msgid "Changelog"
+msgstr "Changelog"
+
+#: src/mediaforge/web/templates/devinfos.html
+msgid "Open release page"
+msgstr "Release-Seite öffnen"

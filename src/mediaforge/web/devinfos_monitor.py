@@ -76,6 +76,14 @@ def _devinfos_fetch_and_store():
             post_id = rp.get("uid") or rp.get("id")
             if post_id in (None, ""):
                 continue
+            # "release" posts carry a nested release block naming the version
+            # they announce plus that version's notes. Flattened into columns
+            # here (rather than stored as JSON) so the templates and the SQL
+            # both stay boring. Absent for every other post type, and a
+            # malformed block is treated as absent rather than trusted.
+            release = rp.get("release")
+            if not isinstance(release, dict):
+                release = {}
             posts.append({
                 "id": post_id,
                 "title": rp.get("title"),
@@ -83,6 +91,11 @@ def _devinfos_fetch_and_store():
                 "type": rp.get("type"),
                 "author": rp.get("author"),
                 "remote_created_at": rp.get("created_at"),
+                "release_tag": release.get("tag"),
+                "release_name": release.get("name"),
+                "release_notes": release.get("notes"),
+                "release_url": release.get("url"),
+                "release_published_at": release.get("published_at"),
             })
         replace_devinfo_posts(posts)
     except Exception as exc:

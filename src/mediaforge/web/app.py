@@ -786,21 +786,25 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     @app.route("/")
     def index():
         sto_lang_labels = {"1": "German Dub", "2": "English Dub", "3": "English Dub (German Sub)"}
-        # "warning" and "important" both get a banner at the top of the home
-        # page; "important" additionally raises a modal (see
-        # static/devinfo_important.js). Rendered in one pass over the cached
-        # feed rather than two, since get_devinfo_posts() hits the DB.
-        # Same "HH:MM DD.MM.YY" rendering the Dev Infos page uses. Imported
-        # inside the view (not at module level) because routes/devinfos.py is
-        # registered from this module further down -- a top-level import would
-        # be a cycle.
+        # Which Dev Info post types get a banner at the top of the home page:
+        #   warning   -- dismissible banner
+        #   important -- the same banner, plus a modal (devinfo_important.js)
+        #   release   -- the same banner, showing the announced version and a
+        #                shortcut into Settings -> Updates; the changelog itself
+        #                stays on the Dev Infos page
+        # Rendered in one pass over the cached feed rather than three, since
+        # get_devinfo_posts() hits the DB.
+        #
+        # _format_devinfo_timestamp is imported inside the view (not at module
+        # level) because routes/devinfos.py is registered from this module
+        # further down -- a top-level import would be a cycle.
         from .routes.devinfos import _format_devinfo_timestamp
 
-        _devinfo_warnings = []
+        _devinfo_banners = []
         _devinfo_importants = []
         for _p in get_devinfo_posts():
             _type = (_p.get("type") or "").strip().lower()
-            if _type not in ("warning", "important"):
+            if _type not in ("warning", "important", "release"):
                 continue
             _entry = {
                 **_p,
@@ -808,7 +812,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "body_html": render_markdown(_p.get("body")),
                 "formatted_time": _format_devinfo_timestamp(_p.get("remote_created_at")),
             }
-            _devinfo_warnings.append(_entry)
+            _devinfo_banners.append(_entry)
             # Only *unread* important posts interrupt with a modal. Marking the
             # post as read (which confirming the modal does) is the one and only
             # way to stop it -- deliberately not a localStorage dismissal like
@@ -839,7 +843,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             lang_labels=LANG_LABELS,
             sto_lang_labels=sto_lang_labels,
             supported_providers=WORKING_PROVIDERS,
-            devinfo_warnings=_devinfo_warnings,
+            devinfo_banners=_devinfo_banners,
             devinfo_importants=_devinfo_importants,
             new_home=_new_home,
             show_new_home_promo=_show_promo,
