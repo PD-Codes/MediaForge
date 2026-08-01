@@ -143,6 +143,58 @@ def _get_display_version():
     return base
 
 
+def is_release_already_installed(tag) -> bool:
+    """True if announcing *tag* would be telling this install old news.
+
+    Used by web/app.py's index() to decide whether a Dev Info post of type
+    "release" still deserves a banner on the home page. Announcing 2.4.0 to
+    somebody already running 2.4.0 is noise, and it is the kind of noise a user
+    cannot dismiss for good, because the banner comes back on every visit.
+
+    True when either:
+      * this install is at or past *tag* -- "past" counts too, since a release
+        older than what is installed is not news either, and
+      * this is a dev-branch or local source build. Those track a moving branch
+        and their version number says nothing useful about a tagged release, so
+        a release banner is never right for them.
+
+    False whenever the answer cannot be established -- an unparseable tag, no
+    version metadata (a frozen build), anything unexpected. Showing a banner
+    that could have been hidden is a much smaller mistake than hiding one that
+    mattered.
+    """
+    if not tag:
+        return False
+
+    # Branch installs first: their version string is whatever the branch
+    # happens to carry and comparing it against a release tag is meaningless.
+    try:
+        is_dev, _commit = _get_dev_install_info()
+        if is_dev or _is_source_build():
+            return True
+    except Exception:
+        pass
+
+    local = (_get_version() or "").strip()
+    if not local:
+        return False
+
+    wanted = str(tag).strip().lstrip("vV").strip()
+    if not wanted:
+        return False
+
+    try:
+        from packaging.version import InvalidVersion, Version
+        try:
+            return Version(local) >= Version(wanted)
+        except InvalidVersion:
+            # A tag that is not a version number at all ("nightly", "2024-06").
+            # An exact match is still a match; anything else is not comparable.
+            return wanted == local
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Update checker
 # ---------------------------------------------------------------------------

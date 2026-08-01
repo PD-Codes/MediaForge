@@ -81,6 +81,7 @@ from .autosync_worker import _ensure_autosync_worker
 from .upscale_worker import _ensure_upscale_worker
 from .encoding_worker import _ensure_encoding_worker
 from .version_info import _get_display_version, _update_cache
+from .version_info import is_release_already_installed
 from .pwa_icons import _generate_pwa_icons
 from .settings_migration import (
     _migrate_dotenv_to_db,
@@ -791,7 +792,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         #   important -- the same banner, plus a modal (devinfo_important.js)
         #   release   -- the same banner, showing the announced version and a
         #                shortcut into Settings -> Updates; the changelog itself
-        #                stays on the Dev Infos page
+        #                stays on the Dev Infos page. Skipped entirely once the
+        #                announced version is installed (or on a dev/source
+        #                build): a banner offering an update somebody already
+        #                has is noise they cannot get rid of, because it
+        #                returns on every visit. The post itself stays on the
+        #                Dev Infos page -- this only suppresses the banner.
         # Rendered in one pass over the cached feed rather than three, since
         # get_devinfo_posts() hits the DB.
         #
@@ -805,6 +811,8 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         for _p in get_devinfo_posts():
             _type = (_p.get("type") or "").strip().lower()
             if _type not in ("warning", "important", "release"):
+                continue
+            if _type == "release" and is_release_already_installed(_p.get("release_tag")):
                 continue
             _entry = {
                 **_p,

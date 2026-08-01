@@ -183,7 +183,19 @@ def register_comic_routes(app):
             return missing, 404
         response = send_file(str(cached), mimetype=covers.cover_mimetype(cached),
                              conditional=True)
-        response.headers["Cache-Control"] = "private, max-age=86400"
+        # A cover is not immutable the way a page inside an archive is: the
+        # "Clear cover cache" button in Settings deletes it, and the URL
+        # carries no content hash that would change when it does. A full day of
+        # max-age meant the browser kept painting covers that no longer existed
+        # on disk -- so the shelf looked fine while the settings page correctly
+        # reported an empty cache, and nothing ever asked for them again, so
+        # nothing was regenerated either.
+        #
+        # Five minutes plus must-revalidate keeps scrolling a shelf of hundreds
+        # of cards free while bounding how long a deleted cover can survive.
+        # send_file(conditional=True) above answers the revalidation with a 304
+        # from the ETag, so this costs headers, not pictures.
+        response.headers["Cache-Control"] = "private, max-age=300, must-revalidate"
         return response
 
     @app.route("/api/library/comic/convert", methods=["POST"])

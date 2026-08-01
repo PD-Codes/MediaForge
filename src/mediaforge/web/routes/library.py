@@ -1986,7 +1986,10 @@ def register_library_routes(app):
         except (OSError, MemoryError):
             logger.debug("[Books] Serving %s uncached", resolved.name, exc_info=True)
         response = send_file(str(served), mimetype=mimetype, conditional=True)
-        response.headers["Cache-Control"] = "private, max-age=86400"
+        # Same bound as the two cover routes below: this one goes through the
+        # cover cache too, so "Clear cover cache" can delete what the browser
+        # is still painting. Revalidation is a 304 off the ETag.
+        response.headers["Cache-Control"] = "private, max-age=300, must-revalidate"
         return response
 
     @app.route("/api/library/book/embedded-cover")
@@ -2023,7 +2026,19 @@ def register_library_routes(app):
             return missing, 404
         response = send_file(str(cached), mimetype=book_covers.cover_mimetype(cached),
                              conditional=True)
-        response.headers["Cache-Control"] = "private, max-age=86400"
+        # A cover is not immutable the way a page inside an archive is: the
+        # "Clear cover cache" button in Settings deletes it, and the URL
+        # carries no content hash that would change when it does. A full day of
+        # max-age meant the browser kept painting covers that no longer existed
+        # on disk -- so the shelf looked fine while the settings page correctly
+        # reported an empty cache, and nothing ever asked for them again, so
+        # nothing was regenerated either.
+        #
+        # Five minutes plus must-revalidate keeps scrolling a shelf of hundreds
+        # of cards free while bounding how long a deleted cover can survive.
+        # send_file(conditional=True) above answers the revalidation with a 304
+        # from the ETag, so this costs headers, not pictures.
+        response.headers["Cache-Control"] = "private, max-age=300, must-revalidate"
         return response
 
     @app.route("/api/library/book/covers/status")

@@ -20,6 +20,17 @@ function switchTab(name) {
     history.replaceState(null, "", "#" + name);
     localStorage.setItem("settingsActiveTab", name);
   } catch (e) { }
+
+  // The cache sizes are measurements, not settings: they change while this
+  // page is open, because the background workers keep producing covers. They
+  // used to be fetched exactly once, when the script loaded -- so a settings
+  // page opened before the covers existed went on reporting "empty" for as
+  // long as it stayed open, however many covers had been written since.
+  // Re-read them whenever the tab that shows them is opened.
+  if (name === "library") {
+    if (typeof loadComicCacheStats === "function") loadComicCacheStats();
+    if (typeof loadBookCacheStats === "function") loadBookCacheStats();
+  }
 }
 
 (function restoreTab() {
@@ -1147,7 +1158,12 @@ function _comicFormatBytes(bytes) {
 }
 
 function _comicCacheLine(stats) {
-  const files = (stats && stats.files) || 0;
+  // "We could not measure it" and "there is nothing in it" are different
+  // answers and must not share a word: "empty" next to a Clear button reads as
+  // a fact about the cache, and it was being printed for a request that never
+  // returned a number at all.
+  if (!stats) return t("unbekannt", "unknown");
+  const files = stats.files || 0;
   if (!files) return t("leer", "empty");
   const label = files === 1 ? t("Datei", "file") : t("Dateien", "files");
   return files + " " + label + " · " + _comicFormatBytes(stats.bytes);
