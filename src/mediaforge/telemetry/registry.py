@@ -512,6 +512,18 @@ DATA_REGISTRY = {
             "en": "Whether a self-update succeeded or failed.",
         },
     },
+    "detail.docker_code_update": {
+        "stage": 3, "group": "self_update",
+        "label": {"de": "Docker-Code-Update-Ergebnis", "en": "Docker code update result"},
+        "explain": {
+            "de": "Ob das Ersetzen des MediaForge-Pakets in einem Docker-Container "
+                  "erfolgreich war oder fehlgeschlagen ist -- inklusive der alten und "
+                  "neuen Versionsnummer, aber ohne das Installationsprotokoll.",
+            "en": "Whether replacing the MediaForge package inside a Docker container "
+                  "succeeded or failed -- including the old and new version number, "
+                  "but never the install log.",
+        },
+    },
     "detail.captcha": {
         "stage": 3, "group": "captcha",
         "label": {"de": "Captcha-Lösestatistik", "en": "Captcha solving statistics"},

@@ -46,6 +46,11 @@ def _auto_update_worker():
         try:
             if get_setting("auto_update_enabled", "0") == "1":
                 inst = selfupdate.detect_install()
+                # Deliberately can_self_update, NOT can_code_update: the
+                # Docker code update is a manual, confirmed action only. It
+                # is lost on the next image pull and it changes the code
+                # under a running container, so nothing here may trigger it
+                # unattended in the middle of the night.
                 if inst["can_self_update"]:
                     now = _dt.now()
                     days_raw = get_setting("auto_update_days", "0,1,2,3,4,5,6") or ""
@@ -92,6 +97,26 @@ def ensure_auto_update_worker():
     _aut.start()
 
 
+def _resolve_docker_target():
+    """Return ``(version, error)`` for a Docker code update.
+
+    The target version is resolved **server-side** from the update cache and
+    is never read from the request body: a client may ask *whether* to
+    update, never *what* to update to. Anything else would let an
+    authenticated admin (or anything that got hold of a session) point the
+    container at an arbitrary package version.
+    """
+    import time as _time
+    if (_time.time() - _update_cache["checked_at"]) > _UPDATE_CHECK_INTERVAL:
+        _do_update_check()
+    if not _update_cache.get("update_available"):
+        return None, "no update available"
+    version = _update_cache.get("latest_version")
+    if not selfupdate.is_valid_target_version(version):
+        return None, "the latest published version could not be determined"
+    return version, None
+
+
 def register_update_routes(app):
     @app.route("/api/update-check", methods=["GET", "POST"])
     def api_update_check():
@@ -114,6 +139,12 @@ def register_update_routes(app):
             "install_type": _inst["type"],
             "channel": _inst["channel"],
             "can_self_update": _inst["can_self_update"],
+            # Docker: the package inside the container can be swapped even
+            # though a full self-update is not possible — see
+            # selfupdate.detect_install() for why these are two flags.
+            "can_code_update": _inst.get("can_code_update", False),
+            "code_update_reason": _inst.get("code_update_reason"),
+            "is_docker": _inst["type"] == "docker",
         })
     @app.route("/api/update/install", methods=["POST"])
     def api_update_install():
@@ -126,6 +157,52 @@ def register_update_routes(app):
             channel = str(channel).strip().lower()
             if channel not in ("stable", "dev"):
                 return jsonify({"error": "invalid channel"}), 400
+
+        _inst = selfupdate.detect_install()
+        if _inst["type"] == "docker":
+            # Container: swap only the mediaforge package, stable channel only.
+            # The preflight runs again here on purpose -- the UI already ran
+            # it, but a UI check is a convenience, never the safeguard. It is
+            # served from selfupdate's 60s cache, so this costs nothing.
+            if channel == "dev":
+                return jsonify({
+                    "error": "the dev channel cannot be installed inside a container",
+                    "reason": "docker_dev_channel",
+                }), 409
+            version, err = _resolve_docker_target()
+            if err:
+                return jsonify({"error": err}), 409
+            try:
+                result = selfupdate.start_docker_code_update(version)
+            except selfupdate.UpdateError as exc:
+                return jsonify({
+                    "error": str(exc),
+                    "reason": getattr(exc, "reason", None),
+                    "blocking": getattr(exc, "blocking", []),
+                }), 409
+            except Exception as exc:
+                logger.exception("[DockerUpdate] start failed")
+                return jsonify({"error": str(exc)}), 500
+
+            # Requeue in-flight downloads so they resume after the in-place
+            # restart (the worker repeats this right before exec'ing, since
+            # the install itself takes a few seconds).
+            try:
+                from ..db import get_db
+                _c = get_db()
+                try:
+                    _c.execute("UPDATE download_queue SET status = 'queued' WHERE status = 'running'")
+                    _c.commit()
+                finally:
+                    _c.close()
+            except Exception:
+                logger.warning("[DockerUpdate] could not pause download queue", exc_info=True)
+
+            # No os._exit() here: the background worker installs and then
+            # replaces this process with os.execv() itself. Exiting would kill
+            # PID 1 and take the whole container down with it.
+            return jsonify(result)
+
         try:
             result = selfupdate.start_update(target_channel=channel)
         except selfupdate.UpdateError as exc:
@@ -153,6 +230,38 @@ def register_update_routes(app):
             logger.info("[SelfUpdate] exiting for update helper")
             os._exit(0)
         threading.Thread(target=_exit_soon, daemon=True, name="selfupdate-exit").start()
+        return jsonify(result)
+    @app.route("/api/update/docker-preflight", methods=["POST"])
+    def api_update_docker_preflight():
+        """Serve POST /api/update/docker-preflight: check whether the newest
+        release can be installed into this container without pulling in new
+        dependencies.
+
+        Admin-only, exactly like /api/update/install -- the check goes out to
+        PyPI, so it must not be reachable by every logged-in user. The result
+        itself is cached inside selfupdate for 60s per target version, which
+        keeps repeated clicks from turning into repeated outbound requests.
+        """
+        _u, _is_admin = _get_current_user_info()
+        if not _is_admin:
+            return jsonify({"error": "forbidden"}), 403
+        _inst = selfupdate.detect_install()
+        if _inst["type"] != "docker":
+            return jsonify({"error": "not a docker installation"}), 409
+        if not _inst.get("can_code_update"):
+            return jsonify({
+                "error": "code update not available for this container",
+                "reason": _inst.get("code_update_reason"),
+            }), 409
+        version, err = _resolve_docker_target()
+        if err:
+            return jsonify({"error": err}), 409
+        try:
+            result = selfupdate.docker_update_preflight(version)
+        except Exception as exc:
+            logger.exception("[DockerUpdate] preflight failed")
+            return jsonify({"error": str(exc)}), 500
+        result["target_version"] = version
         return jsonify(result)
     @app.route("/api/update/status", methods=["GET"])
     def api_update_status():

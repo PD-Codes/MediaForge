@@ -260,6 +260,47 @@
   font-size: 0.9rem;
 }
 
+/* Docker code-update notices (Settings → Updates) -------------- */
+/* One shared box: the neutral "what this button really does" note and the
+   red "blocked by dependencies" variant differ only in accent colour. */
+.update-docker-box {
+  margin: 12px 22px 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-left: 3px solid var(--accent, #7c3aed);
+  background: var(--input-bg, #1e1e30);
+  color: var(--text-secondary, #9191b0);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  /* Long docker commands must wrap instead of widening the settings card. */
+  overflow-wrap: anywhere;
+}
+.update-docker-box strong { color: var(--text-primary, #f0f0f8); }
+.update-docker-box code {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-elevated, #1a1a28);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #f0f0f8);
+  font-size: 0.78rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.update-docker-box.error {
+  border-left-color: var(--error, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
+}
+.update-docker-box.error strong { color: var(--error, #ef4444); }
+
+.update-docker-deps {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+.update-docker-deps li { margin: 3px 0; }
+
 @media (max-width: 640px) {
   .update-overlay { padding: 14px; }
   .update-overlay-card { padding: 30px 20px 24px; }
@@ -267,4 +308,9 @@
   .update-overlay-title { font-size: 1.15rem; }
   .update-overlay-btn { width: 100%; }
   .auto-update-block { padding: 4px 14px 16px; }
+  .update-docker-box { margin: 12px 14px 4px; padding: 11px 12px; font-size: 0.8rem; }
+  .update-docker-deps { padding-left: 16px; }
+  /* The install button is the primary action on this card — full width on
+     phones so it is not a 40px target next to a wall of text. */
+  .update-install-btn { width: 100%; }
 }
