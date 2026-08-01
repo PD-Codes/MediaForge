@@ -36,13 +36,61 @@ async function updateDevInfoBadge() {
     if (type === "feature") return t("Feature", "Feature");
     if (type === "fix") return t("Fix", "Fix");
     if (type === "warning") return t("Warnung", "Warning");
+    if (type === "important") return t("Wichtig", "Important");
+    if (type === "release") return t("Release", "Release");
     return t("Ankündigung", "Announcement");
+  }
+
+  // Release header + collapsible changelog, mirroring the server-rendered
+  // markup in templates/devinfos.html. Returns "" for every non-release post.
+  //
+  // post.release_url is already scheme-checked server-side (see routes/
+  // devinfos.py's _safe_release_url) -- it is empty unless it is an http(s)
+  // URL, so an escaped-but-unchecked "javascript:" can never land in an href
+  // here. Everything else goes through escapeHtml; release_notes_html is the
+  // one exception and is bleach-sanitized, exactly like body_html below.
+  function releaseHeadHtml(post) {
+    if (!post.release_tag) return "";
+    const name = post.release_name || post.release_tag;
+    const showTag = post.release_name && post.release_tag && post.release_name !== post.release_tag;
+    return (
+      '<div class="devinfo-release-head">' +
+        '<span class="devinfo-release-version">' + escapeHtml(name) + '</span>' +
+        (showTag ? '<span class="devinfo-release-tag">' + escapeHtml(post.release_tag) + '</span>' : '') +
+        (post.release_published ? '<span class="devinfo-release-date">' + escapeHtml(post.release_published) + '</span>' : '') +
+        '<a class="devinfo-release-btn-sm" href="' + escapeHtml(SETTINGS_UPDATES_URL) + '">' +
+          t("Zu den Updates", "Go to updates") +
+        '</a>' +
+      '</div>'
+    );
+  }
+
+  function changelogHtml(post) {
+    if (!post.release_notes_html) return "";
+    return (
+      '<details class="devinfo-changelog">' +
+        '<summary class="devinfo-changelog-summary">' +
+          t("Changelog", "Changelog") +
+          ' <span class="devinfo-changelog-version">' + escapeHtml(post.release_tag || "") + '</span>' +
+        '</summary>' +
+        '<div class="devinfo-changelog-body devinfo-markdown">' + post.release_notes_html + '</div>' +
+        (post.release_url
+          ? '<a class="devinfo-changelog-link" href="' + escapeHtml(post.release_url) +
+            '" target="_blank" rel="noopener noreferrer">' + t("Release-Seite öffnen", "Open release page") + '</a>'
+          : '') +
+      '</details>'
+    );
   }
 
   // Shared escaper (static/mf_escape.js). The local one escaped & < > only,
   // while the values land in data-type="..."/data-id="..."/class="..." -- and
   // the Dev-Info feed is explicitly untrusted content (see markdown_utils.py).
   const escapeHtml = window.mfEscape;
+
+  // Deep link into Settings -> Updates. Read off the list container (set by
+  // templates/devinfos.html) instead of hardcoded here, so url_for() stays the
+  // single source of truth for the path even if the app is mounted elsewhere.
+  const SETTINGS_UPDATES_URL = list.getAttribute("data-settings-updates-url") || "/settings#updates";
 
   function markReadBtnHtml(post) {
     const isRead = !!post.is_read;
@@ -72,7 +120,9 @@ async function updateDevInfoBadge() {
             '</span>' +
           '</div>' +
           '<h3 class="devinfo-title">' + escapeHtml(post.title) + '</h3>' +
+          releaseHeadHtml(post) +
           '<div class="devinfo-body devinfo-markdown">' + (post.body_html != null ? post.body_html : escapeHtml(post.body)) + '</div>' +
+          changelogHtml(post) +
         '</div>'
       );
     }).join("");

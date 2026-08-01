@@ -6241,7 +6241,18 @@ CREATE TABLE IF NOT EXISTS devinfo_posts (
     type              TEXT,
     author            TEXT,
     remote_created_at TEXT,
-    fetched_at        INTEGER
+    fetched_at        INTEGER,
+    -- Only populated for type="release" posts: the version the post announces
+    -- plus that release's notes, as delivered by the devInfo server's
+    -- /api/posts (which resolves them from its cached GitHub release list).
+    -- Cached here with the post so the changelog box still renders when the
+    -- devInfo server is unreachable, and so nothing in this app ever talks to
+    -- GitHub directly.
+    release_tag       TEXT,
+    release_name      TEXT,
+    release_notes     TEXT,
+    release_url       TEXT,
+    release_published_at TEXT
 )
 """
 
@@ -6252,6 +6263,15 @@ CREATE TABLE IF NOT EXISTS devinfo_posts (
 # refreshes. Keying this table by the post's own id (not a local rowid) means
 # a read post stays read across those wipes, as long as the remote server
 # keeps handing back the same id for it.
+#
+# That last condition is why the id stored here must be the devInfo server's
+# ``uid`` (a UUID), not its integer ``id``: the integer is an SQLite rowid on
+# that side and gets handed out again after a delete, so a brand-new post
+# could land on the number of a deleted one and inherit its row below --
+# arriving already marked as read. devinfos_monitor.py reads ``uid`` first for
+# exactly this reason. The stale numeric rows left over from before that
+# change need no migration: replace_devinfo_posts() prunes every read id that
+# is not in the current batch, and after the switch no batch contains them.
 _CREATE_DEVINFO_READ_TABLE = """
 CREATE TABLE IF NOT EXISTS devinfo_read (
     id      TEXT    PRIMARY KEY,
@@ -6273,6 +6293,16 @@ def init_devinfos_db():
             conn.execute("ALTER TABLE devinfo_posts ADD COLUMN author TEXT")
         except Exception:
             pass  # column already exists
+        # Migration: release columns, added with the "release" post type. Same
+        # try/except-per-column shape as above -- SQLite has no
+        # "ADD COLUMN IF NOT EXISTS", and a duplicate-column error is the
+        # cheapest possible "already migrated" check.
+        for _col in ("release_tag", "release_name", "release_notes",
+                     "release_url", "release_published_at"):
+            try:
+                conn.execute(f"ALTER TABLE devinfo_posts ADD COLUMN {_col} TEXT")
+            except Exception:
+                pass  # column already exists
         conn.commit()
     finally:
         conn.close()
@@ -6300,8 +6330,10 @@ def replace_devinfo_posts(posts):
         for p in posts:
             conn.execute(
                 "INSERT OR REPLACE INTO devinfo_posts "
-                "(id, title, body, type, author, remote_created_at, fetched_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(id, title, body, type, author, remote_created_at, fetched_at, "
+                " release_tag, release_name, release_notes, release_url, "
+                " release_published_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(p.get("id")),
                     p.get("title"),
@@ -6310,6 +6342,11 @@ def replace_devinfo_posts(posts):
                     p.get("author"),
                     p.get("remote_created_at"),
                     now,
+                    p.get("release_tag"),
+                    p.get("release_name"),
+                    p.get("release_notes"),
+                    p.get("release_url"),
+                    p.get("release_published_at"),
                 ),
             )
         current_ids = [str(p.get("id")) for p in posts]
@@ -6336,7 +6373,8 @@ def get_devinfo_posts():
     try:
         rows = conn.execute(
             "SELECT p.id, p.title, p.body, p.type, p.author, p.remote_created_at, "
-            "p.fetched_at, (r.id IS NOT NULL) AS is_read "
+            "p.fetched_at, p.release_tag, p.release_name, p.release_notes, "
+            "p.release_url, p.release_published_at, (r.id IS NOT NULL) AS is_read "
             "FROM devinfo_posts p LEFT JOIN devinfo_read r ON r.id = p.id "
             "ORDER BY p.remote_created_at DESC, p.fetched_at DESC"
         ).fetchall()

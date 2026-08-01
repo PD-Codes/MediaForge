@@ -13,7 +13,11 @@
     </div>
   </div>
 
-  <div class="devinfos-list" id="devinfosList">
+  {# data-settings-updates-url: static/devinfos.js rebuilds these cards on every
+     refresh and needs the same deep link the server-rendered ones use. Passed
+     as data instead of hardcoded in the script. #}
+  <div class="devinfos-list" id="devinfosList"
+       data-settings-updates-url="{{ url_for('settings_page') }}#updates">
     {% if posts %}
       {% for post in posts %}
       <div class="devinfo-card{% if post.is_read %} devinfo-card-read{% endif %}" data-type="{{ post.type or 'announcement' }}" data-id="{{ post.id }}">
@@ -22,6 +26,8 @@
             {% if post.type == 'feature' %}{{ _('Feature') }}
             {% elif post.type == 'fix' %}{{ _('Fix') }}
             {% elif post.type == 'warning' %}{{ _('Warning') }}
+            {% elif post.type == 'important' %}{{ _('Important') }}
+            {% elif post.type == 'release' %}{{ _('Release') }}
             {% else %}{{ _('Announcement') }}
             {% endif %}
           </span>
@@ -34,7 +40,32 @@
           </span>
         </div>
         <h3 class="devinfo-title">{{ post.title }}</h3>
+        {% if post.release_tag %}
+        <div class="devinfo-release-head">
+          <span class="devinfo-release-version">{{ post.release_name or post.release_tag }}</span>
+          {% if post.release_name and post.release_tag and post.release_name != post.release_tag %}
+          <span class="devinfo-release-tag">{{ post.release_tag }}</span>
+          {% endif %}
+          {% if post.release_published %}<span class="devinfo-release-date">{{ post.release_published }}</span>{% endif %}
+          <a class="devinfo-release-btn-sm" href="{{ url_for('settings_page') }}#updates">{{ _('Go to updates') }}</a>
+        </div>
+        {% endif %}
         <div class="devinfo-body devinfo-markdown">{{ post.body_html|default(post.body, true)|safe }}</div>
+        {# The release notes, collapsed by default: GitHub release bodies are
+           often long and this is a feed, not a changelog page. <details> does
+           the open/close natively -- no JS, and it keeps working in the list
+           that static/devinfos.js re-renders wholesale every 60s. #}
+        {% if post.release_notes_html %}
+        <details class="devinfo-changelog">
+          <summary class="devinfo-changelog-summary">
+            {{ _('Changelog') }} <span class="devinfo-changelog-version">{{ post.release_tag }}</span>
+          </summary>
+          <div class="devinfo-changelog-body devinfo-markdown">{{ post.release_notes_html|safe }}</div>
+          {% if post.release_url %}
+          <a class="devinfo-changelog-link" href="{{ post.release_url }}" target="_blank" rel="noopener noreferrer">{{ _('Open release page') }}</a>
+          {% endif %}
+        </details>
+        {% endif %}
       </div>
       {% endfor %}
     {% else %}

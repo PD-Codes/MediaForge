@@ -64,13 +64,38 @@ def _devinfos_fetch_and_store():
         for rp in raw_posts:
             if not isinstance(rp, dict):
                 continue
+            # Prefer the server's ``uid`` (a UUID) over ``id``. Both name the
+            # same post -- newer devInfo servers publish the UUID under both
+            # keys -- but ``id`` used to be an SQLite rowid, which the server
+            # reuses after a delete: a fresh post could inherit the number of a
+            # deleted one and therefore its row in devinfo_read, showing up as
+            # already read the moment it arrived. Reading ``uid`` first makes
+            # that impossible; the ``id`` fallback keeps older/self-hosted
+            # devInfo servers working. Posts without either key are skipped --
+            # a NULL id would collapse every such post into one cache row.
+            post_id = rp.get("uid") or rp.get("id")
+            if post_id in (None, ""):
+                continue
+            # "release" posts carry a nested release block naming the version
+            # they announce plus that version's notes. Flattened into columns
+            # here (rather than stored as JSON) so the templates and the SQL
+            # both stay boring. Absent for every other post type, and a
+            # malformed block is treated as absent rather than trusted.
+            release = rp.get("release")
+            if not isinstance(release, dict):
+                release = {}
             posts.append({
-                "id": rp.get("id"),
+                "id": post_id,
                 "title": rp.get("title"),
                 "body": rp.get("body"),
                 "type": rp.get("type"),
                 "author": rp.get("author"),
                 "remote_created_at": rp.get("created_at"),
+                "release_tag": release.get("tag"),
+                "release_name": release.get("name"),
+                "release_notes": release.get("notes"),
+                "release_url": release.get("url"),
+                "release_published_at": release.get("published_at"),
             })
         replace_devinfo_posts(posts)
     except Exception as exc:

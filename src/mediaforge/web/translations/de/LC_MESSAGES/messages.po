@@ -6855,3 +6855,42 @@ msgstr "Umgewandelte Bücher löschen"
 #: src/mediaforge/web/templates/settings.html
 msgid "Both caches hold derived data only — your book files are never touched. A cover is read again the next time the shelf is drawn, and a converted book is rebuilt the next time it is opened. These are separate from the comic caches above."
 msgstr "Beide Caches enthalten nur abgeleitete Daten — deine Buchdateien werden nie angefasst. Ein Cover wird beim nächsten Zeichnen des Regals erneut gelesen, ein umgewandeltes Buch beim nächsten Öffnen neu erzeugt. Sie sind von den Comic-Caches oben getrennt."
+
+#: src/mediaforge/web/templates/devinfos.html
+#: src/mediaforge/web/templates/index.html
+msgid "Important"
+msgstr "Wichtig"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Important notice"
+msgstr "Wichtiger Hinweis"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Confirming marks this notice as read and opens the Dev Infos page."
+msgstr "Mit dem Bestätigen wird dieser Hinweis als gelesen markiert und die Dev-Infos-Seite geöffnet."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Understood — open Dev Infos"
+msgstr "Verstanden — Dev Infos öffnen"
+
+#: src/mediaforge/web/templates/devinfos.html
+#: src/mediaforge/web/templates/index.html
+msgid "Release"
+msgstr "Release"
+
+#: src/mediaforge/web/templates/devinfos.html
+#: src/mediaforge/web/templates/index.html
+msgid "Go to updates"
+msgstr "Zu den Updates"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Read changelog"
+msgstr "Changelog lesen"
+
+#: src/mediaforge/web/templates/devinfos.html
+msgid "Changelog"
+msgstr "Changelog"
+
+#: src/mediaforge/web/templates/devinfos.html
+msgid "Open release page"
+msgstr "Release-Seite öffnen"

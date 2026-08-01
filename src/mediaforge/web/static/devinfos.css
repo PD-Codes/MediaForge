@@ -34,6 +34,12 @@
 /* Read posts are visually receded rather than hidden -- the whole point of
    the "mark as read" button is a manual, reversible-feeling record of "I've
    seen this", not a way to make posts disappear. */
+/* Important posts get a left rail on the card too, so they remain findable in
+   a long feed after the home-page modal is gone. */
+.devinfo-card[data-type="important"] {
+  border-left: 3px solid var(--danger, #ef4444);
+}
+
 .devinfo-card-read {
   opacity: 0.6;
   border-color: var(--border, rgba(255,255,255,0.05));
@@ -68,6 +74,13 @@
 .devinfo-tag-fix          { background: rgba(74,144,226,0.18);  color: #4a90e2; }
 .devinfo-tag-announcement { background: rgba(155,89,222,0.18);  color: #b98af0; }
 .devinfo-tag-warning      { background: rgba(240,140,60,0.18);  color: #f0a24a; }
+/* One step above warning -- the only type that also raises a modal on the
+   home page (see static/devinfo_important.js). */
+.devinfo-tag-important    { background: rgba(239,68,68,0.18);   color: #f47272;
+                            box-shadow: inset 0 0 0 1px rgba(239,68,68,0.35); }
+/* Version announcements -- informational, so the theme accent rather than an
+   alarm colour. */
+.devinfo-tag-release      { background: rgba(124,58,237,0.18);  color: #a78bfa; }
 
 .devinfo-meta {
   display: inline-flex;
@@ -127,6 +140,139 @@
   line-height: 1.55;
   color: var(--text-secondary, rgba(255,255,255,0.75));
   word-break: break-word;
+}
+
+/* -- Release posts: version header + collapsible changelog --------------- */
+.devinfo-card[data-type="release"] {
+  border-left: 3px solid var(--accent, #7c3aed);
+}
+
+.devinfo-release-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+
+.devinfo-release-version {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--accent, #7c3aed);
+  word-break: break-word;
+}
+
+.devinfo-release-tag {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--text-muted, rgba(255,255,255,0.5));
+}
+
+.devinfo-release-date {
+  font-size: 0.76rem;
+  color: var(--text-muted, rgba(255,255,255,0.5));
+}
+
+.devinfo-release-btn-sm {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  background: var(--accent, #7c3aed);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: filter .15s;
+}
+
+.devinfo-release-btn-sm:hover,
+.devinfo-release-btn-sm:focus-visible { filter: brightness(1.12); }
+
+/* The changelog box. Closed by default: GitHub release notes are long and this
+   is a feed. <details>/<summary> gives the toggle for free -- no JS, and it
+   survives static/devinfos.js re-rendering the whole list every 60s. */
+.devinfo-changelog {
+  margin-top: 12px;
+  background: var(--bg-elevated, rgba(255,255,255,0.04));
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: var(--radius-sm, 8px);
+  overflow: hidden;
+}
+
+.devinfo-changelog-summary {
+  /* 40px keeps the toggle a comfortable tap target. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary, rgba(255,255,255,0.75));
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+/* Replace the default disclosure triangle with one that follows the theme and
+   points the right way in both states, in both engines. */
+.devinfo-changelog-summary::-webkit-details-marker { display: none; }
+
+.devinfo-changelog-summary::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .15s;
+}
+
+.devinfo-changelog[open] > .devinfo-changelog-summary::before {
+  transform: rotate(90deg);
+}
+
+.devinfo-changelog-summary:hover { color: var(--text-primary, #fff); }
+
+.devinfo-changelog-version {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted, rgba(255,255,255,0.5));
+}
+
+.devinfo-changelog-body {
+  padding: 2px 12px 12px;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--text-secondary, rgba(255,255,255,0.72));
+  /* Release notes can be very long -- cap the box and scroll inside it rather
+     than pushing the next post off the screen. */
+  max-height: 340px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  word-break: break-word;
+}
+
+.devinfo-changelog-link {
+  display: inline-block;
+  margin: 0 12px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-link, #8b8bff);
+  text-decoration: none;
+}
+
+.devinfo-changelog-link:hover { text-decoration: underline; }
+
+@media (prefers-reduced-motion: reduce) {
+  .devinfo-changelog-summary::before { transition: none; }
 }
 
 /* -- Rendered Markdown (Dev Info post body) ------------------------------ */
@@ -267,6 +413,13 @@
 
 @media (max-width: 560px) {
   .devinfo-card-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+
+  /* The button no longer fits on the same line as the version -- give it its
+     own full-width row instead of letting it wrap into a cramped corner. */
+  .devinfo-release-head { gap: 8px; }
+  .devinfo-release-btn-sm { margin-left: 0; width: 100%; min-height: 40px; }
+  .devinfo-release-version { font-size: 0.98rem; }
+  .devinfo-changelog-body { max-height: 260px; font-size: 0.82rem; }
   .devinfo-title { font-size: 0.96rem; }
   .devinfo-body { font-size: 0.86rem; }
 
