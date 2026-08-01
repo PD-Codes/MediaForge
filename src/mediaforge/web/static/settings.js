@@ -2623,16 +2623,7 @@ function _applyUpdateData(data) {
 
   const isDevInstall = !!data.is_dev_install;
   const canSelfUpdate = !!data.can_self_update;
-  // Docker cannot self-update (dependencies + relaunch helper), but it CAN
-  // swap just the mediaforge package on the stable channel — two separate
-  // flags on purpose, see web/selfupdate.py's detect_install().
-  const isDocker = data.install_type === "docker" || !!data.is_docker;
-  const canCodeUpdate = !!data.can_code_update;
-  const dockerCanUpdate = isDocker && canCodeUpdate;
   _selfUpdateCanUpdate = canSelfUpdate;
-  _selfUpdateIsDocker = isDocker;
-  _selfUpdateDockerCanUpdate = dockerCanUpdate;
-  _selfUpdateTargetVersion = data.latest_version || null;
   if (data.channel) _selfUpdateChannel = data.channel;
 
   // "Verfügbar" field
@@ -2651,9 +2642,7 @@ function _applyUpdateData(data) {
   const pipEl = document.getElementById("updatePipCmd");
   const pipBlock = (pipEl && pipEl.closest("div")) ? pipEl.closest("div").parentElement : null;
   if (pipBlock) pipBlock.style.display = canSelfUpdate ? "none" : "";
-  // The dev-channel block offers a pip command that makes no sense inside a
-  // container (there is no pip-managed install to switch), so hide it there.
-  if (devHint) devHint.style.display = (!canSelfUpdate && !isDevInstall && !isDocker) ? "" : "none";
+  if (devHint) devHint.style.display = (!canSelfUpdate && !isDevInstall) ? "" : "none";
 
   if (data.error) {
     if (status) status.textContent = "⚠️ " + data.error;
@@ -2684,9 +2673,8 @@ function _applyUpdateData(data) {
         changelog.style.display = "";
         changelog.textContent = data.release_notes || "";
       }
-      if (pipCmd) pipCmd.textContent = isDocker
-        ? 'docker compose pull && docker compose up -d'
-        : 'pip install --upgrade mediaforge';
+      if (pipCmd) pipCmd.textContent =
+        'pip install --upgrade mediaforge';
     }
   } else {
     if (status) status.textContent = t("✓ Bereits aktuell.","✓ Already up to date.");
@@ -2694,74 +2682,11 @@ function _applyUpdateData(data) {
   }
 
   const installRow = document.getElementById("updateInstallRow");
-  if (installRow) {
-    const showInstall = (canSelfUpdate || dockerCanUpdate) && !!data.update_available;
-    installRow.style.display = showInstall ? "" : "none";
-  }
-
-  _renderDockerUpdateNotice(data, isDocker, dockerCanUpdate);
-}
-
-/* Docker-only notice below the update card.
- *
- * Three cases:
- *   - stable + update available -> what the button does and what it costs
- *     (the swap is lost the next time the container is recreated).
- *   - dev channel               -> no button at all, say why.
- *   - anything else in Docker   -> the standing "pull the image" advice.
- * The blocked-dependencies box is separate (#dockerUpdateBlocked) and only
- * appears after a preflight has actually run.
- */
-function _renderDockerUpdateNotice(data, isDocker, dockerCanUpdate) {
-  const box = document.getElementById("dockerUpdateHint");
-  // A blocked-preflight result belongs to one specific check — clear it
-  // whenever the update data is refreshed so it cannot linger as stale advice.
-  const blocked = document.getElementById("dockerUpdateBlocked");
-  if (blocked) blocked.style.display = "none";
-  if (!box) return;
-  if (!isDocker) { box.style.display = "none"; return; }
-
-  if (!dockerCanUpdate && data.code_update_reason === "docker_dev_channel") {
-    box.innerHTML =
-      "<strong>🐳 " + mfEscape(t("Docker – Dev-Kanal", "Docker – dev channel")) + "</strong><br>" +
-      mfEscape(t("Im Container kann nur der stabile Kanal aktualisiert werden. " +
-                 "Für den Dev-Kanal bitte ein neues Image bauen bzw. ziehen.",
-                 "Only the stable channel can be updated inside a container. " +
-                 "For the dev channel, build or pull a new image instead."));
-    box.style.display = "";
-    return;
-  }
-
-  if (dockerCanUpdate && data.update_available) {
-    box.innerHTML =
-      "<strong>🐳 " + mfEscape(t("Hinweis für Docker", "Docker note")) + "</strong><br>" +
-      mfEscape(t("Der Button ersetzt nur das MediaForge-Paket im laufenden Container. " +
-                 "Das Image bleibt unverändert – beim nächsten Neuerstellen des Containers " +
-                 "(docker compose pull / up -d, Image-Update, Watchtower) geht das Update " +
-                 "verloren. Bitte das Image trotzdem zeitnah aktualisieren.",
-                 "The button only replaces the MediaForge package inside the running " +
-                 "container. The image itself is untouched — the update is lost the next " +
-                 "time the container is recreated (docker compose pull / up -d, an image " +
-                 "update, Watchtower). Please still update the image soon after."));
-    box.style.display = "";
-    return;
-  }
-
-  box.innerHTML =
-    "<strong>🐳 " + mfEscape(t("Hinweis für Docker", "Docker note")) + "</strong><br>" +
-    mfEscape(t("Updates im Container werden am besten über ein neues Image eingespielt: " +
-               "docker compose pull && docker compose up -d",
-               "Updates inside a container are best applied by pulling a new image: " +
-               "docker compose pull && docker compose up -d"));
-  box.style.display = "";
+  if (installRow) installRow.style.display = (canSelfUpdate && data.update_available) ? "" : "none";
 }
 
 let _selfUpdateChannel = null;
 let _selfUpdateCanUpdate = false;
-let _selfUpdateIsDocker = false;
-let _selfUpdateDockerCanUpdate = false;
-let _selfUpdateTargetVersion = null;
-let _dockerPreflightBusy = false;
 
 function _renderChannelSwitch(channel) {
   const sw = document.getElementById("updateChannelSwitch");
@@ -2772,124 +2697,6 @@ function _renderChannelSwitch(channel) {
 }
 
 function installUpdateNow() {
-  // Docker takes the extra dependency-preflight detour before anything is
-  // installed; every other install type keeps the old one-click behaviour.
-  if (_selfUpdateIsDocker) {
-    if (_selfUpdateDockerCanUpdate) dockerInstallUpdateNow();
-    return;
-  }
-  if (window.AniUpdate) window.AniUpdate.startInstall();
-}
-
-/* Render the "cannot update" box for a blocked/failed Docker preflight. */
-function _renderDockerBlocked(payload) {
-  const box = document.getElementById("dockerUpdateBlocked");
-  if (!box) return;
-  const pullCmd = "docker compose pull &amp;&amp; docker compose up -d";
-
-  if (payload && payload.error) {
-    box.innerHTML =
-      "<strong>⚠️ " + mfEscape(t("Update nicht möglich", "Update not possible")) + "</strong><br>" +
-      mfEscape(t("Die Abhängigkeiten der neuen Version konnten nicht geprüft werden: ",
-                 "The dependencies of the new version could not be checked: ")) +
-      mfEscape(payload.error) + "<br>" +
-      mfEscape(t("Aus Sicherheitsgründen wird nicht aktualisiert. Bitte stattdessen das " +
-                 "Docker-Image aktualisieren:",
-                 "Nothing is updated when the check itself fails. Please update the " +
-                 "Docker image instead:")) +
-      "<br><code>" + pullCmd + "</code>";
-    box.style.display = "";
-    return;
-  }
-
-  const list = (payload && payload.blocking) ? payload.blocking : [];
-  const items = list.map(function (d) {
-    const req = d.required && d.required !== "*" ? " " + d.required : "";
-    const have = d.installed
-      ? t(" – installiert: ", " – installed: ") + d.installed
-      : t(" – nicht installiert", " – not installed");
-    return "<li><code>" + mfEscape(d.name + req) + "</code>" + mfEscape(have) + "</li>";
-  }).join("");
-
-  box.innerHTML =
-    "<strong>⚠️ " + mfEscape(t("Update nicht möglich", "Update not possible")) + "</strong><br>" +
-    mfEscape(t("Die neue Version benötigt neue oder neuere Abhängigkeiten, die dieses " +
-               "Image nicht mitbringt:",
-               "The new version needs new or newer dependencies that this image does " +
-               "not ship:")) +
-    "<ul class=\"update-docker-deps\">" + items + "</ul>" +
-    mfEscape(t("Bitte das Docker-Image aktualisieren:",
-               "Please update the Docker image:")) +
-    "<br><code>" + pullCmd + "</code>";
-  box.style.display = "";
-}
-
-/* Docker flow: preflight -> confirm -> install.
- *
- * The preflight is only the polite half — /api/update/install runs the very
- * same check server-side again, so skipping this in the browser buys nothing.
- */
-async function dockerInstallUpdateNow() {
-  if (_dockerPreflightBusy) return;
-  const btn = document.getElementById("updateInstallBtn");
-  const blocked = document.getElementById("dockerUpdateBlocked");
-  if (blocked) blocked.style.display = "none";
-  _dockerPreflightBusy = true;
-  const oldLabel = btn ? btn.textContent : "";
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = t("Abhängigkeiten werden geprüft …", "Checking dependencies …");
-  }
-
-  let payload = null;
-  try {
-    const resp = await fetch("/api/update/docker-preflight", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    payload = await resp.json().catch(function () { return null; });
-    if (!resp.ok) {
-      payload = payload || {};
-      payload.error = payload.error || ("HTTP " + resp.status);
-    }
-  } catch (e) {
-    payload = { error: (e && e.message) || String(e) };
-  } finally {
-    _dockerPreflightBusy = false;
-    if (btn) { btn.disabled = false; btn.textContent = oldLabel; }
-  }
-
-  if (!payload || payload.error || !payload.ok) {
-    _renderDockerBlocked(payload);
-    return;
-  }
-
-  const version = payload.target_version || _selfUpdateTargetVersion || "";
-  const msg =
-    mfEscape(t("MediaForge wird im laufenden Container auf Version " + version +
-               " aktualisiert. Geprüfte Abhängigkeiten: " + payload.checked +
-               " – alle bereits erfüllt.",
-               "MediaForge will be updated to version " + version + " inside the " +
-               "running container. Dependencies checked: " + payload.checked +
-               " — all already satisfied.")) +
-    "<br><br><strong>" +
-    mfEscape(t("Wichtig: Das Docker-Image bleibt unverändert. Beim nächsten " +
-               "Neuerstellen des Containers geht dieses Update verloren – bitte das " +
-               "Image trotzdem zeitnah aktualisieren.",
-               "Important: the Docker image is not changed. This update is lost the " +
-               "next time the container is recreated — please still update the image " +
-               "soon after.")) +
-    "</strong>";
-  const okLabel = t("Jetzt aktualisieren", "Update now");
-  const title = t("Update im Container installieren?", "Install the update inside the container?");
-  let confirmed = false;
-  if (typeof showConfirm === "function") {
-    confirmed = await showConfirm(msg, okLabel, title, "btn-primary");
-  } else {
-    confirmed = window.confirm(msg.replace(/<[^>]+>/g, " "));
-  }
-  if (!confirmed) return;   // user aborted — nothing is reported anywhere
   if (window.AniUpdate) window.AniUpdate.startInstall();
 }
 

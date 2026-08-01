@@ -9,45 +9,12 @@ Neither is reported from start_update(): that process exits for the update
 helper ~1.5s later and the telemetry worker is a daemon thread without a flush
 at exit, so an event submitted there is usually cut off mid-POST. A pure
 restart (start_restart()) is not an update and does not count as one.
-A Docker code update (see below) reports the same two events plus its own
-detail.docker_code_update, and it reports them from the same two places: the
-success case after the in-place restart, the failed-install case immediately
-(that path does not restart, so the worker thread is still alive to finish
-the POST). A preflight that blocks the update is never reported -- that is
-the check doing its job, not a fault. See telemetry/registry.py.
+See telemetry/registry.py.
 
 Capabilities by install type:
 
   - ``pip-release`` / ``pip-dev`` / ``pipx``  → self-update + channel switch
-  - ``docker``                                → *code update* only (stable channel)
-  - ``frozen`` / ``unknown``                  → not supported (UI shows a hint)
-
-Two distinct capability flags exist and they are deliberately NOT the same
-thing:
-
-``can_self_update``
-    "this install can replace itself, dependencies and all, through its own
-    package manager and relaunch through a detached helper script". Stays
-    ``False`` for Docker on purpose -- every existing caller of this flag
-    (the auto-update worker in ``routes/update.py``, the channel switch and
-    the auto-update card in ``static/settings.js``) means exactly that and
-    must keep meaning it. In particular the auto-update worker must never
-    touch a container unattended.
-
-``can_code_update``
-    "the mediaforge package inside this environment can be swapped for a
-    newer *stable* release without touching its dependency tree". Only
-    Docker sets this without ``can_self_update``; it powers the manual
-    "Install update now" button in the container and nothing else.
-
-The Docker code update is intentionally narrow. The container image is not
-rebuilt -- only the ``mediaforge`` wheel inside ``/app/.venv`` is replaced,
-with ``--no-deps``, after ``docker_update_preflight()`` has proven that every
-requirement of the target version is already satisfied by what the image
-ships. That keeps the operation to a few seconds and makes it impossible for
-a dependency tree to be resolved (or compiled) inside a container that has no
-build tooling. It also means the update is lost the moment the container is
-recreated from the image, which the UI says out loud every single time.
+  - ``docker`` / ``frozen`` / ``unknown``     → not supported (UI shows a hint)
 
 Because a running Python process cannot reliably replace its own on-disk files
 (especially on Windows) and cannot restart itself, the actual upgrade happens in
@@ -71,12 +38,9 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shlex
-import shutil
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -105,48 +69,6 @@ LOG_FILE = CONFIG_DIR / "update.log"
 ORIGINAL_ARGV: list[str] = list(sys.argv[1:])
 
 _VALID_STATES = {"idle", "installing", "restarting", "success", "failed"}
-
-# ---------------------------------------------------------------------------
-# Docker code update
-# ---------------------------------------------------------------------------
-# PyPI metadata endpoint for one specific version of one specific package.
-PYPI_VERSION_JSON_URL = "https://pypi.org/pypi/{package}/{version}/json"
-
-# A target version ends up inside a command line, so it is validated against
-# this instead of being trusted. Only the shapes MediaForge actually publishes
-# are accepted (PEP 440 release / pre-release / post / dev segments); anything
-# with a space, a quote, a slash or a shell metacharacter cannot match. The
-# version itself never comes from the client either -- routes/update.py takes
-# it from the server-side update cache -- this is the second line of defence.
-_TARGET_VERSION_RE = re.compile(
-    r"^\d+(?:\.\d+){0,3}(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?$"
-)
-
-# Network timeout for the PyPI metadata lookup (connect, read).
-_PREFLIGHT_TIMEOUT = (10, 15)
-
-# Upper bound for the in-container `uv pip install --no-deps` run. With
-# --no-deps this is a single wheel download plus an unpack, so anything past
-# a few minutes means something is stuck rather than slow.
-_DOCKER_INSTALL_TIMEOUT = 600
-
-# Preflight result cache. The check goes out to PyPI, so repeated clicks (or a
-# bored admin hammering the endpoint) must not turn into repeated outbound
-# requests. Keyed by target version, short-lived on purpose: a 60s window is
-# long enough to cover "preflight, read the dialog, confirm" and short enough
-# that a genuinely changed answer is never stale for long.
-_PREFLIGHT_CACHE_TTL = 60.0
-_preflight_cache: dict = {"version": None, "at": 0.0, "result": None}
-_preflight_lock = threading.Lock()
-
-
-def is_valid_target_version(version) -> bool:
-    """True when *version* is a plausible MediaForge release number.
-
-    Guards every place a version string reaches a command line. See
-    ``_TARGET_VERSION_RE`` above for why this is deliberately strict.
-    """
-    return bool(version) and bool(_TARGET_VERSION_RE.match(str(version).strip()))
 
 
 # ---------------------------------------------------------------------------
@@ -204,49 +126,29 @@ def detect_install() -> dict:
     Return a description of how this instance was installed.
 
     Keys:
-      type              : pip-release | pip-dev | pipx | docker | frozen | unknown
-      channel           : 'stable' | 'dev' | None
-      manager           : 'pip' | 'pipx' | None    (how to perform the upgrade)
-      can_self_update   : bool   -- full self-update incl. dependencies + channel switch
-      can_code_update   : bool   -- swap just the mediaforge package (Docker)
-      code_update_reason: str|None -- why can_code_update is False
-      python            : sys.executable
-
-    ``can_self_update`` keeps its original meaning exactly: Docker stays
-    ``False`` there, so the auto-update worker (routes/update.py), the channel
-    switch and the auto-update card (static/settings.js) behave as before and
-    a container is never updated unattended. The Docker button rides on the
-    separate ``can_code_update`` flag instead -- see the module docstring.
+      type            : pip-release | pip-dev | pipx | docker | frozen | unknown
+      channel         : 'stable' | 'dev' | None
+      manager         : 'pip' | 'pipx' | None      (how to perform the upgrade)
+      can_self_update : bool
+      python          : sys.executable
     """
     info = {
         "type": "unknown",
         "channel": None,
         "manager": None,
         "can_self_update": False,
-        "can_code_update": False,
-        "code_update_reason": "unsupported",
         "python": sys.executable or "",
     }
 
     # Order matters: frozen / docker take precedence — neither can self-update.
     if _is_frozen():
         info["type"] = "frozen"
-        info["code_update_reason"] = "frozen"
         return info
     if _in_docker():
         info["type"] = "docker"
         # channel still meaningful for display
         is_dev, _ = _dev_install_info()
         info["channel"] = "dev" if is_dev else "stable"
-        # Stable only: the dev channel installs straight from the git branch,
-        # which means a source build inside the container -- that needs build
-        # tooling the image does not carry, and its version string never
-        # changes, so there is nothing to pin --no-deps against either.
-        if info["channel"] == "dev":
-            info["code_update_reason"] = "docker_dev_channel"
-        else:
-            info["can_code_update"] = True
-            info["code_update_reason"] = None
         return info
 
     is_dev, _ = _dev_install_info()
@@ -256,15 +158,11 @@ def detect_install() -> dict:
         info["type"] = "pipx"
         info["manager"] = "pipx"
         info["can_self_update"] = True
-        info["can_code_update"] = True
-        info["code_update_reason"] = None
         return info
 
     info["type"] = "pip-dev" if is_dev else "pip-release"
     info["manager"] = "pip"
     info["can_self_update"] = True
-    info["can_code_update"] = True
-    info["code_update_reason"] = None
     return info
 
 
@@ -365,9 +263,6 @@ def read_status() -> dict:
     return {
         "state": _read_state(),
         "restart_only": meta.get("restart_only"),
-        # Lets the overlay repeat the "this is lost on the next image pull"
-        # warning at the moment the update actually finishes.
-        "docker_code_update": bool(meta.get("docker_code_update")),
         "channel": meta.get("channel"),
         "target_channel": meta.get("target_channel"),
         "from_version": meta.get("from_version"),
@@ -382,7 +277,7 @@ def ack_status() -> None:
     """Reset the state back to idle (frontend dismissed the result)."""
     _write_state("idle")
     meta = _read_meta()
-    for k in ("error", "to_version", "telemetry_reported", "docker_code_update"):
+    for k in ("error", "to_version", "telemetry_reported"):
         meta.pop(k, None)
     _write_meta(meta)
 
@@ -530,20 +425,7 @@ def _spawn_detached(script: Path) -> None:
 # Orchestration
 # ---------------------------------------------------------------------------
 class UpdateError(Exception):
-    """Raised when an update cannot be started.
-
-    ``blocking`` carries the unmet-requirement list of a failed Docker
-    preflight (see ``docker_update_preflight``) so the route can hand the UI
-    a structured reason instead of only a sentence; ``reason`` is a stable
-    machine-readable code the frontend can branch on. Both are optional and
-    default to empty, so the plain ``UpdateError("...")`` call sites elsewhere
-    in this module are unaffected.
-    """
-
-    def __init__(self, message: str, *, blocking=None, reason: str | None = None):
-        super().__init__(message)
-        self.blocking = list(blocking or [])
-        self.reason = reason
+    """Raised when an update cannot be started."""
 
 
 def start_update(target_channel: str | None = None) -> dict:
@@ -710,427 +592,6 @@ def start_restart() -> dict:
     return {"ok": True, "type": info["type"]}
 
 
-# ---------------------------------------------------------------------------
-# Docker code update — dependency preflight, in-container install, in-place
-# restart.  See the module docstring for the "why only this narrow thing".
-# ---------------------------------------------------------------------------
-def _site_packages_dir() -> str:
-    """site-packages of the interpreter that is currently running."""
-    import sysconfig
-
-    return sysconfig.get_paths().get("purelib") or ""
-
-
-def _venv_writable() -> tuple[bool, str | None]:
-    """Whether a package can be installed into the running environment.
-
-    The recommended compose file runs the container with ``read_only: true``,
-    which makes ``/app/.venv`` read-only as well -- an install would fail
-    halfway through with a wall of pip output. Checking up front turns that
-    into one clear sentence.
-    """
-    try:
-        target = _site_packages_dir()
-        if not target:
-            return True, None  # can't tell — let the installer try
-        if os.access(target, os.W_OK):
-            return True, None
-        return False, target
-    except Exception:
-        return True, None
-
-
-def _installed_requirements() -> list[str]:
-    """``Requires-Dist`` of the *installed* mediaforge distribution."""
-    from importlib.metadata import metadata
-
-    return list(metadata(PACKAGE).get_all("Requires-Dist") or [])
-
-
-def _fetch_target_requirements(target_version: str) -> list[str]:
-    """``requires_dist`` of *target_version* straight from the PyPI JSON API.
-
-    Uses the project's own niquests session (``config.GLOBAL_SESSION``), so
-    this request goes through the configured DoH resolver and the OS trust
-    store like every other outbound call, instead of urllib's plain system
-    DNS. Imported lazily to keep this module a light leaf import.
-    """
-    from ..config import GLOBAL_SESSION
-
-    url = PYPI_VERSION_JSON_URL.format(package=PACKAGE, version=target_version)
-    resp = GLOBAL_SESSION.get(
-        url, timeout=_PREFLIGHT_TIMEOUT, headers={"Accept": "application/json"}
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    return list((data.get("info") or {}).get("requires_dist") or [])
-
-
-def _docker_preflight_uncached(target_version: str) -> dict:
-    """Do the actual work of ``docker_update_preflight`` (no caching)."""
-    result: dict = {"ok": False, "blocking": [], "checked": 0, "error": None}
-
-    if not is_valid_target_version(target_version):
-        result["error"] = f"invalid target version '{target_version}'"
-        return result
-
-    try:
-        from importlib.metadata import PackageNotFoundError
-        from importlib.metadata import version as _dist_version
-
-        from packaging.requirements import InvalidRequirement, Requirement
-        from packaging.utils import canonicalize_name
-    except Exception as exc:  # pragma: no cover - packaging is a hard dependency
-        result["error"] = f"dependency check unavailable ({exc})"
-        return result
-
-    writable, ro_dir = _venv_writable()
-    if not writable:
-        result["error"] = (
-            f"the package directory inside the container is read-only ({ro_dir})"
-        )
-        return result
-
-    try:
-        current_raw = _installed_requirements()
-    except Exception as exc:
-        result["error"] = f"could not read the installed package metadata ({exc})"
-        return result
-
-    # Only used to mark a blocking entry as "brand new" vs "tightened" — the
-    # actual gate below is always against what is really installed.
-    current_names: set[str] = set()
-    for raw in current_raw:
-        try:
-            current_names.add(canonicalize_name(Requirement(raw).name))
-        except InvalidRequirement:
-            continue
-
-    try:
-        target_raw = _fetch_target_requirements(target_version)
-    except Exception as exc:
-        result["error"] = (
-            f"could not read the requirements of {target_version} from PyPI ({exc})"
-        )
-        return result
-    if not target_raw:
-        # MediaForge always declares dependencies. An empty list means the
-        # metadata is unusable, not that the release has none — fail closed.
-        result["error"] = f"PyPI returned no requirement list for {target_version}"
-        return result
-
-    blocking: list[dict] = []
-    checked = 0
-    for raw in target_raw:
-        try:
-            req = Requirement(raw)
-        except InvalidRequirement:
-            # Something we cannot verify must never be waved through.
-            result["error"] = f"unparseable requirement in {target_version}: {raw!r}"
-            return result
-
-        if req.marker is not None:
-            try:
-                # extra="" makes every `extra == "..."` marker evaluate to
-                # False: MediaForge is installed without extras, so optional
-                # dependency groups do not apply. Plain environment markers
-                # (python_version, sys_platform, …) are evaluated against the
-                # interpreter that is actually running this container.
-                if not req.marker.evaluate({"extra": ""}):
-                    continue
-            except Exception:
-                result["error"] = f"could not evaluate requirement marker: {raw!r}"
-                return result
-
-        checked += 1
-        try:
-            installed = _dist_version(req.name)
-        except PackageNotFoundError:
-            installed = None
-        except Exception:
-            installed = None
-
-        entry = {
-            "name": req.name,
-            "required": str(req.specifier) or "*",
-            "installed": installed,
-            "new": canonicalize_name(req.name) not in current_names,
-        }
-        if installed is None:
-            blocking.append(entry)
-            continue
-        try:
-            satisfied = (not req.specifier) or req.specifier.contains(
-                installed, prereleases=True
-            )
-        except Exception:
-            satisfied = False
-        if not satisfied:
-            blocking.append(entry)
-
-    result["checked"] = checked
-    result["blocking"] = blocking
-    # STRICT on purpose: a single unmet or missing requirement blocks. The
-    # whole point of --no-deps is that nothing has to be resolved inside the
-    # container, and that only holds if *everything* is already in place.
-    result["ok"] = not blocking
-    return result
-
-
-def docker_update_preflight(target_version: str, *, max_age: float | None = None) -> dict:
-    """Can *target_version* be installed into this container with ``--no-deps``?
-
-    Compares the ``requires_dist`` of the target release on PyPI against the
-    packages actually present in the running virtualenv. Environment markers
-    are evaluated against this interpreter; requirements that only apply to an
-    extra are skipped (MediaForge is installed without extras).
-
-    Returns ``{"ok": bool, "blocking": [{name, required, installed, new}, …],
-    "checked": int, "error": str|None}``.
-
-    Fail-closed in every direction: if the check itself cannot be carried out
-    (PyPI unreachable, metadata unreadable, a requirement that will not parse)
-    the result is ``ok=False`` with an ``error`` — never an optimistic "looks
-    fine". Results are cached per target version for
-    ``_PREFLIGHT_CACHE_TTL`` seconds so the endpoint cannot be turned into an
-    outbound request amplifier.
-    """
-    ttl = _PREFLIGHT_CACHE_TTL if max_age is None else max_age
-    key = str(target_version or "").strip()
-    now = time.time()
-    with _preflight_lock:
-        cached = _preflight_cache
-        if (
-            cached.get("result") is not None
-            and cached.get("version") == key
-            and (now - float(cached.get("at") or 0.0)) < ttl
-        ):
-            return json.loads(json.dumps(cached["result"]))  # defensive copy
-
-    result = _docker_preflight_uncached(key)
-
-    with _preflight_lock:
-        _preflight_cache["version"] = key
-        _preflight_cache["at"] = time.time()
-        _preflight_cache["result"] = result
-    return json.loads(json.dumps(result))
-
-
-def build_docker_upgrade_cmd(target_version: str) -> list[str]:
-    """Command that swaps the mediaforge package inside the container venv.
-
-    ``--no-deps`` is not a shortcut here, it is the safety property:
-    ``docker_update_preflight()`` has already proven every requirement of the
-    target release is satisfied by what the image ships, so nothing has to be
-    resolved, downloaded or compiled — which a slim container could not do
-    anyway. ``uv`` is what the image builds with and is on PATH there; the
-    pip fallback exists for custom images that dropped it.
-    """
-    if not is_valid_target_version(target_version):
-        raise UpdateError(f"invalid target version '{target_version}'")
-    py = sys.executable or "python3"
-    spec = f"{PACKAGE}=={str(target_version).strip()}"
-    uv = shutil.which("uv")
-    if uv:
-        return [uv, "pip", "install", "--python", py, "--upgrade", "--no-deps", spec]
-    return [py, "-m", "pip", "install", "--upgrade", "--no-input", "--no-deps", spec]
-
-
-def _requeue_running_downloads() -> None:
-    """Put in-flight downloads back into the queue so they resume after the
-    restart. Mirrors what routes/update.py does around ``start_update()``."""
-    try:
-        from .db import get_db
-
-        conn = get_db()
-        try:
-            conn.execute(
-                "UPDATE download_queue SET status = 'queued' WHERE status = 'running'"
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception:
-        logger.warning("[DockerUpdate] could not requeue download queue", exc_info=True)
-
-
-def _inplace_restart() -> None:
-    """Replace this process with a fresh interpreter — the Docker restart path.
-
-    The detached-helper trick the pip/pipx flow uses cannot work in a
-    container: the app is PID 1 there, and the moment PID 1 exits the whole
-    container (helper script included) is torn down. ``os.execv`` keeps PID 1
-    alive and merely swaps the process image, so the freshly installed code is
-    picked up without depending on a ``restart:`` policy that may not exist.
-    Sockets and files Python opened are non-inheritable (PEP 446), so the
-    listening port is released by the exec itself.
-    """
-    cmd = relaunch_cmd()
-    logger.info("[DockerUpdate] restarting in place: %s", " ".join(cmd))
-    try:
-        sys.stdout.flush()
-        sys.stderr.flush()
-    except Exception:
-        pass
-    try:
-        os.execv(cmd[0], cmd)
-    except Exception:
-        # Last resort: exit and let the container restart policy take over.
-        logger.exception("[DockerUpdate] execv failed, exiting instead")
-        os._exit(0)
-
-
-def _docker_update_worker(target_version: str, cmd: list[str], meta: dict) -> None:
-    """Run the in-container install, then restart in place (background thread).
-
-    Runs off the request thread so the HTTP response returns immediately and
-    the existing update overlay can follow along through
-    ``GET /api/update/status`` exactly like a normal self-update.
-    """
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=_DOCKER_INSTALL_TIMEOUT,
-            env={**os.environ, "PIP_NO_INPUT": "1"},
-        )
-        output = (proc.stdout or "") + (proc.stderr or "")
-        rc = proc.returncode
-    except subprocess.TimeoutExpired:
-        output = f"[updater] install timed out after {_DOCKER_INSTALL_TIMEOUT}s"
-        rc = -1
-    except Exception as exc:
-        output = f"[updater] install could not be started: {exc}"
-        rc = -1
-
-    try:
-        with open(LOG_FILE, "a", encoding="utf-8") as fh:
-            fh.write(output)
-            fh.write(f"\n[updater] exit code {rc}\n")
-    except Exception:
-        pass
-
-    if rc != 0:
-        meta["error"] = (
-            "The package could not be installed inside the container. "
-            "See the log below."
-        )
-        # No restart follows, so this process stays around long enough for the
-        # telemetry worker to finish its POST — report right here.
-        meta["telemetry_reported"] = True
-        _write_meta(meta)
-        _write_state("failed")
-        _report_self_update_flag()
-        _report_docker_code_update(
-            status="failed",
-            error_type="install_command_failed",
-            from_version=meta.get("from_version"),
-            to_version=target_version,
-        )
-        logger.error("[DockerUpdate] install failed (exit %s)", rc)
-        return
-
-    _write_state("restarting")
-    logger.info("[DockerUpdate] install OK, restarting into %s", target_version)
-    _requeue_running_downloads()
-    time.sleep(1.0)  # let the /api/update/status poll observe "restarting"
-    _inplace_restart()
-
-
-def start_docker_code_update(target_version: str) -> dict:
-    """Replace the mediaforge package inside this container and restart.
-
-    Only ever reached for ``type == "docker"`` on the stable channel, and only
-    after ``docker_update_preflight()`` says every requirement is already
-    satisfied — that check is repeated here (from the shared cache, so it
-    costs nothing) so a caller cannot skip it.
-
-    Returns immediately; the install and the in-place restart happen in a
-    background thread and are followed through the usual update state files.
-    """
-    if not is_valid_target_version(target_version):
-        raise UpdateError(
-            f"invalid target version '{target_version}'", reason="invalid_version"
-        )
-    target_version = str(target_version).strip()
-
-    info = detect_install()
-    if info["type"] != "docker":
-        raise UpdateError(
-            f"code update is Docker-only (install type '{info['type']}')",
-            reason="not_docker",
-        )
-    if not info.get("can_code_update"):
-        reason = info.get("code_update_reason") or "unsupported"
-        if reason == "docker_dev_channel":
-            raise UpdateError(
-                "the dev channel cannot be updated inside a container; "
-                "pull a new image instead",
-                reason=reason,
-            )
-        raise UpdateError("code update not available for this container", reason=reason)
-
-    if _read_state() in ("installing", "restarting"):
-        raise UpdateError("an update is already in progress", reason="busy")
-
-    pre = docker_update_preflight(target_version)
-    if pre.get("error"):
-        raise UpdateError(
-            f"dependency check failed: {pre['error']}", reason="preflight_error"
-        )
-    if not pre.get("ok"):
-        raise UpdateError(
-            "the target version needs dependencies this image does not provide",
-            blocking=pre.get("blocking"),
-            reason="preflight_blocked",
-        )
-
-    from_version = _current_version()
-    meta = {
-        "channel": "stable",
-        "target_channel": "stable",
-        "from_version": from_version,
-        "to_version": target_version,
-        "error": None,
-        "started_at": time.time(),
-        "docker_code_update": True,
-    }
-    _write_meta(meta)
-    _write_state("installing")
-
-    cmd = build_docker_upgrade_cmd(target_version)
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        LOG_FILE.write_text(
-            "=== MediaForge Docker code update ===\n"
-            f"from version : {from_version}\n"
-            f"to version   : {target_version}\n"
-            f"checked deps : {pre.get('checked')}\n"
-            f"command      : {' '.join(cmd)}\n\n",
-            encoding="utf-8",
-        )
-    except Exception:
-        pass
-
-    threading.Thread(
-        target=_docker_update_worker,
-        args=(target_version, cmd, meta),
-        daemon=True,
-        name="docker-code-update",
-    ).start()
-
-    return {
-        "ok": True,
-        "type": "docker",
-        "channel": "stable",
-        "target_channel": "stable",
-        "to_version": target_version,
-        "checked": pre.get("checked", 0),
-        "command": " ".join(cmd),
-    }
-
-
 def finalize_after_restart() -> None:
     """
     Called once on startup.  Resolves the state left behind by the helper:
@@ -1158,14 +619,6 @@ def finalize_after_restart() -> None:
         _report_self_update(status="success",
                             from_version=meta.get("from_version"),
                             to_version=meta.get("to_version"))
-        # A Docker code update also lands here (its in-place restart leaves
-        # the same "restarting" state behind), and it gets its own detail
-        # event on top -- it is a materially different operation from a pip
-        # self-update and is worth telling apart on the server.
-        if meta.get("docker_code_update"):
-            _report_docker_code_update(status="success",
-                                       from_version=meta.get("from_version"),
-                                       to_version=meta.get("to_version"))
     elif state == "installing":
         meta = _read_meta()
         meta["error"] = "Update did not complete (process restarted unexpectedly)."
@@ -1179,10 +632,6 @@ def finalize_after_restart() -> None:
         _report_self_update_flag()
         _report_self_update(status="failed", error_type="interrupted",
                             from_version=meta.get("from_version"))
-        if meta.get("docker_code_update"):
-            _report_docker_code_update(status="failed", error_type="interrupted",
-                                       from_version=meta.get("from_version"),
-                                       to_version=meta.get("to_version"))
     elif state == "failed":
         # The helper script itself already wrote "failed" (the pip/pipx
         # upgrade command exited non-zero) before relaunching the app -- this
@@ -1242,41 +691,6 @@ def _report_self_update(*, status, error_type=None, from_version=None, to_versio
             telemetry_client.submit(event)
     except Exception:
         logger.debug("[Telemetry] failed to build/submit detail.self_update event", exc_info=True)
-
-
-def _report_docker_code_update(*, status, error_type=None, from_version=None,
-                               to_version=None):
-    """Submit a detail.docker_code_update telemetry event.
-
-    Separate from detail.self_update because the two answer different
-    questions: whether a package swap inside a container works at all (and
-    how often it is even attempted) says something about the Docker image,
-    not about the pip self-updater. Only genuine outcomes are reported --
-    success after the restart, or a failed install command. A preflight that
-    *blocks* the update is deliberately NOT reported: that is the feature
-    working as designed, not an error, and the same goes for an admin who
-    reads the confirmation dialog and clicks away. Sends nothing but the
-    coarse status, an error classifier and the from/to version -- never the
-    install log or the raw uv/pip output. Wrapped in its own try/except so a
-    telemetry bug can never affect the update flow.
-    """
-    try:
-        metadata = {}
-        if from_version:
-            metadata["from_version"] = str(from_version)[:40]
-        if to_version:
-            metadata["to_version"] = str(to_version)[:40]
-        if error_type:
-            metadata["error_type"] = error_type
-        event = telemetry_events.build_feature_detail_event(
-            "detail.docker_code_update", action="update", status=status,
-            metadata=metadata or None,
-        )
-        if event:
-            telemetry_client.submit(event)
-    except Exception:
-        logger.debug("[Telemetry] failed to build/submit detail.docker_code_update event",
-                     exc_info=True)
 
 
 def _current_version() -> str:

@@ -64,16 +64,7 @@
       btn.textContent = tt("Seite neu laden", "Reload page");
       btn.className = "update-overlay-btn primary";
       btn.onclick = function () { ack(function () { location.reload(); }); };
-      // Docker: say it again at the finish line — only the package inside the
-      // container was replaced, the image still carries the old version.
-      hint.textContent = (st && st.docker_code_update)
-        ? tt("Nur das Paket im Container wurde ersetzt — das Docker-Image ist unverändert. " +
-             "Beim nächsten Neuerstellen des Containers geht dieses Update verloren. " +
-             "Bitte das Image zeitnah aktualisieren (docker compose pull && docker compose up -d).",
-             "Only the package inside the container was replaced — the Docker image is " +
-             "unchanged. This update is lost the next time the container is recreated. " +
-             "Please update the image soon (docker compose pull && docker compose up -d).")
-        : "";
+      hint.textContent = "";
       stopPoll();
     } else if (state === "failed") {
       show();
@@ -128,19 +119,7 @@
       headers: { "Content-Type": "application/json" },
       body: body
     }).then(function (r) {
-      if (!r.ok) return r.json().then(function (e) {
-        // The Docker path re-runs its dependency preflight server-side, so a
-        // rejection can arrive with the list of unmet requirements attached
-        // (e.g. the settings page was left open long enough for a newer
-        // release to appear). Fold it into one readable sentence.
-        var msg = e.error || ("HTTP " + r.status);
-        if (e.blocking && e.blocking.length) {
-          msg += ": " + e.blocking.map(function (d) {
-            return d.name + (d.required && d.required !== "*" ? " " + d.required : "");
-          }).join(", ");
-        }
-        throw new Error(msg);
-      });
+      if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || ("HTTP " + r.status)); });
       return r.json();
     }).then(function () {
       startPoll();           // server will exit & restart shortly

@@ -75,7 +75,7 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 - **UpTime monitor & Dev Infos** — a dashboard showing whether each source site is reachable (history, response times, per-source tracking), and release notes from the developers right in the UI
 - **Opt-in telemetry** — off by default, staged consent, every data point listed and individually switchable under Settings → Privacy; anything you cancel yourself is never reported as an error, and an unreachable telemetry server stays silent instead of writing to your console
 - **Automatic library maintenance** — a watcher keeps the index in sync with the folders on disk, writes Kodi/Jellyfin-style **`.nfo` metadata** next to your files and can lay episodes out in per-language folders
-- **Self-update built in** — pip/pipx installs can upgrade themselves from the UI and switch between the **stable and dev release channels**, no shell required. **Docker** gets a limited version of this: the *Install update now* button swaps just the MediaForge package inside the running container (stable channel only, and only when the new release needs no new dependencies) — the image itself is unchanged, so keep pulling it
+- **Self-update built in** — pip/pipx installs can upgrade themselves from the UI and switch between the **stable and dev release channels**, no shell required
 - **Installable as a PWA** — add MediaForge to your phone's home screen or your desktop and it runs like an app, offline shell included
 - **Guided setup wizard**, an in-app **log viewer**, automatic **ffmpeg/dependency installation**, **autostart on boot** and **mirror-domain handling** that keeps working when a source site moves to a new address
 - **Multi-user auth & OIDC SSO**, a full **REST API**, **Docker**-ready, and a UI in **English, German, Spanish, French and Italian**
@@ -108,23 +108,6 @@ docker run -it --rm -p 8080:8080 \
 Mount your `Downloads` folder for the files and the `mediaforge-data` volume for config/database. For **Docker Compose**, **reverse proxy (nginx)**, **LAN access** and **env-based admin setup**, see the **[Docker](https://github.com/PD-Codes/MediaForge/wiki/Docker)** wiki page.
 
 Running behind a VPN? A ready-to-use **Gluetun** setup is in [`docker-compose.gluetun.yaml`](docker-compose.gluetun.yaml) — see the [Docker wiki](https://github.com/PD-Codes/MediaForge/wiki/Docker#routing-through-a-vpn-gluetun) for the details.
-
-### Updating a container
-
-The normal way is still to pull a new image:
-
-```bash
-docker compose pull && docker compose up -d
-```
-
-The WebUI additionally offers **Settings → Updates → Install update now** inside a container. It replaces only the `mediaforge` package in `/app/.venv` and restarts the app in place — it does **not** rebuild or replace the image. Before anything is installed, MediaForge compares the dependencies the target release declares on PyPI against what the image already contains; if a single one is new or needs a newer version, the update is refused and you are told which ones. The same check runs again server-side when you confirm, so it cannot be skipped from the browser.
-
-Two things to keep in mind:
-
-* the swap is **lost whenever the container is recreated** (`docker compose pull`, `up -d --force-recreate`, Watchtower, a host reboot with a `:latest` re-pull) — so treat it as a stop-gap and pull the image soon after,
-* it only works on the **stable** channel, and only if the container's filesystem is writable. The bundled `docker-compose.yaml` ships with `read_only: true` for hardening; with that in place the button reports that `/app/.venv` is read-only and nothing is changed. Drop `read_only: true` if you want to use it.
-
-Scheduled **automatic** updates deliberately never apply to containers — this is a manual, confirmed action only.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
