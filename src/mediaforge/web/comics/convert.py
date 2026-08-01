@@ -336,9 +336,47 @@ def is_converted(src) -> bool:
 
 
 def needs_conversion(src) -> bool:
-    """True if this file has to be repacked before its pages can be read."""
+    """True if this file still has to be repacked before its pages can be read.
+
+    "Still": a format that needs an extractor but has already been repacked
+    does NOT need conversion again, and saying otherwise is what made the
+    library keep flagging issues the user had just prepared. The cheap format
+    check comes first, so the only files that cost a cache lookup are the ones
+    that could plausibly have one.
+    """
     fmt = archive.sniff(src)
-    return fmt in _EXTRACTORS
+    if fmt not in _EXTRACTORS:
+        return False
+    return not is_converted(src)
+
+
+def converted_keys() -> set:
+    """Every cache key that has a finished conversion behind it.
+
+    One directory listing instead of one ``is_converted()`` call per file --
+    which matters where the question is asked about a whole shelf at once (see
+    routes/library.py). An empty set is also the useful answer for "nothing has
+    ever been converted here", and the caller can skip its whole loop on it.
+
+    Never raises: an unreadable or absent cache directory reads as empty.
+    """
+    try:
+        root = _cache_root()
+    except OSError:
+        return set()
+    keys = set()
+    try:
+        with os.scandir(root) as it:
+            for entry in it:
+                try:
+                    if entry.is_dir(follow_symlinks=False) and \
+                            (Path(entry.path) / "done.json").is_file():
+                        keys.add(entry.name)
+                except OSError:
+                    continue
+    except OSError:
+        return set()
+    return keys
 
 
 # ---------------------------------------------------------------------------

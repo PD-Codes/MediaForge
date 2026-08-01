@@ -46,6 +46,13 @@ logger = get_logger(__name__)
 
 # Bump when the shape below changes, so routes/library.py re-reads instead of
 # serving rows built by an older scanner. Same contract as BOOKS_FORMAT_VERSION.
+#
+# Deliberately NOT bumped when `needs_conversion` started accounting for the
+# conversion cache: a bump forces a full comic rescan of every library on the
+# next request, and the only rows it would correct are already corrected on
+# their way out by routes/library.py's _lib_refresh_comic_conversion_state().
+# Minutes of rescanning to persist a boolean that is recomputed anyway is not a
+# trade worth making; the next scan that happens for its own reasons writes it.
 COMICS_FORMAT_VERSION = 2
 
 # Fields that stay in an issue row even when they are falsy, because a
@@ -146,6 +153,21 @@ def _issue_from(path: Path, st, base: Path, deadline: float) -> dict:
 
     native = archive.is_native(fmt)
     direct = fmt in archive.DIRECT_FORMATS
+    # A RAR/ACE that has already been repacked is readable and does NOT need
+    # preparing again. Asked here (one cache lookup, and only for the formats
+    # that could have one) so a fresh scan does not hand the shelf a "!" badge
+    # for issues the user prepared minutes ago. Cached rows are corrected on
+    # the way out instead -- see routes/library.py's
+    # _lib_refresh_comic_conversion_state().
+    converted = False
+    if fmt and not native and not direct:
+        try:
+            from . import convert as _convert
+            converted = _convert.is_converted(path)
+        except Exception:
+            # A cache that cannot be read is not a reason to fail a scan of
+            # thousands of files; the issue simply keeps its "to prepare" state.
+            converted = False
 
     row = {
         # Stable identity for reading progress and bookmarks. Built from what
@@ -165,9 +187,9 @@ def _issue_from(path: Path, st, base: Path, deadline: float) -> dict:
         # Can the page routes serve this file as it is on disk right now?
         # RAR/ACE say no until convert.py has repacked them, and the shelf
         # shows that as a state rather than as a broken card.
-        "readable": bool(native or direct),
+        "readable": bool(native or direct or converted),
         "direct": direct,
-        "needs_conversion": bool(fmt and not native and not direct),
+        "needs_conversion": bool(fmt and not native and not direct and not converted),
         # Consumed by _series_key() during grouping and then dropped by the
         # filter below -- the series object above the issues already says it.
         "series": series,

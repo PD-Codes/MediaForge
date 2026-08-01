@@ -832,8 +832,46 @@
   // seconds -- the give-up line is generous on purpose.
   var COMIC_CONVERT_MAX_WAIT_MS = 600000;
 
+  /** Turn one /api/library/comic/convert/status answer into a state name.
+   *
+   * The endpoint does not send a "state" field -- it answers with the shape
+   * documented on comics/convert.py's conversion_status():
+   *
+   *     {ok: true,  ready:   true}   the CBZ is on disk, readable now
+   *     {ok: true,  native:  true}   readable in place (no conversion needed)
+   *     {ok: true,  direct:  true}   a PDF; pdf.js reads it
+   *     {ok: true,  pending: true}   a conversion is running (or queued)
+   *     {ok: true,  pending: false}  convertible, but nothing is running
+   *     {ok: false, reason: "..."}   cannot be prepared
+   *
+   * This poll used to test `res.state === "done"`, which no response has ever
+   * carried -- so a finished conversion was never recognised, the spinner ran
+   * until the 10-minute deadline and the user was told the preparation had
+   * failed after it had in fact succeeded. Reading the documented shape is the
+   * fix; "idle" is called out separately because it is recoverable (see below).
+   */
+  function comicConvertState(res) {
+    if (!res || typeof res !== "object") return "unknown";
+    if (res.ok === false) return "failed";
+    if (res.ready || res.native || res.direct) return "done";
+    if (res.pending) return "running";
+    return "idle";
+  }
+
   function startComicConvert(path) {
+    // "Try again" (and a second open of the same issue) re-enters here while a
+    // poll may still be scheduled. Two loops would double the request rate and
+    // race each other into openComic().
+    if (_convertTimer) { clearTimeout(_convertTimer); _convertTimer = null; }
     var started = Date.now();
+    // How often "convertible, but nothing is running" may be answered with a
+    // fresh start request before giving up. The opening POST below is
+    // fire-and-forget, so it can be lost (offline for a moment, a restart
+    // mid-request) with nothing left to notice it -- that used to be a second
+    // route into the same ten minutes of spinner. Bounded so a server that
+    // accepts the request and then never runs it cannot loop forever.
+    var restarts = 0;
+    var MAX_RESTARTS = 3;
     setStatus('<div class="mfr-spinner"></div>' +
       esc(tr("Archiv wird vorbereitet…", "Preparing the archive…")) +
       '<div class="mfr-status-note">' +
@@ -852,12 +890,32 @@
         showComicBlocked(path, { reason: "no_extractor" });
         return;
       }
+      // The rest are internal reason codes. The three this poll produces on its
+      // own get a sentence -- printing "timeout" at somebody is a log line, not
+      // an explanation. Anything the server invents is still shown verbatim,
+      // because a code we do not recognise beats no detail at all.
+      var notes = {
+        timeout: tr("Die Vorbereitung hat zu lange gedauert. Bei sehr großen Archiven kann ein " +
+                    "zweiter Versuch helfen.",
+                    "Preparing took too long. For very large archives a second attempt can help."),
+        not_started: tr("Die Vorbereitung ließ sich nicht starten. Bitte noch einmal versuchen.",
+                        "The preparation could not be started. Please try again."),
+        network: tr("Die Verbindung zum Server ist abgerissen.",
+                    "The connection to the server was lost.")
+      };
+      var note = notes[String(reason || "")] || (reason ? String(reason) : "");
       setStatus(
         esc(tr("Das Archiv konnte nicht vorbereitet werden.",
                "The archive could not be prepared.")) +
-        (reason ? '<div class="mfr-status-note">' + esc(String(reason)) + "</div>" : "") +
+        (note ? '<div class="mfr-status-note">' + esc(note) + "</div>" : "") +
+        // A failure worth a second try should not cost a trip back to the shelf
+        // and another click on the issue.
+        ' <button type="button" class="mfr-btn" id="readerComicRetry">' +
+        esc(tr("Erneut versuchen", "Try again")) + "</button>" +
         ' <a class="mfr-download" href="/api/library/book/file?path=' + encodeURIComponent(path) +
         '" download>' + esc(tr("Herunterladen", "Download")) + "</a>", true);
+      var retry = $id("readerComicRetry");
+      if (retry) retry.addEventListener("click", function () { startComicConvert(path); });
     }
 
     function poll() {
@@ -866,7 +924,7 @@
         .then(function (r) { return r.json(); })
         .then(function (res) {
           if (!_open || _kind !== "comic") return;
-          var state = String((res && res.state) || "idle");
+          var state = comicConvertState(res);
           if (state === "done") {
             loadPosition(_bookKey).then(function (pos) {
               if (!_open || _kind !== "comic") return;
@@ -875,6 +933,17 @@
             return;
           }
           if (state === "failed") { fail(res && res.reason); return; }
+          if (state === "idle") {
+            // Nothing is running and nothing has been produced: the start
+            // request never landed. Send it again rather than spending the
+            // next ten minutes watching a job that does not exist.
+            if (++restarts > MAX_RESTARTS) { fail("not_started"); return; }
+            fetch("/api/library/comic/convert", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: path })
+            }).catch(function () { /* the next poll reports what happened */ });
+          }
           if (Date.now() - started > COMIC_CONVERT_MAX_WAIT_MS) { fail("timeout"); return; }
           _convertTimer = setTimeout(poll, COMIC_CONVERT_POLL_MS);
         })

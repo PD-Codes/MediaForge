@@ -1057,6 +1057,67 @@ def _lib_queue_book_covers(books):
         logger.debug("[Books] Could not queue cover preparation", exc_info=True)
 
 
+def _lib_refresh_comic_conversion_state(series_list):
+    """Clear the "has to be prepared" flag on issues that meanwhile were.
+
+    The scan decides ``needs_conversion`` and the answer is cached for as long
+    as nothing on disk changes -- but preparing an issue changes nothing about
+    the file the scan looked at. It writes a repacked copy into a separate
+    cache. So the shelf went on showing the "!" badge, and the series card went
+    on counting the issue as pending, for a comic the user had just prepared
+    and could already read. That is this function.
+
+    Applied to the rows on their way out rather than written back into the
+    cache: the library cache is a JSON blob in SQLite, and rewriting a
+    multi-megabyte row on a shelf load to correct a boolean would cost far more
+    than recomputing it. The next scan persists the corrected value anyway (see
+    comics/scanner.py).
+
+    Cheap by construction:
+      * one directory listing of the conversion cache for the whole shelf, and
+      * if that listing is empty -- nothing has ever been prepared, the common
+        case -- it returns before touching a single file, and
+      * only issues still flagged are looked at, a set that shrinks with every
+        conversion.
+    """
+    try:
+        from ..comics import convert as comic_convert
+        flagged = [issue
+                   for entry in series_list or ()
+                   for issue in (entry.get("issues") or ())
+                   if issue.get("needs_conversion") and issue.get("path")]
+        if not flagged:
+            return
+        keys = comic_convert.converted_keys()
+        if not keys:
+            return
+        changed = False
+        for issue in flagged:
+            try:
+                key = comic_convert.cache_key(issue["path"])
+            except OSError:
+                # The file is gone. Not this function's problem -- the next
+                # scan drops the row.
+                continue
+            if key in keys:
+                issue["needs_conversion"] = False
+                issue["readable"] = True
+                changed = True
+        if not changed:
+            return
+        # The series card shows its own count, so it has to be recomputed from
+        # the issues that were just corrected -- otherwise the badge on the
+        # card and the badges on its issues disagree.
+        for entry in series_list or ():
+            issues = entry.get("issues") or ()
+            entry["needs_conversion_count"] = sum(
+                1 for i in issues if i.get("needs_conversion"))
+            entry["readable_count"] = sum(1 for i in issues if i.get("readable"))
+    except Exception:
+        # A shelf that shows a stale badge beats a shelf that does not load.
+        logger.debug("[Comics] Could not refresh conversion state", exc_info=True)
+
+
 def _lib_queue_comic_covers(series_list):
     """Ask the background worker for the covers this shelf needs.
 
@@ -1802,6 +1863,9 @@ def register_library_routes(app):
                     if kind == KIND_BOOK:
                         _lib_queue_book_covers(data.get("books") or [])
                     if kind == KIND_COMIC:
+                        # Before the covers: this corrects what the shelf shows
+                        # about rows it is about to render.
+                        _lib_refresh_comic_conversion_state(data.get("comics") or [])
                         _lib_queue_comic_covers(data.get("comics") or [])
                     locations.append(_slim(data))
             else:
