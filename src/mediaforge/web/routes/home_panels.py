@@ -535,6 +535,86 @@ def _panel_system() -> dict:
     }
 
 
+def _panel_wrapped() -> dict:
+    """The monthly recap, as a panel rather than a card on the page.
+
+    It started as a dismissable card above the rows and did not belong there:
+    a recap is something you go and look at, not something that interrupts the
+    page you opened to search on. As a panel it is one click away, it is never
+    in the way, and it does not need a "seen" flag at all.
+
+    Two halves that stand on their own -- what you WATCHED (only available
+    when the account is linked to a Jellyfin/Plex user) and what MediaForge
+    DOWNLOADED. The watched half is never estimated from local playback
+    positions: those only know about files MediaForge downloaded and played,
+    so they would understate the number and quietly make the panel lie.
+    """
+    from .home_extras import _period_bounds, _user_prefs, _wrapped_downloads
+    from .. import mediaplayer
+    from ..request_context import get_current_user_info
+
+    try:
+        username, _is_admin = get_current_user_info()
+    except Exception:
+        username = None
+
+    start, _end, start_iso, end_iso, period = _period_bounds("")
+    dl = _wrapped_downloads(username, start_iso, end_iso)
+    watched = {"available": False}
+    linked = (_user_prefs().get("mediaplayer_user") or "").strip()
+    if linked and mediaplayer.is_configured():
+        try:
+            watched = mediaplayer.watch_stats(linked, start, int(_end))
+        except Exception:
+            logger.debug("[Wrapped] media-server stats failed", exc_info=True)
+
+    # All-time as well as the month. "43 downloads" on its own reads as a
+    # total and looks wrong to anyone with a full library -- the number is
+    # right, it just answers a smaller question than people assume. Showing
+    # both makes the period unmistakable without needing a control.
+    total = _wrapped_downloads(username, None, None)
+
+    stats = [{"label_key": "hp_wrapped_period", "value": period}]
+    if watched.get("available") and watched.get("plays"):
+        stats.append({"label_key": "hp_wrapped_watched",
+                      "value": "%d h" % round((watched.get("seconds") or 0) / 3600)})
+    stats.append({"label_key": "hp_wrapped_downloads", "value": str(dl["count"])})
+    stats.append({"label_key": "hp_wrapped_volume",
+                  "value": _human_size(int(dl["size_mb"] * 1024 * 1024))})
+    stats.append({"label_key": "hp_wrapped_total",
+                  "value": str(total["count"])})
+    stats.append({"label_key": "hp_wrapped_total_volume",
+                  "value": _human_size(int(total["size_mb"] * 1024 * 1024))})
+
+    items = []
+    for entry in (watched.get("top_titles") or [])[:3]:
+        items.append({"title": _clean_text(entry.get("name")),
+                      "sub_key": "hp_wrapped_most_watched", "tone": "ok"})
+    for entry in (watched.get("top_genres") or [])[:1]:
+        items.append({"title": _clean_text(entry.get("name")),
+                      "sub_key": "hp_wrapped_top_genre"})
+    for entry in (dl.get("top_sources") or [])[:2]:
+        items.append({"title": _clean_text(entry.get("name")),
+                      "sub_key": "hp_wrapped_source",
+                      "sub_args": [str(entry.get("count") or 0)]})
+    if dl.get("biggest"):
+        items.append({"title": _clean_text(dl["biggest"]["title"]),
+                      "sub_key": "hp_wrapped_biggest",
+                      "sub_args": [_human_size(int(dl["biggest"]["size_mb"] * 1024 * 1024))]})
+
+    # An honest footnote beats a confident number: Jellyfin has no history
+    # API without a plugin, so its figures are the LAST play per title and
+    # miss rewatches. Plex keeps a real history but carries no genre.
+    empty_key = ("hp_wrapped_link" if not watched.get("available")
+                 else ("hp_wrapped_approx" if watched.get("approximate") else ""))
+    return {
+        "stats": stats,
+        "items": items,
+        "link": {"href": "/stats", "label_key": "hp_open_stats"},
+        "empty_key": empty_key or "hp_wrapped_empty",
+    }
+
+
 def _queue_badge() -> int:
     by_status = get_queue_stats(visible_only=True).get("by_status") or {}
     return int(by_status.get("running", 0)) + int(by_status.get("queued", 0))
@@ -567,6 +647,47 @@ def _system_badge() -> int:
     return _failed_count() + (1 if is_queue_paused() else 0)
 
 
+def _storage_badge() -> int:
+    """How full the fullest volume is, as a percentage.
+
+    Not a to-do count like the other two badges, and deliberately so: "87"
+    next to Storage is the one number about a download box that people
+    actually want at a glance, and the alternative (open the panel to find
+    out) is exactly the click this bar exists to remove. The client renders a
+    percent badge in a warning colour from 90 on -- see _BADGE_TONES.
+    """
+    try:
+        worst = 0
+        for _label, used, total in _disk_rows():
+            if total:
+                worst = max(worst, round(used / total * 100))
+        return int(worst)
+    except Exception:
+        return 0
+
+
+def _library_badge() -> int:
+    """How many titles the library holds. A fact, not a warning -- rendered
+    in the neutral tone. Counted from the same panel that displays them, so
+    the badge and the panel can never disagree."""
+    try:
+        stats = {s.get("label_key"): s.get("value") for s in _panel_library()["stats"]}
+        return int(stats.get("hp_series") or 0) + int(stats.get("hp_movies") or 0)
+    except Exception:
+        return 0
+
+
+# What a badge looks like beyond its number: a unit, and how loud it is.
+# Storage is the only one that is a *level* rather than a to-do count, so it
+# is the only one that needs both.
+_BADGE_STYLE = {
+    "queue":   {"suffix": "", "tone": "info"},
+    "system":  {"suffix": "", "tone": "err"},
+    "storage": {"suffix": "%", "tone": "level"},
+    "library": {"suffix": "", "tone": "muted"},
+}
+
+
 # (id, label key, view, badge, admin_only, icon path)
 # The icon is SVG path data for a 24x24 stroked path -- the same shape the
 # registry accepts from a module, so a built-in button and a module button are
@@ -576,13 +697,17 @@ _BUILTIN_PANELS = (
      "M3 6h18M3 12h18M3 18h12"),
     ("activity", "hp_p_activity", _panel_activity, None, False,
      "M12 8v4l3 3M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"),
-    ("library", "hp_p_library", _panel_library, None, False,
+    ("library", "hp_p_library", _panel_library, _library_badge, False,
      "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"),
-    ("storage", "hp_p_storage", _panel_storage, None, True,
+    ("storage", "hp_p_storage", _panel_storage, _storage_badge, True,
      "M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89"
      "A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"),
     ("system", "hp_p_system", _panel_system, _system_badge, True,
      "M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"),
+    # Last, next to System, and NOT admin-only: the numbers are the current
+    # account's own -- what it watched, what it downloaded.
+    ("wrapped", "hp_p_wrapped", _panel_wrapped, None, False,
+     "M12 2l2.9 6.3 6.6.9-4.8 4.6 1.2 6.6L12 17.3 6.1 20.4l1.2-6.6L2.5 9.2l6.6-.9z"),
 )
 
 # What a badge number MEANS, as an i18n key the client resolves and hangs on
@@ -616,10 +741,13 @@ def register_home_panel_routes(app):
         for pid, label_key, _view, _badge, admin_only, icon in _BUILTIN_PANELS:
             if admin_only and not is_admin:
                 continue
+            style = _BADGE_STYLE.get(pid, {})
             out.append({"id": pid, "label_key": label_key, "label": "",
                         "badge": badges.get(pid) or 0,
                         "badge_key": _BADGE_HINTS.get(pid, ""),
                         "badge_label": "",
+                        "badge_suffix": style.get("suffix", ""),
+                        "badge_tone": style.get("tone", "info"),
                         "icon": icon, "builtin": True})
         for panel in iter_home_panels():
             if panel["admin_only"] and not is_admin:
@@ -632,6 +760,13 @@ def register_home_panel_routes(app):
                         # as label/label_key everywhere else in this payload.
                         "badge_key": "",
                         "badge_label": _clean_text(panel.get("badge_label"), 120),
+                        # A module may say what its number MEANS (a unit and a
+                        # loudness), on the same terms as a built-in -- the
+                        # whole point of this bar being registry-driven.
+                        "badge_suffix": _clean_text(panel.get("badge_suffix"), 4),
+                        "badge_tone": (panel.get("badge_tone")
+                                       if panel.get("badge_tone") in
+                                       ("info", "err", "level", "muted") else "info"),
                         "icon": panel["icon"], "builtin": False})
         return jsonify({"panels": out, "active": _stored_panel(out)})
 

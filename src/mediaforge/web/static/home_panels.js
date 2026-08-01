@@ -97,6 +97,18 @@
       '<path d="' + esc(path) + '"/></svg>';
   }
 
+  /** A badge's colour class. "level" is the only tone the client decides
+      rather than the server: the thresholds (amber at 90, red at 95) are the
+      same ones the Storage panel already paints its bars with, and keeping
+      them in one place means the button and the panel can never disagree
+      about whether a disk is in trouble. */
+  function badgeTone(p) {
+    const tone = p.badge_tone || "info";
+    if (tone !== "level") return tone;
+    const value = parseInt(p.badge, 10) || 0;
+    return value >= 95 ? "err" : (value >= 90 ? "warn" : "muted");
+  }
+
   function renderBar() {
     if (!panels.length) { bar.style.display = "none"; return; }
     bar.style.display = "";
@@ -119,7 +131,9 @@
         '"' + (hint ? ' title="' + esc(hint) + '" aria-label="' + esc(name + " — " + hint) + '"' : '') +
         ' aria-controls="homePanelBody">' + iconSvg(p.icon) +
         '<span>' + esc(name) + '</span>' +
-        (p.badge > 0 ? '<span class="mf-facet">' + esc(String(p.badge)) + '</span>' : '') +
+        (p.badge > 0 ? '<span class="mf-facet hp-badge hp-badge-' +
+          esc(badgeTone(p)) + '">' + esc(String(p.badge) + (p.badge_suffix || "")) +
+          '</span>' : '') +
         '</button>';
     }).join("");
   }

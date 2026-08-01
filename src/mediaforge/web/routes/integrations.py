@@ -518,6 +518,14 @@ def register_integrations_routes(app):
                 if key == "apikey" and value == SECRET_PLACEHOLDER:
                     continue  # unchanged masked value from the GET above
                 set_setting("mediaplayer_" + key, value)
+        # web/mediaplayer.py caches the user list and the resume lists for a
+        # few minutes; without this a changed URL or token is shadowed by
+        # stale answers long enough for the admin to conclude it did not work.
+        try:
+            from ..mediaplayer import invalidate_cache
+            invalidate_cache()
+        except Exception:
+            logger.debug("[MediaPlayer] cache invalidation failed", exc_info=True)
         return jsonify({"ok": True})
     @app.route("/api/settings/mediaplayer/test", methods=["POST"])
     def api_settings_mediaplayer_test():

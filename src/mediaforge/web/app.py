@@ -970,6 +970,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     register_reading_routes(app)
     register_backup_routes(app)
     register_themes_routes(app)
+    # /profile — the account's own settings. Its own page because /settings is
+    # admin-only, so a normal account had no way to reach its own theme,
+    # accent colour or media-server profile at all.
+    from .routes.profile import register_profile_routes
+    register_profile_routes(app)
 
     # ---- Background workers relocated into their feature modules ----
     from .routes.image_proxy import ensure_image_cache_cleanup
@@ -983,7 +988,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     ensure_calendar_watcher_started()
 
     if auth_enabled:
-        from .auth import admin_required
+        from .auth import admin_required, adult_required
         from .thirdparties.registry import (
             admin_required_blueprints, admin_required_endpoints, is_admin_view,
         )
@@ -1152,6 +1157,44 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # someone remembers to add it here.
         app.config["ADMIN_ONLY_ENDPOINTS"] = frozenset(_admin_only)
 
+        # Open to an ordinary account, closed to a kids account. Everything
+        # already in _admin_only is closed to kids too (kids is not admin), so
+        # this set holds only what a NORMAL user may do and a child may not.
+        #
+        # The age gate proper (web/age_gate.py) filters what is *shown*; this
+        # is about what can be *changed*. A child who can install a module or
+        # rewrite the source list can undo the filtering, so the two have to
+        # exist together -- filtering without this would be a suggestion.
+        _kids_blocked = {
+            # Module store: installing code is not a child's decision, and a
+            # module can register its own sources and pages.
+            "extensions_page",
+            "api_extensions_rescan",
+            "api_extensions_install_deps",
+            "api_extensions_deps",
+            "module_settings_page",
+            # Leaving the mode is the PIN's job; a kids ACCOUNT has no way out
+            # at all, so the endpoint is simply not for it.
+            "api_home_mode",
+            # Auto-Sync queues downloads on a schedule -- the same reason
+            # /api/download is refused in routes/queue.py. The read-only
+            # listing endpoints are left open: seeing that a job exists is
+            # harmless, creating or triggering one is not.
+            "autosync_page",
+            "api_autosync_create",
+            "api_autosync_update",
+            "api_autosync_delete",
+            "api_autosync_trigger",
+            "api_autosync_sync_all",
+        }
+        # /api/user/preferences is deliberately NOT here. It is how an account
+        # picks its theme, density and row layout, and a child is allowed to
+        # do that. The one preference that would matter, home_max_fsk, is in
+        # db.PROTECTED_UI_PREF_KEYS and that endpoint refuses it outright --
+        # which is a better guarantee than blocking the whole endpoint and
+        # hoping nothing else important lands in it later.
+        app.config["KIDS_BLOCKED_ENDPOINTS"] = frozenset(_kids_blocked)
+
         # Wrap all non-auth, non-static view functions with login_required
         # (admin_required for settings endpoints)
         _exempt = {
@@ -1253,6 +1296,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                         or endpoint in admin_module_endpoints
                         or (endpoint_blueprint and endpoint_blueprint in admin_blueprints)):
                     app.view_functions[endpoint] = admin_required(view_func)
+                elif endpoint in _kids_blocked:
+                    # Open to an ordinary account, closed to a kids account.
+                    # Wrapped in login_required as well, because adult_required
+                    # only judges the role -- it is not an authentication check.
+                    app.view_functions[endpoint] = login_required(adult_required(view_func))
                 else:
                     app.view_functions[endpoint] = login_required(view_func)
                 _secured.add(endpoint)

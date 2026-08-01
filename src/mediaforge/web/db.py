@@ -117,6 +117,10 @@ SENSITIVE_KEYS: frozenset = frozenset({
     "opensubtitles_api_key",
     "opensubtitles_password",
     "comicvine_api_key",
+    # The PIN that guards leaving a restricted home mode. A short secret, but
+    # a secret: stored encrypted like every other one, and never sent back to
+    # the client (the settings form writes it, it never reads it).
+    "home_kids_pin",
 })
 
 # Sensitive keys registered at runtime on top of the frozen core set above --
@@ -269,10 +273,16 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
+    role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user', 'kids')),
     auth_method TEXT NOT NULL DEFAULT 'local',
     sso_subject TEXT,
     sso_issuer TEXT,
+    -- Added later by _migrate_db()'s ALTER for databases that predate it, and
+    -- listed here too so a table CREATED from this statement has the same
+    -- shape as a migrated one. It was missing, and _migrate_role_check()'s
+    -- rebuild then tried to copy a `language` column into a table that had
+    -- none -- which is how that migration failed.
+    language TEXT NOT NULL DEFAULT 'en',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -359,6 +369,11 @@ def _migrate_db(conn):
     Each column is added only if missing (checked via PRAGMA table_info),
     so this is safe to call on every startup.
     """
+    # First: put the table back if a previous run's rebuild was interrupted.
+    # Has to happen before the column checks below, or they would run against
+    # the half-built table and "fix" the wrong one.
+    _recover_interrupted_user_rebuild(conn)
+
     rows = conn.execute("PRAGMA table_info(users)").fetchall()
     columns = {r["name"] for r in rows}
 
@@ -376,8 +391,148 @@ def _migrate_db(conn):
             "ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT 'en'"
         )
 
+    _migrate_role_check(conn)
+
     conn.execute(_CREATE_SSO_INDEX)
     conn.commit()
+
+
+# Every role the app knows. 'kids' is a RESTRICTION, not a rank: it sits
+# below 'user' and is checked by name everywhere rather than by comparing
+# against 'admin', because "not an admin" was never meant to mean "allowed
+# to do everything else".
+USER_ROLES = ("admin", "user", "kids")
+
+
+def _table_columns(conn, table):
+    return [r["name"] for r in conn.execute("PRAGMA table_info(%s)" % table).fetchall()]
+
+
+def _recover_interrupted_user_rebuild(conn):
+    """Undo a users-table rebuild that did not finish.
+
+    This exists because the first version of the rebuild below lost people
+    their accounts, and it is worth being precise about how, because the
+    mechanism is not obvious:
+
+    Python's sqlite3 module (legacy transaction control) only opens a
+    transaction before DML -- INSERT/UPDATE/DELETE. **DDL runs in
+    autocommit.** So `ALTER TABLE users RENAME TO users_old` and the
+    `CREATE TABLE users` after it were committed the moment they ran. When
+    the following INSERT then failed, `conn.rollback()` had nothing to undo,
+    and the recovery `ALTER TABLE users_old RENAME TO users` could not work
+    either -- a `users` table already existed, the new empty one. The result
+    was an empty users table, an instance asking for first-run setup, and
+    every account still sitting in `users_old`.
+
+    Nothing was lost, and this puts it back: if `users_old` exists, it is the
+    real data and whatever is in `users` is at most a partial copy.
+    """
+    exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users_old'"
+    ).fetchone()
+    if not exists:
+        return
+
+    old_count = conn.execute("SELECT COUNT(*) AS c FROM users_old").fetchone()["c"]
+    try:
+        new_count = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
+    except sqlite3.Error:
+        new_count = -1                      # no users table at all
+
+    logger.warning(
+        "Found an interrupted users-table rebuild (users_old: %d row(s), "
+        "users: %d) — restoring the original table", old_count, new_count)
+
+    # The rebuild only ever fails BEFORE the copy, so `users` here is the
+    # empty new table and dropping it loses nothing. Guarded anyway: if it
+    # somehow holds more rows than the original, keep both and let a human
+    # look rather than delete data on a guess.
+    if new_count > old_count:
+        logger.error(
+            "users has MORE rows than users_old — leaving both tables in place. "
+            "This needs a manual look; nothing has been deleted.")
+        return
+
+    try:
+        conn.execute("DROP TABLE IF EXISTS users")
+        conn.execute("ALTER TABLE users_old RENAME TO users")
+        conn.execute(_CREATE_SSO_INDEX)
+        conn.commit()
+        logger.warning("Restored %d user account(s) from users_old", old_count)
+    except sqlite3.Error:
+        logger.exception("Could not restore users_old — it is still there, untouched")
+
+
+def _migrate_role_check(conn):
+    """Widen users.role's CHECK constraint to include 'kids'.
+
+    SQLite cannot ALTER a CHECK constraint, so the only way is to rebuild the
+    table. Done once and only when needed: the stored CREATE statement is read
+    back from sqlite_master and the rebuild is skipped when 'kids' is already
+    in it, so this costs one cheap query per startup on an up-to-date DB.
+
+    Deliberately NOT a "drop the constraint" migration: the CHECK is what stops
+    a typo'd role from becoming a silently privileged account, and losing it
+    on upgrade would be worse than the rebuild.
+
+    Written defensively because DDL here is NOT transactional (see
+    _recover_interrupted_user_rebuild): the copy is verified before anything
+    is dropped, and a failure leaves the ORIGINAL table in place under its
+    original name rather than trusting a rollback that cannot happen.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+    ).fetchone()
+    sql = (row["sql"] if row else "") or ""
+    if not sql or "'kids'" in sql:
+        return
+
+    logger.info("Migrating users.role to allow the 'kids' role")
+    before = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
+
+    # Copy only the columns BOTH tables have. The old table may carry columns
+    # this build no longer creates, and _CREATE_TABLE may carry ones an old
+    # database never got -- copying either list blindly is what broke this the
+    # first time round.
+    old_columns = _table_columns(conn, "users")
+    conn.execute("DROP TABLE IF EXISTS users_new_kids")   # leftover of a failed run
+    # .replace(..., 1) hits the table name in "CREATE TABLE IF NOT EXISTS
+    # users" and nothing else -- the column list below it contains no such word.
+    conn.execute(_CREATE_TABLE.replace("users", "users_new_kids", 1))
+    new_columns = _table_columns(conn, "users_new_kids")
+    shared = [c for c in old_columns if c in new_columns]
+    names = ", ".join(shared)
+
+    # foreign_keys is per-connection and off by default here, but say so
+    # explicitly: a rebuild with it ON would cascade-delete rows that
+    # reference users while the old table is dropped.
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute(
+            "INSERT INTO users_new_kids (%s) SELECT %s FROM users" % (names, names))
+        after = conn.execute("SELECT COUNT(*) AS c FROM users_new_kids").fetchone()["c"]
+        if after != before:
+            raise sqlite3.IntegrityError(
+                "copied %d of %d user row(s)" % (after, before))
+        # Only now is the original touched. Up to this point a crash leaves a
+        # stray users_new_kids table and nothing else.
+        conn.execute("DROP TABLE users")
+        conn.execute("ALTER TABLE users_new_kids RENAME TO users")
+        conn.execute(_CREATE_SSO_INDEX)
+        conn.commit()
+        logger.info("users.role migration done (%d account(s) kept)", after)
+    except sqlite3.Error:
+        logger.exception(
+            "users.role migration failed — the 'kids' role is unavailable. "
+            "Your accounts are untouched.")
+        try:
+            conn.execute("DROP TABLE IF EXISTS users_new_kids")
+            conn.commit()
+        except sqlite3.Error:
+            pass
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
 
 
 def init_db():
@@ -465,6 +620,52 @@ def set_user_language(user_id: int, language: str) -> None:
             "UPDATE users SET language = ? WHERE id = ?", (language, user_id)
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def set_user_password(user_id, new_password) -> "tuple[bool, str | None]":
+    """Replace a user's own password. Returns (ok, error).
+
+    Deliberately does NOT check the old password: that belongs to the route,
+    which is the layer that knows whether this is a self-service change (old
+    password required) or an admin reset (it is not). Keeping the check out of
+    here means neither case can accidentally inherit the other's rule.
+    """
+    if user_id is None:
+        return False, "No user"
+    password = str(new_password or "")
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters"
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(password), user_id),
+        )
+        conn.commit()
+        if not cur.rowcount:
+            return False, "User not found"
+        return True, None
+    except sqlite3.Error as exc:
+        return False, str(exc)
+    finally:
+        conn.close()
+
+
+def get_user_by_id(user_id):
+    """The account row for *user_id* without its password hash, or None."""
+    if user_id is None:
+        return None
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id, username, role, auth_method, language, created_at "
+            "FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    except sqlite3.Error:
+        return None
     finally:
         conn.close()
 
@@ -584,7 +785,7 @@ def delete_user(user_id):
 
 
 def update_user_role(user_id, new_role):
-    if new_role not in ("admin", "user"):
+    if new_role not in USER_ROLES:
         return False, "Invalid role"
     conn = get_db()
     try:
@@ -2170,6 +2371,70 @@ def get_download_history_summary(username=None, search=None, status=None, source
         conn.close()
 
 
+def get_download_period_recap(username=None, start_iso=None, end_iso=None):
+    """Aggregate one period of *completed* downloads, for the home Wrapped card.
+
+    Returns ``{"count", "size_mb", "top_sources", "biggest", "top_titles"}``.
+
+    Aggregated in SQLite rather than by reading rows into Python: the history
+    is expected to reach six figures (see get_download_history_summary), and a
+    recap that loads a year of rows to count them is the exact mistake the
+    statistics rework had to undo.
+
+    Timestamps are the table's own TEXT format ("YYYY-MM-DD HH:MM:SS", UTC);
+    *start_iso* is inclusive, *end_iso* exclusive. Passing None for both gives
+    the all-time figures.
+
+    Note what this does NOT count, because the number surprises people: only
+    rows with ``status = 'completed'`` (a cancelled or failed download is not
+    a download), and only those whose ``size_mb`` was recorded -- the queue
+    writes NULL when the source never reported a size, so those episodes count
+    towards `count` but contribute nothing to the volume.
+    """
+    conn = get_db()
+    try:
+        where = ["status = 'completed'",
+                 "COALESCE(finished_at, created_at) >= ?",
+                 "COALESCE(finished_at, created_at) < ?"]
+        params = [start_iso or "0000", end_iso or "9999"]
+        if username:
+            where.append("username = ?")
+            params.append(username)
+        where_sql = " WHERE " + " AND ".join(where)
+
+        tot = conn.execute(
+            "SELECT COUNT(*) AS cnt, COALESCE(SUM(size_mb), 0) AS size_mb "
+            "FROM download_history" + where_sql, params).fetchone()
+        sources = conn.execute(
+            "SELECT provider AS name, COUNT(*) AS cnt FROM download_history" +
+            where_sql + " AND provider IS NOT NULL AND provider != '' "
+            "GROUP BY provider ORDER BY cnt DESC LIMIT 3", params).fetchall()
+        titles = conn.execute(
+            "SELECT title AS name, COUNT(*) AS cnt FROM download_history" +
+            where_sql + " AND title != '' "
+            "GROUP BY title COLLATE NOCASE ORDER BY cnt DESC LIMIT 3",
+            params).fetchall()
+        big = conn.execute(
+            "SELECT title, size_mb FROM download_history" + where_sql +
+            " AND size_mb IS NOT NULL ORDER BY size_mb DESC LIMIT 1",
+            params).fetchone()
+
+        return {
+            "count": tot["cnt"] or 0,
+            "size_mb": round(float(tot["size_mb"] or 0), 1),
+            "top_sources": [{"name": r["name"], "count": r["cnt"]} for r in sources],
+            "top_titles": [{"name": r["name"], "count": r["cnt"]} for r in titles],
+            "biggest": ({"title": big["title"], "size_mb": round(float(big["size_mb"]), 1)}
+                        if big else None),
+        }
+    except sqlite3.Error:
+        # Table not created yet on a very fresh install.
+        return {"count": 0, "size_mb": 0.0, "top_sources": [], "top_titles": [],
+                "biggest": None}
+    finally:
+        conn.close()
+
+
 def get_download_history_facets(username=None):
     """Distinct providers and languages present in the history.
 
@@ -3734,6 +3999,14 @@ CREATE TABLE IF NOT EXISTS user_ui_prefs (
 _THEME_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _HOME_FEED_FILTER_RE = re.compile(r"^[a-z0-9_,;:-]{0,200}$")
+# A media-server user id: a Jellyfin GUID or a numeric Plex account id. Kept
+# strict because the value is interpolated into a request path.
+_MEDIAPLAYER_USER_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+# Home modes: "id:label|id:label|…" with the flags appended per mode. The label
+# is user text, so the charset stays narrow -- it is rendered into a button.
+_HOME_MODE_ID_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+_HOME_MODES_RE = re.compile(r"^[\w À-ɏ.,'&+()!?/:;|=-]{0,2000}$")
+_WRAPPED_PERIOD_RE = re.compile(r"^\d{4}-\d{2}$")
 
 
 def _valid_theme_pack(value: str) -> bool:
@@ -3794,7 +4067,37 @@ USER_UI_PREF_KEYS = {
     # device -- the whole complaint about banners is having to close them
     # again and again.
     "new_home_promo_done": lambda v: v in ("", "0", "1"),
+    # How tightly the home rows are packed. A 4K screen fits twice the cards a
+    # laptop does; "comfortable" is the old, only, hardcoded size.
+    "home_density": lambda v: v in ("", "comfortable", "compact", "list"),
+    # Which media-server user this account is. "" = none, and the Continue
+    # watching row keeps using MediaForge's own playback positions.
+    # NOT validated against the server here (db.py must not do network I/O) --
+    # web/mediaplayer.py's resolve_user() is the gate that matters; this only
+    # keeps junk out of the table and out of window._USER_PREFS.
+    "mediaplayer_user": lambda v: v == "" or bool(_MEDIAPLAYER_USER_RE.match(v)),
+    # The setup checklist on a fresh install: "1" once the user dismissed it.
+    "home_onboarding_done": lambda v: v in ("", "0", "1"),
+    # Home modes (#8): the active preset id, plus the presets themselves as a
+    # compact "id:label:flags" list. Kept in one row rather than one row per
+    # preset so switching a mode is a single write.
+    "home_mode": lambda v: v == "" or bool(_HOME_MODE_ID_RE.match(v)),
+    "home_modes": lambda v: len(v) <= 2000 and bool(_HOME_MODES_RE.match(v)),
+    # The Wrapped card is offered once per period; this remembers the last
+    # period the user closed, e.g. "2026-07".
+    "home_wrapped_seen": lambda v: v == "" or bool(_WRAPPED_PERIOD_RE.match(v)),
+    # The age ceiling the home feed is filtered to. "" = no limit.
+    # PROTECTED (see below): this one is a restriction, not a preference, so
+    # it must not be writable through the generic preferences endpoint.
+    "home_max_fsk": lambda v: v in ("", "0", "6", "12", "16", "18"),
 }
+
+# Keys that /api/user/preferences must refuse even though they live in the
+# same table. A kids mode a client can switch off with one PUT to the
+# generic preferences endpoint is decoration, not a restriction -- these are
+# writable only through the endpoint that also checks the PIN
+# (routes/home_extras.py's /api/home/mode), which passes allow_protected=True.
+PROTECTED_UI_PREF_KEYS = frozenset({"home_max_fsk"})
 
 
 def register_ui_pref_key(key: str, validator=None) -> None:
@@ -3849,12 +4152,18 @@ def get_user_ui_prefs(user_id: int) -> dict:
     return out
 
 
-def set_user_ui_prefs(user_id: int, prefs: dict) -> "tuple[bool, str | None]":
+def set_user_ui_prefs(user_id: int, prefs: dict,
+                      allow_protected: bool = False) -> "tuple[bool, str | None]":
     """Upsert appearance preferences for *user_id*.
 
     Returns (ok, error). Rejects the whole call on the first unknown key or
     invalid value instead of silently storing a subset — a half-applied
     appearance is harder to reason about than a failed save.
+
+    *allow_protected* opens up PROTECTED_UI_PREF_KEYS. It defaults to False so
+    the generic /api/user/preferences endpoint cannot write them by accident;
+    only the endpoints that perform the matching check (the kids-mode PIN)
+    pass True.
     """
     if user_id is None:
         return False, "No user in session"
@@ -3865,6 +4174,8 @@ def set_user_ui_prefs(user_id: int, prefs: dict) -> "tuple[bool, str | None]":
         validator = USER_UI_PREF_KEYS.get(key)
         if validator is None:
             return False, f"Unknown preference: {key}"
+        if key in PROTECTED_UI_PREF_KEYS and not allow_protected:
+            return False, f"Preference is protected: {key}"
         value = "" if value is None else str(value)
         if not validator(value):
             return False, f"Invalid value for {key}"
@@ -5691,6 +6002,35 @@ def save_watch_progress(file_path: str, position: float, duration: float, userna
             (user, str(file_path), float(position), float(duration), watched),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def clear_watch_progress(file_paths, username=None) -> int:
+    """Forget the watch position for one or more files. Returns rows removed.
+
+    Deleting the row rather than writing position 0 with watched=0: those two
+    states look the same to every reader except "Continue watching", which
+    lists *unfinished* positions and would happily offer a title you had just
+    said you never watched.
+
+    Scoped to one user, like every other read of this table -- marking
+    something unwatched is a personal statement, not a fact about the file.
+    """
+    paths = [str(p) for p in (file_paths or []) if p]
+    if not paths:
+        return 0
+    user = _normalize_user(username)
+    conn = get_db()
+    try:
+        placeholders = ",".join("?" * len(paths))
+        cur = conn.execute(
+            "DELETE FROM watch_progress WHERE username = ? AND file_path IN (%s)"
+            % placeholders, [user] + paths)
+        conn.commit()
+        return cur.rowcount or 0
+    except sqlite3.Error:
+        return 0
     finally:
         conn.close()
 

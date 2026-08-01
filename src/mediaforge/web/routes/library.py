@@ -1833,7 +1833,14 @@ def register_library_routes(app):
             *and* a comic run this is most of the payload.
             """
             if kind == KIND_VIDEO:
-                return dict(data, books=[], comics=[])
+                # An age-limited session gets an age-limited shelf. Applied
+                # here rather than in the client so it is the same answer for
+                # every caller of this endpoint (the Library page, syncplay's
+                # inline picker, any module) -- and so a filter cannot be
+                # skipped by asking the API directly.
+                from ..age_gate import filter_library_titles
+                titles = filter_library_titles(data.get("titles"))
+                return dict(data, titles=titles, books=[], comics=[])
             if kind == KIND_BOOK:
                 return dict(data, titles=None, lang_folders=None, comics=[])
             return dict(data, titles=None, lang_folders=None, books=[])

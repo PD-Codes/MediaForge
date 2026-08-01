@@ -612,3 +612,65 @@
     width: 100%;
   }
 }
+
+/* ── /profile: the account's own page ───────────────────────────────────
+   Reuses the settings-section/settings-row furniture on purpose -- it is
+   the same kind of page, just scoped to one account instead of the
+   instance. */
+
+/* .settings-row's inputs are `flex: 1`, so their width is whatever the label
+   leaves over -- three password fields under three differently long labels
+   came out three different widths. A fixed label column lines them up.
+   Scoped to this page: the settings pages elsewhere rely on that stretch. */
+#panel-account .settings-row > .settings-label,
+#panel-mediaplayer .settings-row > .settings-label {
+  flex: 0 0 190px;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+}
+
+/* The value column of a read-only row (username, role) should sit with the
+   inputs below it, not hard against the right edge. */
+#panel-account .settings-row > .profile-value,
+#panel-account .settings-row > .profile-role { margin-right: auto; }
+
+@media (max-width: 720px) {
+  /* One column: a 190px label next to an input on a phone leaves the input
+     unusably narrow. */
+  #panel-account .settings-row,
+  #panel-mediaplayer .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  #panel-account .settings-row > .settings-label,
+  #panel-mediaplayer .settings-row > .settings-label { flex: none; }
+}
+.profile-value {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.profile-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.profile-role-admin {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* A restriction, not a rank -- amber rather than accent, so it does not read
+   as a badge of honour next to Administrator. */
+.profile-role-kids {
+  border-color: rgba(251, 191, 36, 0.5);
+  color: var(--warning, #fbbf24);
+}

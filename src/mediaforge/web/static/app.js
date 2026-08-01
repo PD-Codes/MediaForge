@@ -13,6 +13,7 @@ const autoSyncConfigBtn = document.getElementById("autoSyncConfigBtn");
 const autoSyncConfigLabel = document.getElementById("autoSyncConfigLabel");
 let _currentSyncJob = null; // existing autosync job for the open series, or null
 let _customPathsCache = [];
+let _autosyncDefaultPathId = "";
 const statusBar = document.getElementById("statusBar");
 const statusText = document.getElementById("statusText");
 const downloadAllBtn = document.getElementById("downloadAllBtn");
@@ -411,6 +412,8 @@ async function loadCustomPaths() {
     const data = await resp.json();
     const paths = data.paths || [];
     _customPathsCache = paths;
+    // Which path a NEW Auto-Sync job opens on (Settings -> Auto-Sync).
+    _autosyncDefaultPathId = String(data.autosync_default_path || "");
     // Remove old custom options (keep "Default")
     while (customPathSelect.options.length > 1) customPathSelect.remove(1);
     if (paths.length) {
@@ -629,6 +632,84 @@ async function loadHanimeBrowse() {
   }
 }
 
+// ── Getting back out of a search ───────────────────────────────────────────
+//
+// Searching replaced the home page with the results and left no way back
+// except reloading: the browse block and the feed were hidden and nothing
+// ever un-hid them. Three ways out now, because people reach for different
+// ones -- a button above the results, Escape, and the browser's own Back
+// (which is the one most people try first, and which used to leave the page
+// entirely).
+let _searchScrollY = 0;
+
+/** The bar above the results: where you are, and how to leave.
+    Rendered into #searchHead, which lives OUTSIDE #results -- the render
+    functions replace #results.innerHTML wholesale, so a header inside it
+    disappeared the moment the first answer arrived. */
+function renderSearchHeader(keyword) {
+  const head = document.getElementById("searchHead");
+  if (!head) return;
+  head.innerHTML =
+    '<button type="button" class="search-back" onclick="exitSearch()">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>' +
+    "<span>" + escapeHtml(_homeText("search_back", "Zurück", "Back")) + "</span></button>" +
+    '<span class="search-head-term">' +
+    escapeHtml(_homeText("search_results_for", "Ergebnisse für", "Results for")) +
+    " “" + escapeHtml(keyword) + "”</span>";
+  head.hidden = false;
+}
+
+function enterSearchView(keyword) {
+  _searchScrollY = window.scrollY || 0;
+  document.body.classList.add("is-searching");
+  // One entry, not one per keystroke-triggered search: replaceState while
+  // already in a search, pushState only on the way in. Otherwise Back walks
+  // through every search of the session before reaching the page.
+  try {
+    const url = "#search=" + encodeURIComponent(keyword);
+    if (history.state && history.state.mfSearch) history.replaceState({ mfSearch: keyword }, "", url);
+    else history.pushState({ mfSearch: keyword }, "", url);
+  } catch (e) { /* file:// or a locked-down browser */ }
+}
+
+/** Put the home page back. Safe to call when no search is showing. */
+function exitSearch(fromHistory) {
+  if (!document.body.classList.contains("is-searching")) return;
+  document.body.classList.remove("is-searching");
+  if (resultsDiv) resultsDiv.innerHTML = "";
+  const head = document.getElementById("searchHead");
+  if (head) { head.hidden = true; head.innerHTML = ""; }
+  if (searchSpinner) searchSpinner.style.display = "none";
+  if (browseDiv) browseDiv.style.display = "";
+  const feed = document.getElementById("homeFeed");
+  if (feed) feed.style.display = "";
+  // The rows are still rendered underneath -- this is not a reload, so the
+  // scroll position people left is the one they get back.
+  window.scrollTo(0, _searchScrollY);
+  if (!fromHistory) {
+    try { history.pushState({}, "", window.location.pathname); } catch (e) { /* ignore */ }
+  }
+}
+window.exitSearch = exitSearch;
+
+window.addEventListener("popstate", function () {
+  // Back out of a search rather than off the page.
+  exitSearch(true);
+});
+
+document.addEventListener("keydown", function (ev) {
+  if (ev.key !== "Escape") return;
+  if (!document.body.classList.contains("is-searching")) return;
+  // Not while a modal or the suggestion list is open -- Escape belongs to
+  // whatever is on top, and those close themselves first.
+  if (document.querySelector(".directlink-overlay[style*='flex'], .queue-overlay[style*='flex']")) return;
+  const suggest = document.getElementById("searchSuggest");
+  if (suggest && !suggest.hidden) return;
+  exitSearch();
+});
+
 async function showBrowseSections() {
   browseDiv.style.display = "";
   let settings = {};
@@ -708,36 +789,117 @@ function markSourceChipsDown(ids) {
 // Fed by the queue poll that runs on every page anyway (queue.js), so this
 // costs no extra request. Only visible while something is actually running --
 // an always-present empty strip would just be furniture.
+// The live status band under the search field.
+//
+// This used to say only "<title> — 64 %", which meant every other question a
+// running instance raises ("did anything fail?", "is the encoder busy?", "am
+// I about to run out of disk?") still cost a trip to the queue modal. It now
+// carries all of them in one line and, as before, renders nothing at all when
+// nothing is happening -- which is most of the time, and the reason it can
+// afford to be this dense when it does appear.
 window.renderHomeRunStrip = function (items, progress, paused) {
   const wrap = document.getElementById("homeRunStrip");
   if (!wrap) return;
   const list = Array.isArray(items) ? items : [];
   const running = list.find(function (i) { return i.status === "running"; });
-  if (!running) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
+  const failed = list.filter(function (i) {
+    return i.status === "error" || i.status === "failed";
+  });
+  // Idle *and* nothing to report -> gone. A band that is always there is
+  // furniture; one that appears only when it has news is a status band.
+  if (!running && !failed.length) { wrap.style.display = "none"; wrap.innerHTML = ""; return; }
 
   const waiting = list.filter(function (i) { return i.status === "queued"; }).length;
   const p = progress || {};
   const pct = Math.max(0, Math.min(100, parseFloat(p.percent) || 0));
-  const ep = running.current_episode
-    ? " · " + t("Folge", "Episode") + " " + escapeHtml(String(running.current_episode))
+  const ep = running && running.current_episode
+    ? " · " + _homeText("episode", "Folge", "Episode") + " " +
+      escapeHtml(String(running.current_episode))
     : "";
   const facts = [];
   if (p.active && pct) facts.push(Math.round(pct) + " %");
   if (p.bandwidth) facts.push(escapeHtml(String(p.bandwidth)));
+  if (p.eta) facts.push("ETA " + escapeHtml(String(p.eta)));
   if (p.phase && p.phase !== "download") facts.push(escapeHtml(String(p.phase)));
   if (waiting) facts.push(waiting + " " + t("in der Warteschlange", "in the queue"));
 
-  wrap.innerHTML =
-    '<span class="home-run-text">' +
-      '<span class="home-run-title">' + escapeHtml(running.title || "") + ep + "</span>" +
-      '<span class="home-run-bar' + (paused ? " is-paused" : "") + '">'
-        + '<span class="home-run-fill" style="width:' + pct + '%"></span></span>' +
-      '<span class="home-run-sub">' + (facts.join(" · ") || t("Lädt…", "Downloading…")) + "</span>" +
-    "</span>" +
-    '<button type="button" class="btn btn-secondary btn-sm home-run-btn" onclick="openQueueModal()">' +
-      t("Warteschlange", "Queue") + "</button>";
+  let html = "";
+  if (running) {
+    html +=
+      '<span class="home-run-text">' +
+        '<span class="home-run-dot" aria-hidden="true"></span>' +
+        '<span class="home-run-title">' + escapeHtml(running.title || "") + ep + "</span>" +
+        '<span class="home-run-bar' + (paused ? " is-paused" : "") + '">' +
+          '<span class="home-run-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="home-run-sub">' +
+          (facts.join(" · ") || _homeText("status_downloading", "Lädt…", "Downloading…")) +
+        "</span>" +
+      "</span>";
+  }
+  if (failed.length) {
+    // Click-to-expand rather than the error text inline: a yt-dlp message is
+    // three lines long and would push everything else off the band.
+    html += '<button type="button" class="home-run-err" onclick="openQueueModal()" title="' +
+      escapeHtml(failed.map(function (i) { return i.title || ""; }).join(", ")) + '">' +
+      escapeHtml(_homeText("status_last_error", "Letzter Fehler", "Last error")) +
+      " · " + failed.length + "</button>";
+  }
+  // Filled asynchronously by refreshHomeRunFacts() -- the queue poll that
+  // feeds this function knows nothing about the encoder or the disk, and
+  // making it wait for two more endpoints would slow down the part that
+  // actually ticks every second.
+  html += '<span class="home-run-facts" id="homeRunFacts"></span>';
+  html += '<button type="button" class="btn btn-secondary btn-sm home-run-btn" onclick="openQueueModal()">' +
+    escapeHtml(_homeText("status_open_queue", "Warteschlange", "Queue")) + "</button>";
+
+  wrap.innerHTML = html;
   wrap.style.display = "flex";
+  refreshHomeRunFacts();
 };
+
+// Encoder/upscaler load and free space, refreshed at most once a minute. Both
+// come from the home-panel endpoints that already exist, so this adds no new
+// server-side surface -- and both are allowed to be absent: /api/home-panel/
+// storage is admin-only, and a normal account simply sees one fact fewer
+// rather than an error.
+let _homeFactsAt = 0;
+let _homeFacts = "";
+async function refreshHomeRunFacts() {
+  const slot = document.getElementById("homeRunFacts");
+  if (!slot) return;
+  if (_homeFacts && Date.now() - _homeFactsAt < 60000) { slot.innerHTML = _homeFacts; return; }
+  const parts = [];
+  // The panels answer with {stats:[{label_key, value}]}, so the figures are
+  // looked up by their key rather than by position -- the order of that list
+  // is a presentation decision on the server and may change.
+  function statValue(payload, key) {
+    const stats = (payload && payload.stats) || [];
+    for (let i = 0; i < stats.length; i++) {
+      if (stats[i].label_key === key) return stats[i].value;
+    }
+    return "";
+  }
+  try {
+    const sys = await (await fetch("/api/home-panel/system")).json();
+    const busy = parseInt(statValue(sys, "hp_encoding"), 10) || 0;
+    const up = parseInt(statValue(sys, "hp_upscaling"), 10) || 0;
+    if (busy) parts.push(escapeHtml(_homeText("status_encoding", "{} im Encoding", "{} encoding")
+      .replace("{}", String(busy))));
+    if (up) parts.push(escapeHtml(_homeText("status_upscaling", "{} im Upscaling", "{} upscaling")
+      .replace("{}", String(up))));
+  } catch (e) { /* admin-only panel: one fact fewer, not an error */ }
+  try {
+    const st = await (await fetch("/api/home-panel/storage")).json();
+    const fullest = statValue(st, "hp_fullest");
+    if (fullest) {
+      parts.push(escapeHtml(_homeText("status_fullest", "{} voll", "{} full")
+        .replace("{}", String(fullest))));
+    }
+  } catch (e) { /* admin-only */ }
+  _homeFacts = parts.join(" · ");
+  _homeFactsAt = Date.now();
+  slot.innerHTML = _homeFacts;
+}
 
 // ── Source offline banner (only when UpTime monitoring is enabled) ──────────
 let _uptimeBannerDismissed = false;
@@ -1547,28 +1709,108 @@ function closeSearchSuggest() {
   if (input) input.setAttribute("aria-expanded", "false");
 }
 
-function renderSearchSuggest() {
+// Suggestions fetched from /api/home/suggest for the current query. Kept
+// outside renderSearchSuggest() so the dropdown can repaint instantly from
+// the local history while the server answer is still on its way -- a preview
+// that only appears once the network replies is not a preview.
+let _suggestGroups = [];
+let _suggestQuery = "";
+let _suggestTimer = null;
+
+const _SUGGEST_GROUP_LABELS = {
+  library: ["suggest_library", "In deiner Mediathek", "In your library"],
+  watchlist: ["suggest_watchlist", "Auf deiner Merkliste", "On your watchlist"],
+};
+
+/** Ask the server what it already knows about *typed*.
+    Debounced and query-checked: answers that arrive after the user has typed
+    on are dropped rather than replacing a newer list. */
+function _fetchSuggest(typed) {
+  clearTimeout(_suggestTimer);
+  if (typed.length < 2) { _suggestGroups = []; _suggestQuery = ""; return; }
+  _suggestTimer = setTimeout(async function () {
+    try {
+      const resp = await fetch("/api/home/suggest?q=" + encodeURIComponent(typed));
+      const data = await resp.json();
+      const input = document.getElementById("searchInput");
+      const still = input && input.value.trim().toLowerCase();
+      if (still !== typed) return;          // the user has moved on
+      _suggestGroups = Array.isArray(data.groups) ? data.groups : [];
+      _suggestQuery = typed;
+      renderSearchSuggest(true);
+    } catch (e) {
+      _suggestGroups = [];
+    }
+  }, 180);
+}
+
+function renderSearchSuggest(skipFetch) {
   const box = _suggestBox();
   const input = document.getElementById("searchInput");
   if (!box || !input) return;
   const typed = input.value.trim().toLowerCase();
+  if (!skipFetch) {
+    if (typed !== _suggestQuery) { _suggestGroups = []; }
+    _fetchSuggest(typed);
+  }
   const list = _recentSearches().filter(function (x) {
     return !typed || x.toLowerCase().indexOf(typed) !== -1;
   });
-  if (!list.length) { closeSearchSuggest(); return; }
-  box.innerHTML =
-    '<div class="home-suggest-head">' + escapeHtml(_homeText("recent_searches", "Zuletzt gesucht", "Recent searches")) +
-    '<button type="button" class="home-suggest-clear" data-clear="1">' +
-    escapeHtml(_homeText("clear_history", "Verlauf löschen", "Clear history")) + "</button></div>" +
-    list.map(function (kw) {
-      return '<div class="home-suggest-item" role="option" tabindex="-1" data-kw="' + escapeHtml(kw) + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>' +
-        '<span>' + escapeHtml(kw) + "</span>" +
-        '<button type="button" class="home-suggest-del" data-del="' + escapeHtml(kw) + '" aria-label="' +
-        escapeHtml(_homeText("remove_entry", "Entfernen", "Remove")) + '">&times;</button></div>';
-    }).join("");
+  const groups = typed === _suggestQuery ? _suggestGroups : [];
+  if (!list.length && !groups.length) { closeSearchSuggest(); return; }
+
+  let html = "";
+  // Server groups first: "the thing you are looking for is already on disk"
+  // is a more useful answer than "you searched for this before".
+  groups.forEach(function (group) {
+    const meta = _SUGGEST_GROUP_LABELS[group.key];
+    if (!meta || !(group.items || []).length) return;
+    html += '<div class="home-suggest-head">' +
+      escapeHtml(_homeText(meta[0], meta[1], meta[2])) + "</div>";
+    group.items.forEach(function (item) {
+      html += '<div class="home-suggest-item" role="option" tabindex="-1"' +
+        ' data-kw="' + escapeHtml(item.title || "") + '"' +
+        (item.href ? ' data-href="' + escapeHtml(item.href) + '"' : "") +
+        (item.url ? ' data-url="' + escapeHtml(item.url) + '"' : "") + ">" +
+        '<span class="home-suggest-dot" data-group="' + escapeHtml(group.key) + '"></span>' +
+        "<span>" + escapeHtml(item.title || "") + "</span>" +
+        (item.sub ? '<small class="home-suggest-sub">' + escapeHtml(item.sub) + "</small>" : "") +
+        "</div>";
+    });
+  });
+
+  if (list.length) {
+    html += '<div class="home-suggest-head">' +
+      escapeHtml(_homeText("recent_searches", "Zuletzt gesucht", "Recent searches")) +
+      '<button type="button" class="home-suggest-clear" data-clear="1">' +
+      escapeHtml(_homeText("clear_history", "Verlauf löschen", "Clear history")) + "</button></div>" +
+      list.map(function (kw) {
+        return '<div class="home-suggest-item" role="option" tabindex="-1" data-kw="' + escapeHtml(kw) + '">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>' +
+          '<span>' + escapeHtml(kw) + "</span>" +
+          '<button type="button" class="home-suggest-del" data-del="' + escapeHtml(kw) + '" aria-label="' +
+          escapeHtml(_homeText("remove_entry", "Entfernen", "Remove")) + '">&times;</button></div>';
+      }).join("");
+  }
+
+  box.innerHTML = html;
   box.hidden = false;
   input.setAttribute("aria-expanded", "true");
+}
+
+/** Act on one suggestion. A watchlist entry carries a real series URL, so it
+    opens that series directly instead of starting a search for its own
+    name; everything else falls back to the ordinary search. */
+function _applySuggestion(item) {
+  const input = document.getElementById("searchInput");
+  closeSearchSuggest();
+  if (item.dataset.href) { window.location.href = item.dataset.href; return; }
+  if (item.dataset.url && typeof openSeries === "function") {
+    openSeries(item.dataset.url);
+    return;
+  }
+  if (input) input.value = item.dataset.kw || "";
+  if (typeof doSearch === "function") doSearch();
 }
 
 // The search field carries autofocus (the home page is a search page), and a
@@ -1590,9 +1832,30 @@ function initSearchSuggest() {
   input.addEventListener("focus", function () {
     if (_suggestArmed) renderSearchSuggest();
   });
-  input.addEventListener("input", renderSearchSuggest);
+  input.addEventListener("input", function () { renderSearchSuggest(); });
   input.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape") closeSearchSuggest();
+    if (ev.key === "Escape") { closeSearchSuggest(); return; }
+    if (box.hidden) return;
+    const items = Array.prototype.slice.call(box.querySelectorAll(".home-suggest-item"));
+    if (!items.length) return;
+    const current = items.indexOf(box.querySelector(".home-suggest-item.is-active"));
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const next = ev.key === "ArrowDown"
+        ? (current + 1) % items.length
+        : (current <= 0 ? items.length - 1 : current - 1);
+      items.forEach(function (el) { el.classList.remove("is-active"); });
+      items[next].classList.add("is-active");
+      // Keeps the highlighted row inside the (scrollable) dropdown.
+      items[next].scrollIntoView({ block: "nearest" });
+      return;
+    }
+    // Enter only takes the highlighted entry -- without a highlight it must
+    // still start the search for exactly what was typed.
+    if (ev.key === "Enter" && current >= 0) {
+      ev.preventDefault();
+      _applySuggestion(items[current]);
+    }
   });
   box.addEventListener("mousedown", function (ev) {
     // mousedown, not click: the input's blur would close the box first.
@@ -1612,9 +1875,7 @@ function initSearchSuggest() {
     const item = ev.target.closest(".home-suggest-item");
     if (!item) return;
     ev.preventDefault();
-    input.value = item.dataset.kw;
-    closeSearchSuggest();
-    doSearch();
+    _applySuggestion(item);
   });
   document.addEventListener("click", function (ev) {
     if (!ev.target.closest(".home-search-field")) closeSearchSuggest();
@@ -1644,6 +1905,7 @@ async function doSearch() {
   searchSpinner.style.display = "block";
   // Create a search grid with skeletons
   resultsDiv.innerHTML = "";
+  renderSearchHeader(keyword);
   const block = document.createElement("div");
   block.className = "browse-provider-block";
   const grid = document.createElement("div");
@@ -1657,6 +1919,7 @@ async function doSearch() {
   if (browseDiv) browseDiv.style.display = "none";
   const _homeFeed = document.getElementById("homeFeed");
   if (_homeFeed) _homeFeed.style.display = "none";
+  enterSearchView(keyword);
 
   const searchSite = async (site) => {
     const controller = new AbortController();
@@ -2803,6 +3066,7 @@ function openAutoSyncConfig() {
     title: currentSeriesTitle,
     coverUrl: currentSeriesCoverUrl,
     customPaths: _customPathsCache,
+    defaultCustomPathId: _autosyncDefaultPathId,
     languages: languageSelect
       ? Array.from(languageSelect.options)
           .map((o) => o.value)

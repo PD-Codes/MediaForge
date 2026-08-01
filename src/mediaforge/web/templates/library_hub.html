@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% import "_library_nav.html" as libnav %}
 {% block title %}{{ _('Library') }} — MediaForge{% endblock %}
-{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='library_hub.css') }}">{% endblock %}
+{# library_core.css first: it owns .library-container (max-width 1200px,
+   centred), which every other library page loads and this one did not -- so
+   the hub was the one library page that ran the full width of the viewport.
+   library_hub.css is additive on top of it. #}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='library_core.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='library_hub.css') }}">{% endblock %}
 {% block content %}
 <div class="library-container lib-hub">
 

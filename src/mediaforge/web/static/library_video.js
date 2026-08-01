@@ -256,7 +256,11 @@ function _libCardMenuKey(it, pfx) {
     type: it.title.is_movie ? 'movie' : 'title',
     folder: it.title.folder, cpId: it.cpId, lf: it.langFolder,
     pfx: pfx, upscaleKey: upscaleKey, isMovie: !!it.title.is_movie,
-    epPath: it.title.is_movie ? (firstFile ? firstFile.path : '') : undefined
+    epPath: it.title.is_movie ? (firstFile ? firstFile.path : '') : undefined,
+    // Every file of this title, for "mark as unwatched". Collected here
+    // because this is where the title object is in scope -- the menu is
+    // built much later, from the context registry alone.
+    paths: _libAllPaths(it.title)
   });
 }
 
@@ -389,7 +393,8 @@ function libRenderMovieFlat(title, li, langFolder, lfi, cpId) {
     var _upscaleKey = "usc_" + rowId;
     _libUpscaleTitles[_upscaleKey] = title;
 
-    var menuKey = libRegMenuCtx({ type:'movie', folder:title.folder, cpId:cpId, lf:langFolder, pfx:rowId, upscaleKey:_upscaleKey, epPath:ep.path||'' });
+    var menuKey = libRegMenuCtx({ type:'movie', folder:title.folder, cpId:cpId, lf:langFolder, pfx:rowId, upscaleKey:_upscaleKey, epPath:ep.path||'',
+      paths: ep.path ? [ep.path] : [] });
     h.push('<div class="lib-episode-row lib-movie-flat-row lib-hoverable" id="' + rowId + '" data-path="' + libEscAttr(ep.path || '') + '" data-title="' + libEscAttr(title.folder) + '">');
     h.push('<div class="lib-row-left">');
     h.push('<svg class="lib-icon lib-icon-film" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="2" y1="17" x2="7" y2="17"/></svg>');
@@ -416,7 +421,7 @@ function libRenderMovieFlat(title, li, langFolder, lfi, cpId) {
     h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="Mehr Optionen"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
     h.push('</div>');
     if (ep.path) {
-      h.push('<div class="lib-ep-progress-wrap" id="' + rowId + '_prog"><div class="lib-ep-progress-fill" style="width:0%"></div></div>');
+      h.push('<div class="lib-ep-progress-wrap" id="' + rowId + '_prog" data-lib-path="' + libEscAttr(ep.path) + '"><div class="lib-ep-progress-fill" style="width:0%"></div></div>');
       _libPendingProgress.push({ rowId: rowId, path: ep.path });
     }
     h.push('</div>');
@@ -455,7 +460,8 @@ function libRenderSeason(title, skey, titlePfx, li, langFolder, lfi, ti, cpId) {
   var seasonSize = eps.reduce(function(acc,e){ return acc + e.size; }, 0);
   var cpIdStr = cpId !== null && cpId !== undefined ? String(cpId) : '';
   var lfStr   = langFolder || '';
-  var menuKey = libRegMenuCtx({ type:'season', folder:title.folder, cpId:cpId, lf:langFolder, skey:skey });
+  var menuKey = libRegMenuCtx({ type:'season', folder:title.folder, cpId:cpId, lf:langFolder, skey:skey,
+    paths: eps.map(function(e){ return e.path; }).filter(Boolean) });
   var h = [];
   h.push('<div class="lib-season-section">');
   h.push('<div class="lib-season-row lib-hoverable" onclick="libToggle(\'' + bodyId + '\',this)">');
@@ -579,7 +585,7 @@ function libRenderEpisode(ep, title, skey, cpId, langFolder) {
   h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title='+t("Mehr Optionen", "More Options")+'><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
   h.push('</div>');
   if (isVideo && ep.path) {
-    h.push('<div class="lib-ep-progress-wrap" id="' + rowId + '_prog"><div class="lib-ep-progress-fill" style="width:0%"></div></div>');
+    h.push('<div class="lib-ep-progress-wrap" id="' + rowId + '_prog" data-lib-path="' + libEscAttr(ep.path) + '"><div class="lib-ep-progress-fill" style="width:0%"></div></div>');
     _libPendingProgress.push({ rowId: rowId, path: ep.path });
   }
   h.push('</div>');
@@ -1403,13 +1409,14 @@ async function libAddToAutosync(folder) {
 
 async function _libOpenAutosyncCreate(url, title, coverUrl) {
   if (!window.AutosyncFilter) { showToast(t("Auto-Sync ist nicht verfügbar", "Auto-Sync is unavailable")); return; }
-  var customPaths = [], langSep = false, langGroups = [];
+  var customPaths = [], langSep = false, langGroups = [], defaultPathId = "";
   try {
     var res = await Promise.all([
       fetch("/api/custom-paths").then(function(x){ return x.json(); }),
       fetch("/api/settings").then(function(x){ return x.json(); }),
     ]);
     customPaths = (res[0] && res[0].paths) || [];
+    defaultPathId = String((res[0] && res[0].autosync_default_path) || "");
     langSep = res[1] && res[1].lang_separation === "1";
     langGroups = (res[1] && res[1].language_groups) || [];
   } catch (e) { /* fall back to defaults */ }
@@ -1418,6 +1425,7 @@ async function _libOpenAutosyncCreate(url, title, coverUrl) {
     title: title,
     coverUrl: coverUrl,
     customPaths: customPaths,
+    defaultCustomPathId: defaultPathId,
     langSepEnabled: langSep,
     languageGroups: langGroups,
     onSaved: function(r) {
@@ -1483,6 +1491,78 @@ function _libShowAutosyncPicker(folder, results) {
 // The core owns the menu widget (library_core.js); this is the half that
 // knows what a title, a season and an episode can have done to them. Called
 // by libOpenMenu() with the context registered on the clicked button.
+// ── "Mark as unwatched" ────────────────────────────────────────────────────
+// Watch positions are per account and per FILE, so undoing one is a list of
+// paths -- one for an episode, all of a season's or a title's for the other
+// two entries. Collected from the rendered title object rather than from the
+// server, because the page already holds it and a second lookup would only
+// be a second chance to disagree with what is on screen.
+function _libAllPaths(title) {
+  var paths = [];
+  if (!title || !title.seasons) return paths;
+  Object.keys(title.seasons).forEach(function (skey) {
+    (title.seasons[skey] || []).forEach(function (ep) {
+      if (ep && ep.path) paths.push(ep.path);
+    });
+  });
+  return paths;
+}
+
+function libCtxPaths(ctx) {
+  if (ctx && ctx.paths && ctx.paths.length) return ctx.paths;
+  return (ctx && ctx.epPath) ? [ctx.epPath] : [];
+}
+
+/** Forget the watch position for *paths*, then repaint what showed it. */
+function libMarkUnwatched(paths, label) {
+  if (!paths || !paths.length) {
+    if (typeof showToast === "function") showToast(t('Nichts zu ändern', 'Nothing to change'));
+    return;
+  }
+  fetch('/api/progress/clear', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths: paths })
+  }).then(function (r) {
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json();
+  }).then(function () {
+    // The page caches progress per path (_libProgressCache) and paints the
+    // bars from it -- without dropping those entries the rows would keep
+    // their old bars until a reload, which reads as "the button did nothing".
+    //
+    // Only the affected paths, and repainted by asking the server again
+    // rather than by blanking bars in the DOM: a blanket
+    // querySelectorAll('.lib-ep-progress-fill').width = 0 also wipes the
+    // episodes this action never touched, and they would come back on the
+    // next render, which is worse than not updating at all.
+    var affected = {};
+    paths.forEach(function (p) {
+      affected[p] = true;
+      try { delete _libProgressCache[p]; } catch (e) { /* not cached */ }
+    });
+    // Only the rows this action touched. A blanket
+    // querySelectorAll('.lib-ep-progress-fill').width = 0 would also wipe the
+    // episodes it never touched, and they would come back on the next render
+    // -- worse than not updating at all.
+    document.querySelectorAll('.lib-ep-progress-wrap[data-lib-path]').forEach(function (wrap) {
+      if (!affected[wrap.getAttribute('data-lib-path')]) return;
+      var fill = wrap.querySelector('.lib-ep-progress-fill');
+      if (fill) fill.style.width = '0%';
+    });
+    if (typeof showToast === "function") {
+      showToast(t('Als ungesehen markiert', 'Marked as unwatched') +
+        (label ? ': ' + label : ''));
+    }
+    // "Continue watching" on the home page is built from the same table.
+    if (typeof window.reloadHomeFeed === "function") window.reloadHomeFeed();
+  }).catch(function (err) {
+    if (typeof showToast === "function") {
+      showToast(t('Fehlgeschlagen', 'Failed') + ': ' + err.message);
+    }
+  });
+}
+
 function libMenuItemsFor(ctx) {
   var type   = ctx.type   || '';
   var folder = ctx.folder || '';
@@ -1495,6 +1575,7 @@ function libMenuItemsFor(ctx) {
   var ICO_TRASH   = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>';
   var ICO_INFO    = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
   var ICO_SYNC    = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>';
+  var ICO_UNSEEN  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 
   var items = [];
 
@@ -1514,6 +1595,8 @@ function libMenuItemsFor(ctx) {
     if (type === 'movie' && ctx.epPath) {
       items.push({ label:t('Details', 'Details'), icon:ICO_INFO, fn:function(){ libOpenMediaInfo(ctx.epPath, folder); } });
     }
+    items.push({ label:t('Als ungesehen markieren', 'Mark as unwatched'), icon:ICO_UNSEEN,
+      fn:function(){ libMarkUnwatched(libCtxPaths(ctx), folder); } });
     if (libraryCanDelete) {
       items.push({ sep:true });
       items.push({ label:(type==='movie' ? t('Film löschen','Delete movie') : t('Titel löschen','Delete title')), icon:ICO_TRASH, danger:true,
@@ -1522,6 +1605,8 @@ function libMenuItemsFor(ctx) {
 
   } else if (type === 'season') {
     var sk = ctx.skey;
+    items.push({ label:t('Staffel als ungesehen markieren', 'Mark season as unwatched'), icon:ICO_UNSEEN,
+      fn:function(){ libMarkUnwatched(libCtxPaths(ctx), folder); } });
     if (libraryCanDelete)
       items.push({ label:t('Staffel löschen', 'Delete season'), icon:ICO_TRASH, danger:true,
         fn:function(){ libDeleteSeason(folder, parseInt(sk,10), cpId, lf); } });
@@ -1537,6 +1622,10 @@ function libMenuItemsFor(ctx) {
     if (ePath) {
       var displayTitle = folder + ' – E' + String(eNum).padStart(2,'0') + ' – ' + eFile;
       items.push({ label:t('Details', 'Details'), icon:ICO_INFO, fn:function(){ libOpenMediaInfo(ePath, displayTitle); } });
+    }
+    if (ePath) {
+      items.push({ label:t('Als ungesehen markieren', 'Mark as unwatched'), icon:ICO_UNSEEN,
+        fn:function(){ libMarkUnwatched([ePath], folder); } });
     }
     if (libraryCanDelete) {
       items.push({ sep:true });

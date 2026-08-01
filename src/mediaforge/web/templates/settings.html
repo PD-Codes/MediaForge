@@ -762,7 +762,7 @@
       <div class="settings-hint">{{ _('hanime.tv is an adult source (18+) for sexually explicit animated content (hentai). Disabled by default; enabling requires an age confirmation.') }}</div>
     </div>
     <div class="settings-section">
-      <h2>{{ _('Source order') }}</h2>
+      <h2>{{ _('Source order (Start Page v1)') }}</h2>
       <div class="settings-hint">{{ _('Set the order in which sources appear on the start page. Drag the rows or use the arrows. For each source you can also choose whether new or popular items are shown first.') }}</div>
       <div class="source-order-list" id="sourceOrderList"></div>
     </div>
@@ -962,6 +962,7 @@
               <th>{{ _('Path') }}</th>
               <th>{{ _('Default for sites') }}</th>
               <th>{{ _('Media types') }}</th>
+              <th>{{ _('Default path for Auto-Sync') }}</th>
               <th>{{ _('Actions') }}</th>
             </tr>
           </thead>
@@ -970,6 +971,7 @@
       </div>
       <div class="settings-hint">{{ _('Select the sites for which this path should be preselected as the download folder.') }}</div>
       <div class="settings-hint">{{ _('The media types decide which library a path shows up in — a folder is only scanned for what is ticked here.') }}</div>
+      <div class="settings-hint">{{ _('The path marked as the Auto-Sync default is preselected whenever a new Auto-Sync is set up. Only one path can hold this mark. Editing an existing Auto-Sync keeps its own path.') }}</div>
     </div>
 
     <div class="settings-section">
@@ -1402,6 +1404,8 @@
         <select id="newRole">
           <option value="user">{{ _('User') }}</option>
           <option value="admin">{{ _('Administrator') }}</option>
+          {# A restriction, not a rank -- see web/age_gate.py. #}
+          <option value="kids">{{ _('Kids') }}</option>
         </select>
         <button onclick="addUser()">{{ _('Add') }}</button>
       </div>

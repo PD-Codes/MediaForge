@@ -139,6 +139,38 @@ def _quality_height(value) -> int:
     return h if h in (1080, 720, 480, 360) else 0
 
 
+def _age_permits_path(resolved_path: str) -> bool:
+    """Whether the current session may play the file at *resolved_path*.
+
+    The rating is looked up for the TITLE the file belongs to, which here is
+    the download history's record of where the file came from -- that is the
+    one thing that maps a path back to a title without re-walking the library.
+    A file the history does not know is treated as unrated and allowed, the
+    same rule the rest of the age gate follows: an unrated file that is really
+    a cartoon and a hard refusal are both wrong, and only one of them makes
+    people switch the protection off.
+    """
+    from ..age_gate import ceiling, permits
+    limit = ceiling()
+    if limit is None:
+        return True
+    try:
+        from ..db import get_download_history_meta_for_path, get_tmdb_cache
+        from ..db import get_setting as _get_setting
+        from flask import session as _session
+        meta = get_download_history_meta_for_path(resolved_path) or {}
+        title = str(meta.get("title") or "").strip()
+        if not title:
+            return True
+        key = "%s|||%s|||%s" % (title,
+                                _get_setting("cineinfo_country", "DE") or "DE",
+                                _session.get("ui_language", "de"))
+        return permits(get_tmdb_cache(key) or {}, limit)
+    except Exception:
+        logger.debug("[AgeGate] playback rating lookup failed", exc_info=True)
+        return True
+
+
 def _resolve_media_path(file_path: str):
     """Resolve a client-supplied path and confirm it is inside a library root.
 
@@ -462,6 +494,12 @@ def register_stream_routes(app):
         resolved = _resolve_media_path(file_path)
         if resolved is None:
             return jsonify({"error": "Datei nicht gefunden"}), 404
+
+        # The playback gate. Unlike the library listing (which filters what is
+        # OFFERED), this refuses the file itself, so a path that was copied,
+        # bookmarked, or guessed does not play either.
+        if not _age_permits_path(str(resolved)):
+            return jsonify({"error": "not permitted", "code": "age_limited"}), 403
 
         # Probe first so we can return media info
         info = probe_file(str(resolved)) or {}

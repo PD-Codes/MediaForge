@@ -28,6 +28,7 @@ from pathlib import Path
 from ...logger import get_logger
 from ..media_types import (
     BOOK_ALL_EXTS,
+    BOOK_CONVERTIBLE_EXTS,
     BOOK_EXTS,
     BOOK_SIDECAR_NAMES,
     book_format_sort_key,
@@ -52,7 +53,7 @@ logger = get_logger(__name__)
 # HTML descriptions are flattened only reaches books scanned AFTER the update,
 # and every existing shelf keeps showing the bug with nothing on disk changed
 # to trigger a rescan.
-BOOKS_FORMAT_VERSION = 3   # v3: percent-escapes decoded, bracketed year kept
+BOOKS_FORMAT_VERSION = 4   # v4: DRM-protected files marked as unreadable
 
 # A runaway walk is worse than an incomplete one: the scan holds a lock the
 # whole library shares. 200k book files is far beyond any real collection.
@@ -203,6 +204,22 @@ def _pick(bucket: list, key: str, default=None):
     return default
 
 
+def _is_drm(cand: dict) -> bool:
+    """Whether one scanned MOBI-family file is encrypted.
+
+    Only the formats that have a PalmDB header are asked -- an EPUB or PDF
+    never is. Any failure reads as "not protected", so a file this cannot
+    inspect stays listed exactly as before.
+    """
+    if cand.get("ext") not in BOOK_CONVERTIBLE_EXTS:
+        return False
+    try:
+        from .convert import is_drm_protected
+        return is_drm_protected(Path(cand["path"]))
+    except Exception:
+        return False
+
+
 def _build_book(bucket: list, cover_by_folder: dict, catalogue: dict) -> dict:
     """Turn one merged bucket of files into the book entry the API returns."""
     # The longest title wins: Calibre truncates the filename it writes, so the
@@ -242,13 +259,20 @@ def _build_book(bucket: list, cover_by_folder: dict, catalogue: dict) -> dict:
         if cand["path"] in seen_paths:
             continue
         seen_paths.add(cand["path"])
+        # A DRM-protected Kindle file is listed like .kfx is: as a format that
+        # exists but cannot be opened. Deciding it here rather than at open
+        # time is what lets the shelf say so without a conversion attempt --
+        # it costs one ~100-byte header read per MOBI-family file, and the
+        # answer is cached in the scan (hence BOOKS_FORMAT_VERSION 4).
+        drm = _is_drm(cand)
         formats.append(
             {
                 "ext": cand["ext"].lstrip("."),
                 "path": cand["path"],
                 "size": cand["size"],
                 "mtime": cand["mtime"],
-                "readable": cand["ext"] in BOOK_EXTS,
+                "readable": cand["ext"] in BOOK_EXTS and not drm,
+                "drm": drm,
             }
         )
 

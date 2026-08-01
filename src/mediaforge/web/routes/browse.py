@@ -288,7 +288,17 @@ def _prefetch_worker():
 
 
 def ensure_prefetch_worker():
-    """Start the background browse/TMDB prefetch worker thread."""
+    """Start the background browse/TMDB prefetch worker thread.
+
+    Skipped under TESTING. The worker scrapes the real sites and writes the
+    results into _browse_cache -- the same cache the feed tests clear and then
+    fill with stubs. A prefetch landing between the two turned those tests
+    into an intermittent failure that looked like a bug in the feed and was
+    really a second writer nobody had accounted for.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        logger.debug("[Prefetch] Not starting the worker under test")
+        return
     _pt = threading.Thread(target=_prefetch_worker, daemon=True, name="browse-prefetch")
     _pt.start()
     logger.info("[Prefetch] Background worker started (interval=%d min)", _PREFETCH_INTERVAL // 60)
@@ -336,8 +346,12 @@ _FEED_ROW_SOURCES = {
     "new":       {"hint": "sources",  "link": ""},
     "popular":   {"hint": "sources",  "link": ""},
     "movies":    {"hint": "sources",  "link": ""},
+    # Seasons with holes in them. The data is the statistics page's
+    # "incomplete series" list; what makes it a home row is that every card
+    # carries an action ("load what is missing") instead of a number.
+    "gaps":      {"hint": "library",  "link": "/stats"},
 }
-_FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming")
+_FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming", "gaps")
 # The default reading order: what you were doing, what arrived, then what is
 # out there -- and the two rows that are really other pages in miniature
 # (watchlist, calendar) at the end.
@@ -350,9 +364,155 @@ _FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming")
 # actually came for from the top of the page. tests/test_home_feed_smoke.py
 # (test_default_row_order_puts_the_borrowed_rows_last) pins both ends of this
 # order on purpose.
-_FEED_DEFAULT_ORDER = ("continue", "library", "new", "popular", "movies",
-                       "watchlist", "upcoming")
+#
+# "gaps" sits directly behind "popular" by request: it is the one row that
+# asks something of the user rather than offering something, and putting it
+# above the discovery rows would make the home page feel like a chore list.
+_FEED_DEFAULT_ORDER = ("continue", "library", "new", "popular", "gaps",
+                       "movies", "watchlist", "upcoming")
 _FEED_CARDS_CHOICES = (10, 20, 30, 40, 60)
+
+
+def _feed_max_fsk():
+    """The age ceiling for this account, or None when there is none.
+
+    Thin wrapper around web/age_gate.py, which is the single place that knows
+    both ways an account can be limited (the kids ROLE and the per-account
+    kids MODE) -- see that module for why this is not decided here.
+    """
+    from ..age_gate import ceiling
+    return ceiling()
+
+
+def _feed_apply_age_limit(items, max_fsk):
+    """Drop cards rated above *max_fsk*. See web/age_gate.py for the rule --
+    in particular why an unrated title is kept rather than dropped."""
+    from ..age_gate import filter_items
+    return filter_items(items, max_fsk)
+
+
+def _feed_proxy_remote_posters(items):
+    """Point a media-server card's artwork at our own proxy.
+
+    web/mediaplayer.py hands back a server-RELATIVE ``poster_path`` on purpose
+    (see image_bytes()); this turns it into the URL the browser may actually
+    ask for. Anything without a path simply has no poster and falls back to
+    the generated placeholder, same as a local card.
+
+    Returns NEW dicts and never touches the originals. The first version
+    pop()ed the path out of the items it was given -- and those items come
+    straight out of mediaplayer.py's TTL cache, so the first page load got
+    real artwork and every load for the next minute got the placeholder,
+    because the path it needed had been taken out of the cached copy.
+    """
+    from urllib.parse import quote
+    out = []
+    for item in items or []:
+        path = item.get("poster_path") or ""
+        copy = {k: v for k, v in item.items() if k != "poster_path"}
+        copy["poster_url"] = ("/api/mediaplayer/image?path=" + quote(path, safe="")
+                              if path else "")
+        out.append(copy)
+    return out
+
+
+def _feed_library_posters(entries):
+    """Fill in ``poster_url`` for library-derived cards from the TMDB cache.
+
+    The library scanner knows file names, not artwork, so these rows have
+    always drawn the generated colour placeholder. TMDB has usually been
+    asked about these titles already (the browse cards do it), so the poster
+    is sitting in the local cache -- this reads it back in ONE bulk query for
+    the whole row rather than a lookup per card.
+
+    Cache only, never a network call: this runs while building the home page,
+    and a row that waits for twenty TMDB requests is a row nobody sees. A
+    title the cache does not know keeps the placeholder.
+    """
+    if not entries:
+        return entries
+    try:
+        from flask import session
+        from ..db import get_tmdb_cache_bulk
+    except Exception:
+        return entries
+
+    country = get_setting("cineinfo_country", "DE") or "DE"
+    try:
+        ui_lang = session.get("ui_language", "de")
+    except Exception:
+        ui_lang = "de"
+
+    keys = {}
+    for entry in entries:
+        name = str(entry.get("title") or "")
+        if name and not entry.get("poster_url"):
+            keys[name] = name + "|||" + country + "|||" + ui_lang
+    if not keys:
+        return entries
+    try:
+        cached = get_tmdb_cache_bulk(list(keys.values())) or {}
+    except Exception:
+        return entries
+
+    for entry in entries:
+        name = str(entry.get("title") or "")
+        hit = cached.get(keys.get(name, "")) or {}
+        path = ((hit.get("raw_details") or {}).get("poster_path")
+                if isinstance(hit.get("raw_details"), dict) else None)
+        if path:
+            entry["poster_url"] = _poster_proxy("https://image.tmdb.org/t/p/w300" + path)
+    return entries
+
+
+def _feed_gap_rows(lib_titles, limit=12):
+    """Turn library titles into "this season has holes" cards.
+
+    Uses the statistics page's gap detection (_media_missing_episodes) and
+    its ignore list, so a slot the user marked "never mind" on /stats does
+    not reappear on the home page -- two places disagreeing about what
+    "complete" means is worse than not having the row.
+
+    Sorted by *fewest* missing episodes first: a series that is one episode
+    short is one click from being finished, while a series missing two whole
+    seasons is a project. The row is for the former.
+    """
+    from .stats import _media_missing_episodes
+    try:
+        from ..db import get_media_ignores
+        ignores = get_media_ignores() or {}
+    except Exception:
+        ignores = {}
+
+    out = []
+    for title in lib_titles:
+        seasons = title.get("seasons") or {}
+        if not seasons:
+            continue
+        folder = title.get("folder", "")
+        missing = _media_missing_episodes(seasons)
+        # get_media_ignores() keys by the lower-cased folder name (see its
+        # docstring); looking up the raw folder silently ignored every ignore.
+        entry = ignores.get(folder.lower()) or ignores.get(folder)
+        if entry:
+            slots = entry.get("slots") if isinstance(entry, dict) else entry
+            slots = set(slots or [])
+            if "__all__" in slots:
+                continue
+            missing = [m for m in missing if m not in slots]
+        if not missing:
+            continue
+        out.append({
+            "title": folder,
+            "folder": folder,
+            "missing": missing[:12],
+            "missing_count": len(missing),
+            # Both are shown: "3 missing" is the headline, the slot list is
+            # what makes it actionable.
+            "poster_url": title.get("poster_url") or "",
+        })
+    out.sort(key=lambda item: (item["missing_count"], item["title"].lower()))
+    return out[:limit]
 
 
 def _feed_clean_order(raw, fallback=None):
@@ -455,6 +615,32 @@ def feed_effective_config():
         }
         for row in cfg["order"]
     ]
+    # The age ceiling in force, so the page can SAY it is limited. Reported
+    # rather than accepted: this value is what the server already applied
+    # while building the rows, so the toolbar can never claim a mode the feed
+    # is not actually being filtered by.
+    ceiling = _feed_max_fsk()
+    cfg["max_fsk"] = "" if ceiling is None else str(ceiling)
+    cfg["mode"] = (_feed_user_prefs().get("home_mode") or "")
+    # Kids mode is off until an admin turns it on AND sets a PIN. Both, not
+    # either: a kids mode you can leave by clicking "Standard" is a display
+    # setting wearing a lock icon, and offering the button before the lock
+    # exists is how it ends up being used that way.
+    #
+    # Two flags, not one: `kids_switched_on` is what the admin ticked and is
+    # what the checkbox must show, while `kids_enabled` is whether the button
+    # actually appears. Collapsing them would make the checkbox untick itself
+    # whenever the PIN is missing, which reads as "the save failed".
+    cfg["kids_switched_on"] = get_setting("home_kids_enabled", "0") == "1"
+    cfg["kids_has_pin"] = bool((get_setting("home_kids_pin", "") or "").strip())
+    # A kids ACCOUNT is never offered the switch: the role is the answer, and
+    # there is nothing to leave. Showing it a mode toggle would be an invitation
+    # to try a PIN it is not meant to have.
+    from ..age_gate import is_kids_account
+    cfg["kids_account"] = is_kids_account()
+    cfg["kids_enabled"] = (cfg["kids_switched_on"] and cfg["kids_has_pin"]
+                           and not cfg["kids_account"])
+    cfg["kids_max_fsk"] = get_setting("home_kids_max_fsk", "6")
     return cfg
 
 
@@ -554,6 +740,11 @@ def register_browse_routes(app):
     # ships with it -- one home page, one registration point.
     from .home_panels import register_home_panel_routes
     register_home_panel_routes(app)
+    # Home page 2.1: media-server profile link, Wrapped, onboarding, suggest.
+    # Registered here for the same reason the panels are -- everything the
+    # home page needs has one entry point.
+    from .home_extras import register_home_extras_routes
+    register_home_extras_routes(app)
     # Upstream failures answer 502, not 500: none of these routes is broken
     # when they fire -- the third-party site is unreachable or answered with
     # something unusable. 500 would claim MediaForge itself failed, which also
@@ -695,6 +886,19 @@ def register_browse_routes(app):
         """Return the complete new-home-page feed in one answer.
         GET /api/home-feed?adult=0|1&limit=30.
 
+        Kept for the Start Page settings preview, the module examples and the
+        smoke tests. The home page itself asks per row through
+        /api/home-feed/row/<row> so one slow source cannot hold up the page.
+        """
+        return jsonify(_feed_build())
+
+    def _feed_build(only_row=None):
+        """Build the feed payload. Returns a plain dict, not a response.
+
+        *only_row* restricts the work to a single discovery row: sources that
+        contribute nothing to it are never fetched, which is the entire point
+        of the per-row endpoint.
+
         Called from static/home_feed.js, which used to build this itself out
         of eleven separate requests. Rows are assembled server-side because
         that is the only place that knows which sources exist -- built-ins
@@ -710,6 +914,13 @@ def register_browse_routes(app):
         """
         want_adult = request.args.get("adult", "0") == "1"
         config = feed_effective_config()
+        # The age ceiling is applied HERE, not in the browser. A kids mode a
+        # client can undo by editing a query string (or by calling this
+        # endpoint itself) is decoration; the chip row is a filter, this is a
+        # restriction, and the two must not share an implementation.
+        max_fsk = _feed_max_fsk()
+        if max_fsk is not None and max_fsk < 18:
+            want_adult = False
         # An explicit ?limit wins (the settings page previews with it); the
         # configured cards-per-row is what the home page itself uses.
         if request.args.get("limit"):
@@ -753,10 +964,17 @@ def register_browse_routes(app):
 
         enabled = {sid: _feed_source_enabled(sid) for sid in meta}
 
-        def _wanted(sid, mtype):
+        def _wanted(sid, mtype, row):
             if not enabled.get(sid):
                 return False
             if mtype == "adult" and not want_adult:
+                return False
+            if only_row == "movies":
+                # The movie row is derived from media_type, not from a
+                # fetcher name, so it draws on every row -- but only on the
+                # sources that actually publish movies.
+                return mtype == "movies"
+            if only_row and row != only_row:
                 return False
             return True
 
@@ -764,7 +982,7 @@ def register_browse_routes(app):
         #    only touches the browse cache and the scrapers), so a worker pool
         #    is safe here and turns a cold start from "eleven timeouts in a
         #    row" into one.
-        todo = [e for e in entries if _wanted(e[0], e[2])]
+        todo = [e for e in entries if _wanted(e[0], e[2], e[1])]
         fetched = {}
         failures = {}
         if todo:
@@ -791,13 +1009,17 @@ def register_browse_routes(app):
         # 4. Proxy posters + inline cached TMDB, once per source list (both
         #    read settings, so this stays in the request thread).
         for key, items in fetched.items():
-            fetched[key] = _proxy_result_list(items)
+            fetched[key] = _feed_apply_age_limit(_proxy_result_list(items), max_fsk)
 
         # 5. Rows. `taken` spans all three, so nothing is shown twice.
         labels = {sid: meta[sid]["label"] for sid in meta}
         taken, index = set(), {}
         rows = {}
-        for row in _FEED_ROW_ORDER:
+        # With per-row requests, `taken` can no longer span the three rows --
+        # each request only knows its own. static/home_feed.js dedupes across
+        # rows on the client instead (dedupeRows()), which it can do because
+        # it is the side that eventually holds all of them.
+        for row in ([only_row] if only_row else _FEED_ROW_ORDER):
             if row in hidden:
                 # A row nobody sees is a row nobody has to pay for.
                 rows[row] = []
@@ -812,7 +1034,7 @@ def register_browse_routes(app):
                 bucket = {sid: items for (r, sid), items in fetched.items() if r == row}
             rows[row] = _feed_collect(bucket, order, limit, taken, index, labels)
 
-        return jsonify({
+        return {
             "rows": rows,
             "sources": [
                 {
@@ -832,8 +1054,9 @@ def register_browse_routes(app):
             ],
             "adult": want_adult,
             "config": config,
+            "row": only_row or "",
             "generated_at": _time.time(),
-        })
+        }
 
     @app.route("/api/home-feed/sources")
     def api_home_feed_sources():
@@ -874,19 +1097,42 @@ def register_browse_routes(app):
         except Exception:
             username = None
 
-        out = {"continue": [], "watchlist": [], "library": [], "upcoming": []}
+        out = {"continue": [], "watchlist": [], "library": [], "upcoming": [],
+               "gaps": [], "continue_source": "local"}
         hidden = set(feed_effective_config()["hidden"])
         # Reading the whole library to fill a row the user switched off is
         # exactly the kind of work a home page should not be doing.
         if all(row in hidden for row in _FEED_PERSONAL_ROWS):
             return jsonify(out)
 
+        # --- Continue watching, from the media server instead of from here.
+        #     When the account is linked to a Jellyfin/Plex user, that server
+        #     is the truth about what this person was watching -- including
+        #     everything they started in the Jellyfin app and MediaForge never
+        #     saw. The local row is then not merged in but REPLACED: two rows
+        #     of half-truths ordered differently is worse than one.
+        remote_continue = None
+        if "continue" not in hidden:
+            try:
+                from .. import mediaplayer
+                linked = (_feed_user_prefs().get("mediaplayer_user") or "").strip()
+                if linked and mediaplayer.is_configured():
+                    remote_continue = mediaplayer.continue_watching(linked, limit=15)
+                    if remote_continue is not None:
+                        out["continue"] = _feed_proxy_remote_posters(remote_continue)
+                        out["continue_source"] = mediaplayer.config().get("kind", "")
+            except Exception:
+                logger.debug("[HomeFeed] media-server continue-watching failed",
+                             exc_info=True)
+                remote_continue = None
+
         # --- the library, once: both "continue watching" (which needs to turn
         #     a file path back into a title) and "new in your library" read it.
         lib_titles = []
         by_path = {}
         try:
-            if "continue" in hidden and "library" in hidden:
+            if ("continue" in hidden or remote_continue is not None) \
+                    and "library" in hidden and "gaps" in hidden:
                 raise StopIteration
             from .library import lib_path_keys_for_kind, lib_iter_cached_titles
             from ..db import get_all_library_cache
@@ -915,9 +1161,9 @@ def register_browse_routes(app):
         except Exception:
             logger.debug("[HomeFeed] library lookup failed", exc_info=True)
 
-        # --- Continue watching
+        # --- Continue watching (local playback positions)
         try:
-            if "continue" in hidden:
+            if "continue" in hidden or remote_continue is not None:
                 raise StopIteration
             from ..db import get_recent_watch_progress
             for prog in get_recent_watch_progress(username=username, limit=15):
@@ -1026,7 +1272,48 @@ def register_browse_routes(app):
         except Exception:
             logger.debug("[HomeFeed] upcoming row failed", exc_info=True)
 
+        # --- Gaps: seasons with holes in them. Same source of truth as the
+        #     statistics page (_media_missing_episodes), deliberately reusing
+        #     lib_titles above instead of walking the library a second time.
+        try:
+            if "gaps" in hidden:
+                raise StopIteration
+            out["gaps"] = _feed_gap_rows(lib_titles)
+        except StopIteration:
+            pass
+        except Exception:
+            logger.debug("[HomeFeed] gaps row failed", exc_info=True)
+
+        # --- Artwork for the rows that come from the library. Done once here
+        #     rather than per row, so every card that CAN have a poster gets
+        #     one and the placeholder is genuinely "TMDB does not know this".
+        try:
+            _feed_library_posters(out["library"])
+            _feed_library_posters(out["gaps"])
+            if out["continue_source"] == "local":
+                _feed_library_posters(out["continue"])
+        except Exception:
+            logger.debug("[HomeFeed] poster lookup failed", exc_info=True)
+
         return jsonify(out)
+
+    @app.route("/api/home-feed/row/<row>")
+    def api_home_feed_row(row):
+        """One discovery row on its own. GET /api/home-feed/row/new?adult=0.
+
+        /api/home-feed still exists and still answers everything at once (the
+        settings preview and the tests use it), but the home page asks per
+        row now: one slow source used to hold up the entire page, and rows
+        below the fold were fetched whether or not anybody scrolled to them.
+
+        Same payload shape as one entry of /api/home-feed's `rows`, plus the
+        `sources` list -- the first row that answers is what renders the chip
+        row, so it cannot be left out.
+        """
+        row = str(row or "").strip().lower()
+        if row not in ("new", "popular", "movies"):
+            return jsonify({"error": "unknown row"}), 404
+        return jsonify(_feed_build(only_row=row))
 
     @app.route("/api/downloaded-folders")
     def api_downloaded_folders():

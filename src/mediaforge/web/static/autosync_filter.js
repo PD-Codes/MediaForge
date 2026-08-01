@@ -473,7 +473,16 @@
       el("option", { value: "", text: tr("Standard", "Default") }),
     ]);
     customPaths.forEach((p) => pathSelect.appendChild(el("option", { value: p.id, text: p.name + " (" + p.path + ")" })));
-    if (existing && existing.custom_path_id != null) pathSelect.value = String(existing.custom_path_id);
+    // An existing job always wins -- including when its path is "" (the global
+    // download folder). Only a NEW job falls back to the default configured in
+    // Settings -> Auto-Sync, so editing a job never silently moves it to
+    // another folder.
+    if (existing) {
+      pathSelect.value = existing.custom_path_id != null ? String(existing.custom_path_id) : "";
+    } else {
+      const preset = String(opts.defaultCustomPathId || "");
+      if (preset && customPaths.some((p) => String(p.id) === preset)) pathSelect.value = preset;
+    }
 
     const pickerHost = el("div", {});
 

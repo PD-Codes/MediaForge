@@ -330,6 +330,15 @@ def _prepare_one(src: Path) -> bool:
         status = _peek_conversion(src)
         if status.get("ready"):
             return cover_path(src, start_conversion=False) is not None
+        # A conversion that has already given up will never turn ready, and a
+        # DRM-protected book never converts at all. Waiting out the full
+        # per-file timeout for either meant a shelf of Kindle purchases held
+        # the worker for 15 minutes each, on every scan.
+        reason = convert.failure_reason(src)
+        if reason:
+            if reason == "drm":
+                logger.info("[Books] %s is DRM-protected -- no cover", src.name)
+            return False
         time.sleep(_PREP_POLL_SECONDS)
     logger.info("[Books] Gave up waiting for %s to be prepared", src.name)
     return False

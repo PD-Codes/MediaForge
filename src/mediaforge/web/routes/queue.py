@@ -98,6 +98,16 @@ def register_queue_routes(app):
         if not episodes:
             return jsonify({"error": "episodes list is required"}), 400
 
+        # A kids ACCOUNT may not download at all. Not "may download things
+        # under the limit": the limit is judged from TMDB metadata that may
+        # simply be absent, so an allowed download would be one nobody could
+        # vouch for -- and the file it produces then sits in the library
+        # forever. The kids MODE (a shared account, PIN-protected) is left
+        # alone: an adult is the one who set it and can step back out of it.
+        from ..age_gate import is_kids_account
+        if is_kids_account():
+            return jsonify({"error": "not permitted", "code": "age_limited"}), 403
+
         if (
             language == "English Sub"
             and os.environ.get("MEDIAFORGE_DISABLE_ENGLISH_SUB", "0") == "1"

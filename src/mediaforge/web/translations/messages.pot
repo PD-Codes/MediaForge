@@ -3712,7 +3712,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/integrations.html:594
 #: src/mediaforge/web/templates/settings.html:765
-msgid "Source order"
+msgid "Source order (Start Page v1)"
 msgstr ""
 
 #: src/mediaforge/web/templates/integrations.html:595

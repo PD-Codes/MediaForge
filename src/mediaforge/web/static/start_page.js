@@ -240,6 +240,18 @@
     }
   }
 
+  /** Show the stored kids-mode state. The PIN itself is never read back --
+      it is a secret the server encrypts, and a form that renders it would
+      hand it to anyone who can open the settings page. */
+  async function loadKidsSettings(scope, kidsOn, kidsFsk, done) {
+    try {
+      const cfg = (await (await fetch("/api/home-feed/sources")).json()).config || {};
+      if (kidsOn) kidsOn.checked = !!cfg.kids_switched_on;
+      if (kidsFsk) kidsFsk.value = String(cfg.kids_max_fsk || "6");
+    } catch (e) { /* leave the defaults */ }
+    if (typeof done === "function") done();
+  }
+
   // ------------------------------------------------------------ wiring
   function bind(scope) {
     const list = document.getElementById("spRows-" + scope);
@@ -283,6 +295,61 @@
         if (!box.checked && at === -1) state[scope].typesOff.push(id);
         save(scope);
       });
+    }
+    // Kids mode (admin scope only). The PIN saves on change rather than on
+    // every keystroke: written character by character it would leave a trail
+    // of half-PINs in the settings table, each of which would be the valid
+    // one for a moment.
+    const kidsOn = document.getElementById("spKidsOn-" + scope);
+    const kidsFsk = document.getElementById("spKidsFsk-" + scope);
+    const pin = document.getElementById("spKidsPin-" + scope);
+    if (kidsOn || pin) {
+      const state = document.getElementById("spKidsState-" + scope);
+
+      function saveKids(patch) {
+        fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        }).then(async function (r) {
+          const body = await r.json().catch(function () { return {}; });
+          if (!r.ok) throw new Error(body.error || String(r.status));
+          toast(txt("saved", "Saved"));
+          refreshKidsState();
+        }).catch(function (err) {
+          toast(txt("save_failed", "Could not be saved") + ": " + err.message);
+        });
+      }
+
+      /** Say plainly whether the button will actually appear. "On" plus no
+          PIN is the state people get stuck in, and without this line the
+          home page simply shows nothing and looks broken. */
+      async function refreshKidsState() {
+        if (!state) return;
+        try {
+          const cfg = (await (await fetch("/api/home-feed/sources")).json()).config || {};
+          state.textContent = cfg.kids_enabled
+            ? txt("kids_ready", "Kids mode is available on the home page.")
+            : txt("kids_needs_pin", "Switch it on and set a PIN — the button stays hidden until both are done.");
+        } catch (e) { /* leave the hint empty rather than guess */ }
+      }
+
+      if (kidsOn) {
+        kidsOn.addEventListener("change", function () {
+          saveKids({ home_kids_enabled: kidsOn.checked ? "1" : "0" });
+        });
+      }
+      if (kidsFsk) {
+        kidsFsk.addEventListener("change", function () {
+          saveKids({ home_kids_max_fsk: kidsFsk.value });
+        });
+      }
+      if (pin) {
+        pin.addEventListener("change", function () {
+          saveKids({ home_kids_pin: pin.value || "" });
+        });
+      }
+      loadKidsSettings(scope, kidsOn, kidsFsk, refreshKidsState);
     }
     // Which layout THIS account sees. Deliberately not part of save(scope):
     // the rows/filters live in one packed home_feed_layout string, while this

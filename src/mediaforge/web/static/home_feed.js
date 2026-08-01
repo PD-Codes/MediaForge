@@ -39,7 +39,7 @@
   function HT(key) { return I18N[key] || key; }
 
   const DISCOVERY_ROWS = ["new", "popular", "movies"];
-  const PERSONAL_ROWS = ["continue", "watchlist", "library", "upcoming"];
+  const PERSONAL_ROWS = ["continue", "watchlist", "library", "upcoming", "gaps"];
   // Filled from /api/home-feed's `config`: which rows this account wants, in
   // which order (Settings -> Start Page, or the "Customise" button here).
   let layout = { order: [], hidden: [], limit: 30, rows: [] };
@@ -48,6 +48,7 @@
     watchlist: "feedWatchlistGrid",
     library: "feedLibraryGrid",
     upcoming: "feedUpcomingGrid",
+    gaps: "feedGapsGrid",
     new: "feedNewGrid",
     popular: "feedPopularGrid",
     movies: "feedMoviesGrid",
@@ -154,7 +155,12 @@
         "</button>";
     });
 
-    html += '<span class="feed-chip-label feed-chip-label--split">' +
+    // The type chips and their "TYPE" label are one group, so a wrap can
+    // never leave the label stranded at the end of the source line with its
+    // own chips on the next one -- which is what it looked like before, and
+    // read as if "TYPE" belonged to the last source.
+    html += '<span class="feed-chip-set">' +
+      '<span class="feed-chip-label feed-chip-label--split">' +
       mfEscape(HT("type")) + "</span>";
     if (types.series) {
       html += typeChip("series", HT("series"));
@@ -163,8 +169,17 @@
       html += typeChip("movies", HT("movies"));
     }
     if (types.adult) {
-      html += typeChip("adult", "18+");
+      // With an age ceiling in force the 18+ source is never fetched at all
+      // (routes/browse.py drops it before the request goes out), so the chip
+      // is shown as a locked fact rather than a toggle that does nothing.
+      const ceiling = parseInt(window.__HOME_MAX_FSK || "", 10);
+      html += (ceiling >= 0 && ceiling < 18)
+        ? '<span class="feed-chip is-disabled" title="' +
+          mfEscape(HT("mode_notice").replace("{}", String(ceiling))) + '">' +
+          '<span class="feed-chip-dot"></span>18+ · ' + mfEscape(HT("off")) + "</span>"
+        : typeChip("adult", "18+");
     }
+    html += "</span>";
     wrap.innerHTML = html;
   }
 
@@ -208,7 +223,12 @@
       if (on) offTypes[value] = true; else delete offTypes[value];
       // The 18+ source is only ever *fetched* when the chip is on, so turning
       // it on has to go back to the server once.
-      if (value === "adult" && !offTypes.adult) { saveFilters(); renderFilters(); reload(); return; }
+      // reload() never existed -- this threw a ReferenceError, so switching
+      // the 18+ chip ON never fetched the source it exists to fetch and the
+      // row stayed empty until a full page reload.
+      if (value === "adult" && !offTypes.adult) {
+        saveFilters(); renderFilters(); window.reloadHomeFeed(); return;
+      }
     } else {
       return;
     }
@@ -355,9 +375,13 @@
   function renderRows() {
     DISCOVERY_ROWS.forEach(function (row) {
       const list = visibleCards(row);
-      const grid = showSection(row, list.length > 0);
+      // A row that has not been fetched yet stays visible with its skeletons:
+      // hiding it would pull it out of the IntersectionObserver's way and it
+      // would never load at all.
+      const waiting = rowState[row] === "pending" || rowState[row] === "loading";
+      const grid = showSection(row, list.length > 0 || waiting);
       if (!grid) return;
-      if (!list.length) { grid.innerHTML = ""; return; }
+      if (!list.length) { if (!waiting) grid.innerHTML = ""; return; }
       renderBrowseCards(grid, list, {
         skipTmdb: list.every(function (i) { return i.media_type === "adult"; }),
       });
@@ -415,8 +439,13 @@
   }
 
   function renderPersonal() {
-    // Continue watching
+    // Continue watching. When the account is linked to a Jellyfin/Plex user,
+    // these entries came from that server (personal.continue_source says
+    // which) and MediaForge has no file to hand its own player -- the card
+    // opens the media server instead, and says so.
     const cont = personal.continue || [];
+    const remoteServer = personal.continue_source && personal.continue_source !== "local"
+      ? personal.continue_source : "";
     let grid = showSection("continue", cont.length > 0);
     if (grid && cont.length) {
       grid.innerHTML = cont.map(function (it, n) {
@@ -424,16 +453,36 @@
           ? HT("movie")
           : (it.season ? "S" + it.season + (it.episode ? " · " + HT("episode") + " " + it.episode : "")
                        : (it.episode ? HT("episode") + " " + it.episode : ""));
+        const art = it.poster_url
+          ? '<img src="' + mfEscape(it.poster_url) + '" alt="" loading="lazy">'
+          : fauxArt(it.title);
+        if (it.remote) {
+          // A link, not a button: it leaves MediaForge, so it should behave
+          // like every other link (middle-click, "open in new tab", the
+          // status bar showing where it goes).
+          return pcard(
+            '<a class="home-pcard-hit" href="' + mfEscape(it.open_url || "#") +
+            '" target="_blank" rel="noopener noreferrer">' + art +
+            '<span class="home-pcard-play" aria-hidden="true">' +
+            '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></span>' +
+            '<span class="home-pcard-bar"><i style="width:' +
+            Math.max(2, Math.min(100, it.percent || 0)) + '%"></i></span>' +
+            '<span class="home-pcard-badge">' + mfEscape(remoteServer) + "</span>" +
+            '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
+            '<span class="home-pcard-sub">' + mfEscape(sub) + " · " +
+            mfEscape(remaining(it)) + "</span></a>", it.poster_url ? "has-art" : "");
+        }
         return pcard(
           '<button type="button" class="home-pcard-hit" data-play="' + n + '">' +
-          fauxArt(it.title) +
+          art +
           '<span class="home-pcard-play" aria-hidden="true">' +
           '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg></span>' +
           '<span class="home-pcard-bar"><i style="width:' +
           Math.max(2, Math.min(100, it.percent || 0)) + '%"></i></span>' +
           '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
           '<span class="home-pcard-sub">' + mfEscape(sub) + " · " +
-          mfEscape(remaining(it)) + "</span></button>");
+          mfEscape(remaining(it)) + "</span></button>",
+          it.poster_url ? "has-art" : "");
       }).join("");
       grid.querySelectorAll("[data-play]").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -464,12 +513,54 @@
       grid.innerHTML = lib.map(function (it) {
         const sub = it.is_movie ? HT("movie")
           : it.episodes + " " + HT("episodes_short");
+        // The server fills poster_url from the TMDB cache where it can
+        // (_feed_library_posters); the generated colour block is the
+        // fallback for titles TMDB has never been asked about.
+        const art = it.poster_url
+          ? '<img src="' + mfEscape(it.poster_url) + '" alt="" loading="lazy">'
+          : fauxArt(it.title);
         return pcard(
-          '<a class="home-pcard-hit" href="/library">' +
-          fauxArt(it.title) +
+          '<a class="home-pcard-hit" href="/library">' + art +
           '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
-          '<span class="home-pcard-sub">' + mfEscape(sub) + "</span></a>");
+          '<span class="home-pcard-sub">' + mfEscape(sub) + "</span></a>",
+          it.poster_url ? "has-art" : "");
       }).join("");
+    }
+
+    // Gaps — the one row that asks something of you. Each card names what is
+    // missing and links straight into the search for that title, so "3 of 12
+    // missing" is one click from being fixed rather than a number to worry
+    // about. The slot list is capped by the server at 12.
+    const gaps = personal.gaps || [];
+    grid = showSection("gaps", gaps.length > 0);
+    if (grid && gaps.length) {
+      grid.innerHTML = gaps.map(function (it) {
+        const slots = (it.missing || []).slice(0, 4).join(", ");
+        const more = (it.missing_count || 0) > 4
+          ? " +" + ((it.missing_count || 0) - 4) : "";
+        const art = it.poster_url
+          ? '<img src="' + mfEscape(it.poster_url) + '" alt="" loading="lazy">'
+          : fauxArt(it.title);
+        return pcard(
+          '<button type="button" class="home-pcard-hit" data-gap="' +
+          mfEscape(it.title) + '">' + art +
+          '<span class="home-pcard-flag">' +
+          mfEscape(HT("missing_count").replace("{}", String(it.missing_count || 0))) +
+          "</span>" +
+          '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
+          '<span class="home-pcard-sub">' + mfEscape(slots + more) + "</span></button>",
+          it.poster_url ? "has-art is-gap" : "is-gap");
+      }).join("");
+      grid.querySelectorAll("[data-gap]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          // Hand the title to the ordinary search: it is the one place that
+          // knows which of the enabled sources actually has this series, and
+          // duplicating that decision here would be a second, worse answer.
+          const input = document.getElementById("searchInput");
+          if (input) input.value = btn.dataset.gap;
+          if (typeof doSearch === "function") doSearch();
+        });
+      });
     }
 
     // Airing next
@@ -509,38 +600,130 @@
   }
 
   // ------------------------------------------------------------ loading
+  //
+  // One request per row, not one for the page.
+  //
+  // /api/home-feed still exists and still answers everything at once, but the
+  // home page no longer uses it: the payload was only as fast as the slowest
+  // site in it, so a single unresponsive source left the whole page on
+  // skeletons -- and every row below the fold was scraped whether or not
+  // anybody ever scrolled that far. The layout comes from
+  // /api/home-feed/sources (a settings read, no scraping), the rows follow one
+  // by one, and rows that start off-screen wait for an IntersectionObserver.
   let loadedAt = 0;
   let inFlight = false;
+  const rowState = {};                     // row -> "pending"|"loading"|"done"
+  let rowObserver = null;
+
+  /** Cross-row dedupe, which the server can no longer do for us: with one
+      request per row, no single response knows what another row already
+      showed. Runs on the client because this is the side that ends up holding
+      all of them. Earlier rows win -- "New this week" is a stronger statement
+      about a title than "Movies". */
+  function dedupeRows() {
+    const seen = {};
+    DISCOVERY_ROWS.forEach(function (row) {
+      const list = rows[row] || [];
+      rows[row] = list.filter(function (item) {
+        const key = (item.key || item.title || "") + "|" + (item.media_type || "");
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+    });
+  }
+
+  async function loadRow(row) {
+    if (rowState[row] === "loading" || rowState[row] === "done") return;
+    rowState[row] = "loading";
+    const grid = showSection(row, true);
+    if (grid && !grid.children.length) renderSkeletons(grid, 12);
+    try {
+      const resp = await fetch("/api/home-feed/row/" + encodeURIComponent(row) +
+                               "?adult=" + (adultWanted() ? "1" : "0") +
+                               "&limit=" + ROW_MAX);
+      const data = await resp.json();
+      // Every row response carries the full source list, including the
+      // media types that row's sources publish -- the type chips cannot be
+      // built from /api/home-feed/sources alone, which does not scrape and so
+      // does not know them.
+      if (Array.isArray(data.sources) && data.sources.length) {
+        sources = data.sources;
+        renderFilters();
+      }
+      rows[row] = (data.rows || {})[row] || [];
+      rowState[row] = "done";
+    } catch (err) {
+      rows[row] = [];
+      rowState[row] = "pending";           // the retry button may try again
+      feedError = HT("feed_failed");
+    }
+    dedupeRows();
+    renderRows();
+    applyUptimeStatus();
+  }
+
+  /** Rows that are already on screen load now; the rest load when they are
+      scrolled to. A home page nobody scrolls should not scrape five sites. */
+  function scheduleRows() {
+    if (rowObserver) { rowObserver.disconnect(); rowObserver = null; }
+    const pending = DISCOVERY_ROWS.filter(function (row) {
+      return rowVisible(row) && rowState[row] !== "done";
+    });
+    if (!pending.length) return;
+    if (!("IntersectionObserver" in window)) {
+      pending.forEach(loadRow);             // old browser: behave as before
+      return;
+    }
+    rowObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        const row = entry.target.dataset.feedRow;
+        rowObserver.unobserve(entry.target);
+        if (row) loadRow(row);
+      });
+    }, { rootMargin: "400px 0px" });        // start before it is actually seen
+    pending.forEach(function (row) {
+      const grid = document.getElementById(ROW_GRIDS[row]);
+      const section = grid && grid.closest(".browse-section");
+      if (!section) return;
+      rowState[row] = "pending";
+      if (grid && !grid.children.length) renderSkeletons(grid, 12);
+      section.style.display = "";
+      rowObserver.observe(section);
+    });
+  }
 
   async function load() {
     if (inFlight) return;
     if (loadedAt && Date.now() - loadedAt < RELOAD_AFTER) return;
     inFlight = true;
     feedError = "";
-
-    DISCOVERY_ROWS.forEach(function (row) {
-      const grid = showSection(row, true);
-      if (grid) renderSkeletons(grid, 12);
-    });
+    DISCOVERY_ROWS.forEach(function (row) { rowState[row] = "pending"; });
 
     try {
       // The badges need their own data before any card is built — same order
-      // loadAniworldBrowse() uses on the classic page.
+      // loadAniworldBrowse() uses on the classic page. /api/home-feed/sources
+      // reads settings only, so this first hop is fast even when every site
+      // is down.
       const [, , resp] = await Promise.all([
         loadDownloadedFolders(),
         loadAutoSyncJobs(),
-        fetch("/api/home-feed?adult=" + (adultWanted() ? "1" : "0") +
-              "&limit=" + ROW_MAX),
+        fetch("/api/home-feed/sources"),
       ]);
       const data = await resp.json();
-      sources = Array.isArray(data.sources) ? data.sources : [];
-      rows = data.rows || {};
-      if (data.config) {
+      sources = (Array.isArray(data.sources) ? data.sources : []).map(function (s) {
+        // No types yet (that would need a scrape); the first row response
+        // fills them in and re-renders the chips.
+        return Object.assign({ types: [] }, s);
+      });
+      const config = data.config;
+      if (config) {
         layout = {
-          order: data.config.order || [],
-          hidden: data.config.hidden || [],
-          limit: data.config.limit || 30,
-          rows: data.config.rows || [],
+          order: config.order || [],
+          hidden: config.hidden || [],
+          limit: config.limit || 30,
+          rows: config.rows || [],
         };
         ROW_MAX = layout.limit;
         // A user who never touched a chip follows the instance default the
@@ -548,10 +731,18 @@
         if (!hasStoredFilters) {
           offSources = {};
           offTypes = {};
-          (data.config.sources_off || []).forEach(function (id) { offSources[id] = true; });
-          (data.config.types_off || []).forEach(function (ty) { offTypes[ty] = true; });
+          (config.sources_off || []).forEach(function (id) { offSources[id] = true; });
+          (config.types_off || []).forEach(function (ty) { offTypes[ty] = true; });
         }
         applyLayout();
+        // The toolbar's mode buttons follow the SERVER's answer, not the
+        // preference the page was rendered with: those two disagree for as
+        // long as another device (or a failed write) says otherwise, and the
+        // one that decides what is in the rows is the server.
+        if (typeof window.mfHomeApplyMode === "function") {
+          window.mfHomeApplyMode(config.mode || "", config.max_fsk || "",
+                                 !!config.kids_enabled, config.kids_max_fsk || "");
+        }
       }
       loadedAt = Date.now();
     } catch (err) {
@@ -564,12 +755,10 @@
     }
 
     renderFilters();
-    renderRows();
-    applyUptimeStatus();
+    scheduleRows();
 
-    // Personal rows are a second, independent request: they read local data
-    // (library, favourites, calendar) and must not hold up the discovery rows
-    // if the calendar is slow.
+    // Personal rows are one independent request: they read local data
+    // (library, favourites, calendar) and must not wait for any site at all.
     try {
       const presp = await fetch("/api/home-feed/personal");
       personal = await presp.json();
@@ -579,7 +768,11 @@
     }
   }
 
-  window.reloadHomeFeed = function () { loadedAt = 0; load(); };
+  window.reloadHomeFeed = function () {
+    loadedAt = 0;
+    DISCOVERY_ROWS.forEach(function (row) { delete rowState[row]; });
+    load();
+  };
 
   loadFilters();
   load();

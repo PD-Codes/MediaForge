@@ -446,7 +446,54 @@
       'hp_just_now': _('just now'),
       'hp_min_ago': _('{} min ago'),
       'hp_h_ago': _('{} h ago'),
-      'hp_d_ago': _('{} d ago')
+      'hp_d_ago': _('{} d ago'),
+      'missing_count': _('{} missing'),
+      'density': _('Density'),
+      'density_comfortable': _('Comfortable'),
+      'density_compact': _('Compact'),
+      'density_list': _('List'),
+      'suggest_library': _('In your library'),
+      'suggest_watchlist': _('On your watchlist'),
+      'suggest_history': _('Recent searches'),
+      'onboard_title': _('Finish setting up MediaForge'),
+      'onboard_dismiss': _('Hide this'),
+      'onboard_sources': _('Switch on the sources you want'),
+      'onboard_tmdb': _('Add a TMDB key for posters and genres'),
+      'onboard_library': _('Scan a library folder'),
+      'onboard_modules': _('Discover the module store'),
+      'onboard_mediaplayer': _('Link your Jellyfin/Plex profile'),
+      'onboard_open': _('{} of {} done'),
+      'mode_kids': _('Kids'),
+      'hp_p_wrapped': _('Review'),
+      'hp_wrapped_period': _('Period'),
+      'hp_wrapped_watched': _('Watched'),
+      'hp_wrapped_downloads': _('Downloads'),
+      'hp_wrapped_volume': _('Volume'),
+      'hp_wrapped_total': _('Downloads, all time'),
+      'hp_wrapped_total_volume': _('Volume, all time'),
+      'hp_wrapped_most_watched': _('most watched'),
+      'hp_wrapped_top_genre': _('top genre'),
+      'hp_wrapped_source': _('{} downloads'),
+      'hp_wrapped_biggest': _('biggest download, {}'),
+      'hp_wrapped_empty': _('Nothing happened in this period.'),
+      'hp_wrapped_link': _('Link a Jellyfin/Plex profile under “Your home page” to see what you watched.'),
+      'hp_wrapped_approx': _('Jellyfin reports the last play per title, so repeats are not counted.'),
+      'hp_open_stats': _('Open the statistics'),
+      'status_downloading': _('Downloading'),
+      'status_encoding': _('{} encoding'),
+      'status_upscaling': _('{} upscaling'),
+      'status_fullest': _('{} full'),
+      'status_open_queue': _('Queue'),
+      'status_last_error': _('Last error'),
+      'search_back': _('Back'),
+      'search_results_for': _('Results for'),
+      'mode_switch': _('Mode'),
+      'mode_default': _('Standard'),
+      'mode_locked': _('Wrong PIN — this mode is protected.'),
+      'mode_failed': _('The mode could not be switched.'),
+      'mode_no_session': _('You are not signed in any more — reload the page.'),
+      'mode_notice': _('This page is limited to age {} and below. Titles without a rating are still shown.'),
+      'mode_disabled': _('Kids mode is not switched on for this instance.')
     }|tojson }};
   </script>
   {# The panel bar: buttons under the search field, one panel below them.
@@ -491,6 +538,11 @@
      fed by the queue poll that runs anyway. #}
   <div class="home-run" id="homeRunStrip" style="display:none; margin-top:10px;"></div>
   <div class="spinner" id="searchSpinner">{{ _('Searching...') }}</div>
+  {# The way back out of a search. Its OWN element, above #results and not
+     inside it: renderResults()/renderResultsBoth() replace #results.innerHTML
+     wholesale when the answers arrive, so a header rendered in there survived
+     exactly until the first result landed. #}
+  <div class="search-head" id="searchHead" hidden></div>
   <div class="results" id="results"></div>
   <div id="sourceStatusBanner"></div>
   {# Dashboard widgets from enabled extensions (see
@@ -518,6 +570,10 @@
        Start Page settings -- the same controls, same code, same storage. #}
     <div class="feed-toolbar">
       <div class="feed-filters" id="feedFilters"></div>
+      {# Density and modes are rendered by static/home_2_1.js: both depend on
+         a stored preference, and a server-rendered default would flash the
+         wrong one on every load. #}
+      <div class="feed-tools" id="feedTools"></div>
       <button type="button" class="feed-customize" id="feedCustomize"
               onclick="openStartPageModal()" title="{{ _('Customise this page') }}"
               aria-label="{{ _('Customise this page') }}">
@@ -532,6 +588,11 @@
       </button>
     </div>
     <div class="feed-alerts" id="feedAlerts"></div>
+    {# Filled by static/home_2_1.js and invisible on an instance that is fully
+       set up. The monthly recap is NOT here: it moved into the panel bar
+       above (next to System), because a recap is something you go and look at
+       rather than something that interrupts the page you opened to search on. #}
+    <div class="home-onboard" id="homeOnboard" hidden></div>
     {# Personal rows first: what you were doing beats what a site published.
        Each one hides itself when its source has nothing to say (no playback
        position yet, no favourites, calendar switched off), so a fresh install
@@ -551,6 +612,14 @@
     <div class="browse-section feed-section feed-personal" data-feed-row="upcoming" style="display:none">
       <h2 class="browse-heading">{{ _('Airing next') }}</h2>
       <div class="browse-grid" id="feedUpcomingGrid"></div>
+    </div>
+    {# The only row that asks something of you rather than offering something,
+       which is why its default position is *behind* the discovery rows (see
+       _FEED_DEFAULT_ORDER in routes/browse.py) even though its markup sits
+       with the other personal rows. #}
+    <div class="browse-section feed-section feed-personal" data-feed-row="gaps" style="display:none">
+      <h2 class="browse-heading">{{ _('Fill the gaps') }}</h2>
+      <div class="browse-grid" id="feedGapsGrid"></div>
     </div>
     <div class="browse-section feed-section" data-feed-row="new">
       <h2 class="browse-heading">{{ _('New this week') }}</h2>
@@ -649,11 +718,38 @@
     {{ startpage.start_page_form('user') }}
   </div>
 </div>
+{# Kids-mode PIN. Its own overlay rather than window.prompt(): a system prompt
+   cannot mask the digits, is unstyled, blocks the tab, and on a phone appears
+   as a sheet that does not look like it belongs to MediaForge. #}
+{% if new_home %}
+<div class="directlink-overlay" id="homePinOverlay" style="display:none">
+  <div class="directlink-modal home-pin-modal" role="dialog" aria-modal="true"
+       aria-labelledby="homePinTitle">
+    <button class="close" data-pin-cancel="1" aria-label="{{ _('Close') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+           stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;">
+        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+    <h3 class="dl-title" id="homePinTitle">{{ _('Leave kids mode') }}</h3>
+    <p class="dl-hint">{{ _('Enter the PIN to remove the age limit from this page.') }}</p>
+    <input type="password" class="mf-token-input" id="homePinInput"
+           inputmode="numeric" autocomplete="off"
+           placeholder="{{ _('PIN') }}" aria-describedby="homePinError">
+    <div class="home-pin-error" id="homePinError" role="alert"></div>
+    <div class="home-pin-actions">
+      <button type="button" class="btn btn-secondary" data-pin-cancel="1">{{ _('Cancel') }}</button>
+      <button type="button" class="btn btn-primary" data-pin-submit="1">{{ _('Unlock') }}</button>
+    </div>
+  </div>
+</div>
+{% endif %}
 {% include "shared_modals.html" %}
 {% endblock %} {% block scripts %}
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% if new_home %}<script src="{{ url_for('static', filename='home_feed.js') }}"></script>
-<script src="{{ url_for('static', filename='home_panels.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', filename='home_panels.js') }}"></script>
+<script src="{{ url_for('static', filename='home_2_1.js') }}"></script>{% endif %}
 {{ startpage.start_page_i18n() }}
 <script src="{{ url_for('static', filename='start_page.js') }}"></script>
 <script src="{{ url_for('static', filename='devinfo_banner.js') }}"></script>

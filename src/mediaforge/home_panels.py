@@ -51,7 +51,7 @@ _EXTRA_HOME_PANELS: dict = {}
 
 def register_home_panel(item_id, panel_id, label, view,
                         badge=None, admin_only=False, icon=None,
-                        badge_label=None):
+                        badge_label=None, badge_suffix=None, badge_tone=None):
     """Add a button (and its panel) to the home page's button bar.
 
     - ``item_id``: the id the module already passed to ``register_thirdparty()``.
@@ -75,6 +75,14 @@ def register_home_panel(item_id, panel_id, label, view,
       version and as an error code before anyone worked out it counted failed
       downloads. Use ``{}`` where the number should appear; without it the
       count is appended.
+    - ``badge_suffix``: optional unit shown after the number, up to four
+      characters ("%", "GB"). Without one a badge is always read as "how many
+      things are waiting for me", which is wrong for a level.
+    - ``badge_tone``: how loud the badge is -- ``"info"`` (default, the accent
+      colour, "there is something here"), ``"err"`` (something is wrong),
+      ``"level"`` (a percentage that turns amber at 90 and red at 95), or
+      ``"muted"`` (a plain fact, e.g. a total). Anything else falls back to
+      ``"info"``.
     - ``admin_only``: when true the panel is not listed for, and not readable
       by, a non-admin account. Enforced server-side in both routes; hiding a
       button in the template would leave the data one fetch away.
@@ -118,6 +126,9 @@ def register_home_panel(item_id, panel_id, label, view,
         "view": view,
         "badge": badge,
         "badge_label": str(badge_label or "")[:120],
+        "badge_suffix": str(badge_suffix or "")[:4],
+        "badge_tone": (badge_tone if badge_tone in ("info", "err", "level", "muted")
+                       else "info"),
         "admin_only": bool(admin_only),
         "icon": _safe_icon(icon),
     }

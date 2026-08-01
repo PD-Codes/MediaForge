@@ -60,9 +60,17 @@ _MAX_ENTRIES = 20_000
 # development, because path, mtime and size had of course not changed.
 _CONVERTER_VERSION = "v4"
 
+# A DRM-protected book will never convert, no matter how often it is retried:
+# the file is encrypted, and nothing about that changes over time. Such a
+# failure is therefore remembered without a TTL and, unlike every other one,
+# also on disk (see _FAILED_MARKER) so a restart does not start the same
+# pointless unpack again.
+_PERMANENT_FAIL_REASONS = frozenset({"drm"})
+_FAILED_MARKER = "failed.json"
+
 _lock = threading.Lock()
 _jobs: dict = {}      # key -> True while a conversion runs
-_failures: dict = {}  # key -> timestamp of the failure
+_failures: dict = {}  # key -> (timestamp, reason) of the failure
 
 
 def _cache_root() -> Path:
@@ -504,6 +512,61 @@ def _zip_folder_as_epub(folder: Path, opf_rel: str, out: Path) -> None:
     tmp_out.replace(out)
 
 
+def is_drm_protected(src: Path) -> bool:
+    """True if a Mobipocket-family file carries DRM.
+
+    Read straight out of the header rather than discovered by letting
+    KindleUnpack raise: it costs ~100 bytes, it happens before anything is
+    unpacked, and it turns "conversion failed" with a traceback into a fact
+    the shelf can label. Files bought from Amazon are the normal case -- their
+    filename usually still carries the ASIN, e.g. ``..._B01EXUFAMA.azw3``.
+
+    The layout is PalmDB: a 78-byte header, a 2-byte record count, then an
+    8-byte entry per record whose first four bytes are that record's file
+    offset. Record 0 is the MOBI header, and its PalmDOC part carries the
+    encryption type at offset 12 (0 = none, 1 = old Mobipocket, 2 = Kindle).
+
+    Never raises: anything unreadable or not shaped like a PalmDB reads as
+    "not encrypted" and takes the normal path, where the converter gives the
+    real diagnosis.
+    """
+    try:
+        with open(src, "rb") as handle:
+            header = handle.read(78)
+            if len(header) < 78:
+                return False
+            record_count = int.from_bytes(header[76:78], "big")
+            if record_count < 1:
+                return False
+            entry = handle.read(8)
+            if len(entry) < 8:
+                return False
+            handle.seek(int.from_bytes(entry[:4], "big"))
+            record0 = handle.read(16)
+            if len(record0) < 14:
+                return False
+            return int.from_bytes(record0[12:14], "big") != 0
+    except OSError:
+        return False
+
+
+def _mark_failed(key: str, out_dir: Path, reason: str) -> None:
+    """Record a terminal failure. Permanent ones also survive a restart."""
+    with _lock:
+        _failures[key] = (time.time(), reason)
+    if reason in _PERMANENT_FAIL_REASONS:
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / _FAILED_MARKER).write_text(
+                json.dumps({"key": key, "reason": reason, "at": int(time.time())}),
+                encoding="utf-8",
+            )
+            return
+        except OSError:
+            pass  # In-memory only, then -- retried once after a restart.
+    shutil.rmtree(out_dir, ignore_errors=True)
+
+
 def _convert(src: Path, key: str) -> None:
     """Do one conversion. Runs on a worker thread; never raises to the caller."""
     import mobi
@@ -514,6 +577,16 @@ def _convert(src: Path, key: str) -> None:
     tmpdir = None
     chatter = io.StringIO()
     try:
+        # Asked before anything is unpacked: an encrypted book cannot be
+        # converted now or ever, so it is a labelled state rather than a
+        # failure with a stack trace and an hourly retry.
+        if is_drm_protected(src):
+            logger.info(
+                "[Books] %s is DRM-protected (Kindle/Mobipocket encryption) "
+                "and cannot be converted", src.name,
+            )
+            _mark_failed(key, out_dir, "drm")
+            return
         out_dir.mkdir(parents=True, exist_ok=True)
         # KindleUnpack narrates to stdout -- a banner, per-record progress and
         # warnings like "Bad key, size, value combination detected in EXTH".
@@ -554,20 +627,65 @@ def _convert(src: Path, key: str) -> None:
             encoding="utf-8",
         )
         logger.info("[Books] Converted %s -> EPUB (%s)", src.name, key)
-    except Exception:
+    except Exception as exc:
+        # Second line of defence for DRM: the header check above catches the
+        # Mobipocket family, but the converter also refuses Topaz and other
+        # protected variants whose header this module does not read. Same
+        # outcome, so it must not look like a crash either.
+        if "encrypted" in str(exc).lower():
+            logger.info(
+                "[Books] %s is DRM-protected (reported by the converter) "
+                "and cannot be converted", src.name,
+            )
+            _mark_failed(key, out_dir, "drm")
+            return
         logger.exception("[Books] Conversion of %s failed", src)
         tail = (chatter.getvalue() or "").strip().splitlines()[-6:]
         if tail:
             logger.info("[Books] Converter output: %s", " | ".join(tail))
-        with _lock:
-            _failures[key] = time.time()
-        shutil.rmtree(out_dir, ignore_errors=True)
+        _mark_failed(key, out_dir, "conversion_failed")
     finally:
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
         with _lock:
             _jobs.pop(key, None)
+
+
+def _persisted_failure(key: str) -> str:
+    """The reason stored next to a permanently failed conversion, or ""."""
+    marker = _cache_root() / key / _FAILED_MARKER
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    reason = data.get("reason") or ""
+    return reason if reason in _PERMANENT_FAIL_REASONS else ""
+
+
+def failure_reason(src: Path) -> str:
+    """Why *src* cannot be converted, or "" -- WITHOUT starting a conversion.
+
+    The cover worker waits for a conversion it did not start and has no other
+    way to tell "still working" from "will never finish". Without this it sat
+    out its full per-file timeout on every DRM-protected book, once per scan.
+    """
+    try:
+        key = cache_key(src)
+    except OSError:
+        return "unreadable"
+    persisted = _persisted_failure(key)
+    if persisted:
+        return persisted
+    with _lock:
+        failed_at, reason = _failures.get(key, (None, None))
+    if not failed_at:
+        return ""
+    if reason in _PERMANENT_FAIL_REASONS:
+        return reason
+    if time.time() - failed_at < _FAIL_TTL:
+        return reason or "conversion_failed"
+    return ""
 
 
 def conversion_status(src: Path) -> dict:
@@ -595,10 +713,15 @@ def conversion_status(src: Path) -> dict:
     if (_cache_root() / key / "done.json").is_file():
         return {"ready": True, "key": key}
 
+    persisted = _persisted_failure(key)
+    if persisted:
+        return {"failed": True, "reason": persisted}
+
     with _lock:
-        failed_at = _failures.get(key)
-        if failed_at and time.time() - failed_at < _FAIL_TTL:
-            return {"failed": True, "reason": "conversion_failed"}
+        failed_at, reason = _failures.get(key, (None, None))
+        if failed_at and (reason in _PERMANENT_FAIL_REASONS
+                          or time.time() - failed_at < _FAIL_TTL):
+            return {"failed": True, "reason": reason or "conversion_failed"}
         if key in _jobs:
             return {"pending": True}
         if len(_jobs) >= _MAX_PARALLEL:

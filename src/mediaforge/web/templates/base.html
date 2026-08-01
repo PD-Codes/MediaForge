@@ -502,6 +502,18 @@
           </a>
           {% endif %}
 
+          {# Your profile — for EVERY account, admin or not. Settings below is
+             admin-only, so without this link a normal user has no way into
+             their own theme, language or media-server profile. #}
+          <a href="{{ url_for('profile_page') }}" class="sidebar-link" data-page="profile">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+            <span>{{ _('Your profile') }}</span>
+          </a>
+
           {# Settings — single link; sub-navigation now lives in the page as a
              floating side menu (see settings.html). #}
           <a href="{{ url_for('settings_page') }}" class="sidebar-link" data-page="settings">

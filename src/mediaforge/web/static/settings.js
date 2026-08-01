@@ -85,6 +85,11 @@ const syncScheduleSelect         = document.getElementById("syncSchedule");
 const syncLanguageSelect         = document.getElementById("syncLanguage");
 const syncProviderSelect         = document.getElementById("syncProvider");
 const syncPathUnavailableSelect  = document.getElementById("syncPathUnavailableAction");
+const syncDefaultPathSelect      = document.getElementById("syncDefaultPath");
+// Stored setting and available paths arrive from two independent requests, and
+// either can win the race. The wanted value is therefore remembered and applied
+// whenever the options are (re)built, instead of being set once on load.
+let _syncDefaultPathWanted = "";
 const historyRetentionSelect     = document.getElementById("historyRetention");
 const syncModeSelect             = document.getElementById("syncMode");
 const syncIntervalField          = document.getElementById("syncIntervalField");
@@ -174,6 +179,10 @@ async function loadSettings() {
     updateSyncLanguageDropdown(isLangSep, currentSyncLang);
     if (syncProviderSelect && data.sync_provider) syncProviderSelect.value = data.sync_provider;
     if (syncPathUnavailableSelect && data.sync_path_unavailable_action) syncPathUnavailableSelect.value = data.sync_path_unavailable_action;
+    if (data.sync_default_custom_path !== undefined) {
+      _syncDefaultPathWanted = String(data.sync_default_custom_path || "");
+      renderSyncDefaultPathOptions();
+    }
     const syncErrorRetriesEl = document.getElementById("syncErrorRetries");
     if (syncErrorRetriesEl && data.sync_error_retries !== undefined) syncErrorRetriesEl.value = data.sync_error_retries;
     const syncErrorRetryTimeEl = document.getElementById("syncErrorRetryTime");
@@ -909,6 +918,46 @@ async function saveSyncDefaults() {
     else showToast(t("Standards konnten nicht gespeichert werden","Could not save defaults"));
   } catch (e) {
     showToast(t("Standards konnten nicht gespeichert werden: ", "Could not save defaults: ") + e.message);
+  }
+}
+
+// The Auto-Sync "Default Path" dropdown. Its first entry is the global
+// download folder -- the reason this is a setting of its own rather than a
+// mark on one of the custom paths, which could never express "no custom path".
+function renderSyncDefaultPathOptions() {
+  if (!syncDefaultPathSelect) return;
+  while (syncDefaultPathSelect.options.length > 1) syncDefaultPathSelect.remove(1);
+  (customPathsCache || []).forEach(function (p) {
+    const opt = document.createElement("option");
+    opt.value = String(p.id);
+    opt.textContent = p.name + " (" + p.path + ")";
+    syncDefaultPathSelect.appendChild(opt);
+  });
+  // A path that was deleted since the setting was stored falls back to the
+  // global folder instead of leaving the select on a value it cannot show.
+  const wanted = _syncDefaultPathWanted || "";
+  const exists = !wanted || (customPathsCache || []).some((p) => String(p.id) === wanted);
+  syncDefaultPathSelect.value = exists ? wanted : "";
+}
+
+async function saveSyncDefaultPath() {
+  if (!syncDefaultPathSelect) return;
+  const value = syncDefaultPathSelect.value || "";
+  const previous = _syncDefaultPathWanted;
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sync_default_custom_path: value }),
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || "");
+    _syncDefaultPathWanted = value;
+    showToast(t("Standard-Pfad gespeichert", "Default path saved"));
+  } catch (e) {
+    _syncDefaultPathWanted = previous;
+    renderSyncDefaultPathOptions();
+    showToast(t("Standard-Pfad konnte nicht gespeichert werden", "Default path could not be saved"), "error");
   }
 }
 
@@ -1848,6 +1897,9 @@ async function loadCustomPaths() {
     customPathKindOptions = data.media_kind_options || [];
     renderCustomPaths(customPathsCache);
     renderNewPathKindSelect();
+    // Adding or deleting a path has to be reflected in the Auto-Sync default
+    // dropdown immediately -- it is fed from this same list.
+    renderSyncDefaultPathOptions();
   } catch (e) {
     showToast(t("Benutzerdefinierte Pfade konnten nicht geladen werden: " + e.message, "Custom paths could not be loaded: " + e.message));
   }
@@ -2493,6 +2545,10 @@ function renderUsers(users) {
       "<td><select onchange=\"changeRole(" + u.id + ", this.value)\" " + (isLastAdmin ? "disabled" : "") + ">" +
       "<option value=\"user\" " + (u.role === "user" ? "selected" : "") + ">" + t("Benutzer","User") + "</option>" +
       "<option value=\"admin\" " + (u.role === "admin" ? "selected" : "") + ">" + t("Administrator","Administrator") + "</option>" +
+      // A restriction, not a rank: a kids account sees an age-limited app
+      // and cannot download, install modules or change settings. There is no
+      // PIN for it -- the role IS the answer, so there is nothing to leave.
+      "<option value=\"kids\" " + (u.role === "kids" ? "selected" : "") + ">" + t("Kind","Kids") + "</option>" +
       "</select></td>" +
       "<td>" + authBadge + "</td>" +
       "<td>" + esc(u.created_at) + "</td>" +

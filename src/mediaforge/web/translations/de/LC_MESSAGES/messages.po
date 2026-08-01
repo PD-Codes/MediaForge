@@ -4232,8 +4232,8 @@ msgstr "Nichts mehr zu importieren — es ist bereits alles da."
 msgid "Sources"
 msgstr "Quellen"
 
-msgid "Source order"
-msgstr "Reihenfolge der Quellen"
+msgid "Source order (Start Page v1)"
+msgstr "Reihenfolge der Quellen (Startseite v1)"
 
 msgid "Set the order in which sources appear on the start page. Drag the rows or use the arrows. For each source you can also choose whether new or popular items are shown first."
 msgstr "Lege fest, in welcher Reihenfolge die Quellen auf der Startseite erscheinen. Ziehe die Zeilen oder nutze die Pfeile. Für jede Quelle kannst du außerdem wählen, ob neue oder beliebte Inhalte zuerst angezeigt werden."
@@ -6894,3 +6894,351 @@ msgstr "Changelog"
 #: src/mediaforge/web/templates/devinfos.html
 msgid "Open release page"
 msgstr "Release-Seite öffnen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Fill the gaps"
+msgstr "Lücken schließen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} missing"
+msgstr "{} fehlen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Density"
+msgstr "Dichte"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Comfortable"
+msgstr "Komfortabel"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Compact"
+msgstr "Kompakt"
+
+#: src/mediaforge/web/templates/index.html
+msgid "In your library"
+msgstr "In deiner Mediathek"
+
+#: src/mediaforge/web/templates/index.html
+msgid "On your watchlist"
+msgstr "Auf deiner Merkliste"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Finish setting up MediaForge"
+msgstr "MediaForge fertig einrichten"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Hide this"
+msgstr "Ausblenden"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Switch on the sources you want"
+msgstr "Gewünschte Quellen aktivieren"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Add a TMDB key for posters and genres"
+msgstr "TMDB-Key für Poster und Genres hinterlegen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Scan a library folder"
+msgstr "Einen Bibliotheksordner scannen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Discover the module store"
+msgstr "Den Modul-Store entdecken"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Link your Jellyfin/Plex profile"
+msgstr "Jellyfin-/Plex-Profil verknüpfen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} of {} done"
+msgstr "{} von {} erledigt"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Your {} in review"
+msgstr "Dein Rückblick auf {}"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Most watched"
+msgstr "Meistgesehen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Top genre"
+msgstr "Top-Genre"
+
+#: src/mediaforge/web/templates/index.html
+msgid "downloads"
+msgstr "Downloads"
+
+#: src/mediaforge/web/templates/index.html
+msgid "downloaded"
+msgstr "heruntergeladen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Busiest source"
+msgstr "Meistgenutzte Quelle"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Biggest download"
+msgstr "Größter Download"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Jellyfin reports the last play per title, so repeats are not counted."
+msgstr "Jellyfin meldet nur die letzte Wiedergabe pro Titel — Wiederholungen werden nicht gezählt."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Link a Jellyfin/Plex profile to see what you watched."
+msgstr "Verknüpfe ein Jellyfin-/Plex-Profil, um zu sehen, was du geschaut hast."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Downloading"
+msgstr "Lädt…"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} encoding"
+msgstr "{} im Encoding"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} upscaling"
+msgstr "{} im Upscaling"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} full"
+msgstr "{} voll"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Last error"
+msgstr "Letzter Fehler"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Standard"
+msgstr "Standard"
+
+#: src/mediaforge/web/templates/index.html
+msgid "This mode is protected by a PIN."
+msgstr "Dieser Modus ist per PIN geschützt."
+
+#: src/mediaforge/web/templates/index.html
+msgid "PIN"
+msgstr "PIN"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Kids"
+msgstr "Kinder"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Your Jellyfin/Plex profile"
+msgstr "Dein Jellyfin-/Plex-Profil"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Not linked"
+msgstr "Nicht verknüpft"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Pick your user on the media server and “Continue watching” shows what that server knows — including everything you started in its own app. The monthly recap then uses it too. Leave it empty to keep using MediaForge’s own playback positions."
+msgstr "Wähle deinen Benutzer auf dem Medienserver — dann zeigt „Weiterschauen“, was dieser Server weiß, inklusive allem, was du in seiner eigenen App begonnen hast. Der Monatsrückblick nutzt das ebenfalls. Leer lassen, um weiter MediaForges eigene Wiedergabepositionen zu verwenden."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Wrong PIN — this mode is protected."
+msgstr "Falsche PIN — dieser Modus ist geschützt."
+
+#: src/mediaforge/web/templates/index.html
+msgid "The mode could not be switched."
+msgstr "Der Modus konnte nicht gewechselt werden."
+
+#: src/mediaforge/web/templates/index.html
+msgid "You are not signed in any more — reload the page."
+msgstr "Du bist nicht mehr angemeldet — lade die Seite neu."
+
+#: src/mediaforge/web/templates/index.html
+msgid "This page is limited to age {} and below. Titles without a rating are still shown."
+msgstr "Diese Seite ist auf Alter {} und darunter begrenzt. Titel ohne Altersfreigabe werden weiterhin gezeigt."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Kids mode PIN"
+msgstr "Kindermodus-PIN"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Needed to leave a mode with an age limit — switching INTO a stricter mode never asks. Leave empty to let anyone switch modes. The age limit itself is applied on the server, so it cannot be bypassed from the browser."
+msgstr "Nötig, um einen Modus mit Altersgrenze zu verlassen — in einen strengeren Modus zu wechseln fragt nie. Leer lassen, damit jeder frei wechseln darf. Die Altersgrenze selbst wird auf dem Server angewendet und lässt sich daher nicht über den Browser umgehen."
+
+#: src/mediaforge/web/templates/index.html
+msgid "No PIN"
+msgstr "Keine PIN"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Kids mode"
+msgstr "Kindermodus"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Adds a “Kids” button to the home page that limits it to an age rating. The limit is applied on the server while the rows are built, so it cannot be bypassed from the browser. Leaving the mode asks for the PIN; entering it never does."
+msgstr "Fügt der Startseite einen „Kinder\"-Knopf hinzu, der sie auf eine Altersfreigabe begrenzt. Die Grenze wird auf dem Server beim Bauen der Zeilen angewendet und lässt sich daher nicht über den Browser umgehen. Das Verlassen des Modus fragt nach der PIN, das Betreten nie."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Offer kids mode on the home page"
+msgstr "Kindermodus auf der Startseite anbieten"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Age limit"
+msgstr "Altersgrenze"
+
+#: src/mediaforge/web/templates/index.html
+msgid "4–8 digits"
+msgstr "4–8 Ziffern"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Leave kids mode"
+msgstr "Kindermodus verlassen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Enter the PIN to remove the age limit from this page."
+msgstr "Gib die PIN ein, um die Altersgrenze von dieser Seite zu entfernen."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Unlock"
+msgstr "Entsperren"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Kids mode is not switched on for this instance."
+msgstr "Der Kindermodus ist für diese Instanz nicht aktiviert."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Review"
+msgstr "Rückblick"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Period"
+msgstr "Zeitraum"
+
+#: src/mediaforge/web/templates/index.html
+msgid "most watched"
+msgstr "meistgesehen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "top genre"
+msgstr "Top-Genre"
+
+#: src/mediaforge/web/templates/index.html
+msgid "{} downloads"
+msgstr "{} Downloads"
+
+#: src/mediaforge/web/templates/index.html
+msgid "biggest download, {}"
+msgstr "größter Download, {}"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Nothing happened in this period."
+msgstr "In diesem Zeitraum ist nichts passiert."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Link a Jellyfin/Plex profile under “Your home page” to see what you watched."
+msgstr "Verknüpfe unter „Deine Startseite\" ein Jellyfin-/Plex-Profil, um zu sehen, was du geschaut hast."
+
+#: src/mediaforge/web/templates/index.html
+msgid "Open the statistics"
+msgstr "Statistik öffnen"
+
+#: src/mediaforge/web/templates/index.html
+msgid "Results for"
+msgstr "Ergebnisse für"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Your profile"
+msgstr "Dein Profil"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Everything on this page is yours alone — it changes nothing for anyone else on this instance."
+msgstr "Alles auf dieser Seite gehört dir allein — für andere auf dieser Instanz ändert sich dadurch nichts."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Not signed in"
+msgstr "Nicht angemeldet"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "This account is age-limited. The limit is set by an administrator and cannot be changed here."
+msgstr "Dieses Konto ist altersbegrenzt. Die Grenze setzt ein Administrator, hier lässt sie sich nicht ändern."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Change password"
+msgstr "Passwort ändern"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Your current password is asked for again on purpose — a session left open on a shared machine is exactly where someone else would change it."
+msgstr "Nach dem aktuellen Passwort wird bewusst noch einmal gefragt — eine offen gelassene Sitzung auf einem geteilten Rechner ist genau die Situation, in der jemand anderes es ändern würde."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Current password"
+msgstr "Aktuelles Passwort"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "New password (at least 8 characters)"
+msgstr "Neues Passwort (mindestens 8 Zeichen)"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Repeat new password"
+msgstr "Neues Passwort wiederholen"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "This account signs in through your identity provider, so the password is managed there."
+msgstr "Dieses Konto meldet sich über deinen Identitätsanbieter an — das Passwort wird dort verwaltet."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Stored on your account, so the look follows you to your next device instead of resetting."
+msgstr "Auf deinem Konto gespeichert, damit das Aussehen dir aufs nächste Gerät folgt statt sich zurückzusetzen."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Media server user"
+msgstr "Medienserver-Benutzer"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "The two new passwords do not match."
+msgstr "Die beiden neuen Passwörter stimmen nicht überein."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "The new password must be at least 8 characters."
+msgstr "Das neue Passwort muss mindestens 8 Zeichen haben."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "That is not your current password."
+msgstr "Das ist nicht dein aktuelles Passwort."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "The new password is the same as the current one."
+msgstr "Das neue Passwort ist dasselbe wie das aktuelle."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Password changed."
+msgstr "Passwort geändert."
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Downloads, all time"
+msgstr "Downloads gesamt"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Volume, all time"
+msgstr "Datenmenge gesamt"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "Media server"
+msgstr "Medienserver"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "New password"
+msgstr "Neues Passwort"
+
+#: src/mediaforge/web/templates/profile.html
+msgid "At least 8 characters"
+msgstr "Mindestens 8 Zeichen"
+
+msgid "Default Path"
+msgstr "Standard-Pfad"
+
+msgid "Download path (default)"
+msgstr "Download-Pfad (Standard)"
+
+msgid "Default path:"
+msgstr "Standard-Pfad:"
+
+msgid "The download folder a newly set up Auto-Sync starts on. Editing an existing job always keeps that job's own path, so changing this never moves jobs that already run."
+msgstr "Der Download-Ordner, mit dem ein neu eingerichteter Auto-Sync startet. Beim Bearbeiten eines bestehenden Auftrags bleibt immer dessen eigener Pfad erhalten — eine Änderung hier verschiebt also nie bereits laufende Aufträge."

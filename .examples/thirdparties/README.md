@@ -785,10 +785,27 @@ def register(app):
         view=_panel,                # called ONLY when the panel is open
         badge=my_store.count_pending,   # optional; runs on EVERY home page load
         badge_label="{} jobs are waiting",  # what the number means (tooltip)
+        badge_suffix="",            # optional unit, up to 4 chars ("%", "GB")
+        badge_tone="info",          # info | err | level | muted
         admin_only=False,
         icon="M3 6h18M3 12h18M3 18h12",  # optional 24x24 SVG path data
     )
 ```
+
+`badge_suffix` and `badge_tone` say what kind of number your badge is, which
+is the difference between a badge people act on and a badge people ignore:
+
+| `badge_tone` | Looks like | Use it for |
+|---|---|---|
+| `info` (default) | accent pill | "there is something here" — a to-do count |
+| `err` | red | something is wrong and wants a human |
+| `level` | grey, amber from 90, red from 95 | a percentage; pair it with `badge_suffix="%"` |
+| `muted` | quiet grey | a plain total that is not a to-do list |
+
+The built-ins use all four: Queue is `info`, System is `err`, Storage is
+`level` + `"%"`, Library is `muted`. A badge without a suffix is always read
+as "how many things are waiting for me" — which is wrong for a level, and was
+the reason the Storage button had no badge at all before.
 
 Five things that decide whether this behaves well:
 

@@ -510,7 +510,17 @@
   padding: 10px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  /* Not 999px: this container wraps, and a pill radius on a two-line box
+     bulges into a blob. 22px keeps the pill read on one line and stays a
+     rounded panel on two. */
+  border-radius: 22px;
+}
+
+/* Label + its chips travel together across a wrap. */
+.feed-chip-set {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .feed-chip-label {
@@ -694,17 +704,31 @@
   outline: none;
 }
 
+/* One art height for the whole row, as a variable, because three other
+   things are positioned against it (the play button, the progress bar and
+   the compact/list overrides). Before it was a magic 94px repeated in four
+   rules that had to be kept in step by hand.
+
+   Poster-shaped rather than the old letterbox strip: these rows now really
+   have posters (the server fills them from the TMDB cache and from
+   Jellyfin/Plex), and a 2:3 poster squeezed into 94px is a crop through the
+   middle of somebody's face. Titles without artwork keep the generated
+   colour block at the SAME height, so a row with a mix of both still has one
+   baseline instead of a ragged edge. */
+.home-pcard { --pcard-art: 236px; }
+
 .home-pcard-faux,
 .home-pcard-hit > img {
   display: block;
   width: 100%;
-  height: 94px;
+  height: var(--pcard-art);
   object-fit: cover;
+  background: var(--bg-elevated);
 }
 
 .home-pcard-play {
   position: absolute;
-  top: 30px;
+  top: calc(var(--pcard-art) / 2 - 17px);
   left: 50%;
   transform: translateX(-50%);
   width: 34px;
@@ -721,7 +745,7 @@
 
 .home-pcard-bar {
   position: absolute;
-  top: 88px;
+  top: calc(var(--pcard-art) - 3px);
   left: 0;
   right: 0;
   height: 3px;
@@ -851,17 +875,34 @@
    /settings is admin-only, so this button is how a normal account reaches
    its own row order. It sits next to the chips because that is where the
    other "what do I want to see" controls already are. */
+/* Two rows, not one.
+   The chip row wraps -- five sources plus three types do not fit next to two
+   segmented controls on any realistic width -- and when it wrapped inside a
+   single flex row it dragged the controls down with it into a lopsided blob.
+   The chips now own the first line and the quiet controls sit on their own,
+   right-aligned under them, with the customise button anchoring the corner. */
 .feed-toolbar {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "filters customize"
+    "tools   tools";
+  align-items: start;
+  gap: 8px 10px;
   min-width: 0;
 }
 
 .feed-toolbar .feed-filters {
-  flex: 1 1 auto;
+  grid-area: filters;
   min-width: 0;
 }
+
+.feed-toolbar .feed-tools { grid-area: tools; }
+
+/* stretch, not start: the button reads as part of the chip row, so it has to
+   be the same height as it -- and that height is whatever the chips wrap to,
+   which no fixed value can follow. */
+.feed-toolbar .feed-customize { grid-area: customize; align-self: stretch; }
 
 .feed-customize {
   flex: 0 0 auto;
@@ -1382,3 +1423,441 @@ a.hp-item:focus-visible {
 }
 
 .home-customize-row .feed-customize svg { width: 15px; height: 15px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Home 2.1
+   Density, modes, the gaps row, the onboarding strip and the Wrapped card.
+   Everything here is additive: nothing above this block was changed, so a
+   theme pack that styles the 2.0 home page keeps working and only misses
+   the new pieces (which then fall back to the core look).
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Toolbar: density + mode ─────────────────────────────────────────────
+   Deliberately QUIET. The source chips above are the loud control on this
+   page -- they are what people actually toggle, and they already carry the
+   accent colour. Painting these two segmented controls in the same accent
+   made three equally shouty things compete for the same corner, so the
+   active segment here is a subtle raised pill instead. */
+.feed-tools {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  /* Centred rather than right-aligned: the row spans the full width (the
+     customise button sits in its own column above), so hugging the right edge
+     left the pair floating under nothing in particular. */
+  justify-content: center;
+}
+
+.feed-tool-group {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated, var(--bg-surface));
+}
+
+.feed-tool {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition);
+}
+
+.feed-tool:hover { color: var(--text-primary); }
+
+.feed-tool.is-on {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* One accent cue, on the one segment where "which mode am I in" is a
+   restriction rather than a preference. */
+.feed-tool.is-on[data-mode="kids"] {
+  background: var(--accent);
+  color: var(--accent-contrast, #14121a);
+  box-shadow: none;
+}
+
+/* ── Density ──────────────────────────────────────────────────────────
+   On <body> rather than on the feed: browse cards are styled by cards.css,
+   which knows nothing about the home page, so a body-level modifier is the
+   one hook that reaches every card variant at once. */
+
+/* Compact = the same card, narrower. Nothing here touches the poster's
+   HEIGHT: .browse-card img carries `aspect-ratio: 2/3` (cards.css), so the
+   height follows the width on its own. The first version set an explicit
+   height as well, which fought the aspect ratio -- the box was re-resolved
+   whenever the hover drawer moved and the card twitched between two sizes,
+   which is the flicker. Set one of the two, never both. */
+.home-density-compact .browse-card { width: 112px; }
+.home-density-compact .home-pcard { width: 132px; --pcard-art: 186px; }
+.home-density-compact .browse-section { margin-bottom: 18px; }
+.home-density-compact .browse-heading { font-size: 1rem; }
+
+/* List = a different shape, not a smaller one. The row stops scrolling
+   sideways and becomes what the name promises: one line per title, artwork
+   as a thumbnail on the left, everything else readable at a glance. */
+.home-density-list .browse-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: visible;
+}
+
+.home-density-list .browse-card,
+.home-density-list .home-pcard {
+  width: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: var(--radius-md);
+  border-color: transparent;
+  background: transparent;
+  padding: 4px 8px;
+  /* No lift on hover in this mode: a row that jumps 4px pushes the whole
+     column around. The background is the hover cue instead. */
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.home-density-list .browse-card:hover,
+.home-density-list .home-pcard:hover,
+.home-density-list .home-pcard-hit:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.home-density-list .home-pcard-hit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  transform: none !important;
+}
+
+.home-density-list .browse-card img,
+.home-density-list .home-pcard-faux,
+.home-density-list .home-pcard-hit > img {
+  flex: none;
+  width: 44px;
+  height: 62px !important;   /* wins over the --pcard-art box */
+  border-radius: 6px;
+  object-fit: cover;
+  aspect-ratio: auto;                 /* the 2/3 ratio is a poster rule */
+}
+
+.home-density-list .browse-info,
+.home-density-list .home-pcard-title,
+.home-density-list .home-pcard-sub {
+  padding: 0;
+  text-align: left;
+  min-width: 0;
+}
+
+.home-density-list .home-pcard-title,
+.home-density-list .home-pcard-sub { display: block; }
+
+/* The progress bar is absolutely positioned at the poster's bottom edge in
+   the other two modes -- in a list row that put it straight through the
+   title. Here it belongs under the text, in flow. */
+.home-density-list .home-pcard-bar {
+  position: static;
+  order: 3;
+  flex: none;
+  width: 90px;
+  margin-left: auto;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.home-density-list .home-pcard-play { display: none; }
+
+/* The badges ride on the poster, which is a thumbnail now -- they would
+   cover it completely. */
+.home-density-list .browse-hover-overlay,
+.home-density-list .home-pcard-flag,
+.home-density-list .home-pcard-badge { display: none; }
+
+.home-density-list .browse-scroll-btn { display: none; }
+
+/* ── Keyboard focus ──────────────────────────────────────────────────
+   The cards are divs with a roving tabindex (see static/home_2_1.js), so
+   this ring is the only thing telling a keyboard user where they are. It is
+   deliberately loud. */
+.browse-card:focus-visible,
+.home-pcard-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-lg, 14px);
+}
+
+/* ── Gaps row ─────────────────────────────────────────────────────────── */
+.home-pcard.is-gap .home-pcard-hit { border-color: rgba(248, 113, 113, 0.42); }
+
+.home-pcard-flag,
+.home-pcard-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.home-pcard-flag { background: rgba(248, 113, 113, 0.92); color: #2a0708; }
+.home-pcard-badge {
+  left: auto;
+  right: 6px;
+  background: rgba(96, 165, 250, 0.92);
+  color: #05203f;
+  text-transform: capitalize;
+}
+
+/* ── Live status band additions ──────────────────────────────────────── */
+.home-run-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--success, #4ade80);
+  vertical-align: middle;
+}
+
+.home-run-facts {
+  flex: none;
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.home-run-err {
+  flex: none;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--danger, #f87171);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font: inherit;
+  font-size: 0.73rem;
+  cursor: pointer;
+}
+
+/* ── Panel-bar badges ────────────────────────────────────────────────── */
+.hp-badge-err { background: rgba(248, 113, 113, 0.9); color: #2a0708; }
+.hp-badge-warn { background: rgba(251, 191, 36, 0.9); color: #2a1c00; }
+.hp-badge-muted {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ── Onboarding strip ────────────────────────────────────────────────── */
+.home-onboard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--bg-surface);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+
+.home-onboard-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.92rem;
+}
+
+.home-onboard-count {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+}
+
+.home-onboard-hide {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.home-onboard-hide:hover { color: var(--text-primary); }
+
+.home-onboard-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.home-onboard-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 0.79rem;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.home-onboard-step:hover { border-color: var(--accent); background: var(--bg-hover); }
+
+.home-onboard-tick {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.66rem;
+}
+
+.home-onboard-step.is-done { opacity: 0.55; }
+.home-onboard-step.is-done .home-onboard-tick {
+  background: var(--success, #4ade80);
+  border-color: transparent;
+  color: #06240f;
+}
+
+/* ── Search suggestions: grouped ─────────────────────────────────────── */
+.home-suggest-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.home-suggest-dot[data-group="library"] { background: var(--success, #4ade80); }
+.home-suggest-sub {
+  margin-left: auto;
+  padding-left: 10px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Both the pointer hover and the arrow-key highlight, so they cannot drift
+   apart visually. */
+.home-suggest-item.is-active,
+.home-suggest-item:hover { background: var(--bg-hover); }
+
+/* ── Phones ──────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* The chip row already scrolls sideways here (see the nowrap rule further
+     up), so the controls get the full width below it and the customise
+     button keeps the top-right corner. */
+  .feed-tools {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .feed-tools::-webkit-scrollbar { display: none; }
+  .feed-tool-group { flex: 0 0 auto; }
+  .feed-tool { padding: 8px 13px; }        /* keeps the 40px-ish touch target */
+
+  /* One horizontal scroller instead of a grid: a 210px minimum column on a
+     360px phone is one card per row and a very long page. */
+  .home-density-list .browse-grid { grid-template-columns: 1fr; }
+
+  .home-onboard-steps { grid-template-columns: 1fr 1fr; }
+
+  .home-run-facts { display: none; }       /* the band is already two lines */
+}
+
+@media (max-width: 400px) {
+  .home-onboard-steps { grid-template-columns: 1fr; }
+}
+
+/* ── Kids-mode PIN modal ─────────────────────────────────────────────── */
+.home-pin-modal { max-width: 360px; }
+.home-pin-modal .mf-token-input { width: 100%; letter-spacing: 0.3em; }
+
+.home-pin-error {
+  min-height: 18px;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--danger, #f87171);
+}
+
+.home-pin-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* The one notice that is not an error: says the feed is being filtered, so
+   "Kids is on but nothing looks different" is legible rather than a mystery. */
+.feed-mode-notice {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(96, 165, 250, 0.10);
+}
+
+/* ── Getting back out of a search ────────────────────────────────────────
+   The bar above the results. It exists because searching used to be a
+   one-way door: the feed was hidden and nothing ever un-hid it, so the only
+   way back to the home page was reloading it. */
+.search-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+}
+
+.search-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.search-back:hover { background: var(--bg-hover); border-color: var(--accent); }
+.search-back svg { width: 15px; height: 15px; }
+
+.search-head-term {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -31,7 +31,8 @@
       'upcoming':  _('Airing next'),
       'new':       _('New this week'),
       'popular':   _('Popular right now'),
-      'movies':    _('Movies')
+      'movies':    _('Movies'),
+      'gaps':      _('Fill the gaps')
     },
     'hints': {
       'playback':   _('from your playback progress'),
@@ -128,6 +129,11 @@
     </div>
   </div>
 
+  {# The Jellyfin/Plex profile picker used to sit here, in the user scope. It
+     moved to /profile (templates/profile.html), which is where the account's
+     own settings belong -- it only landed in this modal because /settings is
+     admin-only and there was nowhere else a normal account could reach. #}
+
   {% if scope == 'global' %}
   <div class="sp-group">
     <h3 class="settings-subtitle">{{ _('Default filters') }}</h3>
@@ -139,6 +145,38 @@
     <div id="spSources-{{ scope }}" class="sp-checks"></div>
     <div class="sp-sublabel">{{ _('Type') }}</div>
     <div id="spTypes-{{ scope }}" class="sp-checks"></div>
+  </div>
+
+  {# Kids mode is armed HERE, not on the home page. Instance-wide because it
+     is an instance decision: a per-account PIN would be set by the very
+     account it is supposed to restrict. The button only appears on the home
+     page once this is on AND a PIN exists -- both, because a mode nobody can
+     leave would lock the account out of its own home page. #}
+  <div class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Kids mode') }}</h3>
+    <div class="settings-hint">{{ _('Adds a “Kids” button to the home page that limits it to an age rating. The limit is applied on the server while the rows are built, so it cannot be bypassed from the browser. Leaving the mode asks for the PIN; entering it never does.') }}</div>
+    <div class="settings-row">
+      <label class="chb-main">
+        <input type="checkbox" id="spKidsOn-{{ scope }}">
+        <span>{{ _('Offer kids mode on the home page') }}</span>
+      </label>
+    </div>
+    <div class="settings-row">
+      <label class="settings-label" for="spKidsFsk-{{ scope }}">{{ _('Age limit') }}</label>
+      <select class="mf-token-input" id="spKidsFsk-{{ scope }}">
+        <option value="0">0</option>
+        <option value="6" selected>6</option>
+        <option value="12">12</option>
+        <option value="16">16</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <label class="settings-label" for="spKidsPin-{{ scope }}">{{ _('PIN') }}</label>
+      <input type="password" class="mf-token-input" id="spKidsPin-{{ scope }}"
+             autocomplete="new-password" inputmode="numeric"
+             placeholder="{{ _('4–8 digits') }}">
+    </div>
+    <div class="settings-hint" id="spKidsState-{{ scope }}"></div>
   </div>
   {% endif %}
 

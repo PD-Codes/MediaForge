@@ -433,6 +433,14 @@ def register_search_routes(app):
         if not keyword:
             return jsonify({"error": "keyword is required"}), 400
 
+        # A limited session may not search the adult source at all. Refused
+        # here rather than filtered afterwards: everything that site returns
+        # is over the limit by definition, and "search returned nothing" is a
+        # worse answer than "this source is not available to you".
+        from ..age_gate import allows_adult, filter_items
+        if site == "hanime" and not allows_adult():
+            return jsonify({"error": "not permitted", "code": "age_limited"}), 403
+
         results = []
 
         def _get_site_results(kw, site_name):
@@ -503,6 +511,20 @@ def register_search_routes(app):
                 if clean_hyphen and clean_hyphen != keyword:
                     logger.debug("[CineInfo] Fallback Hyphen: Searching for %r", clean_hyphen)
                     results = _get_site_results(clean_hyphen, site)
+
+        # Provider results carry no rating of their own, so for a limited
+        # session the ceiling is applied against whatever TMDB data is already
+        # CACHED for these titles -- no lookup per hit, which would turn one
+        # search into forty API calls. Titles the cache cannot rate are kept
+        # (see age_gate).
+        #
+        # Only for a limited session: _proxy_result_list() also rewrites poster
+        # URLs, and running it unconditionally would quietly change what every
+        # other account's search returns.
+        from ..age_gate import ceiling as _age_ceiling
+        if _age_ceiling() is not None:
+            from .image_proxy import _proxy_result_list
+            results = filter_items(_proxy_result_list(results))
 
         return jsonify({"results": results})
     @app.route("/api/tmdb/genres")
@@ -829,6 +851,24 @@ def register_search_routes(app):
             media_type = "tv"
 
         params, _page = _sanitise_discover_params(request.args)
+
+        # Age limit, applied as a TMDB QUERY rather than by filtering the
+        # answer. Discover pages 20 results at a time, so dropping rows after
+        # the fact would hand back short, ragged pages and eventually an
+        # "empty" page 3 that is really a filtered one. certification.lte
+        # makes TMDB do the paging on the already-limited set.
+        #
+        # include_adult is forced off in the same breath: it is not part of the
+        # allow-list, so a client cannot set it either way, but a limited
+        # session must not depend on that staying true.
+        from ..age_gate import ceiling as _age_ceiling
+        limit = _age_ceiling()
+        if limit is not None:
+            params["include_adult"] = "false"
+            params["certification_country"] = get_setting("cineinfo_country", "DE") or "DE"
+            params["certification.lte"] = str(limit)
+            # The cache key is built from `params` below, so a limited and an
+            # unlimited session can never be served each other's page.
 
         # TMDB uses different date keys for series and movies — accept either
         # spelling from the client and normalise to the one this type needs.

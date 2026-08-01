@@ -109,8 +109,12 @@ def test_registration_rejects_a_builtin_id():
 
 def test_personal_rows_answer_even_with_nothing_to_show(as_user):
     data = as_user("user").get("/api/home-feed/personal").get_json()
-    assert set(data) == {"continue", "watchlist", "library", "upcoming"}
-    assert all(isinstance(v, list) for v in data.values())
+    rows = {"continue", "watchlist", "library", "upcoming", "gaps"}
+    assert rows <= set(data)
+    assert all(isinstance(data[row], list) for row in rows)
+    # Not a row: says whether "Continue watching" came from here or from a
+    # linked Jellyfin/Plex user. "local" when nothing is linked.
+    assert data["continue_source"] == "local"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +129,9 @@ def test_default_row_order_puts_the_borrowed_rows_last(as_user):
     order = data["config"]["order"]
     assert order[-2:] == ["watchlist", "upcoming"]
     assert order[0] == "continue"
+    # "Fill the gaps" asks something of the user rather than offering
+    # something, so it sits behind the discovery rows, not above them.
+    assert order.index("gaps") > order.index("popular")
 
 
 def test_every_row_says_where_it_comes_from(as_user):
@@ -180,7 +187,8 @@ def test_a_junk_layout_can_never_lose_a_row(as_user):
         cfg = client.get("/api/home-feed/sources").get_json()["config"]
         assert cfg["order"][0] == "watchlist"
         assert sorted(cfg["order"]) == sorted(
-            ["continue", "library", "watchlist", "upcoming", "new", "popular", "movies"])
+            ["continue", "library", "watchlist", "upcoming", "new", "popular",
+             "movies", "gaps"])
         assert cfg["limit"] == 30          # 999 is not one of the offered steps
     finally:
         client.post("/api/user/preferences", json={"home_feed_layout": ""})
@@ -193,9 +201,12 @@ def test_start_page_defaults_are_admin_only(as_user):
 
 def test_personal_rows_are_skipped_when_hidden(as_user):
     from mediaforge.web.db import set_setting
-    set_setting("home_rows_hidden", "continue,library,watchlist,upcoming")
+    set_setting("home_rows_hidden", "continue,library,watchlist,upcoming,gaps")
     try:
         data = as_user("user").get("/api/home-feed/personal").get_json()
-        assert all(v == [] for v in data.values())
+        # Only the ROW keys -- the payload also carries continue_source, which
+        # is a string and says where the row would have come from.
+        assert all(data[row] == [] for row in
+                   ("continue", "library", "watchlist", "upcoming", "gaps"))
     finally:
         set_setting("home_rows_hidden", "")

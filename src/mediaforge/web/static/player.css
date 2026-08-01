@@ -346,10 +346,17 @@
   mask-image: var(--mfp-chapter-mask);
 }
 
-/* Hover preview: time bubble, optionally with a thumbnail above it. */
+/* Hover preview: time bubble, optionally with a thumbnail above it.
+
+   Anchored to the TOP of the rail, not to a fixed offset from its bottom.
+   The rail stacks the seek bar over the button row, so a fixed 24px put the
+   bubble on top of the buttons -- and, because the pointer is on the seek
+   bar, under the cursor rather than above it. `bottom: 100%` is the top edge
+   of the rail, which is also the top edge of the seek bar, so the bubble now
+   clears the whole control block no matter how tall the button row gets. */
 .mfp-preview {
   position: absolute;
-  bottom: 24px;
+  bottom: calc(100% + 10px);
   transform: translateX(-50%);
   display: none;
   z-index: 7;

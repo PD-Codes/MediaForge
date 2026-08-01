@@ -90,3 +90,29 @@ def register_progress_routes(app):
             return jsonify({"error": "paths must be list"}), 400
         _user, _ = _get_current_user_info()
         return jsonify(get_watch_progress_bulk(paths, username=_user))
+
+    @app.route("/api/progress/clear", methods=["POST"])
+    def api_progress_clear():
+        """Mark one or more files as unwatched again.
+        POST {"paths": ["…"]}.
+
+        Takes a LIST rather than a single path because the useful cases are
+        "this episode" and "this whole season/series" -- doing the latter one
+        request at a time would be twenty round trips for a season the user
+        wants to rewatch.
+
+        Scoped to the calling account: what you have watched is yours, so this
+        never touches anybody else's positions.
+        """
+        from ..db import clear_watch_progress
+
+        data = request.get_json(force=True, silent=True) or {}
+        paths = data.get("paths", [])
+        if not isinstance(paths, list) or not paths:
+            return jsonify({"error": "paths must be a non-empty list"}), 400
+        # A cap, because this is a DELETE driven by a client-supplied list.
+        if len(paths) > 500:
+            return jsonify({"error": "too many paths"}), 400
+        _user, _ = _get_current_user_info()
+        removed = clear_watch_progress(paths, username=_user)
+        return jsonify({"ok": True, "cleared": removed})

@@ -3918,7 +3918,7 @@ msgstr ""
 msgid "Sources"
 msgstr ""
 
-msgid "Source order"
+msgid "Source order (Start Page v1)"
 msgstr ""
 
 msgid "Set the order in which sources appear on the start page. Drag the rows or use the arrows. For each source you can also choose whether new or popular items are shown first."

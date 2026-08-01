@@ -257,6 +257,11 @@ def register_settings_routes(app):
         sync_language               = get_setting("sync_language")               or os.environ.get("MEDIAFORGE_SYNC_LANGUAGE", "German Dub")
         sync_provider               = get_setting("sync_provider")               or os.environ.get("MEDIAFORGE_SYNC_PROVIDER", "VOE")
         sync_path_unavailable_action = get_setting("sync_path_unavailable_action") or os.environ.get("MEDIAFORGE_SYNC_PATH_UNAVAILABLE_ACTION", "skip")
+        # Which download folder a NEW Auto-Sync job opens on. "" is not a
+        # missing value here, it is the global download path -- which is why
+        # this is a setting rather than a flag on one custom path: no custom
+        # path could ever carry "use the global folder".
+        sync_default_custom_path = get_setting("sync_default_custom_path") or ""
         sync_error_retries   = get_setting_int("sync_error_retries", 0, "MEDIAFORGE_SYNC_ERROR_RETRIES")
         sync_error_retry_time = get_setting("sync_error_retry_time") or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRY_TIME", "5min")
         sync_adaptive_enabled     = get_setting("sync_adaptive_enabled")     or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_ENABLED", "0")
@@ -333,6 +338,7 @@ def register_settings_routes(app):
                 "language_groups":           language_groups,
                 "sync_provider":              sync_provider,
                 "sync_path_unavailable_action": sync_path_unavailable_action,
+                "sync_default_custom_path": sync_default_custom_path,
                 "sync_error_retries":         sync_error_retries,
                 "sync_error_retry_time":      sync_error_retry_time,
                 "sync_adaptive_enabled":      sync_adaptive_enabled,
@@ -992,6 +998,17 @@ def register_settings_routes(app):
                 return jsonify({"error": "Invalid sync_path_unavailable_action: must be 'skip' or 'hold'"}), 400
             set_setting("sync_path_unavailable_action", action)
             os.environ["MEDIAFORGE_SYNC_PATH_UNAVAILABLE_ACTION"] = action
+        if "sync_default_custom_path" in data:
+            raw = str(data["sync_default_custom_path"] or "").strip()
+            if raw:
+                # Validated against the table rather than merely checked for
+                # digits: a stale id would silently send every new job to a
+                # folder that no longer exists.
+                if not raw.isdigit():
+                    return jsonify({"error": "Invalid sync_default_custom_path"}), 400
+                if not any(str(p["id"]) == raw for p in get_custom_paths()):
+                    return jsonify({"error": "Unknown custom path"}), 404
+            set_setting("sync_default_custom_path", raw)
         if "sync_error_retries" in data:
             try:
                 retries = int(data["sync_error_retries"])
@@ -1229,6 +1246,24 @@ def register_settings_routes(app):
                             ",".join(_feed_clean_list(data["home_default_types_off"],
                                                       ("series", "movies", "adult"))))
 
+        # Kids mode. The PIN is digits only and 4-8 of them, so it cannot
+        # become a passphrase nobody can type on a TV remote -- and "" clears
+        # it, which also switches the whole mode off (see below).
+        if "home_kids_pin" in data:
+            pin = str(data["home_kids_pin"] or "").strip()
+            if pin and not (pin.isdigit() and 4 <= len(pin) <= 8):
+                return jsonify({"error": "PIN must be 4-8 digits"}), 400
+            set_setting("home_kids_pin", pin)
+        if "home_kids_enabled" in data:
+            set_setting("home_kids_enabled",
+                        "1" if str(data["home_kids_enabled"]).lower() in ("true", "1") else "0")
+        if "home_kids_max_fsk" in data:
+            limit = str(data["home_kids_max_fsk"] or "6").strip()
+            # 18 is deliberately not offered: a "kids mode" that permits
+            # everything is a mode that only pretends to restrict.
+            set_setting("home_kids_max_fsk",
+                        limit if limit in ("0", "6", "12", "16") else "6")
+
         if "tray_mode" in data:
             val = "1" if str(data["tray_mode"]).lower() in ("true", "1") else "0"
             set_setting("tray_mode", val)
@@ -1407,6 +1442,11 @@ def register_settings_routes(app):
                 "media_kind_options": [
                     kind for kind in kinds_for_api() if kind["scans"]
                 ],
+                # Carried on this response rather than fetched separately:
+                # every caller that opens the Auto-Sync dialog already asks
+                # for the path list, and the preselection has to arrive with
+                # it or the dropdown is built before the default is known.
+                "autosync_default_path": get_setting("sync_default_custom_path") or "",
             }
         )
     @app.route("/api/custom-paths", methods=["POST"])

@@ -1746,9 +1746,17 @@
       "</div>");
 
     function fail(reason) {
-      var why = reason === "too_large"
-        ? tr("Die Datei ist zu groß für die Umwandlung.", "The file is too large to convert.")
-        : tr("Die Datei konnte nicht umgewandelt werden.", "The file could not be converted.");
+      var why;
+      if (reason === "drm") {
+        // Not a defect on our side: the file is encrypted, so there is nothing
+        // to retry. Say so plainly instead of "conversion failed".
+        why = tr("Diese Datei ist DRM-geschützt (z. B. ein Kindle-Kauf) und kann nicht für den Reader umgewandelt werden.",
+                 "This file is DRM-protected (e.g. a Kindle purchase) and cannot be converted for the reader.");
+      } else if (reason === "too_large") {
+        why = tr("Die Datei ist zu groß für die Umwandlung.", "The file is too large to convert.");
+      } else {
+        why = tr("Die Datei konnte nicht umgewandelt werden.", "The file could not be converted.");
+      }
       setStatus(esc(why) +
         ' <a class="mfr-download" href="/api/library/book/file?path=' + encodeURIComponent(path) +
         '" download>' + esc(tr("Herunterladen", "Download")) + "</a>", true);

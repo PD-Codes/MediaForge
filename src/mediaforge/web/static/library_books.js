@@ -313,10 +313,11 @@ function libBookFormatBadges(book, limit, compact) {
   var order = [], byExt = {};
   (book.formats || []).forEach(function(f) {
     var ext = (f.ext || "").toUpperCase();
-    if (!byExt[ext]) { byExt[ext] = { count: 0, readable: !!f.readable, size: 0 }; order.push(ext); }
+    if (!byExt[ext]) { byExt[ext] = { count: 0, readable: !!f.readable, size: 0, drm: false }; order.push(ext); }
     byExt[ext].count++;
     byExt[ext].size += f.size || 0;
     if (f.readable) byExt[ext].readable = true;
+    if (f.drm) byExt[ext].drm = true;
   });
   var shown = (limit && order.length > limit) ? order.slice(0, limit) : order;
   var out = shown.map(function(ext) {
@@ -328,6 +329,11 @@ function libBookFormatBadges(book, limit, compact) {
     var hint = info.count > 1
       ? t(info.count + " Dateien", info.count + " files") + " · " + libFmtSize(info.size)
       : libFmtSize(info.size);
+    // The chip is already greyed out via .is-locked; the tooltip is where the
+    // reason fits without widening the badge row on a narrow card.
+    if (info.drm && !info.readable) {
+      hint += " · " + t("DRM-geschützt", "DRM-protected");
+    }
     return '<span class="mf-format-badge' + (info.readable ? '' : ' is-locked') + '" title="' +
       libEscAttr(hint) + '">' + libEsc(label) + '</span>';
   });
@@ -572,10 +578,25 @@ function libRenderBookDetail(it, pfx) {
              'stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>' +
              '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>');
     } else {
+      // DRM gets its own wording: "this format cannot be opened" reads like a
+      // missing feature, while the actual reason is that the file is
+      // encrypted -- typically a Kindle purchase, which no converter can undo.
       h.push('<span class="mf-book-locked" title="' +
-             libEscAttr(t("Dieses Format ist kopiergeschützt und lässt sich nicht öffnen.",
-                          "This format is copy-protected and cannot be opened.")) + '">' +
-             libEsc(t("Geschützt", "Protected")) + '</span>');
+             libEscAttr(f.drm
+               ? t("Diese Datei ist DRM-geschützt (z. B. ein Kindle-Kauf) und lässt sich nicht öffnen.",
+                   "This file is DRM-protected (e.g. a Kindle purchase) and cannot be opened.")
+               : t("Dieses Format ist kopiergeschützt und lässt sich nicht öffnen.",
+                   "This format is copy-protected and cannot be opened.")) + '">' +
+             libEsc(f.drm ? t("DRM-geschützt", "DRM-protected") : t("Geschützt", "Protected")) + '</span>');
+      // Still downloadable: the file is the user's own, it just cannot be
+      // rendered here. Without this the row offered no action at all.
+      h.push('<a class="mf-book-dl" href="/api/library/book/file?path=' +
+             encodeURIComponent(f.path) + '" download title="' +
+             libEscAttr(t("Herunterladen", "Download")) + '" aria-label="' +
+             libEscAttr(t("Herunterladen", "Download")) + '">' +
+             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+             'stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>' +
+             '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>');
     }
     h.push('</div>');
   });

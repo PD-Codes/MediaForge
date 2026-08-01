@@ -196,6 +196,41 @@ def login_required(f):
     return decorated
 
 
+def adult_required(f):
+    """Decorator: refuse a kids-role account outright.
+
+    Deliberately not the same thing as admin_required. That one protects what
+    only an operator should touch; this protects what a normal account may do
+    but a child's account may not -- installing modules, reaching the module
+    store, changing settings that are otherwise open.
+
+    The role is re-read from the DB rather than trusted from the session, for
+    the same reason admin_required does it: a role an admin just changed has
+    to take effect on the next request, not on the next login.
+
+    Applied by create_app() to the endpoints listed in `_kids_blocked`.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        uid = session.get("user_id")
+        if uid is not None:
+            conn = get_db()
+            try:
+                row = conn.execute(
+                    "SELECT role FROM users WHERE id = ?", (uid,)).fetchone()
+                if row:
+                    session["user_role"] = row["role"]
+            finally:
+                conn.close()
+        if session.get("user_role") == "kids":
+            if request.is_json or request.path.startswith("/api/"):
+                return jsonify({"error": "not permitted", "code": "age_limited"}), 403
+            return redirect(url_for("index"))
+        return f(*args, **kwargs)
+
+    return decorated
+
+
 def admin_required(f):
     """Decorator: require an admin-role session, re-verifying the role from
     the DB on every call (not just trusting the session) since role changes
@@ -513,7 +548,11 @@ def admin_create_user():
         ), 400
     if len(password) < 8:
         return jsonify({"error": "Passwort muss mindestens 8 Zeichen lang sein"}), 400
-    if role not in ("admin", "user"):
+    # USER_ROLES rather than a literal pair: the list grew by one ("kids") and
+    # a second hardcoded copy is exactly how a new role ends up creatable in
+    # one endpoint and rejected in the other.
+    from .db import USER_ROLES
+    if role not in USER_ROLES:
         return jsonify({"error": "Ungültige Rolle"}), 400
 
     try:
