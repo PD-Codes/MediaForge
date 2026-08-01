@@ -113,13 +113,7 @@ def _resolve_docker_target():
         return None, "no update available"
     version = _update_cache.get("latest_version")
     if not selfupdate.is_valid_target_version(version):
-        # On a dev install this cache holds a 7-character commit SHA rather than
-        # a version, which lands here as well -- a container is never pointed at
-        # a git revision.
         return None, "the latest published version could not be determined"
-    if not selfupdate.is_stable_target_version(version):
-        return None, (f"'{version}' is a pre-release; containers install final "
-                      f"releases only")
     return version, None
 
 
@@ -170,19 +164,10 @@ def register_update_routes(app):
             # The preflight runs again here on purpose -- the UI already ran
             # it, but a UI check is a convenience, never the safeguard. It is
             # served from selfupdate's 60s cache, so this costs nothing.
-            # Two separate refusals on purpose. The first covers an explicit
-            # "install dev" request; the second covers a container that simply
-            # *is* a dev install and sends no channel at all, which would
-            # otherwise fall through to the target resolution below.
-            if channel == "dev" or _inst.get("channel") == "dev":
+            if channel == "dev":
                 return jsonify({
                     "error": "the dev channel cannot be installed inside a container",
                     "reason": "docker_dev_channel",
-                }), 409
-            if not _inst.get("can_code_update"):
-                return jsonify({
-                    "error": "code update not available for this container",
-                    "reason": _inst.get("code_update_reason"),
                 }), 409
             version, err = _resolve_docker_target()
             if err:

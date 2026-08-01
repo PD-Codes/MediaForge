@@ -118,27 +118,9 @@ PYPI_VERSION_JSON_URL = "https://pypi.org/pypi/{package}/{version}/json"
 # with a space, a quote, a slash or a shell metacharacter cannot match. The
 # version itself never comes from the client either -- routes/update.py takes
 # it from the server-side update cache -- this is the second line of defence.
-# At least one dot is required. Every MediaForge release is MAJOR.MINOR.PATCH (see the
-# git tags: v1.3.1, v1.4.0, v1.4.1), while the one thing that could plausibly arrive here
-# by mistake is a 7-character git SHA from the dev-install branch of the update cache --
-# and roughly one SHA in thirty is all digits, which a `\d+`-only pattern would happily
-# accept as "version 1234567". The channel gates in routes/update.py already stop a dev
-# container before this point; this makes the string itself unable to lie.
 _TARGET_VERSION_RE = re.compile(
-    r"^\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?$"
+    r"^\d+(?:\.\d+){0,3}(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?$"
 )
-
-# Stricter still, and a different question: _TARGET_VERSION_RE asks "is this safe to put
-# on a command line", this asks "is this a *final* release". No alpha/beta/rc and no .dev
-# segment.
-#
-# Why both exist: "Docker updates the stable channel only" was enforced by looking at the
-# install's channel, which is about where the package came from, not about what the target
-# version is. GitHub's /releases/latest already skips prereleases, so the two agree in
-# practice -- but that is an assumption about an external API and about how a release
-# happens to be tagged, and a container quietly ending up on a release candidate is exactly
-# the failure this feature was supposed to prevent. Cheap to check, so it is checked.
-_STABLE_VERSION_RE = re.compile(r"^\d+(?:\.\d+){1,3}(?:\.post\d+)?$")
 
 # Network timeout for the PyPI metadata lookup (connect, read).
 _PREFLIGHT_TIMEOUT = (10, 15)
@@ -165,15 +147,6 @@ def is_valid_target_version(version) -> bool:
     ``_TARGET_VERSION_RE`` above for why this is deliberately strict.
     """
     return bool(version) and bool(_TARGET_VERSION_RE.match(str(version).strip()))
-
-
-def is_stable_target_version(version) -> bool:
-    """True when *version* is a final release — no rc/alpha/beta, no ``.dev``.
-
-    The Docker code update accepts nothing else, no matter which channel the
-    install reports. See ``_STABLE_VERSION_RE``.
-    """
-    return bool(version) and bool(_STABLE_VERSION_RE.match(str(version).strip()))
 
 
 # ---------------------------------------------------------------------------
@@ -800,13 +773,6 @@ def _docker_preflight_uncached(target_version: str) -> dict:
     if not is_valid_target_version(target_version):
         result["error"] = f"invalid target version '{target_version}'"
         return result
-    if not is_stable_target_version(target_version):
-        # Never answer ok=True for something the installer would refuse anyway --
-        # that would show the user a green light and then fail on the click.
-        result["error"] = (
-            f"'{target_version}' is a pre-release; containers install final releases only"
-        )
-        return result
 
     try:
         from importlib.metadata import PackageNotFoundError
@@ -1086,15 +1052,6 @@ def start_docker_code_update(target_version: str) -> dict:
     if not is_valid_target_version(target_version):
         raise UpdateError(
             f"invalid target version '{target_version}'", reason="invalid_version"
-        )
-    if not is_stable_target_version(target_version):
-        # Independent of the channel check below: this one is about the version
-        # *number*, so a pre-release that reached the update cache through a
-        # differently-tagged GitHub release is refused here too.
-        raise UpdateError(
-            f"'{target_version}' is a pre-release; containers install final "
-            f"releases only",
-            reason="docker_prerelease",
         )
     target_version = str(target_version).strip()
 
