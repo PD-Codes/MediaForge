@@ -1,0 +1,20 @@
+{# Profile floating side menu — client-side tab switching (switchProfileTab in
+   profile.html), same markup and behaviour as the Settings / Integrations /
+   Notifications / Monitoring menus (menu rework, July 2026).
+
+   The media-server entry is rendered but hidden until static/profile.js knows
+   a Jellyfin or Plex server is actually configured: deciding it here would
+   mean asking the media server while the page is being built, which is a
+   network call in the middle of a template render. #}
+<div class="settings-tabs floating-side-menu" id="profileMenu">
+  <button class="settings-tab active" data-tab="account"
+          onclick="switchProfileTab('account')">{{ _('Account') }}</button>
+  <button class="settings-tab" data-tab="appearance"
+          onclick="switchProfileTab('appearance')">{{ _('Appearance') }}</button>
+  <button class="settings-tab" data-tab="language"
+          onclick="switchProfileTab('language')">{{ _('Language') }}</button>
+  <button class="settings-tab" data-tab="mediaplayer" id="profileTabMediaplayer" hidden
+          onclick="switchProfileTab('mediaplayer')">{{ _('Media server') }}</button>
+  <button class="settings-tab" data-tab="home"
+          onclick="switchProfileTab('home')">{{ _('Home page') }}</button>
+</div>

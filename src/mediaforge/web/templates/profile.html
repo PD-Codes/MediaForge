@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% import '_start_page_form.html' as startpage %}
+{#
+  Your own profile.
+
+  Everything on this page belongs to the signed-in account. It is NOT a
+  settings page: /settings is admin-only, which is why a normal account could
+  not reach its own theme, accent colour or media-server profile before this
+  page existed.
+
+  Built exactly like Settings / Integrations / Notifications: one
+  .settings-container, a floating side menu, and one .settings-tab-panel per
+  section switched client-side (no reload). See _profile_menu.html for the
+  menu and switchProfileTab() below.
+
+  The appearance controls deliberately reuse the ids the Design tab uses
+  (themeBtnDark/themeBtnLight, accentPresetsSettings, accentHexInputSettings,
+  accentColorPickerSettings). setTheme(), resetAppearance() and the preset
+  renderer live in base.html and are loaded on every page, so they work here
+  with no second implementation to keep in step.
+#}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='appearance.css') }}">
+{% endblock %}
+
+{% block content %}
+{# The menu goes INSIDE the container, after the page header -- that is what
+   makes .floating-side-menu float beside the content instead of stacking as
+   a full-width block above it (see notifications.html, which does the same). #}
+<div class="settings-container has-floating-menu">
+  <div class="page-header" style="margin-bottom:28px;">
+    <h1 class="page-title">{{ _('Your profile') }}</h1>
+    <p class="page-subtitle">{{ _('Everything on this page is yours alone — it changes nothing for anyone else on this instance.') }}</p>
+  </div>
+
+  {% include "_profile_menu.html" %}
+
+  {# ── Account ───────────────────────────────────────────────────────── #}
+  <div class="settings-tab-panel active" id="panel-account">
+    <div class="settings-section">
+      <h2>{{ _('Account') }}</h2>
+      <div class="settings-row">
+        <span class="settings-label">{{ _('Username') }}</span>
+        <span class="profile-value">{{ account.username or _('Not signed in') }}</span>
+      </div>
+      {% if account.role %}
+      <div class="settings-row">
+        <span class="settings-label">{{ _('Role') }}</span>
+        <span class="profile-role profile-role-{{ account.role }}">
+          {% if account.role == 'admin' %}{{ _('Administrator') }}
+          {% elif account.role == 'kids' %}{{ _('Kids') }}
+          {% else %}{{ _('User') }}{% endif %}
+        </span>
+      </div>
+      {% endif %}
+      {% if account.role == 'kids' %}
+      <div class="settings-hint">{{ _('This account is age-limited. The limit is set by an administrator and cannot be changed here.') }}</div>
+      {% endif %}
+    </div>
+
+    {% if account.auth_method == 'local' %}
+    <div class="settings-section">
+      <h2>{{ _('Change password') }}</h2>
+      <div class="settings-hint">{{ _('Your current password is asked for again on purpose — a session left open on a shared machine is exactly where someone else would change it.') }}</div>
+      <div class="settings-row">
+        <label class="settings-label" for="pwCurrent">{{ _('Current password') }}</label>
+        <input type="password" class="settings-input" id="pwCurrent" autocomplete="current-password">
+      </div>
+      <div class="settings-row">
+        <label class="settings-label" for="pwNew">{{ _('New password') }}</label>
+        <input type="password" class="settings-input" id="pwNew" autocomplete="new-password"
+               placeholder="{{ _('At least 8 characters') }}">
+      </div>
+      <div class="settings-row">
+        <label class="settings-label" for="pwRepeat">{{ _('Repeat new password') }}</label>
+        <input type="password" class="settings-input" id="pwRepeat" autocomplete="new-password">
+      </div>
+      <div class="settings-row">
+        <button class="btn btn-primary" id="pwSave">{{ _('Change password') }}</button>
+      </div>
+      <div class="settings-hint" id="pwState"></div>
+    </div>
+    {% elif account.auth_method %}
+    <div class="settings-section">
+      <h2>{{ _('Password') }}</h2>
+      <div class="settings-hint">{{ _('This account signs in through your identity provider, so the password is managed there.') }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Appearance ────────────────────────────────────────────────────── #}
+  <div class="settings-tab-panel" id="panel-appearance">
+    <div class="settings-section">
+      <h2>{{ _('Appearance') }}</h2>
+      <div class="settings-hint">{{ _('Stored on your account, so the look follows you to your next device instead of resetting.') }}</div>
+      <div class="settings-row">
+        <button class="appearance-theme-btn" id="themeBtnDark" onclick="setTheme('dark')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+          Dark
+        </button>
+        <button class="appearance-theme-btn" id="themeBtnLight" onclick="setTheme('light')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5" />
+            <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+            <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          </svg>
+          Light
+        </button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Accent Color') }}</h2>
+      <div class="settings-row">
+        <div class="accent-presets" id="accentPresetsSettings"></div>
+      </div>
+      <h3 class="settings-subtitle">{{ _('Custom Color') }}</h3>
+      <div class="settings-row">
+        <input type="text" class="settings-input" id="accentHexInputSettings" maxlength="7" placeholder="#7c3aed" />
+        <div class="accent-color-swatch">
+          <input type="color" id="accentColorPickerSettings" />
+        </div>
+        <button class="btn btn-secondary" onclick="resetAppearance()">{{ _('Reset appearance') }}</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Theme Packs') }}</h2>
+      <div class="settings-hint">{{ _('Theme packs restyle the whole interface — fonts, animations, checkboxes, inputs, the calendar and more. New theme packs can be installed from the Module Store.') }}</div>
+      <div class="settings-row theme-pack-row">
+        <select id="profileThemePack">
+          <option value="">{{ _('Instance default') }}{% if active_theme_pack %} ({{ active_theme_pack.name }}){% endif %}</option>
+          <option value="default">{{ _('MediaForge default look') }}</option>
+          {% for tp in installed_theme_packs %}
+          <option value="{{ tp.folder }}">{{ tp.name }} (v{{ tp.version }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  {# ── Language ──────────────────────────────────────────────────────── #}
+  <div class="settings-tab-panel" id="panel-language">
+    <div class="settings-section">
+      <h2>{{ _('Language') }}</h2>
+      <div class="settings-row">
+        <button class="appearance-theme-btn lang-btn{% if ui_language == 'en' %} active{% endif %}"
+                data-profile-lang="en">English</button>
+        <button class="appearance-theme-btn lang-btn{% if ui_language == 'de' %} active{% endif %}"
+                data-profile-lang="de">Deutsch</button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Media server ──────────────────────────────────────────────────── #}
+  {# The panel and its menu entry stay hidden until static/profile.js has
+     confirmed a Jellyfin or Plex server is configured: an empty picker for a
+     feature nobody set up is furniture. #}
+  <div class="settings-tab-panel" id="panel-mediaplayer">
+    <div class="settings-section" id="profilePlayerSection">
+      <h2>{{ _('Your Jellyfin/Plex profile') }}</h2>
+      <div class="settings-hint">{{ _('Pick your user on the media server and “Continue watching” shows what that server knows — including everything you started in its own app. The monthly recap then uses it too. Leave it empty to keep using MediaForge’s own playback positions.') }}</div>
+      <div class="settings-row">
+        <label class="settings-label" for="profilePlayerUser">{{ _('Media server user') }}</label>
+        <select class="mf-token-input" id="profilePlayerUser">
+          <option value="">{{ _('Not linked') }}</option>
+        </select>
+      </div>
+      <div class="settings-hint" id="profilePlayerState"></div>
+    </div>
+  </div>
+
+  {# ── Home page ─────────────────────────────────────────────────────── #}
+  <div class="settings-tab-panel" id="panel-home">
+    <div class="settings-section">
+      <h2>{{ _('Your home page') }}</h2>
+      <div class="settings-hint">{{ _('These settings are yours alone. Anything you do not change follows the instance default.') }}</div>
+      {{ startpage.start_page_form('user') }}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ startpage.start_page_i18n() }}
+<script src="{{ url_for('static', filename='start_page.js') }}"></script>
+<script>
+  window.__PROFILE_I18N = {{ {
+    'saved': _('Saved'),
+    'save_failed': _('Could not be saved'),
+    'pw_mismatch': _('The two new passwords do not match.'),
+    'pw_short': _('The new password must be at least 8 characters.'),
+    'pw_wrong': _('That is not your current password.'),
+    'pw_unchanged': _('The new password is the same as the current one.'),
+    'pw_changed': _('Password changed.')
+  }|tojson }};
+
+  /* Same switcher as the other floating-menu pages (see notifications.html's
+     switchNotifTab): toggle the button and the panel, remember the choice.
+     The #hash is written so a deep link -- and the browser's Back button --
+     land on the section you were actually looking at. */
+  function switchProfileTab(name) {
+    document.querySelectorAll('#profileMenu .settings-tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tab === name);
+    });
+    document.querySelectorAll('.settings-container .settings-tab-panel').forEach(function (p) {
+      p.classList.toggle('active', p.id === 'panel-' + name);
+    });
+    try {
+      history.replaceState(null, '', '#' + name);
+      localStorage.setItem('profileActiveTab', name);
+    } catch (e) { /* private mode */ }
+  }
+
+  (function restoreProfileTab() {
+    var wanted = '';
+    try {
+      wanted = (window.location.hash || '').replace('#', '').trim()
+        || localStorage.getItem('profileActiveTab') || '';
+    } catch (e) { wanted = ''; }
+    /* Valid ids are read off the DOM rather than hardcoded, so a stale
+       localStorage value (or a hash for a section that is hidden on this
+       instance) falls back to Account instead of showing nothing at all. */
+    var known = Array.prototype.map.call(
+      document.querySelectorAll('#profileMenu .settings-tab'),
+      function (b) { return b.dataset.tab; });
+    switchProfileTab(known.indexOf(wanted) !== -1 ? wanted : 'account');
+  })();
+</script>
+<script src="{{ url_for('static', filename='profile.js') }}"></script>
+{% endblock %}
