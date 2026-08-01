@@ -89,6 +89,16 @@ def register_comic_routes(app):
             reason = status.get("reason") or ("needs_conversion" if status.get("ok") else "unreadable")
             if status.get("ok") and not status.get("ready"):
                 reason = "needs_conversion"
+            elif (convert.is_retryable_failure(reason)
+                  and convert.find_extractor(fmt) is not None):
+                # The previous attempt failed for a circumstantial reason -- an
+                # extractor that timed out while a library scan was hammering
+                # the same disk, a share that blinked -- and this machine does
+                # have a tool for the format. That is "not prepared yet", not
+                # "unreadable": the reader offers the prepare button, and
+                # pressing it now really does start a fresh attempt (see
+                # conversion_status()'s handling of start=True).
+                reason = "needs_conversion"
             return jsonify({"ok": False, "readable": False, "format": fmt,
                             "label": archive.FORMAT_LABELS.get(fmt, ""),
                             "reason": reason,

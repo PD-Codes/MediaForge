@@ -281,17 +281,22 @@ async function libCoverPollTick() {
     var moved = (st.done !== _libCoverPrep.done) || (st.running !== _libCoverPrep.running);
     _libCoverPrep = st;
     if (moved) {
-      // Only the pills and the pictures, NOT a full repaint. Rebuilding the
-      // grid every couple of seconds while covers trickle in would reset the
-      // scroll position under the reader's hands and collapse an open series.
+      // Only the pills, the spinners and the pictures, NOT a full repaint.
+      // Rebuilding the grid every couple of seconds while covers trickle in
+      // would reset the scroll position under the reader's hands and collapse
+      // an open series.
       libPaintSummaryPills();
       libRefreshMissingCovers();
+      libSyncPreparingSpinners();
     }
     if (!st.running && _libCoverPoll) {
       window.mfPollStop(_libCoverPoll);
       _libCoverPoll = null;
       libPaintSummaryPills();
       libRefreshMissingCovers();      // one last sweep for the final few
+      // After the sweep, so a card that just got its picture is judged on the
+      // picture it now has. This is what finally clears the shelf.
+      libSyncPreparingSpinners();
     }
   } catch (e) { /* a failed status check is not worth telling anyone about */ }
 }
@@ -308,6 +313,40 @@ function libCoverPollStart() {
   libCoverPollTick();
 }
 
+// Bring every card's spinner in line with what the worker is actually doing.
+//
+// The spinner is baked into the card markup at render time, but preparation
+// starts and finishes long after that, and finishing must NOT cost a full
+// repaint: rebuilding the grid resets the scroll position and collapses an
+// open series (see libCoverPollTick). So the spinners are added and removed in
+// place instead.
+//
+// This is the half that was missing. Cards were given a spinner when a run
+// started and nothing ever took it away again -- libRefreshMissingCovers()
+// only touched cards whose image had 404'd, so every card that already had its
+// cover kept spinning until something else forced a repaint. After a scan that
+// was the whole shelf.
+function libSyncPreparingSpinners() {
+  var arts = document.querySelectorAll(".mf-poster-art");
+  var running = !!_libCoverPrep.running;
+  Array.prototype.forEach.call(arts, function (art) {
+    var spin = art.querySelector(".mf-comic-preparing");
+    // "Has a cover" means a real <img> that has not failed to load. A card
+    // showing the generated fallback tile is still waiting for one.
+    var hasCover = !!art.querySelector("img.mf-comic-cover") &&
+                   !art.classList.contains("mf-comic-nocover");
+    var want = running && !hasCover;
+    if (want && !spin) {
+      art.insertAdjacentHTML("beforeend",
+        '<span class="mf-comic-preparing" title="' +
+        libEscAttr(t("Cover wird vorbereitet", "Preparing cover")) + '">' +
+        '<span class="lib-prep-spinner" aria-hidden="true"></span></span>');
+    } else if (!want && spin) {
+      spin.remove();
+    }
+  });
+}
+
 // Re-request the covers that were not there yet. Cards whose image 404'd are
 // marked by libComicCoverFailed(); this puts a fresh <img> back with a
 // cache-busting query, because the browser would otherwise keep serving the
@@ -318,10 +357,9 @@ function libRefreshMissingCovers() {
   var bust = Date.now();
   Array.prototype.forEach.call(stale, function (art) {
     art.classList.remove("mf-comic-nocover");
-    if (!_libCoverPrep.running) {
-      var spin = art.querySelector(".mf-comic-preparing");
-      if (spin) spin.remove();
-    }
+    // Spinners are libSyncPreparingSpinners()'s job now -- it runs right after
+    // this and judges every card, not just the ones this loop happened to
+    // touch.
     var faux = art.querySelector(".lib-fauxart");
     if (faux) faux.remove();
     var img = document.createElement("img");
@@ -484,8 +522,9 @@ function libRenderIssueCard(it, pfx) {
     h.push(_libFauxArt(it.series.series || ""));
   }
   // The flat view is where a missing cover shows most: every card is a single
-  // issue, so there is nothing else on it to look at.
-  if (_libCoverPrep.running) {
+  // issue, so there is nothing else on it to look at. Same `!cover` condition
+  // as the series card above, for the same reason.
+  if (_libCoverPrep.running && !cover) {
     h.push('<span class="mf-comic-preparing" title="' +
            libEscAttr(t("Cover wird vorbereitet", "Preparing cover")) + '">' +
            '<span class="lib-prep-spinner" aria-hidden="true"></span></span>');
@@ -585,7 +624,15 @@ function libRenderComicCard(it, pfx, showVol) {
   }
   // While the server is still extracting first pages, a card without one is
   // not a card without a cover -- it is a card whose cover is on its way.
-  if (_libCoverPrep.running) {
+  //
+  // `!cover` matters: the spinner used to go on EVERY card while preparation
+  // ran, including the ones already showing their picture, which is a spinner
+  // on top of the thing it claims to be waiting for. And because finishing
+  // only refreshed the cards that were missing a cover, every other card kept
+  // its spinner until the next full repaint -- which is why they were all
+  // still spinning long after the scan was done. libSyncPreparingSpinners()
+  // below now keeps both directions honest without a repaint.
+  if (_libCoverPrep.running && !cover) {
     h.push('<span class="mf-comic-preparing" title="' +
            libEscAttr(t("Cover wird vorbereitet", "Preparing cover")) + '">' +
            '<span class="lib-prep-spinner" aria-hidden="true"></span></span>');

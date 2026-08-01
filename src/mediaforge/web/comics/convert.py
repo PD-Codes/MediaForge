@@ -70,10 +70,57 @@ _CONVERTER_VERSION = "v1"
 # but a shelf-wide click storm should not be able to start forty of them.
 _MAX_PARALLEL = 2
 
-# Remember a failure for an hour: long enough that the client stops polling an
-# archive that cannot be converted, short enough that a transient problem (a
-# NAS that was briefly away) is retried the same afternoon.
+# How long a failed conversion is remembered, so the client stops polling an
+# archive that cannot be converted.
+#
+# Two TTLs, because "cannot be converted" covers two very different things:
+#
+#   PERMANENT  -- a property of the file or of the machine. No extractor
+#                 installed, an archive holding no images, a file too big.
+#                 Retrying in a minute produces the same answer, so it is
+#                 remembered for an hour.
+#   TRANSIENT  -- the attempt failed, not the archive. An extractor that timed
+#                 out, a NAS that was briefly away, a repack that lost a race
+#                 with a library scan hammering the same disk.
+#
+# One shared hour-long TTL is what made a library scan lock the user out of
+# their comics: cover preparation starts repacks in the background, those
+# repacks compete with the scan for the same disk, some time out -- and every
+# archive that lost that race then answered "cannot be read" for the next
+# hour, long after the scan had finished. A minute is long enough to stop a
+# polling client from hammering, short enough that the comic is readable again
+# by the time anyone tries a second time.
 _FAIL_TTL = 3600.0
+_FAIL_TTL_TRANSIENT = 60.0
+
+# Failure reasons that will still be true in an hour. Everything not listed
+# here is treated as circumstantial and forgotten quickly -- the safe
+# direction, since the cost of forgetting too early is one retried conversion
+# and the cost of remembering too long is an unreadable comic.
+_PERMANENT_FAILURES = frozenset({
+    "no_extractor",     # nothing on this machine can open the format
+    "no_pages",         # it unpacked fine and held no images
+    "unsupported",      # not a comic extension at all
+    "too_large",        # over _MAX_SOURCE_BYTES
+    "unknown_format",   # the bytes match no container we know
+})
+
+
+def _fail_ttl(reason) -> float:
+    """How long *reason* is worth remembering."""
+    return _FAIL_TTL if reason in _PERMANENT_FAILURES else _FAIL_TTL_TRANSIENT
+
+
+def is_retryable_failure(reason) -> bool:
+    """True if trying this conversion again could plausibly work.
+
+    Used by routes/comics.py to decide what to tell the reader: a retryable
+    failure gets the "prepare this archive" button (which starts a fresh
+    attempt), a permanent one gets the honest dead end. Saying "this comic
+    cannot be read" about an extractor that merely timed out is both wrong and
+    unactionable.
+    """
+    return bool(reason) and reason not in _PERMANENT_FAILURES
 
 # A single comic issue is tens of megabytes; a collected volume can be a
 # gigabyte. Beyond that it is not a comic, and unpacking it would be an easy
@@ -554,6 +601,8 @@ def _convert(src: Path, key: str, fmt: str) -> None:
         logger.info("[Comics] Cannot convert %s: %s", src.name, reason)
         logger.debug("[Comics] Conversion detail for %s", src, exc_info=exc)
         with _lock:
+            # Read back through _fail_ttl(): a timed-out extractor is forgotten
+            # in a minute, "no extractor installed" in an hour.
             _failures[key] = (time.time(), reason)
         shutil.rmtree(out_dir, ignore_errors=True)
     finally:
@@ -875,8 +924,17 @@ def conversion_status(src, start: bool = False) -> dict:
 
     with _lock:
         failed = _failures.get(key)
-        if failed and time.time() - failed[0] < _FAIL_TTL:
-            return {"ok": False, "reason": failed[1], "format": fmt}
+        if failed and time.time() - failed[0] < _fail_ttl(failed[1]):
+            # ...unless the caller is explicitly asking for this conversion to
+            # happen. `start=True` only ever comes from a deliberate act -- the
+            # reader's "prepare"/"try again" button, or routes/comics.py's
+            # request_conversion(). Answering that from a cached failure meant
+            # the button did nothing at all until the entry expired, which is
+            # how a single failed repack turned into an hour of a comic that
+            # refused to open and a button that refused to react.
+            if not start:
+                return {"ok": False, "reason": failed[1], "format": fmt}
+            _failures.pop(key, None)
         if key in _jobs:
             return {"ok": True, "pending": True, "key": key, "format": fmt}
         if not start:
