@@ -614,8 +614,12 @@ class _FakeTool:
 @pytest.fixture()
 def bsdtar(monkeypatch):
     """Pretend bsdtar is installed, and let the test drive it."""
-    monkeypatch.setattr(convert, "find_extractor",
-                        lambda fmt: ("bsdtar", "/usr/bin/bsdtar", convert._cmd_bsdtar))
+    # find_extractorS (plural) is the seam now: the conversion and the peek both
+    # work down the whole list of usable tools instead of betting on the first
+    # one. A single-element list is exactly the old "one tool is installed".
+    tool = ("bsdtar", "/usr/bin/bsdtar", convert._cmd_bsdtar)
+    monkeypatch.setattr(convert, "find_extractors", lambda fmt: [tool])
+    monkeypatch.setattr(convert, "find_extractor", lambda fmt: tool)
 
     def install(names, produce=None):
         tool = _FakeTool(names, produce)
@@ -871,3 +875,107 @@ def test_both_modules_work_without_any_external_tool(caches, monkeypatch):
     assert covers.cleanup_covers(max_age_days=1) == 0
     assert convert.cleanup_converted(max_age_days=1) == 0
     assert convert.purge_orphans() == 0
+
+
+# ---------------------------------------------------------------------------
+# More than one extractor
+# ---------------------------------------------------------------------------
+# "The binary is installed" and "the binary can read this archive" are not the
+# same claim, and treating them as one is what made every CBR fail on Windows:
+# tar.exe there is libarchive built without RAR support, it was chosen because
+# it is first in the preference order, and the 7-Zip sitting next to it on the
+# PATH was never asked. These pin the fallback down.
+
+def _tool(name):
+    return (name, "/usr/bin/" + name, convert._cmd_7z)
+
+
+def test_a_first_extractor_that_cannot_read_the_archive_is_not_the_end(
+        caches, tmp_path, monkeypatch):
+    """The reported bug, in one test: the preferred tool exits non-zero on
+    every RAR and the next one handles it fine."""
+    comic = _fake_rar(tmp_path / "issue.cbr")
+    monkeypatch.setattr(convert, "find_extractors",
+                        lambda fmt: [_tool("tar"), _tool("7z")])
+    tried = []
+
+    def run(tool, src, dest):
+        tried.append(tool[0])
+        if tool[0] == "tar":
+            return False, "extract_failed"
+        (Path(dest) / "page1.png").write_bytes(PNG)
+        return True, ""
+
+    monkeypatch.setattr(convert, "_run_extractor", run)
+    convert._convert(comic, convert.cache_key(comic), archive.FMT_RAR)
+
+    assert tried == ["tar", "7z"], "the second tool was never tried"
+    assert convert.is_converted(comic)
+
+
+def test_the_tool_that_worked_is_tried_first_next_time(caches, tmp_path, monkeypatch):
+    """Otherwise every conversion pays for the same doomed attempt again."""
+    monkeypatch.setattr(convert, "_extractor_cache",
+                        {archive.FMT_RAR: [_tool("tar"), _tool("7z")]})
+    convert._promote_extractor(archive.FMT_RAR, _tool("7z"))
+    assert [t[0] for t in convert.find_extractors(archive.FMT_RAR)] == ["7z", "tar"]
+
+
+def test_a_tool_is_never_demoted_for_failing_on_one_archive(caches, monkeypatch):
+    """A password-protected CBR says nothing about the tool, and one bad file
+    must not reorder the machine's preferences for every comic after it."""
+    monkeypatch.setattr(convert, "_extractor_cache",
+                        {archive.FMT_RAR: [_tool("tar"), _tool("7z")]})
+    convert._promote_extractor(archive.FMT_RAR, _tool("tar"))    # already first
+    assert [t[0] for t in convert.find_extractors(archive.FMT_RAR)] == ["tar", "7z"]
+
+
+def test_every_extractor_failing_is_still_a_clean_failure(caches, tmp_path, monkeypatch):
+    """Falling back must not turn a genuine dead end into an exception."""
+    comic = _fake_rar(tmp_path / "issue.cbr")
+    monkeypatch.setattr(convert, "find_extractors",
+                        lambda fmt: [_tool("tar"), _tool("7z")])
+    monkeypatch.setattr(convert, "_run_extractor",
+                        lambda tool, src, dest: (False, "extract_failed"))
+    convert._convert(comic, convert.cache_key(comic), archive.FMT_RAR)
+
+    assert not convert.is_converted(comic)
+    status = convert.conversion_status(comic)
+    assert status["ok"] is False and status["reason"] == "extract_failed"
+
+
+# ---------------------------------------------------------------------------
+# Remembering a failure
+# ---------------------------------------------------------------------------
+
+def test_a_circumstantial_failure_is_forgotten_quickly():
+    """An extractor that timed out while a library scan hammered the same disk
+    must not make the comic unreadable for the rest of the hour."""
+    assert convert._fail_ttl("extract_timeout") == convert._FAIL_TTL_TRANSIENT
+    assert convert._fail_ttl("extract_failed") == convert._FAIL_TTL_TRANSIENT
+    assert convert.is_retryable_failure("extract_timeout")
+
+
+def test_a_permanent_failure_is_remembered_properly():
+    """Nothing about "this machine has no unrar" changes in a minute."""
+    for reason in ("no_extractor", "no_pages", "too_large", "unsupported"):
+        assert convert._fail_ttl(reason) == convert._FAIL_TTL
+        assert not convert.is_retryable_failure(reason)
+
+
+def test_asking_for_a_conversion_outright_ignores_a_remembered_failure(
+        caches, tmp_path, monkeypatch):
+    """The button has to do something. Answering a deliberate request out of a
+    cached failure is what made it look dead for an hour."""
+    comic = _fake_rar(tmp_path / "issue.cbr")
+    monkeypatch.setattr(convert, "find_extractors", lambda fmt: [_tool("7z")])
+    monkeypatch.setattr(convert, "_run_extractor",
+                        lambda tool, src, dest: (False, "extract_failed"))
+    key = convert.cache_key(comic)
+    convert._convert(comic, key, archive.FMT_RAR)
+
+    # Polling still gets the remembered answer -- that is what stops a client
+    # from hammering.
+    assert convert.conversion_status(comic, start=False)["ok"] is False
+    # Asking for it starts a fresh attempt instead.
+    assert convert.conversion_status(comic, start=True).get("pending") is True

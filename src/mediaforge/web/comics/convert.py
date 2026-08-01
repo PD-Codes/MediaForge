@@ -122,6 +122,7 @@ def is_retryable_failure(reason) -> bool:
     """
     return bool(reason) and reason not in _PERMANENT_FAILURES
 
+
 # A single comic issue is tens of megabytes; a collected volume can be a
 # gigabyte. Beyond that it is not a comic, and unpacking it would be an easy
 # way to fill the config volume.
@@ -279,18 +280,28 @@ _extractor_cache: dict = {}
 _extractor_lock = threading.Lock()
 
 
-def find_extractor(fmt: str):
-    """The first usable extractor for *fmt* as ``(name, path, builder)``, or None.
+def find_extractors(fmt: str) -> list:
+    """Every usable extractor for *fmt* as ``[(name, path, builder), ...]``,
+    best first. Empty when this machine has none.
 
     Looked up with :func:`shutil.which` and remembered, because this is called
     from a status route the client polls. Nothing is ever installed or
     downloaded; a machine without any of these is simply a machine that cannot
     open CBRs, which is a supported state.
+
+    A LIST, not a single winner, because "this binary exists" and "this binary
+    can read this archive" are different questions and only the second one
+    matters. The one that bites in practice: Windows 10+ ships libarchive as
+    `tar.exe`, `_is_bsdtar` correctly identifies it, and Microsoft's build has
+    no RAR support at all -- so it was picked first, exited non-zero on every
+    single CBR, and _convert() reported `extract_failed` without ever trying
+    the 7-Zip or unrar sitting right next to it on the same PATH.
     """
     with _extractor_lock:
-        if fmt in _extractor_cache:
-            return _extractor_cache[fmt]
-    found = None
+        cached = _extractor_cache.get(fmt)
+    if cached is not None:
+        return list(cached)
+    found = []
     for name, builder, verify in _EXTRACTORS.get(fmt, ()):
         exe = _bundled(name) or shutil.which(name)
         if not exe:
@@ -298,14 +309,43 @@ def find_extractor(fmt: str):
         if verify is not None and not verify(exe):
             logger.debug("[Comics] %s at %s is not the tool we need -- skipping", name, exe)
             continue
-        found = (name, exe, builder)
-        break
+        found.append((name, exe, builder))
     with _extractor_lock:
-        _extractor_cache[fmt] = found
-    if found is None:
+        _extractor_cache[fmt] = list(found)
+    if not found:
         logger.debug("[Comics] No extractor for %s (looked for %s)",
                      fmt, ", ".join(_TOOL_HINTS.get(fmt, ())))
-    return found
+    return list(found)
+
+
+def find_extractor(fmt: str):
+    """The best available extractor for *fmt*, or None.
+
+    Kept because "is there any tool for this format?" is its own question --
+    conversion_status() and the diagnostics page ask exactly that and do not
+    care which one wins. The actual conversion uses find_extractors() and
+    works down the list.
+    """
+    tools = find_extractors(fmt)
+    return tools[0] if tools else None
+
+
+def _promote_extractor(fmt: str, tool) -> None:
+    """Remember that *tool* is the one that actually worked for *fmt*.
+
+    Moves it to the front of the cached order, so the next conversion does not
+    pay for the same failed attempt again. Deliberately one-directional: a tool
+    is promoted on success but never demoted on failure, because a single
+    archive can fail for reasons that say nothing about the tool (password
+    protected, truncated) and one bad file must not reorder the machine's
+    preferences for every comic after it.
+    """
+    with _extractor_lock:
+        order = _extractor_cache.get(fmt)
+        if not order or order[0] == tool or tool not in order:
+            return
+        _extractor_cache[fmt] = [tool] + [t for t in order if t != tool]
+    logger.debug("[Comics] %s is now the preferred extractor for %s", tool[0], fmt)
 
 
 def refresh_extractors() -> None:
@@ -554,9 +594,10 @@ def _convert(src: Path, key: str, fmt: str) -> None:
     out = out_dir / "comic.cbz"
     tmp = None
     reason = "conversion_failed"
+    tool = None
     try:
-        tool = find_extractor(fmt)
-        if tool is None:
+        tools = find_extractors(fmt)
+        if not tools:
             reason = "no_extractor"
             raise RuntimeError(reason)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -566,10 +607,31 @@ def _convert(src: Path, key: str, fmt: str) -> None:
         # not.
         tmp = Path(tempfile.mkdtemp(prefix="extract-", dir=str(out_dir)))
 
-        ok, why = _run_extractor(tool, src, tmp)
-        if not ok:
+        # Work down the list instead of betting everything on the first tool.
+        # "The binary is installed" was being treated as "the binary can read
+        # this", and those come apart badly on Windows, where the bundled
+        # tar.exe is libarchive without RAR support: it was chosen, it failed
+        # on every CBR, and the 7-Zip next to it on the PATH was never asked.
+        ok = False
+        for candidate in tools:
+            ok, why = _run_extractor(candidate, src, tmp)
+            if ok:
+                tool = candidate
+                break
+            # Keep the reason from the last attempt: the tools are ordered
+            # best-first, so the final word is the most capable one's.
             reason = why
-            raise RuntimeError(why)
+            if len(tools) > 1:
+                logger.info("[Comics] %s could not unpack %s (%s) -- trying the next tool",
+                            candidate[0], src.name, why)
+            # A tool that failed halfway may have left partial output behind,
+            # and _collect_pages() cannot tell that from a successful unpack.
+            shutil.rmtree(tmp, ignore_errors=True)
+            tmp.mkdir(parents=True, exist_ok=True)
+        if not ok:
+            raise RuntimeError(reason)
+        # Next time, start with the one that worked.
+        _promote_extractor(fmt, tool)
 
         pages = _collect_pages(tmp)
         if not pages:
@@ -796,24 +858,45 @@ def extract_first_image(src, fmt=None) -> tuple:
 
 
 def _extract_first_image(src: Path, fmt) -> tuple:
+    """Try each usable tool in turn until one can list the archive.
+
+    Same lesson as _convert(): picking only the best-named installed binary
+    meant that on Windows, where tar.exe is libarchive built without RAR
+    support, the peek failed for every CBR -- so no cover was ever produced,
+    the fallback full conversion failed on the same tool, and the shelf
+    re-attempted the whole thing on every single load. Which is what "the
+    covers are generated from scratch every time" actually was.
+    """
     fmt = fmt or archive.sniff(src)
     if fmt not in _EXTRACTORS:
         # Native, PDF or unrecognised: nothing to peek at, by definition.
         return None, None
-    tool = find_extractor(fmt)
-    if tool is None:
-        return None, None           # a machine without unrar; already debug-logged
-    name, exe, _builder = tool
-    peeker = _PEEKERS.get(name)
-    if peeker is None:
-        logger.debug("[Comics] %s cannot extract a single member -- no peek for %s",
+
+    chosen = None
+    for candidate in find_extractors(fmt):
+        name, exe, _builder = candidate
+        peeker = _PEEKERS.get(name)
+        if peeker is None:
+            # unar and unace have no entry in _PEEKERS: neither can be relied
+            # on to pull one named member out. Not a failure -- just not a tool
+            # this job can use, so the full conversion handles those.
+            logger.debug("[Comics] %s cannot extract a single member -- no peek for %s",
+                         name, src.name)
+            continue
+        ok, blob = _run_peek(peeker[0](exe, src), _PEEK_LIST_TIMEOUT)
+        if ok:
+            chosen = (candidate, peeker, blob)
+            break
+        logger.debug("[Comics] %s could not list %s -- trying the next tool",
                      name, src.name)
+    if chosen is None:
+        # A machine without any working tool for this format; already
+        # debug-logged above, and a normal state rather than an error.
         return None, None
+    (name, exe, _builder), peeker, blob = chosen
+    _promote_extractor(fmt, (name, exe, _builder))
     build_list, parse_names, build_extract = peeker
 
-    ok, blob = _run_peek(build_list(exe, src), _PEEK_LIST_TIMEOUT)
-    if not ok:
-        return None, None
     listed = parse_names(blob)[:_MAX_ENTRIES]
     pages = sorted((n for n in listed if archive._is_page_name(n)),
                    key=archive._natural_key)
