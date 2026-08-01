@@ -22,6 +22,7 @@
             {% if post.type == 'feature' %}{{ _('Feature') }}
             {% elif post.type == 'fix' %}{{ _('Fix') }}
             {% elif post.type == 'warning' %}{{ _('Warning') }}
+            {% elif post.type == 'important' %}{{ _('Important') }}
             {% else %}{{ _('Announcement') }}
             {% endif %}
           </span>

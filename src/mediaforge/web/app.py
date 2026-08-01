@@ -786,11 +786,36 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     @app.route("/")
     def index():
         sto_lang_labels = {"1": "German Dub", "2": "English Dub", "3": "English Dub (German Sub)"}
-        _devinfo_warnings = [
-            {**p, "body_html": render_markdown(p.get("body"))}
-            for p in get_devinfo_posts()
-            if (p.get("type") or "").strip().lower() == "warning"
-        ]
+        # "warning" and "important" both get a banner at the top of the home
+        # page; "important" additionally raises a modal (see
+        # static/devinfo_important.js). Rendered in one pass over the cached
+        # feed rather than two, since get_devinfo_posts() hits the DB.
+        # Same "HH:MM DD.MM.YY" rendering the Dev Infos page uses. Imported
+        # inside the view (not at module level) because routes/devinfos.py is
+        # registered from this module further down -- a top-level import would
+        # be a cycle.
+        from .routes.devinfos import _format_devinfo_timestamp
+
+        _devinfo_warnings = []
+        _devinfo_importants = []
+        for _p in get_devinfo_posts():
+            _type = (_p.get("type") or "").strip().lower()
+            if _type not in ("warning", "important"):
+                continue
+            _entry = {
+                **_p,
+                "type": _type,
+                "body_html": render_markdown(_p.get("body")),
+                "formatted_time": _format_devinfo_timestamp(_p.get("remote_created_at")),
+            }
+            _devinfo_warnings.append(_entry)
+            # Only *unread* important posts interrupt with a modal. Marking the
+            # post as read (which confirming the modal does) is the one and only
+            # way to stop it -- deliberately not a localStorage dismissal like
+            # the banner has, because "important" exists precisely for the
+            # things a user must not be able to click away by accident.
+            if _type == "important" and not _p.get("is_read"):
+                _devinfo_importants.append(_entry)
         # Which home page layout this request gets. Read per request so the
         # switch takes effect on the next load instead of at startup.
         #
@@ -815,6 +840,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             sto_lang_labels=sto_lang_labels,
             supported_providers=WORKING_PROVIDERS,
             devinfo_warnings=_devinfo_warnings,
+            devinfo_importants=_devinfo_importants,
             new_home=_new_home,
             show_new_home_promo=_show_promo,
         )

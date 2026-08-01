@@ -36,6 +36,7 @@ async function updateDevInfoBadge() {
     if (type === "feature") return t("Feature", "Feature");
     if (type === "fix") return t("Fix", "Fix");
     if (type === "warning") return t("Warnung", "Warning");
+    if (type === "important") return t("Wichtig", "Important");
     return t("Ankündigung", "Announcement");
   }
 

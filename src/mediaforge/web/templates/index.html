@@ -5,6 +5,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='hanime.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='devinfo_banner.css') }}">
+{% if devinfo_importants %}<link rel="stylesheet" href="{{ url_for('static', filename='devinfo_important.css') }}">{% endif %}
 <style>
   /* #directLinkBtn and the search bar's mobile layout now live in
      index.css, next to the rest of the home styling. */
@@ -182,25 +183,90 @@
 {% endblock %}
 
 {% block content %}
+{# ── Dev Info banners ──────────────────────────────────────────────────
+   Both "warning" and "important" posts land here (app.py's index() builds
+   devinfo_warnings from both). "important" additionally raises the modal
+   further down; the banner is what remains on the page after the modal has
+   been confirmed, so the message stays visible instead of vanishing. #}
 {% if devinfo_warnings %}
 <div id="devinfoWarningBanners" class="devinfo-warning-banners">
   {% for w in devinfo_warnings %}
-  <div class="devinfo-warning-banner" data-devinfo-id="{{ w.id }}">
+  <div class="devinfo-warning-banner{% if w.type == 'important' %} devinfo-warning-banner-important{% endif %}"
+       data-devinfo-id="{{ w.id }}" data-devinfo-type="{{ w.type }}">
     <div class="devinfo-warning-icon">
+      {% if w.type == 'important' %}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+      {% else %}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
         stroke-linejoin="round">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
         <line x1="12" y1="9" x2="12" y2="13" />
         <line x1="12" y1="17" x2="12.01" y2="17" />
       </svg>
+      {% endif %}
     </div>
     <div class="devinfo-warning-content">
+      {% if w.type == 'important' %}
+      <span class="devinfo-warning-flag">{{ _('Important') }}</span>
+      {% endif %}
       <div class="devinfo-warning-title">{{ w.title }}</div>
       <div class="devinfo-warning-body devinfo-markdown">{{ w.body_html|safe }}</div>
     </div>
     <button type="button" class="devinfo-warning-dismiss" aria-label="{{ _('Dismiss') }}" title="{{ _('Dismiss') }}">&times;</button>
   </div>
   {% endfor %}
+</div>
+{% endif %}
+
+{# ── "Important" modal ─────────────────────────────────────────────────
+   Rendered only when there is at least one *unread* important post (app.py
+   filters on is_read). Confirming it marks that post as read and navigates to
+   the Dev Infos page so the full text can actually be read -- see
+   static/devinfo_important.js. Server-rendered rather than fetched, so it is
+   on screen with the first paint instead of after a round trip. #}
+{% if devinfo_importants %}
+<div id="devinfoImportantOverlay" class="devinfo-important-overlay" role="dialog" aria-modal="true"
+     aria-labelledby="devinfoImportantHeading" data-devinfos-url="{{ url_for('devinfos_page') }}" hidden>
+  <div class="devinfo-important-modal">
+    <div class="devinfo-important-head">
+      <span class="devinfo-important-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      </span>
+      <h2 class="devinfo-important-heading" id="devinfoImportantHeading">{{ _('Important notice') }}</h2>
+    </div>
+    <div class="devinfo-important-scroll">
+      {% for w in devinfo_importants %}
+      <div class="devinfo-important-post" data-devinfo-id="{{ w.id }}">
+        <h3 class="devinfo-important-title">{{ w.title }}</h3>
+        {% if w.author or w.formatted_time %}
+        <div class="devinfo-important-meta">
+          {% if w.author %}<span>{{ w.author }}</span>{% endif %}
+          {% if w.formatted_time %}<span>{{ w.formatted_time }}</span>{% endif %}
+        </div>
+        {% endif %}
+        <div class="devinfo-important-body devinfo-markdown">{{ w.body_html|safe }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="devinfo-important-actions">
+      <p class="devinfo-important-hint">
+        {{ _('Confirming marks this notice as read and opens the Dev Infos page.') }}
+      </p>
+      <button type="button" id="devinfoImportantConfirm" class="devinfo-important-btn">
+        {{ _('Understood — open Dev Infos') }}
+      </button>
+    </div>
+  </div>
 </div>
 {% endif %}
 <div class="container">
@@ -560,6 +626,7 @@
 {{ startpage.start_page_i18n() }}
 <script src="{{ url_for('static', filename='start_page.js') }}"></script>
 <script src="{{ url_for('static', filename='devinfo_banner.js') }}"></script>
+{% if devinfo_importants %}<script src="{{ url_for('static', filename='devinfo_important.js') }}"></script>{% endif %}
 {% if show_new_home_promo %}
 <script>
   /* "Try the new home page" — see .nh-promo in index.css.

@@ -1,0 +1,238 @@
+/* -- Dev Info "important" modal ------------------------------------------
+   Raised on the home page (index.html) when at least one unread Dev Info post
+   of type "important" exists. Unlike the warning banner next to it, this one
+   is not dismissible: the only way out is the confirm button, which marks the
+   post as read and navigates to the Dev Infos page. Styled entirely from
+   variables.css tokens so it follows the active theme.
+
+   Kept in its own file rather than appended to devinfo_banner.css: index.html
+   only links it when there actually is an unread important post, so the usual
+   page load ships nothing extra. */
+
+/* Scroll lock while the dialog is up, so scrolling a long notice does not
+   scroll the home page behind it. Set by devinfo_important.js. The same class
+   name (and rule) exists in stats.css for the stats modals -- repeated here
+   rather than shared because that stylesheet is not loaded on the home page,
+   and an identical single-property rule is cheaper than a cross-page import. */
+body.modal-open {
+  overflow: hidden;
+}
+
+.devinfo-important-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000; /* above the sidebar and the shared modals */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(0, 0, 0, 0.66);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* [hidden] alone loses to the display:flex above -- the attribute is how the
+   JS keeps the dialog out of the way until it has decided to show it. */
+.devinfo-important-overlay[hidden] { display: none; }
+
+.devinfo-important-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--danger, #ef4444);
+  border-radius: var(--radius-xl, 18px);
+  box-shadow: var(--shadow-modal, 0 30px 80px rgba(0, 0, 0, 0.55));
+  padding: 22px 22px 18px;
+  animation: devinfoImportantIn .18s ease-out;
+}
+
+@keyframes devinfoImportantIn {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Respect the OS "reduce motion" setting -- an alert that a user cannot skip
+   should not also be the thing that makes them motion-sick. */
+@media (prefers-reduced-motion: reduce) {
+  .devinfo-important-modal { animation: none; }
+}
+
+.devinfo-important-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.devinfo-important-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--danger, #ef4444);
+}
+
+.devinfo-important-icon svg { width: 26px; height: 26px; }
+
+.devinfo-important-heading {
+  margin: 0;
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.devinfo-important-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;
+}
+
+.devinfo-important-post + .devinfo-important-post {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.devinfo-important-title {
+  margin: 0 0 4px;
+  font-size: 0.99rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.devinfo-important-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.devinfo-important-body {
+  font-size: 0.89rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.devinfo-important-actions {
+  flex: 0 0 auto;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.devinfo-important-hint {
+  margin: 0;
+  flex: 1 1 200px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.devinfo-important-btn {
+  flex: 0 0 auto;
+  /* 44px is the minimum comfortable touch target -- this is the only control
+     in the dialog, so missing it on a phone is the whole failure mode. */
+  min-height: 44px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-md, 10px);
+  background: var(--danger, #ef4444);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter var(--transition, .15s), opacity var(--transition, .15s);
+}
+
+.devinfo-important-btn:hover:not(:disabled),
+.devinfo-important-btn:focus-visible { filter: brightness(1.1); }
+
+.devinfo-important-btn:disabled { opacity: .65; cursor: default; }
+
+/* The modal renders Markdown through the same .devinfo-markdown rules the Dev
+   Infos page uses, but that stylesheet is not loaded here -- the handful of
+   rules the body actually needs are inlined below instead of pulling in the
+   whole page stylesheet. */
+.devinfo-important-body > *:first-child { margin-top: 0; }
+.devinfo-important-body > *:last-child { margin-bottom: 0; }
+.devinfo-important-body p { margin: 0 0 9px; }
+.devinfo-important-body ul,
+.devinfo-important-body ol { margin: 0 0 9px; padding-left: 1.35em; }
+.devinfo-important-body li { margin: 3px 0; }
+.devinfo-important-body strong { color: var(--text-primary); }
+.devinfo-important-body a { color: var(--text-link, #8b8bff); text-decoration: none; }
+.devinfo-important-body a:hover { text-decoration: underline; }
+.devinfo-important-body code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  padding: 2px 5px;
+  border-radius: var(--radius-sm, 6px);
+}
+.devinfo-important-body pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.devinfo-important-body pre code { background: none; padding: 0; font-size: 0.8rem; white-space: pre; }
+.devinfo-important-body img { max-width: 100%; height: auto; border-radius: var(--radius-sm, 6px); }
+.devinfo-important-body table {
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.devinfo-important-body th,
+.devinfo-important-body td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; }
+
+@media (max-width: 700px) {
+  .devinfo-important-overlay { padding: 16px 12px; }
+  .devinfo-important-modal { padding: 18px 16px 14px; border-radius: var(--radius-lg, 14px); }
+  .devinfo-important-heading { font-size: 1rem; }
+  .devinfo-important-title { font-size: 0.94rem; }
+  .devinfo-important-body { font-size: 0.86rem; }
+}
+
+@media (max-width: 480px) {
+  .devinfo-important-overlay { padding: 0; align-items: flex-end; }
+  .devinfo-important-modal {
+    /* Full-bleed sheet on a phone: a centred card with side margins wastes the
+       little width there is, and the body can be long. */
+    max-width: none;
+    max-height: 100%;
+    height: 100%;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: 18px 14px 14px;
+  }
+  .devinfo-important-actions { flex-direction: column; align-items: stretch; }
+  .devinfo-important-btn { width: 100%; }
+}

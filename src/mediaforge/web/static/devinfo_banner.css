@@ -40,6 +40,31 @@
   height: 24px;
 }
 
+/* "important" posts share this banner but are the louder variant: red instead
+   of orange, and paired with a modal (devinfo_important.js). See app.py's
+   index(), which feeds both types into devinfo_warnings. */
+.devinfo-warning-banner-important {
+  border-left-color: var(--danger, #ef4444);
+}
+
+.devinfo-warning-banner-important .devinfo-warning-icon {
+  color: var(--danger, #ef4444);
+}
+
+.devinfo-warning-flag {
+  display: inline-block;
+  margin-bottom: 5px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: rgba(239, 68, 68, 0.16);
+  color: var(--danger, #ef4444);
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .devinfo-warning-content {
   flex: 1 1 auto;
   min-width: 0;

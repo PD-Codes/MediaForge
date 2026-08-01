@@ -64,8 +64,20 @@ def _devinfos_fetch_and_store():
         for rp in raw_posts:
             if not isinstance(rp, dict):
                 continue
+            # Prefer the server's ``uid`` (a UUID) over ``id``. Both name the
+            # same post -- newer devInfo servers publish the UUID under both
+            # keys -- but ``id`` used to be an SQLite rowid, which the server
+            # reuses after a delete: a fresh post could inherit the number of a
+            # deleted one and therefore its row in devinfo_read, showing up as
+            # already read the moment it arrived. Reading ``uid`` first makes
+            # that impossible; the ``id`` fallback keeps older/self-hosted
+            # devInfo servers working. Posts without either key are skipped --
+            # a NULL id would collapse every such post into one cache row.
+            post_id = rp.get("uid") or rp.get("id")
+            if post_id in (None, ""):
+                continue
             posts.append({
-                "id": rp.get("id"),
+                "id": post_id,
                 "title": rp.get("title"),
                 "body": rp.get("body"),
                 "type": rp.get("type"),

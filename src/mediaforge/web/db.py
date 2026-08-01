@@ -6252,6 +6252,15 @@ CREATE TABLE IF NOT EXISTS devinfo_posts (
 # refreshes. Keying this table by the post's own id (not a local rowid) means
 # a read post stays read across those wipes, as long as the remote server
 # keeps handing back the same id for it.
+#
+# That last condition is why the id stored here must be the devInfo server's
+# ``uid`` (a UUID), not its integer ``id``: the integer is an SQLite rowid on
+# that side and gets handed out again after a delete, so a brand-new post
+# could land on the number of a deleted one and inherit its row below --
+# arriving already marked as read. devinfos_monitor.py reads ``uid`` first for
+# exactly this reason. The stale numeric rows left over from before that
+# change need no migration: replace_devinfo_posts() prunes every read id that
+# is not in the current batch, and after the switch no batch contains them.
 _CREATE_DEVINFO_READ_TABLE = """
 CREATE TABLE IF NOT EXISTS devinfo_read (
     id      TEXT    PRIMARY KEY,
