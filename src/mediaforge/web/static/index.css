@@ -1505,38 +1505,63 @@ a.hp-item:focus-visible {
 .home-density-compact .browse-section { margin-bottom: 18px; }
 .home-density-compact .browse-heading { font-size: 1rem; }
 
-/* List = a different shape, not a smaller one. The row stops scrolling
-   sideways and becomes what the name promises: one line per title, artwork
-   as a thumbnail on the left, everything else readable at a glance. */
+/* List = a different shape, not a smaller one. One line per title: artwork
+   as a small thumbnail on the left, title and meta beside it, the badges
+   that normally ride on the poster pulled out to the right where they can
+   be read.
+
+   Written as its own layout rather than as tweaks to the card: a browse card
+   is an absolutely-positioned stack (poster, hover drawer, source pill,
+   "Downloaded" badge), and every one of those pieces has to be told where to
+   go when the box becomes 62px tall. Half of them were still floating over
+   the thumbnail before. */
 .home-density-list .browse-grid {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: stretch;
+  gap: 6px;
+  /* Every one of these undoes a rule the horizontal carousel needs and a
+     column does not. The scroll-snap and the padding/negative-margin pair
+     (which exists to give the card's hover lift room) are what kept the rows
+     from simply filling the width. */
   overflow: visible;
+  scroll-snap-type: none;
+  padding: 0;
+  margin-top: 0;
 }
 
 .home-density-list .browse-card,
 .home-density-list .home-pcard {
-  width: auto;
-  flex: none;
+  /* width AND flex-basis: .browse-card is `flex-shrink: 0; width: 140px` for
+     the carousel, and a flex item with a fixed width does not stretch no
+     matter what the container says -- which is why the rows were 140px wide
+     with the rest of the screen empty. */
+  width: 100%;
+  flex: 1 1 auto;
+  align-self: stretch;
+  scroll-snap-align: none;
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 62px;
+  padding: 6px 12px 6px 6px;
   border-radius: var(--radius-md);
-  border-color: transparent;
-  background: transparent;
-  padding: 4px 8px;
-  /* No lift on hover in this mode: a row that jumps 4px pushes the whole
-     column around. The background is the hover cue instead. */
+  /* The accent edge: a list needs a visible boundary per entry far more than
+     a poster grid does, where the artwork itself draws the box. */
+  border: 1px solid var(--accent-soft, var(--border));
+  border-left: 3px solid var(--accent);
+  background: var(--bg-card);
+  overflow: visible;
+  /* No lift on hover here: a row that jumps 4px pushes the whole column
+     around. The background is the cue instead. */
   transform: none !important;
   box-shadow: none !important;
 }
 
 .home-density-list .browse-card:hover,
-.home-density-list .home-pcard:hover,
-.home-density-list .home-pcard-hit:hover {
+.home-density-list .home-pcard:hover {
   background: var(--bg-hover);
-  border-color: var(--border);
+  border-color: var(--accent);
 }
 
 .home-density-list .home-pcard-hit {
@@ -1544,6 +1569,7 @@ a.hp-item:focus-visible {
   align-items: center;
   gap: 12px;
   width: 100%;
+  min-width: 0;
   border: 0;
   background: transparent;
   padding: 0;
@@ -1554,47 +1580,81 @@ a.hp-item:focus-visible {
 .home-density-list .home-pcard-faux,
 .home-density-list .home-pcard-hit > img {
   flex: none;
-  width: 44px;
-  height: 62px !important;   /* wins over the --pcard-art box */
-  border-radius: 6px;
+  width: 38px;
+  height: 54px !important;      /* wins over the --pcard-art box */
+  border-radius: 5px;
   object-fit: cover;
-  aspect-ratio: auto;                 /* the 2/3 ratio is a poster rule */
+  aspect-ratio: auto;           /* the 2/3 ratio is a poster rule */
 }
 
-.home-density-list .browse-info,
-.home-density-list .home-pcard-title,
-.home-density-list .home-pcard-sub {
+/* Title and meta share the remaining width and stay on one line each. */
+.home-density-list .browse-info {
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 0;
   text-align: left;
-  min-width: 0;
 }
 
 .home-density-list .home-pcard-title,
-.home-density-list .home-pcard-sub { display: block; }
+.home-density-list .home-pcard-sub {
+  display: block;
+  padding: 0;
+  text-align: left;
+}
+
+.home-density-list .home-pcard-hit > .home-pcard-title { flex: 1 1 auto; min-width: 0; }
+.home-density-list .home-pcard-hit > .home-pcard-sub { flex: 0 0 auto; }
+
+/* The source pill is anchored to the poster's bottom-left on a card; in a row
+   it belongs after the title, in the flow. */
+.home-density-list .browse-src-pill {
+  position: static;
+  flex: none;
+  order: 4;
+  margin-left: 8px;
+}
+
+/* Same for the "Downloaded" / Auto-Sync markers: absolute on a card, and on a
+   row they ended up hovering somewhere over the middle of the page. */
+.home-density-list .downloaded-badge,
+.home-density-list .card-top-badge {
+  position: static;
+  flex: none;
+  order: 5;
+  margin-left: 8px;
+}
 
 /* The progress bar is absolutely positioned at the poster's bottom edge in
    the other two modes -- in a list row that put it straight through the
-   title. Here it belongs under the text, in flow. */
+   title. Here it sits at the end of the row, in flow. */
 .home-density-list .home-pcard-bar {
   position: static;
-  order: 3;
+  order: 6;
   flex: none;
-  width: 90px;
+  width: 84px;
   margin-left: auto;
   height: 4px;
   border-radius: 999px;
   overflow: hidden;
 }
 
-.home-density-list .home-pcard-play { display: none; }
-
-/* The badges ride on the poster, which is a thumbnail now -- they would
-   cover it completely. */
+/* Things that only make sense on a poster. */
+.home-density-list .home-pcard-play,
 .home-density-list .browse-hover-overlay,
 .home-density-list .home-pcard-flag,
-.home-density-list .home-pcard-badge { display: none; }
-
+.home-density-list .home-pcard-badge,
 .home-density-list .browse-scroll-btn { display: none; }
+
+/* Phones: the thumbnail plus a title is all that fits. Everything optional
+   steps out rather than squeezing the title down to "Nige…". */
+@media (max-width: 620px) {
+  .home-density-list .browse-src-pill,
+  .home-density-list .home-pcard-bar,
+  .home-density-list .home-pcard-sub,
+  .home-density-list .browse-card .genres { display: none; }
+  .home-density-list .downloaded-badge,
+  .home-density-list .card-top-badge { margin-left: auto; }
+}
 
 /* ── Keyboard focus ──────────────────────────────────────────────────
    The cards are divs with a roving tabindex (see static/home_2_1.js), so
@@ -1782,10 +1842,6 @@ a.hp-item:focus-visible {
   .feed-tools::-webkit-scrollbar { display: none; }
   .feed-tool-group { flex: 0 0 auto; }
   .feed-tool { padding: 8px 13px; }        /* keeps the 40px-ish touch target */
-
-  /* One horizontal scroller instead of a grid: a 210px minimum column on a
-     360px phone is one card per row and a very long page. */
-  .home-density-list .browse-grid { grid-template-columns: 1fr; }
 
   .home-onboard-steps { grid-template-columns: 1fr 1fr; }
 

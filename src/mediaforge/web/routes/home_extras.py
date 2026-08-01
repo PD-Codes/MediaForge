@@ -151,9 +151,15 @@ def register_home_extras_routes(app):
                              for sid, _label, _color in _FEED_BUILTIN_META)
         except Exception:
             any_source = True
+        # Every link here is a real tab id, checked against the templates:
+        # #sources and #library exist on /settings, the TMDB key lives on
+        # /integrations#cineinfo (there is no CineInfo tab under Settings at
+        # all), and the media-server picker is on /profile. A checklist that
+        # sends you to a page that does not scroll anywhere is worse than no
+        # checklist.
         step("sources", any_source, "/settings#sources", admin_only=True)
         step("tmdb", bool((get_setting("cineinfo_tmdb_api_key", "") or "").strip()),
-             "/settings#cineinfo", admin_only=True)
+             "/integrations#cineinfo", admin_only=True)
 
         # "Has a library" is asked of the CACHE, not of the configured paths:
         # a path that was added but never scanned is exactly the state this
@@ -172,10 +178,14 @@ def register_home_extras_routes(app):
             has_module = True
         step("modules", has_module, "/extensions")
 
+        # /settings#account never existed -- there is no such tab, and
+        # /settings redirects a non-admin anyway, so this step sent exactly
+        # the people who need it to a page they cannot open. The picker lives
+        # on the profile page.
         step("mediaplayer",
              bool((_user_prefs().get("mediaplayer_user") or "").strip())
              or not mediaplayer.is_configured(),
-             "/settings#account")
+             "/profile#mediaplayer")
 
         done = (_user_prefs().get("home_onboarding_done") or "") == "1"
         return jsonify({

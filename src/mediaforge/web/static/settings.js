@@ -179,9 +179,22 @@ async function loadSettings() {
     updateSyncLanguageDropdown(isLangSep, currentSyncLang);
     if (syncProviderSelect && data.sync_provider) syncProviderSelect.value = data.sync_provider;
     if (syncPathUnavailableSelect && data.sync_path_unavailable_action) syncPathUnavailableSelect.value = data.sync_path_unavailable_action;
+    const defaultThemeMode = document.getElementById("defaultThemeMode");
+    if (defaultThemeMode && data.default_theme_mode) {
+      defaultThemeMode.value = data.default_theme_mode === "light" ? "light" : "dark";
+    }
+    const defaultAccentHex = document.getElementById("defaultAccentHex");
+    if (defaultAccentHex && data.default_accent !== undefined) {
+      defaultAccentHex.value = data.default_accent || "";
+      const picker = document.getElementById("defaultAccentPicker");
+      if (picker && data.default_accent) picker.value = data.default_accent;
+    }
     if (data.sync_default_custom_path !== undefined) {
       _syncDefaultPathWanted = String(data.sync_default_custom_path || "");
       renderSyncDefaultPathOptions();
+      // The Downloads table shows the same value as a radio per row, and it
+      // may already have been drawn before this answer arrived.
+      if (customPathsCache && customPathsCache.length) renderCustomPaths(customPathsCache);
     }
     const syncErrorRetriesEl = document.getElementById("syncErrorRetries");
     if (syncErrorRetriesEl && data.sync_error_retries !== undefined) syncErrorRetriesEl.value = data.sync_error_retries;
@@ -954,6 +967,10 @@ async function saveSyncDefaultPath() {
     if (!data.ok) throw new Error(data.error || "");
     _syncDefaultPathWanted = value;
     showToast(t("Standard-Pfad gespeichert", "Default path saved"));
+    // Downloads shows the same setting as a radio per row. One value, two
+    // controls -- so whichever one is used, the other has to follow, or the
+    // next visit to the other tab shows a stale mark.
+    if (customPathsCache && customPathsCache.length) renderCustomPaths(customPathsCache);
   } catch (e) {
     _syncDefaultPathWanted = previous;
     renderSyncDefaultPathOptions();
@@ -1993,11 +2010,38 @@ function restorePathSelection(root, values) {
   if (window.mfMultiSelect) window.mfMultiSelect.refresh(root);
 }
 
+/** Mark one custom path as the Auto-Sync default (or clear the mark).
+    The same setting the Auto-Sync tab's dropdown writes -- one value, two
+    places to set it, so both read it back from /api/settings. */
+function setSyncDefaultPath(pathId) {
+  const wanted = String(pathId || "");
+  const previous = String(_syncDefaultPathWanted || "");
+  _syncDefaultPathWanted = wanted;
+  fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sync_default_custom_path: wanted }),
+  }).then(function (resp) {
+    if (!resp.ok) throw new Error(String(resp.status));
+    if (typeof showToast === "function") showToast(t("Gespeichert", "Saved"));
+    // The Auto-Sync tab shows the same value in a dropdown.
+    if (typeof renderSyncDefaultPathOptions === "function") renderSyncDefaultPathOptions();
+  }).catch(function (err) {
+    // Put the radio back where it was: leaving it on the row the server
+    // rejected would claim a default that is not set.
+    _syncDefaultPathWanted = previous;
+    renderCustomPaths(customPathsCache);
+    if (typeof showToast === "function") {
+      showToast(t("Konnte nicht gespeichert werden", "Could not be saved") + ": " + err.message);
+    }
+  });
+}
+
 function renderCustomPaths(paths) {
   customPathsBody.innerHTML = "";
   if (!paths.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = t('<td colspan="5" style="color:#6b7280;text-align:center">Keine benutzerdefinierten Pfade</td>','<td colspan="5" style="color:#6b7280;text-align:center">No custom paths</td>');
+    tr.innerHTML = t('<td colspan="6" style="color:#6b7280;text-align:center">Keine benutzerdefinierten Pfade</td>','<td colspan="6" style="color:#6b7280;text-align:center">No custom paths</td>');
     customPathsBody.appendChild(tr);
     return;
   }
@@ -2006,11 +2050,28 @@ function renderCustomPaths(paths) {
     const delCell = customPathsCanEdit()
       ? '<td><button class="btn-del" onclick="deleteCustomPath(' + p.id + ')">'+t("Löschen","Delete")+'</button></td>'
       : '<td></td>';
+    // The table head has promised a "Default path for Auto-Sync" column (and
+    // the hint below the table explains it) since this feature shipped, but
+    // no cell was ever rendered for it: every row was one <td> short, so
+    // Delete slid left into that column and the last one stayed empty.
+    //
+    // A radio, not a checkbox: only ONE path can carry the mark, and a radio
+    // group is the control that says so without needing to be told.
+    const isSyncDefault = String(_syncDefaultPathWanted || "") === String(p.id);
+    const syncCell =
+      '<td class="path-sync-cell"><label class="settings-checkbox-row">' +
+      '<input type="radio" name="customPathSyncDefault" class="chb-main"' +
+      ' value="' + p.id + '"' + (isSyncDefault ? " checked" : "") +
+      (customPathsCanEdit() ? "" : " disabled") +
+      ' onchange="setSyncDefaultPath(this.value)"' +
+      ' aria-label="' + esc(t("Standardpfad für Auto-Sync", "Default path for Auto-Sync")) + '">' +
+      "</label></td>";
     tr.innerHTML =
       "<td>" + esc(p.name) + "</td>" +
       "<td style=\"font-family:'SF Mono','Fira Code',monospace;font-size:.82rem\">" + esc(p.path) + "</td>" +
       '<td class="path-site-cell">' + renderPathSiteSelect(p) + "</td>" +
       '<td class="path-kind-cell">' + renderPathKindSelect(p) + "</td>" +
+      syncCell +
       delCell;
     customPathsBody.appendChild(tr);
   });
@@ -3012,6 +3073,44 @@ function saveThemePackDefault() {
       showToast((d && d.error) || t('Speichern fehlgeschlagen', 'Save failed'));
     }
   }).catch(() => showToast(t('Speichern fehlgeschlagen', 'Save failed')));
+}
+
+// ── Instance default appearance (Settings → Design, admin only) ────────────
+// What an account that has never picked a look is shown. Its own setting keys
+// (default_theme_mode / default_accent), NOT the per-account theme_mode and
+// accent -- those are on the profile page, and an admin changing them there
+// changes only their own view, which is exactly the confusion this splits up.
+function saveAppearanceDefaults(pickedColour) {
+  const mode = document.getElementById("defaultThemeMode");
+  const hex = document.getElementById("defaultAccentHex");
+  const picker = document.getElementById("defaultAccentPicker");
+  if (!mode || !hex) return;
+
+  if (pickedColour) hex.value = pickedColour;
+  const accent = (hex.value || "").trim();
+  if (accent && !/^#[0-9a-fA-F]{6}$/.test(accent)) {
+    showToast(t("Ungültige Farbe (z. B. #7c3aed)", "Invalid colour (e.g. #7c3aed)"), "error");
+    return;
+  }
+  if (picker && accent) picker.value = accent;
+
+  fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ default_theme_mode: mode.value, default_accent: accent }),
+  }).then(async function (resp) {
+    const body = await resp.json().catch(function () { return {}; });
+    if (!resp.ok) throw new Error(body.error || String(resp.status));
+    showToast(t("Standard gespeichert", "Default saved"));
+  }).catch(function (err) {
+    showToast(t("Konnte nicht gespeichert werden", "Could not be saved") + ": " + err.message);
+  });
+}
+
+function clearAppearanceDefaultAccent() {
+  const hex = document.getElementById("defaultAccentHex");
+  if (hex) hex.value = "";
+  saveAppearanceDefaults();
 }
 
 function _toggleDesignSetting(key, id, className, label) {

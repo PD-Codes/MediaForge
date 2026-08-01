@@ -861,3 +861,18 @@ label {
     padding: 0 8px;
   }
 }
+
+/* A radio wearing .chb-main. The class resets the native control and draws a
+   square box, which is right for a checkbox and wrong for a radio: a square
+   in a group where only one option can win reads as "tick several". Same
+   size, same states, round. Used by the Auto-Sync default column in
+   Settings -> Downloads. */
+input[type="radio"].chb-main { border-radius: 50%; }
+
+input[type="radio"].chb-main:checked::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: currentColor;
+}

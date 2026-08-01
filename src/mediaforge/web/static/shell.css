@@ -1263,3 +1263,15 @@ body.mf-scroll-locked {
   overflow: hidden;
   overscroll-behavior: none;
 }
+
+/* The "M" pill on a settings CARD (Third Party, Notifications, Module
+   Settings — anything rendered by _settings_card_macro.html). Same pill as
+   the sidebar's, but it sits mid-header between the title and the badges
+   instead of at the end of a line, so it needs room on its right.
+
+   Its own class rather than a tweak to .sidebar-module-pill: that one is
+   tuned for a sidebar row, and widening it there would push every module
+   entry in the main menu around. Lives in shell.css because base.html loads
+   this file on every page — integrations.css is not loaded on the other two
+   pages that use the same macro. */
+.card-module-pill { margin-right: 15px; }

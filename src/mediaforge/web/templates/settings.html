@@ -334,16 +334,6 @@
 
 
     {% if is_admin %}
-    {# The home page's own settings moved to their own tab (Start Page) once
-       there was more than one switch to make. This is only the pointer. #}
-    <div class="settings-section">
-      <h2>{{ _('Home page') }}</h2>
-      <div class="settings-hint" style="padding:0 22px 14px;">
-        {{ _('Which rows the home page shows, in which order, and how many cards each holds now lives in its own tab.') }}
-        <a href="#startpage" onclick="switchTab('startpage')">{{ _('Start Page') }}</a>
-      </div>
-    </div>
-
     <div class="settings-section">
       <h2>{{ _('Startup & Tray') }}</h2>
       <div id="startupTrayOptions">
@@ -425,24 +415,17 @@
   ══════════════════════════════════════════════════════ -->
   <!-- ══════════════════════════════════════════════════════
        Tab: Start Page
-       Two scopes on one page (see _start_page_form.html): what this
-       account sees, and -- for an admin -- what a fresh account starts
-       with. The personal half is also reachable from the home page
-       itself, because /settings is admin-only.
+       ONE scope: what a fresh account starts with. The personal half moved
+       to /profile once that page existed -- it only ever lived here because
+       /settings was the sole place a form could go, and having both scopes
+       stacked meant two identical-looking forms writing to different places.
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-startpage">
-    {# The instance default comes first: it is the ground everything else
-       stands on, and the personal block below is explicitly described as
-       "everything you do not change follows the default". Reading the
-       override before the thing it overrides made no sense. #}
     {% if is_admin %}
     {{ startpage.start_page_form('global', show_new_home_toggle=True,
          heading=_('Default for new accounts'),
          intro=_('What someone sees who has never opened these settings. Changing this does not overwrite what a user already chose for themselves.')) }}
     {% endif %}
-    {{ startpage.start_page_form('user',
-         heading=_('Your home page'),
-         intro=_('These settings are yours alone. Anything you do not change follows the instance default.')) }}
   </div>
 
   <div class="settings-tab-panel" id="tab-library">
@@ -600,67 +583,44 @@
   <div class="settings-tab-panel active" id="tab-design">
     <div class="page-header" style="margin-bottom:20px;">
       <h1 class="page-title">{{ _('Design') }}</h1>
-      <p class="page-subtitle">{{ _('Appearance themes, accent color, visual effects and layout options') }}</p>
+      <p class="page-subtitle">{{ _('What a new account starts with, plus the visual effects of this browser. Your own theme, dark/light and accent colour are on your profile page.') }}</p>
     </div>
     {# module cards moved to the Module Settings page #}
+    {# The controls that used to sit here wrote to the ACCOUNT, so an admin
+       "setting up the instance" changed nothing for anybody else. They are on
+       the profile page now. What is left here are real instance defaults:
+       what an account that has never picked anything is shown. #}
+    {% if is_admin %}
     <div class="settings-section">
-      <h2>{{ _('Design') }}</h2>
-      <h3 class="settings-subtitle">{{ _('Appearance') }}</h3>
+      <h2>{{ _('Default appearance for new accounts') }}</h2>
+      <div class="settings-hint">{{ _('What someone sees who has never chosen a look. Changing this does not touch accounts that already picked their own.') }}</div>
+      <h3 class="settings-subtitle">{{ _('Dark or light') }}</h3>
       <div class="settings-row">
-        <button class="appearance-theme-btn" id="themeBtnDark" onclick="setTheme('dark')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-          Dark
-        </button>
-        <button class="appearance-theme-btn" id="themeBtnLight" onclick="setTheme('light')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round">
-            <circle cx="12" cy="12" r="5" />
-            <line x1="12" y1="1" x2="12" y2="3" />
-            <line x1="12" y1="21" x2="12" y2="23" />
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-            <line x1="1" y1="12" x2="3" y2="12" />
-            <line x1="21" y1="12" x2="23" y2="12" />
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-          </svg>
-          Light
-        </button>
+        <select class="mf-token-input" id="defaultThemeMode" onchange="saveAppearanceDefaults()"
+                aria-label="{{ _('Dark or light') }}">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
       </div>
-
       <h3 class="settings-subtitle">{{ _('Accent Color') }}</h3>
       <div class="settings-row">
-        <div class="accent-presets" id="accentPresetsSettings"></div>
-      </div>
-      <h3 class="settings-subtitle">{{ _('Custom Color') }}</h3>
-      <div class="settings-row">
-
-        <input type="text" class="settings-input" id="accentHexInputSettings" maxlength="7" placeholder="#7c3aed" />
+        <input type="text" class="settings-input" id="defaultAccentHex" maxlength="7"
+               placeholder="#7c3aed" onchange="saveAppearanceDefaults()"
+               aria-label="{{ _('Accent Color') }}">
         <div class="accent-color-swatch">
-          <input type="color" id="accentColorPickerSettings" />
+          <input type="color" id="defaultAccentPicker" onchange="saveAppearanceDefaults(this.value)">
         </div>
-        <button class="btn btn-secondary" onclick="resetAppearance()">{{ _('Reset appearance') }}</button>
+        <button class="btn btn-secondary" onclick="clearAppearanceDefaultAccent()">{{ _('Use the built-in colour') }}</button>
       </div>
     </div>
+    {% endif %}
     <div class="settings-section">
       <h2>{{ _('Theme Packs') }}</h2>
       <div class="settings-hint">{{ _('Theme packs restyle the whole interface — fonts, animations, checkboxes, inputs, the calendar and more. New theme packs can be installed from the Module Store.') }}</div>
-      <h3 class="settings-subtitle">{{ _('Your theme') }}</h3>
-      <div class="settings-row theme-pack-row">
-        <select id="themePackSelect" onchange="saveThemePackChoice()">
-          <option value="">{{ _('Instance default') }}{% if active_theme_pack %} ({{ active_theme_pack.name }}){% endif %}</option>
-          <option value="default">{{ _('MediaForge default look') }}</option>
-          {% for tp in installed_theme_packs %}
-          <option value="{{ tp.folder }}">{{ tp.name }} (v{{ tp.version }})</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="settings-hint">{{ _('Only changes the look on this device. The dark/light switch above keeps working within a theme pack.') }}</div>
+      {# "Your theme" moved to the profile page with the rest of the personal
+         appearance settings. #}
       {% if is_admin %}
-      <h3 class="settings-subtitle">{{ _('Instance default (all users)') }}</h3>
+      <h3 class="settings-subtitle">{{ _('Default for new accounts') }}</h3>
       <div class="settings-row theme-pack-row">
         <select id="themePackDefaultSelect" onchange="saveThemePackDefault()">
           <option value="default">{{ _('MediaForge default look') }}</option>
@@ -670,60 +630,13 @@
         </select>
         <a class="btn btn-secondary" href="{{ url_for('extensions_page') }}#store">{{ _('Get more themes') }}</a>
       </div>
-      <div class="settings-hint">{{ _('The theme every user sees unless they pick their own above. Installed and managed in the Module Manager.') }}</div>
+      <div class="settings-hint">{{ _('The theme every account sees until it picks its own on the profile page. Installed and managed in the Module Manager.') }}</div>
       {% endif %}
     </div>
-    <div class="settings-section">
-      <h2>{{ _('Advanced Settings') }}</h2>
-      <div class="settings-hint">{{ _('These settings only change the design minimally.') }}</div>
-      <!-- Eine Glow Markierung aktiver Menüpunkte in der Akzentfarbe -->
-      <label class="settings-checkbox-row" for="glowEffect">
-        <input type="checkbox" class="chb-main" id="glowEffect" onchange="saveGlowEffect()" />
-        <span>{{ _('Add glow effect') }}</span>
-      </label>
-      <div class="settings-hint">{{ _('A glow highlight for active menu items in the accent color') }}</div>
-      <!-- Header-Farbe mit der Akzentfarbe ändern-->
-      <label class="settings-checkbox-row" for="headerColor">
-        <input type="checkbox" class="chb-main" id="headerColor" onchange="saveHeaderColor()" />
-        <span>{{ _('Change header color with accent color') }}</span>
-      </label>
-      <div class="settings-hint">{{ _('Change header color with accent color') }}</div>
-      <label class="settings-checkbox-row" for="headerColorHelp">
-        <input type="checkbox" class="chb-main" id="headerColorHelp" onchange="saveHeaderColorHelp()" />
-        <span>{{ _('Fade header color for easier readability') }}</span>
-      </label>
-      <div class="settings-hint">{{ _('Invert header color') }}</div>
-      <!-- Ein animiertes Laden in der Übersichtsanzeige für die einzelnen Elemente-->
-      <label class="settings-checkbox-row" for="skeletonLoader">
-        <input type="checkbox" class="chb-main" id="skeletonLoader" onchange="saveSkeletonLoader()" />
-        <span>{{ _('Skeleton Loader') }}</span>
-      </label>
-      <div class="settings-hint">{{ _('An animated loading indicator for items not yet loaded in the overview') }}</div>
-      <!-- Eine Markierung wenn man mit der Maus über einer der Filme hovert in der Akzentfarbe -->
-      <label class="settings-checkbox-row" for="chooseBorder">
-        <input type="checkbox" class="chb-main" id="chooseBorder" onchange="saveBorder()" />
-        <span>{{ _('Color highlight for selection') }}</span>
-      </label>
-      <div class="settings-hint">{{ _('A highlight when hovering over a movie or series in the accent color') }}</div>
-      <!-- Eine Markierung in der Übersicht was aktuell heruntergeladen wird in der Akzentfarbe-->
-      <label class="settings-checkbox-row" for="activeDownloadGlow">
-        <input type="checkbox" class="chb-main" id="activeDownloadGlow" onchange="saveActiveDownloadGlow()" />
-        <span>{{ _('Color highlight for currently downloading items') }}</span>
-      </label>
-      <div class="settings-hint">{{ _('A highlight for currently downloading items in the accent color') }}</div>
-      <!-- Eine Markierung in der Übersicht was aktuell heruntergeladen wird in der Akzentfarbe (Button wird etwas heller und um 5% kleiner beim Klick)-->
-      <label class="settings-checkbox-row" for="clickEffect">
-        <input type="checkbox" class="chb-main" id="clickEffect" onchange="saveClickEffect()" />
-        <span>{{ _('"Button Press" animation when clicking a button or link') }}</span>
-      </label>
-      <div class="settings-hint">{{ _('Button becomes slightly brighter and 5%% smaller on click') }}</div>
-      <!-- Icons bewegen sich beim Hovern in den Menüs -->
-      <label class="settings-checkbox-row" for="iconMove">
-        <input type="checkbox" class="chb-main" id="iconMove" onchange="saveIconMove()" />
-        <span>{{ _('Icon animations') }}</span>
-      </label>
-      <div class="settings-hint">{{ _('Icons animate on hover in menus') }}</div>
-    </div>
+    {# "Advanced Settings" moved to the profile page. They were written to
+       localStorage only, which made them per BROWSER -- neither an instance
+       setting nor an account one, on a page that is otherwise entirely about
+       the instance. They are account preferences now (ui_* keys). #}
   </div>
 
   {% if is_admin %}
@@ -1127,6 +1040,21 @@
             <option>VOE</option>
             <option>Vidmoly</option>
             <option>Vidoza</option>
+          </select>
+        </div>
+        {# Where a NEW sync job downloads to. settings.js has always had the
+           code for this dropdown (renderSyncDefaultPathOptions /
+           saveSyncDefaultPath) but the <select> it looks for was never in the
+           template, so both functions returned on their first line and the
+           setting could only be reached through the radio column in
+           Downloads. The list is filled from the custom paths at runtime. #}
+        <div class="settings-field">
+          <label class="settings-field-label" for="syncDefaultPath">{{ _('Default path') }}</label>
+          <select id="syncDefaultPath" onchange="saveSyncDefaultPath()" class="sync-select">
+            {# First entry is deliberately not a custom path: "the global
+               download folder" is a real answer the radio column in Downloads
+               cannot express, because unticking every radio is not a choice. #}
+            <option value="">{{ _('Global download folder') }}</option>
           </select>
         </div>
         <div class="settings-field">

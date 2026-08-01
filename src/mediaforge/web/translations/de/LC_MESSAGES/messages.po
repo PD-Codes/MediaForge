@@ -7242,3 +7242,59 @@ msgstr "Standard-Pfad:"
 
 msgid "The download folder a newly set up Auto-Sync starts on. Editing an existing job always keeps that job's own path, so changing this never moves jobs that already run."
 msgstr "Der Download-Ordner, mit dem ein neu eingerichteter Auto-Sync startet. Beim Bearbeiten eines bestehenden Auftrags bleibt immer dessen eigener Pfad erhalten — eine Änderung hier verschiebt also nie bereits laufende Aufträge."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Default path for Auto-Sync"
+msgstr "Standardpfad für Auto-Sync"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Default path"
+msgstr "Standardpfad"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Global download folder"
+msgstr "Globaler Download-Ordner"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Your own home page"
+msgstr "Deine eigene Startseite"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The rows, order and filters for YOUR account are on your profile page — this tab sets what a new account starts with."
+msgstr "Zeilen, Reihenfolge und Filter für DEIN Konto stehen auf deiner Profilseite — dieser Reiter legt fest, womit ein neues Konto startet."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "What a new account starts with, plus the visual effects of this browser. Your own theme, dark/light and accent colour are on your profile page."
+msgstr "Womit ein neues Konto startet, dazu die visuellen Effekte dieses Browsers. Dein eigenes Theme, Hell/Dunkel und die Akzentfarbe stehen auf deiner Profilseite."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The theme every account sees until it picks its own on the profile page. Installed and managed in the Module Manager."
+msgstr "Das Theme, das jedes Konto sieht, bis es auf der Profilseite ein eigenes wählt. Installiert und verwaltet im Modulmanager."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "This is the default for accounts that have not picked a layout themselves — everyone can overrule it on their profile page."
+msgstr "Das ist der Standard für Konten, die selbst kein Layout gewählt haben — jeder kann ihn auf seiner Profilseite überschreiben."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Link a Jellyfin/Plex profile on your profile page to see what you watched."
+msgstr "Verknüpfe auf deiner Profilseite ein Jellyfin-/Plex-Profil, um zu sehen, was du geschaut hast."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Default appearance for new accounts"
+msgstr "Standard-Aussehen für neue Konten"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "What someone sees who has never chosen a look. Changing this does not touch accounts that already picked their own."
+msgstr "Was jemand sieht, der nie ein Aussehen gewählt hat. Konten, die bereits ein eigenes gewählt haben, bleiben unberührt."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Dark or light"
+msgstr "Hell oder dunkel"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Use the built-in colour"
+msgstr "Eingebaute Farbe verwenden"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "These settings only change the design minimally. They are stored on your account, so they follow you to your next device."
+msgstr "Diese Einstellungen verändern das Design nur minimal. Sie werden auf deinem Konto gespeichert und folgen dir damit aufs nächste Gerät."

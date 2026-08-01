@@ -768,6 +768,10 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hov
   a.btn.btn-secondary, .settings-row button {
     width: 100%;
   }
+
+  .appearance-reset{
+    width: unset !important;
+  }
 }
 
 .accent-presets {
@@ -777,8 +781,8 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hov
 }
 
 .accent-preset {
-  width: 24px;
-  height: 24px;
+  width: 24px !important;
+  height: 24px !important;
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;

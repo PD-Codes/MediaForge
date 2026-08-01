@@ -1666,6 +1666,12 @@ def _build_card(item):
         "id": item["id"],
         "title": _gt(item["label"]),
         "badges": [(_gt(text), color) for text, color in item["badges"]],
+        # Which module put this card here, or None for a built-in integration.
+        # The sidebar has said so with an "M" pill since the menu rework;
+        # every settings card built from this shape can now say it too, so a
+        # card on a shared tab (Third Party, Notifications) is not mistaken
+        # for something the core ships.
+        "module_name": module_name_for_item(item["id"]),
         "description": _gt(item["description"]) if item["description"] else "",
         "enable_label": _gt(item["enable_label"]),
         "enable_desc": _gt(item["enable_desc"]) if item["enable_desc"] else "",

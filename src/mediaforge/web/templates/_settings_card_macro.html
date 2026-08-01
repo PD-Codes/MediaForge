@@ -21,6 +21,19 @@
     {% for badge_text, badge_color in card.badges %}
     <span class="integ-subsection-badge" style="background:{{ badge_color }};color:#fff;">{{ badge_text }}</span>
     {% endfor %}
+    {# Same "M" pill the sidebar uses for module-provided entries. On a shared
+       tab like Third Party a module's card sits next to Crunchyroll and
+       Fernsehserien and looked exactly like them -- so "why can I not find
+       this in the docs" had no visible answer. The module's folder name is
+       the tooltip, which is what you need to go and disable it. #}
+    {# The extra .card-module-pill carries the spacing. The shared
+       .sidebar-module-pill keeps its own geometry, which is tuned for a
+       sidebar row where the pill is the last thing on the line -- widening it
+       there would push every module entry in the main menu around. #}
+    {% if card.module_name %}
+    <span class="sidebar-module-pill card-module-pill"
+          title="{{ _('Module') }}: {{ card.module_name }}">M</span>
+    {% endif %}
   </div>
   <div class="integ-collapsible-body">
   {% if card.description %}

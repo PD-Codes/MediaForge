@@ -373,6 +373,9 @@ def register_settings_routes(app):
                 "comic_replace_original":    get_setting("comic_replace_original", "0"),
                 "web_console":               web_console,
                 "tray_mode":                 tray_mode,
+                # Instance defaults for the look (Settings -> Design).
+                "default_theme_mode":        get_setting("default_theme_mode", "dark"),
+                "default_accent":            get_setting("default_accent", ""),
                 "autostart_enabled":         autostart_enabled,
                 "open_browser_on_startup":   open_browser_on_startup,
                 "is_docker":                 is_docker,
@@ -1263,6 +1266,20 @@ def register_settings_routes(app):
             # everything is a mode that only pretends to restrict.
             set_setting("home_kids_max_fsk",
                         limit if limit in ("0", "6", "12", "16") else "6")
+
+        # Instance defaults for the look. Deliberately separate keys from the
+        # per-account ones (theme_mode / accent in user_ui_prefs): these two
+        # answer "what does a new account see", not "what do I see", and
+        # collapsing them is what made the old Design tab misleading.
+        if "default_theme_mode" in data:
+            mode = str(data["default_theme_mode"] or "").strip()
+            set_setting("default_theme_mode", mode if mode in ("dark", "light") else "dark")
+        if "default_accent" in data:
+            accent = str(data["default_accent"] or "").strip()
+            if accent and not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
+                return jsonify({"error": "Invalid accent colour"}), 400
+            # "" is a real value: fall back to the built-in accent.
+            set_setting("default_accent", accent)
 
         if "tray_mode" in data:
             val = "1" if str(data["tray_mode"]).lower() in ("true", "1") else "0"

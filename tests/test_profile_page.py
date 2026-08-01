@@ -133,3 +133,54 @@ def test_an_empty_or_oversized_list_is_refused(as_user):
     assert client.post("/api/progress/clear", json={"paths": []}).status_code == 400
     assert client.post("/api/progress/clear",
                        json={"paths": ["x"] * 501}).status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Instance default appearance + the account-backed "advanced" toggles
+# ---------------------------------------------------------------------------
+
+def test_the_instance_default_appearance_is_its_own_setting(as_user):
+    """Not the per-account theme_mode/accent: those answer "what do I see",
+    these answer "what does a new account see". Collapsing the two is what
+    made the old Design tab claim to configure the instance while writing to
+    one account."""
+    from mediaforge.web.db import get_setting
+
+    admin = as_user("admin")
+    assert admin.put("/api/settings", json={"default_theme_mode": "light",
+                                            "default_accent": "#123456"}).status_code == 200
+    try:
+        assert get_setting("default_theme_mode") == "light"
+        assert get_setting("default_accent") == "#123456"
+        # Reading it back is how base.html gets it into the page.
+        data = admin.get("/api/settings").get_json()
+        assert data["default_theme_mode"] == "light"
+        assert data["default_accent"] == "#123456"
+    finally:
+        admin.put("/api/settings", json={"default_theme_mode": "dark",
+                                         "default_accent": ""})
+
+
+def test_a_junk_accent_default_is_refused(as_user):
+    resp = as_user("admin").put("/api/settings", json={"default_accent": "red"})
+    assert resp.status_code == 400
+    # "" is a real value -- it means "use the built-in colour".
+    assert as_user("admin").put("/api/settings",
+                                json={"default_accent": ""}).status_code == 200
+
+
+def test_the_advanced_toggles_are_account_preferences_now(as_user):
+    """They were localStorage only, which made them per BROWSER: the same
+    account looked different on a laptop and a phone."""
+    from mediaforge.web.db import USER_UI_PREF_KEYS
+
+    for key in ("ui_glow_effect", "ui_header_color", "ui_skeleton_loader",
+                "ui_choose_border", "ui_active_download_glow", "ui_click_effect",
+                "ui_icon_move", "ui_header_color_help"):
+        assert key in USER_UI_PREF_KEYS
+
+    resp = as_user("user").post("/api/user/preferences",
+                                json={"ui_glow_effect": "1"})
+    assert resp.status_code == 200
+    assert as_user("user").post("/api/user/preferences",
+                                json={"ui_glow_effect": "maybe"}).status_code >= 400

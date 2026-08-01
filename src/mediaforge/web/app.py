@@ -8,6 +8,7 @@ web/routes/ (one module per feature) and are wired in via
 register_xxx_routes(app) calls near the end of create_app().
 """
 
+import re
 import secrets
 import threading
 import os
@@ -205,6 +206,25 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         except Exception:
             return {}
 
+    # The instance defaults for dark/light and the accent colour: what an
+    # account that has never picked one is shown. There was no such thing
+    # before -- the Design tab's controls were purely per-account, so an admin
+    # setting them up "for the instance" changed nothing for anybody else.
+    _ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+    def _resolve_appearance_defaults():
+        try:
+            mode = (_get_setting("default_theme_mode", "dark") or "dark").strip()
+            accent = (_get_setting("default_accent", "") or "").strip()
+        except Exception:
+            mode, accent = "dark", ""
+        return {
+            "theme_mode": mode if mode in ("dark", "light") else "dark",
+            # "" means "the built-in accent" -- base.html already has one and
+            # duplicating the literal here is one more place to keep in step.
+            "accent": accent if _ACCENT_RE.match(accent) else "",
+        }
+
     if auth_enabled:
         from .auth import (
             auth_bp,
@@ -387,6 +407,8 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 # Per-account appearance (theme pack / dark-light / accent),
                 # so the look follows the user instead of the browser.
                 "user_ui_prefs": _resolve_user_ui_prefs(),
+                # What an account that never picked one gets.
+                "appearance_defaults": _resolve_appearance_defaults(),
                 # Sidebar entries per category (see web/thirdparties/registry.py's
                 # section= param and base.html's per-category loops).
                 "discover_menu_items": resolve_menu_items("discover"),
@@ -480,6 +502,8 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 # Per-account appearance (theme pack / dark-light / accent),
                 # so the look follows the user instead of the browser.
                 "user_ui_prefs": _resolve_user_ui_prefs(),
+                # What an account that never picked one gets.
+                "appearance_defaults": _resolve_appearance_defaults(),
                 "discover_menu_items": resolve_menu_items("discover"),
                 "management_menu_items": resolve_menu_items("management"),
                 "syncplay_menu_items": resolve_menu_items("syncplay"),

@@ -128,7 +128,7 @@
         <div class="accent-color-swatch">
           <input type="color" id="accentColorPickerSettings" />
         </div>
-        <button class="btn btn-secondary" onclick="resetAppearance()">{{ _('Reset appearance') }}</button>
+        <button class="btn btn-secondary appearance-reset" onclick="resetAppearance()">{{ _('Reset appearance') }}</button>
       </div>
     </div>
 
@@ -144,6 +144,58 @@
           {% endfor %}
         </select>
       </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Advanced Settings') }}</h2>
+      <div class="settings-hint">{{ _('These settings only change the design minimally. They are stored on your account, so they follow you to your next device.') }}</div>
+      <!-- Eine Glow Markierung aktiver Menüpunkte in der Akzentfarbe -->
+      <label class="settings-checkbox-row" for="glowEffect">
+        <input type="checkbox" class="chb-main" id="glowEffect" onchange="mfSetUiToggle('ui_glow_effect', this.checked)" />
+        <span>{{ _('Add glow effect') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('A glow highlight for active menu items in the accent color') }}</div>
+      <!-- Header-Farbe mit der Akzentfarbe ändern-->
+      <label class="settings-checkbox-row" for="headerColor">
+        <input type="checkbox" class="chb-main" id="headerColor" onchange="mfSetUiToggle('ui_header_color', this.checked)" />
+        <span>{{ _('Change header color with accent color') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('Change header color with accent color') }}</div>
+      <label class="settings-checkbox-row" for="headerColorHelp">
+        <input type="checkbox" class="chb-main" id="headerColorHelp" onchange="mfSetUiToggle('ui_header_color_help', this.checked)" />
+        <span>{{ _('Fade header color for easier readability') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('Invert header color') }}</div>
+      <!-- Ein animiertes Laden in der Übersichtsanzeige für die einzelnen Elemente-->
+      <label class="settings-checkbox-row" for="skeletonLoader">
+        <input type="checkbox" class="chb-main" id="skeletonLoader" onchange="mfSetUiToggle('ui_skeleton_loader', this.checked)" />
+        <span>{{ _('Skeleton Loader') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('An animated loading indicator for items not yet loaded in the overview') }}</div>
+      <!-- Eine Markierung wenn man mit der Maus über einer der Filme hovert in der Akzentfarbe -->
+      <label class="settings-checkbox-row" for="chooseBorder">
+        <input type="checkbox" class="chb-main" id="chooseBorder" onchange="mfSetUiToggle('ui_choose_border', this.checked)" />
+        <span>{{ _('Color highlight for selection') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('A highlight when hovering over a movie or series in the accent color') }}</div>
+      <!-- Eine Markierung in der Übersicht was aktuell heruntergeladen wird in der Akzentfarbe-->
+      <label class="settings-checkbox-row" for="activeDownloadGlow">
+        <input type="checkbox" class="chb-main" id="activeDownloadGlow" onchange="mfSetUiToggle('ui_active_download_glow', this.checked)" />
+        <span>{{ _('Color highlight for currently downloading items') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('A highlight for currently downloading items in the accent color') }}</div>
+      <!-- Eine Markierung in der Übersicht was aktuell heruntergeladen wird in der Akzentfarbe (Button wird etwas heller und um 5% kleiner beim Klick)-->
+      <label class="settings-checkbox-row" for="clickEffect">
+        <input type="checkbox" class="chb-main" id="clickEffect" onchange="mfSetUiToggle('ui_click_effect', this.checked)" />
+        <span>{{ _('"Button Press" animation when clicking a button or link') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('Button becomes slightly brighter and 5%% smaller on click') }}</div>
+      <!-- Icons bewegen sich beim Hovern in den Menüs -->
+      <label class="settings-checkbox-row" for="iconMove">
+        <input type="checkbox" class="chb-main" id="iconMove" onchange="mfSetUiToggle('ui_icon_move', this.checked)" />
+        <span>{{ _('Icon animations') }}</span>
+      </label>
+      <div class="settings-hint">{{ _('Icons animate on hover in menus') }}</div>
     </div>
   </div>
 
@@ -178,10 +230,14 @@
     </div>
   </div>
 
-  {# ── Home page ─────────────────────────────────────────────────────── #}
+  {# ── Start Page ────────────────────────────────────────────────────────
+     Named after the Settings tab it mirrors, so "where do I change my rows"
+     has one answer. The form's user scope carries the layout switch (classic
+     / new / follow the instance default) as its first group, which is why
+     nothing extra is needed here for that. #}
   <div class="settings-tab-panel" id="panel-home">
     <div class="settings-section">
-      <h2>{{ _('Your home page') }}</h2>
+      <h2>{{ _('Start Page') }}</h2>
       <div class="settings-hint">{{ _('These settings are yours alone. Anything you do not change follows the instance default.') }}</div>
       {{ startpage.start_page_form('user') }}
     </div>

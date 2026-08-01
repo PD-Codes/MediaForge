@@ -4086,6 +4086,19 @@ USER_UI_PREF_KEYS = {
     # The Wrapped card is offered once per period; this remembers the last
     # period the user closed, e.g. "2026-07".
     "home_wrapped_seen": lambda v: v == "" or bool(_WRAPPED_PERIOD_RE.match(v)),
+    # The "Advanced" appearance toggles. They lived in localStorage only,
+    # which made them per BROWSER: the same account looked different on a
+    # laptop and a phone, and clearing site data reset them silently. Same
+    # reasoning as the theme/accent keys above -- a look you configured is a
+    # look you expect to find again. "" = follow the default (off).
+    "ui_glow_effect": lambda v: v in ("", "0", "1"),
+    "ui_header_color": lambda v: v in ("", "0", "1"),
+    "ui_header_color_help": lambda v: v in ("", "0", "1"),
+    "ui_skeleton_loader": lambda v: v in ("", "0", "1"),
+    "ui_choose_border": lambda v: v in ("", "0", "1"),
+    "ui_active_download_glow": lambda v: v in ("", "0", "1"),
+    "ui_click_effect": lambda v: v in ("", "0", "1"),
+    "ui_icon_move": lambda v: v in ("", "0", "1"),
     # The age ceiling the home feed is filtered to. "" = no limit.
     # PROTECTED (see below): this one is a restriction, not a preference, so
     # it must not be writable through the generic preferences endpoint.

@@ -75,13 +75,21 @@
     window._THEME_PACKS = {{ installed_theme_packs | tojson }};
     window._THEME_DEFAULT = {{ (active_theme_pack.folder if active_theme_pack else '') | tojson }};
     window._USER_PREFS = {{ (user_ui_prefs or {}) | tojson }};
+    window._APPEARANCE_DEFAULTS = {{ (appearance_defaults or {}) | tojson }};
     (function () {
-      // Account value wins; write it through so the mirror cannot go stale.
+      // Three levels, in this order: what THIS account picked, what the admin
+      // set as the instance default, and the built-in look. The middle one is
+      // new -- before it, an account that had never touched the theme fell
+      // straight through to the hardcoded dark/violet no matter what the
+      // instance was set up to look like.
       try {
         var acc = window._USER_PREFS || {};
+        var def = window._APPEARANCE_DEFAULTS || {};
         if (typeof acc.theme_pack === 'string') localStorage.setItem('aw-themepack', acc.theme_pack);
-        if (acc.theme_mode) localStorage.setItem('aw-theme', acc.theme_mode);
-        if (acc.accent) localStorage.setItem('aw-accent', acc.accent);
+        var mode = acc.theme_mode || def.theme_mode || '';
+        if (mode) localStorage.setItem('aw-theme', mode);
+        var accent = acc.accent || def.accent || '';
+        if (accent) localStorage.setItem('aw-accent', accent);
       } catch (e) { }
       try {
         var ov = localStorage.getItem('aw-themepack');
@@ -1185,15 +1193,19 @@
       // which is why the old localStorage.removeItem() pair is gone: clearing
       // the mirror while the account still held the previous values would have
       // brought them straight back on the next page load.
-      setTheme('dark');
-      applyAccent(_DEFAULT_ACCENT);
-      try {
-        var settings = ['aw-glow-effect', 'aw-header-color', 'aw-header-color-help', 'aw-skeleton-loader', 'aw-choose-border', 'aw-active-download-glow', 'aw-click-effect', 'aw-icon-move'];
-        settings.forEach(function (s) {
-          localStorage.setItem(s, 'false');
-        });
-        if (window._initExtendedSettings) _initExtendedSettings();
-      } catch (e) { }
+      // "Reset" means back to the INSTANCE default, not to the hardcoded
+      // look -- on an instance that was themed, resetting to violet-on-dark
+      // would look like a bug rather than a reset.
+      var def = window._APPEARANCE_DEFAULTS || {};
+      setTheme(def.theme_mode || 'dark');
+      applyAccent(def.accent || _DEFAULT_ACCENT);
+      // The advanced toggles are account values now, so "reset" has to write
+      // them back as off rather than only clearing the local mirror -- doing
+      // the latter would bring them straight back on the next page load, the
+      // same mistake the theme/accent reset above already had to unlearn.
+      (window._MF_UI_TOGGLES || []).forEach(function (s) {
+        if (window.mfSetUiToggle) window.mfSetUiToggle(s.pref, false);
+      });
     }
     function _initAppearance() {
       // Build presets
@@ -1260,30 +1272,55 @@
       _initExtendedSettings();
     }
 
+    // The "Advanced" appearance toggles.
+    //
+    // These used to live in localStorage ONLY, which quietly made them per
+    // BROWSER: the same account looked different on a laptop and on a phone,
+    // and clearing site data reset them with nothing to restore from. They
+    // are account preferences now (ui_* in db.USER_UI_PREF_KEYS), with
+    // localStorage kept purely as a pre-paint mirror so the classes are on
+    // <body> before the first frame -- the account values arrive with the
+    // page, but this function also runs on pages rendered before a change.
+    window._MF_UI_TOGGLES = [
+      { pref: 'ui_glow_effect',          ls: 'aw-glow-effect',          cls: 'glow-effect',          cb: 'glowEffect' },
+      { pref: 'ui_header_color',         ls: 'aw-header-color',         cls: 'header-color',         cb: 'headerColor' },
+      { pref: 'ui_header_color_help',    ls: 'aw-header-color-help',    cls: 'header-color-help',    cb: 'headerColorHelp' },
+      { pref: 'ui_skeleton_loader',      ls: 'aw-skeleton-loader',      cls: 'skeleton-loader',      cb: 'skeletonLoader' },
+      { pref: 'ui_choose_border',        ls: 'aw-choose-border',        cls: 'choose-border',        cb: 'chooseBorder' },
+      { pref: 'ui_active_download_glow', ls: 'aw-active-download-glow', cls: 'active-download-glow', cb: 'activeDownloadGlow' },
+      { pref: 'ui_click_effect',         ls: 'aw-click-effect',         cls: 'click-effect',         cb: 'clickEffect' },
+      { pref: 'ui_icon_move',            ls: 'aw-icon-move',            cls: 'icon-move',            cb: 'iconMove' }
+    ];
+
     function _initExtendedSettings() {
-      var settings = [
-        { key: 'aw-glow-effect', class: 'glow-effect' },
-        { key: 'aw-header-color', class: 'header-color' },
-        { key: 'aw-header-color-help', class: 'header-color-help' },
-        { key: 'aw-skeleton-loader', class: 'skeleton-loader' },
-        { key: 'aw-choose-border', class: 'choose-border' },
-        { key: 'aw-active-download-glow', class: 'active-download-glow' },
-        { key: 'aw-click-effect', class: 'click-effect' },
-        { key: 'aw-icon-move', class: 'icon-move' }
-      ];
-      settings.forEach(function (s) {
-        var active = localStorage.getItem(s.key) === 'true';
-        document.body.classList.toggle(s.class, active);
-        // Sync checkbox if on settings page
-        var cb = document.getElementById(s.key.replace('aw-', '').replace(/-([a-z])/g, function (g) { return g[1].toUpperCase(); }));
-        if (cb) cb.checked = active;
-        // Special case for 'choose-border' mapping to 'chooseBorder'
-        if (s.key === 'aw-choose-border') {
-          var cb2 = document.getElementById('chooseBorder');
-          if (cb2) cb2.checked = active;
+      var prefs = window._USER_PREFS || {};
+      window._MF_UI_TOGGLES.forEach(function (s) {
+        // The account wins; localStorage is only consulted for an account
+        // that has never set the key (an upgrade from the old behaviour).
+        var active;
+        if (typeof prefs[s.pref] === 'string' && prefs[s.pref] !== '') {
+          active = prefs[s.pref] === '1';
+        } else {
+          active = localStorage.getItem(s.ls) === 'true';
         }
+        try { localStorage.setItem(s.ls, active ? 'true' : 'false'); } catch (e) { }
+        document.body.classList.toggle(s.cls, active);
+        var cb = document.getElementById(s.cb);
+        if (cb) cb.checked = active;
       });
     }
+
+    /** Flip one toggle: paint it, mirror it, and store it on the account. */
+    window.mfSetUiToggle = function (pref, active) {
+      var entry = null;
+      window._MF_UI_TOGGLES.forEach(function (s) { if (s.pref === pref) entry = s; });
+      if (!entry) return;
+      document.body.classList.toggle(entry.cls, active);
+      try { localStorage.setItem(entry.ls, active ? 'true' : 'false'); } catch (e) { }
+      var patch = {};
+      patch[pref] = active ? '1' : '0';
+      if (typeof window.mfSaveUserPref === 'function') window.mfSaveUserPref(patch);
+    };
     document.addEventListener('DOMContentLoaded', _initAppearance);
 
     // ===== Active nav link =====

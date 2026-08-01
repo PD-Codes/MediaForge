@@ -212,3 +212,31 @@ def test_wrapped_defaults_to_the_month_that_just_ended(as_user):
 def test_wrapped_rejects_a_junk_period_instead_of_trusting_it(as_user):
     data = as_user("user").get("/api/home/wrapped?period=9999-99").get_json()
     assert len(data["period"]) == 7
+
+
+def test_every_onboarding_step_points_at_a_real_place(as_user):
+    """A checklist that links to a tab that does not exist is worse than no
+    checklist -- the page loads and simply does not scroll anywhere. The
+    media-server step pointed at /settings#account, which is neither a tab
+    nor a page a normal account may open."""
+    steps = {s["key"]: s["link"]
+             for s in as_user("admin").get("/api/home/onboarding").get_json()["steps"]}
+    assert steps["sources"] == "/settings#sources"
+    assert steps["library"] == "/settings#library"
+    # The TMDB key lives on Integrations; Settings has no CineInfo tab at all.
+    assert steps["tmdb"] == "/integrations#cineinfo"
+    assert steps["modules"] == "/extensions"
+    assert steps["mediaplayer"] == "/profile#mediaplayer"
+
+
+def test_a_module_card_says_it_comes_from_a_module(app):
+    """On a shared tab a module's card sits next to the built-in ones and
+    looked exactly like them."""
+    from mediaforge.web.thirdparties.registry import _build_card
+
+    with app.test_request_context():
+        card = _build_card({
+            "id": "not-registered-by-any-module", "label": "X", "badges": [],
+            "description": "", "enable_label": "on", "enable_desc": "",
+        })
+    assert card["module_name"] is None      # a built-in gets no pill
