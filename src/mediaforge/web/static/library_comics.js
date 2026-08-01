@@ -281,6 +281,11 @@ async function libCoverPollTick() {
     var moved = (st.done !== _libCoverPrep.done) || (st.running !== _libCoverPrep.running);
     _libCoverPrep = st;
     if (moved) {
+      // Covers appeared since the last tick, so every URL built from here on
+      // has to be a new one. Set here rather than only inside
+      // libRefreshMissingCovers(), which returns early when no card happens to
+      // be marked stale -- and then never reaches its own assignment.
+      _libCoverBust = Date.now();
       // Only the pills, the spinners and the pictures, NOT a full repaint.
       // Rebuilding the grid every couple of seconds while covers trickle in
       // would reset the scroll position under the reader's hands and collapse
@@ -292,6 +297,12 @@ async function libCoverPollTick() {
     if (!st.running && _libCoverPoll) {
       window.mfPollStop(_libCoverPoll);
       _libCoverPoll = null;
+      // Every card built from here on gets a fresh URL. Not only the ones the
+      // sweep below can see: an offscreen card is loading="lazy", so it never
+      // requested its cover, never fired onerror and was never marked stale --
+      // it would otherwise be repainted with the same URL the browser has a
+      // cached 404 for.
+      _libCoverBust = Date.now();
       libPaintSummaryPills();
       libRefreshMissingCovers();      // one last sweep for the final few
       // After the sweep, so a card that just got its picture is judged on the
@@ -355,6 +366,14 @@ function libRefreshMissingCovers() {
   var stale = document.querySelectorAll(".mf-poster-art.mf-comic-nocover[data-cover-src]");
   if (!stale.length) return;
   var bust = Date.now();
+  // The line that was missing. _libCoverBust is what libComicCoverUrl() puts
+  // into the src of every card it BUILDS -- so without this, the in-place
+  // refresh below worked but the next full repaint (the one that happens when
+  // a scan finishes) went straight back to the un-busted URL and the browser
+  // served the 404 it had cached before the cover existed. Covers then stayed
+  // invisible until a hard reload, however many had been generated.
+  // library_books.js has always had this; the comic shelf lost it in the copy.
+  _libCoverBust = bust;
   Array.prototype.forEach.call(stale, function (art) {
     art.classList.remove("mf-comic-nocover");
     // Spinners are libSyncPreparingSpinners()'s job now -- it runs right after

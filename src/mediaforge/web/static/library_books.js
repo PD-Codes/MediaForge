@@ -162,12 +162,20 @@ async function libCoverPollTick() {
     var moved = (st.done !== _libCoverPrep.done) || (st.running !== _libCoverPrep.running);
     _libCoverPrep = st;
     if (moved) {
+      // Same reasoning as the comic shelf: libRefreshMissingCovers() sets the
+      // cache-buster, but only after an early return that fires whenever no
+      // card is currently marked stale. A card that is offscreen is
+      // loading="lazy", so it never requested its cover, never failed, and was
+      // never marked -- and would then be repainted with the very URL the
+      // browser has a cached 404 for.
+      _libCoverBust = Date.now();
       libPaintSummaryPills();
       libRefreshMissingCovers();
     }
     if (!st.running && _libCoverPoll) {
       window.mfPollStop(_libCoverPoll);
       _libCoverPoll = null;
+      _libCoverBust = Date.now();
       libPaintSummaryPills();
       libRefreshMissingCovers();      // one last sweep for the final few
     }

@@ -171,7 +171,16 @@ def register_comic_routes(app):
         # background repacks just because it drew 300 cards.
         cached = covers.cover_path(path, start_conversion=False)
         if cached is None:
-            return jsonify({"error": "no cover"}), 404
+            # A cover that does not exist YET is not a fact worth remembering.
+            # Browsers heuristically cache a 404 that carries no caching
+            # headers, so the miss a card collected before the background
+            # worker got to it was served from the browser's own cache
+            # afterwards -- the picture existed on disk and the shelf still
+            # showed a blank tile until a hard reload. no-store is what makes
+            # the next request actually ask.
+            missing = jsonify({"error": "no cover"})
+            missing.headers["Cache-Control"] = "no-store"
+            return missing, 404
         response = send_file(str(cached), mimetype=covers.cover_mimetype(cached),
                              conditional=True)
         response.headers["Cache-Control"] = "private, max-age=86400"
