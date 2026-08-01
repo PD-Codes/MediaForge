@@ -34,19 +34,55 @@
   color: var(--text-primary, #f0f0f8);
 }
 
-/* Spinner ------------------------------------------------------ */
+/* Spinner — 9-square fade grid ---------------------------------- */
 .update-spinner {
+  position: relative;
   width: 58px;
   height: 58px;
   margin: 4px auto 22px;
-  border-radius: 50%;
-  border: 5px solid var(--accent-soft, rgba(124, 58, 237, 0.2));
-  border-top-color: var(--accent, #7c3aed);
-  animation: update-spin 0.9s linear infinite;
 }
 
-@keyframes update-spin {
-  to { transform: rotate(360deg); }
+.update-spinner > span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 2px;
+  background: var(--accent, #7c3aed);
+  animation: update-spinner-fade 675ms ease-in-out 0s infinite alternate;
+  will-change: opacity;
+}
+
+/* Grid placement: rows/columns at -25px / -5px / +15px around the centre. */
+.update-spinner > span:nth-child(-n + 3) { margin-top: -25px; }
+.update-spinner > span:nth-child(n + 7)  { margin-top: 15px; }
+.update-spinner > span:nth-child(3n + 1) { margin-left: -25px; }
+.update-spinner > span:nth-child(3n)     { margin-left: 15px; }
+
+/* Staggered start so the fade travels across the grid. */
+.update-spinner > span:nth-child(1) { animation-delay: 0ms; }
+.update-spinner > span:nth-child(2) { animation-delay: 75ms; }
+.update-spinner > span:nth-child(3) { animation-delay: 150ms; }
+.update-spinner > span:nth-child(4) { animation-delay: 225ms; }
+.update-spinner > span:nth-child(5) { animation-delay: 300ms; }
+.update-spinner > span:nth-child(6) { animation-delay: 375ms; }
+.update-spinner > span:nth-child(7) { animation-delay: 450ms; }
+.update-spinner > span:nth-child(8) { animation-delay: 525ms; }
+.update-spinner > span:nth-child(9) { animation-delay: 600ms; }
+
+@keyframes update-spinner-fade {
+  from { opacity: 0.12; }
+  to   { opacity: 1; }
+}
+
+/* Respect reduced-motion: keep the shape, drop the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .update-spinner > span {
+    animation: none;
+    opacity: 0.55;
+  }
 }
 
 /* Result icon -------------------------------------------------- */
@@ -227,6 +263,7 @@
 @media (max-width: 640px) {
   .update-overlay { padding: 14px; }
   .update-overlay-card { padding: 30px 20px 24px; }
+  .update-spinner { transform: scale(0.85); }
   .update-overlay-title { font-size: 1.15rem; }
   .update-overlay-btn { width: 100%; }
   .auto-update-block { padding: 4px 14px 16px; }

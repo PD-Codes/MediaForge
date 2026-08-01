@@ -722,7 +722,17 @@
   <!-- ===== Self-update overlay ===== -->
   <div id="updateOverlay" class="update-overlay" role="dialog" aria-modal="true" aria-live="polite">
     <div class="update-overlay-card">
-      <div class="update-spinner" id="updateOverlaySpinner"></div>
+      <div class="update-spinner" id="updateOverlaySpinner" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
       <div class="update-overlay-icon" id="updateOverlayIcon" style="display:none"></div>
       <h2 class="update-overlay-title" id="updateOverlayTitle"></h2>
       <p class="update-overlay-text" id="updateOverlayText"></p>
