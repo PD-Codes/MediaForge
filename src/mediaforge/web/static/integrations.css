@@ -669,3 +669,48 @@
   color: var(--warning);
   border-color: rgba(245, 158, 11, 0.3);
 }
+
+/* ── Card headers on phones ────────────────────────────────────────────
+   A collapsible card header is `chevron + title + n badges` in a single
+   non-wrapping flex row. That is fine at 1200px and unreadable at 380px:
+   the title is uppercase and letter-spaced, so it eats the row on its own,
+   and the badges — flex items with the default `flex-shrink: 1` — were
+   squeezed until their text was clipped mid-word and the last one hung off
+   the right edge ("OM" for what should read "Module").
+
+   The row wraps instead: badges that no longer fit move to a second line at
+   their natural size. Wrapping (rather than only shrinking the badges) is
+   what actually fixes it — a badge is a label; it either reads or it is
+   noise. Same treatment the Module Manager already gives its own card
+   headers (extensions.css), which pack even more badges into this row. */
+@media (max-width: 640px) {
+  .integ-subsection-header {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    column-gap: 8px;
+  }
+
+  /* The title may wrap inside itself; it must not push the badges out. */
+  .integ-subsection-header .integ-subsection-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .integ-subsection-header .integ-subsection-badge {
+    /* Never shrink, never clip: this is the actual bug. */
+    flex: 0 0 auto;
+    margin-left: 0;
+    white-space: nowrap;
+    font-size: 0.62rem;
+    padding: 2px 8px;
+  }
+
+  /* The non-collapsible cards (Mediaplayer, Media Status, TMDB, …) carry
+     their badge inline inside the <h2>. Nothing forces a line break there,
+     so a two-word badge could be split across lines mid-pill. */
+  .section-badge {
+    display: inline-block;
+    white-space: nowrap;
+    margin-left: 6px;
+  }
+}

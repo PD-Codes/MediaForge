@@ -330,9 +330,11 @@
 
   /* The custom-paths table carries two dropdowns on top of its three text
      columns, so it needs more than the shared minimum before the cells
-     start crushing each other. .user-table-wrapper scrolls it sideways. */
+     start crushing each other. .user-table-wrapper scrolls it sideways.
+     Down from 720px since the Auto-Sync-default radio column was dropped --
+     one column fewer is one column less to scroll past on a phone. */
   #customPathsTable {
-    min-width: 720px;
+    min-width: 640px;
   }
 
   .user-table th,

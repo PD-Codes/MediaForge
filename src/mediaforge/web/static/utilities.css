@@ -243,9 +243,15 @@ button.close:hover {
 
 /* Mobile-only width tweak for .browse-card; the card component itself is
    defined in cards.css — this leftover override just lives here because
-   it's a grid-layout tweak rather than part of the card. */
+   it's a grid-layout tweak rather than part of the card.
+
+   Deliberately NOT applied in the home page's list density: there a card is
+   a full-width row (see .home-density-list in index.css), and this
+   `!important` used to win over that rule, which is why list rows were stuck
+   at 110px on phones with the rest of the screen empty. The `body:not()`
+   guard is the narrowest fix that keeps the poster grids untouched. */
 @media (max-width: 480px) {
-  .browse-card {
+  body:not(.home-density-list) .browse-card {
     width: 110px !important;
   }
 }
