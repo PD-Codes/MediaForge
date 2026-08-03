@@ -3068,46 +3068,18 @@ function clearAppearanceDefaultAccent() {
   saveAppearanceDefaults();
 }
 
-function _toggleDesignSetting(key, id, className, label) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const active = el.checked;
-  localStorage.setItem(key, active);
-  document.body.classList.toggle(className, active);
-  showToast(label + (active ? t(" aktiviert", " enabled") : t(" deaktiviert", " disabled")));
-}
+/* The eight "Advanced appearance" handlers (saveGlowEffect, saveHeaderColor,
+   saveHeaderColorHelp, saveSkeletonLoader, saveBorder, saveActiveDownloadGlow,
+   saveClickEffect, saveIconMove) and their shared _toggleDesignSetting() used
+   to live here. They wrote localStorage ONLY, which made every one of those
+   toggles per BROWSER rather than per account.
 
-function saveGlowEffect() {
-  _toggleDesignSetting('aw-glow-effect', 'glowEffect', 'glow-effect', t('Glow-Effekt','Glow Effect'));
-}
-
-function saveHeaderColor() {
-  _toggleDesignSetting('aw-header-color', 'headerColor', 'header-color', t  ('Header-Farbe','Header Color'));
-}
-
-function saveHeaderColorHelp() {
-  _toggleDesignSetting('aw-header-color-help', 'headerColorHelp', 'header-color-help', t('Header-Farbe umgestellt','Header Color Changed'));
-}
-
-function saveSkeletonLoader() {
-  _toggleDesignSetting('aw-skeleton-loader', 'skeletonLoader', 'skeleton-loader', t('Skeleton Loader','Skeleton Loader'));
-}
-
-function saveBorder() {
-  _toggleDesignSetting('aw-choose-border', 'chooseBorder', 'choose-border', t('Farbliche Markierung','Color marking'));
-}
-
-function saveActiveDownloadGlow() {
-  _toggleDesignSetting('aw-active-download-glow', 'activeDownloadGlow', 'active-download-glow', t('Download-Markierung','Download marking'));
-}
-
-function saveClickEffect() {
-  _toggleDesignSetting('aw-click-effect', 'clickEffect', 'click-effect', t('Klick-Effekt','Click Effect'));
-}
-
-function saveIconMove() {
-  _toggleDesignSetting('aw-icon-move', 'iconMove', 'icon-move', t('Icon Movement','Icon Movement'));
-}
+   The toggles moved to the profile page and are account preferences now
+   (ui_* in db.USER_UI_PREF_KEYS, written through base.html's mfSetUiToggle).
+   The functions here were left behind with no caller in any template -- dead,
+   but dead code that still looked like the place to wire a new toggle up, and
+   would have quietly reintroduced the per-browser behaviour. Removed rather
+   than kept: base.html's window._MF_UI_TOGGLES is the single list now. */
 
 // ─── Drag to Scroll for Settings Tabs ─────────────────────────────────────────
 

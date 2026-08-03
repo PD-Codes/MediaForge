@@ -362,6 +362,30 @@ def get_db():
         factory=ContextConnection))
 
 
+# How many values go into one `IN (...)` list. SQLite caps the number of bound
+# variables per statement (SQLITE_MAX_VARIABLE_NUMBER, 999 on the builds Python
+# still ships on several platforms) and caps expression depth at 1000. Both
+# limits are compile-time options of SQLite, so the only fix available here is
+# to keep every generated statement a fixed size regardless of how much data it
+# covers. 400 leaves room for the handful of extra parameters (username, media
+# id, ...) that these queries bind alongside the list.
+_SQL_IN_CHUNK = 400
+
+
+def _sql_chunks(values, size: int = _SQL_IN_CHUNK):
+    """Yield (chunk, placeholders) pairs for building bounded `IN (...)` lists.
+
+    Any query whose parameter count scales with the number of rows it touches
+    belongs here -- a library with a thousand episodes, a calendar with a
+    thousand entries, or a client-supplied list of ids are all normal inputs,
+    and none of them should be able to make a query fail to *parse*.
+    """
+    values = list(values)
+    for start in range(0, len(values), size):
+        chunk = values[start:start + size]
+        yield chunk, ",".join("?" for _ in chunk)
+
+
 def _migrate_db(conn):
     """Add columns to the users table that were introduced after the
     initial CREATE TABLE, so existing databases stay compatible.
@@ -2490,15 +2514,17 @@ def delete_download_history_entries(ids, username=None):
         return 0
     conn = get_db()
     try:
-        placeholders = ",".join("?" for _ in ids)
-        sql = f"DELETE FROM download_history WHERE id IN ({placeholders})"
-        params = list(ids)
-        if username:
-            sql += " AND username = ?"
-            params.append(username)
-        cur = conn.execute(sql, params)
+        removed = 0
+        for chunk, placeholders in _sql_chunks(ids):
+            sql = f"DELETE FROM download_history WHERE id IN ({placeholders})"
+            params = list(chunk)
+            if username:
+                sql += " AND username = ?"
+                params.append(username)
+            cur = conn.execute(sql, params)
+            removed += cur.rowcount or 0
         conn.commit()
-        return cur.rowcount
+        return removed
     finally:
         conn.close()
 
@@ -3060,14 +3086,14 @@ def remove_favourites_bulk(series_urls: list[str], added_by: str | None):
         return
     conn = get_db()
     try:
-        placeholders = ",".join("?" for _ in series_urls)
-        params = list(series_urls)
-        if added_by:
-            query = f"DELETE FROM favourites WHERE series_url IN ({placeholders}) AND (added_by = ? OR added_by IS NULL)"
-            params.append(added_by)
-        else:
-            query = f"DELETE FROM favourites WHERE series_url IN ({placeholders})"
-        conn.execute(query, params)
+        for chunk, placeholders in _sql_chunks(series_urls):
+            params = list(chunk)
+            if added_by:
+                query = f"DELETE FROM favourites WHERE series_url IN ({placeholders}) AND (added_by = ? OR added_by IS NULL)"
+                params.append(added_by)
+            else:
+                query = f"DELETE FROM favourites WHERE series_url IN ({placeholders})"
+            conn.execute(query, params)
         conn.commit()
     finally:
         conn.close()
@@ -4332,19 +4358,19 @@ def get_tmdb_cache_bulk(cache_keys: list, ttl: float = 86400.0) -> dict:
     import json as _json
     conn = get_db()
     try:
-        placeholders = ",".join("?" for _ in cache_keys)
-        rows = conn.execute(
-            f"SELECT cache_key, data_json, cached_at FROM tmdb_cache WHERE cache_key IN ({placeholders})",
-            cache_keys,
-        ).fetchall()
         out = {}
         now = _time.time()
-        for row in rows:
-            if (now - row["cached_at"]) < ttl:
-                try:
-                    out[row["cache_key"]] = _json.loads(row["data_json"])
-                except Exception:
-                    pass
+        for chunk, placeholders in _sql_chunks(cache_keys):
+            rows = conn.execute(
+                f"SELECT cache_key, data_json, cached_at FROM tmdb_cache WHERE cache_key IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                if (now - row["cached_at"]) < ttl:
+                    try:
+                        out[row["cache_key"]] = _json.loads(row["data_json"])
+                    except Exception:
+                        pass
         return out
     finally:
         conn.close()
@@ -4642,30 +4668,67 @@ def save_calendar_episodes(media_id: int, rows: list) -> None:
         conn.close()
 
 
-def delete_calendar_episodes_except(media_id: int, keep_episodes: list) -> None:
-    """Delete episodes for a media that are not in the keep list (tuples of (season, episode))."""
-    if not keep_episodes:
-        conn = get_db()
-        try:
-            conn.execute("DELETE FROM calendar_episodes WHERE media_id = ?", (media_id,))
-            conn.commit()
-        finally:
-            conn.close()
-        return
+def _calendar_ep_key(season, episode) -> tuple:
+    """Normalise one (season, episode) pair for comparison.
 
+    The keep list comes from TMDB's JSON and the stored rows come back as
+    SQLite INTEGERs. A str/int mismatch here does not raise -- it silently
+    makes every episode look stale, which would empty the calendar for that
+    series. Coerce both sides through the same function so that cannot happen.
+    """
+    def _one(v):
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return v
+    return (_one(season), _one(episode))
+
+
+def delete_calendar_episodes_except(media_id: int, keep_episodes: list) -> None:
+    """Delete episodes for a media that are not in the keep list (tuples of (season, episode)).
+
+    The set difference is computed in Python rather than in SQL. The previous
+    version built `... AND NOT ((season=? AND episode=?) OR (…) OR (…) …)`, one
+    OR term per kept episode. SQLite parses a chain of ORs into a left-deep
+    binary tree, so the expression depth grows with the number of terms and a
+    long-running series (One Piece, Detective Conan, a daily soap -- anything
+    past ~1000 episodes) hit SQLITE_MAX_EXPR_DEPTH:
+
+        OperationalError: Expression tree is too large (maximum depth 1000)
+
+    That aborted the whole calendar sync for the show. Raising the limit is a
+    compile-time option of SQLite, so it is not available here -- and a query
+    whose size scales with the data is the actual problem, not the ceiling.
+
+    Deleting by primary key keeps the statement flat, and the chunking keeps it
+    under SQLite's bound-variable cap (999 by default), the same way
+    get_reading_progress_bulk() does.
+    """
     conn = get_db()
     try:
-        conds = []
-        params = [media_id]
-        for s, e in keep_episodes:
-            if s is None and e is None:
-                conds.append("(season IS NULL AND episode IS NULL)")
-            else:
-                conds.append("(season = ? AND episode = ?)")
-                params.extend([s, e])
-        
-        query = f"DELETE FROM calendar_episodes WHERE media_id = ? AND NOT ({' OR '.join(conds)})"
-        conn.execute(query, tuple(params))
+        if not keep_episodes:
+            conn.execute("DELETE FROM calendar_episodes WHERE media_id = ?", (media_id,))
+            conn.commit()
+            return
+
+        keep = {_calendar_ep_key(s, e) for s, e in keep_episodes}
+        rows = conn.execute(
+            "SELECT id, season, episode FROM calendar_episodes WHERE media_id = ?",
+            (media_id,),
+        ).fetchall()
+        stale = [
+            row["id"] for row in rows
+            if _calendar_ep_key(row["season"], row["episode"]) not in keep
+        ]
+        if not stale:
+            return
+
+        for chunk, placeholders in _sql_chunks(stale):
+            conn.execute(
+                f"DELETE FROM calendar_episodes WHERE id IN ({placeholders})", chunk
+            )
         conn.commit()
     finally:
         conn.close()
@@ -4677,12 +4740,15 @@ def get_cached_calendar_media(tmdb_ids: list) -> dict:
         return {}
     conn = get_db()
     try:
-        placeholders = ",".join("?" for _ in tmdb_ids)
-        rows = conn.execute(
-            f"SELECT tmdb_id, last_updated FROM calendar_media WHERE tmdb_id IN ({placeholders})",
-            tmdb_ids,
-        ).fetchall()
-        return {row["tmdb_id"]: row["last_updated"] for row in rows}
+        out = {}
+        for chunk, placeholders in _sql_chunks(tmdb_ids):
+            rows = conn.execute(
+                f"SELECT tmdb_id, last_updated FROM calendar_media WHERE tmdb_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                out[row["tmdb_id"]] = row["last_updated"]
+        return out
     finally:
         conn.close()
 
@@ -4693,18 +4759,20 @@ def get_calendar_episodes_from_db(tmdb_ids: list) -> list:
         return []
     conn = get_db()
     try:
-        placeholders = ",".join("?" for _ in tmdb_ids)
-        rows = conn.execute(
-            f"""
-            SELECT m.tmdb_id, m.title, m.title_en, m.poster_path,
-                   e.season, e.episode, e.name, e.name_en, e.air_date, e.still_path
-            FROM calendar_media m
-            JOIN calendar_episodes e ON m.id = e.media_id
-            WHERE m.tmdb_id IN ({placeholders})
-            """,
-            tmdb_ids,
-        ).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for chunk, placeholders in _sql_chunks(tmdb_ids):
+            rows = conn.execute(
+                f"""
+                SELECT m.tmdb_id, m.title, m.title_en, m.poster_path,
+                       e.season, e.episode, e.name, e.name_en, e.air_date, e.still_path
+                FROM calendar_media m
+                JOIN calendar_episodes e ON m.id = e.media_id
+                WHERE m.tmdb_id IN ({placeholders})
+                """,
+                chunk,
+            ).fetchall()
+            out.extend(dict(r) for r in rows)
+        return out
     finally:
         conn.close()
 
@@ -6036,12 +6104,14 @@ def clear_watch_progress(file_paths, username=None) -> int:
     user = _normalize_user(username)
     conn = get_db()
     try:
-        placeholders = ",".join("?" * len(paths))
-        cur = conn.execute(
-            "DELETE FROM watch_progress WHERE username = ? AND file_path IN (%s)"
-            % placeholders, [user] + paths)
+        removed = 0
+        for chunk, placeholders in _sql_chunks(paths):
+            cur = conn.execute(
+                "DELETE FROM watch_progress WHERE username = ? AND file_path IN (%s)"
+                % placeholders, [user] + chunk)
+            removed += cur.rowcount or 0
         conn.commit()
-        return cur.rowcount or 0
+        return removed
     except sqlite3.Error:
         return 0
     finally:
@@ -6103,21 +6173,21 @@ def get_watch_progress_bulk(file_paths: list, username=None) -> dict:
     user = _normalize_user(username)
     conn = get_db()
     try:
-        placeholders = ",".join("?" for _ in file_paths)
-        rows = conn.execute(
-            f"SELECT file_path, position_seconds, duration_seconds, watched "
-            f"FROM watch_progress WHERE username = ? AND file_path IN ({placeholders})",
-            [user, *file_paths],
-        ).fetchall()
         result = {}
-        for row in rows:
-            pos = float(row["position_seconds"])
-            dur = float(row["duration_seconds"])
-            pct = round(pos / dur * 100, 1) if dur > 0 else 0.0
-            result[row["file_path"]] = {
-                "position": pos, "duration": dur,
-                "percent": pct, "watched": bool(row["watched"]),
-            }
+        for chunk, placeholders in _sql_chunks(file_paths):
+            rows = conn.execute(
+                f"SELECT file_path, position_seconds, duration_seconds, watched "
+                f"FROM watch_progress WHERE username = ? AND file_path IN ({placeholders})",
+                [user, *chunk],
+            ).fetchall()
+            for row in rows:
+                pos = float(row["position_seconds"])
+                dur = float(row["duration_seconds"])
+                pct = round(pos / dur * 100, 1) if dur > 0 else 0.0
+                result[row["file_path"]] = {
+                    "position": pos, "duration": dur,
+                    "percent": pct, "watched": bool(row["watched"]),
+                }
         return result
     finally:
         conn.close()
@@ -6238,9 +6308,7 @@ def get_reading_progress_bulk(book_keys, username=None) -> dict:
     try:
         # Chunked because SQLite caps the number of bound variables (999 by
         # default) -- a shelf with a thousand books would otherwise raise.
-        for start in range(0, len(keys), 400):
-            chunk = keys[start:start + 400]
-            placeholders = ",".join("?" for _ in chunk)
+        for chunk, placeholders in _sql_chunks(keys):
             rows = conn.execute(
                 "SELECT book_key, location, percent, finished FROM reading_progress "
                 "WHERE username = ? AND book_key IN (%s)" % placeholders,

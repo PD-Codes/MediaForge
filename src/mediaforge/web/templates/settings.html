@@ -317,20 +317,13 @@
 
 
 
-    <div class="settings-section">
-      <h2>{{ _('Language') }}</h2>
-      <div class="settings-row" style="gap:10px;padding:12px;">
-        <button class="appearance-theme-btn lang-btn{% if ui_language == 'en' %} active{% endif %}"
-                onclick="setUiLanguage('en')">
-          🇺🇸 English
-        </button>
-        <button class="appearance-theme-btn lang-btn{% if ui_language == 'de' %} active{% endif %}"
-                onclick="setUiLanguage('de')">
-          🇩🇪 Deutsch
-        </button>
-      </div>
-      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Choose the interface language. The page reloads automatically.') }}</div>
-    </div>
+    {# Language moved to the profile page (panel-language), where the rest of
+       the personal settings live. It is an ACCOUNT preference (users.language),
+       so an instance page is the wrong home for it -- and having it in two
+       places meant an admin changing "the language" here was only ever
+       changing their own, which reads as an instance setting and is not one.
+       The sidebar footer's flag dropdown reaches the same setting from every
+       page. #}
 
 
     {% if is_admin %}
@@ -1839,13 +1832,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
-function setUiLanguage(lang) {
-  fetch('/api/user/language', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({language: lang})
-  }).then(r => r.json()).then(() => location.reload());
-}
+{# setUiLanguage() is defined once, in base.html, and is therefore available on
+   every page. The byte-identical copy that used to live here was loaded from
+   {% block scripts %} -- i.e. AFTER base.html's -- so on this page the sidebar
+   footer's flag dropdown called the settings page's copy rather than the
+   shared one. Harmless while the two bodies agreed; a trap the moment one of
+   them was changed. #}
 var settingsCanEdit = {{ 'true' if is_admin else 'false' }};
 </script>
 {{ startpage.start_page_i18n() }}
