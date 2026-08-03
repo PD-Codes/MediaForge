@@ -417,6 +417,54 @@ def _filmpalast_title_to_slugs(title):
     return list(slugs)
 
 
+def _build_locations(hits):
+    """Turn raw scan hits into the `locations` list /api/episodes returns.
+
+    *hits* is a list of ``(folder, root, custom_path_id, custom_path_name)``
+    tuples, one per already-present episode, with repeats.
+
+    Two things happen here, and both are deliberate:
+
+    1. **De-duplication with a count.** A season of 26 files in one folder is
+       one location that holds 26 episodes, not 26 locations.
+    2. **The absolute path is admin-only.** Every logged-in account can open
+       this modal, and the server's directory layout is not something a normal
+       account needs -- so everyone gets the human label ("Anime NAS" plus the
+       title folder) and only an admin additionally gets `path`. The label is
+       enough to answer "which of my folders is it in?", which is the actual
+       question; the full path is for whoever administers the box.
+    """
+    if not hits:
+        return []
+    try:
+        from ..request_context import get_current_user_info
+        _username, is_admin = get_current_user_info()
+    except Exception:
+        # A request that cannot tell is treated as "not admin" -- the safe
+        # direction, and the same rule routes/home_panels.py::_is_admin uses.
+        is_admin = False
+
+    out = {}
+    for folder, _root, _cp_id, cp_name in hits:
+        key = str(folder)
+        entry = out.get(key)
+        if entry is None:
+            # "Standard" is resolved client-side so it follows the UI language;
+            # an empty root_label means "the global download folder".
+            entry = {
+                "root_label": cp_name or "",
+                "folder": folder.name,
+                "episodes": 0,
+            }
+            if is_admin:
+                entry["path"] = key
+            out[key] = entry
+        entry["episodes"] += 1
+    # Biggest first: with a split library the folder holding most of the show
+    # is the one the user means by "where is it".
+    return sorted(out.values(), key=lambda e: -e["episodes"])
+
+
 def register_search_routes(app):
     """Register search, series/season/episode/provider lookup, and TMDB discovery endpoints."""
     @app.route("/api/search", methods=["POST"])
@@ -1350,16 +1398,26 @@ def register_search_routes(app):
             else:
                 dl_base = Path.home() / "Downloads"
 
-            # Collect all scan roots: default + custom paths
-            scan_roots = [dl_base]
+            # Collect all scan roots: default + custom paths.
+            # The label travels with the root so a found file can be reported
+            # back as "Anime NAS > Naruto (2002)" rather than as a bare server
+            # path -- see _build_locations() above.
+            scan_roots = [(dl_base, None, "")]
             for cp in get_custom_paths():
                 cp_path = Path(cp["path"]).expanduser()
                 if not cp_path.is_absolute():
                     cp_path = Path.home() / cp_path
-                scan_roots.append(cp_path)
+                scan_roots.append((cp_path, cp["id"], cp["name"]))
 
             # Build set of (season_num, episode_num) found on disk
             downloaded_eps = set()
+            # (season, episode) -> the title folder the file was found in.
+            # The scan already walks these folders to decide "downloaded"; it
+            # used to throw the location away, so the modal could say THAT a
+            # season exists but never WHERE. First match wins: a file that
+            # somehow sits in two roots is reported at the first one rather
+            # than making the common case a list.
+            ep_folders = {}
             try:
                 title_clean = ""
                 if series:
@@ -1370,12 +1428,14 @@ def register_search_routes(app):
                 if title_clean:
                     ep_re = EPISODE_MARKER_RE  # shared: S(\d{1,4})E(\d{1,4})(?!\d)
                     all_bases = []
-                    for root in scan_roots:
+                    for root, cp_id, cp_name in scan_roots:
                         if lang_sep:
-                            all_bases.extend([root / lf for lf in lang_folders])
+                            all_bases.extend(
+                                [(root / lf, root, cp_id, cp_name) for lf in lang_folders]
+                            )
                         else:
-                            all_bases.append(root)
-                    for base in all_bases:
+                            all_bases.append((root, root, cp_id, cp_name))
+                    for base, root, cp_id, cp_name in all_bases:
                         if not base.is_dir():
                             continue
                         for folder in base.iterdir():
@@ -1388,8 +1448,10 @@ def register_search_routes(app):
                                 if f.is_file():
                                     m = ep_re.search(f.name)
                                     if m:
-                                        downloaded_eps.add(
-                                            (int(m.group(1)), int(m.group(2)))
+                                        key = (int(m.group(1)), int(m.group(2)))
+                                        downloaded_eps.add(key)
+                                        ep_folders.setdefault(
+                                            key, (folder, root, cp_id, cp_name)
                                         )
             except Exception:
                 pass
@@ -1471,6 +1533,10 @@ def register_search_routes(app):
                 logger.debug("[api_episodes] language flag parsing failed: %s", _lang_exc)
 
             episodes_data = []
+            # Folder hits for the episodes of THIS season only. ep_folders is
+            # series-wide (the scan rglobs the whole title folder), so it would
+            # report seasons the caller did not ask about.
+            _season_hits = []
             for ep in season.episodes:
                 # Not just (season_number, episode_number): with AniWorld's
                 # absolute-numbering option the same episode is called S02E062
@@ -1484,6 +1550,10 @@ def register_search_routes(app):
                     ((ep.season.season_number, ep.episode_number),),
                 )
                 downloaded = any(pair in downloaded_eps for pair in _candidates)
+                for pair in _candidates:
+                    if pair in ep_folders:
+                        _season_hits.append(ep_folders[pair])
+                        break
 
                 episodes_data.append(
                     {
@@ -1495,7 +1565,16 @@ def register_search_routes(app):
                         "languages": ep_languages.get(ep.url, []),
                     }
                 )
-            return jsonify({"episodes": episodes_data})
+            return jsonify(
+                {
+                    "episodes": episodes_data,
+                    # Where THIS season's existing files sit. The endpoint is
+                    # called once per season, so this is per-season for free --
+                    # which is what lets the modal name one location for the
+                    # whole series and flag only the season that sits elsewhere.
+                    "locations": _build_locations(_season_hits),
+                }
+            )
         except Exception as e:
             logger.error(f"Episodes fetch failed: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500

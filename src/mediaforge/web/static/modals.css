@@ -827,6 +827,92 @@
   padding: 0 12px;
 }
 
+/* ── "Already stored in" ────────────────────────────────────────────────
+   Where the files that already exist are sitting. Sits between the three
+   selects and the language pills for the same reason the pills sit under the
+   language field: it belongs to the "Target folder" select right above it.
+
+   Deliberately quiet -- one muted row, no card, no border box. It answers a
+   question the user only sometimes has, and a title that has never been
+   downloaded hides the row entirely (renderLibraryLocations in app.js), so it
+   must not compete with the episode list for attention when it IS there. */
+.lib-loc {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+  min-width: 0;
+}
+
+.lib-loc-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  opacity: 0.75;
+}
+
+.lib-loc-lead { flex: none; }
+
+/* The one part worth reading at a glance. min-width:0 + the ellipsis keep a
+   deep folder name from pushing the count off a narrow screen. */
+.lib-loc-name {
+  color: var(--text-primary);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-loc-count,
+.lib-loc-more {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* A split library is unusual enough to point at, so this one is not muted. */
+.lib-loc-more {
+  color: var(--warning);
+  cursor: help;
+}
+
+/* The per-season marker: only rendered on a season whose files sit somewhere
+   other than the primary location, so it is rare by construction. */
+.season-loc {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: rgba(245, 158, 11, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+@media (max-width: 640px) {
+  /* The lead-in is the droppable part: the folder icon already says what the
+     row is about, and the name is what the user came for. */
+  .lib-loc-lead { display: none; }
+  /* Long folder names take the whole row instead of squeezing the badges. */
+  .lib-loc-name { flex: 1 1 100%; }
+  .season-loc {
+    margin-left: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 /* Language availability banner
    Sits directly under the controls because it describes the language field
    above it -- with 18px of margin in between it read as a separate section
@@ -838,13 +924,84 @@
   margin: 0 0 6px;
 }
 
+/* A pill is a button, not a label: it mirrors the language select above, so
+   clicking it picks that language (see the delegated handler in app.js). The
+   reset is explicit because a <button> brings its own font and background. */
 .lang-avail-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
   font-size: 0.75rem;
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 99px;
   border: 1px solid transparent;
   white-space: nowrap;
+  cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
+  transition: border-color var(--transition, 0.15s ease);
+}
+
+/* The fill bar. --avail is set per pill by renderLangAvailBanner(); the bar
+   makes "277 of 279" readable at a glance instead of by comparing two
+   numbers. z-index/isolate keep it behind the label without needing a second
+   wrapper element around the text. */
+.lang-avail-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--avail, 0%);
+  background: currentColor;
+  opacity: 0.16;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.lang-avail-pill:hover { border-color: currentColor; }
+
+/* The selected language. A ring rather than a colour change: the colour
+   already encodes availability, and one attribute must not mean two things. */
+.lang-avail-pill.is-active {
+  border-color: currentColor;
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.lang-avail-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lang-avail-flag {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 2px;
+  object-fit: cover;
+}
+
+/* The count is supporting detail once the bar carries the proportion. */
+.lang-avail-num {
+  font-weight: 500;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Languages this series does not have at all, collapsed into one counter --
+   the names are in the tooltip. Muted on purpose: an absent language is the
+   least actionable thing in the row. */
+.lang-avail-missing {
+  align-self: center;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 99px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+  box-shadow: inset 0 0 0 1px var(--border);
+  white-space: nowrap;
+  cursor: help;
 }
 
 .lang-avail-full {
@@ -859,10 +1016,28 @@
   color: var(--warning);
 }
 
-.lang-avail-none {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: var(--error);
+/* .lang-avail-none is gone: a language with zero episodes no longer gets a
+   pill at all -- it is counted in .lang-avail-missing instead. Three red "0 /
+   279" pills spent most of the row stating that there was nothing to state. */
+
+@media (max-width: 640px) {
+  /* "Eng. Dub (Ger. Sub)" does not fit next to a flag and a count on a phone.
+     The name gives way rather than the number: the count is the information,
+     the flag already identifies the language, and the full label is still in
+     the tooltip and in the language select above. */
+  .lang-avail-pill {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .lang-avail-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .lang-avail-num { flex: none; }
 }
 
 /* Trailer + recommendations, side by side. flex-basis rather than a

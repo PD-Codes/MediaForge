@@ -238,6 +238,13 @@
       window.ANIWORLD_LANGS = {% if lang_labels is defined %}{{ lang_labels | tojson }}{% else %}{}{% endif %};
       window.STO_LANGS = {% if sto_lang_labels is defined %}{{ sto_lang_labels | tojson }}{% else %}{}{% endif %};
     </script>
+    {# Where the files that already exist are sitting. Placed here rather than
+       further down on purpose: it is the counterpart to the "Target folder"
+       select directly above it -- "where should it go" and "where is it
+       already" belong to each other. Filled by renderLibraryLocations()
+       (static/app.js) and hidden whenever nothing is on disk yet, so a title
+       that has never been downloaded shows no empty row. #}
+    <div class="lib-loc" id="libLocation" style="display:none"></div>
     <div class="lang-avail-banner" id="langAvailBanner" style="display:none"></div>
     <div class="episodes-header" id="episodesHeader">
       <h3 id="episodesHeading">{{ _('Episodes') }}</h3>

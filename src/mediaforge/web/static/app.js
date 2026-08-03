@@ -1368,6 +1368,11 @@ function rebuildLanguageSelect(foundLangs = null) {
     });
     languageSelect.appendChild(optgroup);
   }
+  // Rebuilding the options can land on a different value than the one the
+  // pills were rendered against (checkLangSeparation() calls this after the
+  // banner already exists). Without this the select and its pill twin show
+  // two different answers until the next manual change.
+  syncLangAvailPills();
 }
 
 // The ordered languages behind a dropdown value: one entry for a plain
@@ -1399,6 +1404,21 @@ if (searchInput) {
 }
 if (languageSelect) {
   languageSelect.addEventListener("change", updateProviderDropdown);
+  // The availability pills mirror this select, so a change made in the
+  // dropdown has to move the highlight too -- otherwise the two controls show
+  // different answers to the same question.
+  languageSelect.addEventListener("change", () => syncLangAvailPills());
+}
+
+/** Move the pill highlight to whatever the language select currently holds. */
+function syncLangAvailPills() {
+  const banner = document.getElementById("langAvailBanner");
+  if (!banner || !languageSelect) return;
+  banner.querySelectorAll(".lang-avail-pill[data-lang]").forEach(function (p) {
+    const on = p.dataset.lang === languageSelect.value;
+    p.classList.toggle("is-active", on);
+    p.setAttribute("aria-pressed", String(on));
+  });
 }
 
 function _hanimeCensLabel(c) {
@@ -2164,6 +2184,19 @@ async function openSeries(url) {
   if (modalMeta) modalMeta.classList.remove('loaded');
 
   seasonAccordion.innerHTML = "";
+  // Cleared HERE, not in buildAccordion(): that runs only after /api/series
+  // and /api/seasons have both come back, so the previous title's "Already
+  // stored in ..." row stayed on screen for the first seconds of the next one
+  // -- pointing at a folder that has nothing to do with what is being opened.
+  // Everything else the modal carries over is reset in this same block for
+  // exactly that reason. No skeleton variant: a title with nothing on disk
+  // shows no row at all, so a placeholder would promise a line that may never
+  // arrive.
+  const _libLoc = document.getElementById("libLocation");
+  if (_libLoc) {
+    _libLoc.style.display = "none";
+    _libLoc.innerHTML = "";
+  }
   const _lab = document.getElementById("langAvailBanner");
   if (_lab) {
     if (isSkeleton) {
@@ -2282,12 +2315,24 @@ function buildAccordion(seasons, _seq) {
   episodeSpinner.style.display = "block";
   selectAllCb.checked = false;
 
+  // Belt and braces: openSeries() already cleared this the moment the modal
+  // was opened. This covers a rebuild that does not go through openSeries.
+  const _locEl = document.getElementById("libLocation");
+  if (_locEl) {
+    _locEl.style.display = "none";
+    _locEl.innerHTML = "";
+  }
+
   // Fetch all seasons' episodes in parallel
   const fetches = seasons.map((s, i) =>
     fetch("/api/episodes?url=" + encodeURIComponent(s.url))
       .then((r) => r.json())
-      .then((data) => ({ index: i, episodes: data.episodes || [] }))
-      .catch(() => ({ index: i, episodes: [] })),
+      .then((data) => ({
+        index: i,
+        episodes: data.episodes || [],
+        locations: data.locations || [],
+      }))
+      .catch(() => ({ index: i, episodes: [], locations: [] })),
   );
 
   Promise.all(fetches).then((results) => {
@@ -2370,14 +2415,7 @@ function buildAccordion(seasons, _seq) {
       body.className = "season-body" + (isSingleMovie ? " expanded" : "");
       body.id = "seasonBody-" + index;
 
-      // Language flags
-      const langFlagMap = {
-        "German Dub": "/static/flags/german.svg",
-        "English Dub": "/static/flags/english.svg",
-        "German Sub": "/static/flags/japanese-germanSub.svg",
-        "English Sub": "/static/flags/japanese-englishSub.svg",
-        "English Dub (German Sub)": "/static/flags/english-germanSub.svg",
-      };
+      const langFlagMap = LANG_FLAG_SRC;
 
       episodes.forEach((ep) => {
         const div = document.createElement("div");
@@ -2432,10 +2470,126 @@ function buildAccordion(seasons, _seq) {
     // Language availability banner
     renderLangAvailBanner(results);
 
+    // Where the existing files live (header line + per-season deviations)
+    renderLibraryLocations(results);
+
     // Fetch providers from first episode (updates dynamically with checked availability)
     if (firstProviderUrl) {
       fetchProviders(firstProviderUrl);
     }
+  });
+}
+
+/* One flag per language label, used by BOTH the availability pills and the
+   per-episode flag row. It used to be declared inside buildAccordion's season
+   loop, which meant the pills could only have gotten a second copy -- and two
+   copies of a mapping like this drift the first time a language is added. */
+const LANG_FLAG_SRC = {
+  "German Dub": "/static/flags/german.svg",
+  "English Dub": "/static/flags/english.svg",
+  "German Sub": "/static/flags/japanese-germanSub.svg",
+  "English Sub": "/static/flags/japanese-englishSub.svg",
+  "English Dub (German Sub)": "/static/flags/english-germanSub.svg",
+};
+
+/** Identity of one storage location, for grouping across seasons. */
+function _locKey(loc) {
+  return (loc.root_label || "") + " " + (loc.folder || "");
+}
+
+/** "Anime NAS › Naruto (2002)" — the label every account gets to see.
+    root_label is empty for the global download folder, which has no name of
+    its own, so it borrows the one the Target-folder select already uses. */
+function _locLabel(loc) {
+  const root = loc.root_label || t("Standard", "Default");
+  return loc.folder ? root + " › " + loc.folder : root;
+}
+
+/**
+ * Show WHERE the episodes that already exist are stored.
+ *
+ * Two levels, because one line is right almost always and wrong occasionally:
+ *
+ *  - The line under the three selects names the location holding most of the
+ *    series. That is the answer in the normal case (one folder, one series).
+ *  - A season whose files sit somewhere ELSE gets its own small marker in the
+ *    season header. Printing the same path on all twelve season rows would be
+ *    noise; printing it on the one row that deviates is the information.
+ *
+ * The absolute path is only in the payload for admins (see search.py's
+ * _build_locations), so the tooltip simply has nothing to show for everyone
+ * else -- no separate client-side check needed.
+ */
+function renderLibraryLocations(results) {
+  const el = document.getElementById("libLocation");
+  if (!el) return;
+
+  // Merge the per-season lists into one location -> total episodes map.
+  const totals = new Map();
+  (results || []).forEach(({ locations }) => {
+    (locations || []).forEach((loc) => {
+      const key = _locKey(loc);
+      const prev = totals.get(key);
+      if (prev) prev.episodes += loc.episodes || 0;
+      else totals.set(key, Object.assign({}, loc));
+    });
+  });
+
+  if (totals.size === 0) {
+    el.style.display = "none";
+    el.innerHTML = "";
+    return;
+  }
+
+  const ranked = Array.from(totals.values()).sort((a, b) => b.episodes - a.episodes);
+  const primary = ranked[0];
+  const others = ranked.length - 1;
+
+  const icon =
+    '<svg class="lib-loc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+
+  // title= carries the absolute path when the server sent one (admins only).
+  const titleAttr = primary.path ? ' title="' + esc(primary.path) + '"' : "";
+  let html =
+    icon +
+    '<span class="lib-loc-lead">' + esc(t("Bereits vorhanden in", "Already stored in")) + "</span>" +
+    '<span class="lib-loc-name"' + titleAttr + ">" + esc(_locLabel(primary)) + "</span>" +
+    '<span class="lib-loc-count">' + primary.episodes + " " +
+    esc(primary.episodes === 1 ? t("Episode", "episode") : t("Episoden", "episodes")) +
+    "</span>";
+
+  if (others > 0) {
+    // The rest go into the tooltip rather than onto the line: a split library
+    // is worth flagging, but not worth three lines above the episode list.
+    const rest = ranked.slice(1)
+      .map((l) => _locLabel(l) + " (" + l.episodes + ")")
+      .join("\n");
+    html +=
+      '<span class="lib-loc-more" title="' + esc(rest) + '">+' + others + " " +
+      esc(others === 1 ? t("weiterer Ordner", "more folder") : t("weitere Ordner", "more folders")) +
+      "</span>";
+  }
+
+  el.innerHTML = html;
+  el.style.display = "flex";
+
+  // Per-season marker, only where a season deviates from the primary location.
+  const primaryKey = _locKey(primary);
+  (results || []).forEach(({ index, locations }) => {
+    if (!locations || !locations.length) return;
+    const top = locations.slice().sort((a, b) => b.episodes - a.episodes)[0];
+    if (_locKey(top) === primaryKey) return;
+    const section = seasonAccordion.querySelector(
+      '.season-section[data-season-index="' + index + '"] .season-label',
+    );
+    if (!section) return;
+    const chip = document.createElement("span");
+    chip.className = "season-loc";
+    chip.textContent = _locLabel(top);
+    if (top.path) chip.title = top.path;
+    section.appendChild(chip);
   });
 }
 
@@ -2486,20 +2640,75 @@ function renderLangAvailBanner(results) {
 
   if (total === 0) { banner.style.display = "none"; return; }
 
-  const pills = LANG_ORDER.map((lang) => {
-    const n = counts[lang] || 0;
+  // Languages the series does not have at all are folded into one counter.
+  // Five equally loud pills of which three read "0 / 279" spend most of the
+  // row saying there is nothing to say; the ones that DO exist are the answer
+  // to "which language can I actually take".
+  const available = LANG_ORDER.filter((lang) => (counts[lang] || 0) > 0);
+  const missing = LANG_ORDER.filter((lang) => !(counts[lang] || 0));
+
+  // Nothing available at all does NOT mean "this series has no languages" --
+  // it means the provider sent no language flags for it (ep.languages absent).
+  // The old row said "0 / 279" four times, which was useless but honest; a
+  // bare "4 unavailable" would be an assertion, and a wrong one. Say nothing.
+  if (available.length === 0) { banner.style.display = "none"; return; }
+
+  const selected = languageSelect ? languageSelect.value : "";
+
+  const pills = available.map((lang) => {
+    const n = counts[lang];
     const pct = Math.round((n / total) * 100);
     const full = n === total;
-    const none = n === 0;
-    const cls = full ? "lang-avail-pill lang-avail-full"
-      : none ? "lang-avail-pill lang-avail-none"
-        : "lang-avail-pill lang-avail-partial";
-    return `<span class="${cls}" title="${lang}">${LANG_SHORT[lang]}: ${n}&thinsp;/&thinsp;${total}</span>`;
+    const state = full ? "lang-avail-full" : "lang-avail-partial";
+    // Pressed state, not just a highlight: the pill IS the language selector's
+    // twin, so it has to say which one is active to a screen reader too.
+    const isActive = lang === selected;
+    const flag = LANG_FLAG_SRC[lang]
+      ? `<img class="lang-avail-flag" src="${LANG_FLAG_SRC[lang]}" alt="" aria-hidden="true">`
+      : "";
+    const hint = full
+      ? t("Alle Episoden verfügbar", "Every episode available")
+      : `${total - n} ${t("Episoden fehlen", "episodes missing")}`;
+    return (
+      `<button type="button" class="lang-avail-pill ${state}${isActive ? " is-active" : ""}"` +
+      ` style="--avail:${pct}%" data-lang="${esc(lang)}" aria-pressed="${isActive}"` +
+      ` title="${esc(lang + " — " + hint)}">` +
+      flag +
+      `<span class="lang-avail-name">${esc(LANG_SHORT[lang])}</span>` +
+      `<span class="lang-avail-num">${n}&thinsp;/&thinsp;${total}</span>` +
+      "</button>"
+    );
   }).join("");
 
-  banner.innerHTML = pills;
+  const missingChip = missing.length
+    ? `<span class="lang-avail-missing" title="${esc(missing.map((l) => LANG_SHORT[l]).join("\n"))}">` +
+      `${missing.length} ${esc(t("nicht verfügbar", "unavailable"))}</span>`
+    : "";
+
+  banner.innerHTML = pills + missingChip;
   banner.style.display = "flex";
 }
+
+/* Clicking a pill picks that language. Delegated on the banner because the
+   pills are rebuilt on every season load -- per-pill listeners would have to
+   be re-attached each time, and the ones from the previous series would keep
+   a dead closure alive. `change` is dispatched by hand: assigning .value does
+   not fire it, and updateProviderDropdown() hangs off that event. */
+document.addEventListener("click", function (e) {
+  const pill = e.target.closest && e.target.closest(".lang-avail-pill[data-lang]");
+  if (!pill) return;
+  const banner = document.getElementById("langAvailBanner");
+  if (!banner || !banner.contains(pill)) return;
+  const lang = pill.dataset.lang;
+  if (!languageSelect || languageSelect.value === lang) return;
+  // A language with no <option> cannot be selected -- the pill would look like
+  // it did nothing. Only pills for languages that exist are rendered, so this
+  // is a guard, not an expected path.
+  if (!Array.from(languageSelect.options).some((o) => o.value === lang)) return;
+  languageSelect.value = lang;
+  // syncLangAvailPills() runs off this event, so the highlight follows.
+  languageSelect.dispatchEvent(new Event("change"));
+});
 
 function toggleSeason(index) {
   const section = seasonAccordion.querySelector(
