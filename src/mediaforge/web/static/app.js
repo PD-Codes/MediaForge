@@ -910,6 +910,9 @@ async function applyUptimeStatus() {
   let data;
   try {
     const resp = await fetch("/api/uptime/status");
+    // A kids account is refused this endpoint (403, see app.py's
+    // _kids_blocked) — stop rather than parse an error body as a status.
+    if (!resp.ok) return;
     data = await resp.json();
   } catch (e) { return; }
   if (!data || !data.enabled || !Array.isArray(data.sources)) return;

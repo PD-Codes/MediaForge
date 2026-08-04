@@ -1885,7 +1885,7 @@ def register(app):
   session of your own — only `GLOBAL_SESSION` is wired to the failover
   logic). `hosts[0]` is the canonical host your `Provider`'s patterns should
   be written against.
-- **`register_monitor_site(item_id, site_id, label, url, expected_domain, body_markers, expected_headers=None, enabled_setting_key=None, tracked_by_default=True)`**
+- **`register_monitor_site(item_id, site_id, label, url, expected_domain, body_markers, expected_headers=None, enabled_setting_key=None, enabled_setting_default=True, tracked_by_default=True)`**
   (`mediaforge/web/uptime_monitor.py`) is also optional, and equally
   free-standing — it adds an entry to `_MONITOR_SITES`, the dict the UpTime
   dashboard (probe loop, API, JS rendering) is already generic over, so
@@ -1893,6 +1893,12 @@ def register(app):
   blocked-page detection with no other change. `enabled_setting_key` (e.g.
   the same key you passed `register_thirdparty()`) makes the card's
   "enabled_source" badge reflect your actual toggle instead of guessing.
+  `enabled_setting_default` says what an **unset** key means — it defaults to
+  `True`, because a module source was installed on purpose. Pass `False` only
+  if your key is genuinely opt-in. Before this parameter existed the core
+  guessed "off" for every module key, so a module that writes its key only on
+  first save showed a permanent "source disabled" badge on an entirely
+  healthy card.
 - **Uninstall is automatic for all five.** Every registration above is keyed
   by `item_id`, the same id you already pass to `register_thirdparty()` —
   `web/thirdparties/registry.py`'s `unregister_module()` calls

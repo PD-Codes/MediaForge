@@ -508,7 +508,13 @@
           openSourcePicker(pill);
         });
       }
-      grid.children[i].appendChild(pill);
+      // Into the text column when there is one. On a poster the pill is
+      // absolutely positioned against .browse-card (which is the positioned
+      // ancestor either way), so this changes nothing there -- but in a list
+      // row it makes the pill a sibling of the title and genre, which is
+      // where it belongs and where it lines up without a magic indent.
+      const card = grid.children[i];
+      (card.querySelector(".browse-info") || card).appendChild(pill);
     }
   }
 

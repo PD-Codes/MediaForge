@@ -6536,7 +6536,14 @@ def record_uptime_heartbeat(source, status, response_ms=None,
 
 
 def prune_uptime_heartbeats(retention_days):
-    """Delete heartbeats older than the retention window (and orphan sources)."""
+    """Delete heartbeats older than the retention window.
+
+    Age is the only criterion. Rows belonging to a source that no longer
+    exists (an uninstalled third-party monitor site) are deliberately left to
+    expire on their own rather than deleted eagerly: reinstalling the module
+    within the retention window then still shows its history, and the retention
+    window caps the wasted space at a few days either way.
+    """
     import time as _t
     try:
         days = float(retention_days)
@@ -6603,6 +6610,13 @@ def get_uptime_range(source, start_ts, end_ts, n_buckets=50):
     status is 'up' | 'degraded' | 'down' | 'nodata' (empty bucket).
     stats (uptime_pct/avg_ms/total) are over the whole selected range;
     latest is the globally most recent heartbeat (independent of range).
+
+    uptime_pct counts only genuinely 'up' heartbeats. It used to count
+    everything that was not 'down', which quietly inflated the number: the
+    failure-threshold debounce deliberately records the first
+    ``failure_threshold - 1`` rounds of a real outage as 'degraded', so every
+    outage was reported shorter than it was. down_count/degraded_count are
+    returned alongside so a caller can still tell the two apart.
     """
     start_ts = int(start_ts)
     end_ts = int(end_ts)
@@ -6610,13 +6624,30 @@ def get_uptime_range(source, start_ts, end_ts, n_buckets=50):
         end_ts = start_ts + 1
     n_buckets = max(1, int(n_buckets))
     span = end_ts - start_ts
-    size = max(1, span // n_buckets)
+    # Bucket index by proportion, not by a truncated fixed width. With
+    # ``size = span // n_buckets`` the integer remainder (up to n_buckets-1
+    # seconds, i.e. 49 s on a 7-day range) fell outside the last bucket's
+    # nominal end and got clamped into it, so that one bar aggregated more
+    # checks than every other bar and read as busier than it was.
+    size = max(1, span // n_buckets)  # reported as bucket_seconds (nominal)
+
+    def _bucket_edge(i):
+        # Ceiling, so this is the exact inverse of the floor-division index
+        # below (and of the same expression in SQL). Flooring here instead
+        # would put a heartbeat one second outside the bar it was counted in,
+        # which the tooltip then reported as a span not containing its own
+        # checks on any range that does not divide evenly.
+        return start_ts + (i * span + n_buckets - 1) // n_buckets
+
+    def _bucket_index(ts):
+        idx = ((int(ts) - start_ts) * n_buckets) // span
+        return 0 if idx < 0 else (n_buckets - 1 if idx >= n_buckets else idx)
 
     conn = get_db()
     try:
         agg = {}
         for r in conn.execute(
-            "SELECT CAST((ts - ?) / ? AS INTEGER) AS b, "
+            "SELECT CAST(((ts - ?) * ?) / ? AS INTEGER) AS b, "
             "COUNT(*) AS total, "
             "SUM(CASE WHEN status='down' THEN 1 ELSE 0 END) AS downc, "
             "SUM(CASE WHEN status='degraded' THEN 1 ELSE 0 END) AS degc, "
@@ -6624,9 +6655,9 @@ def get_uptime_range(source, start_ts, end_ts, n_buckets=50):
             "SUM(response_ms) AS rt_sum, "
             "SUM(CASE WHEN response_ms IS NOT NULL THEN 1 ELSE 0 END) AS rt_n "
             "FROM uptime_heartbeats WHERE source=? AND ts>=? AND ts<? GROUP BY b",
-            (start_ts, size, source, start_ts, end_ts),
+            (start_ts, n_buckets, span, source, start_ts, end_ts),
         ).fetchall():
-            idx = r["b"]
+            idx = r["b"] or 0
             idx = 0 if idx < 0 else (n_buckets - 1 if idx >= n_buckets else idx)
             a = agg.setdefault(idx, {"total": 0, "down": 0, "deg": 0, "up": 0, "rt_sum": 0, "rt_n": 0})
             a["total"] += r["total"] or 0
@@ -6642,14 +6673,13 @@ def get_uptime_range(source, start_ts, end_ts, n_buckets=50):
             "WHERE source=? AND ts>=? AND ts<? AND status!='up' ORDER BY ts ASC",
             (source, start_ts, end_ts),
         ).fetchall():
-            idx = (r["ts"] - start_ts) // size
-            idx = 0 if idx < 0 else (n_buckets - 1 if idx >= n_buckets else idx)
-            issues[idx] = {"ts": r["ts"], "status": r["status"], "message": r["message"]}
+            issues[_bucket_index(r["ts"])] = {
+                "ts": r["ts"], "status": r["status"], "message": r["message"]}
 
         buckets = []
         for i in range(n_buckets):
-            b_start = start_ts + i * size
-            b_end = end_ts if i == n_buckets - 1 else start_ts + (i + 1) * size
+            b_start = _bucket_edge(i)
+            b_end = end_ts if i == n_buckets - 1 else _bucket_edge(i + 1)
             a = agg.get(i)
             if not a or a["total"] == 0:
                 buckets.append({"start": b_start, "end": b_end, "status": "nodata",
@@ -6664,7 +6694,9 @@ def get_uptime_range(source, start_ts, end_ts, n_buckets=50):
 
         stat = conn.execute(
             "SELECT COUNT(*) AS total, "
-            "SUM(CASE WHEN status='down' THEN 0 ELSE 1 END) AS up_count, "
+            "SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count, "
+            "SUM(CASE WHEN status='down' THEN 1 ELSE 0 END) AS down_count, "
+            "SUM(CASE WHEN status='degraded' THEN 1 ELSE 0 END) AS degraded_count, "
             "AVG(response_ms) AS avg_ms "
             "FROM uptime_heartbeats WHERE source=? AND ts>=? AND ts<?",
             (source, start_ts, end_ts),
@@ -6676,12 +6708,16 @@ def get_uptime_range(source, start_ts, end_ts, n_buckets=50):
         ).fetchone()
         total = (stat["total"] if stat else 0) or 0
         up_count = (stat["up_count"] if stat else 0) or 0
+        down_count = (stat["down_count"] if stat else 0) or 0
+        degraded_count = (stat["degraded_count"] if stat else 0) or 0
         avg_ms = stat["avg_ms"] if stat and stat["avg_ms"] is not None else None
         return {
             "stats": {
                 "total": total,
                 "up_count": up_count,
                 "uptime_pct": round(up_count / total * 100, 2) if total else None,
+                "down_count": down_count,
+                "degraded_count": degraded_count,
                 "avg_ms": round(avg_ms) if avg_ms is not None else None,
             },
             "latest": dict(latest) if latest else None,

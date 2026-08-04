@@ -23,6 +23,7 @@ from ..db import get_setting
 from ..lang_folders import LANG_FOLDERS
 from ..db import get_tmdb_cache
 from ..db import set_browse_cache
+from ..source_policy import source_enabled as _source_enabled
 from ..queue_worker import _hanime_enabled
 from ..queue_worker import _is_filmpalast_url
 from flask import jsonify
@@ -678,9 +679,12 @@ def _feed_builtin_entries():
 def _feed_source_enabled(source_id):
     """Same rule the settings page writes: every source is opt-out except the
     adult one, which is opt-in. Module sources default to on -- a module that
-    registered a source was installed on purpose."""
-    default = "0" if source_id == "hanime" else "1"
-    return get_setting("source_enabled_" + source_id, default) != "0"
+    registered a source was installed on purpose.
+
+    The rule itself lives in source_policy so the UpTime page and this one
+    cannot disagree about the same source (they did: UpTime had its own
+    hardcoded copy naming "hanime")."""
+    return _source_enabled(source_id)
 
 
 def _feed_norm_title(value):

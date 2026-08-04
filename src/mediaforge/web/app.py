@@ -1210,6 +1210,16 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_autosync_delete",
             "api_autosync_trigger",
             "api_autosync_sync_all",
+            # UpTime: the dashboard lists every monitored source by label and
+            # renders its URL as a clickable link -- including the adult one,
+            # whose whole point is that it is opt-in and age-gated everywhere
+            # else in the app. The page had no age gate at all, so a kids
+            # account could reach hanime.tv straight off the monitoring page.
+            # Both the page and its data endpoint are blocked; the operational
+            # information is an operator's concern anyway.
+            "uptime_page",
+            "api_uptime_status",
+            "api_uptime_heartbeats",
         }
         # /api/user/preferences is deliberately NOT here. It is how an account
         # picks its theme, density and row layout, and a child is allowed to

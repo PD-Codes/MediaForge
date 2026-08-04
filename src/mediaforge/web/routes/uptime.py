@@ -4,15 +4,17 @@ Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 """
 
-from ..db import get_setting
 from ..db import get_uptime_heartbeats_between
 from ..db import get_uptime_range
 from ..db import set_setting
+from ..source_policy import source_enabled
 from ..uptime_monitor import _MONITOR_SITES
+from ..uptime_monitor import _MONITOR_ENABLED_DEFAULTS
 from ..uptime_monitor import _MONITOR_ENABLED_KEYS
 from ..uptime_monitor import _uptime_config
 from ..uptime_monitor import _uptime_run_round
 from ..uptime_monitor import _uptime_wake
+from ..uptime_monitor import uptime_round_in_progress
 from flask import jsonify
 from flask import render_template
 from flask import request
@@ -81,22 +83,26 @@ def register_uptime_routes(app):
 
         n_buckets = 50
         sources = []
-        for _sid, (_label, _url, _domain, _markers, _headers) in _MONITOR_SITES.items():
+        # Snapshot: a module (un)registering a monitor site mutates
+        # _MONITOR_SITES from another thread — see _uptime_run_round_locked().
+        for _sid, (_label, _url, _domain, _markers, _headers) in list(_MONITOR_SITES.items()):
             rr = get_uptime_range(_sid, start, end, n_buckets=n_buckets)
             latest = rr["latest"] or {}
             # Third-party sites (see uptime_monitor.register_monitor_site) may
             # declare their own "am I enabled" setting key instead of the
-            # built-in "source_enabled_<id>" convention, and default to
-            # untracked-looking ("0") rather than the five built-ins' "1"
-            # unless they said otherwise.
-            _enabled_key = _MONITOR_ENABLED_KEYS.get(_sid, "source_enabled_" + _sid)
-            _src_def = "0" if (_sid == "hanime" or _sid in _MONITOR_ENABLED_KEYS) else "1"
+            # "source_enabled_<id>" convention, and say themselves what an
+            # unset key means. Built-ins follow the app-wide source rule in
+            # source_policy (opt-out, except an adult source) — the same rule
+            # the home feed and the settings page use, rather than a second
+            # hardcoded copy of it here.
+            _enabled_key = _MONITOR_ENABLED_KEYS.get(_sid)
+            _src_def = _MONITOR_ENABLED_DEFAULTS.get(_sid)
             sources.append({
                 "id":               _sid,
                 "label":            _label,
                 "url":              _url,
                 "tracked":          cfg["tracked"].get(_sid, False),
-                "enabled_source":   get_setting(_enabled_key, _src_def) == "1",
+                "enabled_source":   source_enabled(_sid, key=_enabled_key, default=_src_def),
                 "current_status":   latest.get("status"),
                 "last_ts":          latest.get("ts"),
                 "last_response_ms": latest.get("response_ms"),
@@ -183,7 +189,7 @@ def register_uptime_routes(app):
 
         tracked = data.get("tracked")
         if isinstance(tracked, dict):
-            for _sid in _MONITOR_SITES:
+            for _sid in list(_MONITOR_SITES):
                 if _sid in tracked:
                     set_setting("uptime_track_" + _sid,
                                 "1" if tracked[_sid] else "0")
@@ -202,6 +208,14 @@ def register_uptime_routes(app):
         cfg = _uptime_config()
         if not cfg["enabled"]:
             return jsonify({"error": "uptime disabled"}), 400
+        # Refuse instead of stacking a second round on top of a running one.
+        # Every click used to spawn its own unbounded thread, so N clicks meant
+        # N concurrent probe rounds: duplicate heartbeats in the same second
+        # (skewing uptime_pct/avg_ms) and a failure counter incremented once
+        # per round rather than once per interval. _uptime_run_round() also
+        # guards itself; this is the version that can tell the UI about it.
+        if uptime_round_in_progress():
+            return jsonify({"error": "check already running", "code": "busy"}), 409
         threading.Thread(target=_uptime_run_round, daemon=True,
                          name="uptime-checknow").start()
         return jsonify({"ok": True})

@@ -307,7 +307,7 @@
     if (!s || !e || s >= e) { if (err) err.textContent = t("Ungültiger Zeitraum", "Invalid range"); return; }
     if (err) err.textContent = "";
     curMode = "custom"; curStart = s; curEnd = e; curRange = null;
-    saveSel(); setActivePreset(); closeAllDetails(); refresh();
+    saveSel(); setActivePreset(); closeAllDetails(); refresh({ force: true });
   };
 
   function statusUrl() {
@@ -425,16 +425,38 @@
     });
   }
 
-  async function refresh() {
+  // Guards the 10 s poll against itself. A status response that takes longer
+  // than the poll interval used to let requests pile up, and because they can
+  // complete out of order an older payload could overwrite a newer one — the
+  // page then showed a status that had already been superseded. One request at
+  // a time, and a range switch aborts the in-flight one instead of racing it.
+  let _inFlight = null;
+  let _reqSeq = 0;
+
+  async function refresh(opts) {
+    if (_inFlight) {
+      // A user action (range change, check-now) must not be swallowed by a
+      // slow poll, so it cancels it; a routine poll simply skips this tick.
+      if (!(opts && opts.force)) return;
+      try { _inFlight.abort(); } catch (e) {}
+    }
+    const ctrl = new AbortController();
+    _inFlight = ctrl;
+    const seq = ++_reqSeq;
     let data;
     try {
-      const resp = await fetch(statusUrl());
+      const resp = await fetch(statusUrl(), { signal: ctrl.signal });
       data = await resp.json();
     } catch (e) {
+      if (e && e.name === "AbortError") return;
       const grid = document.getElementById("uptimeGrid");
       if (grid && !grid.querySelector(".uptime-card")) grid.innerHTML = '<div class="uptime-empty">⚠ ' + esc(e.message) + "</div>";
       return;
+    } finally {
+      if (_inFlight === ctrl) _inFlight = null;
     }
+    // A late answer from a superseded request must never repaint the page.
+    if (seq !== _reqSeq) return;
     const now = data.now || Math.floor(Date.now() / 1000);
     const sources = sortSources(data.sources || []);
     const grid = document.getElementById("uptimeGrid");
@@ -454,14 +476,28 @@
 
   window.uptimeCheckNow = async function () {
     const btn = document.getElementById("uptimeCheckNow");
+    const reset = function () {
+      if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute("data-label") || "Check now"; }
+    };
     if (btn) { btn.disabled = true; btn.textContent = I.checking; }
     try { await fetch("/api/uptime/check-now", { method: "POST" }); } catch (e) {}
-    setTimeout(refresh, 1500);
-    setTimeout(refresh, 4000);
-    setTimeout(function () { if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute("data-label") || "Check now"; } }, 2500);
+    // The button stayed disabled for 2.5 s while the last refresh fired at
+    // 4 s, so it was clickable again before the result it triggered had even
+    // landed — and every extra click used to start another probe round
+    // server-side. Re-enable only after the final refresh (the server answers
+    // 409 for a redundant click either way).
+    setTimeout(function () { refresh({ force: true }); }, 1500);
+    setTimeout(function () { refresh({ force: true }); reset(); }, 4000);
   };
 
-  function startPolling() { if (timer) return; refresh(); timer = setInterval(refresh, 10000); }
+  // setInterval hands the callback its own arguments, so refresh must not be
+  // passed to it bare — it would arrive as refresh(<number>) and be read as an
+  // options object.
+  function startPolling() {
+    if (timer) return;
+    refresh({ force: true });
+    timer = setInterval(function () { refresh(); }, 10000);
+  }
   function stopPolling() { if (timer) { clearInterval(timer); timer = null; } }
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -476,7 +512,7 @@
       curMode = "range"; curRange = parseInt(b.getAttribute("data-sec"), 10); curStart = null; curEnd = null;
       saveSel(); setActivePreset();
       const c = document.getElementById("uptimeCustomRange"); if (c) c.hidden = true;
-      closeAllDetails(); refresh();
+      closeAllDetails(); refresh({ force: true });
     });
     initGridEvents();
     startPolling();

@@ -146,5 +146,9 @@ def register(app) -> None:
         body_markers=["example"],
         expected_headers={"server": "cloudflare"},
         enabled_setting_key=ENABLED_KEY,
+        # What an UNSET ENABLED_KEY means for the "source disabled" badge.
+        # True is the right answer for almost every module (it was installed
+        # on purpose); pass False only for a genuinely opt-in source.
+        enabled_setting_default=True,
         tracked_by_default=False,  # off by default: it will always show "down"
     )

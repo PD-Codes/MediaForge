@@ -376,7 +376,8 @@ def register_v1_api_routes(app):
         now = int(_t.time())
         window = min(6 * 3600, cfg["retention_days"] * 86400)
         sources = []
-        for _sid, (_label, _url, _domain, _markers, _headers) in _MONITOR_SITES.items():
+        # Snapshot — a module (un)registering a site mutates the live dict.
+        for _sid, (_label, _url, _domain, _markers, _headers) in list(_MONITOR_SITES.items()):
             rr = get_uptime_range(_sid, now - window, now, n_buckets=1)
             latest = rr["latest"] or {}
             sources.append({

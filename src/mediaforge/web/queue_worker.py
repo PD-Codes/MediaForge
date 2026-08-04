@@ -447,8 +447,13 @@ def _hanime_enabled() -> bool:
 
     Used by: routes/search.py, routes/browse.py, and routes/integrations.py to
     gate hanime results/search behind the setting.
+
+    Defers to source_policy for both the key and the "adult sources are
+    opt-in" default, so this can never drift from what the home feed and the
+    UpTime page believe about the same source.
     """
-    return get_setting("source_enabled_hanime", "0") == "1"
+    from .source_policy import source_enabled
+    return source_enabled("hanime")
 
 
 def _parse_season_episode(url):

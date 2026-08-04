@@ -1650,13 +1650,30 @@ a.hp-item:focus-visible {
 .home-density-list .home-pcard-hit > .home-pcard-title { flex: 1 1 auto; min-width: 0; }
 .home-density-list .home-pcard-hit > .home-pcard-sub { flex: 0 0 auto; }
 
-/* The source pill is anchored to the poster's bottom-left on a card; in a row
-   it belongs after the title, in the flow. */
+/* The source pill is anchored to the poster's bottom-left on a card. In a row
+   it sits in the text column under the title and genre -- it describes the
+   entry, so it belongs with the entry's text rather than out in the badge
+   strip. position:relative rather than static so the "+N" picker, which is
+   `bottom: 100%` of its pill, opens above the pill instead of above the whole
+   card. */
 .home-density-list .browse-src-pill {
-  position: static;
-  flex: none;
-  order: 4;
-  margin-left: 8px;
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  margin-top: 4px;
+}
+
+/* The streaming-service pills (Netflix, Apple TV+ ...) live in the same text
+   column. Two reasons this needs a row of its own here:
+   - its 20px bottom margin is poster spacing, and in a row it was most of the
+     wasted height under every entry;
+   - as a block-level flex row it pushed the source pill onto a fourth line.
+   inline-flex puts the service and the source on one line, which reads as
+   "where you can watch it / where we found it" instead of two stacked pills. */
+.home-density-list .browse-tmdb-meta {
+  display: inline-flex;
+  vertical-align: middle;
+  margin: 4px 6px 0 0;
 }
 
 /* Same for the "Downloaded" / Auto-Sync markers: absolute on a card, and on a
@@ -1683,6 +1700,26 @@ a.hp-item:focus-visible {
   overflow: hidden;
 }
 
+/* The "Uncensored"/"Censored" ribbon is a diagonal band cut into the poster's
+   corner: it only reads as a small triangle because .browse-card clips it
+   (cards.css overflow:hidden). A list row sets overflow:visible, so the full
+   120px band hung out of a 62px row at a 45 degree angle. It was the last
+   absolute poster overlay never carried over to list mode -- here it becomes a
+   flat pill like the Downloaded marker two rules up. */
+.home-density-list .hanime-pill {
+  position: static;
+  flex: none;
+  order: 5;
+  margin-left: 8px;
+  width: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  transform: none;
+  font-size: 0.6rem;
+  line-height: 1.5;
+  box-shadow: none;
+}
+
 /* Things that only make sense on a poster. */
 .home-density-list .home-pcard-play,
 .home-density-list .browse-hover-overlay,
@@ -1693,12 +1730,12 @@ a.hp-item:focus-visible {
 /* Phones: the thumbnail plus a title is all that fits. Everything optional
    steps out rather than squeezing the title down to "Nige…". */
 @media (max-width: 620px) {
-  .home-density-list .browse-src-pill,
   .home-density-list .home-pcard-bar,
   .home-density-list .home-pcard-sub,
   .home-density-list .browse-card .genres { display: none; }
   .home-density-list .downloaded-badge,
-  .home-density-list .card-top-badge { margin-left: auto; }
+  .home-density-list .card-top-badge,
+  .home-density-list .hanime-pill { margin-left: auto; }
 }
 
 /* ── Keyboard focus ──────────────────────────────────────────────────

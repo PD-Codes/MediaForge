@@ -41,6 +41,8 @@ from ..runtime_state import SYNC_RETRY_MAP
 from ..runtime_state import SYNC_SCHEDULE_MAP
 from ..runtime_state import WORKING_PROVIDERS
 from ..settings_migration import _apply_captcha_env
+from ..source_policy import source_enabled_default as _source_enabled_default
+from ..source_policy import source_enabled_key as _source_enabled_key
 from ..uptime_monitor import _MONITOR_SITES
 from ..uptime_monitor import _probe_site
 from flask import jsonify
@@ -484,12 +486,13 @@ def register_settings_routes(app):
                             "uncensored": get_setting("source_show_uncensored_hanime", "1"),
                         },
                     },
+                    # Defaults come from source_policy (opt-out, except an
+                    # adult source) rather than being repeated per id here.
                     "enabled": {
-                        "aniworld":   get_setting("source_enabled_aniworld",   "1"),
-                        "sto":        get_setting("source_enabled_sto",        "1"),
-                        "filmpalast": get_setting("source_enabled_filmpalast", "1"),
-                        "megakino":   get_setting("source_enabled_megakino",   "1"),
-                        "hanime":     get_setting("source_enabled_hanime",     "0"),
+                        _s: get_setting(_source_enabled_key(_s),
+                                        _source_enabled_default(_s))
+                        for _s in ("aniworld", "sto", "filmpalast",
+                                   "megakino", "hanime")
                     },
                     "hide_disabled_in_search": get_setting("sources_hide_in_search", "0"),
                 },
@@ -789,7 +792,8 @@ def register_settings_routes(app):
         #   2. (fallback GET) body contains a known marker or final URL stayed
         #      on the expected domain (handles CDN challenge pages).
         results = {}
-        for _sid, (label, url, expected_domain, markers, headers) in _MONITOR_SITES.items():
+        # Snapshot — a module (un)registering a site mutates the live dict.
+        for _sid, (label, url, expected_domain, markers, headers) in list(_MONITOR_SITES.items()):
             results[label] = _probe_site(url, expected_domain, markers, expected_headers=headers, timeout=10)
 
         return jsonify({

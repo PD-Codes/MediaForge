@@ -15,6 +15,7 @@ from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
 from .db import get_setting, prune_uptime_heartbeats, record_uptime_heartbeat, set_setting
 from .dns_patch import _ip_provider
+from .source_policy import setting_is_on, source_enabled_default
 
 logger = get_logger(__name__)
 
@@ -101,7 +102,7 @@ def _resolve_ip(hostname, timeout):
 
 
 def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10,
-                use_get=False, probe=True):
+                use_get=False, probe=True, resolve_ip=True):
     """Fetch a site and verify we reached the real thing via response headers.
 
     Verification is header-based, not IP-based. Cloudflare and DDoS-Guard (the
@@ -114,9 +115,18 @@ def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10
     to reproduce that exact signature.
 
     A cheap HEAD request (headers only, no body download) is used first and is
-    the *only* request made in the common case. Only when the header signature
-    does not match do we fall back to a full GET so the body can still be
-    checked against known ISP/CUII block-page markers, purely for diagnostics.
+    the *only* request made in the common case. The body fallback (a full GET,
+    so the ISP/CUII block-page markers can be checked) runs whenever the header
+    signature does *not* match **or** the status is 4xx. The 4xx half matters:
+    a Cloudflare block/challenge page (403, error 1020) still carries
+    ``server: cloudflare``, so a header-only verdict would have matched the
+    signature and reported a blocked site as "up" -- which is precisely the
+    thing this monitor exists to notice. Only a response that both matches the
+    signature *and* is below 400 counts as verified outright.
+
+    *resolve_ip* controls the informational DNS lookup. The UpTime loop passes
+    ``False``: it never reads ``ip``/``ip_provider`` (only the DNS diagnostics
+    UI does), and the lookup costs up to *timeout* seconds per site per round.
 
     Returns a dict with: hostname, http_status, http_ok, site_verified,
     headers_matched, response_ms, server_header, and optional ip/ip_provider
@@ -141,13 +151,15 @@ def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10
     # DNS diagnostics UI). NOT used to decide reachability/verification, and
     # bounded by a short timeout so a stalled system resolver can never hang the
     # probe (see _resolve_ip).
-    ip, provider, dns_err = _resolve_ip(hostname, timeout=min(5, timeout))
-    if ip:
-        entry["ip"] = ip
-        entry["socket_ok"] = True
-        entry["ip_provider"] = provider
-    elif dns_err:
-        entry["socket_error"] = dns_err
+    # Skipped entirely for the monitor (resolve_ip=False) -- see the docstring.
+    if resolve_ip:
+        ip, provider, dns_err = _resolve_ip(hostname, timeout=min(5, timeout))
+        if ip:
+            entry["ip"] = ip
+            entry["socket_ok"] = True
+            entry["ip_provider"] = provider
+        elif dns_err:
+            entry["socket_error"] = dns_err
 
     def _headers_match(headers):
         if not expected_headers:
@@ -167,7 +179,14 @@ def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10
             return
         has_marker = any(m.lower() in body_lower for m in markers)
         url_on_domain = expected_domain in entry.get("final_url", "")
-        entry["site_verified"] = bool(has_marker or url_on_domain)
+        # "We are still on the right domain" is not on its own evidence that
+        # the real site answered when the status is 4xx -- a CDN block page is
+        # served from that very domain. A body marker still counts (the real
+        # page can legitimately answer 404 on "/"), the URL alone does not.
+        if not entry.get("status_ok", True):
+            entry["site_verified"] = bool(has_marker)
+        else:
+            entry["site_verified"] = bool(has_marker or url_on_domain)
 
     # Primary check, verified via response headers. HEAD is the cheap default;
     # ``use_get`` switches to a full GET, which is more reliable against the
@@ -190,10 +209,17 @@ def _probe_site(url, expected_domain, markers, expected_headers=None, timeout=10
         entry["final_url"] = str(getattr(resp, "url", url) or url)
         entry["server_header"] = resp.headers.get("server")
         entry["headers_matched"] = _headers_match(resp.headers)
-        entry["site_verified"] = bool(entry["http_ok"] and entry["headers_matched"])
+        # A 4xx is NOT proof we reached the real site, no matter how well the
+        # CDN signature matches -- Cloudflare's own block/challenge page (403,
+        # error 1020) answers with server: cloudflare. So the signature only
+        # verifies a response that is also below 400; everything from 400 up
+        # has to earn its verdict from the body check below.
+        entry["status_ok"] = resp.status_code < 400
+        entry["site_verified"] = bool(entry["status_ok"] and entry["headers_matched"])
 
-        # Header signature didn't match — fall back to the body markers.
-        if entry["http_ok"] and not entry["headers_matched"]:
+        # Signature didn't match, or the status was 4xx — fall back to the
+        # body markers (which is also what detects an ISP/CUII block page).
+        if entry["http_ok"] and not entry["site_verified"]:
             if use_get:
                 # Body already in hand from the GET — no extra request needed.
                 _check_body(resp.text)
@@ -218,6 +244,25 @@ _uptime_monitor_lock = threading.Lock()
 _uptime_wake = threading.Event()  # set to wake the monitor early (config change)
 
 
+def _tracked_default(site_id) -> str:
+    """Default value of ``uptime_track_<id>`` for a site that never had one set.
+
+    A built-in site follows the app-wide source rule and nothing else (see
+    source_policy): opt-out, except an adult source, which is opt-in. There is
+    deliberately no ``if site_id == "hanime"`` here any more -- that hardcoded
+    copy of the rule is the reason the tracking toggle and the source toggle
+    could disagree about the same site.
+
+    A third-party site uses whatever its module asked for at registration
+    (``tracked_by_default``), which register_monitor_site() also seeds into the
+    DB, so this is only the fallback for a site registered while the DB write
+    failed.
+    """
+    if site_id in _MONITOR_TRACKED_DEFAULTS:
+        return _MONITOR_TRACKED_DEFAULTS[site_id]
+    return source_enabled_default(site_id)
+
+
 def _uptime_config():
     """Read the current UpTime configuration from app_settings (clamped).
 
@@ -231,9 +276,9 @@ def _uptime_config():
         return max(lo, min(hi, v))
 
     tracked = {}
-    for _sid in _MONITOR_SITES:
-        _def = "0" if _sid == "hanime" else "1"
-        tracked[_sid] = get_setting("uptime_track_" + _sid, _def) == "1"
+    for _sid in list(_MONITOR_SITES):
+        tracked[_sid] = setting_is_on(
+            get_setting("uptime_track_" + _sid, _tracked_default(_sid)))
 
     return {
         "enabled":           get_setting("uptime_enabled", "0") == "1",
@@ -264,8 +309,17 @@ _EXTRA_MONITOR_SITES = {}  # item_id -> site_id
 # site_id -> the app_settings key that reflects "is this source itself
 # enabled" (shown as the enabled_source badge on the site's Uptime card).
 # Only set for third-party sites -- a built-in one keeps using the
-# "source_enabled_<id>" convention baked into web/routes/uptime.py.
+# "source_enabled_<id>" convention from source_policy.
 _MONITOR_ENABLED_KEYS = {}
+# site_id -> what an *unset* enabled key means for that third-party site.
+# The core cannot know: the key belongs to the module (e.g.
+# "kinox_search_enabled"), and a module that only writes it on first save
+# would otherwise be reported as "source disabled" forever. Modules say so
+# themselves via register_monitor_site(enabled_setting_default=...).
+_MONITOR_ENABLED_DEFAULTS = {}
+# site_id -> the seeded default of the "track this site" toggle, as the
+# registering module asked for it (see _tracked_default).
+_MONITOR_TRACKED_DEFAULTS = {}
 
 
 def register_monitor_site(
@@ -277,6 +331,7 @@ def register_monitor_site(
     body_markers,
     expected_headers=None,
     enabled_setting_key=None,
+    enabled_setting_default=True,
     tracked_by_default=True,
 ) -> None:
     """Register a third-party content source for UpTime tracking, from the
@@ -311,6 +366,11 @@ def register_monitor_site(
       ``enabled_setting_key`` you already passed to ``register_thirdparty()``).
       Purely cosmetic (feeds the "enabled_source" badge on the UpTime card);
       omit it and the card just won't show that badge as accurately.
+    - *enabled_setting_default*: what an *unset* ``enabled_setting_key``
+      means. Defaults to True, because a module source was installed on
+      purpose. Pass False if your key is opt-in -- without this the core would
+      have to guess, and guessing "off" made a module that writes its key only
+      on first save show a permanent "source disabled" badge.
     - *tracked_by_default*: whether the "track this site" toggle starts on.
       Seeded once, the same "only if never explicitly set" semantics as
       ``MODULE_ENABLED_DEFAULT`` (see the module README) -- a later call never
@@ -323,14 +383,16 @@ def register_monitor_site(
         raise ValueError(f"register_monitor_site: site id already registered: {site_id!r}")
     _MONITOR_SITES[site_id] = (label, url, expected_domain, list(body_markers), dict(expected_headers or {}))
     _EXTRA_MONITOR_SITES[item_id] = site_id
+    _MONITOR_TRACKED_DEFAULTS[site_id] = "1" if tracked_by_default else "0"
     if enabled_setting_key:
         _MONITOR_ENABLED_KEYS[site_id] = enabled_setting_key
+        _MONITOR_ENABLED_DEFAULTS[site_id] = "1" if enabled_setting_default else "0"
     if get_setting("uptime_track_" + site_id, None) is None:
-        # Seed the toggle explicitly either way -- _uptime_config()'s own
-        # fallback ("0" only for "hanime", "1" for everything else it
-        # doesn't recognize) would otherwise default an unseeded
-        # tracked_by_default=False site to tracked=True anyway.
-        set_setting("uptime_track_" + site_id, "1" if tracked_by_default else "0")
+        # Seed the toggle so the stored state matches what the module asked
+        # for from the first round on. _tracked_default() would answer the
+        # same either way now, but the seeded row is what the settings UI
+        # reads back and what survives an uninstall/reinstall.
+        set_setting("uptime_track_" + site_id, _MONITOR_TRACKED_DEFAULTS[site_id])
     logger.info("[Uptime] Registered third-party monitor site: %s (%s)", site_id, item_id)
 
 
@@ -343,6 +405,8 @@ def unregister_monitor_site(item_id) -> None:
         return
     _MONITOR_SITES.pop(site_id, None)
     _MONITOR_ENABLED_KEYS.pop(site_id, None)
+    _MONITOR_ENABLED_DEFAULTS.pop(site_id, None)
+    _MONITOR_TRACKED_DEFAULTS.pop(site_id, None)
     with _consec_fail_lock:
         _consec_fail.pop(site_id, None)
     logger.info("[Uptime] Unregistered third-party monitor site: %s", site_id)
@@ -388,25 +452,72 @@ def _report_uptime_monitor_active():
         logger.debug("[Telemetry] failed to build/submit flag.uptime_monitor event", exc_info=True)
 
 
+# Serialises monitor rounds. The scheduled loop and any number of manual
+# "check now" clicks all funnel through here: two rounds running at once wrote
+# two heartbeats per site into the same second (skewing uptime_pct and avg_ms)
+# and, worse, incremented _consec_fail twice per real failure, so the
+# failure-threshold debounce flipped a site to "down" in half the rounds the
+# user configured. Callers that cannot wait use uptime_round_in_progress().
+_uptime_round_lock = threading.Lock()
+
+
+def uptime_round_in_progress() -> bool:
+    """True while a monitor round is running (scheduled or manual).
+
+    Used by: web/routes/uptime.py, to answer a redundant "check now" with 409
+    instead of stacking another thread onto a round already in flight.
+    """
+    return _uptime_round_lock.locked()
+
+
 def _uptime_run_round(cfg=None):
     """Probe every tracked source once and store a heartbeat each; then prune.
+
+    Serialised: if a round is already running this call returns immediately
+    rather than probing everything a second time (see _uptime_round_lock).
 
     Used by: web/routes/uptime.py (manual "run now"), _start_uptime_monitor()
     below (scheduled loop).
     """
+    if not _uptime_round_lock.acquire(blocking=False):
+        logger.debug("[UpTime] round already in progress — skipping this one")
+        return
+    try:
+        _uptime_run_round_locked(cfg)
+    finally:
+        _uptime_round_lock.release()
+
+
+def _uptime_run_round_locked(cfg=None):
+    """The body of a monitor round. Only called with _uptime_round_lock held."""
     cfg = cfg or _uptime_config()
 
     # Telemetry: stage-2 usage counter for "monitoring is actively running".
     # Throttled inside the helper -- see _report_uptime_monitor_active().
     _report_uptime_monitor_active()
 
-    for _sid, (_label, _url, _domain, _markers, _headers) in _MONITOR_SITES.items():
+    # Snapshot the site table: register_monitor_site()/unregister_monitor_site()
+    # mutate _MONITOR_SITES from the request thread (a module being enabled or
+    # uninstalled), and a round takes long enough — every tracked site times
+    # out at up to cfg["timeout"] seconds — that iterating the live dict would
+    # eventually raise "dictionary changed size during iteration" and kill the
+    # round. A site that disappears mid-round simply gets one last heartbeat.
+    _sites = list(_MONITOR_SITES.items())
+
+    # Sites that are no longer tracked must not keep a stale failure streak:
+    # untracking a site mid-outage and re-tracking it later would otherwise
+    # resume at the old count and flip it to "down" on the first check.
+    with _consec_fail_lock:
+        for _stale in [s for s in _consec_fail if not cfg["tracked"].get(s)]:
+            _consec_fail.pop(_stale, None)
+
+    for _sid, (_label, _url, _domain, _markers, _headers) in _sites:
         if not cfg["tracked"].get(_sid):
             continue
         try:
             r = _probe_site(_url, _domain, _markers, expected_headers=_headers,
                             timeout=cfg["timeout"], use_get=cfg.get("use_get", False),
-                            probe=True)
+                            probe=True, resolve_ip=False)
             if r.get("http_ok") and r.get("site_verified"):
                 status, msg = "up", None
             elif r.get("blocked"):
@@ -465,20 +576,33 @@ def _start_uptime_monitor():
 
     def _loop():
         while True:
+            # Clear BEFORE reading the config, never after waiting. The old
+            # order (wait -> clear) dropped any set() that landed while a round
+            # was running — and a round can run for minutes — so a settings
+            # change was silently swallowed and only took effect after the full
+            # interval, which clamps as high as 24 h. Clearing first means a
+            # set() from this point on is always still pending at the next
+            # wait() and wakes it immediately.
+            _uptime_wake.clear()
             try:
                 cfg = _uptime_config()
             except Exception:
                 cfg = None
             if not cfg or not cfg["enabled"]:
                 _uptime_wake.wait(timeout=10)
-                _uptime_wake.clear()
                 continue
+            _t0 = time.monotonic()
             try:
                 _uptime_run_round(cfg)
             except Exception:
                 logger.warning("[UpTime] monitor round failed", exc_info=True)
             # Sleep until the next round, waking early if the config changes.
-            _uptime_wake.wait(timeout=cfg["interval"])
-            _uptime_wake.clear()
+            # The round's own duration counts towards the interval: probing
+            # five sites sequentially at timeout=120 can outlast interval=60
+            # outright, and sleeping the full interval on top of that drifted
+            # the heartbeat spacing further with every round. Never busy-loop
+            # though — a round that overran keeps a 5 s floor.
+            _elapsed = time.monotonic() - _t0
+            _uptime_wake.wait(timeout=max(5.0, cfg["interval"] - _elapsed))
 
     threading.Thread(target=_loop, daemon=True, name="uptime-monitor").start()

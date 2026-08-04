@@ -104,6 +104,16 @@ def test_the_adult_source_is_refused_rather_than_returned_empty(kids):
     assert resp.get_json()["code"] == "age_limited"
 
 
+def test_a_kids_account_cannot_reach_the_uptime_dashboard(kids):
+    """The UpTime page lists every monitored source by label and renders its
+    URL as a clickable link -- the adult one included. It had no age gate at
+    all, which made /uptime a way straight to the source the rest of the app
+    goes to some length to keep away from this role."""
+    assert kids.get("/uptime").status_code in (302, 403)
+    assert kids.get("/api/uptime/status").status_code == 403
+    assert kids.get("/api/uptime/heartbeats?source=hanime").status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # The ceiling
 # ---------------------------------------------------------------------------
