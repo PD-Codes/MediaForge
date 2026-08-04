@@ -1,7 +1,8 @@
 """Example Content Source -- reference module for adding a whole new
 streaming site as a module: providers.register_provider(),
-search.register_search_source(), mirrors.register_site_mirrors() and
-web.uptime_monitor.register_monitor_site() together.
+search.register_search_source(), mirrors.register_site_mirrors(),
+web.uptime_monitor.register_monitor_site() and
+web.routes.image_proxy.register_image_hosts() together.
 
 Settings-only (no page of its own, like example_cineinfo_source/): the
 built-in search bar and URL-paste flows are the "page" this content source
@@ -32,6 +33,7 @@ from ...search import register_search_source
 from ...home_feed import register_home_feed_source
 from ...mirrors import register_site_mirrors
 from ..uptime_monitor import register_monitor_site
+from ..routes.image_proxy import register_image_hosts
 from .source import (
     browse as _browse,
     ExampleSourceSeries,
@@ -50,10 +52,12 @@ ENABLED_KEY = "example_content_source_enabled"
 MODULE_NAME = "Example Content Source"
 MODULE_DESCRIPTION = ("Reference module for adding a whole new streaming site: "
                       "register_provider + register_search_source + register_site_mirrors "
-                      "+ register_home_feed_source + register_monitor_site together. No network calls -- fully offline-safe.")
+                      "+ register_home_feed_source + register_monitor_site + register_image_hosts "
+                      "together. No network calls -- fully offline-safe.")
 MODULE_DESCRIPTION_DE = ("Referenzmodul zum Hinzufuegen einer komplett neuen Streaming-Seite: "
                          "register_provider + register_search_source + register_site_mirrors "
-                         "+ register_home_feed_source + register_monitor_site zusammen. Keine Netzwerkzugriffe -- komplett offline-sicher.")
+                         "+ register_home_feed_source + register_monitor_site + register_image_hosts "
+                         "zusammen. Keine Netzwerkzugriffe -- komplett offline-sicher.")
 MODULE_AUTHOR = "Your Name"
 MODULE_ENABLED_DEFAULT = False
 
@@ -152,3 +156,11 @@ def register(app) -> None:
         enabled_setting_default=True,
         tracked_by_default=False,  # off by default: it will always show "down"
     )
+
+    # 6. Image proxy allowlist -- also illustrative here (source.py's
+    #    poster_url is always "" to stay offline-safe, so nothing actually
+    #    fetches this host), but a real module MUST call this once its
+    #    browse/search results carry a real poster_url pointing at its own
+    #    site: /api/img (web/routes/image_proxy.py) only ever fetches from
+    #    an allowlist, and a host that isn't on it 403s instead of loading.
+    register_image_hosts(ITEM_ID, hosts=("example-source.invalid",))

@@ -1937,6 +1937,54 @@ that registers a whole demo streaming site (`example-source.invalid`, one
 series, three episodes, no network calls anywhere) using all five
 registrations above together.
 
+## Image hosts (`register_image_hosts`)
+
+Every `poster_url` your module hands back — from `register_home_feed_source`,
+`register_search_source`, a CineInfo source, wherever — is never linked to
+directly. `_poster_proxy()` (`web/routes/image_proxy.py`) rewrites it to
+`/api/img?url=...` before it reaches the client, so the browser (and mobile
+devices behind an ISP DNS block) always talks to *this* server, never to
+`mysite.example` directly. That proxy only fetches from an allowlist —
+`image.tmdb.org`, `cdn.myanimelist.net`, the built-in sites' own CDNs, and
+nothing else by default. A third-party module's own image host isn't on that
+list, so **without this call every poster your module returns 403s at the
+proxy and never loads**, even though the module itself is otherwise working.
+
+```python
+from mediaforge.web.routes.image_proxy import register_image_hosts
+
+def register(app):
+    register_thirdparty(item_id="my_source", label="My Source", ...)
+
+    # Exact hosts, e.g. the site itself:
+    register_image_hosts("my_source", hosts=("mysite.example",))
+
+    # Or a whole CDN by suffix, if posters come from a varying/unknown
+    # subdomain (img1.cdn.mysite.example, img7.cdn.mysite.example, ...):
+    register_image_hosts("my_source", domains=("cdn.mysite.example",))
+
+    # Both together are fine -- pass whichever (or both) your site needs.
+```
+
+- **`hosts`**: exact hostnames, matched case-insensitively (`www.` ignored on
+  both sides).
+- **`domains`**: matched by suffix, so `cdn.mysite.example` also allows
+  `img1.cdn.mysite.example` — never a substring match, so
+  `cdn.mysite.example.attacker.tld` is still rejected. Use this instead of
+  `hosts` when the poster CDN's exact subdomain isn't fixed.
+- At least one of the two is required; calling it again with the same
+  `item_id` replaces what was previously registered.
+- This only widens *which host the proxy is willing to fetch from* — the
+  independent SSRF check (`stream_proxy.is_safe_url`, which resolves the
+  host's DNS and rejects anything pointing at an internal/loopback address)
+  still runs on every fetch regardless of who added the host, exactly like a
+  built-in host.
+- **Uninstall is automatic**, same `item_id`-based cleanup as everywhere
+  else: `unregister_module()` calls `unregister_image_hosts()` for you.
+
+See **`example_content_source/`**, which also calls this for its demo poster
+host.
+
 ## Hosters (`register_hoster`)
 
 The video-hoster layer (VOE, Vidoza, Filemoon, ...) that `get_direct_link_for()`

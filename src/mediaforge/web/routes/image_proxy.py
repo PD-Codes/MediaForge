@@ -72,11 +72,105 @@ _ALLOWED_IMAGE_DOMAINS = _domains_of(
 ) | {h for h in HANIME_IMAGE_HOSTS if h}
 
 
+# ---------------------------------------------------------------------------
+# Third-party image hosts
+# ---------------------------------------------------------------------------
+# A third-party module's provider/search source (register_provider /
+# register_search_source) commonly returns poster_url values pointing at its
+# own site's image CDN. Those URLs go through _poster_proxy() -> /api/img
+# exactly like every built-in source's do -- the client never gets a direct
+# URL to the source site -- but until now the allowlist above was a plain
+# module-level set only the core could extend, so a third-party module's
+# posters were silently rejected with 403 "Forbidden host" the moment they
+# reached the proxy. This mirrors extractors.register_hoster's host_patterns
+# and subtitle_sources.register_subtitle_source's item_id convention: keyed
+# by item_id so web/thirdparties/registry.py's unregister_module() can drop
+# a module's hosts automatically on disable/uninstall.
+#
+# Adding a host here only widens *which domain the proxy is willing to fetch
+# from*; it does not weaken the second, independent check in
+# api_image_proxy() (stream_proxy.is_safe_url), which still resolves the
+# host's DNS and rejects anything pointing at an internal/loopback address
+# regardless of how it got onto the allowlist.
+_image_hosts_lock = threading.Lock()
+
+# item_id -> {"hosts": frozenset, "domains": frozenset}
+_EXTRA_IMAGE_HOSTS: dict = {}
+
+
+def register_image_hosts(item_id, hosts=(), domains=()) -> None:
+    """Allow the image proxy (``/api/img``) to fetch from a third-party
+    module's own image host(s).
+
+    - ``item_id``: the id already passed to ``register_thirdparty()`` for this
+      module's entry, so ``web/thirdparties/registry.py``'s
+      ``unregister_module()`` drops these hosts automatically on disable/
+      uninstall -- a host registered under any other id keeps being allowed
+      after the module is gone.
+    - ``hosts``: exact hostnames, e.g. ``("cdn.myhoster.example",)``. Matched
+      case-insensitively; a leading ``www.`` is ignored on both sides, same
+      as the built-in ``_ALLOWED_IMAGE_HOSTS`` set.
+    - ``domains``: registrable domains matched by suffix, e.g.
+      ``("myhoster.example",)`` also allows ``img1.myhoster.example`` and
+      ``static.myhoster.example`` -- use this instead of ``hosts`` when a
+      site serves posters from a CDN subdomain that varies or isn't known in
+      advance. Never a substring match: ``myhoster.example`` does not allow
+      ``myhoster.example.attacker.tld``.
+
+    At least one of ``hosts``/``domains`` must be given. Call again with the
+    same ``item_id`` to replace what was previously registered (safe under
+    the debug reloader), same as every other ``register_*`` in this codebase.
+
+    Without this, a module's own ``poster_url`` values (returned from
+    ``register_provider``/``register_search_source``) get proxied through
+    ``_poster_proxy()`` like any other source's, but every fetch 403s at
+    ``_image_host_allowed()`` -- posters silently never load.
+    """
+    hosts = {str(h).strip().lower().removeprefix("www.") for h in (hosts or ()) if str(h or "").strip()}
+    domains = {str(d).strip().lower().removeprefix("www.") for d in (domains or ()) if str(d or "").strip()}
+    if not hosts and not domains:
+        raise ValueError("register_image_hosts: need at least one of hosts/domains")
+    with _image_hosts_lock:
+        _EXTRA_IMAGE_HOSTS[item_id] = {"hosts": frozenset(hosts), "domains": frozenset(domains)}
+    logger.info("[ImageProxy] Registered image host(s) for %s: %s",
+                item_id, ", ".join(sorted(hosts | domains)))
+
+
+def unregister_image_hosts(item_id) -> None:
+    """Drop the hosts/domains a module previously added via
+    :func:`register_image_hosts`."""
+    with _image_hosts_lock:
+        removed = _EXTRA_IMAGE_HOSTS.pop(item_id, None)
+    if removed:
+        logger.info("[ImageProxy] Unregistered image host(s) for %s", item_id)
+
+
+def thirdparty_image_host_ids() -> set:
+    """item_ids that currently own at least one registered image host.
+
+    Read-only counterpart of :func:`unregister_image_hosts`, used by the
+    Modulmanager's capability list (see
+    ``web/thirdparties/registry.py``'s ``module_capabilities()``).
+    """
+    with _image_hosts_lock:
+        return set(_EXTRA_IMAGE_HOSTS)
+
+
 def _image_host_allowed(netloc: str) -> bool:
     host = (netloc or "").lower().split(":")[0]
     if host in _ALLOWED_IMAGE_HOSTS or host.removeprefix("www.") in _ALLOWED_IMAGE_HOSTS:
         return True
-    return any(host == d or host.endswith("." + d) for d in _ALLOWED_IMAGE_DOMAINS)
+    if any(host == d or host.endswith("." + d) for d in _ALLOWED_IMAGE_DOMAINS):
+        return True
+    bare_host = host.removeprefix("www.")
+    with _image_hosts_lock:
+        extra = list(_EXTRA_IMAGE_HOSTS.values())
+    for entry in extra:
+        if host in entry["hosts"] or bare_host in entry["hosts"]:
+            return True
+        if any(bare_host == d or bare_host.endswith("." + d) for d in entry["domains"]):
+            return True
+    return False
 
 import hashlib as _hashlib
 from pathlib import Path as _Path

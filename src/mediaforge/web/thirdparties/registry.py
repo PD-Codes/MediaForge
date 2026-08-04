@@ -869,9 +869,10 @@ def unregister_module(name):
         unregister_notification_channel(item_id)
         unregister_event_hooks(item_id)
     # Same idea for a registered content source / search source / CineInfo
-    # source / mirror list / uptime entry (see providers.register_provider,
-    # search.register_search_source, cineinfo.registry.register_cineinfo_source,
-    # mirrors.register_site_mirrors, uptime_monitor.register_monitor_site) --
+    # source / mirror list / uptime entry / image host (see
+    # providers.register_provider, search.register_search_source,
+    # cineinfo.registry.register_cineinfo_source, mirrors.register_site_mirrors,
+    # uptime_monitor.register_monitor_site, routes.image_proxy.register_image_hosts) --
     # lazy imports, both to avoid a core -> web import at module load time and
     # because a module that never called one of these leaves nothing to clean up.
     try:
@@ -884,6 +885,7 @@ def unregister_module(name):
         from ...subtitle_sources import unregister_subtitle_source
         from ..uptime_monitor import unregister_monitor_site
         from ..cineinfo.registry import unregister_cineinfo_owner
+        from ..routes.image_proxy import unregister_image_hosts
         for item_id in ids:
             unregister_provider(item_id)
             unregister_home_feed_source(item_id)
@@ -894,8 +896,9 @@ def unregister_module(name):
             unregister_subtitle_source(item_id)
             unregister_monitor_site(item_id)
             unregister_cineinfo_owner(item_id)
+            unregister_image_hosts(item_id)
     except Exception:
-        logger.exception("[Registry] Failed to clean up content/search/cineinfo/hoster/mirror/uptime sources for module '%s'", name)
+        logger.exception("[Registry] Failed to clean up content/search/cineinfo/hoster/mirror/uptime/image-host sources for module '%s'", name)
     _ITEMS = [item for item in _ITEMS if item["id"] not in ids]
     _MODULES.pop(name, None)
     return sorted(blueprints)
@@ -912,7 +915,8 @@ def unregister_module(name):
 # Ownership is read the same way unregister_module() cleans up: every
 # secondary registry (providers, search sources, CineInfo sources, home feed
 # sources, hosters, mirrors, uptime
-# monitors, notification channels, event hooks, background workers) is keyed
+# monitors, notification channels, event hooks, background workers, image
+# hosts) is keyed
 # by the module's own item_id, which is the documented convention. A module
 # that registers a provider under an id it never passed to
 # register_thirdparty() is invisible here for the same reason it is invisible
@@ -978,6 +982,7 @@ def module_capabilities(name) -> list:
     subtitle_sources = _count("...subtitle_sources", "thirdparty_subtitle_source_ids")
     monitors = _count("..uptime_monitor", "thirdparty_monitor_ids")
     cineinfo_sources = _count_cineinfo()
+    image_hosts = _count("..routes.image_proxy", "thirdparty_image_host_ids")
 
     out = []
     for kind, count, hot in (
@@ -997,6 +1002,11 @@ def module_capabilities(name) -> list:
         ("notification_channel", channels, True),
         ("event_hook", hooks, True),
         ("background_worker", workers, True),
+        # Widens which hosts the server will fetch on behalf of a client
+        # (see register_image_hosts) -- worth flagging on an unsigned module
+        # like the other "hot" capabilities, even though is_safe_url()'s
+        # SSRF check still applies to every host regardless of who added it.
+        ("image_host", image_hosts, True),
     ):
         if count:
             out.append({"kind": kind, "count": count, "hot": hot})
