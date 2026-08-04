@@ -256,9 +256,19 @@ def _download_mpv_windows() -> None:
         req = urllib.request.Request(
             _MPV_DOWNLOAD_URL, headers={"User-Agent": "MediaForge/1.0"}
         )
-        with urllib.request.urlopen(
-            req, timeout=60, context=ssl_context_for(_MPV_DOWNLOAD_URL)
-        ) as resp, open(tmp, "wb") as fh:
+        _ctx = ssl_context_for(_MPV_DOWNLOAD_URL)
+        try:
+            _resp = urllib.request.urlopen(req, timeout=60, context=_ctx)
+        except RecursionError:
+            # truststore recursing inside the handshake -- see config.py's
+            # _truststore_is_safe(). Retry once on certifi rather than leaving
+            # the user without a player; verification stays on either way.
+            if _ctx is None:
+                raise
+            logger.warning("[mpv] TLS-Aufbau über truststore rekursiv — "
+                           "wiederhole mit dem Standard-Zertifikatsspeicher")
+            _resp = urllib.request.urlopen(req, timeout=60, context=None)
+        with _resp as resp, open(tmp, "wb") as fh:
             total_size = int(resp.headers.get("Content-Length") or 0)
             read_bytes = 0
             while True:

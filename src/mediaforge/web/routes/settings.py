@@ -796,10 +796,17 @@ def register_settings_routes(app):
         for _sid, (label, url, expected_domain, markers, headers) in list(_MONITOR_SITES.items()):
             results[label] = _probe_site(url, expected_domain, markers, expected_headers=headers, timeout=10)
 
+        # Non-null when this Python installation has a broken ssl.SSLContext
+        # and we had to fall back from the OS trust store to certifi. It is a
+        # property of the interpreter, not of the network, so it belongs next
+        # to the DNS diagnostics rather than in a log nobody reads.
+        from ...config import truststore_unsafe_reason as _ts_reason
+
         return jsonify({
             "dns_mode":          _saved_mode,
             "dns_server_saved":  _saved_server,
             "dns_active_server": dns_patch._active_dns_server,
+            "trust_store_warning": _ts_reason(),
             "sites":             results,
         })
     @app.route("/api/settings/browser", methods=["PUT"])

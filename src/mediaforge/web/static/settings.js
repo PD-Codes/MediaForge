@@ -1665,6 +1665,16 @@ async function runDnsTest() {
       } else {
         statusEl.innerHTML = t('<span class="dns-test-warn">⚠ Gespeicherter Modus: ' + modeLabel + ' — aber kein Server aktiv. Einstellungen erneut speichern?</span>','<span class="dns-test-warn">⚠ Saved mode: ' + modeLabel + ' — but no server active. Save settings again?</span>');
       }
+      // A broken ssl.SSLContext in this Python installation is neither a DNS
+      // nor a network fault, but it looks exactly like one from the outside
+      // ("store unreachable"), so it is reported right here.
+      if (data.trust_store_warning) {
+        statusEl.innerHTML +=
+          '<div class="dns-test-warn" style="margin-top:8px">⚠ ' +
+          t("Zertifikatsspeicher des Betriebssystems nicht nutzbar — es wird der mitgelieferte Speicher verwendet. Die Zertifikatsprüfung bleibt aktiv.",
+            "The operating system certificate store is unusable — the bundled store is used instead. Certificate verification stays enabled.") +
+          '<br><code style="font-size:.85em;opacity:.8">' + window.mfEscape(data.trust_store_warning) + '</code></div>';
+      }
     }
     const siteMap = { AniWorld: "dnsTestRowAniWorld", SerienStream: "dnsTestRowSTO", FilmPalast: "dnsTestRowFilmpalast", MegaKino: "dnsTestRowMegaKino", hanime: "dnsTestRowHanime" };
     for (const [label, rowId] of Object.entries(siteMap)) {

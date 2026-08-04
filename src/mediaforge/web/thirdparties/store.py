@@ -266,13 +266,30 @@ def _http_get(url: str, max_bytes: int, timeout: int = HTTP_TIMEOUT) -> bytes:
     from ...config import ssl_context_for
 
     req = urllib.request.Request(url, headers={"User-Agent": "MediaForge-ModuleStore/1.0"})
-    with urllib.request.urlopen(
-        req, timeout=timeout, context=ssl_context_for(url)
-    ) as resp:
-        data = resp.read(max_bytes + 1)
+    ctx = ssl_context_for(url)
+    try:
+        data = _urlopen_read(req, timeout, ctx, max_bytes)
+    except RecursionError:
+        # truststore recursing inside the handshake (see config.py's
+        # _truststore_is_safe(): another library injected a subclass into
+        # ssl.SSLContext, so its property setter calls itself). The pre-flight
+        # check catches the known shape of this; anything it misses must not
+        # cost the user the store. Retry once on Python's default context --
+        # certifi, still fully verified.
+        if ctx is None:
+            raise
+        logger.warning("[ModuleStore] TLS setup recursed via truststore — "
+                       "retrying %s with the default (certifi) trust store", url)
+        data = _urlopen_read(req, timeout, None, max_bytes)
     if len(data) > max_bytes:
         raise ValueError(f"response larger than {max_bytes} bytes")
     return data
+
+
+def _urlopen_read(req, timeout, context, max_bytes):
+    """One GET attempt, reading at most max_bytes + 1 (see _http_get)."""
+    with urllib.request.urlopen(req, timeout=timeout, context=context) as resp:
+        return resp.read(max_bytes + 1)
 
 
 def _normalize(entry: dict, base_url: str) -> dict:

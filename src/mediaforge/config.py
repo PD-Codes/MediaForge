@@ -327,9 +327,125 @@ _DEFAULT_TIMEOUT = (10, 30)
 # -- which niquests, and therefore GLOBAL_SESSION *and the DoH resolver*, runs on
 # every single connection -- recurses until RecursionError. The result is every
 # site going "offline" at once, DNS included.
+# We are not the only ones who can break this, though -- and the other
+# direction is what actually reached users. If *something else in the
+# interpreter* injected a subclass into ``ssl.SSLContext`` before truststore
+# was imported (a sitecustomize.py or a .pth file, as corporate TLS-inspection
+# tooling likes to install), then truststore's captured
+#     _original_super_SSLContext = super(ssl.SSLContext, ssl.SSLContext)
+# no longer resolves to the C-level descriptor in ``_ssl._SSLContext`` but to
+# the Python property in ``ssl.py``, whose setter reads the module global
+# ``SSLContext`` at call time -- now the subclass -- and calls itself. Every
+# TLS handshake through truststore then dies with
+#     RecursionError: maximum recursion depth exceeded
+# which reached the Modulmanager as "store unreachable" with nothing to act on.
+#
+# We cannot fix that interpreter, but we do not have to be taken down by it:
+# certifi is a perfectly good fallback for our three urllib egress points, and
+# it is what we would have used had truststore not been installed at all. So
+# the state is detected once, reported once, and then routed around.
+_TRUSTSTORE_UNSAFE_REASON = None
+_truststore_checked = False
+
+
+def _truststore_is_safe():
+    """Whether truststore can be used in this interpreter without recursing.
+
+    Answered once and cached: the check imports ssl/truststore and compares
+    identities, which is cheap, but the warning must not be logged per request.
+    """
+    global _truststore_checked, _TRUSTSTORE_UNSAFE_REASON
+    if _truststore_checked:
+        return _TRUSTSTORE_UNSAFE_REASON is None
+    _truststore_checked = True
+    try:
+        import ssl
+
+        from truststore import _ssl_constants
+    except Exception as exc:  # truststore not installed -> certifi, silently
+        _TRUSTSTORE_UNSAFE_REASON = "truststore unavailable (%s)" % exc
+        return False
+
+    original = getattr(_ssl_constants, "_original_SSLContext", None)
+    if original is not None and ssl.SSLContext is not original:
+        # Someone replaced ssl.SSLContext. Whether truststore itself did it
+        # (inject_into_ssl) or another library did, the property chain above is
+        # now recursive.
+        _TRUSTSTORE_UNSAFE_REASON = (
+            "ssl.SSLContext has been replaced by %r; something in this Python "
+            "installation injected a subclass into the ssl module (commonly a "
+            ".pth file or sitecustomize.py from TLS-inspection tooling). "
+            "Falling back to the bundled certifi trust store for the module "
+            "store, the Dev Info feed and the mpv download. Certificate "
+            "verification stays ON." % (ssl.SSLContext,)
+        )
+        try:
+            from .logger import get_logger
+
+            get_logger(__name__).warning("[TLS] %s", _TRUSTSTORE_UNSAFE_REASON)
+        except Exception:
+            pass
+        return False
+
+    # Belt and braces: prove the write path terminates instead of trusting the
+    # identity check to have covered every way this can be broken. A throwaway
+    # context, one property write, RecursionError caught rather than raised
+    # through a store fetch.
+    try:
+        probe = original(ssl.PROTOCOL_TLS_CLIENT)
+        probe.check_hostname = False
+        _ssl_constants._set_ssl_context_verify_mode(probe, ssl.CERT_NONE)
+    except RecursionError:
+        # Note this is NOT covered by the identity check above: when the
+        # injection happened *before* truststore was imported, truststore
+        # captured the injected subclass AS the original, so the two compare
+        # equal and only an actual write reveals the recursion. The observed
+        # real-world cause is the pip-system-certs package, whose
+        # pip_system_certs.pth injects pip._vendor.truststore into ssl at
+        # interpreter startup.
+        _TRUSTSTORE_UNSAFE_REASON = (
+            "truststore's verify_mode write recurses in this interpreter: "
+            "ssl.SSLContext is %r, i.e. a subclass was injected into the ssl "
+            "module before truststore was imported (the usual cause is the "
+            "pip-system-certs package via its pip_system_certs.pth; check "
+            "site-packages/*.pth). Falling back to the bundled certifi trust "
+            "store for the module store, the Dev Info feed and the mpv "
+            "download -- certificate verification stays ON. NOTE this only "
+            "covers those three; urllib3-future builds its own context on "
+            "every connection and recurses the same way, so GLOBAL_SESSION "
+            "and the DoH resolver stay at risk until the injection is removed."
+            % (ssl.SSLContext,)
+        )
+        try:
+            from .logger import get_logger
+
+            get_logger(__name__).warning("[TLS] %s", _TRUSTSTORE_UNSAFE_REASON)
+        except Exception:
+            pass
+        return False
+    except Exception:
+        # Any other failure here says nothing about the recursion bug (e.g. a
+        # platform that rejects this particular combination) -- do not disable
+        # truststore over it.
+        pass
+    return True
+
+
+def truststore_unsafe_reason():
+    """Why truststore is being bypassed, or None when it is in use.
+
+    Used by: web/routes/settings.py's DNS diagnostics, so the reason is
+    visible in the UI rather than only in the log.
+    """
+    _truststore_is_safe()
+    return _TRUSTSTORE_UNSAFE_REASON
+
+
 def _os_trust_store_context():
     """An SSLContext validating against the OS trust store, or None if
-    truststore isn't installed. Passed explicitly to the urllib call sites."""
+    truststore isn't installed or cannot be used safely here."""
+    if not _truststore_is_safe():
+        return None
     try:
         import ssl
 
