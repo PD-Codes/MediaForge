@@ -958,7 +958,22 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
             speed = d.get("speed") or 0
             elapsed = d.get("elapsed") or 0
 
-            percent = (downloaded / total * 100.0) if total > 0 else 0.0
+            if total > 0:
+                percent = downloaded / total * 100.0
+            else:
+                # HLS/m3u8 fragment streams (Pornhub and most other
+                # segment-based sources) report no byte total at all when
+                # yt-dlp can't estimate one -- a live stream, or a playlist
+                # whose fragments vary enough in size that the running
+                # estimate in yt_dlp/downloader/fragment.py never kicks in.
+                # That downloader still reports fragment_index/fragment_count
+                # on every callback either way (same file, same function),
+                # so fall back to a fragment-count-based percentage instead
+                # of leaving the queue stuck at 0% for the whole download.
+                frag_index = d.get("fragment_index") or 0
+                frag_count = d.get("fragment_count") or 0
+                percent = (frag_index / frag_count * 100.0) if frag_count > 0 else 0.0
+
             speed_str = f"{speed / 1_048_576:.1f} MB/s" if speed else ""
             downloaded_mb = round(downloaded / 1_048_576, 1)
             total_mb = round(total / 1_048_576, 1) if total > 0 else 0.0
@@ -1380,7 +1395,6 @@ def _move_with_progress(src, dst, label="", cancel_event=None):
     100 % is reported immediately.  Otherwise a chunked copy is performed so
     the Web UI can show a real progress bar with speed and ETA.
     """
-    import stat as _stat
     src, dst = Path(src), Path(dst)
     total = src.stat().st_size
 
@@ -1859,7 +1873,7 @@ def download(self, cancel_event=None):
         self._last_output_path = target_path
         return True
 
-    except Exception as e:
+    except Exception:
         # Clean up temp files from failed attempt (both destination and temp dir)
         _stem_exc = self._episode_path.stem
         for suffix in (
