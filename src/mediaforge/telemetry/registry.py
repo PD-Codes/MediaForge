@@ -61,6 +61,9 @@ DEVINFOS_SERVER_URL = "https://mediaforge.softarchiv.com"
 _BASE = DEVINFOS_SERVER_URL.rstrip("/")
 
 TELEMETRY_INGEST_URL = f"{_BASE}/telemetry/ingest"
+# One-time enrollment: exchanges the (public) project key for a per-install
+# device secret every later request is signed with -- see telemetry/device_auth.py.
+TELEMETRY_REGISTER_URL = f"{_BASE}/telemetry/register"
 TELEMETRY_REQUEST_URL = f"{_BASE}/telemetry/request-from-app"
 TELEMETRY_REQUEST_STATUS_URL = f"{_BASE}/telemetry/request-from-app/status"
 

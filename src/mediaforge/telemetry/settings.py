@@ -121,6 +121,14 @@ def regenerate_install_id() -> str:
     migration; TELEMETRY_IMPLEMENTATION_PLAN.md §3.1). Returns the new id."""
     new_id = str(uuid.uuid4())
     set_setting("telemetry_install_id", new_id)
+    # The device secret belongs to the OLD install_id -- the server derives it
+    # from that id and will refuse any signature the new one makes with it.
+    # Keeping it would not merely be useless, it would break enrollment
+    # silently: ensure_enrolled() sees a stored secret, never registers the new
+    # identity, and every request is then refused as a bad signature. Imported
+    # here rather than at module scope because device_auth imports this module.
+    from . import device_auth
+    device_auth.clear()
     return new_id
 
 

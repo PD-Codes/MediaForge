@@ -1765,7 +1765,10 @@ def register_settings_routes(app):
         (TELEMETRY_IMPLEMENTATION_PLAN.md §3.8). install_id is attached here
         server-side from the local settings -- never typed by the user, so
         the resulting request proves it came from this actual installation."""
-        from ...config import GLOBAL_SESSION
+        import json as _json
+
+        from ...config import GLOBAL_SESSION, VERSION
+        from ...telemetry import device_auth as _dev
         from ...telemetry import settings as _tel
         from ...telemetry.registry import TELEMETRY_PROJECT_KEY, TELEMETRY_REQUEST_URL
         data = request.get_json(silent=True) or {}
@@ -1775,14 +1778,41 @@ def register_settings_routes(app):
         payload = {
             "request_type": request_type,
             "install_id": _tel.get_install_id(),
+            # Same version string the ingest batch sends. The server refuses an
+            # unsigned request from 1.4.2 onward, and it needs to be told which
+            # version is asking before it can apply that rule.
+            "app_version": VERSION or "unknown",
             "submitted_username": str(data.get("username", "")).strip()[:80],
             "submitted_email": str(data.get("email", "")).strip()[:255],
         }
         try:
+            # This endpoint can trigger the deletion of an install's data, so
+            # it is signed exactly like ingest: enroll if we have no secret
+            # yet, then sign the raw bytes that actually go on the wire.
+            # Enrolling here is consent-safe without a telemetry_active()
+            # check, and only here: the user pressed "request export/deletion"
+            # and typed an address, which is a deliberate act of contacting the
+            # server -- and one that must keep working after consent is
+            # withdrawn, since withdrawing it is exactly when a deletion gets
+            # requested. Enrolling is also not optional any more: from 1.4.2 on
+            # the server refuses an unsigned request from a client claiming
+            # this version, device row or not, so a failure to enroll means the
+            # request below comes back 401 and the UI reports it.
+            _dev.ensure_enrolled()
+            body = _json.dumps(payload).encode("utf-8")
+            headers = {"X-Project-Key": TELEMETRY_PROJECT_KEY,
+                       "Content-Type": "application/json"}
+            headers.update(_dev.sign_headers("POST", TELEMETRY_REQUEST_URL, body))
             resp = GLOBAL_SESSION.post(
-                TELEMETRY_REQUEST_URL, json=payload,
-                headers={"X-Project-Key": TELEMETRY_PROJECT_KEY}, timeout=8,
+                TELEMETRY_REQUEST_URL, data=body, headers=headers, timeout=8,
             )
+            if resp.status_code == 401 and _dev.needs_registration(resp) and _dev.rotate():
+                # Our secret and the server's record of it disagree. Re-register
+                # once and retry once -- see device_auth.needs_registration().
+                headers.update(_dev.sign_headers("POST", TELEMETRY_REQUEST_URL, body))
+                resp = GLOBAL_SESSION.post(
+                    TELEMETRY_REQUEST_URL, data=body, headers=headers, timeout=8,
+                )
             if resp.status_code >= 400:
                 return jsonify({"ok": False, "error": f"devInfo server returned {resp.status_code}"}), 502
         except Exception as e:
@@ -1808,15 +1838,48 @@ def register_settings_routes(app):
         (TELEMETRY_IMPLEMENTATION_PLAN.md §3.8). On success, forwards the
         devInfo server's response array unchanged (shared contract); the
         dict shape below is only used for this proxy's own failure case."""
-        from ...config import GLOBAL_SESSION
+        from ...config import GLOBAL_SESSION, VERSION
+        from ...telemetry import device_auth as _dev
         from ...telemetry import settings as _tel
         from ...telemetry.registry import TELEMETRY_PROJECT_KEY, TELEMETRY_REQUEST_STATUS_URL
         try:
+            # Deliberately NOT ensure_enrolled(): this route is polled
+            # automatically by telemetry.js's loadTelemetrySettings() every time
+            # the Settings -> Telemetry page is opened, including for a user who
+            # has declined telemetry or not decided yet. Enrolling here would
+            # POST /telemetry/register -- install_id, app_version, OS, Python
+            # version and arch -- and create a server-side Install row for
+            # somebody who never consented, purely because they looked at the
+            # page. Enrollment belongs to the two paths that are actually about
+            # to send data: _flush() (behind telemetry_active()) and the
+            # user-pressed data-request POST above. An install with no secret
+            # has no data requests to poll either, so the worst outcome here is
+            # a 401 that renders as "nothing to show".
+            params = {"install_id": _tel.get_install_id(),
+                      "app_version": VERSION or "unknown"}
+            headers = {"X-Project-Key": TELEMETRY_PROJECT_KEY}
+            # A GET has no body, so the body hash is sha256(b"") -- and the
+            # signed <path> is the path ALONE: the server signs Flask's
+            # request.path, which stops at the "?". install_id and app_version
+            # therefore ride outside the signature, which is what the server
+            # verifies and so what we must reproduce.
+            headers.update(_dev.sign_headers("GET", TELEMETRY_REQUEST_STATUS_URL, b""))
             resp = GLOBAL_SESSION.get(
-                TELEMETRY_REQUEST_STATUS_URL,
-                params={"install_id": _tel.get_install_id()},
-                headers={"X-Project-Key": TELEMETRY_PROJECT_KEY}, timeout=8,
+                TELEMETRY_REQUEST_STATUS_URL, params=params,
+                headers=headers, timeout=8,
             )
+            # has_secret() first, for the same reason enrollment is skipped
+            # above: rotate() falls back to a plain first registration when
+            # nothing is stored, so without this guard the 401 an unenrolled
+            # 1.4.2 client always gets here would enroll it anyway -- the leak
+            # by the back door.
+            if (resp.status_code == 401 and _dev.has_secret()
+                    and _dev.needs_registration(resp) and _dev.rotate()):
+                headers.update(_dev.sign_headers("GET", TELEMETRY_REQUEST_STATUS_URL, b""))
+                resp = GLOBAL_SESSION.get(
+                    TELEMETRY_REQUEST_STATUS_URL, params=params,
+                    headers=headers, timeout=8,
+                )
             resp.raise_for_status()
             return jsonify(resp.json())
         except Exception as e:

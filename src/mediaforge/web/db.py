@@ -121,6 +121,12 @@ SENSITIVE_KEYS: frozenset = frozenset({
     # a secret: stored encrypted like every other one, and never sent back to
     # the client (the settings form writes it, it never reads it).
     "home_kids_pin",
+    # Per-install device secret for signed telemetry requests. Issued once by
+    # the devInfo server and never re-issued, so losing it means re-enrolling;
+    # leaking it means somebody else can post telemetry as this install and
+    # request the deletion of its data. Encrypted at rest like every other
+    # secret, and never returned by GET /api/settings/telemetry.
+    "telemetry_device_secret",
 })
 
 # Sensitive keys registered at runtime on top of the frozen core set above --
