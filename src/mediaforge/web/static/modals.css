@@ -856,15 +856,17 @@
 
 .lib-loc-lead { flex: none; }
 
-/* The one part worth reading at a glance. min-width:0 + the ellipsis keep a
-   deep folder name from pushing the count off a narrow screen. */
+/* The one part worth reading at a glance, so it wraps onto a second line
+   rather than being cut off: a truncated path is exactly the case where the
+   ellipsis eats the part that tells the folders apart. min-width:0 lets it
+   shrink below its content width inside the flex row, and overflow-wrap
+   breaks a single unbroken segment (a long release name with no spaces)
+   instead of letting it push the modal wider than its 680px cap. */
 .lib-loc-name {
   color: var(--text-primary);
   font-weight: 600;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .lib-loc-count,
@@ -895,7 +897,11 @@
   color: var(--warning);
   font-size: 0.7rem;
   font-weight: 600;
-  white-space: nowrap;
+  /* Same reasoning as .lib-loc-name: wrap rather than run past the season
+     row. inline-block so the chip's own box wraps as a unit. */
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   vertical-align: middle;
 }
 
@@ -905,12 +911,7 @@
   .lib-loc-lead { display: none; }
   /* Long folder names take the whole row instead of squeezing the badges. */
   .lib-loc-name { flex: 1 1 100%; }
-  .season-loc {
-    margin-left: 0;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+  .season-loc { margin-left: 0; }
 }
 
 /* Language availability banner

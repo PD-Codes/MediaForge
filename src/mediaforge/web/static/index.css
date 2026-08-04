@@ -1840,7 +1840,7 @@ a.hp-item:focus-visible {
     scrollbar-width: none;
   }
   .feed-tools::-webkit-scrollbar { display: none; }
-  .feed-tool-group { flex: 0 0 auto; }
+  .feed-tool-group { flex: 0 0 auto; margin:auto; }
   .feed-tool { padding: 8px 13px; }        /* keeps the 40px-ish touch target */
 
   .home-onboard-steps { grid-template-columns: 1fr 1fr; }
