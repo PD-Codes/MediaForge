@@ -183,6 +183,7 @@ async function loadSettings() {
     if (defaultThemeMode && data.default_theme_mode) {
       defaultThemeMode.value = data.default_theme_mode === "light" ? "light" : "dark";
     }
+    if (data.default_ui_language) markDefaultLanguage(data.default_ui_language);
     const defaultAccentHex = document.getElementById("defaultAccentHex");
     if (defaultAccentHex && data.default_accent !== undefined) {
       defaultAccentHex.value = data.default_accent || "";
@@ -3061,6 +3062,39 @@ function saveAppearanceDefaults(pickedColour) {
     showToast(t("Konnte nicht gespeichert werden", "Could not be saved") + ": " + err.message);
   });
 }
+
+// ── Instance default UI language (Settings → Design, admin only) ──────────
+// Which language a freshly created account starts in. Purely an instance
+// default: it never touches accounts that already exist, and every account
+// can still switch on its profile page.
+function markDefaultLanguage(lang) {
+  document.querySelectorAll("[data-default-lang]").forEach(function (btn) {
+    btn.classList.toggle("active", btn.dataset.defaultLang === lang);
+  });
+}
+
+function saveDefaultLanguage(lang) {
+  fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ default_ui_language: lang }),
+  }).then(async function (resp) {
+    const body = await resp.json().catch(function () { return {}; });
+    if (!resp.ok) throw new Error(body.error || String(resp.status));
+    markDefaultLanguage(lang);
+    showToast(t("Standard gespeichert", "Default saved"));
+  }).catch(function (err) {
+    showToast(t("Konnte nicht gespeichert werden", "Could not be saved") + ": " + err.message);
+  });
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  document.querySelectorAll("[data-default-lang]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      saveDefaultLanguage(btn.dataset.defaultLang);
+    });
+  });
+});
 
 function clearAppearanceDefaultAccent() {
   const hex = document.getElementById("defaultAccentHex");

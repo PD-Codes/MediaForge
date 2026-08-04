@@ -607,7 +607,15 @@ def has_any_admin():
         conn.close()
 
 
-def create_user(username, password, role="user", language="en"):
+def create_user(username, password, role="user", language=None):
+    # language=None means "use the instance default" (Settings -> Design).
+    # Resolving it here rather than at each call site is deliberate: the
+    # admin user endpoint and the env bootstrap both used to fall through to
+    # a hardcoded "en", which silently ignored the instance default.
+    if language is None:
+        language = get_setting("default_ui_language", "en")
+    if language not in ("en", "de"):
+        language = "en"
     conn = get_db()
     try:
         cur = conn.execute(

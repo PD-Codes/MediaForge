@@ -756,6 +756,24 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hov
   gap: 8px;
 }
 
+/* Flag icon inside a language button. pointer-events:none keeps the click
+   target the button itself, so the handler never sees the <img> as target. */
+.lang-flag {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .appearance-theme-btn.lang-btn .lang-flag {
+    width: 24px;
+    height: 24px;
+  }
+}
+
 @media (max-width: 640px) {
   .appearance-theme-btn.lang-btn {
     padding: 15px 0;
@@ -846,7 +864,6 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hov
 }
 
 .appearance-reset {
-  width: 100%;
   padding: 6px 0;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);

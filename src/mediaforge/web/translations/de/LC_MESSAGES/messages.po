@@ -7298,3 +7298,6 @@ msgstr "Eingebaute Farbe verwenden"
 #: src/mediaforge/web/templates/settings.html
 msgid "These settings only change the design minimally. They are stored on your account, so they follow you to your next device."
 msgstr "Diese Einstellungen verändern das Design nur minimal. Sie werden auf deinem Konto gespeichert und folgen dir damit aufs nächste Gerät."
+
+msgid "The interface language a newly created account starts with. Everyone can change it later on their profile page."
+msgstr "Die Oberflächensprache, mit der ein neu angelegtes Konto startet. Jeder kann sie später auf seiner Profilseite ändern."

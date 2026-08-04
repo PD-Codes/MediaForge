@@ -205,9 +205,15 @@
       <h2>{{ _('Language') }}</h2>
       <div class="settings-row">
         <button class="appearance-theme-btn lang-btn{% if ui_language == 'en' %} active{% endif %}"
-                data-profile-lang="en">English</button>
+                data-profile-lang="en">
+          <img src="{{ url_for('static', filename='flags/english.svg') }}" class="lang-flag" alt="" aria-hidden="true" />
+          <span>English</span>
+        </button>
         <button class="appearance-theme-btn lang-btn{% if ui_language == 'de' %} active{% endif %}"
-                data-profile-lang="de">Deutsch</button>
+                data-profile-lang="de">
+          <img src="{{ url_for('static', filename='flags/german.svg') }}" class="lang-flag" alt="" aria-hidden="true" />
+          <span>Deutsch</span>
+        </button>
       </div>
     </div>
   </div>

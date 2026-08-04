@@ -6270,3 +6270,6 @@ msgstr ""
 
 msgid "Target folder"
 msgstr ""
+
+msgid "The interface language a newly created account starts with. Everyone can change it later on their profile page."
+msgstr "La lingua dell'interfaccia con cui parte un account appena creato. Ognuno può cambiarla in seguito nella propria pagina del profilo."

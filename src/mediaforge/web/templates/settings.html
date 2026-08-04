@@ -605,6 +605,18 @@
         </div>
         <button class="btn btn-secondary" onclick="clearAppearanceDefaultAccent()">{{ _('Use the built-in colour') }}</button>
       </div>
+      <h3 class="settings-subtitle">{{ _('Language') }}</h3>
+      <div class="settings-row">
+        <button type="button" class="appearance-theme-btn lang-btn" data-default-lang="en">
+          <img src="{{ url_for('static', filename='flags/english.svg') }}" class="lang-flag" alt="" aria-hidden="true" />
+          <span>English</span>
+        </button>
+        <button type="button" class="appearance-theme-btn lang-btn" data-default-lang="de">
+          <img src="{{ url_for('static', filename='flags/german.svg') }}" class="lang-flag" alt="" aria-hidden="true" />
+          <span>Deutsch</span>
+        </button>
+      </div>
+      <div class="settings-hint">{{ _('The interface language a newly created account starts with. Everyone can change it later on their profile page.') }}</div>
     </div>
     {% endif %}
     <div class="settings-section">

@@ -376,6 +376,7 @@ def register_settings_routes(app):
                 # Instance defaults for the look (Settings -> Design).
                 "default_theme_mode":        get_setting("default_theme_mode", "dark"),
                 "default_accent":            get_setting("default_accent", ""),
+                "default_ui_language":       get_setting("default_ui_language", "en"),
                 "autostart_enabled":         autostart_enabled,
                 "open_browser_on_startup":   open_browser_on_startup,
                 "is_docker":                 is_docker,
@@ -1280,6 +1281,15 @@ def register_settings_routes(app):
                 return jsonify({"error": "Invalid accent colour"}), 400
             # "" is a real value: fall back to the built-in accent.
             set_setting("default_accent", accent)
+        if "default_ui_language" in data:
+            # Validated against the app's own language list, so enabling a
+            # third catalogue does not need this endpoint touched again.
+            from flask import current_app
+            allowed = current_app.config.get("AVAILABLE_LANGUAGES", ["en", "de"])
+            lang = str(data["default_ui_language"] or "").strip()
+            if lang not in allowed:
+                return jsonify({"error": "Invalid language"}), 400
+            set_setting("default_ui_language", lang)
 
         if "tray_mode" in data:
             val = "1" if str(data["tray_mode"]).lower() in ("true", "1") else "0"
