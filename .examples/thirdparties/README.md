@@ -1950,6 +1950,14 @@ nothing else by default. A third-party module's own image host isn't on that
 list, so **without this call every poster your module returns 403s at the
 proxy and never loads**, even though the module itself is otherwise working.
 
+This also covers the download-queue hub: a title with no TMDB entry (or no
+TMDB key configured at all) gets its poster from your `Provider`'s own
+`series_cls(url=...).poster_url` instead — resolved once in the background
+and cached, never blocking `/api/queue`'s ~2s poll — and that fallback goes
+through the exact same `_poster_proxy()` -> allowlist path. Nothing to call
+for this specifically; it works automatically for any `register_provider`
+source once its image host is registered here.
+
 ```python
 from mediaforge.web.routes.image_proxy import register_image_hosts
 

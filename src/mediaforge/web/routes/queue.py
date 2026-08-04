@@ -28,19 +28,117 @@ from ..language_groups import resolve_chain
 from ..queue_worker import _dl_lock
 from flask import jsonify
 from flask import request
+import atexit
+import concurrent.futures
 import os
+import threading
+
+
+# ---------------------------------------------------------------------------
+# Non-TMDB poster fallback (background-resolved, cache-only on the request path)
+# ---------------------------------------------------------------------------
+# Some sources have no TMDB entry at all (an adult-content module, for
+# example) or the admin never configured a TMDB key, so the TMDB-cache lookup
+# in _attach_cached_posters() below never has anything to attach for them.
+# Their Provider's own series page usually already carries a poster -- the
+# same poster_url the browse/search cards show -- but getting it means
+# constructing ``series_cls(url=...)`` and reading ``.poster_url``, which for
+# most providers triggers a real, uncached network fetch (see
+# routes/browse.py's ``_prefetch_worker``, which does the exact same
+# construction from a background thread for exactly this reason). /api/queue
+# is polled every ~2s, so that fetch must never happen inline on this
+# request's own thread -- the same rule _attach_cached_posters()'s docstring
+# already states for TMDB.
+#
+# Cached through db.get_provider_cache()/set_provider_cache() -- the same
+# namespaced, TTL'd table Crunchyroll's/Fernsehserien.de's availability pills
+# already share -- rather than a plain process-memory dict, so a resolved
+# poster survives a restart instead of every queue view re-fetching once per
+# run. resolve_provider() checks third-party providers (register_provider)
+# exactly like built-in ones, so this works the same for a module's own
+# content source with no extra wiring -- as long as the module also called
+# image_proxy.register_image_hosts() for its poster's CDN, or the proxy will
+# still 403 it.
+_QUEUE_POSTER_NAMESPACE = "queue_poster_fallback"
+_QUEUE_POSTER_TTL = 86400.0  # 24h, matches provider_cache's own housekeeping window
+
+_queue_poster_pool = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="queue-poster")
+atexit.register(_queue_poster_pool.shutdown, wait=False)
+
+# series_url values a background resolve is already running for -- without
+# this, every ~2s poll before the first fetch completes would submit another
+# one for the same URL (the pool has only one worker, so they would queue up
+# behind each other and each still hit the network in turn).
+_queue_poster_inflight: set = set()
+_queue_poster_inflight_lock = threading.Lock()
+
+
+def _resolve_queue_poster_bg(series_url):
+    """Background worker: resolve one series' poster via its Provider class
+    and cache the result -- positive or negative, so a source with no poster
+    (or a provider that's down) is not retried on every poll."""
+    poster = ""
+    try:
+        from ...providers import resolve_provider
+        from .image_proxy import _poster_proxy
+
+        prov = resolve_provider(series_url)
+        series_cls = getattr(prov, "series_cls", None)
+        if series_cls:
+            s_inst = series_cls(url=series_url)
+            raw = getattr(s_inst, "poster_url", "") or getattr(s_inst, "poster", "")
+            if raw:
+                poster = _poster_proxy(raw)
+    except Exception:
+        pass
+    try:
+        from ..db import set_provider_cache
+        set_provider_cache(_QUEUE_POSTER_NAMESPACE, series_url, {"poster": poster})
+    except Exception:
+        pass
+    with _queue_poster_inflight_lock:
+        _queue_poster_inflight.discard(series_url)
+
+
+def _queue_poster_fallback(series_url):
+    """Cached, non-blocking read: returns a cached poster URL, or None if
+    nothing is cached yet (including "resolved to no poster") -- kicking off
+    a background resolve in that case so the *next* poll finds it."""
+    from ..db import get_provider_cache
+
+    cached = get_provider_cache(_QUEUE_POSTER_NAMESPACE, series_url, ttl=_QUEUE_POSTER_TTL)
+    if cached is not None:
+        return cached.get("poster") or None
+
+    with _queue_poster_inflight_lock:
+        if series_url in _queue_poster_inflight:
+            return None
+        _queue_poster_inflight.add(series_url)
+    _queue_poster_pool.submit(_resolve_queue_poster_bg, series_url)
+    return None
 
 
 def _attach_cached_posters(items):
-    """Add a poster URL to queue rows — from the cache only, never live.
+    """Add a poster URL to queue rows — cache-only on this request's own
+    thread, never a live fetch.
 
     download_queue has no poster column and /api/queue is polled every two
-    seconds, so a lookup that could reach out to TMDB is out of the question.
-    This reads the TMDB cache the browse/search pages already fill and leaves
-    ``poster`` unset when there is no hit; the queue hub then falls back to
-    its gradient placeholder. The URL handed to the client is the
-    /api/img proxy, never image.tmdb.org directly (same rule as everywhere
-    else — see routes/image_proxy.py).
+    seconds, so a lookup that could reach out to a source site or TMDB
+    inline is out of the question. Two independent cache layers feed
+    ``poster``, in order:
+
+    1. The TMDB cache the browse/search pages already fill (below).
+    2. For anything still unset afterwards -- no TMDB key configured, or a
+       source with no TMDB entry at all -- the provider-resolved fallback
+       above (:func:`_queue_poster_fallback`), itself only ever a cache read
+       plus a fire-and-forget background resolve on a miss.
+
+    Either way ``poster`` is left unset when there is no hit yet, and the
+    queue hub falls back to its gradient placeholder for that poll. The URL
+    handed to the client is always the /api/img proxy, never a source site
+    or image.tmdb.org directly (same rule as everywhere else — see
+    routes/image_proxy.py).
     """
     try:
         from ..db import get_setting
@@ -48,29 +146,36 @@ def _attach_cached_posters(items):
         from flask import session
         import urllib.parse as _up
 
-        if not get_setting("cineinfo_tmdb_api_key", ""):
-            return
-        country = get_setting("cineinfo_country", "DE") or "DE"
-        ui_lang = session.get("ui_language", "de")
+        if get_setting("cineinfo_tmdb_api_key", ""):
+            country = get_setting("cineinfo_country", "DE") or "DE"
+            ui_lang = session.get("ui_language", "de")
 
-        keys = {}
-        for it in items:
-            title = it.get("title")
-            if title:
-                keys[title] = title + "|||" + country + "|||" + ui_lang
-        if not keys:
-            return
+            keys = {}
+            for it in items:
+                title = it.get("title")
+                if title:
+                    keys[title] = title + "|||" + country + "|||" + ui_lang
+            if keys:
+                hits = get_tmdb_cache_bulk(list(keys.values()))
+                for it in items:
+                    cached = hits.get(keys.get(it.get("title"), ""))
+                    if not isinstance(cached, dict):
+                        continue
+                    details = cached.get("raw_details")
+                    path = details.get("poster_path") if isinstance(details, dict) else None
+                    if path:
+                        raw = "https://image.tmdb.org/t/p/w154" + path
+                        it["poster"] = "/api/img?url=" + _up.quote(raw, safe="")
 
-        hits = get_tmdb_cache_bulk(list(keys.values()))
         for it in items:
-            cached = hits.get(keys.get(it.get("title"), ""))
-            if not isinstance(cached, dict):
+            if it.get("poster"):
                 continue
-            details = cached.get("raw_details")
-            path = details.get("poster_path") if isinstance(details, dict) else None
-            if path:
-                raw = "https://image.tmdb.org/t/p/w154" + path
-                it["poster"] = "/api/img?url=" + _up.quote(raw, safe="")
+            series_url = it.get("series_url") or ""
+            if not series_url:
+                continue
+            poster = _queue_poster_fallback(series_url)
+            if poster:
+                it["poster"] = poster
     except Exception:
         # A missing poster must never cost the queue its response.
         pass
@@ -165,7 +270,6 @@ def register_queue_routes(app):
         download queue modal.
         """
         from ...models.common.common import get_ffmpeg_progress
-        from ..db import get_general_stats
 
         items = get_queue()
         ffmpeg_pct = get_ffmpeg_progress()
