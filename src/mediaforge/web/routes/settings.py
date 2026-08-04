@@ -1843,6 +1843,18 @@ def register_settings_routes(app):
         from ...telemetry import settings as _tel
         from ...telemetry.registry import TELEMETRY_PROJECT_KEY, TELEMETRY_REQUEST_STATUS_URL
         try:
+            # Nothing leaves the machine for somebody who never consented.
+            # telemetry.js polls this route on every load of the Settings page
+            # -- any tab, not just the telemetry one -- so without this the
+            # install_id and app_version reach the server purely because the
+            # page was opened. An install that never enrolled provably has no
+            # data requests to poll, and one that DID enrol keeps working here
+            # after withdrawing consent, which is exactly when a deletion gets
+            # requested and has to stay pollable.
+            if _tel.is_consent_given() is not True and not _dev.has_secret():
+                # Empty list, not an error: the caller is telemetry.js, which
+                # expects the server's array shape and renders nothing for it.
+                return jsonify([])
             # Deliberately NOT ensure_enrolled(): this route is polled
             # automatically by telemetry.js's loadTelemetrySettings() every time
             # the Settings -> Telemetry page is opened, including for a user who
