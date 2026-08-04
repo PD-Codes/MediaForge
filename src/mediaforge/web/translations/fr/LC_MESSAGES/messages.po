@@ -6273,3 +6273,15 @@ msgstr ""
 
 msgid "The interface language a newly created account starts with. Everyone can change it later on their profile page."
 msgstr "La langue de l'interface avec laquelle démarre un compte nouvellement créé. Chacun peut la changer ensuite sur sa page de profil."
+
+#: src/mediaforge/web/templates/index.html:392
+msgid "None"
+msgstr "Aucune"
+
+#: src/mediaforge/web/templates/index.html:392
+msgid "sources"
+msgstr "sources"
+
+#: src/mediaforge/web/templates/index.html:392
+msgid "types"
+msgstr "types"

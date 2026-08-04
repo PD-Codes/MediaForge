@@ -7301,3 +7301,15 @@ msgstr "Diese Einstellungen verändern das Design nur minimal. Sie werden auf de
 
 msgid "The interface language a newly created account starts with. Everyone can change it later on their profile page."
 msgstr "Die Oberflächensprache, mit der ein neu angelegtes Konto startet. Jeder kann sie später auf seiner Profilseite ändern."
+
+#: src/mediaforge/web/templates/index.html:392
+msgid "None"
+msgstr "Keine"
+
+#: src/mediaforge/web/templates/index.html:392
+msgid "sources"
+msgstr "Quellen"
+
+#: src/mediaforge/web/templates/index.html:392
+msgid "types"
+msgstr "Typen"

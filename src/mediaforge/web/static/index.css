@@ -561,6 +561,12 @@
   margin-top: 18px;
 }
 
+/* Desktop keeps the chips; the dropdowns only exist below the breakpoint.
+   This has to sit BEFORE the media query: a media query adds no specificity,
+   so an equally specific rule placed after it would win at every width and
+   the dropdowns would never show. */
+.feed-filters-mobile { display: none; }
+
 /* On a phone the pill row would eat half the screen — it scrolls sideways
    instead of wrapping into four lines. */
 @media (max-width: 640px) {
@@ -575,6 +581,45 @@
   .feed-filters::-webkit-scrollbar { display: none; }
   .feed-chip { flex: none; }
   .feed-chip-label { flex: none; }
+
+  /* Phone: the chips step aside for the two dropdowns. */
+  .feed-filters > .feed-chip,
+  .feed-filters > .feed-chip-label,
+  .feed-filters > .feed-chip-set { display: none; }
+
+  .feed-filters-mobile {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* .mf-multiselect is width:100% in forms.css — overridden here instead of
+     touching the shared rule, so the two sit side by side. */
+  .feed-filters-mobile .mf-multiselect {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+}
+
+/* A source switched off in Settings (or the FSK-locked 18+ entry) is shown,
+   but is a fact rather than an option — like .feed-chip.is-disabled. */
+.feed-filters-mobile .mf-multiselect-item.is-disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.feed-filters-mobile .mf-multiselect-item.is-disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+/* The item text is one <span>, so the source dot has to be inline. */
+.feed-filters-mobile .feed-chip-dot {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
 }
 
 

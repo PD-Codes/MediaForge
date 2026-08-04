@@ -696,11 +696,22 @@
   }
 
   /* ── Modal: streaming providers ──────────────────────────────────── */
+  /* The box scrolls once the provider list outgrows it (max-height and
+     overflow are set inline by _tmdbModalPills in app.js, which owns this
+     container). The scrollbar is hidden on purpose -- the same idiom the
+     home panel bar and the feed filters use -- so the pill block stays a
+     quiet strip of metadata rather than growing a rail of its own. */
   .tmdb-providers {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
     margin: 4px 0 10px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .tmdb-providers::-webkit-scrollbar {
+    display: none;
   }
 
   /* Same base as .lang-avail-pill */
@@ -715,7 +726,10 @@
     border: 1px solid rgba(148, 163, 184, .3);
     background: var(--bg-elevated);
     color: var(--text-secondary);
-    white-space: nowrap;
+    /* Wraps rather than clipping: a nowrap pill also raises the row's
+       min-content width, which is what pushed the modal past its max-width. */
+    max-width: 100%;
+    overflow-wrap: anywhere;
     line-height: 1.4;
     transition: filter .15s, border-color .15s;
     /* brand colour overridden inline */

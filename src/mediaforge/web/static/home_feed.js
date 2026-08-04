@@ -129,6 +129,11 @@
   function renderFilters() {
     const wrap = document.getElementById("feedFilters");
     if (!wrap) return;
+    // renderFilters() runs again on every row response. Replacing innerHTML
+    // while one of the mobile dropdowns is open would make it disappear mid
+    // interaction, so the render is deferred until it closes.
+    if (multiselectOpen()) { filtersDirty = true; return; }
+    filtersDirty = false;
     const types = availableTypes();
     let html = '<span class="feed-chip-label">' + mfEscape(HT("sources")) + "</span>";
 
@@ -180,8 +185,148 @@
         : typeChip("adult", "18+");
     }
     html += "</span>";
+
+    // Both variants are always emitted and CSS picks one (index.css): the
+    // chips above 640px, the two dropdowns below it. That is cheaper and less
+    // brittle than a resize listener re-rendering the row.
+    html += renderMobileFilters(types);
     wrap.innerHTML = html;
+    syncMultiselects();
   }
+
+  // ------------------------------------------------- mobile filter dropdowns
+  // Under 640px the chip row would be a sideways-scrolling ribbon of a dozen
+  // pills. Same state, same guard rails, but as two .mf-multiselect dropdowns
+  // (static/mf_multiselect.js owns open/close/label; this file only renders
+  // the markup and reacts to its events).
+  let filtersDirty = false;
+
+  function multiselectOpen() {
+    return !!document.querySelector("#feedFilters .mf-multiselect.is-open");
+  }
+
+  function msItem(value, label, checked, disabled, title, color) {
+    const dot = color
+      ? '<span class="feed-chip-dot" style="background:' + mfEscape(color) + '"></span>'
+      : "";
+    return '<label class="mf-multiselect-item' + (disabled ? " is-disabled" : "") +
+      '"' + (title ? ' title="' + mfEscape(title) + '"' : "") + ">" +
+      '<input type="checkbox" class="chb-main" value="' + mfEscape(value) + '"' +
+      (checked ? " checked" : "") + (disabled ? " disabled" : "") + ">" +
+      "<span>" + dot + mfEscape(label) + "</span></label>";
+  }
+
+  function msRoot(kind, manyLabel, items) {
+    return '<div class="mf-multiselect feed-ms" data-mf-multiselect data-feed-kind="' +
+      kind + '" data-none-label="' + mfEscape(HT("filter_none")) +
+      '" data-many-label="' + mfEscape(manyLabel) + '" data-max-names="1">' +
+      '<button type="button" class="mf-multiselect-trigger" aria-expanded="false" ' +
+      'aria-haspopup="true"><span class="mf-multiselect-label"></span>' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/>' +
+      "</svg></button>" +
+      '<div class="mf-multiselect-dropdown">' + items + "</div></div>";
+  }
+
+  function renderMobileFilters(types) {
+    let src = "";
+    sources.forEach(function (s) {
+      if (!s.enabled) {
+        // A source switched off in Settings is a fact, not an option — same as
+        // the chip, so it is rendered as a disabled entry with the same title.
+        src += msItem(s.id, s.label + " · " + HT("off"), false, true,
+          HT("disabled_in_settings"), "");
+        return;
+      }
+      const down = s.error || downIds.indexOf(s.id) !== -1;
+      src += msItem(s.id, s.label + (down ? " · " + HT("offline") : ""),
+        sourceOn(s.id), false, "", down ? "" : (s.color || ""));
+    });
+
+    let ty = "";
+    if (types.series) ty += msItem("series", HT("series"), typeOn("series"), false, "", "");
+    if (types.movies) ty += msItem("movies", HT("movies"), typeOn("movies"), false, "", "");
+    if (types.adult) {
+      const ceiling = parseInt(window.__HOME_MAX_FSK || "", 10);
+      ty += (ceiling >= 0 && ceiling < 18)
+        ? msItem("adult", "18+ · " + HT("off"), false, true,
+            HT("mode_notice").replace("{}", String(ceiling)), "")
+        : msItem("adult", "18+", typeOn("adult"), false, "", "");
+    }
+
+    return '<div class="feed-filters-mobile">' +
+      msRoot("source", HT("many_sources"), src) +
+      msRoot("type", HT("many_types"), ty) + "</div>";
+  }
+
+  /** Push the current filter state back into the checkboxes and re-compute the
+      trigger labels. Also the "undo" for a rejected toggle. */
+  function syncMultiselects() {
+    if (!window.mfMultiSelect) return;
+    document.querySelectorAll("#feedFilters .mf-multiselect[data-feed-kind]")
+      .forEach(function (root) {
+        const on = root.dataset.feedKind === "source" ? sourceOn : typeOn;
+        root.querySelectorAll('.mf-multiselect-dropdown input[type="checkbox"]')
+          .forEach(function (box) {
+            if (!box.disabled) box.checked = on(box.value);
+          });
+        window.mfMultiSelect.refresh(root);
+      });
+  }
+
+  // The component fires this on every checkbox change, so the filter is saved
+  // immediately (chips do the same). Saving on mf-multiselect-close instead
+  // would lose a change if the user navigates away with the dropdown open.
+  feed.addEventListener("mf-multiselect-change", function (ev) {
+    const root = ev.target.closest &&
+      ev.target.closest(".mf-multiselect[data-feed-kind]");
+    if (!root || !window.mfMultiSelect) return;
+    const kind = root.dataset.feedKind;
+    const picked = {};
+    window.mfMultiSelect.values(root).forEach(function (v) { picked[v] = true; });
+
+    // Guard rails, same as the chips: never all sources off, never all types
+    // off. Unlike a chip the checkbox has already flipped, so the rejected
+    // state has to be put back visibly.
+    if (Object.keys(picked).length === 0) { syncMultiselects(); return; }
+
+    if (kind === "source") {
+      activeSources().forEach(function (s) {
+        if (picked[s.id]) delete offSources[s.id]; else offSources[s.id] = true;
+      });
+    } else if (kind === "type") {
+      const wasAdult = typeOn("adult");
+      Object.keys(availableTypes()).forEach(function (key) {
+        if (picked[key]) delete offTypes[key]; else offTypes[key] = true;
+      });
+      // The 18+ source is only fetched while it is on, so switching it on has
+      // to go back to the server once (same as the chip handler).
+      if (!wasAdult && typeOn("adult")) {
+        saveFilters(); renderFilters(); window.reloadHomeFeed(); return;
+      }
+    } else {
+      return;
+    }
+    saveFilters();
+    renderFilters();                         // deferred while the menu is open
+    renderRows();
+  });
+
+  // A deferred render has to happen as soon as the menu is gone again. The
+  // close event only fires when something changed, so a plain open/close is
+  // caught by the click/Escape fallbacks below.
+  function flushFilters() {
+    if (filtersDirty && !multiselectOpen()) renderFilters();
+  }
+  feed.addEventListener("mf-multiselect-close", function () {
+    window.setTimeout(flushFilters, 0);
+  });
+  document.addEventListener("click", function () {
+    window.setTimeout(flushFilters, 0);
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") window.setTimeout(flushFilters, 0);
+  });
 
   function typeChip(key, label) {
     const on = typeOn(key);

@@ -3372,10 +3372,15 @@ function _makeProviderPill(name, opts) {
     'border:1.5px solid ' + (color ? color + '60' : 'rgba(148,163,184,.35)'),
     'background:var(--bg-elevated,#1a1a28)',
     'color:' + (color || 'var(--text-secondary,#9191b0)'),
-    'white-space:nowrap',
+    // The card variant stays on one line and truncates; the modal variant
+    // wraps instead. A name like "Netflix Standard with Ads" is otherwise
+    // either cut off or -- because a nowrap pill raises the row's min-content
+    // width -- wide enough to push the modal past its max-width.
+    'white-space:' + (opts.small ? 'nowrap' : 'normal'),
+    'max-width:100%',
     'line-height:1.4',
     'cursor:default',
-  ].concat(opts.small ? ['max-width:100%', 'overflow:hidden'] : []).join(';');
+  ].concat(opts.small ? ['overflow:hidden'] : ['overflow-wrap:anywhere']).join(';');
   if (opts.title) pill.title = opts.title;
   if (color) {
     const dot = document.createElement('span');
@@ -3661,8 +3666,15 @@ function _ensureCardMeta(card) {
   return meta;
 }
 
-// TMDB's provider block in the detail modal: every provider as a pill, capped
-// at MAX_SHOW with a "+N more" chip. Returns true iff it rendered anything.
+// TMDB's provider block in the detail modal: every provider as a pill, in a
+// box that scrolls once the list outgrows it. Returns true iff it rendered
+// anything.
+//
+// This used to cap the list at six and append a "+N more" chip, because the
+// box clipped at a fixed height and the rest was simply unreachable. Now that
+// the box scrolls, a cap would only hide providers behind a chip that says
+// nothing about them -- so every provider is rendered and the user scrolls.
+// (That chip was also a hardcoded German string, untranslated.)
 function _tmdbModalPills(provEl, d) {
   if (!provEl || !d || !d.found) return false;
   if (!cineinfoSettings || cineinfoSettings.show_providers === '0') return false;
@@ -3672,34 +3684,20 @@ function _tmdbModalPills(provEl, d) {
   provEl.style.cssText = [
     'display:flex',
     'flex-wrap:wrap',
+    'align-content:flex-start',
     'gap:5px',
     'margin:4px 0 16px',
-    'max-height:74px',
-    'overflow:hidden',
+    // Roughly three rows of pills. Past that the block starts crowding out the
+    // rest of the modal, which is what the height limit is here for.
+    'max-height:104px',
+    'overflow-y:auto',
+    // Keeps a flick at the end of the list from scrolling the modal behind it.
+    'overscroll-behavior:contain',
     'position:relative',
   ].join(';');
-  const MAX_SHOW = 6;
-  const visible = d.providers.slice(0, MAX_SHOW);
-  const rest = d.providers.length - MAX_SHOW;
-  visible.forEach(p => provEl.appendChild(_makeProviderPill(p)));
-  if (rest > 0) {
-    const more = document.createElement('span');
-    more.textContent = '+' + rest + ' mehr';
-    more.style.cssText = [
-      'display:inline-flex',
-      'align-items:center',
-      'font-size:0.72rem',
-      'font-weight:600',
-      'padding:4px 10px',
-      'border-radius:99px',
-      'border:1.5px solid rgba(148,163,184,.3)',
-      'background:var(--bg-elevated,#1a1a28)',
-      'color:var(--text-muted,#55556a)',
-      'white-space:nowrap',
-      'cursor:default',
-    ].join(';');
-    provEl.appendChild(more);
-  }
+  // The scrollbar itself is hidden via the .tmdb-providers rule in
+  // queue.css -- ::-webkit-scrollbar has no inline-style equivalent.
+  d.providers.forEach(p => provEl.appendChild(_makeProviderPill(p)));
   return true;
 }
 
