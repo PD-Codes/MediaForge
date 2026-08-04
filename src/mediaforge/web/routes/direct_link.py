@@ -264,11 +264,19 @@ def register_direct_link_routes(app):
         if not url:
             return jsonify({"error": "url is required"}), 400
 
-        from ...models.direct_link.probe import probe_direct_link_formats
+        from ...models.direct_link.probe import UnsafeUrlError, probe_direct_link_formats
         try:
             result = probe_direct_link_formats(url)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 400
+        except UnsafeUrlError as e:
+            # SSRF gate (shared with the HLS proxy): never echo which internal
+            # address was refused, that alone would make this a LAN scanner.
+            logger.warning(f"[DirectLink] Probe rejected an unsafe URL: {e}")
+            return jsonify({"error": "This URL cannot be probed."}), 400
+        except Exception:
+            # The upstream exception can carry internal hostnames/IPs and
+            # connection details -- log it, but return a generic message.
+            logger.exception(f"[DirectLink] Probe failed for {url}")
+            return jsonify({"error": "Could not read this link."}), 400
         return jsonify(result)
 
     @app.route("/api/direct-link/download", methods=["POST"])

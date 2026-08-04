@@ -727,7 +727,16 @@ class TranscodeSession:
 
     def start(self) -> bool:
         """Launch ffmpeg and return immediately — no blocking wait."""
-        self.tmp_dir       = tempfile.mkdtemp(prefix=f"aw_stream_{self.token[:8]}_")
+        # Segment dirs go under the app temp dir (the disk-backed
+        # /tmp/mediaforge volume in Docker), NOT the system temp dir: with
+        # -hls_list_size 0 every segment of the whole title stays on disk for
+        # the life of the session, so eight concurrent viewers add up to many
+        # GB. On the small /tmp tmpfs that filled RAM and took everything else
+        # on /tmp down with it. -hls_list_size 0 is kept on purpose -- this is
+        # a seekable VOD playlist, and delete_segments would break seeking
+        # back to a part that has already been played.
+        self.tmp_dir       = tempfile.mkdtemp(prefix=f"aw_stream_{self.token[:8]}_",
+                                              dir=str(_cache_dir("sessions")))
         self.playlist_path = os.path.join(self.tmp_dir, "index.m3u8")
         cmd = self._build_cmd()
         logger.info("[Transcoder] start %s  enc=%s  file=%s",
@@ -938,7 +947,41 @@ def active_count() -> int:
 
 # ── Background cleanup ─────────────────────────────────────────────────────
 
+def _sweep_orphan_session_dirs() -> None:
+    """Delete segment dirs no live session owns any more.
+
+    ``stop()`` removes its own directory, but a crash, a SIGKILL or a
+    container restart leaves the segments of a whole title behind. Since they
+    now live on the persistent temp volume, nothing else would ever reclaim
+    that space.
+    """
+    try:
+        base = _cache_dir("sessions")
+    except Exception:
+        return
+    with _sessions_lock:
+        live = {s.tmp_dir for s in _sessions.values() if s.tmp_dir}
+    now = time.time()
+    for d in base.iterdir() if base.is_dir() else []:
+        try:
+            if not d.is_dir() or not d.name.startswith("aw_stream_"):
+                continue
+            if str(d) in live:
+                continue
+            # Grace period: a session that is starting up right now is not in
+            # _sessions yet, and ffmpeg keeps touching the dir while it writes.
+            newest = max([d.stat().st_mtime]
+                         + [f.stat().st_mtime for f in d.iterdir()], default=0)
+            if now - newest < SESSION_TIMEOUT:
+                continue
+            shutil.rmtree(d, ignore_errors=True)
+            logger.info("[Transcoder] removed orphaned segment dir %s", d.name)
+        except OSError:
+            continue
+
+
 def _cleanup_loop():
+    _sweep_orphan_session_dirs()
     while True:
         time.sleep(60)
         now = time.time()
@@ -959,6 +1002,7 @@ def _cleanup_loop():
         for tok, sess in stale:
             logger.info("[Transcoder] stale session cleanup: %s", tok[:8])
             sess.stop()
+        _sweep_orphan_session_dirs()
 
 
 threading.Thread(target=_cleanup_loop, daemon=True, name="transcoder-cleanup").start()

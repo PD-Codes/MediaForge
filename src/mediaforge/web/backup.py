@@ -13,8 +13,8 @@ Design notes
   ``~/.mediaforge/.flask_secret`` -- that key is NOT portable. So on export we
   decrypt them with the local key and re-encrypt them under a key derived from
   the user-supplied backup password (PBKDF2-SHA256 -> Fernet). On import we
-  decrypt with the password and hand the plain values to ``set_setting()``,
-  which re-encrypts them with the *target* install's local key.
+  decrypt with the password and write the plain values back through the
+  import transaction, re-encrypting them with the *target* install's local key.
 * A backup password is always required (even when no secrets are present), per
   product decision.
 
@@ -28,7 +28,7 @@ import time
 
 from ..logger import get_logger
 from . import db as _db
-from .db import get_db, get_setting, is_sensitive_key, set_setting
+from .db import get_db, get_setting, is_sensitive_key
 
 logger = get_logger(__name__)
 
@@ -368,6 +368,14 @@ def import_backup(file_bytes: bytes, password: str, categories, mode: str = "mer
     existing keys) or ``"replace"`` (DELETE the category's tables first). All
     writes happen in a single transaction; any error rolls the whole import
     back.
+
+    That promise used to be false: _restore_settings() went through
+    db.set_setting(), which fetches the same request-cached connection and
+    commits per key -- ending the transaction opened here. In "replace" mode
+    _restore_table() had already run its DELETE FROM, so a failure afterwards
+    reached rollback() with nothing left to roll back and the user's data was
+    gone. Settings are now written with direct INSERTs on *this* connection, and
+    the setting listeners fire only after the outer commit succeeded.
     """
     if mode not in ("merge", "replace"):
         raise BackupError("invalid import mode")
@@ -392,13 +400,16 @@ def import_backup(file_bytes: bytes, password: str, categories, mode: str = "mer
         raise BackupError("no matching categories to import")
 
     report: dict = {}
+    applied_settings: list = []
     conn = get_db()
     try:
         conn.execute("BEGIN")
         for cid in selected:
             meta = catalog[cid]
             if meta["kind"] == "settings":
-                report[cid] = _restore_settings(conn, data.get("settings", {}), secrets)
+                applied = _restore_settings(conn, data.get("settings", {}), secrets)
+                applied_settings.extend(applied)
+                report[cid] = len(applied)
             else:
                 total = 0
                 for tbl in meta["tables"]:
@@ -411,6 +422,12 @@ def import_backup(file_bytes: bytes, password: str, categories, mode: str = "mer
     finally:
         conn.close()
 
+    # Only now that the data is durably committed do the side effects run.
+    # _notify_setting_listeners() swallows listener errors itself, so a broken
+    # third-party handler cannot make a successful import look failed.
+    for key, value in applied_settings:
+        _db._notify_setting_listeners(key, value)
+
     logger.info("Backup import finished: %s (mode=%s)", report, mode)
     return report
 
@@ -419,19 +436,33 @@ def import_backup(file_bytes: bytes, password: str, categories, mode: str = "mer
 # Restore helpers
 # ---------------------------------------------------------------------------
 
-def _restore_settings(conn, plain: dict, secrets: dict) -> int:
-    """Apply plain + secret settings via set_setting (re-encrypts locally).
+def _restore_settings(conn, plain: dict, secrets: dict) -> list:
+    """Write plain + secret settings on *conn* (re-encrypting sensitive keys).
 
     Settings are always merged (keys present in the backup overwrite the target
     value); keys absent from the backup are left untouched.
+
+    This deliberately does NOT call db.set_setting(): that helper commits per
+    key and would end the import transaction opened by import_backup(). The
+    upsert below is the same statement set_setting() runs, minus the commit and
+    minus the listener notification -- the caller fires the listeners once the
+    whole import is committed.
+
+    Returns the list of ``(key, value)`` pairs written, in plaintext, so the
+    caller can notify the listeners afterwards.
     """
-    count = 0
+    applied: list = []
     for key, value in {**plain, **secrets}.items():
         if key in _SETTING_DENYLIST:
             continue
-        set_setting(key, value)
-        count += 1
-    return count
+        stored = _db._encrypt_value(value) if is_sensitive_key(key) else value
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, stored),
+        )
+        applied.append((key, value))
+    return applied
 
 
 def _restore_table(conn, table: str, rows, mode: str) -> int:

@@ -22,8 +22,10 @@ from datetime import datetime, timezone
 
 from . import settings
 from .classify import is_cancel_exception_name, is_cancel_status, is_user_cancellation
-from .sanitize import (clean_url, is_adult_provider, redact_secrets, redact_urls_in_text,
-                        sanitize_exception, shorten_path)
+from .sanitize import (clean_url, collapse_paths_in_text, is_adult_provider,
+                        mentions_adult_provider, redact_secrets, redact_urls_in_text,
+                        sanitize_exception, shorten_path, strip_browser_launch_noise,
+                        strip_url_paths)
 
 
 def _now_iso() -> str:
@@ -70,6 +72,13 @@ def build_crash_event(exc_type, exc_value, tb):
     if is_user_cancellation(exc_type, exc_value):
         return None
     payload = sanitize_exception(exc_type, exc_value, tb)
+    # The hard 18+ rule (sanitize.is_adult_provider) applies to this channel too:
+    # an exception message or a source line can carry the watch URL just as a log
+    # line can, and crash_reports is stage 1 -- enabled without any consent to
+    # watch data. Checked on the already-sanitized text, so it costs one scan of
+    # a string that is at most MAX_TRACEBACK_BYTES long.
+    if mentions_adult_provider(payload.get("traceback_text")):
+        return None
     _attach_runtime(payload)
     return _event("crash_reports", payload)
 
@@ -96,7 +105,20 @@ def build_log_error_event(record):
     raw_message = record.getMessage()
     if is_user_cancellation(message=raw_message):
         return None
-    message = redact_secrets(redact_urls_in_text(raw_message))[:2000]
+    # The crash channel is stage 1 and can be enabled entirely on its own, so a
+    # log line naming the age-gated provider (the download watchdog logs the
+    # episode URL verbatim) must not travel through it -- that is precisely the
+    # watch data stages 4-6 exist to gate. Same guard as every provider-aware
+    # builder above, just asked about free text; see sanitize.mentions_adult_provider().
+    if mentions_adult_provider(raw_message):
+        return None
+    # strip_url_paths() rather than redact_urls_in_text(): for a log message the
+    # URL path is the content-identifying part (which series/episode), and
+    # collapse_paths_in_text() does the same for local filesystem paths, so a
+    # "No such file: C:\Users\<name>\..." log line cannot carry the username.
+    message = redact_secrets(
+        collapse_paths_in_text(strip_url_paths(strip_browser_launch_noise(raw_message)))
+    )[:2000]
     filename = shorten_path(record.pathname)
     frame = {"filename": filename, "lineno": record.lineno, "name": record.funcName, "line": ""}
     traceback_text = (

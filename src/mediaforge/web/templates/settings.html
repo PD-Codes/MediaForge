@@ -595,15 +595,24 @@
           <option value="light">Light</option>
         </select>
       </div>
+      {# Same shape as the accent block on the profile page: preset swatches
+         first, custom colour below. The presets carry their own class so
+         base.html's applyAccent() -- which marks every .accent-preset with
+         the ACCOUNT's colour -- leaves this row alone. #}
       <h3 class="settings-subtitle">{{ _('Accent Color') }}</h3>
+      <div class="settings-row">
+        <div class="accent-presets" id="defaultAccentPresets"></div>
+      </div>
+      <h3 class="settings-subtitle">{{ _('Custom Color') }}</h3>
       <div class="settings-row">
         <input type="text" class="settings-input" id="defaultAccentHex" maxlength="7"
                placeholder="#7c3aed" onchange="saveAppearanceDefaults()"
                aria-label="{{ _('Accent Color') }}">
         <div class="accent-color-swatch">
-          <input type="color" id="defaultAccentPicker" onchange="saveAppearanceDefaults(this.value)">
+          <input type="color" id="defaultAccentPicker" value="#7c3aed"
+                 onchange="saveAppearanceDefaults(this.value)">
         </div>
-        <button class="btn btn-secondary" onclick="clearAppearanceDefaultAccent()">{{ _('Use the built-in colour') }}</button>
+        <button class="btn btn-secondary appearance-reset" onclick="clearAppearanceDefaultAccent()">{{ _('Use the built-in colour') }}</button>
       </div>
       <h3 class="settings-subtitle">{{ _('Language') }}</h3>
       <div class="settings-row">

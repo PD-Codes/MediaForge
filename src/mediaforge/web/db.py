@@ -302,6 +302,21 @@ def _configure_connection(conn):
     enabled, NORMAL is still crash-safe for the application (only an OS-level
     crash can lose the very last transaction) and removes that cost from the
     workers, which commit constantly.
+
+    foreign_keys is deliberately NOT set here, even though the schema declares
+    two ON DELETE CASCADE constraints (user_notification_prefs -> users and
+    calendar_episodes -> calendar_media) that therefore never fire. Turning it
+    on globally breaks no-auth mode: init_db() -- the only thing that creates
+    the users table -- runs only when auth is enabled, while no-auth requests
+    run as the pseudo-user id 0 (see app.py's _set_noauth_session) and save
+    notification prefs for it. With enforcement on, that INSERT fails with
+    "no such table: main.users", or with "FOREIGN KEY constraint failed" once
+    the table does exist, because no users row 0 is ever created.
+
+    Enabling it needs the FK on user_notification_prefs dropped first (a table
+    rebuild, exactly like user_ui_prefs which documents the same pseudo-user
+    problem as its reason for having no FK). Until then every caller must clean
+    up per-user rows explicitly -- see delete_user().
     """
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -556,7 +571,11 @@ def _migrate_role_check(conn):
         except sqlite3.Error:
             pass
     finally:
-        conn.execute("PRAGMA foreign_keys=ON")
+        # Restore the connection's normal state, which is OFF (see
+        # _configure_connection). This used to turn enforcement ON here, so
+        # whichever caller went on using this connection silently got a
+        # different pragma than every other code path.
+        conn.execute("PRAGMA foreign_keys=OFF")
 
 
 def init_db():
@@ -805,6 +824,27 @@ def delete_user(user_id):
             ).fetchone()["cnt"]
             if cnt <= 1:
                 return False, "Cannot delete the last admin"
+        # Purge every per-user table explicitly. The ON DELETE CASCADE on
+        # user_notification_prefs never fires because PRAGMA foreign_keys is
+        # off on every connection (see _configure_connection for why it has to
+        # stay off), and push_subscriptions never declared the FK at all -- so
+        # both tables used to outlive the account. SQLite reuses user ids by
+        # value, which meant the next account created with this id inherited
+        # the deleted user's notification prefs and push endpoints. The deletes
+        # run before the users row so they are covered by the same commit, and
+        # they stay correct if the pragma is ever switched on.
+        for stmt in (
+            "DELETE FROM user_notification_prefs WHERE user_id = ?",
+            "DELETE FROM push_subscriptions WHERE user_id = ?",
+            # Per-user too, and likewise without an FK: the hidden-request list
+            # would otherwise be inherited by the next account with this id.
+            "DELETE FROM seerr_hidden WHERE user_id = ?",
+        ):
+            try:
+                conn.execute(stmt, (user_id,))
+            except sqlite3.Error:
+                # Table may not exist yet on a fresh/partially migrated DB.
+                logger.debug("delete_user: purge failed for %r", stmt, exc_info=True)
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
         # user_ui_prefs has no FK to users (see its CREATE TABLE for why), so

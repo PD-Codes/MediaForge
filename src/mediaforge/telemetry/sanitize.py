@@ -9,11 +9,16 @@ that leaves the user's device:
      traceback.extract_tb(). Never touches frame.f_locals or any other
      runtime value.
   2. shorten_path() -- absolute paths collapsed to the part from
-     "mediaforge/" onward, so a Windows username / install path never
-     leaves the device.
+     "mediaforge/" onward (or the home directory replaced by "~" when there
+     is no such segment), so a Windows username / install path never leaves
+     the device. collapse_paths_in_text() applies the same treatment to
+     paths embedded in free text (exception messages, source lines, log
+     messages), which _clean_text() runs for every one of them.
   3. clean_url() / redact_urls_in_text() -- query string and fragment
      stripped from any URL (that's typically where session tokens for
-     streaming hosters live).
+     streaming hosters live). strip_url_paths() goes one step further for
+     log-derived crash messages and drops the path as well, since that is
+     the content-identifying part.
   4. redact_secrets() -- a regex safety net over the fully-assembled text,
      independent of steps 1-3, catching Authorization headers, Bearer
      tokens, api_key=/password=/token= patterns.
@@ -22,6 +27,7 @@ that leaves the user's device:
      payload.
 """
 
+import hashlib
 import re
 import traceback
 from urllib.parse import urlsplit
@@ -33,6 +39,25 @@ MAX_TRACEBACK_BYTES = 8 * 1024  # ~8 KB cap, see module docstring point 5
 _MEDIAFORGE_PATH_RE = re.compile(r".*?([\\/]mediaforge[\\/].*)", re.IGNORECASE)
 
 _URL_RE = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
+
+# Home directory -> "~". Runs on already slash-normalized text, so only forward
+# slashes need to be handled. This is what actually keeps a Windows/Linux
+# username off the wire for paths that have no "mediaforge" segment at all
+# (a media root on a NAS, an ffmpeg temp file, a FileNotFoundError on a file
+# under C:\Users\<name>\Downloads, ...).
+_HOME_DIR_RE = re.compile(r"(?:[a-z]:)?/(?:users|home)/[^/]+", re.IGNORECASE)
+_ROOT_HOME_RE = re.compile(r"(?:[a-z]:)?/root(?![^\W_])", re.IGNORECASE)
+
+# Absolute-path-looking token inside free text (an exception message, a source
+# line, a log message). Deliberately anchored on either a drive letter or one of
+# the usual absolute roots rather than "any slash", so it cannot swallow ordinary
+# prose or an already-cleaned URL's host. Each match is handed to shorten_path().
+_ABS_PATH_IN_TEXT_RE = re.compile(
+    r"(?:[A-Za-z]:[\\/]"
+    r"|/(?:home|users|root|mnt|media|srv|opt|var|tmp|data|app|config|downloads)\b)"
+    r"[^\s'\"<>,;)\]}]*",
+    re.IGNORECASE,
+)
 
 # Regex safety net (point 4 above) -- deliberately broad and case-insensitive.
 # Each pattern keeps its own "key=" / "Bearer " prefix and replaces only the
@@ -82,7 +107,41 @@ def shorten_path(path) -> str:
     match = _MEDIAFORGE_PATH_RE.match(path)
     if match:
         return match.group(1).replace("\\", "/")
-    return path.replace("\\", "/")
+    normalized = path.replace("\\", "/")
+    # No "mediaforge" segment (stdlib/site-packages frame, a media file on a
+    # NAS, a temp file under the user's profile): at minimum collapse the home
+    # directory, otherwise the OS username would still leave the device -- which
+    # is exactly what this function exists to prevent.
+    normalized = _HOME_DIR_RE.sub("~", normalized)
+    return _ROOT_HOME_RE.sub("~", normalized)
+
+
+def collapse_paths_in_text(text) -> str:
+    """Run shorten_path() over every absolute-path-looking token inside *text*.
+
+    shorten_path() only ever saw frame filenames, so an exception message
+    ("[Errno 2] No such file or directory: 'C:\\\\Users\\\\bob\\\\Videos\\\\x.mkv'")
+    or an ffmpeg error line carried the full local path -- including the
+    username -- straight into the payload. This closes that gap for free text;
+    the per-token work is still shorten_path(), not a second implementation.
+
+    URLs are stepped over rather than rewritten: a URL path can legitimately
+    contain "/home/<something>", and collapsing it produced garbage like
+    "https://host~/file.mkv". URLs are already handled by clean_url() /
+    strip_url_paths(), which run before this in _clean_text().
+    """
+    if not text:
+        return text
+    out = []
+    pos = 0
+    for m in _URL_RE.finditer(text):
+        out.append(_ABS_PATH_IN_TEXT_RE.sub(
+            lambda x: shorten_path(x.group(0)), text[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(_ABS_PATH_IN_TEXT_RE.sub(
+        lambda x: shorten_path(x.group(0)), text[pos:]))
+    return "".join(out)
 
 
 def clean_url(url) -> str:
@@ -170,9 +229,88 @@ def strip_browser_launch_noise(text) -> str:
 
 
 def _clean_text(text) -> str:
-    """Strip browser-launch noise, then URL-clean + secret-redact (redact_secrets
-    is a superset safety net so it always runs last)."""
-    return redact_secrets(redact_urls_in_text(strip_browser_launch_noise(text or "")))
+    """Strip browser-launch noise, then URL-clean, collapse absolute paths and
+    secret-redact (redact_secrets is a superset safety net so it always runs
+    last).
+
+    Path collapsing lives here rather than at the individual call sites so it
+    covers exception messages and traceback source lines too, not just frame
+    filenames -- see collapse_paths_in_text(). All four steps are plain
+    non-recursive regex passes, so this stays cheap enough for the per-frame
+    hot path.
+    """
+    text = strip_browser_launch_noise(text or "")
+    text = redact_urls_in_text(text)
+    text = collapse_paths_in_text(text)
+    return redact_secrets(text)
+
+
+def _hash_token(value) -> str:
+    """Short, stable, non-reversible tag for a dropped value, so two reports
+    about the same URL are still recognizable as the same one without the
+    value itself ever being transmitted."""
+    return hashlib.sha256(value.encode("utf-8", errors="ignore")).hexdigest()[:8]
+
+
+def strip_url_paths(text) -> str:
+    """Reduce every URL in *text* to ``scheme://host/[path:<hash>]``.
+
+    redact_urls_in_text()/clean_url() keep the URL path, which is fine for a
+    traceback frame but not for a log line: this codebase logs content-
+    identifying watch URLs directly (the download watchdog logs the episode
+    URL), and the path is the part that says *what the user is watching*. In
+    the crash channel -- stage 1, enabled on its own by users who never
+    consented to any watch data -- the path therefore goes away entirely and
+    only a hash is kept for correlating repeat reports.
+    """
+    if not text:
+        return text
+
+    def _replace(match):
+        url = match.group(0)
+        cleaned = clean_url(url)
+        try:
+            parts = urlsplit(cleaned)
+        except Exception:
+            return "[unparsable-url]"
+        if not parts.scheme or not parts.netloc:
+            return cleaned
+        path = (parts.path or "").strip("/")
+        if not path:
+            return f"{parts.scheme}://{parts.netloc}"
+        return f"{parts.scheme}://{parts.netloc}/[path:{_hash_token(path)}]"
+
+    return _URL_RE.sub(_replace, text)
+
+
+# Word-ish token inside free text -- hostnames included, since "." is part of
+# the class. Used only to feed candidate tokens to is_adult_provider().
+_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+
+
+def mentions_adult_provider(text) -> bool:
+    """True if *text* names the age-gated provider -- by provider id
+    (``hanime_tv``) or by host (``hanime.tv``, ``www.hanime.tv``).
+
+    The is_adult_provider() guard is only reachable from the event builders in
+    events.py, which all receive an explicit provider argument. The crash
+    channel has no provider argument at all: it gets a free-text log message
+    that may contain the watch URL. This gives that path a way to ask the SAME
+    guard the same question -- it normalizes candidate tokens to the provider
+    id shape and defers to is_adult_provider(); it is not a second list.
+    """
+    if not text:
+        return False
+    for token in _TOKEN_RE.findall(text):
+        candidates = [token]
+        labels = [p for p in token.split(".") if p]
+        if len(labels) >= 2:
+            candidates.append(".".join(labels[-2:]))  # host -> registrable part
+        for candidate in candidates:
+            if is_adult_provider(_NON_ALNUM_RE.sub("_", candidate.lower()).strip("_")):
+                return True
+    return False
 
 
 def extract_traceback_frames(tb):

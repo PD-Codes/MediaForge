@@ -798,7 +798,12 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hov
   flex-wrap: wrap;
 }
 
-.accent-preset {
+/* .accent-preset-default is the instance-default row in Settings -> Design.
+   It looks identical but is deliberately NOT .accent-preset, because
+   applyAccent() in base.html marks every .accent-preset with the ACCOUNT's
+   colour -- which would light up the wrong swatch here. */
+.accent-preset,
+.accent-preset-default {
   width: 24px !important;
   height: 24px !important;
   border-radius: 50%;
@@ -808,11 +813,13 @@ body.icon-move :is(.sidebar-link, .sidebar-sub-link)[data-page="extensions"]:hov
   flex-shrink: 0;
 }
 
-.accent-preset:hover {
+.accent-preset:hover,
+.accent-preset-default:hover {
   transform: scale(1.15);
 }
 
-.accent-preset.active {
+.accent-preset.active,
+.accent-preset-default.active {
   border-color: var(--text-primary);
 }
 

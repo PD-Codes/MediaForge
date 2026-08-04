@@ -41,6 +41,7 @@ from ..logger import get_logger
 from . import events
 from .classify import is_transport_failure, is_user_cancellation
 from .client import get_client
+from .sanitize import mentions_adult_provider
 
 logger = get_logger(__name__)
 
@@ -163,6 +164,19 @@ class _TelemetryLogHandler(logging.Handler):
             # cancellation check above: most of these are logged as plain text
             # with no exception object attached.
             if is_transport_failure(message=raw_message):
+                return
+            # The 18+ hard rule (sanitize.is_adult_provider) applied to the raw
+            # log text, before anything is built. Call sites log content-
+            # identifying URLs directly -- web/queue_worker.py's download
+            # watchdog logs the episode URL -- and this handler turns EVERY
+            # ERROR record into a crash_reports event, i.e. a stage-1 channel a
+            # user can enable without consenting to any watch data. The event
+            # builders' provider guard never sees this path (there is no
+            # provider argument here), so the check has to happen on the message
+            # itself. Both branches below are covered: the exc_info branch
+            # reports the exception raised in the same context this line
+            # describes.
+            if mentions_adult_provider(raw_message):
                 return
             exc_info = record.exc_info or sys.exc_info()
             if exc_info and exc_info[0] is not None and is_user_cancellation(exc_info[0], exc_info[1]):

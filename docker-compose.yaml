@@ -16,8 +16,12 @@ services:
       #       Existing .env files are automatically imported on first start.
       - mediaforge-data:/home/mediaforge/.mediaforge
       # Scratch space for full episode downloads/transcodes (yt-dlp + ffmpeg
-      # intermediates). Kept as a real disk-backed volume instead of the /tmp
-      # tmpfs below, since a single episode can be several GB — too big for RAM.
+      # intermediates) AND the player's HLS segment dirs. Kept as a real
+      # disk-backed volume instead of the /tmp tmpfs below, since a single
+      # episode can be several GB — too big for RAM. Size it for the worst
+      # case: one download/encode temp file per active job plus, per streaming
+      # viewer, the segments of an entire title (roughly the size of the
+      # source, up to 8 concurrent sessions).
       - mediaforge-tmp:/tmp/mediaforge
       - aniworld-data:/home/mediaforge/.aniworld:ro # for the migration
 
@@ -67,9 +71,11 @@ services:
       - /run:size=128m
       # Needed because read_only:true otherwise makes /tmp read-only too. Only
       # covers small stuff (log file, dbus socket, captcha browser-profile
-      # fallback, transcoder session dirs) — the big scratch dir is the
-      # mediaforge-tmp volume above, mounted over /tmp/mediaforge, so it isn't
-      # limited by this tmpfs size.
+      # fallback) — everything that can grow, including the transcoder's HLS
+      # segment dirs, goes to the mediaforge-tmp volume above, mounted over
+      # /tmp/mediaforge, so it isn't limited by this tmpfs size. Do not point
+      # bulk data at /tmp itself: filling this tmpfs eats RAM and breaks the
+      # captcha browser and logging along with it.
       - /tmp:size=512m
 
     # Chromium's crashpad handler needs a writable config/cache dir. With

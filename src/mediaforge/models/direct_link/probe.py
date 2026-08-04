@@ -26,6 +26,32 @@ from .resolver import (
 
 logger = get_logger(__name__)
 
+
+class UnsafeUrlError(ValueError):
+    """Raised when a URL points at a non-http(s) scheme or an internal address.
+
+    Direct Link fetches, yt-dlp-probes and even headless-browser-renders whatever
+    URL the user pastes, so without this gate any logged-in user could aim it at
+    the host's LAN / loopback / cloud metadata services (SSRF).
+    """
+
+
+def assert_safe_url(url):
+    """Raise UnsafeUrlError unless *url* passes the shared SSRF gate.
+
+    Reuses web/stream_proxy.py's is_safe_url() (the same check the HLS proxy
+    applies) instead of a second implementation. Imported lazily to keep this
+    model module free of an import-time dependency on the web package.
+    """
+    from ...web.stream_proxy import is_safe_url
+
+    if not is_safe_url(url):
+        raise UnsafeUrlError(f"URL points at a forbidden address: {url}")
+
+
+# How many redirects the static page scan follows; each hop is re-checked.
+MAX_PAGE_REDIRECTS = 5
+
 _RESOLVE_CACHE = {}
 _RESOLVE_CACHE_TTL = 600  # 10 minutes (600 seconds)
 
@@ -78,16 +104,32 @@ def find_candidate_urls_in_page(url, timeout=15):
     resolves -- a page can link to several mirrors and some may be dead.
     """
     import requests
+    from urllib.parse import urljoin
 
     try:
-        resp = requests.get(
-            url,
-            headers={
-                "User-Agent": DIRECT_LINK_USER_AGENT,
-                "Accept-Encoding": "gzip, deflate",
-            },
-            timeout=timeout,
-        )
+        assert_safe_url(url)
+        # Follow redirects manually so every hop can be re-checked BEFORE it is
+        # fetched -- requests' own redirect handling would already have hit an
+        # internal address by the time resp.history could be inspected.
+        current = url
+        resp = None
+        for _ in range(MAX_PAGE_REDIRECTS + 1):
+            resp = requests.get(
+                current,
+                headers={
+                    "User-Agent": DIRECT_LINK_USER_AGENT,
+                    "Accept-Encoding": "gzip, deflate",
+                },
+                timeout=timeout,
+                allow_redirects=False,
+            )
+            if resp.is_redirect and resp.headers.get("Location"):
+                current = urljoin(current, resp.headers["Location"])
+                assert_safe_url(current)
+                continue
+            break
+        else:
+            raise RuntimeError("too many redirects")
         resp.raise_for_status()
         html = resp.text
     except Exception as e:
@@ -147,6 +189,11 @@ def discover_and_resolve(url, timeout=12, use_cache=True):
     """
     default_headers = {"User-Agent": DIRECT_LINK_USER_AGENT}
 
+    # SSRF gate: everything below fetches, yt-dlp-probes or headless-renders
+    # this URL, so refuse internal/loopback targets and non-http(s) schemes up
+    # front. Raises UnsafeUrlError.
+    assert_safe_url(url)
+
     if _MEDIA_URL_RE.search(url) or _NATIVE_YTDLP_HOSTS_RE.search(url):
         return None, url, default_headers
 
@@ -162,6 +209,8 @@ def discover_and_resolve(url, timeout=12, use_cache=True):
     if name:
         try:
             stream_url, headers = resolve_stream_for_provider(name, url, timeout=timeout)
+            # The host decides the final stream URL, so re-check it too.
+            assert_safe_url(stream_url)
             logger.warning(f"[DirectLink] {url} is itself a known embed link ({name}), resolved successfully")
             _RESOLVE_CACHE[url] = (time.time(), name, stream_url, headers)
             return name, stream_url, headers
@@ -170,7 +219,9 @@ def discover_and_resolve(url, timeout=12, use_cache=True):
 
     for cand_name, cand_url in find_candidate_urls_in_page(url, timeout=timeout):
         try:
+            assert_safe_url(cand_url)
             stream_url, headers = resolve_stream_for_provider(cand_name, cand_url, timeout=timeout)
+            assert_safe_url(stream_url)
             logger.warning(f"[DirectLink] {url}: resolved via embedded {cand_name} link ({cand_url})")
             _RESOLVE_CACHE[url] = (time.time(), cand_name, stream_url, headers)
             return cand_name, stream_url, headers
@@ -181,6 +232,7 @@ def discover_and_resolve(url, timeout=12, use_cache=True):
     sniffed = sniff_media_url(url, timeout=timeout)
     if sniffed:
         stream_url, headers = sniffed
+        assert_safe_url(stream_url)
         logger.warning(f"[DirectLink] {url}: resolved via browser network-sniff ({stream_url[:100]})")
         _RESOLVE_CACHE[url] = (time.time(), None, stream_url, headers)
         return None, stream_url, headers

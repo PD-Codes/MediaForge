@@ -188,7 +188,14 @@ async function loadSettings() {
     if (defaultAccentHex && data.default_accent !== undefined) {
       defaultAccentHex.value = data.default_accent || "";
       const picker = document.getElementById("defaultAccentPicker");
-      if (picker && data.default_accent) picker.value = data.default_accent;
+      // "" means "built-in colour", and an <input type=color> has no empty
+      // state -- left unset it renders black, which reads as a real (wrong)
+      // choice. Fall back to the built-in accent instead.
+      if (picker) picker.value = data.default_accent || MF_BUILTIN_ACCENT;
+      // Build here too: this response can land before DOMContentLoaded, and
+      // marking a row that does not exist yet silently loses the active dot.
+      buildDefaultAccentPresets();
+      markDefaultAccentPreset(data.default_accent || "");
     }
     if (data.sync_default_custom_path !== undefined) {
       _syncDefaultPathWanted = String(data.sync_default_custom_path || "");
@@ -3036,6 +3043,50 @@ function saveThemePackDefault() {
 // (default_theme_mode / default_accent), NOT the per-account theme_mode and
 // accent -- those are on the profile page, and an admin changing them there
 // changes only their own view, which is exactly the confusion this splits up.
+// The built-in accent, kept in sync with _DEFAULT_ACCENT in base.html.
+const MF_BUILTIN_ACCENT = "#7c3aed";
+
+// Preset swatches for the instance default, mirroring the account-level row
+// on the profile page. Read from base.html's _ACCENT_PRESETS when available
+// so there is one list of colours, not two that drift apart.
+function _defaultAccentPresets() {
+  return (typeof _ACCENT_PRESETS !== "undefined" && _ACCENT_PRESETS.length)
+    ? _ACCENT_PRESETS
+    : [
+      { color: "#7c3aed", name: "Purple" }, { color: "#3b82f6", name: "Blue" },
+      { color: "#06b6d4", name: "Cyan" }, { color: "#22c55e", name: "Green" },
+      { color: "#f97316", name: "Orange" }, { color: "#ec4899", name: "Pink" },
+      { color: "#ef4444", name: "Red" }, { color: "#eab308", name: "Yellow" },
+    ];
+}
+
+function markDefaultAccentPreset(hex) {
+  const want = String(hex || "").toLowerCase();
+  document.querySelectorAll(".accent-preset-default").forEach(function (el) {
+    el.classList.toggle("active", el.dataset.color === want);
+  });
+}
+
+function buildDefaultAccentPresets() {
+  const box = document.getElementById("defaultAccentPresets");
+  if (!box || box.childElementCount) return;
+  _defaultAccentPresets().forEach(function (p) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "accent-preset-default";
+    btn.title = p.name;
+    btn.dataset.color = p.color;
+    btn.style.background = p.color;
+    btn.addEventListener("click", function () {
+      const hex = document.getElementById("defaultAccentHex");
+      if (hex) hex.value = p.color;
+      markDefaultAccentPreset(p.color);
+      saveAppearanceDefaults(p.color);
+    });
+    box.appendChild(btn);
+  });
+}
+
 function saveAppearanceDefaults(pickedColour) {
   const mode = document.getElementById("defaultThemeMode");
   const hex = document.getElementById("defaultAccentHex");
@@ -3048,7 +3099,8 @@ function saveAppearanceDefaults(pickedColour) {
     showToast(t("Ungültige Farbe (z. B. #7c3aed)", "Invalid colour (e.g. #7c3aed)"), "error");
     return;
   }
-  if (picker && accent) picker.value = accent;
+  if (picker) picker.value = accent || MF_BUILTIN_ACCENT;
+  markDefaultAccentPreset(accent);
 
   fetch("/api/settings", {
     method: "PUT",
@@ -3089,6 +3141,7 @@ function saveDefaultLanguage(lang) {
 }
 
 document.addEventListener("DOMContentLoaded", function () {
+  buildDefaultAccentPresets();
   document.querySelectorAll("[data-default-lang]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       saveDefaultLanguage(btn.dataset.defaultLang);
