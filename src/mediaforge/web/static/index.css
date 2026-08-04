@@ -1633,11 +1633,31 @@ a.hp-item:focus-visible {
 }
 
 /* Title and meta share the remaining width and stay on one line each. */
+/* Two lines: the title, then everything that describes the entry on one
+   shared line -- genre, source, streaming service. They are flat siblings, so
+   the line break is made by letting the title claim the full first line and
+   letting the rest wrap after it. Stacking each on its own line instead cost
+   ~15px of height per row and left the pills looking like strays. */
 .home-density-list .browse-info {
   flex: 1 1 auto;
   min-width: 0;
   padding: 0;
   text-align: left;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 3px;
+}
+
+.home-density-list .browse-title {
+  flex: 0 0 100%;
+  margin-bottom: 0;
+}
+
+.home-density-list .browse-genre {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .home-density-list .home-pcard-title,
@@ -1658,9 +1678,13 @@ a.hp-item:focus-visible {
    card. */
 .home-density-list .browse-src-pill {
   position: relative;
+  /* The poster rule positions the pill with bottom/left; those are still set
+     here, and under position:relative they become OFFSETS -- the pill was
+     shifted 8px up and left and overlapped its neighbour. */
+  left: auto;
+  bottom: auto;
   display: inline-block;
   vertical-align: middle;
-  margin-top: 4px;
 }
 
 /* The streaming-service pills (Netflix, Apple TV+ ...) live in the same text
@@ -1673,7 +1697,10 @@ a.hp-item:focus-visible {
 .home-density-list .browse-tmdb-meta {
   display: inline-flex;
   vertical-align: middle;
-  margin: 4px 6px 0 0;
+  max-width: 100%;
+  /* The 20px bottom margin is poster spacing; in a row it was most of the
+     wasted height under every entry. */
+  margin: 0;
 }
 
 /* Same for the "Downloaded" / Auto-Sync markers: absolute on a card, and on a
@@ -1732,7 +1759,10 @@ a.hp-item:focus-visible {
 @media (max-width: 620px) {
   .home-density-list .home-pcard-bar,
   .home-density-list .home-pcard-sub,
-  .home-density-list .browse-card .genres { display: none; }
+  .home-density-list .browse-card .genres,
+  /* The meta line has to fit the source and the streaming service; the genre
+     is the least load-bearing of the three and goes first. */
+  .home-density-list .browse-genre { display: none; }
   .home-density-list .downloaded-badge,
   .home-density-list .card-top-badge,
   .home-density-list .hanime-pill { margin-left: auto; }
