@@ -4,8 +4,16 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# System dependencies + unprivileged user in one layer
-RUN apt-get update && apt-get install -y \
+# System dependencies + unprivileged user in one layer.
+#
+# The `apt-get upgrade` is not cosmetic: the python:3.13-slim base is rebuilt on
+# its own schedule, so between two base releases it carries whatever Debian
+# packages were current at build time -- including ones with published security
+# fixes. That is how six HIGH CVEs in libssh-4 (pulled in transitively by mpv
+# and ffmpeg, not requested here) failed the Trivy gate while a fixed version
+# had been in debian-security for a while. Upgrading first means the image
+# tracks debian-security instead of the base image's cadence.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ffmpeg \
     mpv \
     # bsdtar (libarchive) reads RAR4 and RAR5, which is what .cbr comic
@@ -77,10 +85,17 @@ RUN apt-get update && apt-get install -y \
 # copies the data on first boot; the folder stays empty and harmless otherwise.
 
 # Container-friendly Python & UV defaults
+# UV_NO_CACHE: XDG_CACHE_HOME points at /tmp below (Chromium needs a writable
+# one), so uv wrote its download cache there and every wheel got baked into the
+# image -- a second, unreachable copy of every dependency. It cost image size
+# and it made the vulnerability scan report each finding twice, once for the
+# installed package and once for the cached archive it came from. The venv is
+# what runs; the cache has no reader after the build.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH"
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/

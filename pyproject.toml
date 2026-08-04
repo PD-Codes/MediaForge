@@ -126,6 +126,25 @@ test = [
   "pytest>=8",
 ]
 
+[tool.uv]
+# Security floors, not feature requirements. `uv lock` on its own keeps a
+# resolved version forever unless something forces it up, so a transitive
+# dependency can sit on a version with a published CVE indefinitely and only
+# the image scan notices. A floor here makes the next resolution refuse the
+# vulnerable range instead.
+#
+# constraint-dependencies (rather than adding these to [project] dependencies)
+# because we do not depend on them directly and should not claim to:
+#   aiohttp       comes in via pywebpush
+#   cryptography  is a direct dependency, but the floor belongs with its peers
+#
+#   aiohttp      < 3.14.3  CVE-2026-69244  OOB heap read in the C response parser
+#   cryptography < 50.0.0  CVE-2026-69247  Bleichenbacher oracle in PKCS#7 decrypt
+constraint-dependencies = [
+  "aiohttp>=3.14.3",
+  "cryptography>=50.0.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Only files following this pattern are collected -- tests/ also holds the
