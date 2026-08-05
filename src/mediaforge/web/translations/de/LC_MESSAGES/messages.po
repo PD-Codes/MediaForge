@@ -7827,3 +7827,80 @@ msgstr "abgelehnt"
 #: src/mediaforge/web/templates/settings.html
 msgid "No library locations configured."
 msgstr "Keine Bibliotheksorte konfiguriert."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Machine-readable description"
+msgstr "Maschinenlesbare Beschreibung"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The OpenAPI document describes every endpoint, its parameters and the scope it needs. It is generated from the routes that are actually running, so it cannot drift from the code, and it is readable without a key — a client cannot know which scopes to ask for until it can read the spec."
+msgstr "Das OpenAPI-Dokument beschreibt jeden Endpunkt, seine Parameter und den benötigten Scope. Es wird aus den tatsächlich laufenden Routen erzeugt und kann daher nicht vom Code abweichen — und es ist ohne Schlüssel lesbar, denn ein Client kann nicht wissen, welche Scopes er anfragen muss, bevor er die Spezifikation lesen kann."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Scoped API keys"
+msgstr "API-Schlüssel mit Scopes"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The single key above is all-or-nothing: whatever can read the status can also read your whole library and history. A scoped key carries only the scopes you pick, can be revoked or expired on its own, and is stored hashed — so it is shown exactly once, when you create it, and cannot be recovered afterwards. The single key keeps working and grants every scope."
+msgstr "Der einzelne Schlüssel oben ist alles-oder-nichts: Was den Status lesen kann, liest auch die ganze Bibliothek und den Verlauf. Ein Schlüssel mit Scopes trägt nur, was du auswählst, lässt sich einzeln widerrufen oder befristen und wird gehasht gespeichert — er wird also genau einmal angezeigt, beim Anlegen, und ist danach nicht wiederherstellbar. Der einzelne Schlüssel funktioniert weiter und gewährt alle Scopes."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "New API key"
+msgstr "Neuer API-Schlüssel"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No scoped keys yet."
+msgstr "Noch keine Schlüssel mit Scopes."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "API key created"
+msgstr "API-Schlüssel angelegt"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Copy it now. Only a hash is stored, so this key cannot be shown again — if you lose it, revoke it and create another."
+msgstr "Jetzt kopieren. Gespeichert wird nur ein Hash, dieser Schlüssel lässt sich also nicht erneut anzeigen — geht er verloren, widerrufe ihn und lege einen neuen an."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Copied"
+msgstr "Kopiert"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Scopes"
+msgstr "Scopes"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Pick only what the client needs. A dashboard that shows a queue count needs status:read and nothing else."
+msgstr "Wähle nur, was der Client wirklich braucht. Ein Dashboard, das eine Warteschlangenzahl anzeigt, braucht status:read und sonst nichts."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Pick at least one scope."
+msgstr "Mindestens einen Scope auswählen."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Expires (optional)"
+msgstr "Läuft ab (optional)"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "expires"
+msgstr "läuft ab"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "last used"
+msgstr "zuletzt benutzt"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "expired"
+msgstr "abgelaufen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "active"
+msgstr "aktiv"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Revoke"
+msgstr "Widerrufen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Revoke this key? Anything using it stops working immediately."
+msgstr "Diesen Schlüssel widerrufen? Alles, was ihn benutzt, funktioniert sofort nicht mehr."
+

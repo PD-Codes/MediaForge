@@ -1259,6 +1259,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         from .routes.ops import ADMIN_ONLY_OPS_ENDPOINTS
         _admin_only |= set(ADMIN_ONLY_OPS_ENDPOINTS)
 
+        # Used by the _exempt set below: every /api/v1/ endpoint authenticates
+        # with an API key instead of a session, so none of them may be wrapped
+        # in login_required.
+        from .routes.v1_api import _V1_ENDPOINT_SCOPES
+
         # Published so it can be asserted on (tests/test_admin_gating.py):
         # authorisation lives in this hand-maintained set, not on the routes,
         # so a new endpoint is login-protected but NOT admin-protected unless
@@ -1342,6 +1347,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # learns only whether the process is up.
             "healthz",
             "readyz",
+            # The OpenAPI document for the external API. A client cannot know
+            # which scopes to ask for until it can read the spec, so requiring
+            # a key to fetch it is a chicken-and-egg problem. It describes
+            # shapes, not data: endpoint names, parameter types and the scope
+            # each one needs -- nothing an unauthenticated caller could not
+            # read in the public documentation.
+            "api_v1_openapi",
             # SyncPlay guest endpoints — gated by room token + enabled flag,
             # so invited guests can watch together without an account.
             "api_syncplay_config",
@@ -1376,14 +1388,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_stream_status",
             "api_stream_stop",
             "api_stream_active",
-            # External REST API — authenticated via API key, not session
-            "api_v1_status",
-            "api_v1_queue",
-            "api_v1_queue_item",
-            "api_v1_library",
-            "api_v1_library_series",
-            "api_v1_library_movies",
-            "api_v1_stats",
+            # External REST API — authenticated via API key, not session.
+            # The list is imported from routes/v1_api.py rather than typed out
+            # here, and that is a bug fix, not tidying: this set used to name
+            # seven of the thirteen v1 endpoints by hand. The other six
+            # (autosync, uptime, update-status, mediascan, upscale, history)
+            # were wrapped in login_required, which answers /api/ paths with a
+            # plain 401 -- so a caller with a perfectly valid API key was told
+            # its key was wrong, and the obvious next step (regenerate it)
+            # changed nothing. Deriving the set means a new v1 endpoint cannot
+            # be born broken the same way.
+            *_V1_ENDPOINT_SCOPES,
             # Calendar ICS subscription feed — authenticated by a per-user
             # token in the query string, not by session. A calendar client
             # (Google/Apple/Thunderbird/DAVx5) sends no cookies, so a login

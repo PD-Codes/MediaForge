@@ -83,7 +83,12 @@ def test_anonymous_requests_are_redirected_or_rejected(app, client):
     # names, no error text -- so an unauthenticated caller learns only whether
     # the process is up. (/healthz is already covered by the "/health" prefix
     # in exempt_prefixes above.)
+    # api_v1_openapi is the machine-readable description of the external API.
+    # A client cannot know which scopes to ask for until it can read the spec,
+    # so requiring a key to fetch it is a chicken-and-egg problem. It describes
+    # shapes -- endpoint names, parameter types, required scopes -- not data.
     known_exempt = {"api_syncplay_rooms", "api_syncplay_config", "api_health",
-                    "api_calendar_ics", "syncplay_page", "readyz"}
+                    "api_calendar_ics", "syncplay_page", "readyz",
+                    "api_v1_openapi"}
     unexpected = [x for x in leaked if x.split(" ")[0] not in known_exempt]
     assert not unexpected, "reachable without a login:\n  " + "\n  ".join(unexpected)

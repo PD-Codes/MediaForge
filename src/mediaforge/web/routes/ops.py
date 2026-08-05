@@ -362,6 +362,69 @@ def register_ops_routes(app):
                          as_attachment=True, download_name=filename)
 
     # -----------------------------------------------------------------
+    # Scoped API keys
+    # -----------------------------------------------------------------
+    @app.route("/api/ops/api-keys")
+    def api_ops_api_keys():
+        guard = _require_admin()
+        if guard:
+            return guard
+        from .. import api_keys
+        return jsonify({"keys": api_keys.list_keys(), "scopes": api_keys.SCOPES})
+
+    @app.route("/api/ops/api-keys", methods=["POST"])
+    def api_ops_api_key_create():
+        """Create a key. The plaintext is in THIS response and nowhere else.
+
+        Only the hash is stored, so there is no "show key" later. That is the
+        point -- a stolen database must not hand the attacker working API
+        credentials -- and it is why the UI makes a fuss about copying it now.
+        """
+        guard = _require_admin()
+        if guard:
+            return guard
+        from .. import audit as _audit
+        from .. import api_keys
+        data = _body()
+        plaintext, err = api_keys.create_key(
+            data.get("name", ""), data.get("scopes"),
+            expires_at=(data.get("expires_at") or None))
+        if err:
+            return jsonify({"error": err}), 400
+        _audit.audit("api", "api_key_created", target=data.get("name", ""),
+                     detail={"scopes": data.get("scopes"),
+                             "expires_at": data.get("expires_at")},
+                     severity="notice")
+        return jsonify({"ok": True, "key": plaintext})
+
+    @app.route("/api/ops/api-keys/<int:key_id>", methods=["PUT"])
+    def api_ops_api_key_update(key_id):
+        guard = _require_admin()
+        if guard:
+            return guard
+        from .. import audit as _audit
+        from .. import api_keys
+        enabled = bool(_body().get("enabled", True))
+        ok = api_keys.set_enabled(key_id, enabled)
+        if ok:
+            _audit.audit("api", "api_key_enabled" if enabled else "api_key_disabled",
+                         target=str(key_id), severity="notice")
+        return jsonify({"ok": ok}), (200 if ok else 404)
+
+    @app.route("/api/ops/api-keys/<int:key_id>", methods=["DELETE"])
+    def api_ops_api_key_delete(key_id):
+        guard = _require_admin()
+        if guard:
+            return guard
+        from .. import audit as _audit
+        from .. import api_keys
+        ok = api_keys.delete_key(key_id)
+        if ok:
+            _audit.audit("api", "api_key_revoked", target=str(key_id),
+                         severity="warning")
+        return jsonify({"ok": ok}), (200 if ok else 404)
+
+    # -----------------------------------------------------------------
     # Settings profiles
     # -----------------------------------------------------------------
     @app.route("/api/ops/profile/export")
@@ -554,6 +617,8 @@ ADMIN_ONLY_OPS_ENDPOINTS = frozenset({
     "api_ops_maintenance_update", "api_ops_maintenance_delete",
     "api_ops_diagnostics",
     "api_ops_profile_export", "api_ops_profile_preview", "api_ops_profile_import",
+    "api_ops_api_keys", "api_ops_api_key_create", "api_ops_api_key_update",
+    "api_ops_api_key_delete",
     "api_ops_rules", "api_ops_rule_create", "api_ops_rule_update",
     "api_ops_rule_delete", "api_ops_rules_test",
     "api_ops_language_profiles", "api_ops_language_profile_create",

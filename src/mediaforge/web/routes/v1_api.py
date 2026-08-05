@@ -45,9 +45,9 @@ from ..uptime_monitor import _uptime_config
 from ..version_info import _get_display_version
 from flask import Response as _FlaskResponse
 from flask import g
-from flask import jsonify
 from flask import request
 import json
+import re
 import secrets
 import threading
 import time
@@ -142,32 +142,94 @@ def _report_v1_call(endpoint, status):
         logger.debug("[Telemetry] failed to build/submit v1 API events", exc_info=True)
 
 
+# Which scope each v1 endpoint requires. Kept as a map rather than read back
+# out of the route functions because the OpenAPI document has to state it, and
+# a specification that derives its facts from a second hand-maintained list is
+# a specification that drifts. tests/test_api_keys.py asserts that every
+# registered /api/v1/ endpoint appears here.
+_V1_ENDPOINT_SCOPES: dict[str, str] = {
+    "api_v1_status":         "status:read",
+    "api_v1_queue":          "queue:read",
+    "api_v1_queue_item":     "queue:read",
+    "api_v1_library":        "library:read",
+    "api_v1_library_series": "library:read",
+    "api_v1_library_movies": "library:read",
+    "api_v1_stats":          "stats:read",
+    "api_v1_autosync":       "autosync:read",
+    "api_v1_uptime":         "uptime:read",
+    "api_v1_update_status":  "update:read",
+    "api_v1_mediascan":      "library:read",
+    "api_v1_upscale":        "queue:read",
+    "api_v1_history":        "history:read",
+}
+
+
 def _v1_json(data, status=200):
     """Pretty-printed JSON response for all /api/v1/ endpoints."""
     body = json.dumps(data, indent=2, ensure_ascii=False, default=str) + "\n"
     return _FlaskResponse(body, status=status, mimetype="application/json")
 
 
-def _check_api_key():
-    """Return a 401 JSON response if the API key is invalid, else None.
+def _check_api_key(scope: str = ""):
+    """Return an error JSON response if the caller may not proceed, else None.
 
     Accepts the key either via the X-Api-Key header (preferred) or an
     ?apikey= query param — the latter matches the example URL shown on the
     Settings page's API docs table, which used to be undocumented dead
     weight since only the header was actually checked.
+
+    Two kinds of key are accepted, in this order:
+
+    1. A **scoped key** (web/api_keys.py). Only its hash is stored, it carries
+       a scope set, and it can be revoked or expired individually.
+    2. The **legacy key** (``external_api_key`` in app_settings). It grants
+       every scope and keeps working unchanged. Breaking every existing Home
+       Assistant integration to introduce scopes would be a poor trade, so
+       scoped keys are offered as an upgrade rather than imposed as one.
+
+    ``scope`` names what this endpoint needs. An authenticated caller without
+    it gets 403, not 401: the credential was fine, the permission was not, and
+    conflating the two sends people to regenerate a key that was never the
+    problem.
     """
-    stored = get_setting("external_api_key", "")
-    if not stored:
-        return jsonify({"error": "API key not configured"}), 500
+    from .. import api_keys as _api_keys
+
     provided = request.headers.get("X-Api-Key", "") or request.args.get("apikey", "")
-    if not provided or not secrets.compare_digest(provided, stored):
+    if not provided:
         return _v1_json({
             "error": "Unauthorized",
             "message": "Provide your API key via the X-Api-Key header or an ?apikey= query param.",
         }, status=401)
+
+    granted = None
+    resolved = _api_keys.verify(provided)
+    if resolved:
+        granted = resolved["scopes"]
+        g._v1_key_name = resolved["name"]
+    else:
+        stored = get_setting("external_api_key", "")
+        if stored and secrets.compare_digest(provided, stored):
+            granted = [_api_keys.WILDCARD]
+            g._v1_key_name = "legacy"
+
+    if granted is None:
+        return _v1_json({
+            "error": "Unauthorized",
+            "message": "Unknown, disabled or expired API key.",
+        }, status=401)
+
+    if scope and not _api_keys.has_scope(granted, scope):
+        return _v1_json({
+            "error": "Forbidden",
+            "message": "This API key does not carry the %r scope." % scope,
+            "required_scope": scope,
+            "granted_scopes": granted,
+        }, status=403)
+
     # Marks this request as a genuine API call for the telemetry hook below --
     # unauthenticated probes must not count as "the REST API was used".
     g._v1_authenticated = True
+    g._v1_scopes = granted
     return None
 
 
@@ -237,10 +299,84 @@ def register_v1_api_routes(app):
     tools/scripts, distinct from the internal /api/* endpoints the web UI
     itself uses (those are not versioned and can change shape freely).
     """
+    @app.route("/api/v1/openapi.json")
+    def api_v1_openapi():
+        """The machine-readable description of this API.
+
+        Served rather than shipped as a static file, and generated from the
+        registered routes rather than hand-written, because a specification
+        maintained separately from the code is a specification that is wrong.
+        The endpoint list, the scope each one needs and the version all come
+        from what is actually running.
+
+        Deliberately reachable **without** a key. A client cannot know which
+        scopes to ask for until it can read the spec, and the document
+        describes shapes, not data -- there is nothing in it that an
+        unauthenticated caller could not learn from the documentation.
+        """
+        from .. import api_keys as _api_keys
+
+        paths = {}
+        for rule in sorted(app.url_map.iter_rules(), key=lambda r: str(r)):
+            path = str(rule)
+            if not path.startswith("/api/v1/") or rule.endpoint == "api_v1_openapi":
+                continue
+            view = app.view_functions.get(rule.endpoint)
+            summary = ((view.__doc__ or "").strip().splitlines() or [""])[0]
+            scope = _V1_ENDPOINT_SCOPES.get(rule.endpoint, "")
+            # Flask's <int:queue_id> is not OpenAPI's {queue_id}.
+            spec_path = re.sub(r"<(?:[^:<>]+:)?([^<>]+)>", r"{\1}", path)
+            parameters = [
+                {"name": name, "in": "path", "required": True,
+                 "schema": {"type": "integer"}}
+                for name in re.findall(r"<(?:[^:<>]+:)?([^<>]+)>", path)
+            ]
+            paths[spec_path] = {
+                "get": {
+                    "summary": summary,
+                    "operationId": rule.endpoint,
+                    "security": [{"ApiKeyHeader": []}, {"ApiKeyQuery": []}],
+                    "parameters": parameters,
+                    "x-required-scope": scope,
+                    "responses": {
+                        "200": {"description": "Success"},
+                        "401": {"description": "Missing, unknown, disabled or expired key"},
+                        "403": {"description": "Key lacks the required scope"},
+                    },
+                }
+            }
+
+        return _v1_json({
+            "openapi": "3.0.3",
+            "info": {
+                "title": "MediaForge API",
+                "version": _get_display_version() or "1",
+                "description": (
+                    "External REST API. Authenticate with a scoped API key "
+                    "(Settings -> API) via the X-Api-Key header, or with the "
+                    "legacy single key, which carries every scope.\n\n"
+                    "Deprecation policy: a v1 endpoint is never removed or "
+                    "changed in a breaking way. Anything that has to change "
+                    "shape appears under a new path; anything on its way out "
+                    "answers with a Deprecation header for at least one minor "
+                    "release before it stops being documented."
+                ),
+            },
+            "servers": [{"url": "/"}],
+            "components": {
+                "securitySchemes": {
+                    "ApiKeyHeader": {"type": "apiKey", "in": "header", "name": "X-Api-Key"},
+                    "ApiKeyQuery": {"type": "apiKey", "in": "query", "name": "apikey"},
+                },
+            },
+            "x-scopes": _api_keys.SCOPES,
+            "paths": paths,
+        })
+
     @app.route("/api/v1/status")
     def api_v1_status():
         """Overall downloader status — safe to poll frequently."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("status:read")
         if auth_err:
             return auth_err
         from ...models.common.common import get_ffmpeg_progress
@@ -285,7 +421,7 @@ def register_v1_api_routes(app):
     @app.route("/api/v1/queue")
     def api_v1_queue():
         """All queue items, optionally filtered by ?status=<status>."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("queue:read")
         if auth_err:
             return auth_err
         items = get_queue()
@@ -302,7 +438,7 @@ def register_v1_api_routes(app):
     @app.route("/api/v1/queue/<int:queue_id>")
     def api_v1_queue_item(queue_id):
         """Single queue item detail."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("queue:read")
         if auth_err:
             return auth_err
         item = get_queue_item(queue_id)
@@ -317,28 +453,28 @@ def register_v1_api_routes(app):
     @app.route("/api/v1/library")
     def api_v1_library():
         """Full library — all titles (series + movies)."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("library:read")
         if auth_err:
             return auth_err
         return _v1_library_data(only_movies=None)
     @app.route("/api/v1/library/series")
     def api_v1_library_series():
         """Library — series only (no movies)."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("library:read")
         if auth_err:
             return auth_err
         return _v1_library_data(only_movies=False)
     @app.route("/api/v1/library/movies")
     def api_v1_library_movies():
         """Library — movies only."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("library:read")
         if auth_err:
             return auth_err
         return _v1_library_data(only_movies=True)
     @app.route("/api/v1/stats")
     def api_v1_stats():
         """Download statistics."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("stats:read")
         if auth_err:
             return auth_err
         return _v1_json(get_general_stats())
@@ -350,7 +486,7 @@ def register_v1_api_routes(app):
         current user's own jobs), this always returns every job — the external
         API has no notion of a logged-in user, only the shared API key.
         """
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("autosync:read")
         if auth_err:
             return auth_err
         jobs = get_autosync_jobs()
@@ -368,7 +504,7 @@ def register_v1_api_routes(app):
         status/uptime%/avg response time only, no bucketed history (that's
         a UI-chart concern, not something worth shipping to external pollers).
         """
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("uptime:read")
         if auth_err:
             return auth_err
         import time as _t
@@ -398,14 +534,14 @@ def register_v1_api_routes(app):
     def api_v1_update_status():
         """Self-update progress/state (download/apply progress of an in-flight
         update, or the idle state if none is running)."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("update:read")
         if auth_err:
             return auth_err
         return _v1_json(selfupdate.read_status())
     @app.route("/api/v1/mediascan")
     def api_v1_mediascan():
         """MediaScan (Plex/Jellyfin library import) run status + cached count."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("library:read")
         if auth_err:
             return auth_err
         with _mediascan_status_lock:
@@ -424,7 +560,7 @@ def register_v1_api_routes(app):
     @app.route("/api/v1/upscale")
     def api_v1_upscale():
         """Upscale queue — all items, badge count, and current job progress."""
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("queue:read")
         if auth_err:
             return auth_err
         try:
@@ -448,7 +584,7 @@ def register_v1_api_routes(app):
 
         Query params: ?limit=&offset=&status=&source=
         """
-        auth_err = _check_api_key()
+        auth_err = _check_api_key("history:read")
         if auth_err:
             return auth_err
         try:

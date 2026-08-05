@@ -832,6 +832,149 @@
   });
 
   /* ===============================================================
+   * Scoped API keys
+   * =============================================================== */
+  var scopeCatalogue = {};
+
+  function loadApiKeys() {
+    var box = document.getElementById("opsApiKeyList");
+    if (!box) { return; }
+    api("/api/ops/api-keys").then(function (data) {
+      scopeCatalogue = data.scopes || {};
+      var keys = data.keys || [];
+      if (!keys.length) {
+        box.innerHTML = '<div class="settings-hint">' +
+          esc(T("no_api_keys", "No scoped keys yet.")) + '</div>';
+        return;
+      }
+      box.innerHTML = keys.map(function (k) {
+        var state = !k.enabled ? T("disabled", "disabled")
+          : k.expired ? T("expired", "expired")
+          : T("active", "active");
+        return '' +
+          '<div class="ops-card' + (k.enabled && !k.expired ? "" : " is-off") + '">' +
+            '<div class="ops-card-head"><strong>' + esc(k.name) + '</strong>' +
+              '<span class="ops-pill">' + esc(state) + '</span></div>' +
+            '<div class="ops-card-meta">' +
+              '<span><code>' + esc(k.key_prefix) + '…</code></span>' +
+              '<span>' + esc(k.scopes.length) + ' ' + esc(T("scopes", "scopes")) + '</span>' +
+              '<span>' + esc(T("last_used", "last used")) + ': ' + esc(k.last_used || "—") + '</span>' +
+              (k.expires_at ? '<span>' + esc(T("expires", "expires")) + ': ' + esc(k.expires_at) + '</span>' : '') +
+            '</div>' +
+            '<div class="ops-card-rule"><code>' + esc(k.scopes.join(", ")) + '</code></div>' +
+            '<div class="ops-card-actions">' +
+              '<button type="button" class="btn btn-ghost" data-ops-key-toggle="' + esc(k.id) + '" ' +
+                'data-enabled="' + (k.enabled ? "1" : "0") + '">' +
+                esc(k.enabled ? T("disable", "Disable") : T("enable", "Enable")) + '</button>' +
+              '<button type="button" class="btn btn-ghost ops-danger" data-ops-key-del="' + esc(k.id) + '">' +
+                esc(T("revoke", "Revoke")) + '</button>' +
+            '</div>' +
+          '</div>';
+      }).join("");
+    }).catch(function (exc) {
+      box.innerHTML = '<div class="settings-hint">' + esc(exc.message) + '</div>';
+    });
+  }
+
+  window.opsApiKeyCreate = function () {
+    var rows = Object.keys(scopeCatalogue).sort().map(function (key) {
+      return '<label class="settings-checkbox-row ops-perm-row">' +
+        '<input type="checkbox" class="chb-main" data-scope-pick="' + esc(key) + '">' +
+        '<span><code>' + esc(key) + '</code></span></label>';
+    }).join("");
+
+    openModal(T("new_api_key", "New API key"),
+      '<div class="settings-field"><label class="settings-field-label" for="opsKeyName">' +
+        esc(T("name", "Name")) + '</label>' +
+        '<input type="text" id="opsKeyName" placeholder="Home Assistant"></div>' +
+      '<div class="settings-field"><label class="settings-field-label" for="opsKeyExpires">' +
+        esc(T("expires_optional", "Expires (optional)")) + '</label>' +
+        '<input type="date" id="opsKeyExpires"></div>' +
+      '<div class="settings-field"><span class="settings-field-label">' +
+        esc(T("scopes", "Scopes")) + '</span>' +
+        '<div class="ops-perm-grid">' + rows + '</div>' +
+        '<span class="settings-hint">' + esc(T("scope_hint_key",
+          "Pick only what the client needs. A dashboard that shows a queue count needs status:read and nothing else.")) +
+        '</span></div>',
+      function (root) {
+        var scopes = Array.prototype.slice
+          .call(root.querySelectorAll("[data-scope-pick]"))
+          .filter(function (el) { return el.checked; })
+          .map(function (el) { return el.getAttribute("data-scope-pick"); });
+        if (!scopes.length) {
+          toast(T("pick_a_scope", "Pick at least one scope."), "error");
+          return false;
+        }
+        var expires = val(root, "opsKeyExpires");
+        return api("/api/ops/api-keys", {
+          method: "POST",
+          body: {
+            name: val(root, "opsKeyName"),
+            scopes: scopes,
+            // A date input gives a bare date; the server compares against a
+            // full timestamp, so pin it to the end of that day rather than
+            // to midnight — "expires on the 5th" should include the 5th.
+            expires_at: expires ? (expires + "T23:59:59") : null
+          }
+        }).then(function (res) {
+          loadApiKeys();
+          showNewKey(res.key);
+        });
+      });
+  };
+
+  function showNewKey(plaintext) {
+    // Only the hash is stored, so this is the one and only time the key
+    // exists anywhere outside the client. The dialog says so, and there is
+    // deliberately no "show key" anywhere else in the UI to contradict it.
+    openModal(T("api_key_created", "API key created"),
+      '<p class="settings-hint">' + esc(T("copy_now",
+        "Copy it now. Only a hash is stored, so this key cannot be shown again — if you lose it, revoke it and create another.")) +
+      '</p>' +
+      '<div class="settings-field">' +
+        '<input type="text" id="opsNewKeyValue" readonly value="' + esc(plaintext) + '" ' +
+        'style="font-family:monospace;font-size:0.82rem;"></div>' +
+      '<button type="button" class="btn btn-primary" id="opsCopyKey">' +
+        esc(T("copy", "Copy")) + '</button>', null);
+
+    var field = document.getElementById("opsNewKeyValue");
+    if (field) { field.focus(); field.select(); }
+    var copy = document.getElementById("opsCopyKey");
+    if (copy) {
+      copy.addEventListener("click", function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(plaintext).then(function () {
+            toast(T("copied", "Copied"), "success");
+          }).catch(function () { if (field) { field.select(); } });
+        } else if (field) {
+          // No clipboard API on plain http, which is a normal way to run this.
+          field.select();
+          document.execCommand("copy");
+          toast(T("copied", "Copied"), "success");
+        }
+      });
+    }
+  }
+
+  document.addEventListener("click", function (ev) {
+    var toggle = ev.target.closest("[data-ops-key-toggle]");
+    if (toggle) {
+      api("/api/ops/api-keys/" + toggle.getAttribute("data-ops-key-toggle"),
+          { method: "PUT", body: { enabled: toggle.getAttribute("data-enabled") !== "1" } })
+        .then(loadApiKeys).catch(fail);
+      return;
+    }
+    var del = ev.target.closest("[data-ops-key-del]");
+    if (del) {
+      if (!confirm(T("confirm_revoke",
+        "Revoke this key? Anything using it stops working immediately."))) { return; }
+      api("/api/ops/api-keys/" + del.getAttribute("data-ops-key-del"), { method: "DELETE" })
+        .then(function () { loadApiKeys(); toast(T("deleted", "Deleted"), "success"); })
+        .catch(fail);
+    }
+  });
+
+  /* ===============================================================
    * Settings profiles
    * =============================================================== */
   window.opsProfileExport = function () {
@@ -1081,6 +1224,7 @@
   function activate(tab) {
     if (tab === "auth" && !loaded.auth) { loaded.auth = true; loadGroups(); }
     if (tab === "rules" && !loaded.rules) { loaded.rules = true; loadRules(); loadProfiles(); }
+    if (tab === "api" && !loaded.api) { loaded.api = true; loadApiKeys(); }
     if (tab === "operations") {
       if (!loaded.operations) { loaded.operations = true; loadSchema(); loadWindows(); }
       startWorkerPolling();

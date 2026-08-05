@@ -1501,6 +1501,26 @@
         <code id="apiBaseUrlDisplay" style="font-size:0.85rem;">http://localhost:8080</code>
       </div>
       <div style="padding:4px 22px 16px;">
+        <div class="settings-subtitle" style="padding-left:0;">{{ _('Machine-readable description') }}</div>
+        <div class="settings-hint">
+          {{ _('The OpenAPI document describes every endpoint, its parameters and the scope it needs. It is generated from the routes that are actually running, so it cannot drift from the code, and it is readable without a key — a client cannot know which scopes to ask for until it can read the spec.') }}
+        </div>
+        <a href="/api/v1/openapi.json" target="_blank" rel="noopener"><code>/api/v1/openapi.json</code></a>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Scoped API keys') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('The single key above is all-or-nothing: whatever can read the status can also read your whole library and history. A scoped key carries only the scopes you pick, can be revoked or expired on its own, and is stored hashed — so it is shown exactly once, when you create it, and cannot be recovered afterwards. The single key keeps working and grants every scope.') }}
+      </div>
+      <div id="opsApiKeyList" class="ops-card-grid">
+        <div class="settings-hint">{{ _('Loading…') }}</div>
+      </div>
+      <div class="settings-row" style="margin-top:14px;">
+        <button type="button" class="btn btn-primary" onclick="opsApiKeyCreate()">{{ _('New API key') }}</button>
+      </div>
+      <div style="padding:4px 22px 16px;">
         <div class="settings-subtitle" style="padding-left:0;margin-bottom:8px;">{{ _('Endpoints') }}</div>
         <table class="api-endpoints-table">
           <tbody>
@@ -2077,6 +2097,25 @@ window.OPS_I18N = {
   all_permissions: {{ _('all permissions')|tojson }},
   all_libraries: {{ _('all libraries')|tojson }},
   no_locations: {{ _('No library locations configured.')|tojson }},
+
+  no_api_keys: {{ _('No scoped keys yet.')|tojson }},
+  new_api_key: {{ _('New API key')|tojson }},
+  api_key_created: {{ _('API key created')|tojson }},
+  copy_now: {{ _('Copy it now. Only a hash is stored, so this key cannot be shown again — if you lose it, revoke it and create another.')|tojson }},
+  copy: {{ _('Copy')|tojson }},
+  copied: {{ _('Copied')|tojson }},
+  scopes: {{ _('Scopes')|tojson }},
+  scope_hint_key: {{ _('Pick only what the client needs. A dashboard that shows a queue count needs status:read and nothing else.')|tojson }},
+  pick_a_scope: {{ _('Pick at least one scope.')|tojson }},
+  expires_optional: {{ _('Expires (optional)')|tojson }},
+  expires: {{ _('expires')|tojson }},
+  last_used: {{ _('last used')|tojson }},
+  expired: {{ _('expired')|tojson }},
+  active: {{ _('active')|tojson }},
+  enable: {{ _('Enable')|tojson }},
+  disable: {{ _('Disable')|tojson }},
+  revoke: {{ _('Revoke')|tojson }},
+  confirm_revoke: {{ _('Revoke this key? Anything using it stops working immediately.')|tojson }},
   library_scope: {{ _('Library scope')|tojson }},
   scope_hint: {{ _('Comma-separated library location ids, or * for all. Naming any location restricts members to those.')|tojson }},
   no_groups: {{ _('No groups.')|tojson }},

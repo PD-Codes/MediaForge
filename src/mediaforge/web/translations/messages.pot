@@ -7912,3 +7912,80 @@ msgstr ""
 #: src/mediaforge/web/templates/settings.html
 msgid "No library locations configured."
 msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Machine-readable description"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The OpenAPI document describes every endpoint, its parameters and the scope it needs. It is generated from the routes that are actually running, so it cannot drift from the code, and it is readable without a key — a client cannot know which scopes to ask for until it can read the spec."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Scoped API keys"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The single key above is all-or-nothing: whatever can read the status can also read your whole library and history. A scoped key carries only the scopes you pick, can be revoked or expired on its own, and is stored hashed — so it is shown exactly once, when you create it, and cannot be recovered afterwards. The single key keeps working and grants every scope."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "New API key"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No scoped keys yet."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "API key created"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Copy it now. Only a hash is stored, so this key cannot be shown again — if you lose it, revoke it and create another."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Copied"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Scopes"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Pick only what the client needs. A dashboard that shows a queue count needs status:read and nothing else."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Pick at least one scope."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Expires (optional)"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "expires"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "last used"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "expired"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "active"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Revoke"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Revoke this key? Anything using it stops working immediately."
+msgstr ""
+
