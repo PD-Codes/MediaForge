@@ -1,0 +1,402 @@
+/* Operations UI — groups, rules, language profiles, workers, snapshots,
+ * maintenance windows and the audit log.
+ *
+ * Everything here is built from the existing tokens (--bg-card, --border,
+ * --accent, --text-muted, --radius-lg). No hardcoded brand colour: a theme
+ * pack that repaints the app must repaint these panels too, and hardcoded
+ * violet is exactly what had to be swept out of ~25 places once already.
+ *
+ * Mobile is not an afterthought in this file. Every grid collapses to one
+ * column, the audit rows reflow from a four-column layout to stacked, and the
+ * modal becomes a bottom sheet — an admin checking why a download failed is
+ * very often doing it from a phone.
+ */
+
+/* ---------------------------------------------------------------- cards */
+.ops-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.ops-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 14px 16px;
+}
+
+.ops-card.is-builtin { border-left: 3px solid var(--accent); }
+.ops-card.is-off { opacity: 0.6; }
+
+.ops-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.ops-card-head strong { font-size: 0.95rem; }
+
+.ops-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.ops-card-desc {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.ops-card-rule {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.ops-card-rule code {
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.2));
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.ops-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.ops-pill {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ops-danger { color: var(--danger, #ef4444) !important; }
+.ops-warn { color: var(--warning, #f59e0b); }
+
+/* ------------------------------------------------------------- workers */
+.ops-worker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.ops-worker {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 14px 16px;
+}
+
+.ops-worker-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ops-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ops-state-running { border-left-color: var(--success, #22c55e); }
+.ops-state-running .ops-dot {
+  background: var(--success, #22c55e);
+  /* Only the running dot animates. A page full of pulsing indicators is
+     noise; one that moves means "something is happening right now". */
+  animation: ops-pulse 1.8s ease-in-out infinite;
+}
+.ops-state-error { border-left-color: var(--danger, #ef4444); }
+.ops-state-error .ops-dot { background: var(--danger, #ef4444); }
+.ops-state-stale { border-left-color: var(--warning, #f59e0b); }
+.ops-state-stale .ops-dot { background: var(--warning, #f59e0b); }
+
+@keyframes ops-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ops-state-running .ops-dot { animation: none; }
+}
+
+.ops-worker-detail {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.ops-worker-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 10px 0 0;
+  font-size: 0.76rem;
+}
+
+.ops-worker-facts dt { color: var(--text-muted); }
+.ops-worker-facts dd { margin: 0; }
+
+.ops-worker-error {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+  color: var(--danger, #ef4444);
+  font-size: 0.76rem;
+  word-break: break-word;
+}
+
+/* ------------------------------------------------------------ snapshots */
+.ops-snap-result {
+  margin-top: 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.ops-snap-result.is-ok { color: var(--success, #22c55e); }
+.ops-snap-result.is-bad { color: var(--danger, #ef4444); }
+
+/* ---------------------------------------------------------------- forms */
+.ops-form-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.ops-form-row .settings-field { flex: 1 1 160px; min-width: 0; }
+
+.ops-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.ops-perm-grid,
+.ops-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 6px 14px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.ops-perm-row { margin: 0; }
+.ops-perm-row code { font-size: 0.78rem; }
+
+.ops-day-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.ops-cond-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ops-cond-row select { flex: 0 1 140px; min-width: 0; }
+.ops-cond-row input { flex: 1 1 160px; min-width: 0; }
+
+.ops-result {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.78rem;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- audit */
+.ops-stat-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ops-stat {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-width: 100px;
+}
+
+.ops-stat b { display: block; font-size: 1.15rem; }
+.ops-stat span { font-size: 0.72rem; color: var(--text-muted); }
+
+.ops-audit-filters .settings-field { flex: 1 1 160px; min-width: 0; }
+
+.ops-audit-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+}
+
+.ops-audit-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 180px auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  font-size: 0.83rem;
+}
+
+.ops-audit-row:last-child { border-bottom: none; }
+.ops-sev-notice { border-left-color: var(--accent); }
+.ops-sev-warning { border-left-color: var(--warning, #f59e0b); }
+.ops-sev-critical { border-left-color: var(--danger, #ef4444); }
+
+.ops-audit-when { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ops-audit-main { min-width: 0; word-break: break-word; }
+.ops-audit-target { color: var(--text-muted); }
+.ops-audit-who { color: var(--text-muted); font-size: 0.78rem; }
+.ops-audit-ip { opacity: 0.7; }
+
+.ops-audit-more {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.ops-audit-detail {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  padding: 10px;
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.25));
+  border-radius: 8px;
+  font-size: 0.74rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- modal */
+.ops-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ops-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 14px);
+  width: min(680px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ops-modal-head,
+.ops-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+}
+
+.ops-modal-head { border-bottom: 1px solid var(--border); }
+.ops-modal-head h3 { margin: 0; flex: 1; font-size: 1rem; }
+
+.ops-modal-x {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.ops-modal-body {
+  padding: 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ops-modal-foot {
+  border-top: 1px solid var(--border);
+  justify-content: flex-end;
+}
+
+/* --------------------------------------------------------------- mobile */
+@media (max-width: 720px) {
+  .ops-card-grid,
+  .ops-worker-grid,
+  .ops-form-grid,
+  .ops-perm-grid,
+  .ops-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Four columns of audit metadata do not fit, and shrinking them makes the
+     timestamp unreadable. Stack instead, with the action first. */
+  .ops-audit-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 12px 14px;
+  }
+
+  .ops-audit-when { order: 2; font-size: 0.74rem; }
+  .ops-audit-main { order: 1; }
+  .ops-audit-who { order: 3; }
+  .ops-audit-more { order: 4; justify-self: start; }
+
+  .ops-cond-row select,
+  .ops-cond-row input { flex: 1 1 100%; }
+
+  /* Bottom sheet: a centred dialog on a phone leaves the action buttons
+     under the thumb only by accident. */
+  .ops-modal-backdrop { align-items: flex-end; padding: 0; }
+
+  .ops-modal {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    border-bottom: none;
+  }
+
+  .ops-modal-foot button { flex: 1; }
+}

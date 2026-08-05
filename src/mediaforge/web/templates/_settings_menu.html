@@ -4,6 +4,20 @@
    "Encoding" as the active entry). "Encoding" is always a real link to its
    own /encoding route (E2), inserted right after "General". is_admin gates
    the admin-only entries, matching settings.html's original gating. #}
+{# Three admin-only entries were added at the end of `rows`, and deliberately
+   only three: rules + language profiles share one tab because they answer the
+   same question ("how should this title be handled"), and everything
+   operational -- workers, schema snapshots, maintenance windows, diagnostics --
+   shares "Operations" rather than becoming four separate entries. Group
+   management lives inside "Authentication" next to the user list, where anyone
+   looking for it will already be.
+
+   NOTE: a Jinja comment must NOT be placed inside the "set rows = [...]"
+   expression below. Jinja does not strip comments inside an expression, so the
+   hash is parsed as part of it and the whole page dies with a
+   TemplateSyntaxError -- which is exactly what happened when this note was
+   first written in there. (Jinja comments do not nest either, which is why
+   this paragraph spells the markers out instead of showing them.) #}
 {% macro settings_menu(mode='tabs', active='overview', is_admin=True) %}
 <div class="settings-tabs floating-side-menu" id="settingsTabs">
   {%- set rows = [
@@ -20,7 +34,10 @@
       ('api', 'API', true),
       ('privacy', _('Privacy & Telemetry'), true),
       ('backup', _('Backup'), true),
-      ('updates', _('Updates'), false)
+      ('updates', _('Updates'), false),
+      ('rules', _('Rules & Languages'), true),
+      ('operations', _('Operations'), true),
+      ('audit', _('Audit Log'), true)
   ] -%}
   {%- for id, label, admin_only in rows %}
     {%- if not admin_only or is_admin %}

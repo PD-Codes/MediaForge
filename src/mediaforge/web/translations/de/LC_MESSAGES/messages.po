@@ -7313,3 +7313,460 @@ msgstr "Quellen"
 #: src/mediaforge/web/templates/index.html:392
 msgid "types"
 msgstr "Typen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Account"
+msgstr "Konto"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Rules & Languages"
+msgstr "Regeln & Sprachen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Operations"
+msgstr "Betrieb"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Audit Log"
+msgstr "Audit-Log"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Source order"
+msgstr "Reihenfolge der Quellen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Groups & Permissions"
+msgstr "Gruppen & Berechtigungen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The three built-in groups (Administrator, User, Kids) cannot be edited or removed — they define what the roles mean app-wide. Custom groups are additive: a member keeps everything their role grants and gains what the group adds. If a group names specific library locations, its members are restricted to those."
+msgstr "Die drei eingebauten Gruppen (Administrator, Benutzer, Kinder) lassen sich nicht bearbeiten oder löschen — sie legen app-weit fest, was die Rollen bedeuten. Eigene Gruppen kommen hinzu: Mitglieder behalten alles, was ihre Rolle gewährt, und bekommen dazu, was die Gruppe ergänzt. Nennt eine Gruppe bestimmte Bibliotheksorte, sind ihre Mitglieder auf diese beschränkt."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "New group"
+msgstr "Neue Gruppe"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Conditional handling per title, provider or language"
+msgstr "Bedingte Behandlung pro Titel, Anbieter oder Sprache"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Download rules"
+msgstr "Download-Regeln"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "A rule is a list of conditions and the actions to apply when they all match. Rules run in priority order, lowest number first, and later matches override earlier ones. A rule marked “stop” ends evaluation. A rule with no conditions matches everything — useful as a low-priority default."
+msgstr "Eine Regel besteht aus Bedingungen und den Aktionen, die greifen, wenn alle zutreffen. Regeln laufen nach Priorität, kleinste Zahl zuerst; spätere Treffer überschreiben frühere. Eine Regel mit „Stopp“ beendet die Auswertung. Eine Regel ohne Bedingungen trifft immer zu — praktisch als Vorgabe mit niedriger Priorität."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "New rule"
+msgstr "Neue Regel"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Test rules"
+msgstr "Regeln testen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Language profiles"
+msgstr "Sprachprofile"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "A profile is an ordered fallback chain. “First match” takes the first language that exists; “all” downloads every language in the chain. Titles bound to a profile ignore the global language setting."
+msgstr "Ein Profil ist eine geordnete Ausweichkette. „Erster Treffer“ nimmt die erste vorhandene Sprache, „alle“ lädt jede Sprache der Kette. Titel mit Profil ignorieren die globale Spracheinstellung."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "New profile"
+msgstr "Neues Profil"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Worker states, database snapshots, maintenance windows and diagnostics"
+msgstr "Worker-Zustände, Datenbank-Snapshots, Wartungsfenster und Diagnose"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Background workers"
+msgstr "Hintergrund-Worker"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Every worker reports what it is doing, when it last ran and what it last failed with. “Unknown” means the worker has never reported — which is different from “not running”."
+msgstr "Jeder Worker meldet, was er tut, wann er zuletzt lief und woran er zuletzt scheiterte. „Unbekannt“ heißt, dass der Worker noch nie gemeldet hat — das ist etwas anderes als „läuft nicht“."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Database schema & snapshots"
+msgstr "Datenbankschema & Snapshots"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "A snapshot is taken automatically before any schema change, and can be taken manually at any time. Verifying a snapshot opens it read-only and checks that it is actually restorable — an unverified backup is not a backup. Restoring replaces the live database and requires a restart."
+msgstr "Vor jeder Schemaänderung wird automatisch ein Snapshot angelegt, manuell geht das jederzeit. „Prüfen“ öffnet einen Snapshot schreibgeschützt und stellt fest, ob er sich wirklich zurückspielen lässt — ein ungeprüftes Backup ist kein Backup. Ein Zurückspielen ersetzt die laufende Datenbank und erfordert einen Neustart."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Create snapshot"
+msgstr "Snapshot erstellen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Maintenance windows"
+msgstr "Wartungsfenster"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Limit what the workers may do at certain times of day — for example one download and no encoding during working hours. Windows are restrictions: outside every window the normal settings apply. Overlapping windows combine to the strictest result."
+msgstr "Begrenzt, was die Worker zu bestimmten Tageszeiten dürfen — etwa ein Download und kein Encoding während der Arbeitszeit. Fenster sind Einschränkungen: außerhalb gelten die normalen Einstellungen. Überlappende Fenster ergeben zusammen das strengste Ergebnis."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "New window"
+msgstr "Neues Fenster"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Builds a ZIP with version and platform info, which settings are set (sensitive values replaced), table row counts, worker states, recent queue errors and the tail of the log. Paths, URLs and secret-shaped tokens are scrubbed. Nothing is sent anywhere — the file is generated on demand and downloaded once."
+msgstr "Erstellt ein ZIP mit Versions- und Plattforminfos, welche Einstellungen gesetzt sind (sensible Werte ersetzt), Zeilenzahlen der Tabellen, Worker-Zuständen, den letzten Warteschlangenfehlern und dem Ende des Logs. Pfade, URLs und geheimnisartige Zeichenketten werden bereinigt. Es wird nichts versendet — die Datei entsteht auf Anfrage und wird einmal heruntergeladen."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Download diagnostic bundle"
+msgstr "Diagnosepaket herunterladen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Who changed what, and when"
+msgstr "Wer hat wann was geändert"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "The audit log lives in its own database file so it survives a snapshot restore or a backup import. Entries are append-only and hash-chained: removing one from the middle breaks the chain and is detected by “Verify”. Sensitive values are never recorded — only the fact that they changed."
+msgstr "Das Audit-Log liegt in einer eigenen Datenbankdatei und übersteht damit ein Zurückspielen oder einen Backup-Import. Einträge werden nur angehängt und sind per Hash verkettet: Wird einer aus der Mitte entfernt, bricht die Kette und „Kette prüfen“ erkennt das. Sensible Werte werden nie gespeichert — nur die Tatsache, dass sie geändert wurden."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "User, target, action…"
+msgstr "Benutzer, Ziel, Aktion…"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Category"
+msgstr "Kategorie"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Severity"
+msgstr "Schweregrad"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Verify chain"
+msgstr "Kette prüfen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Export CSV"
+msgstr "CSV exportieren"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Deleted"
+msgstr "Gelöscht"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Key"
+msgstr "Schlüssel"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "disabled"
+msgstr "deaktiviert"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Run"
+msgstr "Ausführen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Delete this entry?"
+msgstr "Diesen Eintrag löschen?"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Built-in"
+msgstr "Eingebaut"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "members"
+msgstr "Mitglieder"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Permissions"
+msgstr "Berechtigungen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "all permissions"
+msgstr "alle Berechtigungen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "all libraries"
+msgstr "alle Bibliotheken"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Library scope"
+msgstr "Bibliotheks-Bereich"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Comma-separated library location ids, or * for all. Naming any location restricts members to those."
+msgstr "Kommagetrennte IDs von Bibliotheksorten oder * für alle. Sobald ein Ort genannt wird, sind Mitglieder auf diese beschränkt."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No groups."
+msgstr "Keine Gruppen."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Edit group"
+msgstr "Gruppe bearbeiten"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Delete this group? Members keep their role but lose what this group granted."
+msgstr "Diese Gruppe löschen? Mitglieder behalten ihre Rolle, verlieren aber, was diese Gruppe gewährt hat."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No rules yet."
+msgstr "Noch keine Regeln."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Edit rule"
+msgstr "Regel bearbeiten"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Priority"
+msgstr "Priorität"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Conditions"
+msgstr "Bedingungen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Add condition"
+msgstr "Bedingung hinzufügen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "All conditions must match. No conditions means the rule always applies."
+msgstr "Alle Bedingungen müssen zutreffen. Ohne Bedingungen gilt die Regel immer."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Leave a text action empty to not set it."
+msgstr "Ein leeres Textfeld bedeutet: Aktion nicht setzen."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "stop"
+msgstr "Stopp"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Stop after this rule"
+msgstr "Nach dieser Regel aufhören"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "always"
+msgstr "immer"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "no actions"
+msgstr "keine Aktionen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Describe a hypothetical download. The result shows which rules match, in order, and the actions that would apply."
+msgstr "Beschreibe einen gedachten Download. Das Ergebnis zeigt, welche Regeln in welcher Reihenfolge greifen und welche Aktionen daraus folgen."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No profiles yet."
+msgstr "Noch keine Profile."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Edit profile"
+msgstr "Profil bearbeiten"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Language chain"
+msgstr "Sprachkette"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Comma-separated, in order of preference."
+msgstr "Kommagetrennt, in der bevorzugten Reihenfolge."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Download every language in the chain"
+msgstr "Jede Sprache der Kette herunterladen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "first match"
+msgstr "erster Treffer"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "all"
+msgstr "alle"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "titles"
+msgstr "Titel"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Library scan"
+msgstr "Bibliotheks-Scan"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "UpTime monitor"
+msgstr "UpTime-Monitor"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "TMDB keywords"
+msgstr "TMDB-Schlagwörter"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Cache eviction"
+msgstr "Cache-Bereinigung"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Dev infos"
+msgstr "Dev-Infos"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Audit retention"
+msgstr "Audit-Aufbewahrung"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "idle"
+msgstr "bereit"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "error"
+msgstr "Fehler"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "stale"
+msgstr "überfällig"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Last run"
+msgstr "Letzter Lauf"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Next run"
+msgstr "Nächster Lauf"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Schema version"
+msgstr "Schemaversion"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "pending"
+msgstr "ausstehend"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No snapshots yet."
+msgstr "Noch keine Snapshots."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Snapshot created"
+msgstr "Snapshot erstellt"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Verify"
+msgstr "Prüfen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Restored — please restart the server now."
+msgstr "Zurückgespielt — bitte den Server jetzt neu starten."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "integrity"
+msgstr "Integrität"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Replace the live database with this snapshot? A snapshot of the current state is taken first. The server must be restarted afterwards."
+msgstr "Die laufende Datenbank durch diesen Snapshot ersetzen? Vom aktuellen Stand wird vorher ein Snapshot angelegt. Danach muss der Server neu gestartet werden."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No maintenance windows."
+msgstr "Keine Wartungsfenster."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Edit window"
+msgstr "Fenster bearbeiten"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Active now"
+msgstr "Jetzt aktiv"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No window active — normal settings apply."
+msgstr "Kein Fenster aktiv — es gelten die normalen Einstellungen."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Max downloads"
+msgstr "Max. Downloads"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Library scans"
+msgstr "Bibliotheks-Scans"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Allowed during this window"
+msgstr "Während dieses Fensters erlaubt"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "An end time before the start time wraps over midnight."
+msgstr "Liegt das Ende vor dem Start, geht das Fenster über Mitternacht."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Mon"
+msgstr "Mo"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Tue"
+msgstr "Di"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Wed"
+msgstr "Mi"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Thu"
+msgstr "Do"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Fri"
+msgstr "Fr"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Sat"
+msgstr "Sa"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Sun"
+msgstr "So"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "entries"
+msgstr "Einträge"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "failures"
+msgstr "Fehlschläge"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "size"
+msgstr "Größe"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "oldest"
+msgstr "ältester"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No entries."
+msgstr "Keine Einträge."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Chain intact"
+msgstr "Kette intakt"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Chain broken at entry "
+msgstr "Kette unterbrochen bei Eintrag "
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Integration"
+msgstr "Integration"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Info"
+msgstr "Info"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Notice"
+msgstr "Hinweis"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Critical"
+msgstr "Kritisch"
+

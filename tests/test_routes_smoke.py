@@ -77,7 +77,13 @@ def test_anonymous_requests_are_redirected_or_rejected(app, client):
     # they are listed in web/app.py's _exempt set with a reason.
     # Login-exempt by design; each is listed in web/app.py's _exempt set with a
     # reason (guests reach the SyncPlay lobby before they have an account).
+    # /readyz joins api_health for the same reason: a container orchestrator,
+    # a Docker HEALTHCHECK or an external uptime monitor has no session and
+    # never will. It answers a single status string -- no version, no worker
+    # names, no error text -- so an unauthenticated caller learns only whether
+    # the process is up. (/healthz is already covered by the "/health" prefix
+    # in exempt_prefixes above.)
     known_exempt = {"api_syncplay_rooms", "api_syncplay_config", "api_health",
-                    "api_calendar_ics", "syncplay_page"}
+                    "api_calendar_ics", "syncplay_page", "readyz"}
     unexpected = [x for x in leaked if x.split(" ")[0] not in known_exempt]
     assert not unexpected, "reachable without a login:\n  " + "\n  ".join(unexpected)

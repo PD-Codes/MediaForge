@@ -13,7 +13,8 @@
      .integ-subsection-*) lives in integrations.css -- needed here too since
      this page can render that same macro for any thirdparty registered with
      settings_host="settings" (see registry.py's _KNOWN_TABS). -->
-<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">{% endblock %}
+<link rel="stylesheet" href="{{ url_for('static', filename='integrations.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='ops.css') }}">{% endblock %}
 {% set is_admin = not auth_enabled or (current_user and current_user.role == 'admin') %}
 {% block content %}
 <div class="settings-container has-floating-menu">
@@ -1385,6 +1386,22 @@
       </div>
     </div>
 
+    {# Groups sit next to the user list on purpose: "which users are in this
+       group" and "which groups is this user in" are the same question, and
+       splitting them across two pages is how the answer drifts. #}
+    <div class="settings-section">
+      <h2>{{ _('Groups & Permissions') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('The three built-in groups (Administrator, User, Kids) cannot be edited or removed — they define what the roles mean app-wide. Custom groups are additive: a member keeps everything their role grants and gains what the group adds. If a group names specific library locations, its members are restricted to those.') }}
+      </div>
+      <div id="opsGroupList" class="ops-card-grid">
+        <div class="settings-hint">{{ _('Loading…') }}</div>
+      </div>
+      <div class="settings-row" style="margin-top:14px;">
+        <button type="button" class="btn btn-primary" onclick="opsGroupEdit(null)">{{ _('New group') }}</button>
+      </div>
+    </div>
+
     <div class="settings-section">
       <h2>{{ _('Single Sign-On (SSO / OIDC)') }}</h2>
       <div class="settings-hint" style="margin-bottom:16px;">
@@ -1818,6 +1835,140 @@
   </div><!-- /tab-backup -->
   {% endif %}
 
+  <!-- ══════════════════════════════════════════════════════
+       Tab: Regeln & Sprachen (rule engine + language profiles)
+  ══════════════════════════════════════════════════════ -->
+  {% if is_admin %}
+  <div class="settings-tab-panel" id="tab-rules">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Rules & Languages') }}</h1>
+      <p class="page-subtitle">{{ _('Conditional handling per title, provider or language') }}</p>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Download rules') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('A rule is a list of conditions and the actions to apply when they all match. Rules run in priority order, lowest number first, and later matches override earlier ones. A rule marked “stop” ends evaluation. A rule with no conditions matches everything — useful as a low-priority default.') }}
+      </div>
+      <div id="opsRuleList" class="ops-card-grid">
+        <div class="settings-hint">{{ _('Loading…') }}</div>
+      </div>
+      <div class="settings-row" style="margin-top:14px;gap:10px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" onclick="opsRuleEdit(null)">{{ _('New rule') }}</button>
+        <button type="button" class="btn btn-ghost" onclick="opsRuleTestOpen()">{{ _('Test rules') }}</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Language profiles') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('A profile is an ordered fallback chain. “First match” takes the first language that exists; “all” downloads every language in the chain. Titles bound to a profile ignore the global language setting.') }}
+      </div>
+      <div id="opsProfileList" class="ops-card-grid">
+        <div class="settings-hint">{{ _('Loading…') }}</div>
+      </div>
+      <div class="settings-row" style="margin-top:14px;">
+        <button type="button" class="btn btn-primary" onclick="opsProfileEdit(null)">{{ _('New profile') }}</button>
+      </div>
+    </div>
+  </div><!-- /tab-rules -->
+
+  <!-- ══════════════════════════════════════════════════════
+       Tab: Betrieb (workers, schema snapshots, maintenance, diagnostics)
+  ══════════════════════════════════════════════════════ -->
+  <div class="settings-tab-panel" id="tab-operations">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Operations') }}</h1>
+      <p class="page-subtitle">{{ _('Worker states, database snapshots, maintenance windows and diagnostics') }}</p>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Background workers') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('Every worker reports what it is doing, when it last ran and what it last failed with. “Unknown” means the worker has never reported — which is different from “not running”.') }}
+      </div>
+      <div id="opsWorkerList" class="ops-worker-grid">
+        <div class="settings-hint">{{ _('Loading…') }}</div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Database schema & snapshots') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('A snapshot is taken automatically before any schema change, and can be taken manually at any time. Verifying a snapshot opens it read-only and checks that it is actually restorable — an unverified backup is not a backup. Restoring replaces the live database and requires a restart.') }}
+      </div>
+      <div id="opsSchemaInfo" class="settings-hint" style="margin-bottom:12px;"></div>
+      <div class="settings-row" style="gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <button type="button" class="btn btn-primary" onclick="opsSnapshotCreate()">{{ _('Create snapshot') }}</button>
+      </div>
+      <div id="opsSnapshotList" class="ops-card-grid">
+        <div class="settings-hint">{{ _('Loading…') }}</div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Maintenance windows') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('Limit what the workers may do at certain times of day — for example one download and no encoding during working hours. Windows are restrictions: outside every window the normal settings apply. Overlapping windows combine to the strictest result.') }}
+      </div>
+      <div id="opsWindowCurrent" class="settings-hint" style="margin-bottom:12px;"></div>
+      <div id="opsWindowList" class="ops-card-grid">
+        <div class="settings-hint">{{ _('Loading…') }}</div>
+      </div>
+      <div class="settings-row" style="margin-top:14px;">
+        <button type="button" class="btn btn-primary" onclick="opsWindowEdit(null)">{{ _('New window') }}</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>{{ _('Diagnostics') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('Builds a ZIP with version and platform info, which settings are set (sensitive values replaced), table row counts, worker states, recent queue errors and the tail of the log. Paths, URLs and secret-shaped tokens are scrubbed. Nothing is sent anywhere — the file is generated on demand and downloaded once.') }}
+      </div>
+      <div class="settings-row">
+        <button type="button" class="btn btn-primary" onclick="opsDiagnostics()">{{ _('Download diagnostic bundle') }}</button>
+      </div>
+    </div>
+  </div><!-- /tab-operations -->
+
+  <!-- ══════════════════════════════════════════════════════
+       Tab: Audit-Log
+  ══════════════════════════════════════════════════════ -->
+  <div class="settings-tab-panel" id="tab-audit">
+    <div class="page-header" style="margin-bottom:20px;">
+      <h1 class="page-title">{{ _('Audit Log') }}</h1>
+      <p class="page-subtitle">{{ _('Who changed what, and when') }}</p>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('The audit log lives in its own database file so it survives a snapshot restore or a backup import. Entries are append-only and hash-chained: removing one from the middle breaks the chain and is detected by “Verify”. Sensitive values are never recorded — only the fact that they changed.') }}
+      </div>
+      <div id="opsAuditStats" class="ops-stat-row"></div>
+      <div class="settings-row ops-audit-filters" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin:14px 0;">
+        <div class="settings-field">
+          <label class="settings-field-label" for="opsAuditSearch">{{ _('Search') }}</label>
+          <input type="text" id="opsAuditSearch" oninput="opsAuditDebounced()" placeholder="{{ _('User, target, action…') }}">
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="opsAuditCategory">{{ _('Category') }}</label>
+          <select id="opsAuditCategory" onchange="opsAuditLoad(0)"></select>
+        </div>
+        <div class="settings-field">
+          <label class="settings-field-label" for="opsAuditSeverity">{{ _('Severity') }}</label>
+          <select id="opsAuditSeverity" onchange="opsAuditLoad(0)"></select>
+        </div>
+        <button type="button" class="btn btn-ghost" onclick="opsAuditVerify()">{{ _('Verify chain') }}</button>
+        <button type="button" class="btn btn-ghost" onclick="opsAuditExport()">{{ _('Export CSV') }}</button>
+      </div>
+      <div id="opsAuditList" class="ops-audit-list">
+        <div class="settings-hint">{{ _('Loading…') }}</div>
+      </div>
+      <div class="mf-pagination-bar" id="opsAuditPager"></div>
+    </div>
+  </div><!-- /tab-audit -->
+  {% endif %}
+
   {# Module-contributed settings tabs render on the Module Settings page
      (registry.resolve_module_settings), not here anymore. #}
 
@@ -1874,6 +2025,143 @@
    shared one. Harmless while the two bodies agreed; a trap the moment one of
    them was changed. #}
 var settingsCanEdit = {{ 'true' if is_admin else 'false' }};
+{# ops.js's strings are built HERE, not in the JS file. babel.cfg extracts
+   Jinja templates only, so a string written directly in a .js file never
+   reaches the .po catalogue and silently stays English forever -- the trap
+   that already cost this project two rounds of missing translations. The
+   server hands ops.js a key->translated-text map instead. #}
+window.OPS_I18N = {
+  close: {{ _('Close')|tojson }},
+  cancel: {{ _('Cancel')|tojson }},
+  save: {{ _('Save')|tojson }},
+  saved: {{ _('Saved')|tojson }},
+  edit: {{ _('Edit')|tojson }},
+  delete: {{ _('Delete')|tojson }},
+  deleted: {{ _('Deleted')|tojson }},
+  name: {{ _('Name')|tojson }},
+  key: {{ _('Key')|tojson }},
+  description: {{ _('Description')|tojson }},
+  enabled: {{ _('Enabled')|tojson }},
+  disabled: {{ _('disabled')|tojson }},
+  all: {{ _('All')|tojson }},
+  details: {{ _('Details')|tojson }},
+  run: {{ _('Run')|tojson }},
+  confirm_delete: {{ _('Delete this entry?')|tojson }},
+
+  builtin: {{ _('Built-in')|tojson }},
+  members: {{ _('members')|tojson }},
+  permissions: {{ _('Permissions')|tojson }},
+  all_permissions: {{ _('all permissions')|tojson }},
+  all_libraries: {{ _('all libraries')|tojson }},
+  library_scope: {{ _('Library scope')|tojson }},
+  scope_hint: {{ _('Comma-separated library location ids, or * for all. Naming any location restricts members to those.')|tojson }},
+  no_groups: {{ _('No groups.')|tojson }},
+  new_group: {{ _('New group')|tojson }},
+  edit_group: {{ _('Edit group')|tojson }},
+  confirm_delete_group: {{ _('Delete this group? Members keep their role but lose what this group granted.')|tojson }},
+
+  no_rules: {{ _('No rules yet.')|tojson }},
+  new_rule: {{ _('New rule')|tojson }},
+  edit_rule: {{ _('Edit rule')|tojson }},
+  priority: {{ _('Priority')|tojson }},
+  conditions: {{ _('Conditions')|tojson }},
+  actions: {{ _('Actions')|tojson }},
+  add_condition: {{ _('Add condition')|tojson }},
+  cond_hint: {{ _('All conditions must match. No conditions means the rule always applies.')|tojson }},
+  action_hint: {{ _('Leave a text action empty to not set it.')|tojson }},
+  stop: {{ _('stop')|tojson }},
+  stop_after_match: {{ _('Stop after this rule')|tojson }},
+  always: {{ _('always')|tojson }},
+  no_actions: {{ _('no actions')|tojson }},
+  test_rules: {{ _('Test rules')|tojson }},
+  test_hint: {{ _('Describe a hypothetical download. The result shows which rules match, in order, and the actions that would apply.')|tojson }},
+
+  no_profiles: {{ _('No profiles yet.')|tojson }},
+  new_profile: {{ _('New profile')|tojson }},
+  edit_profile: {{ _('Edit profile')|tojson }},
+  chain: {{ _('Language chain')|tojson }},
+  chain_hint: {{ _('Comma-separated, in order of preference.')|tojson }},
+  grab_all: {{ _('Download every language in the chain')|tojson }},
+  first_match: {{ _('first match')|tojson }},
+  all_languages: {{ _('all')|tojson }},
+  titles: {{ _('titles')|tojson }},
+
+  worker_queue: {{ _('Download queue')|tojson }},
+  worker_encoding: {{ _('Encoding')|tojson }},
+  worker_upscale: {{ _('Upscaling')|tojson }},
+  worker_autosync: 'Auto-Sync',
+  worker_libscan: {{ _('Library scan')|tojson }},
+  worker_uptime: {{ _('UpTime monitor')|tojson }},
+  worker_mediascan: 'MediaScan',
+  worker_keywords: {{ _('TMDB keywords')|tojson }},
+  worker_cacheevict: {{ _('Cache eviction')|tojson }},
+  worker_devinfos: {{ _('Dev infos')|tojson }},
+  worker_auditprune: {{ _('Audit retention')|tojson }},
+  state_running: {{ _('running')|tojson }},
+  state_idle: {{ _('idle')|tojson }},
+  state_error: {{ _('error')|tojson }},
+  state_stale: {{ _('stale')|tojson }},
+  state_unknown: {{ _('unknown')|tojson }},
+  last_run: {{ _('Last run')|tojson }},
+  next_run: {{ _('Next run')|tojson }},
+  mode: {{ _('Mode')|tojson }},
+
+  schema_version: {{ _('Schema version')|tojson }},
+  pending: {{ _('pending')|tojson }},
+  no_snapshots: {{ _('No snapshots yet.')|tojson }},
+  snapshot_created: {{ _('Snapshot created')|tojson }},
+  verify: {{ _('Verify')|tojson }},
+  restore: {{ _('Restore')|tojson }},
+  restored: {{ _('Restored — please restart the server now.')|tojson }},
+  checking: {{ _('Checking…')|tojson }},
+  integrity: {{ _('integrity')|tojson }},
+  confirm_restore: {{ _('Replace the live database with this snapshot? A snapshot of the current state is taken first. The server must be restarted afterwards.')|tojson }},
+
+  no_windows: {{ _('No maintenance windows.')|tojson }},
+  new_window: {{ _('New window')|tojson }},
+  edit_window: {{ _('Edit window')|tojson }},
+  window_active: {{ _('Active now')|tojson }},
+  no_window_active: {{ _('No window active — normal settings apply.')|tojson }},
+  max_downloads: {{ _('Max downloads')|tojson }},
+  encoding: {{ _('Encoding')|tojson }},
+  upscaling: {{ _('Upscaling')|tojson }},
+  scanning: {{ _('Library scans')|tojson }},
+  allowed_during_window: {{ _('Allowed during this window')|tojson }},
+  days: {{ _('Days')|tojson }},
+  from: {{ _('From')|tojson }},
+  to: {{ _('To')|tojson }},
+  wrap_hint: {{ _('An end time before the start time wraps over midnight.')|tojson }},
+  day_mon: {{ _('Mon')|tojson }},
+  day_tue: {{ _('Tue')|tojson }},
+  day_wed: {{ _('Wed')|tojson }},
+  day_thu: {{ _('Thu')|tojson }},
+  day_fri: {{ _('Fri')|tojson }},
+  day_sat: {{ _('Sat')|tojson }},
+  day_sun: {{ _('Sun')|tojson }},
+
+  entries: {{ _('entries')|tojson }},
+  failures: {{ _('failures')|tojson }},
+  size: {{ _('size')|tojson }},
+  oldest: {{ _('oldest')|tojson }},
+  no_entries: {{ _('No entries.')|tojson }},
+  chain_ok: {{ _('Chain intact')|tojson }},
+  chain_broken: {{ _('Chain broken at entry ')|tojson }},
+  cat_auth: {{ _('Authentication')|tojson }},
+  cat_user: {{ _('User')|tojson }},
+  cat_group: {{ _('Group')|tojson }},
+  cat_settings: {{ _('Settings')|tojson }},
+  cat_module: {{ _('Module')|tojson }},
+  cat_backup: {{ _('Backup')|tojson }},
+  cat_queue: {{ _('Queue')|tojson }},
+  cat_library: {{ _('Library')|tojson }},
+  cat_system: {{ _('System')|tojson }},
+  cat_api: 'API',
+  cat_integration: {{ _('Integration')|tojson }},
+  sev_info: {{ _('Info')|tojson }},
+  sev_notice: {{ _('Notice')|tojson }},
+  sev_warning: {{ _('Warning')|tojson }},
+  sev_critical: {{ _('Critical')|tojson }}
+};
 </script>
 {{ startpage.start_page_i18n() }}
 <script src="{{ url_for('static', filename='settings.js') }}"></script>
@@ -1885,4 +2173,8 @@ var settingsCanEdit = {{ 'true' if is_admin else 'false' }};
      notifications.html/extensions.html load for the identical purpose. -->
 <script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
 <script src="{{ url_for('static', filename='telemetry.js') }}"></script>
+<!-- Operations UI: groups, rules, language profiles, workers, snapshots,
+     maintenance windows, diagnostics, audit log. Loaded after settings.js
+     because it wraps that file's switchTab() to lazy-load its panels. -->
+<script src="{{ url_for('static', filename='ops.js') }}"></script>
 {% endblock %}

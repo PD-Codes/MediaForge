@@ -77,6 +77,15 @@ MAX_AUTO_SNAPSHOTS = 10
 _MIGRATIONS: dict[int, tuple[str, callable]] = {}
 _lock = threading.Lock()
 
+# The highest migration whose effect the pre-engine ``init_*_db()`` path
+# already produces. A database that predates this module is recorded as having
+# applied everything up to and including this number, without running it.
+#
+# This is a constant, not "whatever is registered": raising it means claiming
+# that an untouched old database already has that migration's tables, which is
+# only true for the schema as it stood when the engine was introduced.
+BASELINE_VERSION = 1
+
 
 # ---------------------------------------------------------------------------
 # Registration
@@ -441,17 +450,29 @@ def run_pending(*, allow_snapshot: bool = True) -> dict:
                 conn.commit()
                 return {"ok": True, "applied": [], "baselined": [], "current": max(done) if done else 0}
 
-            # Existing install that has never seen this engine: everything we
-            # know about was already produced by the init_*_db() path, so mark
-            # it applied instead of running it. Only migrations added later
-            # will actually execute on this database.
+            # Existing install that has never seen this engine: the shape the
+            # init_*_db() path produces is exactly what BASELINE_VERSION
+            # describes, so mark that much applied without running it.
+            #
+            # Only up to BASELINE_VERSION. Baselining *everything* pending was
+            # the obvious-looking version of this and it is wrong: migrations
+            # above the baseline create tables no init_*_db() function knows
+            # about, so marking them applied means those tables are never
+            # created and the first request that needs one fails with
+            # "no such table". Baseline describes the past; anything after it
+            # has to actually run.
+            baselined = []
             if not done and _looks_like_existing_install(conn):
-                for version in pending:
+                baselined = [v for v in pending if v <= BASELINE_VERSION]
+                for version in baselined:
                     _record(conn, version, _MIGRATIONS[version][0], app_ver, baselined=True)
                 conn.commit()
+                pending = [v for v in pending if v > BASELINE_VERSION]
                 logger.info("[Migrate] Existing database baselined at schema version %d",
-                            max(pending))
-                return {"ok": True, "applied": [], "baselined": pending, "current": max(pending)}
+                            BASELINE_VERSION)
+                if not pending:
+                    return {"ok": True, "applied": [], "baselined": baselined,
+                            "current": BASELINE_VERSION}
 
             snap = snapshot(reason="pre-migration",
                             note="before schema %d" % max(pending)) if allow_snapshot else None
@@ -481,7 +502,7 @@ def run_pending(*, allow_snapshot: bool = True) -> dict:
 
             logger.info("[Migrate] Database at schema version %d", max(applied))
             return {
-                "ok": True, "applied": applied, "baselined": [],
+                "ok": True, "applied": applied, "baselined": baselined,
                 "snapshot": (snap or {}).get("id"), "current": max(applied),
             }
         finally:

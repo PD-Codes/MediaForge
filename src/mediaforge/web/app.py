@@ -113,6 +113,39 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
 
     _generate_pwa_icons()
 
+    # ── Schema migrations ───────────────────────────────────────────────────
+    # This has to run before ANY init_*_db(), and the ordering is not cosmetic.
+    # run_pending() decides between "fresh database, run every migration" and
+    # "existing database, baseline it" by looking for tables the pre-migration
+    # code used to create (app_settings, download_queue). Call it after those
+    # functions have run and a brand-new database looks exactly like an old
+    # one: every migration gets marked applied without executing, and the
+    # tables they create never appear. That is not a startup warning, it is a
+    # missing table at the first request that needs it.
+    from . import audit as _audit
+    from . import dbmigrate as _dbmigrate
+
+    # The audit writer comes first so the migration result itself is auditable.
+    _audit.init_audit_db()
+
+    _migration_result = _dbmigrate.run_pending()
+    if not _migration_result.get("ok"):
+        # Deliberately not fatal. A database that failed to migrate is still
+        # readable, and refusing to start would leave the user without the UI
+        # they need to roll back from -- the pre-migration snapshot named in
+        # this message is the way out, and the Operations tab surfaces it.
+        logger.error(
+            "[Migrate] Schema migration %s failed (%s). Snapshot for rollback: %s",
+            _migration_result.get("failed"), _migration_result.get("error"),
+            _migration_result.get("snapshot"),
+        )
+    elif _migration_result.get("applied"):
+        _audit.audit("system", "schema_migrated",
+                     target="v%s" % _migration_result.get("current"),
+                     detail={"applied": _migration_result["applied"],
+                             "snapshot": _migration_result.get("snapshot")},
+                     severity="notice")
+
     app = Flask(__name__)
     app.config['TEMPLATES_AUTO_RELOAD'] = False
     app.jinja_env.filters["markdown"] = render_markdown
@@ -541,12 +574,6 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "dashboard_widgets": resolve_dashboard_widgets(),
             }
 
-    # Audit log first: it lives in its own database file (see audit.py) and
-    # everything below is auditable, so the writer has to exist before the
-    # first thing worth recording happens.
-    from . import audit as _audit
-    _audit.init_audit_db()
-
     # Initialize download queue, custom paths and autosync (works with or without auth)
     init_queue_db()
     init_custom_paths_db()
@@ -562,34 +589,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     init_provider_cache_db()
     init_calendar_db()
 
-    # Groups/permissions, then the migration engine. Order matters: init_*_db()
-    # builds a fresh database from nothing, and run_pending() then baselines it
-    # instead of re-running migrations against tables that are already correct.
-    # Doing it the other way round would apply migration 2 to a database whose
-    # group tables init_groups_db() had just created -- harmless here (the DDL
-    # is IF NOT EXISTS) but exactly the sort of ordering assumption that breaks
-    # the first time a migration is not idempotent.
+    # Groups/permissions. The migration engine already created these tables on
+    # a fresh database (migration 2); this covers the database that was
+    # baselined instead, where migration 2 was marked applied without running.
+    # Both paths end at the same schema, and the DDL is IF NOT EXISTS.
     from .groups import init_groups_db
     init_groups_db()
-
-    from . import dbmigrate as _dbmigrate
-    _migration_result = _dbmigrate.run_pending()
-    if not _migration_result.get("ok"):
-        # Deliberately not fatal: a database that failed to migrate is still
-        # readable, and refusing to start would leave the user with no UI to
-        # roll back from. The Operations tab surfaces this state, and the
-        # pre-migration snapshot is the way out.
-        logger.error(
-            "[Migrate] Schema migration %s failed (%s). Snapshot for rollback: %s",
-            _migration_result.get("failed"), _migration_result.get("error"),
-            _migration_result.get("snapshot"),
-        )
-    elif _migration_result.get("applied"):
-        _audit.audit("system", "schema_migrated",
-                     target="v%s" % _migration_result.get("current"),
-                     detail={"applied": _migration_result["applied"],
-                             "snapshot": _migration_result.get("snapshot")},
-                     severity="notice")
 
     # Periodically evict expired TMDB / provider cache entries so the tables
     # don't grow unboundedly.
@@ -975,6 +980,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     from .routes.direct_link import register_direct_link_routes
     from .routes.backup import register_backup_routes
     from .routes.themes import register_themes_routes
+    from .routes.ops import register_ops_routes
 
     register_search_routes(app)
     register_queue_routes(app)
@@ -1029,6 +1035,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     register_reading_routes(app)
     register_backup_routes(app)
     register_themes_routes(app)
+    register_ops_routes(app)
     # /profile — the account's own settings. Its own page because /settings is
     # admin-only, so a normal account had no way to reach its own theme,
     # accent colour or media-server profile at all.
@@ -1210,6 +1217,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_settings_telemetry_request_status",
         }
 
+        # Operations API (routes/ops.py): audit log, groups, snapshots and
+        # rollback, worker states, maintenance windows, diagnostics, rules,
+        # language profiles. Imported from the module that defines the routes
+        # instead of being re-typed here, so a new endpoint cannot end up
+        # registered but unprotected -- which is the exact failure mode this
+        # hand-maintained set has. /healthz and /readyz are deliberately not
+        # in it: they must answer to an unauthenticated monitor, which is why
+        # they return booleans and nothing else.
+        from .routes.ops import ADMIN_ONLY_OPS_ENDPOINTS
+        _admin_only |= set(ADMIN_ONLY_OPS_ENDPOINTS)
+
         # Published so it can be asserted on (tests/test_admin_gating.py):
         # authorisation lives in this hand-maintained set, not on the routes,
         # so a new endpoint is login-protected but NOT admin-protected unless
@@ -1285,6 +1303,14 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # so requiring a login here would make the button unable to see its own result.
             # It exposes nothing: an "ok" and two booleans.
             "api_health",
+            # Container/orchestrator probes (routes/ops.py). Same reasoning as
+            # api_health, different audience: a Docker HEALTHCHECK, a k8s probe
+            # or an external uptime monitor has no session and never will. Both
+            # return a single status string and nothing else -- no version, no
+            # worker names, no error text -- so an unauthenticated caller
+            # learns only whether the process is up.
+            "healthz",
+            "readyz",
             # SyncPlay guest endpoints — gated by room token + enabled flag,
             # so invited guests can watch together without an account.
             "api_syncplay_config",
