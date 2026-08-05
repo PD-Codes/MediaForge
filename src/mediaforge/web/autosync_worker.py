@@ -1246,11 +1246,21 @@ def _autosync_worker():
                         should_run = True
 
                 if should_run:
+                    from . import worker_registry as _wr
+                    _wr.working("autosync", detail=job.get("title", ""))
                     _run_autosync_for_job(job)
+                    _wr.done("autosync", detail=job.get("title", ""))
 
+            from . import worker_registry as _wr
+            _wr.beat("autosync", state="idle", detail="%d job(s)" % len(jobs))
             time.sleep(10)
         except Exception as e:
             logger.error("Auto-sync worker error: %s", e, exc_info=True)
+            try:
+                from . import worker_registry as _wr
+                _wr.fail("autosync", str(e))
+            except Exception:
+                pass
             time.sleep(30)
 
 

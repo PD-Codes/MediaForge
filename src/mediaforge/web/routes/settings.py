@@ -352,6 +352,7 @@ def register_settings_routes(app):
                 "sync_adaptive_retry_value":  sync_adaptive_retry_value,
                 "sync_adaptive_retry_unit":   sync_adaptive_retry_unit,
                 "history_retention_days":     history_retention_days,
+                "audit_retention_days":       get_setting("audit_retention_days", "0"),
                 "download_language":         download_language,
                 "download_provider":         download_provider,
                 "naming_template":           naming_template,
@@ -1082,6 +1083,19 @@ def register_settings_routes(app):
                 return jsonify({"error": "Invalid history_retention_days: integer 0-3650"}), 400
             set_setting("history_retention_days", str(hrd))
             os.environ["MEDIAFORGE_HISTORY_RETENTION_DAYS"] = str(hrd)
+        if "audit_retention_days" in data:
+            # Same shape as history retention, and deliberately handled here
+            # rather than by an endpoint of its own: a second write path into
+            # app_settings is a second place for the validation and encryption
+            # rules to drift apart. 0 means "keep forever" -- pruning is the
+            # only deletion the audit log permits (web/audit.py).
+            try:
+                ard = int(data["audit_retention_days"])
+                if ard < 0 or ard > 3650:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                return jsonify({"error": "Invalid audit_retention_days: integer 0-3650"}), 400
+            set_setting("audit_retention_days", str(ard))
         if "download_language" in data:
             val = str(data["download_language"]).strip()
             if is_group_ref(val):

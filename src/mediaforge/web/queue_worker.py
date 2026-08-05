@@ -40,6 +40,7 @@ from .runtime_state import (
 )
 from .upscale_worker import _trigger_episode_after_download_upscale
 from .encoding_worker import _trigger_after_download_encode
+from . import worker_registry as _wr
 
 logger = get_logger(__name__)
 
@@ -502,6 +503,65 @@ def _is_within_download_window() -> bool:
     return cur >= s or cur < e  # overnight window wrapping past midnight
 
 
+def _maintenance_allows_download() -> bool:
+    """False while an active maintenance window sets max downloads to 0.
+
+    Deliberately separate from _is_within_download_window() even though both
+    gate the same thing: the download window is one global on/off schedule the
+    user configures under Downloads, while maintenance windows are per-weekday
+    restrictions that also cover encoding, upscaling and scans. Merging them
+    would mean one of the two silently stops being visible in its own UI.
+
+    Only the "0 downloads" case blocks here. A window that caps parallel
+    downloads at 1 or 2 is enforced where parallelism actually happens, not by
+    refusing to claim -- this worker processes one item at a time anyway.
+    """
+    try:
+        from .maintenance import current_limits
+        limits = current_limits()
+        return not (limits["active"] and limits.get("max_downloads") == 0)
+    except Exception:
+        # A broken or not-yet-migrated maintenance table must never stop
+        # downloads. Failing open is right here: the feature is a restriction,
+        # and a restriction that cannot be read is not a restriction.
+        return True
+
+
+def _rule_actions_for(item) -> dict:
+    """Evaluate the rule engine for one claimed queue item.
+
+    Returns the merged actions, or ``{}`` when nothing matched or the engine
+    is unavailable. Never raises: a misconfigured rule must not be able to
+    stop the queue.
+    """
+    try:
+        from .rules import evaluate
+        season, episode = None, None
+        try:
+            episodes = json.loads(item.get("episodes") or "[]")
+            if episodes:
+                season, episode = _parse_season_episode(episodes[0])
+        except Exception:
+            pass
+        context = {
+            "title": item.get("title") or "",
+            "provider": item.get("provider") or "",
+            "language": item.get("language") or "",
+            "url": item.get("series_url") or "",
+            "requested_by": item.get("username") or "",
+            "season": season,
+            "episode": episode,
+        }
+        actions = evaluate(context)
+        if actions.get("_matched"):
+            logger.info("[Rules] Job #%s matched: %s",
+                        item.get("id"), ", ".join(actions["_matched"]))
+        return actions
+    except Exception as exc:
+        logger.warning("[Rules] Evaluation failed for job #%s: %s", item.get("id"), exc)
+        return {}
+
+
 def _queue_worker():
     """Single global worker loop that processes one queued download at a time.
 
@@ -525,7 +585,8 @@ def _queue_worker():
         try:
             # Hold new downloads outside the configured time window. Checked
             # before claiming so items aren't marked running while held.
-            if not _is_within_download_window():
+            if not _is_within_download_window() or not _maintenance_allows_download():
+                _wr.beat("queue", state="idle", detail="waiting for the download window")
                 time.sleep(30)
                 continue
 
@@ -534,8 +595,26 @@ def _queue_worker():
                 item = claim_next_queued()
 
             if not item:
+                _wr.beat("queue", state="idle")
                 time.sleep(3)
                 continue
+
+            # Rule engine. Evaluated once per job, right after the claim, so
+            # every decision below sees the same answer -- re-evaluating per
+            # episode would let a rule change mid-job and produce a half-encoded
+            # season nobody can explain.
+            _rules = _rule_actions_for(item)
+            if _rules.get("skip"):
+                logger.info("[Rules] Job #%s skipped by rule (%s)",
+                            item["id"], ", ".join(_rules.get("_matched", [])))
+                try:
+                    set_queue_status(item["id"], "cancelled")
+                except Exception as _se:
+                    logger.warning("[Rules] Could not cancel skipped job: %s", _se)
+                item = None
+                continue
+
+            _wr.working("queue", detail=item.get("title", ""))
 
             # Don't start a new item while paused
             while is_queue_paused():
@@ -968,10 +1047,28 @@ def _queue_worker():
                         # Both triggers stay PER EPISODE rather than batched at
                         # the end of the download item, so episode 1 is already
                         # being worked on while episode 2 still downloads.
+                        #
+                        # A rule may override either half of that chain, and a
+                        # maintenance window may forbid both outright. Both are
+                        # applied here rather than inside the trigger functions
+                        # so the chain logic above stays the single place that
+                        # knows encode-then-upscale ordering.
                         _wants_upscale = bool(item.get("upscale", 0))
+                        if "upscale_after" in _rules:
+                            _wants_upscale = bool(_rules["upscale_after"])
+                        _allow_encode = _rules.get("encode_after", True)
+                        try:
+                            from .maintenance import is_allowed as _mw_allows
+                            if not _mw_allows("upscale"):
+                                _wants_upscale = False
+                            if not _mw_allows("encoding"):
+                                _allow_encode = False
+                        except Exception:
+                            pass
+
                         _encode_queued = False
                         try:
-                            if _out_path is not None:
+                            if _out_path is not None and _allow_encode:
                                 _encode_queued = _trigger_after_download_encode(
                                     [str(_out_path)],
                                     item.get("title", ""),
@@ -1230,6 +1327,7 @@ def _queue_worker():
                     status = "failed"
                 set_queue_status(item["id"], status)
                 _final_status_set = True
+                _wr.done("queue", detail="%s: %s" % (item.get("title", ""), status))
 
                 # Send notifications (all services)
                 from .notifications import notify_all
@@ -1276,6 +1374,7 @@ def _queue_worker():
 
         except Exception as e:
             logger.error(f"Queue worker error: {e}", exc_info=True)
+            _wr.fail("queue", str(e), detail=(item or {}).get("title", ""))
             if item is not None and not _final_status_set:
                 try:
                     if not is_queue_cancelled(item["id"]):

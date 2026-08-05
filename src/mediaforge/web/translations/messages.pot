@@ -7855,3 +7855,56 @@ msgstr ""
 msgid "Critical"
 msgstr ""
 
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Settings profile"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "A small, plain-JSON export of the configuration itself — naming template, provider order, quality defaults, path layout. Deliberately free of users, history, queues and API keys, so it can be pasted into a support ticket. Importing shows you exactly what would change before anything is written."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Export profile"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Choose profile file…"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Keep entries for (days)"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "0 keeps everything forever. Pruning is the only deletion the log permits, and it is itself recorded."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "That file is too large to be a settings profile."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "This profile matches the current configuration — nothing to apply."
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Applied"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Apply selected"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "change(s)"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "unchanged"
+msgstr ""
+
+#: src/mediaforge/web/templates/settings.html
+msgid "refused"
+msgstr ""
+

@@ -795,6 +795,83 @@
   });
 
   /* ===============================================================
+   * Settings profiles
+   * =============================================================== */
+  window.opsProfileExport = function () {
+    window.location.href = "/api/ops/profile/export";
+  };
+
+  window.opsProfilePreview = function (input) {
+    var box = document.getElementById("opsProfilePreview");
+    var file = input && input.files && input.files[0];
+    if (!file || !box) { return; }
+    // Cap the read. A profile is a few kilobytes of settings; anything larger
+    // is the wrong file, and reading it into memory first is how a mistaken
+    // drag-and-drop of a video freezes the tab.
+    if (file.size > 512 * 1024) {
+      box.innerHTML = '<div class="settings-hint">' + esc(T("file_too_large", "That file is too large to be a settings profile.")) + '</div>';
+      input.value = "";
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      api("/api/ops/profile/preview", { method: "POST", body: { file: reader.result } })
+        .then(function (data) { renderProfilePreview(data, reader.result); })
+        .catch(function (exc) {
+          box.innerHTML = '<div class="settings-hint">' + esc(exc.message) + '</div>';
+        });
+    };
+    reader.readAsText(file);
+    input.value = "";
+  };
+
+  function renderProfilePreview(data, rawText) {
+    var box = document.getElementById("opsProfilePreview");
+    if (!box) { return; }
+    if (!data.changes.length) {
+      box.innerHTML = '<div class="settings-hint">' +
+        esc(T("profile_no_changes", "This profile matches the current configuration — nothing to apply.")) +
+        '</div>';
+      return;
+    }
+    box.innerHTML =
+      '<div class="settings-hint" style="margin-bottom:10px;">' +
+        esc(data.name || "") + ' · ' + esc(data.app_version || "?") + ' · ' +
+        esc(data.changes.length) + ' ' + esc(T("changes", "change(s)")) +
+        (data.unchanged ? ' · ' + esc(data.unchanged) + ' ' + esc(T("unchanged", "unchanged")) : '') +
+        (data.refused.length
+          ? ' · <span class="ops-warn">' + esc(data.refused.length) + ' ' + esc(T("refused", "refused")) + '</span>'
+          : '') +
+      '</div>' +
+      '<div class="ops-audit-list">' +
+        data.changes.map(function (c) {
+          return '<label class="ops-audit-row">' +
+            '<input type="checkbox" class="chb-main" data-profile-key="' + esc(c.key) + '" checked>' +
+            '<div class="ops-audit-main"><code>' + esc(c.key) + '</code></div>' +
+            '<div class="ops-audit-who">' + esc(c.from == null ? "—" : c.from) +
+              ' &rarr; <strong>' + esc(c.to) + '</strong></div>' +
+          '</label>';
+        }).join("") +
+      '</div>' +
+      '<div class="settings-row" style="margin-top:12px;">' +
+        '<button type="button" class="btn btn-primary" id="opsProfileApply">' +
+          esc(T("apply_selected", "Apply selected")) + '</button>' +
+      '</div>';
+
+    box.querySelector("#opsProfileApply").addEventListener("click", function () {
+      var keys = Array.prototype.slice.call(box.querySelectorAll("[data-profile-key]"))
+        .filter(function (el) { return el.checked; })
+        .map(function (el) { return el.getAttribute("data-profile-key"); });
+      if (!keys.length) { return; }
+      api("/api/ops/profile/import", { method: "POST", body: { file: rawText, keys: keys } })
+        .then(function (res) {
+          toast(T("profile_applied", "Applied") + " (" + res.count + ")", "success");
+          box.innerHTML = "";
+        }).catch(fail);
+    });
+  }
+
+  /* ===============================================================
    * Diagnostics
    * =============================================================== */
   window.opsDiagnostics = function () {
@@ -922,6 +999,26 @@
     }
   });
 
+  window.opsAuditSaveRetention = function () {
+    var field = document.getElementById("opsAuditRetention");
+    if (!field) { return; }
+    var days = Math.max(0, Math.min(parseInt(field.value, 10) || 0, 3650));
+    // Reuses the ordinary settings endpoint rather than getting one of its
+    // own: this is a setting, and a second write path to app_settings is a
+    // second place for the encryption/validation rules to drift.
+    api("/api/settings", { method: "PUT", body: { audit_retention_days: days } })
+      .then(function () { toast(T("saved", "Saved"), "success"); })
+      .catch(fail);
+  };
+
+  function loadAuditRetention() {
+    var field = document.getElementById("opsAuditRetention");
+    if (!field) { return; }
+    api("/api/settings").then(function (data) {
+      field.value = parseInt(data.audit_retention_days, 10) || 0;
+    }).catch(function () { field.value = 0; });
+  }
+
   window.opsAuditVerify = function () {
     api("/api/ops/audit/verify").then(function (data) {
       toast(data.ok
@@ -953,7 +1050,11 @@
     } else {
       stopWorkerPolling();
     }
-    if (tab === "audit" && !loaded.audit) { loaded.audit = true; window.opsAuditLoad(0); }
+    if (tab === "audit" && !loaded.audit) {
+      loaded.audit = true;
+      loadAuditRetention();
+      window.opsAuditLoad(0);
+    }
   }
 
   // switchTab() is settings.js's, and it is what every tab button calls. Wrap

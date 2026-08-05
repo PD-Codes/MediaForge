@@ -600,8 +600,22 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # don't grow unboundedly.
     def _tmdb_cache_eviction_loop():
         import time as _t
+        from . import worker_registry as _wr
         while True:
             _t.sleep(3600)  # run every hour
+            _wr.working("cache_evict")
+            # Audit retention rides along with the hourly eviction pass rather
+            # than getting a thread of its own: both are "delete rows nobody
+            # needs any more", both are cheap, and one fewer thread in the web
+            # process is one fewer thing to move when the workers get their own.
+            try:
+                from . import audit as _audit_mod
+                _keep = int(get_setting("audit_retention_days", "0") or 0)
+                if _keep > 0:
+                    _audit_mod.prune(_keep)
+                _wr.done("audit_prune", detail="retention %d day(s)" % _keep)
+            except Exception as exc:
+                get_logger(__name__).debug("[Audit] Retention prune failed: %s", exc)
             try:
                 removed = evict_tmdb_cache()
                 if removed:
@@ -620,6 +634,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                     get_logger(__name__).debug("[DB] Evicted %d expired browse cache entries", removed)
             except Exception as exc:
                 get_logger(__name__).warning("[DB] Browse cache eviction failed: %s", exc)
+            _wr.done("cache_evict")
 
     threading.Thread(target=_tmdb_cache_eviction_loop, daemon=True,
                      name="tmdb-cache-evict").start()

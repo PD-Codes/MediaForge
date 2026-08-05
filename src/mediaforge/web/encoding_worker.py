@@ -27,6 +27,7 @@ import uuid
 
 from ..config import MEDIAFORGE_TEMP_DIR
 from ..logger import get_logger
+from . import worker_registry as _wr
 from .media_publish import publish_output, sweep_stale_temp_files
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
@@ -212,12 +213,28 @@ def _encoding_worker():
         # even exists.
         _handed_paths = set()
         try:
+            # An active maintenance window can forbid encoding outright.
+            # Checked BEFORE claiming, so a held job stays "queued" instead of
+            # being marked running for the length of the window.
+            try:
+                from .maintenance import is_allowed as _mw_allows
+                if not _mw_allows("encoding"):
+                    _wr.beat("encoding", state="idle",
+                             detail="held by a maintenance window")
+                    time.sleep(30)
+                    continue
+            except Exception:
+                pass  # a restriction that cannot be read is not a restriction
+
             with _encoding_lock:
                 item = claim_next_encoding_queued()
 
             if not item:
+                _wr.beat("encoding", state="idle")
                 time.sleep(4)
                 continue
+
+            _wr.working("encoding", detail=item.get("title") or item.get("file_path", ""))
 
             cancel_ev = threading.Event()
             with _encoding_cancel_lock:
@@ -358,6 +375,7 @@ def _encoding_worker():
 
         except Exception as e:
             logger.error(f"[Encoding] Worker-Fehler: {e}", exc_info=True)
+            _wr.fail("encoding", str(e), detail=(item or {}).get("title", ""))
             with _encoding_progress_lock:
                 _encoding_progress.update(active=False, percent=0.0, time="", speed="", file="")
             # The item died outside the per-file loop, so nothing handed its

@@ -689,10 +689,60 @@ document.addEventListener("keydown", function (ev) {
   window.qhubToggleError(ev, row);
 });
 
+// Cause id -> [German, English] label and advice. The server (web/error_explain.py)
+// classifies the raw error and sends back a cause id; the wording lives here
+// because that is where the t(de, en) helper this file already uses lives.
+//
+// The point of the whole thing: a queue entry has to answer "is this my fault
+// and what do I do now?", and a traceback answers neither. The raw text is
+// still shown underneath -- it is what a bug report needs.
+const _QHUB_CAUSES = {
+  disk_full:        [["Kein Speicherplatz mehr", "No space left"], ["Platz auf dem Ziellaufwerk schaffen und neu starten.", "Free space on the target drive, then retry."]],
+  path_missing:     [["Zielordner nicht gefunden", "Target folder missing"], ["Den Custom Path in den Einstellungen prüfen — er wurde verschoben oder gelöscht.", "Check the custom path in Settings — it was moved or deleted."]],
+  permission:       [["Keine Schreibrechte", "Permission denied"], ["MediaForge darf nicht in den Zielordner schreiben. Rechte prüfen (bei Docker: Volume-Mapping und Benutzer-ID).", "MediaForge cannot write to the target folder. Check the permissions (with Docker: the volume mapping and user id)."]],
+  file_in_use:      [["Datei ist in Benutzung", "File is in use"], ["Ein anderes Programm hält die Datei offen. Player oder Virenscanner schließen und erneut versuchen.", "Another program is holding the file open. Close the player or scanner and retry."]],
+  captcha:          [["Captcha nicht gelöst", "Captcha not solved"], ["Die Seite hat eine Bot-Prüfung gezeigt. Erneut versuchen — bei wiederholtem Auftreten das manuelle Lösen in den Einstellungen aktivieren.", "The site showed a bot check. Retry — if it keeps happening, enable manual solving in the settings."]],
+  rate_limited:     [["Zu viele Anfragen", "Rate limited"], ["Die Quelle drosselt. Etwas warten und dann erneut versuchen, oder weniger parallele Downloads einstellen.", "The source is throttling. Wait a while and retry, or lower the number of parallel downloads."]],
+  blocked:          [["Zugriff verweigert", "Access denied"], ["Die Quelle blockt diese IP oder verlangt eine Anmeldung. Ein anderer Anbieter oder ein VPN hilft oft.", "The source is blocking this IP or wants a login. Another provider or a VPN often helps."]],
+  hoster_dead:      [["Hoster liefert kein Video", "Hoster has no video"], ["Dieser Hoster ist tot oder die Datei wurde gelöscht. Erneut versuchen greift auf den nächsten Hoster zurück.", "This hoster is dead or the file was removed. Retrying falls back to the next hoster."]],
+  episode_missing:  [["Episode nicht gefunden", "Episode not found"], ["Die Episode gibt es auf der Quellseite (noch) nicht.", "The episode does not exist on the source site (yet)."]],
+  language_missing: [["Sprache nicht verfügbar", "Language unavailable"], ["Diese Episode gibt es in der gewählten Sprache nicht. Eine Sprachkette unter Regeln & Sprachen fängt das ab.", "This episode is not available in the chosen language. A language chain under Rules & Languages covers this."]],
+  provider_layout:  [["Quellseite hat sich geändert", "Source site changed"], ["Die Seite antwortet anders als erwartet — das ist ein Fall für ein Update oder einen Fehlerbericht.", "The site responded differently than expected — this is a case for an update or a bug report."]],
+  dns:              [["Adresse nicht auflösbar", "Name resolution failed"], ["DNS antwortet nicht. Unter Netzwerk & Zugriff einen anderen DNS-Server wählen.", "DNS is not answering. Pick a different DNS server under Network & Access."]],
+  tls:              [["TLS-Fehler", "TLS error"], ["Das Zertifikat wurde abgelehnt. Häufig eine falsche Systemzeit oder ein aufbrechender Proxy.", "The certificate was rejected. Usually a wrong system clock or a TLS-inspecting proxy."]],
+  timeout:          [["Zeitüberschreitung", "Timed out"], ["Die Quelle war zu langsam oder nicht erreichbar. Erneut versuchen.", "The source was too slow or unreachable. Retry."]],
+  connection:       [["Verbindung abgebrochen", "Connection lost"], ["Netzwerkproblem zwischen dir und der Quelle. Erneut versuchen.", "A network problem between you and the source. Retry."]],
+  watchdog_hang:    [["Download hing fest", "Download hung"], ["Der Watchdog hat einen hängenden Download beendet. Erneut versuchen.", "The watchdog stopped a hung download. Retry."]],
+  stalled:          [["Kein Fortschritt mehr", "Stalled"], ["Der Download stand zu lange still und wurde beendet. Erneut versuchen.", "The download stood still too long and was stopped. Retry."]],
+  cancelled:        [["Abgebrochen", "Cancelled"], ["Von Hand oder durch eine Regel abgebrochen.", "Cancelled by hand or by a rule."]],
+  ffmpeg_missing:   [["ffmpeg-Problem", "ffmpeg problem"], ["ffmpeg fehlt oder ist kaputt. Unter Einstellungen neu herunterladen lassen.", "ffmpeg is missing or broken. Let the settings page download it again."]],
+  server_error:     [["Serverfehler bei der Quelle", "Source server error"], ["Das Problem liegt bei der Quelle. Später erneut versuchen.", "The problem is on the source's side. Try again later."]],
+  not_found:        [["Nicht gefunden (404)", "Not found (404)"], ["Die Adresse gibt es nicht mehr.", "The address no longer exists."]],
+  unknown:          [["Unbekannter Fehler", "Unknown error"], ["Kein bekanntes Muster erkannt — der Originaltext steht unten und gehört in einen Fehlerbericht.", "No known pattern matched — the original text is below and belongs in a bug report."]]
+};
+
+function _qhubCauseHeader(summary) {
+  if (!summary || !summary.causes || !summary.causes.length) return "";
+  const Q = window.QHub;
+  return summary.causes.map(function (c) {
+    // Strip the "err_"/"fix_" prefixes the server sends: the cause id is the
+    // key here, the i18n keys are the server's business.
+    const entry = _QHUB_CAUSES[c.cause] || _QHUB_CAUSES.unknown;
+    return '<div class="qhub-err-cause qhub-err-sev-' + Q.esc(c.severity) + '">'
+      + '<div class="qhub-err-cause-head">'
+      + '<strong>' + Q.esc(t(entry[0][0], entry[0][1])) + '</strong>'
+      + (c.count > 1 ? '<span class="qhub-err-count">' + Q.esc(c.count) + '&times;</span>' : '')
+      + '</div>'
+      + '<div class="qhub-err-cause-fix">' + Q.esc(t(entry[1][0], entry[1][1])) + '</div>'
+      + '</div>';
+  }).join("");
+}
+
 /** The sibling panel. Sibling, not child: .qhub-row is a horizontal flex box. */
 function _qhubErrorPanel(e, errors, key) {
   const Q = window.QHub;
-  let body = errors.length > 1
+  let body = _qhubCauseHeader((e.raw || {}).error_summary);
+  body += errors.length > 1
     ? '<div class="qhub-err-head">' + errors.length + " " + t("Fehler", "errors") + '</div>'
     : '';
   errors.forEach(function (err) {

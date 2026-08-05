@@ -1921,6 +1921,21 @@
     </div>
 
     <div class="settings-section">
+      <h2>{{ _('Settings profile') }}</h2>
+      <div class="settings-hint" style="margin-bottom:14px;">
+        {{ _('A small, plain-JSON export of the configuration itself — naming template, provider order, quality defaults, path layout. Deliberately free of users, history, queues and API keys, so it can be pasted into a support ticket. Importing shows you exactly what would change before anything is written.') }}
+      </div>
+      <div class="settings-row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <button type="button" class="btn btn-primary" onclick="opsProfileExport()">{{ _('Export profile') }}</button>
+        <label class="btn btn-ghost" style="margin-bottom:unset !important;">
+          <span>{{ _('Choose profile file…') }}</span>
+          <input type="file" id="opsProfileFile" accept="application/json,.json" style="display:none;" onchange="opsProfilePreview(this)">
+        </label>
+      </div>
+      <div id="opsProfilePreview" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="settings-section">
       <h2>{{ _('Diagnostics') }}</h2>
       <div class="settings-hint" style="margin-bottom:14px;">
         {{ _('Builds a ZIP with version and platform info, which settings are set (sensitive values replaced), table row counts, worker states, recent queue errors and the tail of the log. Paths, URLs and secret-shaped tokens are scrubbed. Nothing is sent anywhere — the file is generated on demand and downloaded once.') }}
@@ -1945,6 +1960,14 @@
         {{ _('The audit log lives in its own database file so it survives a snapshot restore or a backup import. Entries are append-only and hash-chained: removing one from the middle breaks the chain and is detected by “Verify”. Sensitive values are never recorded — only the fact that they changed.') }}
       </div>
       <div id="opsAuditStats" class="ops-stat-row"></div>
+      <div class="settings-row" style="gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:14px;">
+        <div class="settings-field">
+          <label class="settings-field-label" for="opsAuditRetention">{{ _('Keep entries for (days)') }}</label>
+          <input type="number" id="opsAuditRetention" min="0" max="3650" step="1">
+          <span class="settings-hint">{{ _('0 keeps everything forever. Pruning is the only deletion the log permits, and it is itself recorded.') }}</span>
+        </div>
+        <button type="button" class="btn btn-ghost" onclick="opsAuditSaveRetention()">{{ _('Save') }}</button>
+      </div>
       <div class="settings-row ops-audit-filters" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin:14px 0;">
         <div class="settings-field">
           <label class="settings-field-label" for="opsAuditSearch">{{ _('Search') }}</label>
@@ -2138,6 +2161,14 @@ window.OPS_I18N = {
   day_fri: {{ _('Fri')|tojson }},
   day_sat: {{ _('Sat')|tojson }},
   day_sun: {{ _('Sun')|tojson }},
+
+  file_too_large: {{ _('That file is too large to be a settings profile.')|tojson }},
+  profile_no_changes: {{ _('This profile matches the current configuration — nothing to apply.')|tojson }},
+  profile_applied: {{ _('Applied')|tojson }},
+  apply_selected: {{ _('Apply selected')|tojson }},
+  changes: {{ _('change(s)')|tojson }},
+  unchanged: {{ _('unchanged')|tojson }},
+  refused: {{ _('refused')|tojson }},
 
   entries: {{ _('entries')|tojson }},
   failures: {{ _('failures')|tojson }},

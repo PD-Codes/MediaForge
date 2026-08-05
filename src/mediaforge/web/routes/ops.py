@@ -13,6 +13,7 @@ module here.
 """
 
 import io
+import json
 
 from flask import jsonify
 from flask import request
@@ -342,6 +343,43 @@ def register_ops_routes(app):
                          as_attachment=True, download_name=filename)
 
     # -----------------------------------------------------------------
+    # Settings profiles
+    # -----------------------------------------------------------------
+    @app.route("/api/ops/profile/export")
+    def api_ops_profile_export():
+        guard = _require_admin()
+        if guard:
+            return guard
+        from .. import audit as _audit
+        from .. import settings_profile
+        doc = settings_profile.export_profile(request.args.get("name", ""))
+        _audit.audit("settings", "profile_exported",
+                     detail={"keys": len(doc["settings"])})
+        payload = json.dumps(doc, indent=2, ensure_ascii=False)
+        return send_file(io.BytesIO(payload.encode("utf-8")),
+                         mimetype="application/json", as_attachment=True,
+                         download_name="mediaforge-profile.json")
+
+    @app.route("/api/ops/profile/preview", methods=["POST"])
+    def api_ops_profile_preview():
+        guard = _require_admin()
+        if guard:
+            return guard
+        from .. import settings_profile
+        result = settings_profile.preview_profile(_body().get("file"))
+        return jsonify(result), (200 if result.get("ok") else 400)
+
+    @app.route("/api/ops/profile/import", methods=["POST"])
+    def api_ops_profile_import():
+        guard = _require_admin()
+        if guard:
+            return guard
+        from .. import settings_profile
+        data = _body()
+        result = settings_profile.import_profile(data.get("file"), data.get("keys"))
+        return jsonify(result), (200 if result.get("ok") else 400)
+
+    # -----------------------------------------------------------------
     # Rules
     # -----------------------------------------------------------------
     @app.route("/api/ops/rules")
@@ -496,6 +534,7 @@ ADMIN_ONLY_OPS_ENDPOINTS = frozenset({
     "api_ops_maintenance", "api_ops_maintenance_create",
     "api_ops_maintenance_update", "api_ops_maintenance_delete",
     "api_ops_diagnostics",
+    "api_ops_profile_export", "api_ops_profile_preview", "api_ops_profile_import",
     "api_ops_rules", "api_ops_rule_create", "api_ops_rule_update",
     "api_ops_rule_delete", "api_ops_rules_test",
     "api_ops_language_profiles", "api_ops_language_profile_create",

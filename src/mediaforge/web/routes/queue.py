@@ -30,6 +30,7 @@ from flask import jsonify
 from flask import request
 import atexit
 import concurrent.futures
+import json
 import os
 import threading
 
@@ -275,8 +276,19 @@ def register_queue_routes(app):
         ffmpeg_pct = get_ffmpeg_progress()
         # Items using a fallback group store the internal "group:<id>"; the
         # queue rows show the group's name instead.
+        from ..error_explain import summarize as _explain_errors
+
         for _it in items:
             _it["language_label"] = language_display(_it.get("language"))
+            # Group this item's raw errors by cause. A twelve-episode job that
+            # failed twelve times almost always failed for one reason, and the
+            # queue is the place that has to say which -- a traceback there is
+            # information nobody can act on.
+            if _it.get("errors") and _it["errors"] != "[]":
+                try:
+                    _it["error_summary"] = _explain_errors(json.loads(_it["errors"]))
+                except Exception:
+                    _it["error_summary"] = None
         _attach_cached_posters(items)
 
         return jsonify({
@@ -454,6 +466,97 @@ def register_queue_routes(app):
         if not ok:
             return jsonify({"error": err}), 400
         return jsonify({"ok": True})
+    @app.route("/api/queue/bulk", methods=["POST"])
+    def api_queue_bulk():
+        """Apply one action to several queue items at once.
+
+        POST /api/queue/bulk with {"ids": [...], "action": "cancel"|"remove"|
+        "retry"|"top"|"bottom"}. Called from queue.js's bulk toolbar.
+
+        Every id is processed independently and its result reported: a
+        selection of twenty where one item was already gone must not fail the
+        other nineteen, and "it didn't work" without saying which one is the
+        reason bulk actions get distrusted.
+        """
+        data = request.get_json(silent=True) or {}
+        action = str(data.get("action", "")).strip()
+        raw_ids = data.get("ids") or []
+        if action not in ("cancel", "remove", "retry", "top", "bottom"):
+            return jsonify({"error": "unknown action"}), 400
+
+        # "retry" re-queues downloads, which is the one thing a kids account
+        # must not do -- /api/download refuses it for the same reason (see
+        # api_download above). The other actions stay open, matching the
+        # standing of the singular endpoints they batch.
+        if action == "retry":
+            from ..age_gate import is_kids_account
+            if is_kids_account():
+                return jsonify({"error": "not permitted", "code": "age_limited"}), 403
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"error": "no items selected"}), 400
+        # Cap the batch. The ids come from a browser and each one is a
+        # database round trip; an unbounded list is a free way to tie up a
+        # worker thread for as long as the caller likes.
+        if len(raw_ids) > 500:
+            return jsonify({"error": "too many items"}), 400
+
+        ids = []
+        for value in raw_ids:
+            try:
+                ids.append(int(value))
+            except (TypeError, ValueError):
+                continue
+
+        done, failed = [], {}
+        for queue_id in ids:
+            try:
+                if action == "cancel":
+                    ok, err = cancel_queue_item(queue_id)
+                    if ok:
+                        with _active_cancel_events_lock:
+                            ev = _active_cancel_events.get(queue_id)
+                        if ev is not None:
+                            ev.set()
+                        try:
+                            update_queue_progress(queue_id, 0, "")
+                        except Exception:
+                            pass
+                elif action == "remove":
+                    ok, err = remove_from_queue(queue_id)
+                elif action == "retry":
+                    item = get_queue_item(queue_id)
+                    if not item:
+                        ok, err = False, "not found"
+                    else:
+                        ok, err = restart_queue_item_inplace(
+                            queue_id, json.loads(item.get("episodes") or "[]"))
+                else:
+                    # "top" / "bottom": move_queue_item only steps one place,
+                    # so repeat it. Bounded by the queue length, which is what
+                    # the loop counts down -- not by a while-True that a
+                    # move which silently stops working would turn into a hang.
+                    direction = "up" if action == "top" else "down"
+                    ok, err = True, None
+                    for _ in range(len(get_queue()) or 1):
+                        moved, _merr = move_queue_item(queue_id, direction)
+                        if not moved:
+                            break
+                if ok:
+                    done.append(queue_id)
+                else:
+                    failed[str(queue_id)] = err or "failed"
+            except Exception as exc:
+                failed[str(queue_id)] = str(exc)
+
+        from .. import audit as _audit
+        _audit.audit("queue", "bulk_%s" % action,
+                     target="%d item(s)" % len(done),
+                     detail={"ok": done, "failed": failed},
+                     outcome="success" if not failed else "partial")
+
+        return jsonify({"ok": True, "action": action,
+                        "succeeded": done, "failed": failed})
+
     @app.route("/api/queue/completed", methods=["DELETE"])
     def api_queue_clear():
         """Remove all completed items from the queue.

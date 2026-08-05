@@ -25,6 +25,7 @@ from ..logger import get_logger
 from ..telemetry import classify as telemetry_classify
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
+from . import worker_registry as _wr
 from .media_publish import publish_output, sweep_stale_temp_files
 from .db import (
     add_to_upscale_queue,
@@ -122,12 +123,29 @@ def _upscale_worker():
             # handler reads them, and a job can die before they are filled.
             _job_started = time.monotonic()
             settings = None
+
+            # An active maintenance window can forbid upscaling outright.
+            # Checked BEFORE claiming, so a held job stays "queued" instead of
+            # being marked running for the length of the window.
+            try:
+                from .maintenance import is_allowed as _mw_allows
+                if not _mw_allows("upscale"):
+                    _wr.beat("upscale", state="idle",
+                             detail="held by a maintenance window")
+                    time.sleep(30)
+                    continue
+            except Exception:
+                pass  # a restriction that cannot be read is not a restriction
+
             with _upscale_lock:
                 item = claim_next_upscale_queued()
 
             if not item:
+                _wr.beat("upscale", state="idle")
                 time.sleep(4)
                 continue
+
+            _wr.working("upscale", detail=item.get("title") or item.get("file_path", ""))
 
             # An item whose file an encode still has to touch is never
             # handed out in the first place -- claim_next_upscale_queued()
@@ -326,6 +344,7 @@ def _upscale_worker():
 
         except Exception as e:
             logger.error(f"[Upscale] Worker-Fehler: {e}", exc_info=True)
+            _wr.fail("upscale", str(e), detail=(item or {}).get("title", ""))
             # Telemetry: a crashed job counts as a failed run -- but only when
             # the exception is a real defect. A user-initiated cancel raised as
             # an exception must never show up as an error (telemetry/classify.py),

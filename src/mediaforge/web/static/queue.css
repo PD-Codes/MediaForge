@@ -1632,6 +1632,43 @@
 
 .qhub-err-panel.is-open { display: block; }
 
+/* The explanation, above the raw text. Set apart from .qhub-err-line on
+   purpose: the raw lines are evidence and stay muted and small, this is the
+   part that is meant to be read first. */
+.qhub-err-cause {
+  margin: 6px 0 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.2));
+  border-left: 3px solid var(--text-muted);
+}
+
+.qhub-err-cause-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.qhub-err-count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.qhub-err-cause-fix {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.qhub-err-sev-critical { border-left-color: var(--error); }
+.qhub-err-sev-warning { border-left-color: var(--warning, #f59e0b); }
+.qhub-err-sev-info { border-left-color: var(--accent); }
+
 .qhub-err-line {
   display: flex;
   gap: 8px;

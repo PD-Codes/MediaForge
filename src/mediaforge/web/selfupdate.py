@@ -269,6 +269,10 @@ def read_status() -> dict:
         "to_version": meta.get("to_version"),
         "error": meta.get("error"),
         "started_at": meta.get("started_at"),
+        # The database snapshot taken just before the update started. The
+        # Updates tab names it so "put it back" is one click in Operations
+        # rather than a hunt through ~/.mediaforge/db_snapshots/.
+        "rollback_snapshot": meta.get("rollback_snapshot"),
         "log": _log_tail(),
     }
 
@@ -277,6 +281,9 @@ def ack_status() -> None:
     """Reset the state back to idle (frontend dismissed the result)."""
     _write_state("idle")
     meta = _read_meta()
+    # rollback_snapshot deliberately survives the acknowledgement: a problem
+    # introduced by an update is usually noticed days later, long after the
+    # "update finished" banner was dismissed.
     for k in ("error", "to_version", "telemetry_reported"):
         meta.pop(k, None)
     _write_meta(meta)
@@ -465,6 +472,31 @@ def start_update(target_channel: str | None = None) -> dict:
         raise UpdateError("an update is already in progress")
 
     from_version = _current_version()
+
+    # Snapshot the database before handing control to the update helper.
+    #
+    # A new version may run schema migrations on first start, and those are
+    # one-way: the old code has no idea what the new code did. Without a
+    # snapshot taken *here*, "the update broke something, put it back" means
+    # restoring a backup the user hopefully made. The migration engine also
+    # takes one before it migrates, but that one is written by the NEW code --
+    # if the new version fails before it gets that far, this is the only copy
+    # of the pre-update state that exists.
+    #
+    # Failure is not fatal: an unwritable snapshot directory or a full disk
+    # must not block an update the user asked for, it just means there is no
+    # automatic way back. The id goes into the meta so the Updates tab can
+    # name it after the restart.
+    rollback_snapshot = None
+    try:
+        from .dbmigrate import snapshot as _snapshot
+        _snap = _snapshot(reason="pre-update",
+                          note="before %s -> %s" % (current_channel, target))
+        rollback_snapshot = (_snap or {}).get("id")
+    except Exception as exc:
+        logger.warning("[SelfUpdate] Could not snapshot the database before "
+                       "updating (continuing without a rollback point): %s", exc)
+
     meta = {
         "channel": current_channel,
         "target_channel": target,
@@ -472,6 +504,7 @@ def start_update(target_channel: str | None = None) -> dict:
         "to_version": None,
         "error": None,
         "started_at": time.time(),
+        "rollback_snapshot": rollback_snapshot,
     }
     _write_meta(meta)
     _write_state("installing")

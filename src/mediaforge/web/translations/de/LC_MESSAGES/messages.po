@@ -7770,3 +7770,56 @@ msgstr "Hinweis"
 msgid "Critical"
 msgstr "Kritisch"
 
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Settings profile"
+msgstr "Einstellungsprofil"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "A small, plain-JSON export of the configuration itself — naming template, provider order, quality defaults, path layout. Deliberately free of users, history, queues and API keys, so it can be pasted into a support ticket. Importing shows you exactly what would change before anything is written."
+msgstr "Ein kleiner Export der Konfiguration selbst als reines JSON — Namensschema, Reihenfolge der Anbieter, Qualitätsvorgaben, Pfad-Layout. Bewusst ohne Benutzer, Verlauf, Warteschlangen und API-Schlüssel, damit man ihn in ein Support-Ticket kopieren kann. Beim Import siehst du erst genau, was sich ändern würde, bevor etwas geschrieben wird."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Export profile"
+msgstr "Profil exportieren"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Choose profile file…"
+msgstr "Profildatei wählen…"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Keep entries for (days)"
+msgstr "Einträge aufbewahren (Tage)"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "0 keeps everything forever. Pruning is the only deletion the log permits, and it is itself recorded."
+msgstr "0 bewahrt alles dauerhaft auf. Das Kürzen ist die einzige Löschung, die das Log erlaubt — und sie wird selbst protokolliert."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "That file is too large to be a settings profile."
+msgstr "Diese Datei ist zu groß für ein Einstellungsprofil."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "This profile matches the current configuration — nothing to apply."
+msgstr "Dieses Profil entspricht der aktuellen Konfiguration — nichts zu übernehmen."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Applied"
+msgstr "Übernommen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Apply selected"
+msgstr "Auswahl übernehmen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "change(s)"
+msgstr "Änderung(en)"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "unchanged"
+msgstr "unverändert"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "refused"
+msgstr "abgelehnt"
+
