@@ -192,7 +192,8 @@ def _tr(lang, de, en):
     return de if lang == "de" else en
 
 
-def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True):
+def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
+                          dry_run: bool = False, report: dict | None = None):
     """Check a single autosync job for new/missing episodes and queue them.
 
     Guarded by `_syncing_jobs`/`_syncing_jobs_lock` so the same job never runs
@@ -215,9 +216,36 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
     errors increment retry_count, which `_autosync_worker` uses to schedule a
     short-interval retry.
 
+    ``dry_run`` answers "what would this job do if it ran right now?" without
+    doing any of it. It implies ``queue_downloads=False`` and additionally
+    suppresses the two side effects that version does NOT suppress:
+
+    * the job's own bookkeeping (``last_check``, ``episodes_found``,
+      ``last_new_*``, ``retry_count``, the filter-dirty flag) -- a preview that
+      resets the schedule and clears the "new episodes" badge has changed the
+      thing it was asked to describe, and the next real run would then find
+      nothing new;
+    * notifications and telemetry, for the same reason.
+
+    Pass a ``report`` dict to have the plan written into it: which languages
+    were checked, which episodes would be queued, and which were skipped and
+    why. That is what the Dry-Run button in the UI shows, and it is the whole
+    point -- an Auto-Sync job that is about to queue 200 episodes because of a
+    filter typo should be able to say so before it does it.
+
     Used by: `_autosync_worker`'s poll loop, once per enabled job whose
-    schedule/retry window is due.
+    schedule/retry window is due; routes/autosync.py for the preview.
     """
+    if dry_run:
+        queue_downloads = False
+    if report is None:
+        report = {}
+    report.setdefault("job_id", job.get("id"))
+    report.setdefault("title", job.get("title"))
+    report.setdefault("dry_run", bool(dry_run))
+    report.setdefault("languages", [])
+    report.setdefault("would_queue", 0)
+    report.setdefault("skipped", [])
     import os
     from datetime import datetime
     from pathlib import Path
@@ -236,12 +264,14 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             "Auto-sync skipped '%s' — AniWorld layout-change backoff active for another %.0fs",
             job.get("title", "?"), layout_backoff_remaining(),
         )
-        return
+        report["blocked"] = "layout_backoff"
+        return report
 
     with _syncing_jobs_lock:
         if job_id in _syncing_jobs:
             logger.info("Auto-sync skipped job %d — already running", job_id)
-            return
+            report["blocked"] = "already_running"
+            return report
         _syncing_jobs.add(job_id)
 
     try:
@@ -864,9 +894,24 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                             "Auto-sync skipped '%s' (%s, %s) — already queued/running",
                             job["title"], target_lang, _kind,
                         )
+                        report["skipped"].append({
+                            "language": target_lang, "kind": _kind,
+                            "count": len(_group), "reason": "already_queued",
+                        })
                         continue
 
                     total_new_queued += len(_group)
+                    report["languages"].append({
+                        "language": target_lang,
+                        "kind": _kind,
+                        "count": len(_group),
+                        # Enough to recognise what it is, not the whole list:
+                        # a job catching up on a 200-episode series would
+                        # otherwise return a payload nobody can read.
+                        "sample": _group[:10],
+                        "custom_path_id": _path_id,
+                    })
+                    report["would_queue"] += len(_group)
                     if queue_downloads:
                         add_to_queue(
                             title=job["title"],
@@ -908,6 +953,20 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
             update_fields["filter_dirty"] = 0
 
         update_fields["last_error"] = None  # clear any previous error on success
+
+        report["episodes_online"] = total_online_count
+        report["episodes_local"] = max_local_found
+        report["ok"] = True
+
+        if dry_run:
+            # Everything below this point mutates something. A preview that
+            # resets last_check and clears the "new episodes" badge has changed
+            # the thing it was asked to describe, and the next real run would
+            # then find nothing new.
+            logger.info("Auto-sync dry run for '%s': would queue %d episode(s)",
+                        job.get("title", "?"), total_new_queued)
+            return report
+
         update_autosync_job(job["id"], **update_fields)
 
         # Telemetry: stage-3 run statistic — no series title/URL, just the
@@ -957,6 +1016,21 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
                          "could not read the series page")
         _is_transient = any(kw.lower() in type(e).__name__.lower() or kw.lower() in str(e).lower()
                             for kw in _net_keywords)
+
+        if dry_run:
+            # A failed preview must not leave a mark on the job either. The
+            # success path already returns before its own bookkeeping; this is
+            # the same rule for the other half, and it is the half that is easy
+            # to miss: without it a dry run against an unreachable provider
+            # sets last_error, stamps last_check and burns a retry the user
+            # never asked to spend -- and fires an error notification for a
+            # run that never happened.
+            report["ok"] = False
+            report["error"] = str(e)
+            report["transient"] = _is_transient
+            logger.info("Auto-sync dry run for '%s' failed: %s",
+                        job.get("title", "?"), e)
+            return report
 
         # What telemetry gets to know. "error_type: RuntimeError" was true and told us
         # nothing: it could not distinguish "aniworld was down for a minute" from "their
@@ -1122,6 +1196,13 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True)
     finally:
         with _syncing_jobs_lock:
             _syncing_jobs.discard(job_id)
+
+    # Every path through the body fills `report` in place, so returning it
+    # here covers the early exits (path unavailable, layout backoff, already
+    # running) as well as the successful one. A dry run that bailed out early
+    # still has to say why rather than returning nothing.
+    report.setdefault("ok", False)
+    return report
 
 
 def _autosync_worker():

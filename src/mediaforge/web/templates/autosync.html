@@ -3,6 +3,11 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='autosync.css') }}">
+<!-- ops.css owns the .ops-modal-* dialog the dry-run result is rendered into.
+     Linked rather than duplicated: a second copy of a modal's styling is how
+     the two drift apart, and this file is small and carries no page-specific
+     rules. -->
+<link rel="stylesheet" href="{{ url_for('static', filename='ops.css') }}">
 {% endblock %}
 {% block content %}
 <div class="autosync-container">

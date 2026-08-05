@@ -320,6 +320,42 @@ def register_autosync_routes(app):
                 return jsonify({"error": "Sync already running for this job"}), 409
         threading.Thread(target=_run_autosync_for_job, args=(job, True), daemon=True).start()
         return jsonify({"ok": True, "message": "Sync started"})
+    @app.route("/api/autosync/<int:job_id>/dry-run", methods=["POST"])
+    def api_autosync_dry_run(job_id):
+        """Answer "what would this job do if it ran right now?".
+
+        Route: POST /api/autosync/<job_id>/dry-run. Called from
+        static/autosync.js's `dryRunJob()`.
+
+        Runs synchronously rather than on a thread, unlike the real trigger
+        above: the caller is a person waiting for an answer, and a preview
+        whose result has to be polled for is a preview nobody uses. The
+        provider fetch is the slow part, so this can take a few seconds.
+
+        Nothing is written. Not the queue, and — the part that is easy to get
+        wrong — not the job's own bookkeeping either: a preview that resets
+        last_check and clears the "new episodes" badge has changed the thing
+        it was asked to describe, and the next real run would find nothing new.
+        """
+        job = get_autosync_job(job_id)
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+        username, is_admin = _get_current_user_info()
+        if not is_admin and job.get("added_by") != username:
+            return jsonify({"error": "Not authorized"}), 403
+        with _syncing_jobs_lock:
+            if job_id in _syncing_jobs:
+                return jsonify({"error": "Sync already running for this job"}), 409
+
+        report = {}
+        try:
+            _run_autosync_for_job(job, dry_run=True, report=report)
+        except Exception as exc:
+            logger.warning("[AutoSync] Dry run for job %d failed: %s", job_id, exc)
+            report.setdefault("ok", False)
+            report["error"] = str(exc)
+        return jsonify(report)
+
     @app.route("/api/autosync/running")
     def api_autosync_running():
         """Return the set of currently running sync job IDs.

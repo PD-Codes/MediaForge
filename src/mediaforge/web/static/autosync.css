@@ -837,3 +837,59 @@ label.btn.btn-ghost.autosync-hdr-btn.autosync-import-lbl {
     flex: 1 1 100%;
   }
 }
+/* ── Dry-run result ────────────────────────────────────────────────────────
+   Rendered inside ops.css's .ops-modal (linked from autosync.html), so only
+   the content needs styling here. The two headline cases are deliberately
+   different colours: "nothing would happen" is the reassuring answer and
+   "would queue N" is the one that should make you look at the number. */
+.sync-dry-none {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border-left: 3px solid var(--success, #22c55e);
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.2));
+  font-size: 0.85rem;
+}
+
+.sync-dry-count {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.2));
+  font-size: 0.9rem;
+}
+
+.sync-dry-group {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.sync-dry-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+
+.sync-dry-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  /* A catch-up run can list a lot. Cap it and scroll rather than growing the
+     dialog past the viewport. */
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.sync-dry-more { list-style: none; margin-left: -18px; opacity: 0.75; }
+
+@media (max-width: 720px) {
+  .sync-dry-list { max-height: 140px; }
+}

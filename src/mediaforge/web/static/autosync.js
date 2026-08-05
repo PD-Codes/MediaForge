@@ -590,12 +590,16 @@ function _buildJobCard(job, grayed) {
     </div>` : '';
 
   const editSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
+  // Magnifier: "look at it" rather than "run it". Deliberately not another
+  // arrow — a dry run must not read as a second kind of sync.
+  const dryRunSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
   const syncSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
   const delSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
 
   const actionsHtml = `<div class="sync-card-actions">
     ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn" onclick="openEditModal(${job.id})">${editSvg} ${t('Edit','Edit')}</button>` : ''}
     <button class="btn btn-ghost sync-card-btn sync-card-btn-sync" onclick="syncNow(${job.id})" ${isRunning || grayed ? 'disabled' : ''}>${syncSvg} Sync</button>
+    <button class="btn btn-ghost sync-card-btn" onclick="dryRunJob(${job.id})" ${isRunning ? 'disabled' : ''} title="${t('Zeigt, was dieser Job jetzt tun würde — ohne etwas zu tun','Shows what this job would do right now — without doing any of it')}">${dryRunSvg} ${t('Testlauf','Dry run')}</button>
     ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn sync-card-btn-del" onclick="removeJob(${job.id})">${delSvg} ${t('Entf.','Del')}</button>` : ''}
   </div>`;
 
@@ -744,6 +748,123 @@ async function syncNow(id) {
   }
 }
 
+/**
+ * Ask what a job WOULD do, without doing any of it.
+ *
+ * Synchronous on the server side (the provider fetch is the slow part), so
+ * this can take a few seconds. The button says so rather than sitting there
+ * looking broken.
+ *
+ * The result is what makes the feature worth having: an Auto-Sync job that is
+ * about to queue 200 episodes because of a filter typo says so here, before
+ * it does it.
+ */
+async function dryRunJob(id) {
+  const btn = event && event.currentTarget ? event.currentTarget : null;
+  const restore = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.textContent = t("Prüfe…", "Checking…"); }
+  try {
+    const res = await fetch("/api/autosync/" + id + "/dry-run", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || t("Testlauf fehlgeschlagen", "Dry run failed"));
+      return;
+    }
+    showDryRunResult(data);
+  } catch (e) {
+    showToast(t("Testlauf fehlgeschlagen", "Dry run failed"));
+  } finally {
+    if (btn) { btn.disabled = false; if (restore !== null) btn.innerHTML = restore; }
+  }
+}
+
+function showDryRunResult(data) {
+  const esc = window.mfEscape;
+  let body = "";
+
+  if (data.blocked) {
+    const why = data.blocked === "already_running"
+      ? t("Der Job läuft gerade.", "The job is running right now.")
+      : t("Ein Layout-Backoff ist aktiv — die Quellseite hat sich geändert.",
+          "A layout backoff is active — the source site changed.");
+    body = `<p class="settings-hint">${esc(why)}</p>`;
+  } else if (data.error) {
+    body = `<p class="settings-hint">${esc(data.error)}</p>`;
+  } else {
+    const online = data.episodes_online != null ? data.episodes_online : "?";
+    const local = data.episodes_local != null ? data.episodes_local : "?";
+    body = `<p class="settings-hint">${esc(t("Online gefunden", "Found online"))}: <strong>${esc(online)}</strong> · `
+         + `${esc(t("lokal vorhanden", "already local"))}: <strong>${esc(local)}</strong></p>`;
+
+    if (!data.would_queue) {
+      body += `<p class="sync-dry-none">${esc(t("Es würde nichts heruntergeladen — alles aktuell.",
+                                                "Nothing would be downloaded — everything is up to date."))}</p>`;
+    } else {
+      body += `<p class="sync-dry-count">${esc(t("Es würden", "Would queue"))} <strong>${esc(data.would_queue)}</strong> `
+            + `${esc(t("Episode(n) eingereiht.", "episode(s)."))}</p>`;
+      body += (data.languages || []).map(function (row) {
+        const sample = (row.sample || []).map(function (u) {
+          // typeof, not a truthiness check: parseSeasonEpisode lives in
+          // queue.js, and a bare reference to a name that is not defined is a
+          // ReferenceError, not undefined.
+          const label = typeof parseSeasonEpisode === "function"
+            ? (parseSeasonEpisode(u) || u) : u;
+          return `<li>${esc(label)}</li>`;
+        }).join("");
+        const more = row.count > (row.sample || []).length
+          ? `<li class="sync-dry-more">…${esc(row.count - row.sample.length)} ${esc(t("weitere", "more"))}</li>`
+          : "";
+        return `<div class="sync-dry-group">`
+             + `<div class="sync-dry-group-head"><strong>${esc(row.language)}</strong>`
+             + `<span class="queue-meta-pill">${esc(row.kind)}</span>`
+             + `<span class="queue-meta-pill">${esc(row.count)}</span></div>`
+             + `<ul class="sync-dry-list">${sample}${more}</ul></div>`;
+      }).join("");
+    }
+
+    if ((data.skipped || []).length) {
+      body += `<div class="sync-dry-group"><div class="sync-dry-group-head"><strong>`
+            + `${esc(t("Übersprungen", "Skipped"))}</strong></div><ul class="sync-dry-list">`
+            + data.skipped.map(function (s) {
+                return `<li>${esc(s.language)} · ${esc(s.kind)} · ${esc(s.count)} — `
+                     + `${esc(t("bereits in der Warteschlange", "already queued"))}</li>`;
+              }).join("")
+            + `</ul></div>`;
+    }
+  }
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "ops-modal-backdrop";
+  backdrop.innerHTML =
+    `<div class="ops-modal" role="dialog" aria-modal="true">
+       <div class="ops-modal-head">
+         <h3>${esc(t("Testlauf", "Dry run"))}: ${esc(data.title || "")}</h3>
+         <button type="button" class="ops-modal-x" aria-label="${esc(t("Schließen", "Close"))}">&times;</button>
+       </div>
+       <div class="ops-modal-body">${body}
+         <p class="settings-hint">${esc(t("Nichts davon wurde ausgeführt oder gespeichert — auch der Zeitplan des Jobs ist unverändert.",
+                                          "None of this was executed or saved — the job's schedule is unchanged too."))}</p>
+       </div>
+       <div class="ops-modal-foot">
+         <button type="button" class="btn btn-primary" data-act="close">${esc(t("Schließen", "Close"))}</button>
+       </div>
+     </div>`;
+  document.body.appendChild(backdrop);
+  if (window.MFScrollLock) { window.MFScrollLock.acquire("sync-dry-run"); }
+
+  function close() {
+    backdrop.remove();
+    if (window.MFScrollLock) { window.MFScrollLock.release("sync-dry-run"); }
+    document.removeEventListener("keydown", onKey);
+  }
+  function onKey(ev) { if (ev.key === "Escape") close(); }
+  document.addEventListener("keydown", onKey);
+  backdrop.addEventListener("click", function (ev) {
+    if (ev.target === backdrop || ev.target.closest(".ops-modal-x") ||
+        ev.target.closest('[data-act="close"]')) { close(); }
+  });
+}
+
 async function syncAll() {
   const btn = document.getElementById("syncAllBtn");
   if (btn) { btn.disabled = true; btn.textContent = t("Synchronisiere…", "Syncing…"); }
@@ -887,6 +1008,9 @@ function _buildCompactCard(job, grayed) {
     : '';
 
   const editSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
+  // Magnifier: "look at it" rather than "run it". Deliberately not another
+  // arrow — a dry run must not read as a second kind of sync.
+  const dryRunSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
   const syncSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
   const delSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
 
@@ -907,6 +1031,7 @@ function _buildCompactCard(job, grayed) {
       <div class="sync-card-actions">
         ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn" onclick="openEditModal(${job.id})" title="${t('Bearbeiten','Edit')}">${editSvg}</button>` : ''}
         <button class="btn btn-ghost sync-card-btn sync-card-btn-sync" onclick="syncNow(${job.id})" ${isRunning || grayed ? 'disabled' : ''} title="Sync">${syncSvg}</button>
+        <button class="btn btn-ghost sync-card-btn" onclick="dryRunJob(${job.id})" ${isRunning ? 'disabled' : ''} title="${t('Testlauf','Dry run')}">${dryRunSvg}</button>
         ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn sync-card-btn-del" onclick="removeJob(${job.id})" title="${t('Entfernen','Remove')}">${delSvg}</button>` : ''}
       </div>
     </div>
