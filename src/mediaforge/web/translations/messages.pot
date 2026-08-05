@@ -7989,3 +7989,7 @@ msgstr ""
 msgid "Revoke this key? Anything using it stops working immediately."
 msgstr ""
 
+
+#: src/mediaforge/web/templates/index.html
+msgid "Because you watched {}"
+msgstr ""

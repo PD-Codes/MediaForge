@@ -52,6 +52,11 @@
   {# Shared HTML escaping (window.mfEscape / window.mfSafeUrl). In <head> and
      before every other script so inline blocks can use it too. #}
   <script src="{{ url_for('static', filename='mf_escape.js') }}"></script>
+  <!-- Shared skeleton / empty-state markup (window.MFSkeleton). Loaded here,
+       next to mf_escape.js, so it is available to every page and to inline
+       blocks -- the whole point is that there is one shape, not one per
+       page. Styles live in mf_components.css, which is already global. -->
+  <script src="{{ url_for('static', filename='mf_skeleton.js') }}"></script>
   {# Visibility-aware polling (window.mfPoll) — see static/mf_poll.js. #}
   <script src="{{ url_for('static', filename='mf_poll.js') }}"></script>
   {# Shared .mf-multiselect dropdown behaviour (window.mfMultiSelect) — see static/mf_multiselect.js. #}

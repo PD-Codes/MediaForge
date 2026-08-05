@@ -49,6 +49,7 @@
     library: "feedLibraryGrid",
     upcoming: "feedUpcomingGrid",
     gaps: "feedGapsGrid",
+    because: "feedBecauseGrid",
     new: "feedNewGrid",
     popular: "feedPopularGrid",
     movies: "feedMoviesGrid",
@@ -674,6 +675,36 @@
           '<a class="home-pcard-hit" href="/library">' + art +
           '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
           '<span class="home-pcard-sub">' + mfEscape(sub) + "</span></a>",
+          it.poster_url ? "has-art" : "");
+      }).join("");
+    }
+
+    // Because you watched X. The only row on this page that GUESSES, so it
+    // names its seed in the section title -- a suggestion nobody can trace
+    // back to a reason is a suggestion nobody trusts, and one bad card should
+    // read as "wrong guess" rather than "why is this here at all".
+    const because = personal.because || [];
+    grid = showSection("because", because.length > 0);
+    if (grid && because.length) {
+      // The heading ships with a {} placeholder (index.html); fill it with
+      // the seed. Written via textContent, not innerHTML: the seed is a title
+      // from the library and therefore not ours.
+      const head = document.querySelector('[data-feed-heading="because"]');
+      if (head && personal.because_seed) {
+        const template = head.getAttribute("data-template") || head.textContent;
+        head.setAttribute("data-template", template);
+        head.textContent = template.replace("{}", personal.because_seed);
+      }
+      grid.innerHTML = because.map(function (it) {
+        const art = it.poster_url
+          ? '<img src="' + mfEscape(it.poster_url) + '" alt="" loading="lazy">'
+          : fauxArt(it.title);
+        const shared = (it.shared || []).join(", ");
+        return pcard(
+          '<a class="home-pcard-hit" href="/library">' + art +
+          '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
+          (shared ? '<span class="home-pcard-sub">' + mfEscape(shared) + "</span>" : "") +
+          "</a>",
           it.poster_url ? "has-art" : "");
       }).join("");
     }

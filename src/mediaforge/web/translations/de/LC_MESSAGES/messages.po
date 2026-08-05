@@ -7904,3 +7904,7 @@ msgstr "Widerrufen"
 msgid "Revoke this key? Anything using it stops working immediately."
 msgstr "Diesen Schlüssel widerrufen? Alles, was ihn benutzt, funktioniert sofort nicht mehr."
 
+
+#: src/mediaforge/web/templates/index.html
+msgid "Because you watched {}"
+msgstr "Weil du {} gesehen hast"

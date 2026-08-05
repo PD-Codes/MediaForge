@@ -624,6 +624,14 @@
       <h2 class="browse-heading">{{ _('Fill the gaps') }}</h2>
       <div class="browse-grid" id="feedGapsGrid"></div>
     </div>
+    {# "Because you watched X". The heading carries a {} placeholder that
+       home_feed.js fills with the seed title -- the row is the only guess on
+       this page, and naming what it guessed FROM is what makes a wrong card
+       read as "wrong guess" instead of "why is this here". #}
+    <div class="browse-section feed-section feed-personal" data-feed-row="because" style="display:none">
+      <h2 class="browse-heading" data-feed-heading="because">{{ _('Because you watched {}') }}</h2>
+      <div class="browse-grid" id="feedBecauseGrid"></div>
+    </div>
     <div class="browse-section feed-section" data-feed-row="new">
       <h2 class="browse-heading">{{ _('New this week') }}</h2>
       <div class="browse-grid" id="feedNewGrid"></div>

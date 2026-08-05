@@ -1026,3 +1026,154 @@ body.mf-select-mode .mf-poster-select,
   font-size: 0.72rem;
   white-space: nowrap;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Skeletons and empty states
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Every page used to invent its own waiting state: a spinner here, the word
+   "Loading…" there, a blank area somewhere else. Three problems with that,
+   in increasing order of how much they cost:
+
+   1. It looks like three different applications.
+   2. A blank area is indistinguishable from "there is nothing here", so the
+      user cannot tell whether to wait or to go away.
+   3. Content arriving into an empty box makes the page jump. A skeleton the
+      shape of the thing that is coming does not.
+
+   So: one set of blocks, used everywhere. .mf-skeleton is the primitive;
+   .mf-skeleton-card / -row / -text are the shapes the app actually shows.
+
+   The shimmer is a background-position animation on a gradient, not an
+   opacity pulse. Pulsing dozens of boxes in step reads as a fault light;
+   a sweep reads as progress -- and it is one composited property either way.
+   ─────────────────────────────────────────────────────────────────────── */
+
+.mf-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
+}
+
+.mf-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.07) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: mf-skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes mf-skeleton-sweep {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* Respect the setting. A sweeping gradient is exactly the kind of motion
+   people turn this on to avoid, and a still skeleton still does its job:
+   it holds the shape and says "not empty, waiting". */
+@media (prefers-reduced-motion: reduce) {
+  .mf-skeleton::after { animation: none; }
+}
+
+/* --- shapes ------------------------------------------------------------- */
+
+/* A poster card, matching .browse-card / .mf-poster-art proportions so the
+   real card drops into exactly the space the skeleton held. */
+.mf-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mf-skeleton-card .mf-skeleton-art {
+  aspect-ratio: 2 / 3;
+  width: 100%;
+  border-radius: var(--radius-lg, 12px);
+}
+
+.mf-skeleton-text {
+  height: 0.72rem;
+  border-radius: 5px;
+}
+
+.mf-skeleton-text.is-short { width: 45%; }
+.mf-skeleton-text.is-medium { width: 70%; }
+
+/* A list row: queue entries, history lines, audit lines. */
+.mf-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mf-skeleton-row:last-child { border-bottom: none; }
+
+.mf-skeleton-row .mf-skeleton-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
+.mf-skeleton-row .mf-skeleton-lines {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mf-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+/* --- empty state -------------------------------------------------------- */
+/* The other half of the same problem. An empty area says nothing; this says
+   what is missing and, where there is one, what to do about it. */
+
+.mf-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 44px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.mf-empty-icon {
+  width: 40px;
+  height: 40px;
+  opacity: 0.45;
+  stroke-width: 1.5;
+}
+
+.mf-empty-title {
+  font-size: 0.95rem;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.mf-empty-hint {
+  font-size: 0.82rem;
+  max-width: 42ch;
+  line-height: 1.55;
+}
+
+.mf-empty-action { margin-top: 6px; }
+
+@media (max-width: 720px) {
+  .mf-skeleton-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .mf-empty { padding: 32px 16px; }
+}

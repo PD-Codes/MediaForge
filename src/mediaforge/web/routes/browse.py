@@ -351,8 +351,13 @@ _FEED_ROW_SOURCES = {
     # "incomplete series" list; what makes it a home row is that every card
     # carries an action ("load what is missing") instead of a number.
     "gaps":      {"hint": "library",  "link": "/stats"},
+    # "Because you watched X". The only row on this page that is a GUESS, and
+    # it names its seed for exactly that reason: a suggestion nobody can trace
+    # back to a reason is a suggestion nobody trusts. See web/recommend.py.
+    "because":   {"hint": "playback", "link": "/library"},
 }
-_FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming", "gaps")
+_FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming", "gaps",
+                       "because")
 # The default reading order: what you were doing, what arrived, then what is
 # out there -- and the two rows that are really other pages in miniature
 # (watchlist, calendar) at the end.
@@ -369,8 +374,13 @@ _FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming", "gaps")
 # "gaps" sits directly behind "popular" by request: it is the one row that
 # asks something of the user rather than offering something, and putting it
 # above the discovery rows would make the home page feel like a chore list.
-_FEED_DEFAULT_ORDER = ("continue", "library", "new", "popular", "gaps",
-                       "movies", "watchlist", "upcoming")
+#
+# "because" sits right after "library": both answer "what of mine should I
+# open next", and putting a guess in front of the discovery rows is the only
+# place it earns its space. Ahead of "continue" it would be presumptuous --
+# the thing you already started beats anything this can infer.
+_FEED_DEFAULT_ORDER = ("continue", "library", "because", "new", "popular",
+                       "gaps", "movies", "watchlist", "upcoming")
 _FEED_CARDS_CHOICES = (10, 20, 30, 40, 60)
 
 
@@ -1102,7 +1112,8 @@ def register_browse_routes(app):
             username = None
 
         out = {"continue": [], "watchlist": [], "library": [], "upcoming": [],
-               "gaps": [], "continue_source": "local"}
+               "gaps": [], "because": [], "because_seed": "",
+               "continue_source": "local"}
         hidden = set(feed_effective_config()["hidden"])
         # Reading the whole library to fill a row the user switched off is
         # exactly the kind of work a home page should not be doing.
@@ -1288,12 +1299,29 @@ def register_browse_routes(app):
         except Exception:
             logger.debug("[HomeFeed] gaps row failed", exc_info=True)
 
+        # --- "Because you watched X". Last, because it is the only row here
+        #     that guesses, and because it reads the same caches the rows
+        #     above already warmed.
+        try:
+            if "because" in hidden:
+                raise StopIteration
+            from .. import recommend
+            because = recommend.because_you_watched(username or "")
+            if because:
+                out["because"] = because["items"]
+                out["because_seed"] = because["seed"]
+        except StopIteration:
+            pass
+        except Exception:
+            logger.debug("[HomeFeed] because-you-watched row failed", exc_info=True)
+
         # --- Artwork for the rows that come from the library. Done once here
         #     rather than per row, so every card that CAN have a poster gets
         #     one and the placeholder is genuinely "TMDB does not know this".
         try:
             _feed_library_posters(out["library"])
             _feed_library_posters(out["gaps"])
+            _feed_library_posters(out["because"])
             if out["continue_source"] == "local":
                 _feed_library_posters(out["continue"])
         except Exception:

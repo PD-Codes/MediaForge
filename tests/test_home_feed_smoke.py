@@ -188,7 +188,7 @@ def test_a_junk_layout_can_never_lose_a_row(as_user):
         assert cfg["order"][0] == "watchlist"
         assert sorted(cfg["order"]) == sorted(
             ["continue", "library", "watchlist", "upcoming", "new", "popular",
-             "movies", "gaps"])
+             "movies", "gaps", "because"])
         assert cfg["limit"] == 30          # 999 is not one of the offered steps
     finally:
         client.post("/api/user/preferences", json={"home_feed_layout": ""})
