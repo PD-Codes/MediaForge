@@ -209,6 +209,7 @@ first time each of the module's registered items is seen -- see
 
 import ast
 import atexit
+import contextlib
 import importlib
 import pkgutil
 import shutil
@@ -229,6 +230,11 @@ from ...config import MEDIAFORGE_CONFIG_DIR
 from ...logger import get_logger
 
 logger = get_logger(__name__)
+
+# Serialises the Flask "setup finished" guard in _allow_late_setup(), so two
+# concurrent live registrations (e.g. a store install racing a Modulmanager
+# "Refresh") cannot restore each other's saved state.
+_late_setup_lock = threading.RLock()
 
 # ---------------------------------------------------------------------------
 # Where modules live: NOT in here.
@@ -878,6 +884,49 @@ def _register_sensitive_settings(name, module) -> None:
             exc_info=True)
 
 
+@contextlib.contextmanager
+def _allow_late_setup(app):
+    """Let a module's register(app) call Flask setup methods
+    (register_blueprint, add_url_rule, ...) on an app that has already served
+    a request.
+
+    Flask >=2.2 refuses those calls via Scaffold._check_setup_finished(),
+    which asserts on the private `app._got_first_request` flag. By the time
+    rescan_new_modules() runs -- an admin clicking "Refresh", a store
+    install, a dependency install -- that flag is always True, so without
+    this a genuinely new module's Blueprint could never be added live, which
+    is the entire point of "Refresh".
+
+    Clearing `_got_first_request` for the duration is NOT enough: Flask's
+    full_dispatch_request() sets it back to True on *every* request, so any
+    concurrent request from another browser tab (the app polls queues and
+    notifications constantly) re-arms the assertion mid-registration and the
+    module dies with "The setup method 'register_blueprint' can no longer be
+    called on the application". Instead the check itself is shadowed with a
+    no-op instance attribute -- unaffected by other threads, because a
+    request never calls _check_setup_finished(). The lock serialises
+    concurrent registrations so two of them can't restore each other's state.
+
+    Flask keeps no per-request state derived from the setup phase (the url
+    map adapter is rebuilt per request and before_first_request is gone), so
+    routes added this way take effect on the next request.
+    """
+    with _late_setup_lock:
+        had_first_request = getattr(app, "_got_first_request", False)
+        had_override = "_check_setup_finished" in vars(app)
+        previous = vars(app).get("_check_setup_finished")
+        app._got_first_request = False
+        app._check_setup_finished = lambda f_name: None
+        try:
+            yield
+        finally:
+            if had_override:
+                app._check_setup_finished = previous
+            else:
+                vars(app).pop("_check_setup_finished", None)
+            app._got_first_request = had_first_request
+
+
 def _register_modules(app, modules: dict, registered: set) -> list:
     """Call register(app) for each of `modules`, in an order that respects
     DEPENDS_ON (see _resolve_load_order) -- shared by
@@ -951,26 +1000,11 @@ def _register_modules(app, modules: dict, registered: set) -> list:
             continue
         try:
             before_ids = item_ids()
-            # Flask >=2.2 refuses register_blueprint()/app.route() once the
-            # app has handled its first request (Scaffold.
-            # _check_setup_finished(), gated on the private app.
-            # _got_first_request flag) -- which is always the case by the
-            # time rescan_new_modules() (this function's other caller) runs,
-            # since it's only ever triggered by an admin clicking "Refresh"
-            # on an already-running app. That flag has no purpose beyond
-            # this one assertion in current Flask (it's not used for
-            # before-first-request hooks anymore, and full_dispatch_request()
-            # unconditionally sets it back to True on every request
-            # regardless of what we do here), so it's safe to flip off just
-            # for the duration of this one register(app) call -- without
-            # this, a genuinely new module's Blueprint can never be added
-            # live, defeating the entire point of "Refresh".
-            had_first_request = getattr(app, "_got_first_request", False)
-            app._got_first_request = False
-            try:
+            # See _allow_late_setup(): a module registered while the app is
+            # already serving requests must be allowed to add its Blueprint
+            # and routes anyway.
+            with _allow_late_setup(app):
                 register_fn(app)
-            finally:
-                app._got_first_request = had_first_request
             logger.info("[Thirdparties] Registered integration: %s", name)
             registered.add(name)
             newly_registered.append(name)
@@ -989,7 +1023,10 @@ def _register_modules(app, modules: dict, registered: set) -> list:
             # defaults are seeded, fire on_install/on_upgrade -- a hook that
             # creates tables or migrates data has no business running for a
             # module that turned out not to load.
-            _run_lifecycle_hooks(app, name, module)
+            # Same guard as register(app): an on_install/on_upgrade hook is
+            # allowed to add routes too, and hits the same Flask assertion.
+            with _allow_late_setup(app):
+                _run_lifecycle_hooks(app, name, module)
         except Exception as exc:
             logger.exception("[Thirdparties] register(app) failed for '%s'", name)
             record_module_status(name, registered=False, error=str(exc))
