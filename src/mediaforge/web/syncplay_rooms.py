@@ -50,6 +50,27 @@ MEMBER_TIMEOUT = 30.0
 ROOM_GRACE = 60.0
 # Bounded chat history kept server-side for late joiners.
 CHAT_HISTORY = 100
+
+# Reactions a member may send within REACTION_WINDOW seconds. A reaction is a
+# broadcast to everyone in the room, so this is a limit on how much noise one
+# person can make, not a limit on enthusiasm.
+REACTION_BURST = 8
+REACTION_WINDOW = 10.0
+
+# A closed set, and these are the exact characters templates/syncplay.html's
+# reaction bar sends. Free text here would be a second chat with no length
+# limit and no moderation, rendered into every participant's player -- and the
+# client already floats whatever arrives straight into the video stage.
+#
+# The bar and the endpoint shipped without each other: the client has posted to
+# /api/syncplay/reaction since the room UI was written, and no such route
+# existed, so every tap was a silent 404. Keep the two in step.
+REACTIONS = ("\U0001F44D", "\U0001F602", "\U0001F62E", "\U0001F622",
+             "\U0001F525", "\u2764\uFE0F")
+
+# Live invite links per room. A host who genuinely needs more simultaneous
+# links than this is doing something other than inviting friends.
+MAX_INVITES = 20
 # Per-member event backlog before we force a full resync instead of leaking memory.
 EVENT_BACKLOG = 500
 
@@ -243,6 +264,11 @@ class Member:
         self.buffering = False
         self.ready = True
 
+        # Reaction timestamps, for the per-member rate limit. Per member and
+        # not per room on purpose: a shared budget would let one enthusiastic
+        # person drown out everybody else.
+        self.reaction_times: list[float] = []
+
         # SSE delivery queue + overflow guard.
         self.q: "Queue[dict]" = Queue()
         self._queued = 0
@@ -298,6 +324,13 @@ class Room:
         self.host_lock: bool = False           # only host may control playback
         self.max_members: int | None = None    # None = unlimited
         self.password: str | None = None
+
+        # Invite links the host handed out. code -> {"expires_at", "uses_left",
+        # "created_by"}. A link is a SEPARATE object from the room name on
+        # purpose: sharing the room name is forever and cannot be taken back,
+        # while an invite can be given a lifetime and revoked without renaming
+        # the room out from under the people already in it.
+        self.invites: dict[str, dict] = {}
 
         self.lock = threading.RLock()
         self._empty_since: float | None = None
@@ -713,6 +746,152 @@ def chat(token: str, text: str) -> bool:
         room.chat.append(msg)
         room.broadcast({"type": "chat", "message": msg})
     return True
+
+
+def react(token: str, emoji: str) -> bool:
+    """Send a reaction into the room.
+
+    Deliberately NOT a chat message: a reaction is a moment, not a record.
+    It is broadcast and forgotten -- never appended to ``room.chat`` -- so
+    twenty people tapping the same emoji at a cliffhanger does not push the
+    conversation off the top of the chat history, which is the one thing that
+    would make people stop using either feature.
+
+    The emoji set is closed. Free text here would be a second chat with no
+    length limit and no moderation, and an arbitrary string rendered into
+    everyone's player is not something to accept from a guest.
+    """
+    emoji = (emoji or "").strip()
+    if emoji not in REACTIONS:
+        return False
+    room = room_for_token(token)
+    if not room:
+        return False
+    with room.lock:
+        member = room.members.get(token)
+        if not member:
+            return False
+        member.touch()
+        # Rate limited per member, not per room: one enthusiastic person must
+        # not be able to drown out everybody else, and a shared limit would
+        # let them do exactly that.
+        now = time.time()
+        recent = [t for t in member.reaction_times if now - t < REACTION_WINDOW]
+        if len(recent) >= REACTION_BURST:
+            member.reaction_times = recent
+            return False
+        recent.append(now)
+        member.reaction_times = recent
+        room.broadcast({"type": "reaction", "name": member.name,
+                        "emoji": emoji, "ts": now})
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Invite links
+# ---------------------------------------------------------------------------
+
+def create_invite(host_token: str, *, minutes: int = 60,
+                  uses: int | None = None) -> dict | None:
+    """Host creates a shareable invite. Returns ``{"code", "expires_at", ...}``.
+
+    Only the host: an invite is a decision about who gets into the room, and
+    a guest handing out further invites is how a private room stops being one.
+    """
+    room = _host_room(host_token)
+    if not room:
+        return None
+    minutes = max(1, min(int(minutes or 60), 60 * 24 * 7))
+    if uses is not None:
+        uses = max(1, min(int(uses), 100))
+
+    with room.lock:
+        # Bound the number of live invites. Without it a script could fill the
+        # room object with codes, and a host who genuinely needs more than
+        # this many simultaneous links is doing something else.
+        room.invites = {c: i for c, i in room.invites.items()
+                        if not _invite_expired(i)}
+        if len(room.invites) >= MAX_INVITES:
+            return None
+        host = room.members.get(host_token)
+        code = secrets.token_urlsafe(12)
+        entry = {
+            "expires_at": time.time() + minutes * 60,
+            "uses_left": uses,
+            "created_by": host.name if host else "?",
+        }
+        room.invites[code] = entry
+    return {"code": code, "room": room.name,
+            "expires_at": entry["expires_at"], "uses_left": entry["uses_left"]}
+
+
+def _invite_expired(entry: dict, now: float | None = None) -> bool:
+    now = now if now is not None else time.time()
+    if entry.get("expires_at", 0) <= now:
+        return True
+    uses = entry.get("uses_left")
+    return uses is not None and uses <= 0
+
+
+def resolve_invite(code: str) -> str | None:
+    """Room name for a live invite code, or None.
+
+    Does NOT consume a use -- that happens in :func:`consume_invite`, once the
+    join actually succeeds. Resolving on page load and consuming there would
+    burn the invite on a refresh, or on the visitor being bounced by a
+    password prompt.
+    """
+    code = (code or "").strip()
+    if not code:
+        return None
+    with _registry_lock:
+        rooms = list(_rooms.values())
+    for room in rooms:
+        with room.lock:
+            entry = room.invites.get(code)
+            if entry and not _invite_expired(entry):
+                return room.name
+    return None
+
+
+def consume_invite(code: str) -> bool:
+    """Decrement a limited invite. Called once a join has succeeded."""
+    code = (code or "").strip()
+    if not code:
+        return False
+    with _registry_lock:
+        rooms = list(_rooms.values())
+    for room in rooms:
+        with room.lock:
+            entry = room.invites.get(code)
+            if not entry or _invite_expired(entry):
+                continue
+            if entry.get("uses_left") is not None:
+                entry["uses_left"] -= 1
+                if entry["uses_left"] <= 0:
+                    room.invites.pop(code, None)
+            return True
+    return False
+
+
+def list_invites(host_token: str) -> list[dict]:
+    room = _host_room(host_token)
+    if not room:
+        return []
+    with room.lock:
+        room.invites = {c: i for c, i in room.invites.items()
+                        if not _invite_expired(i)}
+        return [{"code": code, "expires_at": entry["expires_at"],
+                 "uses_left": entry["uses_left"]}
+                for code, entry in room.invites.items()]
+
+
+def revoke_invite(host_token: str, code: str) -> bool:
+    room = _host_room(host_token)
+    if not room:
+        return False
+    with room.lock:
+        return room.invites.pop((code or "").strip(), None) is not None
 
 
 def set_media(token: str, media: dict | None) -> bool:

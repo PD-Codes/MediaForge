@@ -879,6 +879,22 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         resp.headers["Cache-Control"] = "no-cache"
         return resp
 
+    @app.route("/offline")
+    def offline_page():
+        """The page the service worker shows when a navigation cannot reach us.
+
+        Precached at install time (see static/sw.js's SHELL), so it has to be
+        reachable without a session -- a service worker fetching it during
+        install carries no cookies worth relying on, and a login redirect
+        cached under this URL would be shown as "you are offline" forever.
+
+        It contains no data at all, which is the point: a queue or library
+        served from a stale cache looks current and is wrong.
+        """
+        from flask import session as _session
+        return render_template("offline.html",
+                               ui_language=_session.get("ui_language", "en"))
+
     @app.route("/")
     def index():
         sto_lang_labels = {"1": "German Dub", "2": "English Dub", "3": "English Dub (German Sub)"}
@@ -1354,6 +1370,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # each one needs -- nothing an unauthenticated caller could not
             # read in the public documentation.
             "api_v1_openapi",
+            # The PWA's offline page. Precached by the service worker at
+            # install time, when the fetch carries no session worth relying
+            # on -- and a login redirect cached under this URL would be shown
+            # as "you are offline" forever. It contains no data at all.
+            "offline_page",
             # SyncPlay guest endpoints — gated by room token + enabled flag,
             # so invited guests can watch together without an account.
             "api_syncplay_config",
@@ -1363,6 +1384,15 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_syncplay_report",
             "api_syncplay_ready",
             "api_syncplay_chat",
+            # Reactions ride the same guest path as chat: a guest in a room
+            # is a participant, and a room where only account holders may
+            # react is not the feature.
+            "api_syncplay_react",
+            # Following an invite link is the one thing a person without an
+            # account MUST be able to do before joining. It answers with a
+            # room name and nothing else -- no member list, no media, no
+            # indication of whether anything is playing.
+            "api_syncplay_invite_resolve",
             "api_syncplay_episode",
             "api_syncplay_leave",
             "api_syncplay_rooms",

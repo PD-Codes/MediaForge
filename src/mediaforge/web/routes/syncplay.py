@@ -101,6 +101,16 @@ def register_syncplay_routes(app):
             from flask import redirect, url_for
             return redirect(url_for("index"))
         room = (request.args.get("room") or "").strip()
+        # ?invite=<code> is the revocable, expiring form of ?room=<name>.
+        # Resolved here rather than in the client so the existing lobby needs
+        # no new code: it already prefills from `invite_room`. A dead or
+        # expired code simply lands on the normal lobby -- telling a visitor
+        # that the code WAS valid once is information they have no use for and
+        # that confirms a room exists.
+        code = (request.args.get("invite") or "").strip()
+        if code and not room:
+            from .. import syncplay_rooms as sp
+            room = sp.resolve_invite(code) or ""
         return render_template("syncplay.html", invite_room=room)
     @app.before_request
     def _syncplay_guest_stream_guard():
@@ -276,6 +286,90 @@ def register_syncplay_routes(app):
         data = request.get_json(silent=True) or {}
         ok = sp.chat((data.get("token") or "").strip(), str(data.get("text", "")))
         return (jsonify({"ok": True}) if ok else (jsonify({"error": "session not found"}), 404))
+    @app.route("/api/syncplay/reaction", methods=["POST"])
+    def api_syncplay_react():
+        """Serve POST /api/syncplay/react: send a reaction into the room.
+
+        Separate from chat on purpose: a reaction is a moment, not a record.
+        It is broadcast and forgotten rather than appended to the chat
+        history, so twenty people tapping the same emoji at a cliffhanger
+        does not push the conversation off the top of the log.
+
+        The emoji is a key from a closed set, not free text -- an arbitrary
+        string rendered into every participant's player is not something to
+        accept from a guest.
+        """
+        from .. import syncplay_rooms as sp
+        data = request.get_json(silent=True) or {}
+        ok = sp.react((data.get("token") or "").strip(),
+                      str(data.get("emoji", "")))
+        if ok:
+            return jsonify({"ok": True})
+        # 429, not 404: the common reason to land here is the per-member rate
+        # limit, and telling somebody their session is gone when they just
+        # tapped too fast sends them to reload a working page.
+        return jsonify({"error": "not allowed or too fast"}), 429
+
+    @app.route("/api/syncplay/invite", methods=["POST"])
+    def api_syncplay_invite():
+        """Serve POST /api/syncplay/invite: the host creates a share link.
+
+        An invite is a separate object from the room name: sharing the name is
+        forever and cannot be taken back, while a link can be given a lifetime
+        and revoked without renaming the room out from under everybody already
+        in it.
+
+        Host only — a guest handing out further invites is how a private room
+        stops being one.
+        """
+        from .. import syncplay_rooms as sp
+        data = request.get_json(silent=True) or {}
+        invite = sp.create_invite(
+            (data.get("token") or "").strip(),
+            minutes=int(data.get("minutes") or 60),
+            uses=(int(data["uses"]) if str(data.get("uses") or "").isdigit() else None),
+        )
+        if not invite:
+            return jsonify({"error": "not the host, or too many live invites"}), 403
+        base = (get_setting("web_base_url", "") or "").rstrip("/")
+        invite["url"] = "%s/syncplay?invite=%s" % (base, invite["code"])
+        return jsonify(invite)
+
+    @app.route("/api/syncplay/invites", methods=["GET"])
+    def api_syncplay_invites():
+        """Serve GET /api/syncplay/invites?token=…: the host's live invites."""
+        from .. import syncplay_rooms as sp
+        return jsonify({"invites": sp.list_invites(
+            (request.args.get("token") or "").strip())})
+
+    @app.route("/api/syncplay/invite/revoke", methods=["POST"])
+    def api_syncplay_invite_revoke():
+        """Serve POST /api/syncplay/invite/revoke: kill one share link."""
+        from .. import syncplay_rooms as sp
+        data = request.get_json(silent=True) or {}
+        ok = sp.revoke_invite((data.get("token") or "").strip(),
+                              str(data.get("code", "")))
+        return (jsonify({"ok": True}) if ok else (jsonify({"error": "unknown"}), 404))
+
+    @app.route("/api/syncplay/invite/resolve")
+    def api_syncplay_invite_resolve():
+        """Serve GET /api/syncplay/invite/resolve?code=…: which room is this?
+
+        Login-exempt, like the other guest endpoints: the whole point of an
+        invite is that somebody without an account can follow it. It answers
+        with a room NAME and nothing else -- no member list, no media, no
+        indication of whether the room is currently playing anything.
+
+        Resolving deliberately does not consume a use. Burning the invite here
+        would spend it on a page refresh, or on the visitor being bounced by
+        the room's password prompt.
+        """
+        from .. import syncplay_rooms as sp
+        room = sp.resolve_invite((request.args.get("code") or "").strip())
+        if not room:
+            return jsonify({"ok": False, "error": "expired or unknown"}), 404
+        return jsonify({"ok": True, "room": room})
+
     @app.route("/api/syncplay/episode", methods=["POST"])
     def api_syncplay_episode():
         """Serve POST /api/syncplay/episode: host announces the currently

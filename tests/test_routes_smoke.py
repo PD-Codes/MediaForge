@@ -87,8 +87,12 @@ def test_anonymous_requests_are_redirected_or_rejected(app, client):
     # A client cannot know which scopes to ask for until it can read the spec,
     # so requiring a key to fetch it is a chicken-and-egg problem. It describes
     # shapes -- endpoint names, parameter types, required scopes -- not data.
+    # offline_page is precached by the service worker at install time, when
+    # the fetch carries no session worth relying on. A login redirect cached
+    # under that URL would then be shown as "you are offline" forever. The
+    # page contains no data at all -- that is the whole point of it.
     known_exempt = {"api_syncplay_rooms", "api_syncplay_config", "api_health",
                     "api_calendar_ics", "syncplay_page", "readyz",
-                    "api_v1_openapi"}
+                    "api_v1_openapi", "offline_page"}
     unexpected = [x for x in leaked if x.split(" ")[0] not in known_exempt]
     assert not unexpected, "reachable without a login:\n  " + "\n  ".join(unexpected)

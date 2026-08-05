@@ -7993,3 +7993,16 @@ msgstr ""
 #: src/mediaforge/web/templates/index.html
 msgid "Because you watched {}"
 msgstr ""
+
+#: src/mediaforge/web/templates/offline.html
+msgid "MediaForge is not reachable"
+msgstr ""
+
+#: src/mediaforge/web/templates/offline.html
+msgid "Your device is offline, or the server is not answering."
+msgstr ""
+
+#: src/mediaforge/web/templates/offline.html
+msgid "Nothing is shown here on purpose: a queue or library served from a stale cache would look current and be wrong."
+msgstr ""
+

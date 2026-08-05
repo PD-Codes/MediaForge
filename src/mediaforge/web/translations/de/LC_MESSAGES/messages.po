@@ -7908,3 +7908,16 @@ msgstr "Diesen Schlüssel widerrufen? Alles, was ihn benutzt, funktioniert sofor
 #: src/mediaforge/web/templates/index.html
 msgid "Because you watched {}"
 msgstr "Weil du {} gesehen hast"
+
+#: src/mediaforge/web/templates/offline.html
+msgid "MediaForge is not reachable"
+msgstr "MediaForge ist nicht erreichbar"
+
+#: src/mediaforge/web/templates/offline.html
+msgid "Your device is offline, or the server is not answering."
+msgstr "Dein Gerät ist offline, oder der Server antwortet nicht."
+
+#: src/mediaforge/web/templates/offline.html
+msgid "Nothing is shown here on purpose: a queue or library served from a stale cache would look current and be wrong."
+msgstr "Hier steht bewusst nichts: Eine Warteschlange oder Bibliothek aus einem veralteten Cache sähe aktuell aus und wäre falsch."
+

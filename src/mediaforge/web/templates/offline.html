@@ -1,0 +1,69 @@
+{# The page the service worker shows when a navigation cannot reach the server.
+
+   Deliberately standalone rather than extending base.html: base pulls in a
+   dozen stylesheets and scripts, and the one thing this page must do is
+   render from the cache with nothing else available. Everything it needs is
+   inline.
+
+   It also deliberately does NOT pretend to be the app. Showing a cached queue
+   or library here would be worse than showing nothing -- operational data
+   that is wrong reads as data that is right. #}
+<!DOCTYPE html>
+<html lang="{{ ui_language|default('en') }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ _('Offline') }} — MediaForge</title>
+  <style>
+    :root { color-scheme: dark light; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: #0d0f16;
+      color: #e8ecf7;
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      text-align: center;
+    }
+    .box { max-width: 44ch; }
+    h1 { font-size: 1.35rem; margin: 0 0 10px; letter-spacing: -0.01em; }
+    p { color: #98a2bd; margin: 0 0 8px; }
+    svg { width: 46px; height: 46px; opacity: 0.5; margin-bottom: 14px; }
+    button {
+      margin-top: 18px;
+      background: #8b5cf6;
+      border: none;
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-size: 0.92rem;
+      cursor: pointer;
+    }
+    @media (prefers-color-scheme: light) {
+      body { background: #f6f7fb; color: #1a1d29; }
+      p { color: #5b6478; }
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M1 1l22 22"/>
+      <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+      <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+      <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+      <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+      <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+      <line x1="12" y1="20" x2="12.01" y2="20"/>
+    </svg>
+    <h1>{{ _('MediaForge is not reachable') }}</h1>
+    <p>{{ _('Your device is offline, or the server is not answering.') }}</p>
+    <p>{{ _('Nothing is shown here on purpose: a queue or library served from a stale cache would look current and be wrong.') }}</p>
+    <button type="button" onclick="location.reload()">{{ _('Try again') }}</button>
+  </div>
+</body>
+</html>
