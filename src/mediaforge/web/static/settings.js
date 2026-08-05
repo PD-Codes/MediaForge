@@ -1639,14 +1639,77 @@ function toggleDnsTestPanel() {
   if (opening) runDnsTest();
 }
 
+// Fixed rows for the five built-in sites, already in settings.html with a
+// stable id each. Anything /api/settings/dns/test reports that ISN'T one of
+// these labels is a third-party module's site (register_monitor_site() --
+// see web/uptime_monitor.py's module docstring: one call feeds both the
+// UpTime dashboard and this test) and gets its row created on the fly by
+// _dnsSiteRow() below, inside the same #dnsTestSiteRows container.
+const DNS_TEST_BUILTIN_SITES = { AniWorld: "dnsTestRowAniWorld", SerienStream: "dnsTestRowSTO", FilmPalast: "dnsTestRowFilmpalast", MegaKino: "dnsTestRowMegaKino", hanime: "dnsTestRowHanime" };
+
+/** Find (or, for a third-party label, create) the row for one DNS-test site. */
+function _dnsSiteRow(label) {
+  const fixedId = DNS_TEST_BUILTIN_SITES[label];
+  if (fixedId) return document.getElementById(fixedId);
+
+  const container = document.getElementById("dnsTestSiteRows");
+  if (!container) return null;
+  let row = container.querySelector('.dns-test-site-row[data-dns-label="' + CSS.escape(label) + '"]');
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "dns-test-site-row";
+    row.dataset.dnsLabel = label;
+    const nameEl = document.createElement("span");
+    nameEl.className = "dns-test-site-name";
+    nameEl.textContent = label;
+    const resEl = document.createElement("span");
+    resEl.className = "dns-test-site-result dns-test-idle";
+    resEl.textContent = "—";
+    row.appendChild(nameEl);
+    row.appendChild(resEl);
+    container.appendChild(row);
+  }
+  return row;
+}
+
+/** Render one site's probe result into its `.dns-test-site-result` element. */
+function _dnsRenderSiteResult(resEl, site) {
+  if (!site) { resEl.className = "dns-test-site-result dns-test-warn"; resEl.textContent = t("— Keine Daten","— No data"); return; }
+  const ip = site.ip ? " (" + site.ip + (site.ip_provider ? " · " + site.ip_provider : "") + ")" : "";
+  resEl.innerHTML = "";
+  const txt = document.createElement("span");
+  resEl.appendChild(txt);
+  if (site.http_ok && site.site_verified) {
+    resEl.className = "dns-test-site-result dns-test-ok";
+    txt.textContent = t("✓ Erreichbar & verifiziert","✓ Reachable & verified") + ip;
+  } else if (site.http_ok && site.blocked) {
+    resEl.className = "dns-test-site-result dns-test-fail";
+    txt.textContent = t("✗ Sperr-/Blockseite erkannt — nicht die echte Seite","✗ Block/ISP page detected — not the real site") + ip;
+  } else if (site.http_ok && !site.site_verified) {
+    resEl.className = "dns-test-site-result dns-test-warn";
+    txt.textContent = t("⚠ Erreichbar","⚠ Reachable") + ip + t(", aber echte Seite nicht bestätigt (evtl. Schutz-/Challenge-Seite)"," , but real site not confirmed (possibly protection/challenge page)");
+  } else if (site.socket_ok) {
+    resEl.className = "dns-test-site-result dns-test-warn";
+    txt.textContent = t("⚠ DNS aufgelöst","⚠ DNS resolved") + ip + t(", aber HTTP fehlgeschlagen"," , but HTTP failed");
+    if (site.http_error) dnsTestAppendErrorBtn(resEl, site.http_error);
+  } else {
+    resEl.className = "dns-test-site-result dns-test-fail";
+    txt.textContent = t("✗ Nicht erreichbar","✗ Not reachable");
+    const errMsg = site.socket_error || site.http_error;
+    if (errMsg) dnsTestAppendErrorBtn(resEl, errMsg);
+  }
+}
+
 async function runDnsTest() {
   const btn = document.getElementById("dnsTestRunBtn");
   const statusEl = document.getElementById("dnsTestStatus");
   if (btn) { btn.disabled = true; btn.textContent = t("⏳ Teste…","⏳ Testing..."); }
   if (statusEl) statusEl.innerHTML = t('<span class="dns-test-loading">⏳ Lädt…</span>','<span class="dns-test-loading">⏳ Loading...</span>');
-  for (const id of ["dnsTestRowAniWorld", "dnsTestRowSTO", "dnsTestRowFilmpalast", "dnsTestRowMegaKino", "dnsTestRowHanime"]) {
-    const row = document.getElementById(id);
-    if (row) {
+  // Reset every row currently in the container to "loading" -- the five
+  // fixed rows plus any third-party rows a previous run already created.
+  const rowsContainer = document.getElementById("dnsTestSiteRows");
+  if (rowsContainer) {
+    for (const row of rowsContainer.querySelectorAll(".dns-test-site-row")) {
       const res = row.querySelector(".dns-test-site-result");
       if (res) { res.className = "dns-test-site-result dns-test-loading"; res.textContent = t("⏳ Teste…","⏳ Testing..."); }
     }
@@ -1676,37 +1739,17 @@ async function runDnsTest() {
           '<br><code style="font-size:.85em;opacity:.8">' + window.mfEscape(data.trust_store_warning) + '</code></div>';
       }
     }
-    const siteMap = { AniWorld: "dnsTestRowAniWorld", SerienStream: "dnsTestRowSTO", FilmPalast: "dnsTestRowFilmpalast", MegaKino: "dnsTestRowMegaKino", hanime: "dnsTestRowHanime" };
-    for (const [label, rowId] of Object.entries(siteMap)) {
-      const row = document.getElementById(rowId);
+    // Every label /api/settings/dns/test returned -- the five built-in sites
+    // plus whatever third-party modules added via register_monitor_site().
+    // _dnsSiteRow() resolves a built-in label to its fixed row, or creates a
+    // row on the fly for anything else, so a module's site shows up here with
+    // no template change needed on its part.
+    for (const [label, site] of Object.entries(data.sites || {})) {
+      const row = _dnsSiteRow(label);
       if (!row) continue;
       const resEl = row.querySelector(".dns-test-site-result");
       if (!resEl) continue;
-      const site = data.sites?.[label];
-      if (!site) { resEl.className = "dns-test-site-result dns-test-warn"; resEl.textContent = t("— Keine Daten","— No data"); continue; }
-      const ip = site.ip ? " (" + site.ip + (site.ip_provider ? " · " + site.ip_provider : "") + ")" : "";
-      resEl.innerHTML = "";
-      const txt = document.createElement("span");
-      resEl.appendChild(txt);
-      if (site.http_ok && site.site_verified) {
-        resEl.className = "dns-test-site-result dns-test-ok";
-        txt.textContent = t("✓ Erreichbar & verifiziert","✓ Reachable & verified") + ip;
-      } else if (site.http_ok && site.blocked) {
-        resEl.className = "dns-test-site-result dns-test-fail";
-        txt.textContent = t("✗ Sperr-/Blockseite erkannt — nicht die echte Seite","✗ Block/ISP page detected — not the real site") + ip;
-      } else if (site.http_ok && !site.site_verified) {
-        resEl.className = "dns-test-site-result dns-test-warn";
-        txt.textContent = t("⚠ Erreichbar","⚠ Reachable") + ip + t(", aber echte Seite nicht bestätigt (evtl. Schutz-/Challenge-Seite)"," , but real site not confirmed (possibly protection/challenge page)");
-      } else if (site.socket_ok) {
-        resEl.className = "dns-test-site-result dns-test-warn";
-        txt.textContent = t("⚠ DNS aufgelöst","⚠ DNS resolved") + ip + t(", aber HTTP fehlgeschlagen"," , but HTTP failed");
-        if (site.http_error) dnsTestAppendErrorBtn(resEl, site.http_error);
-      } else {
-        resEl.className = "dns-test-site-result dns-test-fail";
-        txt.textContent = t("✗ Nicht erreichbar","✗ Not reachable");
-        const errMsg = site.socket_error || site.http_error;
-        if (errMsg) dnsTestAppendErrorBtn(resEl, errMsg);
-      }
+      _dnsRenderSiteResult(resEl, site);
     }
   } catch (e) {
     if (statusEl) statusEl.innerHTML = t('<span class="dns-test-fail">✗ Fehler: ' + e.message + '</span>','<span class="dns-test-fail">✗ Error: ' + e.message + '</span>');

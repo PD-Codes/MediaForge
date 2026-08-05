@@ -1823,7 +1823,9 @@ def register(app):
         color="#7c5cff",              # optional chip colour
     )
 
-    # 5. Optional: an UpTime dashboard card for this site.
+    # 5. Optional: an UpTime dashboard card for this site -- and, for free,
+    #    a row in the DNS test too (same _MONITOR_SITES dict, both features
+    #    read it).
     register_monitor_site(
         "my_source", "my_source", "My Source", "https://mysite.example",
         "mysite.example", body_markers=["mysite"],
@@ -1901,10 +1903,14 @@ def register(app):
   be written against.
 - **`register_monitor_site(item_id, site_id, label, url, expected_domain, body_markers, expected_headers=None, enabled_setting_key=None, enabled_setting_default=True, tracked_by_default=True)`**
   (`mediaforge/web/uptime_monitor.py`) is also optional, and equally
-  free-standing — it adds an entry to `_MONITOR_SITES`, the dict the UpTime
-  dashboard (probe loop, API, JS rendering) is already generic over, so
-  your site gets its own tracked/untracked toggle, heartbeat history and
-  blocked-page detection with no other change. `enabled_setting_key` (e.g.
+  free-standing — it adds an entry to `_MONITOR_SITES`, the **same dict both
+  the UpTime dashboard (probe loop, API, JS rendering) and the DNS test**
+  (Settings → Network & Access → "DNS test", `GET /api/settings/dns/test`)
+  are already generic over. One call, two features: your site gets its own
+  tracked/untracked toggle, heartbeat history and blocked-page detection on
+  UpTime, *and* is probed and reported alongside the built-in sites the next
+  time a user runs the DNS test — no separate registration, no other change.
+  `enabled_setting_key` (e.g.
   the same key you passed `register_thirdparty()`) makes the card's
   "enabled_source" badge reflect your actual toggle instead of guessing.
   `enabled_setting_default` says what an **unset** key means — it defaults to

@@ -135,8 +135,9 @@ def register(app) -> None:
         color="#7c5cff",
     )
 
-    # 5. UpTime tracking -- also illustrative (the probe will report this
-    #    site as unreachable, since .invalid never resolves); shows the
+    # 5. UpTime tracking (and, for free, the DNS test -- both read the same
+    #    _MONITOR_SITES entry) -- also illustrative (the probe will report
+    #    this site as unreachable, since .invalid never resolves); shows the
     #    demo site as its own card on the UpTime dashboard. A real module
     #    points url/expected_domain/body_markers/expected_headers at the
     #    actual site, the same fields a built-in _MONITOR_SITES entry has.

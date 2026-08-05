@@ -1236,25 +1236,34 @@
         </div>
         <div class="dns-test-block">
           <div class="dns-test-block-title">{{ _('Reachability') }}</div>
-          <div class="dns-test-site-row" id="dnsTestRowAniWorld">
-            <span class="dns-test-site-name">aniworld.to</span>
-            <span class="dns-test-site-result dns-test-idle">—</span>
-          </div>
-          <div class="dns-test-site-row" id="dnsTestRowSTO">
-            <span class="dns-test-site-name">serienstream.to</span>
-            <span class="dns-test-site-result dns-test-idle">—</span>
-          </div>
-          <div class="dns-test-site-row" id="dnsTestRowFilmpalast">
-            <span class="dns-test-site-name">filmpalast.to</span>
-            <span class="dns-test-site-result dns-test-idle">—</span>
-          </div>
-          <div class="dns-test-site-row" id="dnsTestRowMegaKino">
-            <span class="dns-test-site-name">megakino.to</span>
-            <span class="dns-test-site-result dns-test-idle">—</span>
-          </div>
-          <div class="dns-test-site-row" id="dnsTestRowHanime">
-            <span class="dns-test-site-name">hanime.tv</span>
-            <span class="dns-test-site-result dns-test-idle">—</span>
+          <!-- Static rows for the five built-in sites, kept as fixed ids so their
+               order/labels never move around. A third-party module's site (any
+               register_monitor_site() entry -- see web/uptime_monitor.py -- that
+               isn't one of these five) has no row here: runDnsTest() in
+               settings.js creates one dynamically, appended to this same
+               container, from whatever extra keys /api/settings/dns/test
+               returns. Do not remove this id -- it is where those go. -->
+          <div id="dnsTestSiteRows">
+            <div class="dns-test-site-row" id="dnsTestRowAniWorld">
+              <span class="dns-test-site-name">aniworld.to</span>
+              <span class="dns-test-site-result dns-test-idle">—</span>
+            </div>
+            <div class="dns-test-site-row" id="dnsTestRowSTO">
+              <span class="dns-test-site-name">serienstream.to</span>
+              <span class="dns-test-site-result dns-test-idle">—</span>
+            </div>
+            <div class="dns-test-site-row" id="dnsTestRowFilmpalast">
+              <span class="dns-test-site-name">filmpalast.to</span>
+              <span class="dns-test-site-result dns-test-idle">—</span>
+            </div>
+            <div class="dns-test-site-row" id="dnsTestRowMegaKino">
+              <span class="dns-test-site-name">megakino.to</span>
+              <span class="dns-test-site-result dns-test-idle">—</span>
+            </div>
+            <div class="dns-test-site-row" id="dnsTestRowHanime">
+              <span class="dns-test-site-name">hanime.tv</span>
+              <span class="dns-test-site-result dns-test-idle">—</span>
+            </div>
           </div>
         </div>
       </div>

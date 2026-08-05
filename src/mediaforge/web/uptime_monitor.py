@@ -334,8 +334,9 @@ def register_monitor_site(
     enabled_setting_default=True,
     tracked_by_default=True,
 ) -> None:
-    """Register a third-party content source for UpTime tracking, from the
-    module's own ``register(app)``::
+    """Register a third-party content source for UpTime tracking *and* the
+    DNS test (Settings -> Network & Access), from the module's own
+    ``register(app)``::
 
         register_monitor_site(
             "kinox_mod", "kinox", "Kinox", "https://kinox.to", "kinox.to",
