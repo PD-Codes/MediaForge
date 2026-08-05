@@ -7823,3 +7823,7 @@ msgstr "unverändert"
 msgid "refused"
 msgstr "abgelehnt"
 
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No library locations configured."
+msgstr "Keine Bibliotheksorte konfiguriert."

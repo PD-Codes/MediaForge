@@ -136,6 +136,25 @@ def register_ops_routes(app):
         from ..groups import PERMISSIONS, list_groups
         return jsonify({"groups": list_groups(), "permissions": PERMISSIONS})
 
+    @app.route("/api/ops/library-locations")
+    def api_ops_library_locations():
+        """The location ids a group's scope can name.
+
+        Exists so the group editor offers the real ids instead of asking an
+        admin to type "default" or a custom path id from memory -- a scope
+        naming a location that does not exist looks configured and restricts
+        nothing.
+        """
+        guard = _require_admin()
+        if guard:
+            return guard
+        from ..db import get_custom_paths
+        locations = [{"id": "default", "name": "Default download folder"}]
+        for path in get_custom_paths():
+            locations.append({"id": str(path["id"]), "name": path["name"],
+                              "path": path["path"]})
+        return jsonify({"locations": locations})
+
     @app.route("/api/ops/groups", methods=["POST"])
     def api_ops_group_create():
         guard = _require_admin()
@@ -527,7 +546,7 @@ ADMIN_ONLY_OPS_ENDPOINTS = frozenset({
     "api_ops_audit", "api_ops_audit_stats", "api_ops_audit_verify",
     "api_ops_audit_export",
     "api_ops_groups", "api_ops_group_create", "api_ops_group_update",
-    "api_ops_group_delete",
+    "api_ops_group_delete", "api_ops_library_locations",
     "api_ops_schema", "api_ops_snapshot_create", "api_ops_snapshot_verify",
     "api_ops_snapshot_restore", "api_ops_snapshot_delete",
     "api_ops_workers",

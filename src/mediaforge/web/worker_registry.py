@@ -56,6 +56,10 @@ STALE_AFTER = 900
 
 _local = threading.local()
 
+# Workers whose heartbeat has already failed once. See beat()'s except clause:
+# the first failure is a warning, the rest are debug.
+_warned: set[str] = set()
+
 
 def _now() -> str:
     return _dt.datetime.now().isoformat(timespec="seconds")
@@ -78,33 +82,61 @@ def beat(worker: str, *, state: str = "idle", detail: str = "",
         from .db import get_db
         conn = get_db()
         try:
+            # last_error is NOT NULL, so the INSERT branch can never receive
+            # NULL -- the sticky-error semantics live entirely in the UPDATE
+            # branch, where :err IS NULL means "leave whatever is there".
+            #
+            # Writing the sentinel straight into the inserted row was the first
+            # version of this and it was wrong in the quietest possible way:
+            # every heartbeat failed with "NOT NULL constraint failed", beat()
+            # swallowed it as a debug line (a heartbeat must never take a
+            # worker down), and the Operations view simply stayed empty.
             conn.execute("""
                 INSERT INTO worker_heartbeats
                     (worker, pid, host, mode, state, detail, last_beat, last_run,
                      next_run, last_error, error_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (:worker, :pid, :host, :mode, :state, :detail, :now,
+                        :last_run, :next_run, COALESCE(:err, ''),
+                        CASE WHEN :err IS NOT NULL AND :err != '' THEN :now END)
                 ON CONFLICT(worker) DO UPDATE SET
-                    pid = excluded.pid,
-                    host = excluded.host,
-                    mode = excluded.mode,
-                    state = excluded.state,
-                    detail = excluded.detail,
-                    last_beat = excluded.last_beat,
-                    last_run = COALESCE(excluded.last_run, worker_heartbeats.last_run),
-                    next_run = COALESCE(excluded.next_run, worker_heartbeats.next_run),
-                    last_error = COALESCE(excluded.last_error, worker_heartbeats.last_error),
-                    error_at = CASE WHEN excluded.last_error IS NOT NULL AND excluded.last_error != ''
-                                    THEN excluded.error_at ELSE worker_heartbeats.error_at END
-            """, (worker, os.getpid(), socket.gethostname()[:64], _mode(),
-                  state, str(detail)[:300], _now(), last_run, next_run,
-                  None if error is None else str(error)[:500],
-                  _now() if error else None))
+                    pid = :pid,
+                    host = :host,
+                    mode = :mode,
+                    state = :state,
+                    detail = :detail,
+                    last_beat = :now,
+                    last_run = COALESCE(:last_run, worker_heartbeats.last_run),
+                    next_run = COALESCE(:next_run, worker_heartbeats.next_run),
+                    last_error = COALESCE(:err, worker_heartbeats.last_error),
+                    error_at = CASE WHEN :err IS NOT NULL AND :err != ''
+                                    THEN :now ELSE worker_heartbeats.error_at END
+            """, {
+                "worker": worker,
+                "pid": os.getpid(),
+                "host": socket.gethostname()[:64],
+                "mode": _mode(),
+                "state": state,
+                "detail": str(detail)[:300],
+                "now": _now(),
+                "last_run": last_run,
+                "next_run": next_run,
+                "err": None if error is None else str(error)[:500],
+            })
             conn.commit()
         finally:
             conn.close()
     except Exception as exc:
-        # A heartbeat is diagnostics. It must never take a worker down with it.
-        logger.debug("[Workers] Heartbeat for %s failed: %s", worker, exc)
+        # A heartbeat is diagnostics. It must never take a worker down with it
+        # -- but it must not be invisible either. The first version logged this
+        # at DEBUG, so a statement that failed on *every single* heartbeat
+        # produced an empty Operations view and not one line anybody saw.
+        # Warn once per worker, then fall back to debug so a persistent problem
+        # does not drown the log.
+        if worker not in _warned:
+            _warned.add(worker)
+            logger.warning("[Workers] Heartbeat for %s failed: %s", worker, exc)
+        else:
+            logger.debug("[Workers] Heartbeat for %s failed: %s", worker, exc)
 
 
 def fail(worker: str, error: str, detail: str = "") -> None:

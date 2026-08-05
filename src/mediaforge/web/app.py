@@ -744,13 +744,29 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # process. Only start workers in the child (actual server) process
     # to avoid duplicate ffmpeg downloads.
     _debug = os.getenv("MEDIAFORGE_DEBUG_MODE", "0") == "1"
-    if not _debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    # MEDIAFORGE_WORKER_MODE=external hands these to a separate process
+    # (web/worker_host.py). Default is unchanged: they run here, as threads.
+    # The two processes coordinate purely through the database -- the claim
+    # statements were already atomic UPDATE ... WHERE status='queued', so this
+    # is a deployment choice rather than a different execution model.
+    from .worker_host import workers_run_in_web_process as _workers_here
+    _run_workers = _workers_here()
+    if not _run_workers:
+        logger.info("[Workers] MEDIAFORGE_WORKER_MODE=external -- the queue, encoding, "
+                    "upscale, Auto-Sync and TMDB-keyword workers are expected in a "
+                    "separate worker host process (python -m mediaforge.web.worker_host)")
+
+    if _run_workers and (not _debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true"):
         _ensure_queue_worker()
         _ensure_autosync_worker()
         _ensure_upscale_worker()
         _ensure_encoding_worker()
         _ensure_tmdb_keywords_sync_worker()
-        # Auto-download mpv.exe on Windows if missing
+
+    # Auto-download mpv.exe on Windows if missing. Outside the worker block:
+    # mpv belongs to the local player, which is a web-process feature, so
+    # moving the workers out must not stop it from being fetched.
+    if not _debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         try:
             from ..autodeps import ensure_mpv_windows_async
             ensure_mpv_windows_async()

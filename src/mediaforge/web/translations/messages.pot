@@ -7908,3 +7908,7 @@ msgstr ""
 msgid "refused"
 msgstr ""
 
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No library locations configured."
+msgstr ""

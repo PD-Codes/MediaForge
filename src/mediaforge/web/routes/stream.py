@@ -177,6 +177,12 @@ def _resolve_media_path(file_path: str):
     Every endpoint that touches a file by path has to go through this --
     the subtitle and thumbnail routes added for the player would otherwise
     be a plain arbitrary-file-read.
+
+    It also applies the caller's library scope (web/groups.py): a group can
+    restrict its members to some of the configured locations, and "cannot see
+    it in the library but can still stream it by path" is not a restriction.
+    Each root is checked against the same location id the library uses --
+    "default" for the download root, the custom path id otherwise.
     """
     from pathlib import Path as _Path
     from ..db import get_custom_paths as _get_custom_paths
@@ -189,24 +195,35 @@ def _resolve_media_path(file_path: str):
         return None
 
     raw_dl = get_setting("download_path") or os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")
-    roots = []
+    roots = []          # (location_id, resolved root)
     if raw_dl:
         try:
-            roots.append(_Path(raw_dl).expanduser().resolve())
+            roots.append(("default", _Path(raw_dl).expanduser().resolve()))
         except Exception:
             pass
     else:
-        roots.append((_Path.home() / "Downloads").resolve())
+        roots.append(("default", (_Path.home() / "Downloads").resolve()))
     for cp in _get_custom_paths():
         try:
-            roots.append(_Path(cp["path"]).expanduser().resolve())
+            roots.append((str(cp["id"]), _Path(cp["path"]).expanduser().resolve()))
         except Exception:
             pass
 
-    for root in roots:
+    try:
+        from .library import lib_current_scope
+        from ..groups import scope_allows
+        scope = lib_current_scope()
+    except Exception:
+        scope, scope_allows = ["*"], None
+
+    for location_id, root in roots:
         try:
             resolved.relative_to(root)
         except ValueError:
+            continue
+        if scope_allows is not None and not scope_allows(scope, location_id):
+            # Inside the library but not inside this caller's part of it.
+            # Keep looking rather than returning None: locations can nest.
             continue
         return resolved if resolved.is_file() else None
     return None

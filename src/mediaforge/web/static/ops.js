@@ -118,10 +118,17 @@
    * Groups
    * =============================================================== */
   var permissionCatalogue = {};
+  var libraryLocations = [];
 
   function loadGroups() {
     var box = document.getElementById("opsGroupList");
     if (!box) { return; }
+    // Locations first, so the editor can offer the real ids rather than
+    // asking the admin to remember them. A scope naming a location that does
+    // not exist looks configured and restricts nothing.
+    api("/api/ops/library-locations")
+      .then(function (data) { libraryLocations = data.locations || []; })
+      .catch(function () { libraryLocations = []; });
     api("/api/ops/groups").then(function (data) {
       permissionCatalogue = data.permissions || {};
       var groups = data.groups || [];
@@ -169,6 +176,16 @@
         '<span><code>' + esc(key) + '</code></span></label>';
     }).join("");
 
+    var scope = (group && group.scope) || ["*"];
+    var scopeIsAll = scope.indexOf("*") !== -1;
+    var locationRows = libraryLocations.map(function (loc) {
+      var on = !scopeIsAll && scope.indexOf(loc.id) !== -1 ? " checked" : "";
+      return '<label class="settings-checkbox-row ops-perm-row">' +
+        '<input type="checkbox" class="chb-main" data-scope="' + esc(loc.id) + '"' + on + '>' +
+        '<span>' + esc(loc.name) + '</span></label>';
+    }).join("") || ('<div class="settings-hint">' +
+        esc(T("no_locations", "No library locations configured.")) + '</div>');
+
     return '' +
       '<div class="settings-field"><label class="settings-field-label" for="opsGroupName">' +
         esc(T("name", "Name")) + '</label>' +
@@ -180,10 +197,14 @@
       '<div class="settings-field"><label class="settings-field-label" for="opsGroupDesc">' +
         esc(T("description", "Description")) + '</label>' +
         '<input type="text" id="opsGroupDesc" value="' + esc((group && group.description) || "") + '"></div>' +
-      '<div class="settings-field"><label class="settings-field-label" for="opsGroupScope">' +
-        esc(T("library_scope", "Library scope")) + '</label>' +
-        '<input type="text" id="opsGroupScope" placeholder="*" value="' +
-        esc(((group && group.scope) || ["*"]).join(", ")) + '">' +
+      '<div class="settings-field"><span class="settings-field-label">' +
+        esc(T("library_scope", "Library scope")) + '</span>' +
+        '<label class="settings-checkbox-row">' +
+          '<input type="checkbox" class="chb-main" id="opsGroupScopeAll"' +
+          (scopeIsAll ? " checked" : "") + '>' +
+          '<span>' + esc(T("all_libraries", "all libraries")) + '</span></label>' +
+        '<div class="ops-perm-grid" id="opsGroupScopeList"' +
+          (scopeIsAll ? ' hidden' : '') + '>' + locationRows + '</div>' +
         '<span class="settings-hint">' + esc(T("scope_hint",
           "Comma-separated library location ids, or * for all. Naming any location restricts members to those.")) +
         '</span></div>' +
@@ -198,29 +219,45 @@
     if (groupId != null && box && box._groups) {
       group = box._groups.filter(function (g) { return String(g.id) === String(groupId); })[0] || null;
     }
-    openModal(group ? T("edit_group", "Edit group") : T("new_group", "New group"),
-      groupForm(group), function (root) {
+    var root = openModal(group ? T("edit_group", "Edit group") : T("new_group", "New group"),
+      groupForm(group), function (rootEl) {
         var perms = Array.prototype.slice
-          .call(root.querySelectorAll("[data-perm]"))
+          .call(rootEl.querySelectorAll("[data-perm]"))
           .filter(function (el) { return el.checked; })
           .map(function (el) { return el.getAttribute("data-perm"); });
-        var scope = String(val(root, "opsGroupScope") || "*")
-          .split(",").map(function (s) { return s.trim(); })
-          .filter(Boolean);
+        var scope = ["*"];
+        if (!val(rootEl, "opsGroupScopeAll")) {
+          scope = Array.prototype.slice
+            .call(rootEl.querySelectorAll("[data-scope]"))
+            .filter(function (el) { return el.checked; })
+            .map(function (el) { return el.getAttribute("data-scope"); });
+          // Unchecking everything means "no restriction", not "no access" --
+          // a group that hides the whole library from its members is never
+          // what somebody meant to build by clicking checkboxes off.
+          if (!scope.length) { scope = ["*"]; }
+        }
         var payload = {
-          name: val(root, "opsGroupName"),
-          description: val(root, "opsGroupDesc"),
+          name: val(rootEl, "opsGroupName"),
+          description: val(rootEl, "opsGroupDesc"),
           permissions: perms,
-          scope: scope.length ? scope : ["*"]
+          scope: scope
         };
         var req = group
           ? api("/api/ops/groups/" + group.id, { method: "PUT", body: payload })
           : api("/api/ops/groups", {
               method: "POST",
-              body: Object.assign({ key: val(root, "opsGroupKey") }, payload)
+              body: Object.assign({ key: val(rootEl, "opsGroupKey") }, payload)
             });
         return req.then(function () { loadGroups(); toast(T("saved", "Saved"), "success"); });
       });
+
+    // "All libraries" hides the per-location list rather than disabling it, so
+    // the previous selection is still there if the box is unchecked again.
+    var allBox = root.querySelector("#opsGroupScopeAll");
+    var list = root.querySelector("#opsGroupScopeList");
+    if (allBox && list) {
+      allBox.addEventListener("change", function () { list.hidden = allBox.checked; });
+    }
   };
 
   document.addEventListener("click", function (ev) {

@@ -92,6 +92,59 @@ services:
 
     restart: unless-stopped
 
+  # --- Optional: run the background workers in their own container -----------
+  # Uncomment BOTH this service and MEDIAFORGE_WORKER_MODE below to move the
+  # download, encoding, upscale, Auto-Sync and TMDB-keyword workers out of the
+  # web container. Doing nothing keeps them where they are — this is opt-in.
+  #
+  # Worth doing when the workers and the UI compete: a scraper stuck in a
+  # blocking call makes the web UI feel broken, and a worker that wedges a
+  # subprocess takes down the page you would cancel it from. Separating them
+  # also lets you give the workers their own CPU/memory limits and restart
+  # policy.
+  #
+  # The two containers coordinate purely through the database — the queue
+  # claim is an atomic UPDATE ... WHERE status='queued', written that way long
+  # before this existed — so they MUST share the same mediaforge-data volume.
+  # The worker container needs no port: it serves nothing.
+  #
+  # The worker host waits for the web container to finish migrating the schema
+  # before it starts, so the start order does not matter. Exactly one process
+  # owns the schema, and that is the web container.
+  #
+  # mediaforge-worker:
+  #   container_name: mediaforge-worker
+  #   image: ghcr.io/pd-codes/mediaforge:latest
+  #   command: ["python", "-m", "mediaforge.web.worker_host"]
+  #   depends_on:
+  #     - mediaforge
+  #   volumes:
+  #     - ./Downloads:/app/Downloads
+  #     - mediaforge-data:/home/mediaforge/.mediaforge
+  #     - mediaforge-tmp:/tmp/mediaforge
+  #   environment:
+  #     - MEDIAFORGE_WORKER_MODE=external
+  #     # Run only some of them here and leave the rest in the web container:
+  #     # - MEDIAFORGE_WORKERS=queue,encoding,upscale
+  #     - XDG_CONFIG_HOME=/tmp/.config
+  #     - XDG_CACHE_HOME=/tmp/.cache
+  #     - XDG_DATA_HOME=/tmp/.local/share
+  #   cap_drop:
+  #     - ALL
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   read_only: true
+  #   tmpfs:
+  #     - /run:size=128m
+  #     - /tmp:size=512m
+  #   restart: unless-stopped
+  #
+  # ...and add this to the mediaforge service's environment so it stops
+  # starting the workers itself. Without it BOTH containers run them: no job
+  # would be processed twice (the claim prevents that), but you would be
+  # paying for two of everything.
+  #   - MEDIAFORGE_WORKER_MODE=external
+
 volumes:
   mediaforge-data:
   mediaforge-tmp:

@@ -650,6 +650,55 @@ def _lib_path_key(cp_id):
     return "default" if cp_id is None else str(cp_id)
 
 
+def lib_current_scope():
+    """Library locations the caller may see, or ``["*"]`` for all of them.
+
+    The ids are the same strings ``_lib_path_key()`` produces -- "default" or
+    a custom path id -- so a group's scope is expressed in exactly the terms
+    the rest of this module already uses. Groups store them as free text
+    (web/groups.py), which is what keeps the scope stable when a path is
+    renamed.
+
+    Falls back to unrestricted whenever it cannot tell: no session (no-auth
+    mode), no group tables yet, or an error reading them. Failing closed here
+    would empty the library for every user of an install that has never
+    configured a group, which is every install by default.
+    """
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return ["*"]
+        uid = session.get("user_id")
+        if uid is None:
+            return ["*"]
+        from ..groups import effective_scope
+        return effective_scope(uid, session.get("user_role") or "user")
+    except Exception:
+        return ["*"]
+
+
+def lib_scope_allows(cp_id, scope=None):
+    """True when a scan target is inside the caller's scope."""
+    from ..groups import scope_allows
+    return scope_allows(scope if scope is not None else lib_current_scope(),
+                        _lib_path_key(cp_id))
+
+
+def _lib_scoped_targets(targets=None):
+    """The scan targets the caller is allowed to see.
+
+    Used by the READ endpoints. Scanning deliberately keeps using the
+    unfiltered list: the index has to cover the whole library regardless of
+    who happens to be logged in when a scan runs, and filtering there would
+    make the cache depend on the session that populated it.
+    """
+    targets = _lib_build_scan_targets() if targets is None else targets
+    scope = lib_current_scope()
+    if "*" in scope:
+        return targets
+    return [t for t in targets if lib_scope_allows(t[1], scope)]
+
+
 def lib_iter_cached_titles(data):
     """Every title in one library_cache entry, language folders included.
 
@@ -1384,7 +1433,7 @@ def _lib_watcher_scan_callback(path_key: str, changed_paths=None):
         return
 
 
-def lib_resolve_library_file(path, exts=None):
+def lib_resolve_library_file(path, exts=None, scoped=True):
     """Resolve *path* and return it only if it is a real media file inside one
     of the configured scan targets; otherwise None.
 
@@ -1405,6 +1454,14 @@ def lib_resolve_library_file(path, exts=None):
     set to also cover eBooks would mean an .epub could be probed for eight
     seconds and then destroyed by an upscale job. So each caller names the
     kind of file it actually wants.
+
+    *scoped* additionally requires the file to be inside a location the
+    CURRENT CALLER may see (see lib_current_scope()). It defaults to True, so
+    every existing caller gains the check without being changed -- the
+    alternative, opting each one in, is how a new endpoint ends up being the
+    one that ignores group scoping. Background workers pass scoped=False:
+    they have no session, and an upscale job must not fail because the account
+    that queued it was later restricted.
     """
     from pathlib import Path as _P
     if not path:
@@ -1418,12 +1475,18 @@ def lib_resolve_library_file(path, exts=None):
         return None
     if not resolved.is_file():
         return None
-    for (_, _, base_path) in _lib_build_scan_targets():
+    scope = lib_current_scope() if scoped else ["*"]
+    for (_label, cp_id, base_path) in _lib_build_scan_targets():
         try:
             resolved.relative_to(_P(base_path).resolve())
-            return resolved
         except (ValueError, OSError):
             continue
+        if scoped and not lib_scope_allows(cp_id, scope):
+            # Inside the library, but not inside THIS caller's part of it.
+            # Keep looking: locations can nest, and an allowed one further
+            # down the list may still contain the file.
+            continue
+        return resolved
     return None
 
 
@@ -1573,6 +1636,7 @@ def _lib_overview_counts():
     """
     kinds_map = _lib_kinds_map()
     cache = get_all_library_cache() or {}
+    scope = lib_current_scope()
 
     titles = episodes = books = series = issues = 0
     video_size = book_size = comic_size = 0
@@ -1581,6 +1645,12 @@ def _lib_overview_counts():
         kinds = kinds_map.get(path_key)
         if not kinds:
             continue                      # leftover row of a deleted path
+        # A scoped account must not learn the size of a library it cannot
+        # open. Counting everything and showing only some of it is the classic
+        # way a "restricted" view leaks exactly what it was meant to hide.
+        from ..groups import scope_allows as _scope_allows
+        if not _scope_allows(scope, path_key):
+            continue
         data = (entry or {}).get("data") or {}
         if KIND_VIDEO in kinds:
             for title in lib_iter_cached_titles(data):
@@ -1817,7 +1887,12 @@ def register_library_routes(app):
 
         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
         kinds_map = _lib_kinds_map()
-        targets = [t for t in _lib_build_scan_targets()
+        # _lib_scoped_targets(), not _lib_build_scan_targets(): a group may
+        # restrict its members to some of the locations. Applied here rather
+        # than in the client for the same reason the age gate is -- so it is
+        # the same answer for every caller of this endpoint, and cannot be
+        # skipped by asking the API directly.
+        targets = [t for t in _lib_scoped_targets()
                    if kind in (kinds_map.get(_lib_path_key(t[1])) or [])]
         cache = get_all_library_cache()
 
