@@ -78,6 +78,14 @@
   border: 1px solid var(--border, rgba(255,255,255,0.08));
   border-radius: 12px; padding: 22px; min-height: 240px;
   display: flex; align-items: center; justify-content: center;
+  /* Reactions are appended here while nobody is watching yet
+     (syncplay_page.js's _floatReaction picks spStage or spNow) and are
+     position:absolute. Without a positioned ancestor they resolve against
+     the page instead and animate somewhere off-card — which reads as
+     "reactions do not work" rather than "reactions are in the wrong place".
+     .sp-stage already carries this; this one was missing it. */
+  position: relative;
+  overflow: hidden;
 }
 .sp-now-empty { text-align: center; }
 .sp-now-card { display: flex; gap: 18px; width: 100%; }

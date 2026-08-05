@@ -442,13 +442,18 @@ def run_pending(*, allow_snapshot: bool = True) -> dict:
         conn = get_db()
         try:
             _ensure_schema_table(conn)
+            # Do not trust the record on its own: a shipped bug once marked
+            # migrations applied without running them. See repair_missing().
+            repaired = repair_missing(conn)
             done = applied_versions(conn)
             pending = sorted(set(_MIGRATIONS) - done)
             app_ver = _app_version()
 
             if not pending:
                 conn.commit()
-                return {"ok": True, "applied": [], "baselined": [], "current": max(done) if done else 0}
+                return {"ok": True, "applied": [], "baselined": [],
+                        "repaired": repaired,
+                        "current": max(done) if done else 0}
 
             # Existing install that has never seen this engine: the shape the
             # init_*_db() path produces is exactly what BASELINE_VERSION
@@ -471,7 +476,7 @@ def run_pending(*, allow_snapshot: bool = True) -> dict:
                 logger.info("[Migrate] Existing database baselined at schema version %d",
                             BASELINE_VERSION)
                 if not pending:
-                    return {"ok": True, "applied": [], "baselined": baselined,
+                    return {"ok": True, "applied": [], "baselined": baselined, "repaired": repaired,
                             "current": BASELINE_VERSION}
 
             snap = snapshot(reason="pre-migration",
@@ -503,6 +508,7 @@ def run_pending(*, allow_snapshot: bool = True) -> dict:
             logger.info("[Migrate] Database at schema version %d", max(applied))
             return {
                 "ok": True, "applied": applied, "baselined": baselined,
+                "repaired": repaired,
                 "snapshot": (snap or {}).get("id"), "current": max(applied),
             }
         finally:
@@ -630,6 +636,61 @@ def _m7_api_keys(conn):
             last_used   TEXT
         )
     """)
+
+
+# Tables each migration is responsible for creating. Used by repair_missing()
+# below, which is the answer to "the bookkeeping says this ran, but the table
+# is not there".
+#
+# Only tables a migration CREATES belong here. A migration that adds a column
+# has nothing to verify this way and simply has no entry.
+_MIGRATION_TABLES: dict[int, tuple[str, ...]] = {
+    2: ("user_groups", "user_group_members"),
+    3: ("download_rules",),
+    4: ("language_profiles", "title_language_profile"),
+    5: ("maintenance_windows",),
+    6: ("worker_heartbeats",),
+    7: ("api_keys",),
+}
+
+
+def repair_missing(conn) -> list[int]:
+    """Un-record migrations whose tables are not actually there.
+
+    This exists because of a real incident, and the shape of it is worth
+    keeping in mind for any future migration engine: an early version of
+    ``run_pending()`` baselined *everything* pending on an existing database
+    rather than stopping at BASELINE_VERSION. Databases that started the app
+    once with that version came away with rows 2..7 marked applied and none of
+    those tables created. The bug was fixed, but the fix cannot help them --
+    the engine now correctly believes it has nothing to do, and the app fails
+    at runtime with "no such table: worker_heartbeats".
+
+    So the record is not trusted on its own. Before running pending
+    migrations, every applied migration that owns tables is checked against
+    ``sqlite_master``; any whose tables are missing is un-recorded so the
+    normal path re-runs it. Every migration body is written with
+    ``IF NOT EXISTS``, so a partially-applied one heals rather than conflicts.
+
+    Returns the versions it reset.
+    """
+    reset = []
+    for version, tables in sorted(_MIGRATION_TABLES.items()):
+        missing = [t for t in tables if not table_exists(conn, t)]
+        if not missing:
+            continue
+        row = conn.execute(
+            "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)).fetchone()
+        if not row:
+            continue          # not claimed as applied -- nothing to repair
+        logger.warning(
+            "[Migrate] Migration %d is recorded as applied but %s missing -- "
+            "re-running it", version, ", ".join(missing))
+        conn.execute("DELETE FROM schema_migrations WHERE version = ?", (version,))
+        reset.append(version)
+    if reset:
+        conn.commit()
+    return reset
 
 
 def _register_migrations() -> None:

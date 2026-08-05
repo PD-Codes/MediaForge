@@ -722,6 +722,17 @@ const _QHUB_CAUSES = {
 };
 
 function _qhubCauseHeader(summary) {
+  try {
+    return _qhubCauseHeaderInner(summary);
+  } catch (e) {
+    // The explanation is a nicety bolted onto the error panel. It must never
+    // be the reason the queue window fails to render -- that would turn "one
+    // download failed" into "the queue is broken".
+    return "";
+  }
+}
+
+function _qhubCauseHeaderInner(summary) {
   if (!summary || !summary.causes || !summary.causes.length) return "";
   const Q = window.QHub;
   return summary.causes.map(function (c) {

@@ -12,6 +12,33 @@
  * very often doing it from a phone.
  */
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Inset inside a settings section
+   ─────────────────────────────────────────────────────────────────────────
+   .settings-section carries NO padding of its own -- every child brings its
+   own 22px (see settings_rows.css: .settings-row, h2, .settings-hint all do).
+   These blocks were added without it and sat flush against the section
+   border, which looked like a rendering fault rather than a layout choice.
+   Matched to .settings-hint's 22px / 14px on mobile so a grid lines up with
+   the paragraph above it. */
+.settings-section > .ops-card-grid,
+.settings-section > .ops-worker-grid,
+.settings-section > .ops-audit-list,
+.settings-section > .ops-stat-row,
+.settings-section > .mf-pagination-bar {
+  margin: 0 22px 18px;
+}
+
+@media (max-width: 640px) {
+  .settings-section > .ops-card-grid,
+  .settings-section > .ops-worker-grid,
+  .settings-section > .ops-audit-list,
+  .settings-section > .ops-stat-row,
+  .settings-section > .mf-pagination-bar {
+    margin: 0 14px 14px;
+  }
+}
+
 /* ---------------------------------------------------------------- cards */
 .ops-card-grid {
   display: grid;

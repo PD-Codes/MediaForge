@@ -850,11 +850,11 @@ function showDryRunResult(data) {
        </div>
      </div>`;
   document.body.appendChild(backdrop);
-  if (window.MFScrollLock) { window.MFScrollLock.acquire("sync-dry-run"); }
+  if (window.MFScrollLock) { window.MFScrollLock.lock(); }
 
   function close() {
     backdrop.remove();
-    if (window.MFScrollLock) { window.MFScrollLock.release("sync-dry-run"); }
+    if (window.MFScrollLock) { window.MFScrollLock.unlock(); }
     document.removeEventListener("keydown", onKey);
   }
   function onKey(ev) { if (ev.key === "Escape") close(); }

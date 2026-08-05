@@ -45,6 +45,59 @@ def test_run_pending_is_idempotent(app):
     assert result["applied"] == []
 
 
+def test_a_migration_recorded_but_not_applied_is_repaired(app, tmp_path):
+    """Regression, from a real incident.
+
+    An early version of run_pending() baselined *everything* pending rather
+    than stopping at BASELINE_VERSION. Databases that started the app once
+    with that build came away with migrations 2..7 marked applied and none of
+    their tables created -- and the fixed engine then correctly believed it
+    had nothing to do, so the app failed at runtime with "no such table:
+    worker_heartbeats". The record is therefore not trusted on its own.
+    """
+    import sqlite3
+
+    from mediaforge.web import dbmigrate
+
+    broken = tmp_path / "broken.db"
+    conn = sqlite3.connect(str(broken))
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL,"
+        " applied_at TEXT NOT NULL, app_version TEXT NOT NULL DEFAULT '',"
+        " baselined INTEGER NOT NULL DEFAULT 0)")
+    for version in dbmigrate.known_versions():
+        conn.execute("INSERT INTO schema_migrations VALUES (?,?,?,?,1)",
+                     (version, "x", "2026-01-01", "1.4.3"))
+    conn.commit()
+
+    reset = dbmigrate.repair_missing(conn)
+    assert reset, "the repair pass did not notice the missing tables"
+    # ...and only the ones that own tables are reset. Migration 1 is a no-op
+    # baseline and must not be re-run for the sake of it.
+    assert 1 not in reset
+
+    still_recorded = {r["version"] for r in
+                      conn.execute("SELECT version FROM schema_migrations").fetchall()}
+    for version in reset:
+        assert version not in still_recorded
+    conn.close()
+
+
+def test_repair_leaves_a_healthy_database_alone(app):
+    """It runs on every start, so it has to be a no-op when nothing is wrong."""
+    from mediaforge.web import dbmigrate
+    from mediaforge.web.db import get_db
+
+    with app.app_context():
+        conn = get_db()
+        try:
+            assert dbmigrate.repair_missing(conn) == []
+        finally:
+            conn.close()
+
+
 def test_snapshot_verify_and_traversal_guard(app):
     from mediaforge.web import dbmigrate
     with app.app_context():

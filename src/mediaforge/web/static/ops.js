@@ -65,7 +65,7 @@
 
   function closeModal() {
     if (modalEl) { modalEl.remove(); modalEl = null; }
-    if (window.MFScrollLock) { window.MFScrollLock.release("ops-modal"); }
+    if (window.MFScrollLock) { window.MFScrollLock.unlock(); }
     document.removeEventListener("keydown", onModalKey);
   }
 
@@ -88,7 +88,7 @@
         '</div>' +
       '</div>';
     document.body.appendChild(modalEl);
-    if (window.MFScrollLock) { window.MFScrollLock.acquire("ops-modal"); }
+    if (window.MFScrollLock) { window.MFScrollLock.lock(); }
     document.addEventListener("keydown", onModalKey);
 
     modalEl.addEventListener("click", function (ev) {
