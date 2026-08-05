@@ -13,19 +13,16 @@ Copy this folder into ``web/thirdparties/`` (or ship it as a module) to
 activate it; the auto-discovery loader picks up any folder exposing
 ``register(app)``.
 
-IMPORTANT caveat (also called out in .examples/thirdparties/README.md's
-"Content sources" section): this wires up URL resolution
-(providers.resolve_provider(), so a pasted example-source.invalid/... URL
-works everywhere a built-in one does) and the POST /api/search route
-itself. It does NOT currently make the homepage's "quick search" or the
-Advanced Search page's UI *ask* for this site -- static/app.js's search
-functions still loop over a fixed list of built-in site ids
-(aniworld/sto/filmpalast/megakino/hanime). Until that's generalized, a
-registered content source's results are reachable via a direct
-POST /api/search {"site": "example_source", "keyword": "..."} call (or a
-module's own page, if it builds one), but not automatically from the main
-search bar. This is a known, documented gap -- not something you did wrong
-if your module's results don't show up there yet.
+Enabling this module is enough to see it in the search bar: the two calls
+below cover both halves. register_provider() makes a pasted
+example-source.invalid/... URL work everywhere a built-in one does, and
+register_search_source() puts the site into GET /api/search/sources -- the
+one list the WebUI fans every keyword out to, so this source gets its own
+result section (in the user's source order), a chip under the search field
+and an on/off row under Settings -> Sources, with no frontend change.
+
+Registering only the provider is a valid choice too: it means "my URLs
+resolve" without claiming the site can answer a keyword search.
 """
 from ..registry import register_thirdparty
 from ...providers import Provider, register_provider

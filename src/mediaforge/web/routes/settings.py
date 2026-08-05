@@ -41,8 +41,7 @@ from ..runtime_state import SYNC_RETRY_MAP
 from ..runtime_state import SYNC_SCHEDULE_MAP
 from ..runtime_state import WORKING_PROVIDERS
 from ..settings_migration import _apply_captcha_env
-from ..source_policy import source_enabled_default as _source_enabled_default
-from ..source_policy import source_enabled_key as _source_enabled_key
+from ..source_policy import search_sources as _search_sources
 from ..uptime_monitor import _MONITOR_SITES
 from ..uptime_monitor import _probe_site
 from flask import jsonify
@@ -240,6 +239,11 @@ def register_settings_routes(app):
         frontend files via `fetch('/api/settings')`, e.g. static/app.js,
         static/autosync.js, and static/integrations.js's `_getSettings()`."""
         from pathlib import Path
+        from ..age_gate import allows_adult as _allows_adult
+
+        # Resolved once: the catalogue walks the module registry and reads a
+        # setting per source, and the blob below needs it twice.
+        _sources_available = _search_sources(include_adult=_allows_adult())
 
         raw = get_setting("download_path") or os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")
         if raw:
@@ -486,13 +490,18 @@ def register_settings_routes(app):
                             "uncensored": get_setting("source_show_uncensored_hanime", "1"),
                         },
                     },
+                    # Every source that currently exists -- built-ins plus the
+                    # ones installed modules registered. The Sources tab
+                    # renders its rows from this instead of the five ids it
+                    # used to hardcode, so a module source gets an on/off
+                    # switch like any other.
+                    "available": _sources_available,
                     # Defaults come from source_policy (opt-out, except an
                     # adult source) rather than being repeated per id here.
+                    # Kept as the "1"/"0" strings the frontend already reads.
                     "enabled": {
-                        _s: get_setting(_source_enabled_key(_s),
-                                        _source_enabled_default(_s))
-                        for _s in ("aniworld", "sto", "filmpalast",
-                                   "megakino", "hanime")
+                        _s["id"]: ("1" if _s["enabled"] else "0")
+                        for _s in _sources_available
                     },
                     "hide_disabled_in_search": get_setting("sources_hide_in_search", "0"),
                 },
@@ -1344,12 +1353,22 @@ def register_settings_routes(app):
             set_setting("auto_update_time", t_norm)
             os.environ["MEDIAFORGE_AUTO_UPDATE_TIME"] = t_norm
         # -- Sources: order & enablement (admin only) --
+        # Known ids = built-ins + whatever installed modules registered. Read
+        # once: it is the whitelist for both the order and the on/off keys
+        # below, so a module source can be reordered and switched off like any
+        # built-in, while an unknown id still cannot write a settings row.
+        _known_sources = _search_sources()
+        _known_source_ids = tuple(_s["id"] for _s in _known_sources)
+        # id -> the app_settings key that actually holds its on/off state. For
+        # a built-in that is source_enabled_<id>; a module source may have
+        # declared its own (register_search_source(enabled_key=...)), and the
+        # switch must write the key the reader reads.
+        _source_enabled_keys = {_s["id"]: _s["enabled_key"] for _s in _known_sources}
         _source_keys = (
             "home_source_order",
             "home_section_order_aniworld", "home_section_order_sto", "home_section_order_hanime",
             "home_section_order_megakino",
-            "source_enabled_aniworld", "source_enabled_sto", "source_enabled_filmpalast",
-            "source_enabled_megakino", "source_enabled_hanime",
+            *(("source_enabled_" + _sid) for _sid in _known_source_ids),
             "source_show_new_aniworld", "source_show_popular_aniworld",
             "source_show_new_sto", "source_show_popular_sto",
             "source_show_new_hanime", "source_show_trending_hanime",
@@ -1363,7 +1382,7 @@ def register_settings_routes(app):
             if not _sadmin:
                 return jsonify({"error": "forbidden"}), 403
         if "home_source_order" in data:
-            _valid_provs = {"aniworld", "sto", "filmpalast", "megakino", "hanime"}
+            _valid_provs = set(_known_source_ids)
             _parts = [p.strip().lower() for p in str(data["home_source_order"]).split(",") if p.strip()]
             if not _parts or any(p not in _valid_provs for p in _parts) or len(set(_parts)) != len(_parts):
                 return jsonify({"error": "Invalid home_source_order"}), 400
@@ -1380,10 +1399,11 @@ def register_settings_routes(app):
                 if sorted(_parts) != ["new", "popular"]:
                     return jsonify({"error": "Invalid %s: must be a permutation of new,popular" % _k}), 400
                 set_setting(_k, ",".join(_parts))
-        for _prov in ("aniworld", "sto", "filmpalast", "megakino", "hanime"):
+        for _prov in _known_source_ids:
             _k = "source_enabled_" + _prov
             if _k in data:
-                set_setting(_k, "1" if str(data[_k]).lower() in ("true", "1") else "0")
+                set_setting(_source_enabled_keys.get(_prov, _k),
+                            "1" if str(data[_k]).lower() in ("true", "1") else "0")
         for _prov in ("aniworld", "sto"):
             for _sec in ("new", "popular"):
                 _k = "source_show_" + _sec + "_" + _prov

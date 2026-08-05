@@ -3407,8 +3407,11 @@ const SOURCE_META = {
               ] }
 };
 
+// Pre-load placeholder only: _loadSourceSettings() replaces `order` and
+// `enabled` with whatever sources the server reports (see sources.available),
+// which is the list that includes module-registered ones.
 let _sourceState = {
-  order: ["aniworld", "sto", "filmpalast", "megakino", "hanime"],
+  order: [],
   section_order: { aniworld: ["new", "popular"], sto: ["new", "popular"], megakino: ["new_movies", "popular_movies", "new_series", "popular_series"], hanime: ["new", "trending"] },
   sections_visible: { aniworld: { new: true, popular: true }, sto: { new: true, popular: true }, megakino: { new_movies: true, popular_movies: true, new_series: true, popular_series: true }, hanime: { new: true, trending: true, censored: true, uncensored: true } },
   enabled: { aniworld: true, sto: true, filmpalast: true, megakino: true, hanime: false },
@@ -3420,10 +3423,57 @@ function _splitOrder(str, fallback) {
   return parts.length ? parts : fallback.slice();
 }
 
+// Sources an installed module registered, from GET /api/settings ->
+// sources.available. Kept so _commitSourceEnabled() can label its toast and
+// so the order list can show a row for them.
+let _thirdpartySources = [];
+
+/** Render one on/off row per module-registered source, using the same
+ *  .settings-checkbox-row / .chb-main pattern as the built-in rows above it.
+ *  Built with DOM calls rather than innerHTML: the id and label come from a
+ *  module, so they must never be parsed as markup. */
+function _renderThirdpartySourceToggles(list) {
+  const host = document.getElementById("thirdpartySourceToggles");
+  if (!host) return;
+  host.innerHTML = "";
+  (list || []).forEach(function (src) {
+    const row = document.createElement("label");
+    row.className = "settings-checkbox-row";
+    row.setAttribute("for", "sourceEnabled_" + src.id);
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "chb-main";
+    cb.id = "sourceEnabled_" + src.id;
+    cb.checked = _sourceState.enabled[src.id] !== false;
+    cb.addEventListener("change", function () { saveSourceEnabled(src.id); });
+    const span = document.createElement("span");
+    span.textContent = src.label || src.id;
+    if (src.adult) {
+      const badge = document.createElement("span");
+      badge.className = "browse-provider-18";
+      badge.textContent = "18+";
+      span.appendChild(document.createTextNode(" "));
+      span.appendChild(badge);
+    }
+    row.appendChild(cb);
+    row.appendChild(span);
+    host.appendChild(row);
+  });
+}
+
 function _loadSourceSettings(sources) {
   sources = sources || {};
-  const validProv = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
-  let order = _splitOrder(sources.order, ["aniworld", "sto", "filmpalast", "megakino", "hanime"]).filter(p => validProv.indexOf(p) !== -1);
+  // Which sources exist is a runtime answer now (a module can register one),
+  // so the id list comes from the server instead of being repeated here. The
+  // five built-ins stay as the fallback for an older/failed response.
+  const available = Array.isArray(sources.available) && sources.available.length
+    ? sources.available
+    : ["aniworld", "sto", "filmpalast", "megakino", "hanime"].map(function (id) {
+        return { id: id, label: (SOURCE_META[id] || {}).label || id, adult: id === "hanime", thirdparty: false };
+      });
+  _thirdpartySources = available.filter(function (s) { return s.thirdparty; });
+  const validProv = available.map(function (s) { return s.id; });
+  let order = _splitOrder(sources.order, validProv).filter(p => validProv.indexOf(p) !== -1);
   // ensure every provider is present exactly once
   validProv.forEach(p => { if (order.indexOf(p) === -1) order.push(p); });
   _sourceState.order = order;
@@ -3458,12 +3508,13 @@ function _loadSourceSettings(sources) {
     };
   }
 
+  // Adult sources are opt-in ("1"), everything else opt-out ("0") -- asked
+  // per source's own adult flag rather than by naming hanime, so a module's
+  // 18+ source follows the same rule.
   const en = sources.enabled || {};
-  _sourceState.enabled.aniworld   = en.aniworld   !== "0";
-  _sourceState.enabled.sto        = en.sto        !== "0";
-  _sourceState.enabled.filmpalast = en.filmpalast !== "0";
-  _sourceState.enabled.megakino   = en.megakino   !== "0";
-  _sourceState.enabled.hanime     = en.hanime     === "1";  // adult source: default OFF
+  available.forEach(function (src) {
+    _sourceState.enabled[src.id] = src.adult ? en[src.id] === "1" : en[src.id] !== "0";
+  });
   _sourceState.hide_in_search = sources.hide_disabled_in_search === "1";
 
   // Reflect enabled toggles (Quellen tab)
@@ -3480,6 +3531,7 @@ function _loadSourceSettings(sources) {
   const cbHide = document.getElementById("sourcesHideInSearch");
   if (cbHide) cbHide.checked = _sourceState.hide_in_search;
 
+  _renderThirdpartySourceToggles(_thirdpartySources);
   _renderSourceOrder();
 }
 
@@ -3493,8 +3545,16 @@ function _renderSourceOrder() {
   if (!list) return;
   list.innerHTML = "";
   _sourceState.order.forEach((prov, idx) => {
-    const meta = SOURCE_META[prov];
-    if (!meta) return;
+    // A module-registered source has no SOURCE_META entry (that table
+    // describes the built-in home-page sections). It still belongs in this
+    // list, because the order set here is also the order the search results
+    // are grouped in -- just without any section controls, and with its label
+    // escaped, since it comes from a module.
+    const meta = SOURCE_META[prov] || {
+      label: esc(_sourceLabel(prov)),
+      cls: "browse-provider-thirdparty",
+      hasSections: false,
+    };
     const row = document.createElement("div");
     row.className = "source-order-row";
     row.setAttribute("draggable", "true");
@@ -3637,21 +3697,47 @@ function _saveSectionOrder(prov) {
   _putSettings(payload, t("Reihenfolge gespeichert", "Order saved"));
 }
 
+/** Display label of any source -- built-in (SOURCE_META) or module-registered
+ *  (the catalogue from /api/settings). Falls back to the raw id. */
+function _sourceLabel(prov) {
+  if (SOURCE_META[prov]) return SOURCE_META[prov].label;
+  const tp = _thirdpartySources.filter(function (s) { return s.id === prov; })[0];
+  return (tp && tp.label) || prov;
+}
+
+/** Is this an 18+ source? Built-in hanime or a module source that declared
+ *  itself adult (register_search_source(..., adult=True)). */
+function _sourceIsAdult(prov) {
+  if (prov === "hanime") return true;
+  const tp = _thirdpartySources.filter(function (s) { return s.id === prov; })[0];
+  return !!(tp && tp.adult);
+}
+
 function _commitSourceEnabled(prov, enabled) {
   _sourceState.enabled[prov] = enabled;
   const payload = {};
+  // The server maps source_enabled_<id> onto whatever key actually holds this
+  // source's state (a module may own its own), so the frontend always sends
+  // the canonical name.
   payload["source_enabled_" + prov] = enabled;
-  const label = SOURCE_META[prov] ? SOURCE_META[prov].label : prov;
-  _putSettings(payload, label + (enabled ? t(" aktiviert", " enabled") : t(" deaktiviert", " disabled")));
+  _putSettings(payload, _sourceLabel(prov) + (enabled ? t(" aktiviert", " enabled") : t(" deaktiviert", " disabled")));
+}
+
+/** The checkbox element of a source's on/off row. Built-ins have hand-written
+ *  ids in settings.html; module sources get the generated
+ *  "sourceEnabled_<id>" row from _renderThirdpartySourceToggles(). */
+function _sourceEnabledCheckbox(prov) {
+  const map = { sto: "sourceEnabledSto", aniworld: "sourceEnabledAniworld", filmpalast: "sourceEnabledFilmpalast", megakino: "sourceEnabledMegakino", hanime: "sourceEnabledHanime" };
+  return document.getElementById(map[prov] || ("sourceEnabled_" + prov));
 }
 
 function saveSourceEnabled(prov) {
-  const map = { sto: "sourceEnabledSto", aniworld: "sourceEnabledAniworld", filmpalast: "sourceEnabledFilmpalast", megakino: "sourceEnabledMegakino", hanime: "sourceEnabledHanime" };
-  const el = document.getElementById(map[prov]);
+  const el = _sourceEnabledCheckbox(prov);
   if (!el) return;
-  // hanime is an adult source: turning it ON requires an explicit 18+ confirmation.
-  if (prov === "hanime" && el.checked) {
+  // An adult source turning ON requires an explicit 18+ confirmation.
+  if (_sourceIsAdult(prov) && el.checked) {
     el.checked = false;              // stays off until the user confirms
+    _pendingAgeSource = prov;
     _openHanimeAgeModal();
     return;
   }
@@ -3666,6 +3752,11 @@ function saveSourceEnabled(prov) {
 // The NEXT activation attempt then shows the sharper "should we really believe
 // you?" variant instead of the normal question.
 let _hanimeBailedOnce = false;
+// Which source the currently open age modal belongs to. The modal is shared:
+// hanime is the built-in case, but a module may register an 18+ source too,
+// and the same confirmation must gate it -- so the answer is applied to this
+// id rather than to a hardcoded "hanime".
+let _pendingAgeSource = "hanime";
 
 function _openHanimeAgeModal() {
   const s1 = document.getElementById("hanimeAgeStep1"); // variant A (first try)
@@ -3681,7 +3772,7 @@ function _closeHanimeAgeModal() {
 }
 function _hanimeAgeClose() {
   _closeHanimeAgeModal();
-  const el = document.getElementById("sourceEnabledHanime");
+  const el = _sourceEnabledCheckbox(_pendingAgeSource);
   if (el) el.checked = false;
 }
 // Variant A, highlighted button "Yes, I am under 18": do NOT enable, and
@@ -3695,9 +3786,9 @@ function hanimeAgeDecline() { _hanimeAgeClose(); }
 // Variant A "No, I am 18 or older"  AND  variant B "Yes": actually enable.
 function hanimeAgeConfirm() {
   _closeHanimeAgeModal();
-  const el = document.getElementById("sourceEnabledHanime");
+  const el = _sourceEnabledCheckbox(_pendingAgeSource);
   if (el) el.checked = true;
-  _commitSourceEnabled("hanime", true);
+  _commitSourceEnabled(_pendingAgeSource, true);
 }
 
 function saveSourcesHideInSearch() {

@@ -542,7 +542,7 @@
   <div class="home-run" id="homeRunStrip" style="display:none; margin-top:10px;"></div>
   <div class="spinner" id="searchSpinner">{{ _('Searching...') }}</div>
   {# The way back out of a search. Its OWN element, above #results and not
-     inside it: renderResults()/renderResultsBoth() replace #results.innerHTML
+     inside it: renderResults()/renderResultsBySource() replace #results.innerHTML
      wholesale when the answers arrive, so a header rendered in there survived
      exactly until the first result landed. #}
   <div class="search-head" id="searchHead" hidden></div>

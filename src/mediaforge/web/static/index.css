@@ -489,6 +489,17 @@
   background: var(--success);
 }
 
+/* A content source registered by a third-party module. The app cannot know a
+   colour for a source it has never seen and must not build a class name out
+   of a module-supplied id, so every module source shares this one neutral
+   accent (see web/source_policy.py's css_class). */
+.browse-provider-thirdparty {
+  color: var(--accent);
+}
+.browse-provider-thirdparty::before {
+  background: var(--accent);
+}
+
 /* ===================================================================
    Home feed — the opt-in "new home page" (Settings -> General)
    Rows are grouped by question instead of by source, so the two chip

@@ -687,6 +687,11 @@
         <span>hanime <span class="browse-provider-18">18+</span></span>
       </label>
       <div class="settings-hint">{{ _('hanime.tv is an adult source (18+) for sexually explicit animated content (hentai). Disabled by default; enabling requires an age confirmation.') }}</div>
+      {# Sources added by installed modules. Filled by settings.js's
+         _renderThirdpartySourceToggles() from GET /api/settings ->
+         sources.available, because their number and names are only known at
+         runtime. Empty (and invisible) when no module registered one. #}
+      <div id="thirdpartySourceToggles"></div>
     </div>
     <div class="settings-section">
       <h2>{{ _('Source order (Start Page v1)') }}</h2>

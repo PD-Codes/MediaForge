@@ -1427,6 +1427,10 @@
           <input type="checkbox" class="chb-main" id="uptimeTrack_hanime" onchange="saveUptimeSettings()" />
           <span>hanime <small style="opacity:.6">hanime.tv · 18+</small></span>
         </label>
+        {# Sites a module registered (uptime_monitor.register_monitor_site).
+           Filled by integrations.js from GET /api/uptime/status -> sources,
+           since only the running app knows which modules are installed. #}
+        <div id="uptimeThirdpartyTracks"></div>
 
         <div class="settings-row" id="uptimeOpenRow" style="margin-top:14px;">
           <div class="settings-row-left">

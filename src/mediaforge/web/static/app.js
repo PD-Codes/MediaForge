@@ -590,7 +590,7 @@ async function loadMegakinoBrowse() {
 // hanime items (both the New/Trending lists and the general title-search
 // results mix censored and uncensored entries) — not separate sections, so
 // this filters an item array rather than hiding a whole grid/section. Shared
-// by loadHanimeBrowse() (home page New/Trending) and renderResultsBoth()
+// by loadHanimeBrowse() (home page New/Trending) and renderResultsBySource()
 // (title search) so both respect the same setting identically.
 function _filterHanimeCensorship(results) {
   const hnVis = (generalSettings && generalSettings.sources && generalSettings.sources.sections && generalSettings.sources.sections.hanime) || {};
@@ -724,8 +724,82 @@ async function showBrowseSections() {
   if (enabled.megakino !== "0") loadMegakinoBrowse();
   if (enabled.hanime === "1") loadHanimeBrowse();
 
-  renderSourceChips(sources);
+  // Awaited: renderSourceChips() now waits for the source catalogue, and
+  // applyUptimeStatus() marks chips that do not exist yet if it runs first.
+  await renderSourceChips(sources);
   applyUptimeStatus();
+}
+
+// ── The source catalogue ───────────────────────────────────────────────────
+// Which content sources exist is a *runtime* question, not a constant: a
+// third-party module can register one (providers.register_provider +
+// search.register_search_source) and it must then be searched, chipped and
+// listed like any built-in. So the list comes from GET /api/search/sources
+// and every consumer below derives from it, instead of the five ids each of
+// them used to hardcode -- which is exactly why a module source used to be
+// reachable by pasted URL but never actually asked a keyword.
+//
+// The hardcoded list survives only as _FALLBACK_SOURCES: if that one request
+// fails, searching the built-ins is a far better outcome than searching
+// nothing. An adult source is omitted server-side for an age-limited session,
+// so anything in here is a source this session may see.
+const _FALLBACK_SOURCES = [
+  { id: "aniworld",   label: "AniWorld",     adult: false, thirdparty: false, css_class: "browse-provider-aniworld" },
+  { id: "sto",        label: "SerienStream", adult: false, thirdparty: false, css_class: "browse-provider-sto" },
+  { id: "filmpalast", label: "FilmPalast",   adult: false, thirdparty: false, css_class: "browse-provider-filmpalast" },
+  { id: "megakino",   label: "MegaKino",     adult: false, thirdparty: false, css_class: "browse-provider-megakino" },
+  { id: "hanime",     label: "hanime 18+",   adult: true,  thirdparty: false, css_class: "browse-provider-hanime" },
+];
+
+let _searchSources = null;         // last resolved catalogue
+let _searchSourcesPromise = null;  // in-flight request, so N callers = 1 fetch
+
+/**
+ * The source catalogue, fetched once per page load.
+ * @param {boolean} [force] refetch instead of using the cached answer -- used
+ *   after a module was installed/removed, where the list genuinely changed.
+ * @returns {Promise<Array>} [{id,label,adult,thirdparty,enabled,css_class}]
+ */
+function loadSearchSources(force) {
+  if (force) { _searchSources = null; _searchSourcesPromise = null; }
+  if (_searchSources) return Promise.resolve(_searchSources);
+  if (_searchSourcesPromise) return _searchSourcesPromise;
+  _searchSourcesPromise = fetch("/api/search/sources")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(r.status)); })
+    .then(function (data) {
+      const list = (data && Array.isArray(data.sources) && data.sources.length)
+        ? data.sources : _FALLBACK_SOURCES.slice();
+      _searchSources = _sortSourcesByUserOrder(list, (data || {}).order);
+      return _searchSources;
+    })
+    .catch(function () {
+      _searchSourcesPromise = null;   // transient failure: allow a retry
+      return _FALLBACK_SOURCES.slice();
+    });
+  return _searchSourcesPromise;
+}
+window.loadSearchSources = loadSearchSources;
+
+/** Sort a catalogue by the user's saved order; unknown/new ids keep their
+ *  position at the end rather than disappearing. */
+function _sortSourcesByUserOrder(list, order) {
+  const ord = Array.isArray(order)
+    ? order
+    : String(order || "").split(",").map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean);
+  if (!ord.length) return list;
+  return list.slice().sort(function (a, b) {
+    const ia = ord.indexOf(a.id), ib = ord.indexOf(b.id);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+}
+
+/** Is this source switched on? `enabled` from /api/settings wins (it is the
+ *  live value the Sources tab writes), the catalogue's own flag is the
+ *  fallback, and an adult source is opt-in either way. */
+function _sourceIsOn(src, enabledMap) {
+  const raw = (enabledMap || {})[src.id];
+  if (raw !== undefined) return src.adult ? raw === "1" : raw !== "0";
+  return !!src.enabled;
 }
 
 // ── "Who is being asked" chips under the search field ───────────────────────
@@ -734,32 +808,20 @@ async function showBrowseSections() {
 // answer instead of hiding it: enabled = normal, off = greyed with a label,
 // down = red (set later by applyUptimeStatus, which is the only place that
 // knows). Order follows the user's own source order.
-const _SOURCE_CHIP_LABELS = {
-  aniworld: "AniWorld",
-  sto: "SerienStream",
-  filmpalast: "FilmPalast",
-  megakino: "MegaKino",
-  hanime: "hanime",
-};
-const _SOURCE_CHIP_ORDER = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
-
-function renderSourceChips(sources) {
+async function renderSourceChips(sources) {
   const wrap = document.getElementById("homeSourceChips");
   if (!wrap) return;
   const enabled = (sources && sources.enabled) || {};
-  const order = (sources && Array.isArray(sources.order) && sources.order.length)
-    ? sources.order : _SOURCE_CHIP_ORDER;
-  // Anything the settings order does not mention still gets a chip, appended.
-  const ids = order.filter(function (id) { return _SOURCE_CHIP_LABELS[id]; });
-  _SOURCE_CHIP_ORDER.forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+  let list = await loadSearchSources();
+  // The Sources tab order is the more recent one when both are present.
+  if (sources && sources.order) list = _sortSourcesByUserOrder(list, sources.order);
 
-  wrap.innerHTML = ids.map(function (id) {
-    // hanime is opt-in ("1"), everything else opt-out ("0").
-    const on = id === "hanime" ? enabled[id] === "1" : enabled[id] !== "0";
-    return '<span class="home-chip' + (on ? "" : " is-off") + '" data-source="' + escapeHtml(id) + '">' +
+  wrap.innerHTML = list.map(function (src) {
+    const on = _sourceIsOn(src, enabled);
+    return '<span class="home-chip' + (on ? "" : " is-off") + '" data-source="' + escapeHtml(src.id) + '">' +
       '<span class="home-chip-dot" style="background:' +
         (on ? "var(--success)" : "var(--text-muted)") + '"></span>' +
-      escapeHtml(_SOURCE_CHIP_LABELS[id]) +
+      escapeHtml(src.label) +
       (on ? "" : " · " + t("aus", "off")) +
       "</span>";
   }).join("");
@@ -1968,16 +2030,22 @@ async function doSearch() {
     try { _srcSettings = ((await loadGeneralSettings()) || {}).sources || {}; } catch (e) { _srcSettings = {}; }
     const _en = _srcSettings.enabled || {};
     const _hide = _srcSettings.hide_disabled_in_search === "1";
-    const _active = (prov) => !(_hide && _en[prov] === "0");
-    const _hanActive = _en.hanime === "1";
-    const [aniResults, stoResults, fpResults, mkResults, hanResults] = await Promise.all([
-      _active("aniworld") ? searchSite("aniworld").catch(() => []) : Promise.resolve([]),
-      _active("sto") ? searchSite("sto").catch(() => []) : Promise.resolve([]),
-      _active("filmpalast") ? searchSite("filmpalast").catch(() => []) : Promise.resolve([]),
-      _active("megakino") ? searchSite("megakino").catch(() => []) : Promise.resolve([]),
-      _hanActive ? searchSite("hanime").catch(() => []) : Promise.resolve([]),
-    ]);
-    renderResultsBoth(aniResults, stoResults, fpResults, mkResults, _filterHanimeCensorship(hanResults));
+    // Every source that exists right now, built-in or module-registered, in
+    // the user's own order -- see loadSearchSources(). An adult source is
+    // always opt-in; everything else is only skipped when the user asked for
+    // disabled sources to be left out of search ("hide_disabled_in_search").
+    let _sources = _sortSourcesByUserOrder(await loadSearchSources(), _srcSettings.order);
+    const _sections = await Promise.all(_sources.map(async function (src) {
+      const on = _sourceIsOn(src, _en);
+      const ask = src.adult ? on : (on || !_hide);
+      let results = ask ? await searchSite(src.id).catch(() => []) : [];
+      // The censorship filter is a property of the hanime source's own
+      // metadata (r.censored), so it applies to whichever source reports it,
+      // not to a hardcoded site id.
+      results = _filterHanimeCensorship(results) || [];
+      return { source: src, results: results };
+    }));
+    renderResultsBySource(_sections);
   } catch (e) {
     showToast(t("Suche fehlgeschlagen: ", "Search failed: " + e.message));
   } finally {
@@ -2006,44 +2074,38 @@ function renderResults(results) {
   });
 }
 
-function renderResultsBoth(aniResults, stoResults, fpResults, mkResults, hanResults) {
-  fpResults = fpResults || [];
-  mkResults = mkResults || [];
-  hanResults = hanResults || [];
+/**
+ * Render search results grouped by the source they came from.
+ * @param {Array} sections [{source, results}] as produced by doSearch() --
+ *   one entry per source that exists, in the user's own order. Replaces the
+ *   old five-positional-argument renderResultsBoth(), which could not
+ *   represent a sixth source at all.
+ */
+function renderResultsBySource(sections) {
+  sections = (sections || []).filter(function (s) { return s && s.source; });
   resultsDiv.innerHTML = "";
-  if (!aniResults.length && !stoResults.length && !fpResults.length && !mkResults.length && !hanResults.length) {
+  if (!sections.some(function (s) { return (s.results || []).length; })) {
     resultsDiv.innerHTML =
-      '<div style="width:100%;text-align:center;color:#888;padding:40px">Keine Ergebnisse gefunden.</div>';
+      '<div style="width:100%;text-align:center;color:#888;padding:40px">' +
+      escapeHtml(t("Keine Ergebnisse gefunden.", "No results found.")) + "</div>";
     return;
   }
 
-  const sections = [
-    { key: "aniworld", label: "AniWorld", cls: "browse-provider-aniworld", results: aniResults },
-    { key: "sto", label: "SerienStream", cls: "browse-provider-sto", results: stoResults },
-    { key: "filmpalast", label: "FilmPalast", cls: "browse-provider-filmpalast", results: fpResults },
-    { key: "megakino", label: "MegaKino", cls: "browse-provider-megakino", results: mkResults },
-    { key: "hanime", label: "hanime 18+", cls: "browse-provider-hanime", results: hanResults },
-  ];
-  try {
-    const _ord = String(((generalSettings || {}).sources || {}).order || "")
-      .split(",").map(x => x.trim().toLowerCase()).filter(Boolean);
-    if (_ord.length) {
-      sections.sort((a, b) => {
-        const ia = _ord.indexOf(a.key), ib = _ord.indexOf(b.key);
-        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-      });
-    }
-  } catch (e) { }
-
   sections.forEach(function (sec) {
+    sec.results = sec.results || [];
     if (!sec.results.length) return;
 
     const block = document.createElement("div");
     block.className = "browse-provider-block";
 
     const header = document.createElement("div");
-    header.className = "browse-provider-header " + sec.cls;
-    header.textContent = sec.label;
+    // A module source has no colour of its own in the shipped CSS, so
+    // source_policy hands it the neutral browse-provider-thirdparty class
+    // rather than a class name that does not exist.
+    header.className = "browse-provider-header " +
+      (sec.source.css_class || "browse-provider-thirdparty");
+    // textContent, not innerHTML: the label comes from a module.
+    header.textContent = sec.source.label || sec.source.id;
     block.appendChild(header);
 
     const grid = document.createElement("div");
@@ -2068,7 +2130,9 @@ function renderResultsBoth(aniResults, stoResults, fpResults, mkResults, hanResu
       // — skip the TMDB/Crunchyroll/Fernsehserien lookup chain entirely here
       // too; it would just be a wasted (or wrong-match) request per card.
       // Genre/FSK hover info still works, fed from hanime's own tags.
-      if (sec.key === "hanime") {
+      // Keyed off "is this an adult source", not off the literal id, so a
+      // module's 18+ source is treated the same way.
+      if (sec.source.adult) {
         const hanimeTags = (r.tags && r.tags.length)
           ? r.tags
           : (r.genre ? r.genre.split(",").map(g => g.trim()).filter(Boolean) : []);

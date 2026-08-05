@@ -14,6 +14,8 @@ from ...search import megakino_search
 from ...search import query as aniworld_query
 from ...search import query_s_to
 from ...search import get_search_source
+from ..source_policy import is_adult_source as _is_adult_source
+from ..source_policy import search_sources
 from ..db import clear_tmdb_cache
 from .browse import _browse_cache
 from .browse import _prefetch_cycle
@@ -465,8 +467,55 @@ def _build_locations(hits):
     return sorted(out.values(), key=lambda e: -e["episodes"])
 
 
+def _source_is_adult(site_id) -> bool:
+    """True if *site_id* is an 18+ source -- built-in or module-registered.
+
+    Kept next to the search route rather than inlined so the age gate in
+    api_search() and the listing in api_search_sources() cannot drift apart.
+    """
+    if _is_adult_source(site_id):
+        return True
+    entry = get_search_source(site_id)
+    return bool(entry and entry.get("adult"))
+
+
 def register_search_routes(app):
     """Register search, series/season/episode/provider lookup, and TMDB discovery endpoints."""
+    @app.route("/api/search/sources", methods=["GET"])
+    def api_search_sources():
+        """List the content sources a keyword search can currently reach.
+
+        GET /api/search/sources. The one list the WebUI works from: the search
+        fan-out in app.js's doSearch(), the source chips under the search
+        field, the Sources tab in Settings and the UpTime tracking rows all
+        read it instead of each repeating the five built-in ids -- which is
+        what previously made a module's registered search source unreachable
+        from the normal search box.
+
+        Sources a module registered (``search.register_search_source()``)
+        appear here the moment the module is enabled and vanish when it is
+        disabled or uninstalled, without a restart.
+
+        18+ sources are omitted entirely for an age-limited session, so such a
+        session never even offers, chips or searches them -- the same rule
+        POST /api/search enforces with a 403.
+        """
+        from ..age_gate import allows_adult
+        sources = search_sources(include_adult=allows_adult())
+        return jsonify({
+            "sources": sources,
+            # The user's own ordering (Settings -> Sources). Sent along so the
+            # frontend does not need a second request to know how to sort, and
+            # so an id that is in the saved order but no longer installed is
+            # simply ignored by the client filtering against "sources".
+            "order": [
+                p.strip().lower()
+                for p in str(get_setting("home_source_order", "") or "").split(",")
+                if p.strip()
+            ],
+            "hide_disabled_in_search": get_setting("sources_hide_in_search", "0"),
+        })
+
     @app.route("/api/search", methods=["POST"])
     def api_search():
         """Search a given site (aniworld/sto/filmpalast/megakino/hanime) for a keyword.
@@ -481,12 +530,16 @@ def register_search_routes(app):
         if not keyword:
             return jsonify({"error": "keyword is required"}), 400
 
-        # A limited session may not search the adult source at all. Refused
+        # A limited session may not search an adult source at all. Refused
         # here rather than filtered afterwards: everything that site returns
         # is over the limit by definition, and "search returned nothing" is a
         # worse answer than "this source is not available to you".
+        # Asked via is_adult_source()/the source catalogue rather than by
+        # comparing against the literal "hanime", so a module that registers
+        # an 18+ source (register_search_source(..., adult=True)) is covered
+        # by the same gate instead of quietly bypassing it.
         from ..age_gate import allows_adult, filter_items
-        if site == "hanime" and not allows_adult():
+        if _source_is_adult(site) and not allows_adult():
             return jsonify({"error": "not permitted", "code": "age_limited"}), 403
 
         results = []

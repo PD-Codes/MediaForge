@@ -1846,17 +1846,31 @@ def register(app):
   (e.g. `models/megakino_to/`, the newest and closest in shape to a
   from-scratch site) as the reference for that interface; it isn't
   re-documented here since it's the same either way, built-in or not.
-- **`register_search_source(item_id, site_id, search_fn, label=None)`**
+- **`register_search_source(item_id, site_id, search_fn, label=None,
+  adult=False, enabled_key=None)`**
   (`mediaforge/search.py`) is the search half: it makes
   `POST /api/search {"site": "<site_id>", "keyword": "..."}` (the endpoint
   itself, the one every built-in site's search already goes through) reach
-  your `search_fn`. `site_id` must not collide with a built-in one
+  your `search_fn`, **and** puts your source into the normal search bar —
+  it is listed by `GET /api/search/sources`, which is what the WebUI fans
+  every keyword out to. `site_id` must not collide with a built-in one
   (`aniworld`/`sto`/`filmpalast`/`megakino`/`hanime`) or another
-  registration. Exceptions inside `search_fn` are caught by the route and
-  logged, same as everything else in this document. **This wires up the
-  route, not the search-bar UI that calls it** — see "Still not automatic"
-  below, this is the one piece that needs more than a registration call
-  today.
+  registration, and must match `[a-z0-9][a-z0-9_-]{1,39}` — it becomes a
+  settings key suffix, a DOM id and part of a CSS class. `label` is what the
+  user sees: the heading above your results, your chip under the search
+  field, your row in Settings → Sources. `adult=True` marks the source 18+,
+  which makes it opt-in behind the age confirmation and hides it entirely
+  from an age-limited session, exactly like the built-in adult source.
+  `enabled_key` points at a settings key you already own; leave it unset and
+  the standard `source_enabled_<site_id>` is used, which the Sources tab
+  writes for you — either way the source defaults to **on**, since it was
+  installed on purpose. Exceptions inside `search_fn` are caught by the route
+  and logged, same as everything else in this document.
+
+  Note that this is deliberately a *separate* call from
+  `register_provider()`: registering only a provider makes your URLs
+  resolvable (pasted links, AutoSync) without claiming your site can answer
+  a keyword search. A source that offers both should register both.
 - **`register_home_feed_source(item_id, source_id, label, fetchers, media_type="series", color=None)`**
   (`mediaforge/home_feed.py`) puts your source on the start page. `fetchers`
   is `{"new": fn}` and/or `{"popular": fn}`; each `fn()` returns the same
@@ -1907,30 +1921,27 @@ def register(app):
   `unregister_monitor_site()` for every
   `item_id` a module owned, so disabling/removing the module removes all of
   it, live, no restart.
+- **The search bar asks for it automatically.** `GET /api/search/sources` is
+  the one list of "which sources exist right now" (built-ins plus every
+  `register_search_source()` registration, assembled by
+  `web/source_policy.py`'s `search_sources()`), and the WebUI derives
+  everything from it: the search fan-out in `app.js`'s `doSearch()`, the
+  source chips under the search field, the result section (its own heading,
+  in the user's source order), the on/off row in Settings → Sources, the
+  Seerr "find streams" modal. Nothing to opt into — registering the search
+  half *is* the opt-in. This used to be a known gap: those five consumers
+  each hardcoded the built-in site ids, so a module source was reachable by
+  pasted URL but never asked a keyword.
 - **Still not automatic — read this before assuming a registered source is
   "done":**
-  - **The main search bar / Advanced Search UI does not yet ask for it.**
-    `web/static/app.js`'s search functions (the homepage quick search and
-    Advanced Search both) loop over a *fixed* list of built-in site ids
-    (`aniworld`/`sto`/`filmpalast`/`megakino`/`hanime`) — they don't read
-    the list of registered sources from the backend, so a registered
-    `search_fn` is reachable by calling `POST /api/search` directly (curl,
-    a module's own page, `resolve_provider()` on a pasted URL, AutoSync)
-    but not from the search bar a user actually types into, until `app.js`
-    is generalized to ask the backend which sites exist instead of
-    hardcoding them. This is a known gap, not something missing from your
-    module.
   - **The classic home page still has its rows in the template.**
     `register_home_feed_source()` fills the *new* home page (Settings →
     General → "Use the new home page"); with the classic one selected your
     source has no carousel there, because that page's eleven rows are
     hardcoded markup in `templates/index.html`. A `dashboard_widget_template`
     is the workaround for classic-home users.
-  - A settings toggle for enabling/disabling the source's own search results
-    the way MegaKino/hanime have is still yours to build (an
-    `extra_settings` toggle you check inside `search_fn`). Use the key
-    `source_enabled_<site_id>` and the home feed picks the same switch up
-    for free.
+  - Advanced Search (`static/advanced_search.js`) is a TMDB discovery page,
+    not a site fan-out, so it has no per-source list to join.
 
 See **`example_content_source/`** for a complete, offline-safe reference
 that registers a whole demo streaming site (`example-source.invalid`, one

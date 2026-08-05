@@ -581,7 +581,47 @@ async function saveSyncplaySettings() {
 
 
 // ===== UpTime =====
-const _UPTIME_SOURCES = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
+// The built-in sites, which have hand-written checkbox rows in
+// integrations.html. Anything beyond these comes from the monitor itself
+// (GET /api/uptime/status -> sources, which includes sites registered by a
+// module via uptime_monitor.register_monitor_site) and gets a row generated
+// below -- so a module's source can be monitored without editing the template.
+const _UPTIME_BUILTIN_SOURCES = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
+// Every id the last /api/uptime/status answer knew about; what
+// saveUptimeSettings() iterates when collecting the checkbox states.
+let _UPTIME_SOURCES = _UPTIME_BUILTIN_SOURCES.slice();
+
+/** Generate a tracking row for each monitored site that has no static one.
+ *  DOM calls, not innerHTML: label and URL come from a module. */
+function _renderThirdpartyUptimeTracks(sources) {
+  const host = document.getElementById("uptimeThirdpartyTracks");
+  if (!host) return;
+  host.innerHTML = "";
+  (sources || []).forEach(function (s) {
+    if (!s || !s.id || _UPTIME_BUILTIN_SOURCES.indexOf(s.id) !== -1) return;
+    const row = document.createElement("label");
+    row.className = "settings-checkbox-row";
+    row.setAttribute("for", "uptimeTrack_" + s.id);
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "chb-main";
+    cb.id = "uptimeTrack_" + s.id;
+    cb.addEventListener("change", function () { saveUptimeSettings(); });
+    const span = document.createElement("span");
+    span.textContent = s.label || s.id;
+    if (s.url) {
+      const small = document.createElement("small");
+      small.style.opacity = ".6";
+      let host_ = s.url;
+      try { host_ = new URL(s.url).hostname; } catch (e) { }
+      small.textContent = " " + host_;
+      span.appendChild(small);
+    }
+    row.appendChild(cb);
+    row.appendChild(span);
+    host.appendChild(row);
+  });
+}
 
 async function loadUptimeSettings() {
   try {
@@ -601,6 +641,14 @@ async function loadUptimeSettings() {
     if (ug) ug.checked = !!data.use_get;
     const trackedMap = {};
     (data.sources || []).forEach(function (s) { trackedMap[s.id] = !!s.tracked; });
+    // Rows for module-registered sites first, so the loop below finds their
+    // checkboxes. Built-ins that the monitor does not report keep their
+    // static row (and their default), hence the union rather than a replace.
+    _renderThirdpartyUptimeTracks(data.sources);
+    _UPTIME_SOURCES = _UPTIME_BUILTIN_SOURCES.slice();
+    (data.sources || []).forEach(function (s) {
+      if (s && s.id && _UPTIME_SOURCES.indexOf(s.id) === -1) _UPTIME_SOURCES.push(s.id);
+    });
     _UPTIME_SOURCES.forEach(function (sid) {
       const cb = document.getElementById("uptimeTrack_" + sid);
       if (cb) cb.checked = trackedMap[sid] !== undefined ? trackedMap[sid] : (sid !== "hanime");

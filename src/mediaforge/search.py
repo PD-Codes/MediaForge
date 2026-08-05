@@ -733,10 +733,16 @@ def fetch_hanime_trending(show_censored=True, show_uncensored=True):
 # (see ``providers.register_provider`` for the URL-resolution half of the
 # same feature) registers its own site id here so ``api_search()`` picks it
 # up automatically -- no change to that route needed.
-_EXTRA_SEARCH_SOURCES: dict = {}  # item_id -> {"site_id", "search_fn", "label"}
+_EXTRA_SEARCH_SOURCES: dict = {}  # item_id -> see register_search_source()
+
+# A site id ends up as a settings key suffix, a DOM data attribute and part of
+# a CSS class, so it is validated once at registration instead of escaped at
+# every use site.
+_SITE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
 
 
-def register_search_source(item_id: str, site_id: str, search_fn, label: str | None = None) -> None:
+def register_search_source(item_id: str, site_id: str, search_fn, label: str | None = None,
+                           adult: bool = False, enabled_key: str | None = None) -> None:
     """Register a keyword search function for a third-party content source.
 
     - ``item_id``: the id the module already passed to ``register_thirdparty()``
@@ -753,17 +759,48 @@ def register_search_source(item_id: str, site_id: str, search_fn, label: str | N
       the ``Provider`` this module registered via ``register_provider``).
       Exceptions are the caller's (``api_search()``'s) responsibility to
       catch, same as any built-in source failing upstream.
-    - ``label``: optional human-readable name for logs; defaults to ``site_id``.
+    - ``label``: human-readable name. Shown to the user -- it is the heading
+      above this source's results, its chip under the search field and its row
+      in Settings -> Sources -- and used in logs. Defaults to ``site_id``.
+    - ``adult``: mark the source 18+. It then behaves like the built-in adult
+      source everywhere: hidden entirely from an age-limited session and never
+      searched by one (see ``web/source_policy.py``).
+    - ``enabled_key``: the ``app_settings`` key holding this source's on/off
+      state, if the module already owns one. Defaults to the
+      ``source_enabled_<site_id>`` convention, which the Sources settings tab
+      writes for module sources automatically -- pass this only to reuse an
+      existing key. Either way the source defaults to *on*: it was installed
+      on purpose.
+
+    Registering the search half is what puts a module's content source into
+    the *normal search box*: ``GET /api/search/sources`` lists it and the
+    WebUI fans every keyword out to everything on that list. A module that
+    only calls ``providers.register_provider()`` stays reachable by pasted URL
+    but is never asked a keyword -- the two halves are deliberately separate,
+    since a site can be resolvable without offering a keyword search.
     """
     if not callable(search_fn):
         raise ValueError("register_search_source: search_fn must be callable")
     reserved = {"aniworld", "sto", "filmpalast", "megakino", "hanime"}
     if site_id in reserved:
         raise ValueError(f"register_search_source: {site_id!r} is a built-in site id")
+    # The id travels into DOM attributes, settings keys and CSS selectors, so
+    # it is constrained to the shape all of those tolerate rather than being
+    # escaped at each of the (currently five) places it is rendered.
+    if not _SITE_ID_RE.match(site_id or ""):
+        raise ValueError(
+            f"register_search_source: invalid site id {site_id!r} "
+            "(allowed: a-z, 0-9, _ and -, 2-40 chars)")
     for existing_id, entry in _EXTRA_SEARCH_SOURCES.items():
         if entry["site_id"] == site_id and existing_id != item_id:
             raise ValueError(f"register_search_source: site id already registered: {site_id!r}")
-    _EXTRA_SEARCH_SOURCES[item_id] = {"site_id": site_id, "search_fn": search_fn, "label": label or site_id}
+    _EXTRA_SEARCH_SOURCES[item_id] = {
+        "site_id": site_id,
+        "search_fn": search_fn,
+        "label": label or site_id,
+        "adult": bool(adult),
+        "enabled_key": enabled_key or None,
+    }
     logger.info("[Search] Registered third-party search source: %s (%s)", site_id, item_id)
 
 
@@ -782,6 +819,26 @@ def thirdparty_search_source_ids() -> set:
     module's private dict.
     """
     return set(_EXTRA_SEARCH_SOURCES)
+
+
+def thirdparty_search_sources() -> list:
+    """Every registered third-party search source as a plain dict
+    (``site_id``/``label``/``adult``/``enabled_key``) -- no ``search_fn``, so
+    the result is safe to hand to a JSON response.
+
+    Read-only view for ``web/source_policy.py``'s :func:`search_sources`,
+    which merges these with the built-ins into the one list the WebUI fans
+    its searches out to.
+    """
+    return [
+        {
+            "site_id": e["site_id"],
+            "label": e.get("label") or e["site_id"],
+            "adult": bool(e.get("adult")),
+            "enabled_key": e.get("enabled_key"),
+        }
+        for e in _EXTRA_SEARCH_SOURCES.values()
+    ]
 
 
 def get_search_source(site_id: str):

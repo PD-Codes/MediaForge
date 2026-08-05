@@ -890,6 +890,24 @@
     { site: "hanime", label: "hanime 18+", keep: function () { return true; } },
   ];
 
+  // Sources an installed module registered. Appended to both lists above with
+  // an unconditional keep(): the movie/series split is expressed by the
+  // built-ins' own `keep` predicates (they know their result shape), and a
+  // module source declares no such distinction -- so its hits are offered in
+  // both contexts rather than silently dropped from one.
+  var _extraSources = [];
+  function _loadExtraSources() {
+    if (typeof window.loadSearchSources !== "function") return Promise.resolve([]);
+    return window.loadSearchSources().then(function (list) {
+      _extraSources = (list || [])
+        .filter(function (s) { return s.thirdparty; })
+        .map(function (s) {
+          return { site: s.id, label: s.label || s.id, keep: function () { return true; } };
+        });
+      return _extraSources;
+    }).catch(function () { return []; });
+  }
+
   function openSearchModal(reqId) {
     var req = S.items[reqId] || {};
     S.ctxReqId = reqId;
@@ -912,7 +930,9 @@
 
     openOverlay("seerrSearchOverlay");
     if (input) input.focus();
-    if (req.title) doSearch();
+    // Resolved before the first fan-out so a module source is included in it;
+    // loadSearchSources() caches, so this is one request per page load.
+    _loadExtraSources().then(function () { if (req.title) doSearch(); });
   }
 
   function closeSearchModal() { closeOverlay("seerrSearchOverlay"); }
@@ -928,7 +948,7 @@
       '<span class="seerr-spinner" aria-hidden="true"></span>' +
       esc(t("Suche läuft…", "Searching…")) + "</div>";
 
-    var sources = S.ctxIsMovie ? MOVIE_SOURCES : SERIES_SOURCES;
+    var sources = (S.ctxIsMovie ? MOVIE_SOURCES : SERIES_SOURCES).concat(_extraSources);
     var mySeq = ++S.searchSeq;
 
     Promise.all(sources.map(function (src) {
