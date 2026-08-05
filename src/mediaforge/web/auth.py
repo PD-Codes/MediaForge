@@ -269,6 +269,65 @@ def admin_required(f):
     return decorated
 
 
+def permission_required(permission: str):
+    """Decorator: require one permission from the caller's effective group set.
+
+    This is the finer-grained sibling of :func:`admin_required`, and it is
+    additive rather than a replacement: ``admin`` holds the wildcard, so every
+    route that is admin-only today keeps behaving identically. What it buys is
+    the middle ground -- letting somebody approve downloads without also
+    handing them the settings page.
+
+    Like admin_required, the role is re-read from the database on every call
+    rather than trusted from the session, so revoking access takes effect
+    immediately instead of at the user's next login.
+    """
+    def _decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            uid = session.get("user_id")
+            wants_json = request.is_json or request.path.startswith("/api/")
+            if uid is None:
+                # No-auth mode runs every request as the pseudo-user id 0 with
+                # no session at all; there is nothing to restrict against, and
+                # failing closed here would break the whole app for those
+                # installs. Auth-enabled installs always have a user_id.
+                if not current_app.config.get("AUTH_ENABLED", True):
+                    return f(*args, **kwargs)
+                if wants_json:
+                    return jsonify({"error": "authentication required"}), 401
+                return redirect(url_for("auth.login"))
+
+            conn = get_db()
+            try:
+                row = conn.execute("SELECT role FROM users WHERE id = ?", (uid,)).fetchone()
+            finally:
+                conn.close()
+            if not row:
+                session.clear()
+                if wants_json:
+                    return jsonify({"error": "authentication required"}), 401
+                return redirect(url_for("auth.login"))
+
+            role = row["role"]
+            session["user_role"] = role
+            session["_role_checked"] = time.time()
+
+            from .groups import has_permission
+            if not has_permission(uid, role, permission):
+                from .audit import audit as _audit
+                _audit("auth", "permission_denied", target=permission,
+                       detail={"path": request.path}, outcome="denied",
+                       severity="warning")
+                if wants_json:
+                    return jsonify({"error": "permission required",
+                                    "permission": permission}), 403
+                return redirect(url_for("index"))
+            return f(*args, **kwargs)
+        return decorated
+    return _decorator
+
+
 # ---------------------------------------------------------------------------
 # Blueprint
 # ---------------------------------------------------------------------------
@@ -300,8 +359,20 @@ def login():
             from .db import get_user_language as _get_lang
             session["ui_language"] = _get_lang(user["id"])
             session["_lang_synced"] = True
+            from .audit import audit as _audit
+            _audit("auth", "login", target=user["username"],
+                   detail={"method": "local"},
+                   actor_id=user["id"], actor_name=user["username"])
             return redirect(url_for("index"))
         error = err
+        # Failed logins are the single most useful thing an audit log holds,
+        # so the username attempted is recorded -- but never the password, not
+        # even its length: a near-miss typo of a real password is itself a
+        # secret worth protecting.
+        from .audit import audit as _audit
+        _audit("auth", "login_failed", target=username, outcome="failure",
+               severity="warning", detail={"reason": str(err or "invalid")},
+               actor_id=0, actor_name=username or "unknown")
 
     resp = make_response(render_template(
         "login.html",
@@ -326,6 +397,8 @@ def logout():
     nuisance, but there is no reason for a state-changing endpoint to answer
     GET at all.
     """
+    from .audit import audit as _audit
+    _audit("auth", "logout", target=session.get("user_name", ""))
     session.clear()
     return redirect(url_for("auth.login"))
 
@@ -555,10 +628,20 @@ def admin_create_user():
     if role not in USER_ROLES:
         return jsonify({"error": "Ungültige Rolle"}), 400
 
+    from .audit import audit as _audit
     try:
         uid = create_user(username, password, role)
+        groups = data.get("groups")
+        if groups is not None:
+            from .groups import set_user_groups
+            set_user_groups(uid, groups)
+        _audit("user", "user_created", target=username,
+               detail={"role": role, "id": uid, "groups": groups or []},
+               severity="notice")
         return jsonify({"id": uid, "username": username, "role": role})
     except Exception as e:
+        _audit("user", "user_created", target=username, outcome="failure",
+               severity="warning", detail={"error": str(e)})
         return jsonify({"error": str(e)}), 409
 
 
@@ -567,9 +650,18 @@ def admin_create_user():
 def admin_delete_user(user_id):
     if user_id == session.get("user_id"):
         return jsonify({"error": "Cannot delete your own account"}), 400
+    from .audit import audit as _audit
+    from .db import get_user_by_id
+    # Resolve the name before the row is gone -- an audit entry that says
+    # "deleted user 17" is useless once 17 no longer exists.
+    victim = (get_user_by_id(user_id) or {}).get("username") or str(user_id)
     ok, err = delete_user(user_id)
     if not ok:
+        _audit("user", "user_deleted", target=victim, outcome="failure",
+               severity="warning", detail={"error": err})
         return jsonify({"error": err}), 400
+    _audit("user", "user_deleted", target=victim, detail={"id": user_id},
+           severity="notice")
     return jsonify({"ok": True})
 
 
@@ -578,7 +670,30 @@ def admin_delete_user(user_id):
 def admin_update_role(user_id):
     data = request.get_json(silent=True) or {}
     new_role = data.get("role", "")
+    from .audit import audit as _audit
+    from .db import get_user_by_id
+    before = (get_user_by_id(user_id) or {})
     ok, err = update_user_role(user_id, new_role)
     if not ok:
         return jsonify({"error": err}), 400
+    _audit("user", "role_changed", target=before.get("username") or str(user_id),
+           detail={"from": before.get("role"), "to": new_role}, severity="notice")
     return jsonify({"ok": True})
+
+
+@auth_bp.route("/admin/api/users/<int:user_id>/groups", methods=["PUT"])
+@admin_required
+def admin_update_user_groups(user_id):
+    data = request.get_json(silent=True) or {}
+    from .audit import audit as _audit
+    from .db import get_user_by_id
+    from .groups import set_user_groups, user_group_ids
+    before = user_group_ids(user_id)
+    ok, err = set_user_groups(user_id, data.get("groups") or [])
+    if not ok:
+        return jsonify({"error": err}), 400
+    after = user_group_ids(user_id)
+    _audit("user", "groups_changed",
+           target=(get_user_by_id(user_id) or {}).get("username") or str(user_id),
+           detail={"from": before, "to": after}, severity="notice")
+    return jsonify({"ok": True, "groups": after})

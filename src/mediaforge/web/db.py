@@ -845,6 +845,11 @@ def delete_user(user_id):
             # Per-user too, and likewise without an FK: the hidden-request list
             # would otherwise be inherited by the next account with this id.
             "DELETE FROM seerr_hidden WHERE user_id = ?",
+            # Group memberships have no FK either (the no-auth pseudo-user id 0
+            # rules it out, same as user_ui_prefs), so a recycled user id would
+            # otherwise inherit the deleted account's permissions -- the worst
+            # variant of this bug, since it silently grants access.
+            "DELETE FROM user_group_members WHERE user_id = ?",
         ):
             try:
                 conn.execute(stmt, (user_id,))

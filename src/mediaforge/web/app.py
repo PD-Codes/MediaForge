@@ -541,6 +541,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "dashboard_widgets": resolve_dashboard_widgets(),
             }
 
+    # Audit log first: it lives in its own database file (see audit.py) and
+    # everything below is auditable, so the writer has to exist before the
+    # first thing worth recording happens.
+    from . import audit as _audit
+    _audit.init_audit_db()
+
     # Initialize download queue, custom paths and autosync (works with or without auth)
     init_queue_db()
     init_custom_paths_db()
@@ -555,6 +561,35 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     init_tmdb_cache_db()
     init_provider_cache_db()
     init_calendar_db()
+
+    # Groups/permissions, then the migration engine. Order matters: init_*_db()
+    # builds a fresh database from nothing, and run_pending() then baselines it
+    # instead of re-running migrations against tables that are already correct.
+    # Doing it the other way round would apply migration 2 to a database whose
+    # group tables init_groups_db() had just created -- harmless here (the DDL
+    # is IF NOT EXISTS) but exactly the sort of ordering assumption that breaks
+    # the first time a migration is not idempotent.
+    from .groups import init_groups_db
+    init_groups_db()
+
+    from . import dbmigrate as _dbmigrate
+    _migration_result = _dbmigrate.run_pending()
+    if not _migration_result.get("ok"):
+        # Deliberately not fatal: a database that failed to migrate is still
+        # readable, and refusing to start would leave the user with no UI to
+        # roll back from. The Operations tab surfaces this state, and the
+        # pre-migration snapshot is the way out.
+        logger.error(
+            "[Migrate] Schema migration %s failed (%s). Snapshot for rollback: %s",
+            _migration_result.get("failed"), _migration_result.get("error"),
+            _migration_result.get("snapshot"),
+        )
+    elif _migration_result.get("applied"):
+        _audit.audit("system", "schema_migrated",
+                     target="v%s" % _migration_result.get("current"),
+                     detail={"applied": _migration_result["applied"],
+                             "snapshot": _migration_result.get("snapshot")},
+                     severity="notice")
 
     # Periodically evict expired TMDB / provider cache entries so the tables
     # don't grow unboundedly.
