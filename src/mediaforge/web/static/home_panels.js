@@ -59,8 +59,9 @@
     },
   };
 
-  const PREF_KEY = "home_panel";
-  const LS_KEY = "mf-home-panel";         // fallback when nobody is logged in
+  // Only kept to clear a value written by an earlier version -- see the
+  // persistence note below. Nothing writes it any more.
+  const LS_KEY = "mf-home-panel";
   const POLL_MS = 20000;
 
   let panels = [];                        // [{id,label,badge,icon,builtin}]
@@ -69,24 +70,18 @@
   let inFlight = null;                    // AbortController of the open fetch
 
   // ------------------------------------------------------------- persistence
-  function storeActive(id) {
-    try { localStorage.setItem(LS_KEY, id); } catch (e) { /* private mode */ }
-    // Fire-and-forget, same as the appearance settings in base.html: the panel
-    // is already open locally, so a failed save must never interrupt anything.
-    // A 401 (auth on, session expired) is a normal outcome and stays silent.
-    fetch("/api/user/preferences", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [PREF_KEY]: id }),
-    }).then(function (r) {
-      if (r.ok && window._USER_PREFS) window._USER_PREFS[PREF_KEY] = id;
-    }).catch(function () { /* offline — the local copy is enough */ });
-  }
-
-  function storedActive() {
-    const prefs = window._USER_PREFS || {};
-    if (prefs[PREF_KEY]) return prefs[PREF_KEY];
-    try { return localStorage.getItem(LS_KEY) || ""; } catch (e) { return ""; }
+  //
+  // There isn't any, deliberately. The cockpit panels used to remember which
+  // one was open, in localStorage and as a server-side user preference, and
+  // restore it on every page load. In practice that meant arriving at the home
+  // page with a panel already expanded, pushing the actual content down, for a
+  // choice made once days ago. A panel is a glance at something, not a mode --
+  // so every load starts closed and the user opens what they want now.
+  //
+  // The stored key and preference are simply no longer read or written. Any
+  // value left over from an earlier version is inert; nothing has to migrate.
+  function forgetStoredActive() {
+    try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
   }
 
   // --------------------------------------------------------------- rendering
@@ -227,28 +222,28 @@
       .then(function (data) {
         panels = (data && data.panels) || [];
         if (!panels.length) { renderBar(); return; }
-        // The server's answer wins over the local one: it already dropped any
-        // panel this account may no longer see.
-        const wanted = (data && data.active) || storedActive();
-        const allowed = panels.some(function (p) { return p.id === wanted; });
-        setActive(allowed ? wanted : "", true);
+        // Always closed on load -- see the persistence note above. The server
+        // still sends `active` for older clients; it is ignored here.
+        forgetStoredActive();
+        setActive("", true);
       })
       .catch(function () { bar.style.display = "none"; });
   }
 
   // ------------------------------------------------------------ interaction
-  function setActive(id, silent) {
+  // `silent` is vestigial: it used to mean "restore, don't persist". Nothing
+  // persists now, so it is accepted and ignored rather than removed, because
+  // both call sites still pass it and one of them is a module-facing path.
+  function setActive(id, silent) {  // eslint-disable-line no-unused-vars
     active = id || "";
     renderBar();
     stopPoll();
     if (!active) {
       body.innerHTML = "";
       body.hidden = true;
-      if (!silent) storeActive("");
       return;
     }
     body.hidden = false;
-    if (!silent) storeActive(active);
     loadPanel(active, false);
     startPoll();
   }

@@ -128,6 +128,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # The audit writer comes first so the migration result itself is auditable.
     _audit.init_audit_db()
 
+    # Subscribe the audit hooks before anything else runs: the settings
+    # listener has to be in place before the first set_setting(), or the
+    # writes that happen during startup are the ones missing from the log.
+    from . import audit_hooks as _audit_hooks
+    _audit_hooks.install()
+    _audit_hooks.record_lifecycle("app_started", pid=os.getpid())
+
     _migration_result = _dbmigrate.run_pending()
     if not _migration_result.get("ok"):
         # Deliberately not fatal. A database that failed to migrate is still
@@ -600,9 +607,39 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # don't grow unboundedly.
     def _tmdb_cache_eviction_loop():
         import time as _t
+        import datetime as _dt
         from . import worker_registry as _wr
+
+        _interval = 3600  # run every hour
+
+        def _next_run_iso():
+            return (_dt.datetime.now()
+                    + _dt.timedelta(seconds=_interval)).isoformat(timespec="seconds")
+
+        def _audit_rows():
+            """Row count of the audit log, or None if it cannot be read."""
+            try:
+                from . import audit as _audit_mod
+                return int(_audit_mod.stats().get("total") or 0)
+            except Exception:
+                return None
+
+        # Report both workers before the first sleep. The loop used to sleep an
+        # hour first, so after every restart these two were the only workers
+        # with no heartbeat at all for up to an hour -- which read as "broken"
+        # when the truth was "waiting". idle(), not done(): nothing has run yet,
+        # so last_run must stay empty.
+        try:
+            _wr.idle("cache_evict", detail="waiting", next_run=_next_run_iso())
+            _rows = _audit_rows()
+            _wr.idle("audit_prune", detail="waiting", next_run=_next_run_iso(),
+                     extra=None if _rows is None else {"entries": _rows})
+        except Exception:
+            get_logger(__name__).debug("[Workers] Initial eviction heartbeat failed",
+                                       exc_info=True)
+
         while True:
-            _t.sleep(3600)  # run every hour
+            _t.sleep(_interval)
             _wr.working("cache_evict")
             # Audit retention rides along with the hourly eviction pass rather
             # than getting a thread of its own: both are "delete rows nobody
@@ -613,9 +650,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 _keep = int(get_setting("audit_retention_days", "0") or 0)
                 if _keep > 0:
                     _audit_mod.prune(_keep)
-                _wr.done("audit_prune", detail="retention %d day(s)" % _keep)
+                _rows = _audit_rows()
+                _wr.done("audit_prune", detail="retention %d day(s)" % _keep,
+                         next_run=_next_run_iso(),
+                         extra=None if _rows is None else {"entries": _rows})
             except Exception as exc:
                 get_logger(__name__).debug("[Audit] Retention prune failed: %s", exc)
+                _wr.fail("audit_prune", str(exc))
             try:
                 removed = evict_tmdb_cache()
                 if removed:
@@ -634,7 +675,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                     get_logger(__name__).debug("[DB] Evicted %d expired browse cache entries", removed)
             except Exception as exc:
                 get_logger(__name__).warning("[DB] Browse cache eviction failed: %s", exc)
-            _wr.done("cache_evict")
+            _wr.done("cache_evict", next_run=_next_run_iso())
 
     threading.Thread(target=_tmdb_cache_eviction_loop, daemon=True,
                      name="tmdb-cache-evict").start()
@@ -762,6 +803,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         _ensure_upscale_worker()
         _ensure_encoding_worker()
         _ensure_tmdb_keywords_sync_worker()
+        # The stall watchdog runs in the process that owns the workers, and
+        # only there: two processes both deciding to restart the same worker
+        # would race, and the loser would restart the winner's fresh thread.
+        # In external mode it is started by worker_host.py instead.
+        from .worker_watchdog import start as _start_watchdog
+        _start_watchdog()
 
     # Auto-download mpv.exe on Windows if missing. Outside the worker block:
     # mpv belongs to the local player, which is a web-process feature, so

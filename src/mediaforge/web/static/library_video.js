@@ -758,10 +758,6 @@ function libStartEpRename(folder, season, episode, oldFile, cpId, langFolder) {
 
 // ---- Move ----
 
-// ── Move job state ──────────────────────────────────────────────
-var _libMoveJobId    = null;
-var _libMovePollTimer = null;
-
 function libOpenMove(folder, cpId, langFolder) {
   // Don't open select view while a move is already running
   if (_libMoveJobId) { libOpenMoveProgress(); return; }
@@ -797,86 +793,6 @@ function libOpenMove(folder, cpId, langFolder) {
 
   modal.style.display = "block";
 }
-
-function libCloseMoveModal() {
-  var modal = document.getElementById("libMoveModal");
-  if (modal) modal.style.display = "none";
-}
-
-// Called when clicking the background overlay — only close if no active job
-function libMoveModalBgClick() {
-  if (_libMoveJobId) { libMinimizeMove(); return; }
-  libCloseMoveModal();
-}
-
-// Minimize to pill — keep job running in background
-function libMinimizeMove() {
-  libCloseMoveModal();
-}
-
-// Reopen progress modal from pill
-function libOpenMoveProgress() {
-  if (!_libMoveJobId) return;
-  var modal = document.getElementById("libMoveModal");
-  var sv    = document.getElementById("libMoveSelectView");
-  var pv    = document.getElementById("libMoveProgressView");
-  if (!modal) return;
-  if (sv) sv.style.display = "none";
-  if (pv) pv.style.display = "";
-  modal.style.display = "block";
-}
-
-function _libShowMovePill(pct) {
-  var pill = document.getElementById("libMovePill");
-  var pctEl = document.getElementById("libMovePillPct");
-  if (pill) pill.style.display = "";
-  if (pctEl) pctEl.textContent = pct + "%";
-}
-
-function _libHideMovePill() {
-  var pill = document.getElementById("libMovePill");
-  if (pill) pill.style.display = "none";
-}
-
-function _libMoveSetProgress(pct, file) {
-  var fill  = document.getElementById("libMoveProgressBarFill");
-  var pctEl = document.getElementById("libMoveProgressPct");
-  var fileEl = document.getElementById("libMoveProgressFile");
-  if (fill)  fill.style.width  = pct + "%";
-  if (pctEl) pctEl.textContent = pct + "%";
-  if (fileEl) fileEl.textContent = file || "";
-  _libShowMovePill(pct);
-}
-
-function _libMoveFinish(folder) {
-  _libMoveJobId = null;
-  clearInterval(_libMovePollTimer);
-  _libMovePollTimer = null;
-  _libHideMovePill();
-  libCloseMoveModal();
-  if (window.showToast) showToast('"' + folder + t("wurde verschoben", "was moved") + '"');
-  libLoad(false);
-}
-
-function _libMoveError(msg) {
-  _libMoveJobId = null;
-  clearInterval(_libMovePollTimer);
-  _libMovePollTimer = null;
-  _libHideMovePill();
-
-  // Show error in modal
-  var pv  = document.getElementById("libMoveProgressView");
-  var err = document.getElementById("libMoveProgressError");
-  var act = document.getElementById("libMoveProgressActions");
-  var modal = document.getElementById("libMoveModal");
-  if (modal) modal.style.display = "block";
-  if (pv) pv.style.display = "";
-  var sv = document.getElementById("libMoveSelectView");
-  if (sv) sv.style.display = "none";
-  if (err) { err.style.display = ""; err.textContent = t("Fehler: ", "Error: ") + msg; }
-  if (act) act.innerHTML = '<button class="btn btn-secondary btn-sm" onclick="libCloseMoveModal()">' + libEsc(t("Schließen", "Close")) + '</button>';
-}
-
 async function libConfirmMove() {
   var modal  = document.getElementById("libMoveModal");
   var select = document.getElementById("libMoveTarget");
@@ -898,7 +814,10 @@ async function libConfirmMove() {
   if (pv)  pv.style.display  = "";
   if (pt)  pt.textContent    = folder;
   if (err) err.style.display = "none";
-  if (act) act.innerHTML     = '<button class="btn btn-secondary btn-sm" id="libMoveMinimizeBtn" onclick="libMinimizeMove()">Im Hintergrund</button>';
+  // Was a hardcoded German string here, on a page that is otherwise fully
+  // translated.
+  if (act) act.innerHTML     = '<button class="btn btn-secondary btn-sm" id="libMoveMinimizeBtn" onclick="libMinimizeMove()">'
+    + t("Im Hintergrund", "In background") + '</button>';
   _libMoveSetProgress(0, t("Wird vorbereitet…", "Preparing…"));
 
   try {
@@ -917,20 +836,10 @@ async function libConfirmMove() {
       _libMoveError(data.error);
       return;
     }
-    _libMoveJobId = data.job_id;
-    // Start polling
-    _libMovePollTimer = setInterval(async function() {
-      try {
-        var r = await fetch("/api/library/move_status/" + _libMoveJobId);
-        if (!r.ok) { _libMoveError(t("Server-Fehler " + r.status, "Server error " + r.status)); return; }
-        var s = await r.json();
-        if (s.error && s.status !== "done") { _libMoveError(s.error); return; }
-        var pct = s.total_bytes > 0 ? Math.round(s.copied_bytes / s.total_bytes * 100) : 0;
-        _libMoveSetProgress(pct, s.current_file || "");
-        if (s.status === "done") { _libMoveFinish(folder); }
-        else if (s.status === "error") { _libMoveError(s.error || t("Unbekannter Fehler", "Unknown error")); }
-      } catch(e) { _libMoveError(t("Verbindung unterbrochen", "Connection interrupted")); }
-    }, 400);
+    // Remembered before polling starts, so a navigation in the very next
+    // moment can still pick the job back up.
+    _libMoveRemember(data.job_id, folder);
+    _libMoveStartPolling(folder);
   } catch(e) {
     _libMoveError(t("Netzwerkfehler: ", "Network error: ") + e.message);
   }

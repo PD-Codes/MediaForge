@@ -40,7 +40,7 @@ from ..queue_worker import _is_job_adaptive_paused
 from ..runtime_state import _syncing_jobs
 from ..runtime_state import _syncing_jobs_lock
 from ..runtime_state import is_queue_paused
-from ..uptime_monitor import _MONITOR_SITES
+from ..uptime_monitor import active_monitor_sites
 from ..uptime_monitor import _uptime_config
 from ..version_info import _get_display_version
 from flask import Response as _FlaskResponse
@@ -513,7 +513,8 @@ def register_v1_api_routes(app):
         window = min(6 * 3600, cfg["retention_days"] * 86400)
         sources = []
         # Snapshot — a module (un)registering a site mutates the live dict.
-        for _sid, (_label, _url, _domain, _markers, _headers) in list(_MONITOR_SITES.items()):
+        # Same enabled-aware view the UpTime dashboard uses.
+        for _sid, (_label, _url, _domain, _markers, _headers) in active_monitor_sites().items():
             rr = get_uptime_range(_sid, now - window, now, n_buckets=1)
             latest = rr["latest"] or {}
             sources.append({

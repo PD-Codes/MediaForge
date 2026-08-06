@@ -501,11 +501,41 @@ function _qNormDownload(item) {
   };
 }
 
+/**
+ * Which row of `queue` is actually being worked on right now.
+ *
+ * Normally the answer is "the one whose status is running", and the DB says so.
+ * But the status column and the live ffmpeg progress are written by different
+ * code at different moments, and between claiming a job and committing its
+ * status there is a window where the encoder/upscaler is demonstrably busy
+ * (progress.active) while every row still reads "queued".
+ *
+ * That window is what produced the reported bug: on the "Upscaling" pane the
+ * job became the hero card (the pane's only runner, so the hero picked it) and
+ * looked active, while on "Everything" the hero slot was taken by a running
+ * download and the same job fell through to "Up next" — the same job described
+ * two different ways depending on which tab you were looking at.
+ *
+ * So when the queue reports active work and no row admits to running, the first
+ * queued row is treated as the running one. Returns null when the DB already
+ * has an answer, or when nothing is active.
+ */
+function _qInferredRunningId(queue) {
+  const model = _qhubModel[queue];
+  if (!model) { return null; }
+  const progress = model.progress || {};
+  if (!progress.active) { return null; }
+  const items = model.items || [];
+  if (items.some(i => i.status === "running")) { return null; }
+  const first = items.filter(i => i.status === "queued")[0];
+  return first ? first.id : null;
+}
+
 /** Normalise an encoding / upscaling queue row (they have the same shape). */
 function _qNormJob(item, queue) {
   const Q = window.QHub;
   const progress = _qhubModel[queue].progress || {};
-  const running = item.status === "running";
+  const running = item.status === "running" || item.id === _qInferredRunningId(queue);
   const totalFiles = item.total_files || 1;
   const curIdx = item.current_file_idx || 0;
   const filePct = running && progress.active ? (progress.percent || 0) : 0;

@@ -62,5 +62,26 @@ def _record_download_history(item, ep_url, start_time, ep_path, size_bytes, stat
             started_at=_iso(start_time),
             finished_at=_iso(end_time),
         )
+
+        # Audit trail. Hooked here rather than in queue_worker.py because this
+        # function is the single point every download outcome already funnels
+        # through -- success, failure, skip and cancel alike. Hooking the
+        # worker would have meant seven call sites today and a near-certainty
+        # that the eighth, added later, would be forgotten.
+        #
+        # Its own try/except: the history row is the important write, and an
+        # audit hook must not be able to lose it.
+        try:
+            from .audit_hooks import record_download
+
+            record_download({
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "url": ep_url,
+                "provider": item.get("provider"),
+                "episode_count": 1,
+            }, status)
+        except Exception:
+            logger.debug("[History] Audit hook failed", exc_info=True)
     except Exception as exc:
         logger.debug("[History] Failed to record download history: %s", exc)

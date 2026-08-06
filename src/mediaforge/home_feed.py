@@ -125,7 +125,12 @@ def iter_home_feed_sources() -> list:
     Copies, because the caller merges these with the built-ins and tags them
     with per-request state (enabled, reachable) -- mutating the registry from
     inside a request would leak that state into the next one.
+
+    Sources belonging to a switched-off module are left out -- see
+    module_gate.py for why the enabled check lives at the point of use.
     """
+    from .module_gate import filter_enabled
+
     return [
         {
             "source_id": entry["source_id"],
@@ -135,7 +140,7 @@ def iter_home_feed_sources() -> list:
             "color": entry["color"],
             "item_id": item_id,
         }
-        for item_id, entry in _EXTRA_HOME_FEED_SOURCES.items()
+        for item_id, entry in filter_enabled(_EXTRA_HOME_FEED_SOURCES).items()
     ]
 
 

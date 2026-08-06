@@ -545,47 +545,172 @@
   /* ===============================================================
    * Workers
    * =============================================================== */
-  var workerTimer = null;
+  var workerTimer = null;      // fallback poll, only used when SSE is unavailable
+  var workerStream = null;     // EventSource
+  var workerCountdown = null;  // 1s ticker for the stall countdowns
+  var workerSeenStream = false;
+
+  // Absolute timestamp -> "in 12:34". The server sends a deadline rather than a
+  // remaining number of seconds, so the countdown stays correct no matter how
+  // long ago the last update arrived -- a tab that was in the background for
+  // five minutes shows the right value on its first repaint, without asking
+  // the server for anything.
+  function fmtCountdown(deadlineTs) {
+    var left = Math.round(deadlineTs - (Date.now() / 1000));
+    if (left <= 0) { return T("stall_due", "restarting…"); }
+    var m = Math.floor(left / 60);
+    var s = left % 60;
+    if (m >= 60) {
+      var h = Math.floor(m / 60);
+      return h + "h " + (m % 60) + "m";
+    }
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function fmtTime(value) {
+    if (!value) { return T("never", "never"); }
+    var d = new Date(value);
+    // An unparseable value is shown as-is rather than as "Invalid Date":
+    // whatever the worker wrote is more useful than the parser's opinion of it.
+    return isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+  }
+
+  // One renderer per field id. The set a worker gets comes from the server
+  // (WORKERS[...]["fields"] in web/worker_registry.py), so adding a field to a
+  // worker is a change there and not here -- the UI has no per-worker branches.
+  var WORKER_FIELDS = {
+    status: function (w) {
+      return [T("status", "Status"), T("state_" + w.state, w.state)];
+    },
+    stall: function (w) {
+      if (!w.stall_deadline) { return null; }   // only a working worker has one
+      return [T("stall", "Restart in"),
+              '<span class="ops-countdown" data-deadline="' + w.stall_deadline + '">' +
+                esc(fmtCountdown(w.stall_deadline)) +
+              '</span>', true];
+    },
+    last_run: function (w) { return [T("last_run", "Last run"), fmtTime(w.last_run)]; },
+    next_run: function (w) { return [T("next_run", "Next run"), fmtTime(w.next_run)]; },
+    next_update: function (w) { return [T("next_update", "Next update"), fmtTime(w.next_run)]; },
+    found: function (w) {
+      var v = (w.extra || {}).found;
+      return [T("found", "Files found"), v == null ? "—" : String(v)];
+    },
+    online: function (w) {
+      var e = w.extra || {};
+      if (e.online == null && e.offline == null) { return null; }
+      return [T("online", "Online / offline"), (e.online || 0) + " / " + (e.offline || 0)];
+    },
+    entries: function (w) {
+      var v = (w.extra || {}).entries;
+      return [T("entries", "Entries"), v == null ? "—" : String(v)];
+    }
+  };
+
+  function workerCard(w) {
+    var rows = (w.fields || ["status"]).map(function (id) {
+      var fn = WORKER_FIELDS[id];
+      if (!fn) { return ""; }
+      var out = fn(w);
+      if (!out) { return ""; }
+      // out[2] marks a value that is already HTML (the countdown span); every
+      // other value goes through esc().
+      var value = out[2] ? out[1] : esc(out[1]);
+      return '<dt>' + esc(out[0]) + '</dt><dd>' + value + '</dd>';
+    }).join("");
+
+    // No status pill any more: it carried no colour, so it never actually told
+    // you the state at a glance. The colour of the whole card does that, and
+    // the state is spelled out in the field list.
+    return '' +
+      '<div class="ops-worker ops-state-' + esc(w.state) + '">' +
+        '<div class="ops-worker-top">' +
+          '<span class="ops-dot"></span>' +
+          '<strong>' + esc(T(w.label, w.worker)) + '</strong>' +
+        '</div>' +
+        (w.detail ? '<div class="ops-worker-detail">' + esc(w.detail) + '</div>' : '') +
+        '<dl class="ops-worker-facts">' + rows + '</dl>' +
+        (w.last_error
+          ? '<div class="ops-worker-error">' + esc(w.last_error) + '</div>'
+          : '') +
+      '</div>';
+  }
+
+  function renderWorkers(data) {
+    var box = document.getElementById("opsWorkerList");
+    if (!box) { return; }
+    box.innerHTML = (data.workers || []).map(workerCard).join("");
+  }
+
+  // Only the countdown text is rewritten, once a second. Re-rendering the whole
+  // list at 1 Hz would throw away scroll position and fight the SSE updates.
+  function tickCountdowns() {
+    var nodes = document.querySelectorAll("#opsWorkerList .ops-countdown");
+    for (var i = 0; i < nodes.length; i++) {
+      nodes[i].textContent = fmtCountdown(Number(nodes[i].getAttribute("data-deadline")));
+    }
+  }
 
   function loadWorkers() {
     var box = document.getElementById("opsWorkerList");
     if (!box) { return; }
-    api("/api/ops/workers").then(function (data) {
-      var workers = data.workers || [];
-      box.innerHTML = workers.map(function (w) {
-        var state = w.stale ? "stale" : w.state;
-        return '' +
-          '<div class="ops-worker ops-state-' + esc(state) + '">' +
-            '<div class="ops-worker-top">' +
-              '<span class="ops-dot"></span>' +
-              '<strong>' + esc(T(w.label, w.worker)) + '</strong>' +
-              '<span class="ops-pill">' + esc(T("state_" + state, state)) + '</span>' +
-            '</div>' +
-            (w.detail ? '<div class="ops-worker-detail">' + esc(w.detail) + '</div>' : '') +
-            '<dl class="ops-worker-facts">' +
-              '<dt>' + esc(T("last_run", "Last run")) + '</dt><dd>' + esc(w.last_run || "—") + '</dd>' +
-              '<dt>' + esc(T("next_run", "Next run")) + '</dt><dd>' + esc(w.next_run || "—") + '</dd>' +
-              '<dt>' + esc(T("mode", "Mode")) + '</dt><dd>' + esc(w.mode || "—") + '</dd>' +
-            '</dl>' +
-            (w.last_error
-              ? '<div class="ops-worker-error">' + esc(w.last_error) + '</div>'
-              : '') +
-          '</div>';
-      }).join("");
-    }).catch(function (exc) {
+    api("/api/ops/workers").then(renderWorkers).catch(function (exc) {
       box.innerHTML = '<div class="settings-hint">' + esc(exc.message) + '</div>';
     });
   }
 
+  function opsTabActive() {
+    var panel = document.getElementById("tab-operations");
+    return !!(panel && panel.classList.contains("active"));
+  }
+
+  function startWorkerLiveUpdates() {
+    stopWorkerLiveUpdates();
+
+    // The countdown runs off local time and needs no server contact, so it
+    // ticks regardless of how the data arrives.
+    workerCountdown = setInterval(function () {
+      if (document.hidden || !opsTabActive()) { return; }
+      tickCountdowns();
+    }, 1000);
+
+    if (typeof EventSource === "undefined") { startWorkerPolling(); return; }
+
+    try {
+      workerStream = new EventSource("/api/ops/workers/stream");
+    } catch (e) {
+      startWorkerPolling();
+      return;
+    }
+
+    workerStream.addEventListener("init", function (ev) {
+      workerSeenStream = true;
+      stopWorkerPolling();   // the stream works; the fallback is not needed
+      try { renderWorkers(JSON.parse(ev.data)); } catch (e) { /* keep last state */ }
+    });
+    workerStream.addEventListener("update", function (ev) {
+      try { renderWorkers(JSON.parse(ev.data)); } catch (e) { /* keep last state */ }
+    });
+    workerStream.onerror = function () {
+      // EventSource reconnects on its own, so a blip needs no action here. What
+      // does need handling is a stream that never worked at all -- a proxy that
+      // buffers text/event-stream, for instance. In that case fall back to the
+      // poll rather than showing a page that silently never updates.
+      if (!workerSeenStream) {
+        stopWorkerLiveUpdates();
+        startWorkerPolling();
+      }
+    };
+  }
+
   function startWorkerPolling() {
-    stopWorkerPolling();
+    if (workerTimer) { return; }
     loadWorkers();
     workerTimer = setInterval(function () {
       // Stop polling while the tab is hidden. A settings page left open in a
       // background tab used to keep hitting the server every 10 s forever.
       if (document.hidden) { return; }
-      var panel = document.getElementById("tab-operations");
-      if (!panel || !panel.classList.contains("active")) { stopWorkerPolling(); return; }
+      if (!opsTabActive()) { stopWorkerLiveUpdates(); return; }
       loadWorkers();
     }, 10000);
   }
@@ -593,6 +718,23 @@
   function stopWorkerPolling() {
     if (workerTimer) { clearInterval(workerTimer); workerTimer = null; }
   }
+
+  function stopWorkerLiveUpdates() {
+    stopWorkerPolling();
+    if (workerCountdown) { clearInterval(workerCountdown); workerCountdown = null; }
+    if (workerStream) {
+      // Closing matters: an EventSource left open holds a server-side generator
+      // (and a slot against the per-topic subscriber limit) for as long as the
+      // page lives, even after the user has navigated to another settings tab.
+      workerStream.close();
+      workerStream = null;
+    }
+    workerSeenStream = false;
+  }
+
+  // Leaving the page must release the stream too -- "navigated away" is not
+  // something the tab-switch handler sees.
+  window.addEventListener("pagehide", stopWorkerLiveUpdates);
 
   /* ===============================================================
    * Schema + snapshots
@@ -1227,9 +1369,9 @@
     if (tab === "api" && !loaded.api) { loaded.api = true; loadApiKeys(); }
     if (tab === "operations") {
       if (!loaded.operations) { loaded.operations = true; loadSchema(); loadWindows(); }
-      startWorkerPolling();
+      startWorkerLiveUpdates();
     } else {
-      stopWorkerPolling();
+      stopWorkerLiveUpdates();
     }
     if (tab === "audit" && !loaded.audit) {
       loaded.audit = true;
@@ -1267,6 +1409,15 @@
   });
 
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) { stopWorkerPolling(); }
+    // A hidden tab drops the stream entirely rather than just pausing the
+    // poll: an open EventSource costs a server-side generator and a slot
+    // against the subscriber limit for as long as it lives, and a background
+    // tab has nobody looking at it. Coming back re-opens it, and the "init"
+    // event delivers the current state immediately -- so nothing is missed.
+    if (document.hidden) {
+      stopWorkerLiveUpdates();
+    } else if (opsTabActive()) {
+      startWorkerLiveUpdates();
+    }
   });
 })();

@@ -41,6 +41,7 @@ from .runtime_state import (
 from .upscale_worker import _trigger_episode_after_download_upscale
 from .encoding_worker import _trigger_after_download_encode
 from . import worker_registry as _wr
+from . import worker_watchdog as _watchdog
 
 logger = get_logger(__name__)
 
@@ -582,11 +583,28 @@ def _queue_worker():
     """
     while True:
         item = None
+        # Bound before anything can fail, so the finally below can always stop
+        # it -- a leaked ticker reports "working" for a job that ended, and the
+        # stall watchdog would eventually act on that.
+        _hb = None
         try:
+            # The watchdog asked this worker to come back. Honoured between
+            # jobs, the only point at which unwinding is safe: mid-job there is
+            # a partially downloaded file and a claimed queue row.
+            if _watchdog.restart_requested("queue"):
+                logger.warning("[Queue] Restart requested by the watchdog — unwinding")
+                _wr.idle("queue", detail="restarted by watchdog")
+                # Clears _queue_worker_started as well, so the watchdog's next
+                # pass can actually start a replacement -- without it this
+                # thread would end and _ensure_queue_worker() would refuse to
+                # start another one, for the life of the process.
+                _watchdog.worker_exiting("queue")
+                return
+
             # Hold new downloads outside the configured time window. Checked
             # before claiming so items aren't marked running while held.
             if not _is_within_download_window() or not _maintenance_allows_download():
-                _wr.beat("queue", state="idle", detail="waiting for the download window")
+                _wr.idle("queue", detail="waiting for the download window")
                 time.sleep(30)
                 continue
 
@@ -595,7 +613,7 @@ def _queue_worker():
                 item = claim_next_queued()
 
             if not item:
-                _wr.beat("queue", state="idle")
+                _wr.idle("queue")
                 time.sleep(3)
                 continue
 
@@ -614,7 +632,25 @@ def _queue_worker():
                 item = None
                 continue
 
-            _wr.working("queue", detail=item.get("title", ""))
+            # Heartbeat for the whole job. A download that sits waiting on a
+            # captcha is the case this matters for: it is genuinely stuck, the
+            # ticker keeps saying so, and the countdown the Operations view
+            # shows is the time until the watchdog steps in.
+            _hb = _watchdog.heartbeat_ticker("queue", detail=item.get("title", ""))
+            _hb.start()
+
+            # Audit: the *start* of a job. The per-episode outcomes are logged
+            # from download_history, but a job that never produces one -- it
+            # hangs on a captcha, or the process dies mid-download -- would
+            # otherwise leave no trace that it was ever attempted, which is
+            # exactly the case somebody comes to the audit log to investigate.
+            try:
+                from .audit_hooks import record_job
+
+                record_job("download", "download_started", item.get("title", ""),
+                           provider=item.get("provider"), queue_id=item.get("id"))
+            except Exception:
+                logger.debug("[Queue] Audit hook failed", exc_info=True)
 
             # Don't start a new item while paused
             while is_queue_paused():
@@ -1411,6 +1447,9 @@ def _queue_worker():
             if item is not None:
                 with _active_cancel_events_lock:
                     _active_cancel_events.pop(item["id"], None)
+            # ...and always stop the heartbeat ticker, on every exit path.
+            if _hb is not None:
+                _hb.stop()
 
 
 def _ensure_queue_worker():
@@ -1438,5 +1477,8 @@ def _ensure_queue_worker():
     finally:
         conn.close()
 
-    thread = threading.Thread(target=_queue_worker, daemon=True)
+    # Named, because worker_watchdog.py identifies a dead worker thread by
+    # name -- an unnamed thread would look permanently absent and get
+    # "restarted" on every check.
+    thread = threading.Thread(target=_queue_worker, daemon=True, name="queue-worker")
     thread.start()

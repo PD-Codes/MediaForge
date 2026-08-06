@@ -156,6 +156,40 @@ def thirdparty_image_host_ids() -> set:
         return set(_EXTRA_IMAGE_HOSTS)
 
 
+def _module_item_enabled(item_id: str) -> bool:
+    """Whether the module owning *item_id* is currently switched on.
+
+    Deliberately NOT registry.item_enabled(): that helper is fail-*open* -- an
+    unknown item id or a DB error both answer "yes", which is the right default
+    for a provider list or a search source, where refusing to serve would break
+    a working setup for no security benefit.
+
+    Here the answer widens an SSRF-relevant allowlist, so every uncertain case
+    has to mean "no":
+
+    * an item id that is not a registered thirdparty item has no toggle to
+      read, so nothing can ever switch it off -- exactly the hole this check
+      exists to close. Modules are documented to register capabilities under
+      the id they passed to register_thirdparty(); one that does not, does not
+      get to extend the proxy's reach.
+    * an error resolving the state is not a licence to fetch.
+
+    A blocked image is a missing poster. A wrongly allowed host is a request
+    the server makes on an attacker's behalf.
+
+    Cached for a second inside the registry, which matters here: the proxy is
+    hit once per poster, so a library grid would otherwise mean hundreds of
+    extra SQLite reads per page view.
+    """
+    try:
+        from ..thirdparties.registry import item_enabled_strict
+
+        return item_enabled_strict(item_id)
+    except Exception:
+        logger.exception("[ImageProxy] Could not resolve enabled state for %s", item_id)
+        return False
+
+
 def _image_host_allowed(netloc: str) -> bool:
     host = (netloc or "").lower().split(":")[0]
     if host in _ALLOWED_IMAGE_HOSTS or host.removeprefix("www.") in _ALLOWED_IMAGE_HOSTS:
@@ -164,7 +198,13 @@ def _image_host_allowed(netloc: str) -> bool:
         return True
     bare_host = host.removeprefix("www.")
     with _image_hosts_lock:
-        extra = list(_EXTRA_IMAGE_HOSTS.values())
+        extra_items = list(_EXTRA_IMAGE_HOSTS.items())
+    # A module's register(app) runs whether or not the module is switched on,
+    # so this dict holds entries for disabled modules too. Those must not keep
+    # widening the proxy's allowlist: every extra host is outbound fetch
+    # surface, and the whole point of the suffix-matching rewrite above was to
+    # keep that surface exactly as large as it needs to be.
+    extra = [entry for item_id, entry in extra_items if _module_item_enabled(item_id)]
     for entry in extra:
         if host in entry["hosts"] or bare_host in entry["hosts"]:
             return True

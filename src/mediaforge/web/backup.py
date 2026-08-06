@@ -425,8 +425,22 @@ def import_backup(file_bytes: bytes, password: str, categories, mode: str = "mer
     # Only now that the data is durably committed do the side effects run.
     # _notify_setting_listeners() swallows listener errors itself, so a broken
     # third-party handler cannot make a successful import look failed.
-    for key, value in applied_settings:
-        _db._notify_setting_listeners(key, value)
+    #
+    # The audit hook is suppressed for the duration and replaced by a single
+    # summary line below. A restore replays every stored setting, and one audit
+    # row per setting means hundreds to thousands of near-identical entries
+    # that push everything interesting out of the retention window -- for an
+    # event that is far better described once, as "settings were restored from
+    # a backup".
+    from . import audit_hooks as _audit_hooks
+
+    with _audit_hooks.suppressed_setting_audit():
+        for key, value in applied_settings:
+            _db._notify_setting_listeners(key, value)
+
+    if applied_settings:
+        _audit_hooks.record_lifecycle("settings_restored",
+                                      count=len(applied_settings), mode=mode)
 
     logger.info("Backup import finished: %s (mode=%s)", report, mode)
     return report

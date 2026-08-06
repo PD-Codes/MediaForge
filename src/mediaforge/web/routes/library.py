@@ -36,6 +36,12 @@ from ..db import set_library_cache
 from ..db import set_library_scanning
 from ..runtime_state import _move_jobs
 from ..runtime_state import _move_jobs_lock
+
+# How long a finished move job stays readable after reaching its final state.
+# Long enough for another open view (a second tab, the page the user navigated
+# to) to poll it once and report the outcome; short enough that the dict does
+# not accumulate. See api_library_move_status().
+_MOVE_JOB_GRACE = 60.0
 from flask import abort
 from flask import jsonify
 from flask import render_template
@@ -1261,6 +1267,14 @@ def _lib_do_scan(targets, lang_sep):
         return
     try:
         _lib_do_scan_locked(targets, lang_sep)
+    except Exception as exc:
+        # Reported here rather than inside the locked body so a crash anywhere
+        # in the scan reaches the Operations view instead of leaving the worker
+        # stuck on "working" forever. The exception itself is re-raised
+        # unchanged -- this is diagnostics, not error handling.
+        from .. import worker_registry as _wr
+        _wr.fail("library_scan", str(exc))
+        raise
     finally:
         _lib_scan_lock.release()
 
@@ -1268,7 +1282,19 @@ def _lib_do_scan(targets, lang_sep):
 def _lib_do_scan_locked(targets, lang_sep):
     """The actual scan. Only ever called with `_lib_scan_lock` held."""
     from pathlib import Path
-    
+
+    from .. import worker_registry as _wr
+
+    # Heartbeat: without it the Operations view cannot tell a scan that is
+    # walking a slow network share from one that never started at all -- the
+    # two look identical from outside, and only one of them is a problem.
+    # beat() swallows its own failures, so no guard is needed around it.
+    _wr.working("library_scan", detail="%d location(s)" % len(targets))
+    # Counted across all targets so the Operations view can show what the last
+    # completed scan actually turned up, which is the cheapest sanity check an
+    # operator has against a location that silently went empty.
+    found_total = 0
+
     # Build lookup from old cache to optimize scans
     old_cache_lookup = {}
     try:
@@ -1327,6 +1353,7 @@ def _lib_do_scan_locked(targets, lang_sep):
 
         set_library_scanning(path_key, True)
         progress = {}
+        found_here = 0
         try:
             # Books are collected by a pass of their own and land under their
             # own key. They are never folded into `titles`: everything reading
@@ -1347,6 +1374,8 @@ def _lib_do_scan_locked(targets, lang_sep):
                     lf_titles = _lib_scan_base(base_path / lf, old_cache_lookup, progress)
                     if lf_titles:
                         loc_lang_folders.append({"name": lf, "titles": lf_titles})
+                found_here = (sum(len(lf["titles"]) for lf in loc_lang_folders)
+                              + len(loc_books) + len(loc_comics))
                 set_library_cache(path_key, {
                     "label": label, "custom_path_id": cp_id, "media_kinds": kinds,
                     "lang_folders": loc_lang_folders, "titles": None,
@@ -1356,6 +1385,7 @@ def _lib_do_scan_locked(targets, lang_sep):
             else:
                 loc_titles = (_lib_scan_base(base_path, old_cache_lookup, progress)
                               if want_video else [])
+                found_here = len(loc_titles) + len(loc_books) + len(loc_comics)
                 set_library_cache(path_key, {
                     "label": label, "custom_path_id": cp_id, "media_kinds": kinds,
                     # `lang_folders: None` on a book-only path is not a
@@ -1370,6 +1400,7 @@ def _lib_do_scan_locked(targets, lang_sep):
             logger.exception("[LibraryScan] Scan of %s (%s) failed", base_path, label)
             set_library_scanning(path_key, False)
         else:
+            found_total += found_here
             # is_scanning is already set to 0 by set_library_cache.
             # Remember whether this location still has files left to probe, so
             # the auto-rescan loop comes back in minutes rather than waiting a
@@ -1393,6 +1424,23 @@ def _lib_do_scan_locked(targets, lang_sep):
                         removed, "y" if removed == 1 else "ies")
     except Exception:
         logger.exception("[LibraryScan] Could not prune stale library cache entries")
+
+    # Report the finished run. next_run comes from the auto-rescan interval
+    # (see _lib_start_auto_rescan) because that loop is what will scan next --
+    # a watcher-triggered or manual scan cannot be predicted, and showing "in
+    # 24 h" is still the honest upper bound.
+    try:
+        import datetime as _dt
+
+        _next = None
+        _hours = _lib_rescan_hours()
+        if _hours:
+            _next = (_dt.datetime.now()
+                     + _dt.timedelta(hours=_hours)).isoformat(timespec="seconds")
+        _wr.done("library_scan", detail="%d location(s)" % len(targets),
+                 next_run=_next, extra={"found": found_total})
+    except Exception:
+        logger.debug("[LibraryScan] Could not report scan completion", exc_info=True)
 
 
 def _lib_trigger_scan_async(targets, lang_sep):
@@ -1565,6 +1613,7 @@ def _lib_move_worker(job_id, src, dst):
         invalidate_library_cache()
         with _move_jobs_lock:
             job["status"] = "done"
+            job["_final_at"] = _time.time()
             job["current_file"] = ""
     except Exception as exc:
         logger.error("[LibMove] Move job %s failed: %s", job_id, exc, exc_info=True)
@@ -1577,6 +1626,7 @@ def _lib_move_worker(job_id, src, dst):
         with _move_jobs_lock:
             job["status"] = "error"
             job["error"] = str(exc)
+            job["_final_at"] = _time.time()
 
 
 def _lib_move_loose_files_worker(job_id, file_paths, dst_dir):
@@ -1618,12 +1668,14 @@ def _lib_move_loose_files_worker(job_id, file_paths, dst_dir):
         invalidate_library_cache()
         with _move_jobs_lock:
             job["status"] = "done"
+            job["_final_at"] = _time.time()
             job["current_file"] = ""
     except Exception as exc:
         logger.error("[LibMove] Loose file move job %s failed: %s", job_id, exc, exc_info=True)
         with _move_jobs_lock:
             job["status"] = "error"
             job["error"] = str(exc)
+            job["_final_at"] = _time.time()
 
 def _lib_overview_counts():
     """Per-kind headline numbers for the library hub tiles.
@@ -2715,15 +2767,36 @@ def register_library_routes(app):
     def api_library_move_status(job_id):
         """Poll move job progress.
 
-        GET /api/library/move_status/<job_id>. Removes the job entry once
-        its final (done/error) state has been polled once. Called from
-        static/library_video.js's `libConfirmMove()`."""
+        GET /api/library/move_status/<job_id>. Called from
+        static/library_video.js's move polling.
+
+        A finished job is kept for a short grace period instead of being
+        dropped on the first poll of its final state. The old behaviour was
+        first-poller-wins, which broke as soon as the move could be watched
+        from more than one place: the user minimizes the modal, navigates to
+        another page, that page's poll reads "done" and deletes the job, and
+        the tab that comes back sees a 404 for a move that succeeded. A
+        completed move must be able to report itself completed to whoever asks
+        within the next few seconds.
+        """
+        import time as _t
+
         with _move_jobs_lock:
             job = _move_jobs.get(job_id)
             if job is None:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             result = dict(job)
-            # Clean up finished jobs after first poll of final state
+            # _final_at is stamped by the move worker when it reaches a final
+            # status, not here. Stamping it on first poll leaked every job
+            # that finished with nobody watching -- the tab was closed, so
+            # nothing ever polled it, so it never got a timestamp, so the
+            # sweep below never reaped it. This setdefault only covers a job
+            # left over from before the upgrade.
             if job["status"] in ("done", "error"):
-                _move_jobs.pop(job_id, None)
+                job.setdefault("_final_at", _t.time())
+            now = _t.time()
+            for stale_id, stale in list(_move_jobs.items()):
+                if stale.get("_final_at") and now - stale["_final_at"] > _MOVE_JOB_GRACE:
+                    _move_jobs.pop(stale_id, None)
+        result.pop("_final_at", None)
         return jsonify(result)

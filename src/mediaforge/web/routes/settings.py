@@ -42,7 +42,7 @@ from ..runtime_state import SYNC_SCHEDULE_MAP
 from ..runtime_state import WORKING_PROVIDERS
 from ..settings_migration import _apply_captcha_env
 from ..source_policy import search_sources as _search_sources
-from ..uptime_monitor import _MONITOR_SITES
+from ..uptime_monitor import active_monitor_sites
 from ..uptime_monitor import _probe_site
 from flask import jsonify
 from flask import render_template
@@ -803,7 +803,10 @@ def register_settings_routes(app):
         #      on the expected domain (handles CDN challenge pages).
         results = {}
         # Snapshot — a module (un)registering a site mutates the live dict.
-        for _sid, (label, url, expected_domain, markers, headers) in list(_MONITOR_SITES.items()):
+        # active_monitor_sites() additionally leaves out sites belonging to a
+        # module that is switched off: probing those would keep a disabled
+        # module's domains in the DNS test (and in outbound traffic).
+        for _sid, (label, url, expected_domain, markers, headers) in active_monitor_sites().items():
             results[label] = _probe_site(url, expected_domain, markers, expected_headers=headers, timeout=10)
 
         # Non-null when this Python installation has a broken ssl.SSLContext

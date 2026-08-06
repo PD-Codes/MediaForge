@@ -197,8 +197,17 @@ def thirdparty_provider_ids() -> set:
 
 
 def all_providers() -> list["Provider"]:
-    """Every provider resolve_provider() considers, built-ins first."""
-    return list(PROVIDERS) + list(_EXTRA_PROVIDERS.values())
+    """Every provider resolve_provider() considers, built-ins first.
+
+    Third-party providers whose module is switched off are left out: a module's
+    register(app) runs regardless of its enabled flag, so _EXTRA_PROVIDERS
+    holds entries for disabled modules too. Without this filter a module that
+    was toggled off in the Modulmanager kept showing up in the provider picker
+    and kept being used to resolve URLs.
+    """
+    from .module_gate import filter_enabled
+
+    return list(PROVIDERS) + list(filter_enabled(_EXTRA_PROVIDERS).values())
 
 
 def normalize_url(url: str) -> str:

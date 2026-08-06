@@ -34,6 +34,19 @@ _devinfos_last_fetch_ts = 0.0  # updated on every fetch attempt, used to rate-li
                                 # the on-page-visit "refresh now" trigger below
 
 
+def _next_poll_iso():
+    """ISO stamp of the next scheduled poll, for the heartbeat's next_run.
+
+    The loop restarts its wait after every round, so this is accurate for a
+    user-requested immediate refresh too -- that one sets the wake event, which
+    also restarts the wait.
+    """
+    import datetime as _dt
+
+    return (_dt.datetime.now() + _dt.timedelta(
+        seconds=DEVINFOS_POLL_INTERVAL_SECONDS)).isoformat(timespec="seconds")
+
+
 def _devinfos_fetch_and_store():
     """Fetch the remote Dev Info feed once and replace the local cache.
 
@@ -48,6 +61,9 @@ def _devinfos_fetch_and_store():
     if not DEVINFOS_SERVER_URL:
         return
     _devinfos_last_fetch_ts = time.time()
+    from . import worker_registry as _wr
+
+    _wr.working("devinfos")
     try:
         # Reuse the project's shared, DNS-patched HTTP session (GLOBAL_SESSION)
         # for consistency with every other outbound request in this project
@@ -98,6 +114,11 @@ def _devinfos_fetch_and_store():
                 "release_published_at": release.get("published_at"),
             })
         replace_devinfo_posts(posts)
+        # The Operations view labels this field "next_update", but the value is
+        # the ordinary next_run stamp -- one source of truth, so a card and a
+        # heartbeat can never disagree about when the poller comes back.
+        _wr.done("devinfos", detail="%d post(s)" % len(posts),
+                 next_run=_next_poll_iso(), extra={"entries": len(posts)})
     except Exception as exc:
         # One line, not a traceback: the Dev Info server being unreachable is a
         # routine event (no internet, DNS filtered, server down) and the cached
@@ -121,6 +142,10 @@ def _devinfos_fetch_and_store():
             logger.warning("[DevInfos] fetch failed (%s: %s) — keeping cached posts",
                            type(exc).__name__, str(exc)[:200])
         logger.debug("[DevInfos] fetch failure detail", exc_info=True)
+        # Still a heartbeat: an unreachable feed server is a normal state, and
+        # the operator needs to see *why* the cache is not moving rather than a
+        # worker that stopped reporting.
+        _wr.fail("devinfos", str(exc)[:200], detail=type(exc).__name__)
 
 
 def _start_devinfos_poller():

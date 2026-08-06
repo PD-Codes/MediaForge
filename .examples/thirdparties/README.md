@@ -279,6 +279,52 @@ rather than permanently blocking you — this only ever tightens an
 already-registered dependency's enabled check, it doesn't invent a new
 failure mode.
 
+## Your capabilities follow your toggle, automatically
+
+`register(app)` runs for **every** discovered module, whether or not the
+module is switched on. That is deliberate — the Modulmanager has to be able
+to show what a disabled module *would* register, and a module has to be
+switchable back on without a restart.
+
+It used to mean, though, that a switched-off module kept working: its
+content source stayed in the provider picker and kept resolving URLs, its
+UpTime site kept being probed, its DNS-test entry kept being tested, and its
+image hosts stayed on the image proxy's allowlist. Only the *UI* honoured the
+toggle. Nothing you could do about it from the module side either, because
+the same thing happened to a module that was already off at boot: there was
+no "disable" moment to react to.
+
+Everything a module registers is now gated at the point where it is used,
+against the same condition that decides whether your sidebar link shows
+(`enabled_setting_key` plus `requires_enabled`):
+
+| You registered via | Left out while your module is off |
+|---|---|
+| `providers.register_provider` | provider picker, `resolve_provider()` |
+| `uptime_monitor.register_monitor_site` | UpTime dashboard, probe rounds, DNS test |
+| `search.register_search_source` | search fan-out, `get_search_source()` |
+| `subtitle_sources.register_subtitle_source` | subtitle lookups |
+| `home_feed.register_home_feed_source` | home feed |
+| `home_panels.register_home_panel` | cockpit panels |
+| `cineinfo.registry.register_cineinfo_source` | CineInfo enrichment |
+| `routes.image_proxy.register_image_hosts` | `/api/img` allowlist |
+
+Two things follow for you as a module author:
+
+- **Register under your own `item_id`.** The gate is keyed by it, exactly
+  like the uninstall cleanup is (see "Uninstall really removes your
+  blueprint"). A capability registered under an id you never passed to
+  `register_thirdparty()` has no toggle to read, so it is treated as
+  un-gated and stays active — the same blind spot the cleanup has, for the
+  same reason.
+- **You no longer need to check the toggle in these paths.** Your own
+  routes still should (see `requires_enabled` above); a provider or search
+  source will simply never be handed to you while you are off.
+
+If you want the check yourself, it is
+`web/thirdparties/registry.py`'s `item_enabled(item_id)`, or
+`mediaforge/module_gate.py`'s `module_item_enabled()` from core code.
+
 ## Admin-only integrations (`auth_required`)
 
 By default every registered integration's routes get wrapped with the same
@@ -864,6 +910,70 @@ For anything beyond "restart me", implement the hook:
 def on_settings_changed(app, keys):
     """A module:<MODULE_ID>:* setting was saved."""
 ```
+
+### Reporting status to Settings → Operations
+
+Your worker can appear in the Operations view next to the built-in ones. Call
+`web/worker_registry.py` as you work:
+
+```python
+from ....web import worker_registry as wr
+
+wr.working("my_bot", detail="syncing 12 titles")   # actively processing
+wr.idle("my_bot")                                  # alive, nothing to do
+wr.done("my_bot", next_run=next_iso)               # a round finished
+wr.fail("my_bot", "API returned 502")              # something broke
+```
+
+Three states only — `idle` ("Inactive"), `working` ("Working"), `error`
+("Error"). Older names such as `running` are normalized on write, so an
+existing worker keeps reporting correctly.
+
+`idle()` vs `done()` matters: `done()` stamps "last run", `idle()` does not.
+A loop that polls an empty queue every few seconds should use `idle()`, or
+"last run" advances forever without a run ever having happened.
+
+Extra facts shown next to the status go in `extra`, and are **merged**, not
+replaced — reporting a count once per round does not get wiped by the next
+plain heartbeat:
+
+```python
+wr.done("my_bot", extra={"entries": 42})
+```
+
+**If your worker can run for a long time, keep beating while it does.** A
+worker that reports at job start and again at job end is indistinguishable
+from a hung one in between, which is what made a healthy two-hour upscale show
+up as overdue:
+
+```python
+from ....web.worker_watchdog import heartbeat_ticker
+
+with heartbeat_ticker("my_bot", detail=title):
+    do_the_long_thing()
+```
+
+Stall watchdog restarts apply to the built-in continuous workers only; a
+module worker is reported but not restarted.
+
+### Live updates (`web/events.py`)
+
+The Operations view is pushed, not polled. If your module has its own status
+page, the same broadcaster is available:
+
+```python
+from ....web.events import publish, stream, sse_headers
+
+publish("my_topic", {"changed": "something"})      # from your worker
+
+# in a route:
+return Response(stream_with_context(stream("my_topic", initial=payload)),
+                mimetype="text/event-stream", headers=sse_headers())
+```
+
+Subscriber queues are bounded and drop their oldest message under pressure, so
+treat a message as a hint to re-read state rather than as data you must not
+lose.
 
 ## TMDB metadata (`lookup_media`)
 

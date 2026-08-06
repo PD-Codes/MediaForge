@@ -59,6 +59,21 @@ _dropped = 0
 CATEGORIES = (
     "auth", "user", "group", "settings", "module", "backup", "queue",
     "library", "system", "api", "integration",
+    # Added when the audit log was extended from "administrative actions" to
+    # "everything that happens", which is what an audit trail has to be to be
+    # worth consulting: a download that vanished and a setting that changed
+    # around the same time are the same investigation, and having only one of
+    # them recorded makes the log something you check *after* you already know
+    # the answer.
+    #
+    # Kept as separate categories rather than folded into "queue"/"system" so
+    # the filter stays useful -- "show me every upscale event" is a question
+    # people actually ask, and it would otherwise mean reading every queue row.
+    "download",   # a download starting, finishing, failing, being cancelled
+    "encoding",   # transcode jobs
+    "upscale",    # upscale jobs
+    "worker",     # a worker stalling, being restarted by the watchdog
+    "lifecycle",  # app start, restart, shutdown, self-update
 )
 
 SEVERITIES = ("info", "notice", "warning", "critical")
@@ -219,8 +234,15 @@ def _writer_loop() -> None:
 # Keys whose values must never be written into the audit detail, even though
 # the *fact* that they changed absolutely must be. Matched as substrings, so
 # a new "..._api_key" setting is covered without anybody remembering to add it.
-_REDACT_HINTS = ("password", "secret", "token", "api_key", "apikey", "pin",
-                 "cookie", "session", "private", "credential")
+_REDACT_HINTS = ("password", "passwd", "secret", "token", "api_key", "apikey",
+                 "pin", "cookie", "session", "private", "credential",
+                 # Added when the audit log started recording *every* settings
+                 # write rather than a handful of administrative actions. Each
+                 # of these routinely carries a credential in a key nobody
+                 # would call a secret: a Discord/Slack webhook URL is a
+                 # bearer token in URL form, "auth"/"bearer" speak for
+                 # themselves, and client_id/client_secret travel together.
+                 "webhook", "auth", "bearer", "client_id", "_key")
 
 
 def redact(data) -> dict:

@@ -86,18 +86,9 @@
   border-radius: 50%; animation: lib-spin 0.8s linear infinite;
 }
 
-.lib-move-pill {
-  display: none; align-items: center; gap: 7px;
-  font-size: 0.76rem; font-weight: 600; color: var(--warning, #f59e0b);
-  background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
-  border-radius: 999px; padding: 4px 11px; cursor: pointer;
-}
-.lib-move-pill-spinner {
-  width: 11px; height: 11px;
-  border: 2px solid rgba(245,158,11,0.25); border-top-color: var(--warning,#f59e0b);
-  border-radius: 50%; animation: lib-spin 0.8s linear infinite;
-}
-.lib-move-pill-label { color: var(--text-muted); }
+/* The move pill and its spinner moved to shell.css, which every page loads --
+   a minimized move has to stay visible after navigating away from the library.
+   See the ".lib-move-pill-host" block there. */
 
 .lib-last-scanned { color: var(--text-muted); margin-left: auto; white-space: nowrap; }
 

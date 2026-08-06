@@ -175,10 +175,22 @@ def get_sources(enabled_only: bool = True) -> list:
     """
     with _lock:
         sources = list(_SOURCES.values())
+        owners = {sid: owner for owner, sids in _OWNERS.items() for sid in sids}
     if enabled_only:
+        # Two separate gates. The source's own is_enabled() is the source
+        # saying "I am configured"; module_item_enabled() is the app saying
+        # "the module that brought you is switched on". A module's
+        # register(app) runs regardless of its enabled flag, so without the
+        # second gate a disabled module kept enriching CineInfo results --
+        # see module_gate.py.
+        from ...module_gate import module_item_enabled
+
         live = []
         for s in sources:
             try:
+                owner = owners.get(s.id)
+                if owner is not None and not module_item_enabled(owner):
+                    continue
                 if s.is_enabled():
                     live.append(s)
             except Exception:

@@ -1940,7 +1940,7 @@
     <div class="settings-section">
       <h2>{{ _('Background workers') }}</h2>
       <div class="settings-hint" style="margin-bottom:14px;">
-        {{ _('Every worker reports what it is doing, when it last ran and what it last failed with. “Unknown” means the worker has never reported — which is different from “not running”.') }}
+        {{ _('Every worker reports its own status live. A worker that is processing something shows how long it has before the watchdog restarts it.') }}
       </div>
       <div id="opsWorkerList" class="ops-worker-grid">
         <div class="settings-hint">{{ _('Loading…') }}</div>
@@ -2187,6 +2187,7 @@ window.OPS_I18N = {
   worker_queue: {{ _('Download queue')|tojson }},
   worker_encoding: {{ _('Encoding')|tojson }},
   worker_upscale: {{ _('Upscaling')|tojson }},
+  {# Auto-Sync and MediaScan are product names, identical in every language. #}
   worker_autosync: 'Auto-Sync',
   worker_libscan: {{ _('Library scan')|tojson }},
   worker_uptime: {{ _('UpTime monitor')|tojson }},
@@ -2195,14 +2196,23 @@ window.OPS_I18N = {
   worker_cacheevict: {{ _('Cache eviction')|tojson }},
   worker_devinfos: {{ _('Dev infos')|tojson }},
   worker_auditprune: {{ _('Audit retention')|tojson }},
-  state_running: {{ _('running')|tojson }},
-  state_idle: {{ _('idle')|tojson }},
-  state_error: {{ _('error')|tojson }},
-  state_stale: {{ _('stale')|tojson }},
-  state_unknown: {{ _('unknown')|tojson }},
+
+  {# Exactly three worker states. "running"/"stale"/"unknown" are gone -- see
+     the STATE_* constants in web/worker_registry.py. #}
+  state_idle: {{ _('Inactive')|tojson }},
+  state_working: {{ _('Working')|tojson }},
+  state_error: {{ _('Error')|tojson }},
+
+  status: {{ _('Status')|tojson }},
   last_run: {{ _('Last run')|tojson }},
   next_run: {{ _('Next run')|tojson }},
-  mode: {{ _('Mode')|tojson }},
+  next_update: {{ _('Next update')|tojson }},
+  stall: {{ _('Restart in')|tojson }},
+  stall_due: {{ _('restarting…')|tojson }},
+  found: {{ _('Files found')|tojson }},
+  online: {{ _('Online / offline')|tojson }},
+  entries: {{ _('Entries')|tojson }},
+  never: {{ _('never')|tojson }},
 
   schema_version: {{ _('Schema version')|tojson }},
   pending: {{ _('pending')|tojson }},

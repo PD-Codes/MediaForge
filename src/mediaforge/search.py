@@ -829,7 +829,12 @@ def thirdparty_search_sources() -> list:
     Read-only view for ``web/source_policy.py``'s :func:`search_sources`,
     which merges these with the built-ins into the one list the WebUI fans
     its searches out to.
+
+    Sources belonging to a switched-off module are left out -- see
+    module_gate.py for why the enabled check lives at the point of use.
     """
+    from .module_gate import filter_enabled
+
     return [
         {
             "site_id": e["site_id"],
@@ -837,15 +842,22 @@ def thirdparty_search_sources() -> list:
             "adult": bool(e.get("adult")),
             "enabled_key": e.get("enabled_key"),
         }
-        for e in _EXTRA_SEARCH_SOURCES.values()
+        for e in filter_enabled(_EXTRA_SEARCH_SOURCES).values()
     ]
 
 
 def get_search_source(site_id: str):
     """Return the ``{"site_id", "search_fn", "label"}`` entry for *site_id*, or
-    ``None``. Used by ``web/routes/search.py``'s ``api_search()``."""
-    for entry in _EXTRA_SEARCH_SOURCES.values():
-        if entry["site_id"] == site_id:
+    ``None``. Used by ``web/routes/search.py``'s ``api_search()``.
+
+    Returns None for a source whose module is switched off, so a client that
+    still has the old site id (a stale tab, a saved filter) cannot keep the
+    module scraping after it was disabled.
+    """
+    from .module_gate import module_item_enabled
+
+    for item_id, entry in list(_EXTRA_SEARCH_SOURCES.items()):
+        if entry["site_id"] == site_id and module_item_enabled(item_id):
             return entry
     return None
 
