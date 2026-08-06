@@ -106,6 +106,11 @@ def thirdparty_subtitle_source_ids() -> set:
 
 
 def iter_subtitle_sources() -> list:
-    """Every registered source as a list of copies, in registration order."""
+    """Every *active* registered source as a list of copies, in registration
+    order. A source whose module is switched off is left out -- see
+    module_gate.py for why the enabled check lives at the point of use."""
+    from .module_gate import filter_enabled
+
     with _lock:
-        return [dict(entry) for entry in _EXTRA_SUBTITLE_SOURCES.values()]
+        snapshot = dict(_EXTRA_SUBTITLE_SOURCES)
+    return [dict(entry) for entry in filter_enabled(snapshot).values()]

@@ -17,6 +17,10 @@ logger = get_logger(__name__)
 
 _tmdb_keywords_worker_started = False
 
+# How long the worker sleeps between passes. Named so the heartbeat's
+# "next run" and the actual sleep cannot drift apart.
+_SYNC_INTERVAL = 3600
+
 
 def _tmdb_keywords_sync_worker():
     """Background loop: check hourly whether today's TMDB keyword export
@@ -26,12 +30,26 @@ def _tmdb_keywords_sync_worker():
     import urllib.request
     from datetime import datetime
 
+    from . import worker_registry as _wr
+
+    def _next_run_iso():
+        """When this loop will look again -- it always sleeps _SYNC_INTERVAL
+        between passes, including after a skipped one."""
+        return (datetime.now() + timedelta(seconds=_SYNC_INTERVAL)).isoformat(timespec="seconds")
+
     while True:
         try:
             from .db import get_setting
+            # Beat before the config check, not after: a worker that is
+            # switched off is still alive, and reporting only when enabled is
+            # what made it look permanently unknown in the Operations view.
+            _wr.working("tmdb_keywords")
             # Only run if advanced search is enabled in config
             if get_setting("cineinfo_advanced_search", "0") != "1":
-                time.sleep(3600)
+                # idle(), not done(): nothing ran, so "last run" must not move.
+                _wr.idle("tmdb_keywords", detail="advanced search disabled",
+                         next_run=_next_run_iso())
+                time.sleep(_SYNC_INTERVAL)
                 continue
 
             yesterday_str = (datetime.utcnow() - timedelta(days=1)).strftime("%m_%d_%Y")
@@ -57,10 +75,15 @@ def _tmdb_keywords_sync_worker():
                 except Exception as e:
                     logger.warning(f"Failed to download TMDB keywords: {e}")
 
+            _wr.done("tmdb_keywords",
+                     detail="downloaded" if download_needed else "already current",
+                     next_run=_next_run_iso())
+
         except Exception as e:
             logger.error(f"Error in TMDB keywords sync worker: {e}")
+            _wr.fail("tmdb_keywords", str(e))
 
-        time.sleep(3600)  # Check every hour
+        time.sleep(_SYNC_INTERVAL)  # Check every hour
 
 
 def _ensure_tmdb_keywords_sync_worker():

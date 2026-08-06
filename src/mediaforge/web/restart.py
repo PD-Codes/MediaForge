@@ -90,6 +90,21 @@ def request_restart(delay: float = 1.0) -> dict:
     _restarting.set()
     logger.info("[Restart] Restart requested — replacing the process in %.1fs", delay)
 
+    # Audited, and audited *here* rather than after the exec: once the process
+    # is replaced there is nothing left to write the entry, so a restart used
+    # to appear in the log only as an unexplained gap.
+    try:
+        from .audit_hooks import record_lifecycle
+
+        record_lifecycle("restart_requested", delay=delay)
+        # Flush synchronously: the writer thread does not survive the exec, and
+        # a queued entry that never reaches disk is the same as no entry.
+        from .audit import flush as _audit_flush
+
+        _audit_flush(2.0)
+    except Exception:
+        logger.debug("[Restart] Audit hook failed", exc_info=True)
+
     def _run():
         time.sleep(delay)
         try:

@@ -28,6 +28,7 @@ import uuid
 from ..config import MEDIAFORGE_TEMP_DIR
 from ..logger import get_logger
 from . import worker_registry as _wr
+from . import worker_watchdog as _watchdog
 from .media_publish import publish_output, sweep_stale_temp_files
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
@@ -212,15 +213,28 @@ def _encoding_worker():
         # except handler reads it, and the item can die before the file list
         # even exists.
         _handed_paths = set()
+        # Bound before anything can fail, so the finally below can always stop
+        # it -- a leaked ticker would keep reporting "working" for a job that
+        # ended, and the stall watchdog would act on that.
+        _hb = None
         try:
+            # The watchdog asked this worker to come back. Honoured between
+            # jobs, the only point at which unwinding is safe: mid-job there is
+            # a half-written output file and a claimed queue row.
+            if _watchdog.restart_requested("encoding"):
+                logger.warning("[Encoding] Restart requested by the watchdog — unwinding")
+                _wr.idle("encoding", detail="restarted by watchdog")
+                # Also clears _encoding_worker_started; see worker_exiting().
+                _watchdog.worker_exiting("encoding")
+                return
+
             # An active maintenance window can forbid encoding outright.
             # Checked BEFORE claiming, so a held job stays "queued" instead of
             # being marked running for the length of the window.
             try:
                 from .maintenance import is_allowed as _mw_allows
                 if not _mw_allows("encoding"):
-                    _wr.beat("encoding", state="idle",
-                             detail="held by a maintenance window")
+                    _wr.idle("encoding", detail="held by a maintenance window")
                     time.sleep(30)
                     continue
             except Exception:
@@ -230,11 +244,24 @@ def _encoding_worker():
                 item = claim_next_encoding_queued()
 
             if not item:
-                _wr.beat("encoding", state="idle")
+                _wr.idle("encoding")
                 time.sleep(4)
                 continue
 
-            _wr.working("encoding", detail=item.get("title") or item.get("file_path", ""))
+            # Heartbeat for the duration of the job, not only at its start:
+            # a long encode is indistinguishable from a hung one otherwise.
+            _hb = _watchdog.heartbeat_ticker(
+                "encoding", detail=item.get("title") or item.get("file_path", ""))
+            _hb.start()
+
+            try:
+                from .audit_hooks import record_job
+
+                record_job("encoding", "encoding_started",
+                           item.get("title") or item.get("file_path", ""),
+                           job_id=item.get("id"))
+            except Exception:
+                logger.debug("[Encoding] Audit hook failed", exc_info=True)
 
             cancel_ev = threading.Event()
             with _encoding_cancel_lock:
@@ -373,6 +400,21 @@ def _encoding_worker():
             with _encoding_cancel_lock:
                 _encoding_active_cancel_events.pop(item["id"], None)
 
+            # Job over: stamp last_run and drop back to idle, so no stall
+            # countdown is shown for a worker with nothing to do.
+            _wr.done("encoding", detail="")
+
+            try:
+                from .audit_hooks import record_job
+
+                record_job("encoding",
+                           "encoding_failed" if _overall_failed else "encoding_completed",
+                           item.get("title") or item.get("file_path", ""),
+                           job_id=item.get("id"), failed=_overall_failed,
+                           total=_total_files)
+            except Exception:
+                logger.debug("[Encoding] Audit hook failed", exc_info=True)
+
         except Exception as e:
             logger.error(f"[Encoding] Worker-Fehler: {e}", exc_info=True)
             _wr.fail("encoding", str(e), detail=(item or {}).get("title", ""))
@@ -391,6 +433,11 @@ def _encoding_worker():
                 except Exception as db_err:
                     logger.error(f"[Encoding] Failed to set status to failed for item {item['id']}: {db_err}", exc_info=True)
             time.sleep(5)
+        finally:
+            # Every exit from an iteration passes here -- normal end, a
+            # `continue` out of a guard clause, or an exception.
+            if _hb is not None:
+                _hb.stop()
 
 
 def _ensure_encoding_worker():

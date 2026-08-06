@@ -89,12 +89,8 @@
         <span class="lib-watcher-dot" id="libWatcherDot"></span>
         <span class="lib-watcher-label" id="libWatcherLabel">{{ _('Watcher…') }}</span>
       </span>
-      <!-- Move-Pill -->
-      <span class="lib-move-pill" id="libMovePill" style="display:none" onclick="libOpenMoveProgress()" title="{{ _('Move in progress') }}">
-        <span class="lib-move-pill-spinner"></span>
-        <span id="libMovePillPct">0%</span>
-        <span class="lib-move-pill-label">{{ _('moving') }}</span>
-      </span>
+      {# The move pill moved to base.html so a minimized move stays reachable
+         from every page, not just this one. #}
       <!-- Last scan -->
       <span class="lib-last-scanned" id="libLastScanned"></span>
     </div>

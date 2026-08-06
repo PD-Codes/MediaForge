@@ -276,7 +276,10 @@ def _uptime_config():
         return max(lo, min(hi, v))
 
     tracked = {}
-    for _sid in list(_MONITOR_SITES):
+    # active_monitor_sites(), not _MONITOR_SITES: a site whose module is
+    # switched off is not tracked, so it drops out of the round and out of
+    # every "is this tracked" answer derived from this config.
+    for _sid in active_monitor_sites():
         tracked[_sid] = setting_is_on(
             get_setting("uptime_track_" + _sid, _tracked_default(_sid)))
 
@@ -423,6 +426,36 @@ def thirdparty_monitor_ids() -> set:
     return set(_EXTRA_MONITOR_SITES)
 
 
+def active_monitor_sites() -> dict:
+    """The monitor sites that should actually be probed/listed right now.
+
+    A snapshot copy of :data:`_MONITOR_SITES` -- built-ins always, third-party
+    sites only while the module that registered them is switched on. Every
+    consumer (the probe loop, the UpTime API, the DNS test, the public v1 API)
+    goes through here instead of reading ``_MONITOR_SITES`` directly, so a
+    module toggled off in the Modulmanager stops being probed and disappears
+    from the UpTime dashboard and the DNS test in the same instant.
+
+    Needed because a module's ``register(app)`` runs regardless of its enabled
+    flag, so ``_MONITOR_SITES`` legitimately contains entries for modules that
+    are off -- both after a toggle and right after a restart.
+
+    Copying also keeps callers safe from a module registering/unregistering a
+    site mid-iteration from a request thread.
+    """
+    try:
+        from .thirdparties.registry import item_enabled
+    except Exception:
+        return dict(_MONITOR_SITES)
+
+    disabled = {
+        site_id
+        for item_id, site_id in list(_EXTRA_MONITOR_SITES.items())
+        if not item_enabled(item_id)
+    }
+    return {sid: cfg for sid, cfg in list(_MONITOR_SITES.items()) if sid not in disabled}
+
+
 # Throttle state for flag.uptime_monitor: the monotonic timestamp of the last
 # submitted flag event (None = never submitted in this process). Guarded by its
 # own lock because a manual "run now" from the UI and the scheduled loop can
@@ -485,13 +518,31 @@ def _uptime_run_round(cfg=None):
         return
     try:
         _uptime_run_round_locked(cfg)
+    except Exception as exc:
+        # Reported here so a round that dies half-way does not leave the worker
+        # showing "working" until the next one happens to succeed. Re-raised
+        # unchanged; the callers already log it.
+        from . import worker_registry as _wr
+        _wr.fail("uptime", str(exc))
+        raise
     finally:
         _uptime_round_lock.release()
 
 
 def _uptime_run_round_locked(cfg=None):
     """The body of a monitor round. Only called with _uptime_round_lock held."""
+    from . import worker_registry as _wr
+
     cfg = cfg or _uptime_config()
+
+    # Heartbeat: a round can take minutes (every tracked site may time out),
+    # so the Operations view needs to see "working" while it does, otherwise a
+    # slow round is indistinguishable from a dead monitor. beat() never raises.
+    _wr.working("uptime", detail="%d site(s)" % len(cfg.get("tracked") or {}))
+    # Counted from this round's verdicts so the view can show the online /
+    # offline split without re-querying the heartbeat history.
+    _online = 0
+    _offline = 0
 
     # Telemetry: stage-2 usage counter for "monitoring is actively running".
     # Throttled inside the helper -- see _report_uptime_monitor_active().
@@ -503,7 +554,9 @@ def _uptime_run_round_locked(cfg=None):
     # out at up to cfg["timeout"] seconds — that iterating the live dict would
     # eventually raise "dictionary changed size during iteration" and kill the
     # round. A site that disappears mid-round simply gets one last heartbeat.
-    _sites = list(_MONITOR_SITES.items())
+    # active_monitor_sites() returns such a snapshot and additionally drops
+    # sites belonging to a disabled module.
+    _sites = list(active_monitor_sites().items())
 
     # Sites that are no longer tracked must not keep a stale failure streak:
     # untracking a site mid-outage and re-tracking it later would otherwise
@@ -547,6 +600,11 @@ def _uptime_run_round_locked(cfg=None):
                 else:
                     _consec_fail.pop(_sid, None)
 
+            if status == "up":
+                _online += 1
+            elif status == "down":
+                _offline += 1
+
             record_uptime_heartbeat(
                 _sid, status,
                 response_ms=r.get("response_ms"),
@@ -554,6 +612,7 @@ def _uptime_run_round_locked(cfg=None):
                 message=msg,
             )
         except Exception as exc:
+            _offline += 1
             try:
                 record_uptime_heartbeat(_sid, "down", message=str(exc))
             except Exception:
@@ -562,6 +621,19 @@ def _uptime_run_round_locked(cfg=None):
         prune_uptime_heartbeats(cfg["retention_days"])
     except Exception:
         pass
+
+    # next_run is derived from the configured interval rather than measured:
+    # the loop sleeps interval-minus-round-duration, so this is the correct
+    # upper bound and stays right for a manual round too.
+    try:
+        import datetime as _dt
+
+        _next = (_dt.datetime.now() + _dt.timedelta(
+            seconds=int(cfg.get("interval") or 0))).isoformat(timespec="seconds")
+        _wr.done("uptime", detail="%d up / %d down" % (_online, _offline),
+                 next_run=_next, extra={"online": _online, "offline": _offline})
+    except Exception:
+        logger.debug("[UpTime] Could not report round completion", exc_info=True)
 
 
 def _start_uptime_monitor():

@@ -65,6 +65,10 @@ _mediascan_delay_timer: threading.Timer | None = None
 _mediascan_delay_lock  = threading.Lock()
 
 # 24-h scheduler
+# Named rather than inlined because the heartbeat's "next run" has to agree
+# with the loop's own wait -- two copies of 86400 would drift apart the first
+# time somebody tuned one of them.
+_MEDIASCAN_INTERVAL_SECONDS = 86400
 _mediascan_scheduler_thread: threading.Thread | None = None
 _mediascan_scheduler_stop   = threading.Event()
 
@@ -366,6 +370,13 @@ def _run_mediascan(source: str | None = None) -> None:
     # request does not count as a second scan.
     _report_library_scan_started()
 
+    # Heartbeat: reported from here rather than from the 24-h scheduler loop,
+    # because a manual refresh and the scheduled one are the same run as far as
+    # an operator is concerned -- instrumenting only the loop would show the
+    # worker as idle right through a scan somebody triggered by hand.
+    from . import worker_registry as _wr
+    _wr.working("mediascan", detail=str(source))
+
     try:
         logger.info("[MediaScan] Starting library fetch from %s", source)
 
@@ -400,6 +411,18 @@ def _run_mediascan(source: str | None = None) -> None:
         _report_library_scan(source, status="success",
                               duration=_t.time() - _mediascan_status["started_at"],
                               count=len(entries))
+        # next_run follows the scheduler's fixed 24-h period (see
+        # _start_mediascan_scheduler): the scheduler restarts its wait after
+        # every run, so "now + 24 h" is exactly when it comes back.
+        try:
+            import datetime as _dtm
+
+            _wr.done("mediascan", detail="%d entries" % len(entries),
+                     next_run=(_dtm.datetime.now() + _dtm.timedelta(
+                         seconds=_MEDIASCAN_INTERVAL_SECONDS)).isoformat(timespec="seconds"),
+                     extra={"entries": len(entries)})
+        except Exception:
+            logger.debug("[MediaScan] Could not report scan completion", exc_info=True)
 
     except Exception as exc:
         logger.error("[MediaScan] Fetch failed: %s", exc)
@@ -412,6 +435,7 @@ def _run_mediascan(source: str | None = None) -> None:
         _report_library_scan(source, status="error",
                               duration=_t.time() - _mediascan_status["started_at"],
                               error_type=type(exc).__name__)
+        _wr.fail("mediascan", str(exc), detail=str(source))
 
 
 def _schedule_mediascan_delayed(delay: float = 120.0) -> None:
@@ -449,7 +473,7 @@ def _start_mediascan_scheduler() -> None:
 
     def _loop():
         # Wait 24 h, then refresh, repeat
-        while not _mediascan_scheduler_stop.wait(timeout=86400):
+        while not _mediascan_scheduler_stop.wait(timeout=_MEDIASCAN_INTERVAL_SECONDS):
             if get_setting("mediascan_enabled", "0") == "1":
                 source = get_setting("mediascan_source", "") or ""
                 if source and source != "folders":

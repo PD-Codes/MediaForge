@@ -815,6 +815,24 @@
     </div>
   </div>
 
+  <!-- ===== Library: Move — background pill =====
+       Lives here rather than in library_video.html's header, where it used to
+       be. A move keeps running server-side after the modal is minimized, but
+       with the pill on one page only there was no way back into it from
+       anywhere else: minimize, navigate, and a running move became invisible
+       and unreachable. Global markup + the job id in sessionStorage (see
+       library_video.js) means it survives the page change. -->
+  <div class="lib-move-pill-host">
+    <span class="lib-move-pill" id="libMovePill" style="display:none"
+          onclick="libOpenMoveProgress()" title="{{ _('Move in progress') }}"
+          role="button" tabindex="0"
+          onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();libOpenMoveProgress();}">
+      <span class="lib-move-pill-spinner"></span>
+      <span id="libMovePillPct">0%</span>
+      <span class="lib-move-pill-label">{{ _('moving') }}</span>
+    </span>
+  </div>
+
   <!-- ===== Library: Move Modal ===== -->
   <div class="modal-overlay" id="libMoveModal" style="display:none"
     onclick="if(event.target===this)libMoveModalBgClick()">
@@ -937,6 +955,10 @@
   <script src="{{ url_for('static', filename='autosync_filter.js') }}"></script>
   <script src="{{ url_for('static', filename='selfupdate.js') }}"></script>
   <script src="{{ url_for('static', filename='number_input.js') }}"></script>
+  {# Library move: pill, polling and progress view. Global, not on the library
+     page only -- a minimized move has to stay reachable after a navigation.
+     See static/library_move.js. #}
+  <script src="{{ url_for('static', filename='library_move.js') }}"></script>
   {% block scripts %}{% endblock %}
   <script>
     // ===== Sidebar =====

@@ -8,7 +8,7 @@ from ..db import get_uptime_heartbeats_between
 from ..db import get_uptime_range
 from ..db import set_setting
 from ..source_policy import source_enabled
-from ..uptime_monitor import _MONITOR_SITES
+from ..uptime_monitor import active_monitor_sites
 from ..uptime_monitor import _MONITOR_ENABLED_DEFAULTS
 from ..uptime_monitor import _MONITOR_ENABLED_KEYS
 from ..uptime_monitor import _uptime_config
@@ -85,7 +85,9 @@ def register_uptime_routes(app):
         sources = []
         # Snapshot: a module (un)registering a monitor site mutates
         # _MONITOR_SITES from another thread — see _uptime_run_round_locked().
-        for _sid, (_label, _url, _domain, _markers, _headers) in list(_MONITOR_SITES.items()):
+        # active_monitor_sites() also hides sites of a switched-off module, so
+        # the dashboard matches what is actually being probed.
+        for _sid, (_label, _url, _domain, _markers, _headers) in active_monitor_sites().items():
             rr = get_uptime_range(_sid, start, end, n_buckets=n_buckets)
             latest = rr["latest"] or {}
             # Third-party sites (see uptime_monitor.register_monitor_site) may
@@ -136,7 +138,7 @@ def register_uptime_routes(app):
         Called from static/uptime.js's `openDetail()`."""
         import time as _t
         src = (request.args.get("source") or "").strip()
-        if src not in _MONITOR_SITES:
+        if src not in active_monitor_sites():
             return jsonify({"error": "unknown source"}), 400
         now = int(_t.time())
         def _int(v, d):
@@ -189,7 +191,7 @@ def register_uptime_routes(app):
 
         tracked = data.get("tracked")
         if isinstance(tracked, dict):
-            for _sid in list(_MONITOR_SITES):
+            for _sid in active_monitor_sites():
                 if _sid in tracked:
                     set_setting("uptime_track_" + _sid,
                                 "1" if tracked[_sid] else "0")

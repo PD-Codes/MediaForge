@@ -289,6 +289,55 @@ def register_ops_routes(app):
         from ..worker_registry import health, snapshot
         return jsonify({"workers": snapshot(), "health": health()})
 
+    @app.route("/api/ops/workers/stream")
+    def api_ops_workers_stream():
+        """Server-Sent Events: worker status, pushed as it changes.
+
+        Replaces the Operations view's 10-second poll. The point is not saving
+        requests -- it is that a worker picking up a job, failing, or being
+        restarted by the watchdog shows up immediately instead of up to ten
+        seconds later, which for a status page is the difference between
+        trusting it and reloading it by hand.
+
+        Same admin gate as /api/ops/workers: worker detail names hosts, PIDs
+        and error strings.
+
+        Authenticated by session cookie, deliberately not by a token in the
+        query string (the Syncplay stream predates this and does it the other
+        way): a URL with a credential in it lands in proxy logs and browser
+        history.
+        """
+        guard = _require_admin()
+        if guard:
+            return guard
+
+        from flask import Response, stream_with_context
+        from .. import events as _events
+        from ..worker_registry import EVENT_TOPIC, health, snapshot
+
+        def _payload():
+            # health() would call snapshot() again; one read is enough.
+            workers = snapshot()
+            return {"workers": workers, "health": health(workers)}
+
+        def _generate():
+            # The hint published by beat() only names the worker that changed;
+            # the client wants the whole picture, so the payload is rebuilt
+            # here. Cheap: snapshot() is one SELECT over a table with one row
+            # per worker, and it only runs when something actually changed.
+            for frame in _events.stream(EVENT_TOPIC, initial=_payload()):
+                if frame.startswith("event: update"):
+                    yield _events.format_event(_payload(), event="update")
+                else:
+                    yield frame
+
+        # stream_with_context: the generator calls snapshot(), which needs the
+        # app context for get_db(). Without it the first update raises outside
+        # the request and the stream dies silently.
+        return Response(stream_with_context(_generate()),
+                        mimetype="text/event-stream",
+                        headers=_events.sse_headers())
+
     # -----------------------------------------------------------------
     # Maintenance windows
     # -----------------------------------------------------------------
@@ -612,7 +661,7 @@ ADMIN_ONLY_OPS_ENDPOINTS = frozenset({
     "api_ops_group_delete", "api_ops_library_locations",
     "api_ops_schema", "api_ops_snapshot_create", "api_ops_snapshot_verify",
     "api_ops_snapshot_restore", "api_ops_snapshot_delete",
-    "api_ops_workers",
+    "api_ops_workers", "api_ops_workers_stream",
     "api_ops_maintenance", "api_ops_maintenance_create",
     "api_ops_maintenance_update", "api_ops_maintenance_delete",
     "api_ops_diagnostics",

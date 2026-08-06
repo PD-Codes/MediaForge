@@ -53,6 +53,41 @@
   box-sizing: border-box;
 }
 
+/* "Build your own module or theme": four link buttons on the right of a
+   settings row.
+
+   The bug this fixes: the container carried an inline max-width:35% while
+   settings_rows.css sets .settings-row-right{flex-shrink:0} and buttons.css
+   sets .btn{white-space:nowrap}. So the box was capped, refused to shrink, and
+   held children that could not wrap their own text -- the longest button
+   ("Publish on the developer portal", and longer again in German) simply
+   overflowed and sat outside the card. The mobile override below did fix it,
+   but it lives in a max-width:640px query, so on desktop it never applied.
+
+   min-width:0 is the part that is easy to miss: a flex item defaults to
+   min-width:auto, which means "never shrink below my content", and that alone
+   is enough to reproduce the overflow even without the inline cap. */
+.extensions-page .ext-author-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  /* A share of the row rather than a hard cap, and allowed to shrink. */
+  flex: 1 1 auto;
+  max-width: 60%;
+}
+
+.extensions-page .ext-author-links .btn {
+  /* Overrides buttons.css's nowrap for these four only: a long localized
+     label wrapping onto two lines is correct here, where the alternative is
+     it leaving the card. */
+  white-space: normal;
+  text-align: center;
+  min-width: 0;
+}
+
 @media (max-width: 640px) {
   /* settings_rows.css's .settings-row is a plain, non-wrapping flex row with
      .settings-row-right set to flex-shrink:0 -- fine for a lone toggle/button,

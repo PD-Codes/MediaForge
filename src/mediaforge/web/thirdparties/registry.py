@@ -1526,15 +1526,123 @@ def unregister_background_worker(item_id):
 def _worker_should_run(item_id) -> bool:
     """A worker runs exactly when its item is enabled and its requires_enabled
     dependencies are actually on -- the same condition that decides whether the
-    item's sidebar link is shown, so "visible" and "running" can't disagree."""
+    item's sidebar link is shown, so "visible" and "running" can't disagree.
+
+    Unlike item_enabled(), an *unknown* item_id means "no worker should run":
+    a worker whose item disappeared has nothing left to gate it.
+    """
+    if not get_thirdparty(item_id):
+        return False
+    return item_enabled(item_id)
+
+
+# Short-lived cache for item_enabled(). The gate now runs on hot paths -- the
+# image proxy is hit once per poster on a library grid, the uptime API once per
+# site per request -- and each miss is a get_setting(), i.e. an open/read/close
+# on SQLite. A one-second window is short enough that a toggle still feels
+# immediate (the enable/disable edge clears it outright, see
+# _invalidate_enabled_cache) and long enough to collapse a page's worth of
+# lookups into one.
+_ENABLED_TTL = 1.0
+_enabled_cache: dict = {}   # item_id -> (expires_at, value)
+_enabled_cache_lock = threading.Lock()
+
+
+def _invalidate_enabled_cache() -> None:
+    """Drop the cache. Called on the enable/disable edge so a toggle takes
+    effect on the very next request rather than up to _ENABLED_TTL later."""
+    with _enabled_cache_lock:
+        _enabled_cache.clear()
+
+
+def item_enabled(item_id) -> bool:
+    """Is the module capability registered under *item_id* currently active?
+
+    The single answer to "should this module-provided thing be used right now",
+    shared by every secondary registry (providers, uptime/DNS targets, search
+    sources, hosters, mirrors, subtitle sources, CineInfo sources, image-host
+    allowlist entries, background workers). It is the same condition
+    resolve_menu_items() uses for the sidebar, so a module that looks off in the
+    UI is genuinely off everywhere else too.
+
+    Why this exists at all: _register_modules() calls a module's register(app)
+    regardless of its enabled flag, so a module that is switched off -- at
+    startup or later from the Modulmanager -- still has its provider, uptime
+    target and image hosts sitting in those registries. Detaching them on the
+    disable *edge* would not help a module that was already off at boot, so the
+    gate lives at the point of use instead, where it holds in both cases.
+
+    Fail-open for an id that is not in _ITEMS: those are ids a module registered
+    a capability under without ever passing them to register_thirdparty(), plus
+    anything the core itself registered. Neither has an enabled flag to read,
+    and refusing to serve them would break working setups. See the module
+    README's "Content sources" section -- such ids are invisible to
+    unregister_module()'s cleanup for the same reason.
+    """
+    import time as _t
+
+    from ..db import get_setting
+
+    item = get_thirdparty(item_id)
+    if not item:
+        return True
+
+    now = _t.monotonic()
+    with _enabled_cache_lock:
+        cached = _enabled_cache.get(item_id)
+        if cached and cached[0] > now:
+            return cached[1]
+
+    try:
+        value = (get_setting(item["enabled_setting_key"], "0") == "1"
+                 and dependencies_satisfied(item_id))
+    except Exception:
+        # A transient DB hiccup must not silently disable half the app --
+        # and must not be cached either, or one bad moment would keep
+        # answering from a wrong value.
+        logger.exception("[Registry] item_enabled('%s') failed", item_id)
+        return True
+
+    with _enabled_cache_lock:
+        _enabled_cache[item_id] = (now + _ENABLED_TTL, value)
+    return value
+
+
+def item_enabled_strict(item_id) -> bool:
+    """item_enabled(), but every uncertain case answers False.
+
+    For gates where being wrong in the permissive direction is a security
+    problem rather than a broken feature -- currently the image proxy's host
+    allowlist, which decides where the server will make outbound requests. An
+    unregistered item id answers False here (it has no toggle, so nothing could
+    ever switch it off) and so does an error.
+
+    Shares item_enabled()'s cache, so a hot path can call it per request.
+    """
+    import time as _t
+
     from ..db import get_setting
 
     item = get_thirdparty(item_id)
     if not item:
         return False
-    if get_setting(item["enabled_setting_key"], "0") != "1":
+
+    now = _t.monotonic()
+    with _enabled_cache_lock:
+        cached = _enabled_cache.get(item_id)
+        if cached and cached[0] > now:
+            return cached[1]
+
+    try:
+        value = (get_setting(item["enabled_setting_key"], "0") == "1"
+                 and dependencies_satisfied(item_id))
+    except Exception:
+        logger.exception("[Registry] item_enabled_strict('%s') failed", item_id)
         return False
-    return dependencies_satisfied(item_id)
+
+    with _enabled_cache_lock:
+        _enabled_cache[item_id] = (now + _ENABLED_TTL, value)
+    return value
 
 
 def _start_worker(item_id, worker, app):
@@ -2005,7 +2113,26 @@ def register_generic_settings_routes(app):
             # lazily -- web/thirdparties/__init__.py imports this module, so a
             # top-level import here would be circular.
             if was_enabled != now_enabled:
+                # Before anything else: the gate that decides whether this
+                # module's provider, uptime target and image hosts are used
+                # caches for a second, and a toggle should be visible on the
+                # next request, not the one after.
+                _invalidate_enabled_cache()
+
                 from . import fire_module_hook
+
+                # Audit: the "module" category was defined when the audit log
+                # was written and never once used, which meant a module being
+                # switched off -- changing which providers, uptime targets and
+                # image hosts the app uses -- left no trace at all.
+                try:
+                    from ..audit_hooks import record_module
+
+                    record_module("module_enabled" if now_enabled else "module_disabled",
+                                  module_name_for_item(item_id) or item_id,
+                                  item_id=item_id)
+                except Exception:
+                    logger.debug("[Registry] Audit hook failed", exc_info=True)
 
                 fire_module_hook(module_name_for_item(item_id),
                                  "on_enable" if now_enabled else "on_disable", app)

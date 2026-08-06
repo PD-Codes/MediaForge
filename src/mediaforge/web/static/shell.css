@@ -1275,3 +1275,70 @@ body.mf-scroll-locked {
    this file on every page — integrations.css is not loaded on the other two
    pages that use the same macro. */
 .card-module-pill { margin-right: 15px; }
+
+/* ---------------------------------------------------------------- library move
+   A folder move keeps running on the server after its modal is minimized, so
+   the way back into it has to exist on every page -- not just the library one,
+   where this used to live (library_core.css, loaded only there). Minimizing a
+   move and navigating away left it running and unreachable.
+
+   Fixed to the viewport rather than sitting in the library header: base.html
+   has no shared header slot, and a running background job is exactly the kind
+   of thing that should stay put while the page scrolls. */
+.lib-move-pill-host {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1200;   /* above page content, below .modal-overlay */
+  pointer-events: none;
+}
+
+.lib-move-pill {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--warning, #f59e0b);
+  background: var(--bg-card, rgba(30, 30, 40, 0.96));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 999px;
+  /* Comfortably tappable: the pill is the only way back into a running move,
+     and on a phone a 20px-tall target is a miss waiting to happen. */
+  padding: 9px 15px;
+  min-height: 44px;
+  box-sizing: border-box;
+  cursor: pointer;
+  pointer-events: auto;   /* the host is transparent to clicks, the pill is not */
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+
+.lib-move-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lib-move-pill-spinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(245, 158, 11, 0.25);
+  border-top-color: var(--warning, #f59e0b);
+  border-radius: 50%;
+  animation: lib-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.lib-move-pill-label { color: var(--text-muted); }
+
+/* The keyframes live in library_core.css, which is not loaded everywhere --
+   redeclaring by the same name is harmless and makes the pill self-contained. */
+@keyframes lib-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lib-move-pill-spinner { animation: none; }
+}
+
+@media (max-width: 640px) {
+  /* Clear of the mobile bottom navigation. */
+  .lib-move-pill-host { right: 12px; bottom: 76px; }
+}

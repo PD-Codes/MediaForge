@@ -143,17 +143,32 @@
   flex-shrink: 0;
 }
 
-.ops-state-running { border-left-color: var(--success, #22c55e); }
-.ops-state-running .ops-dot {
+/* Three states, three colours -- carried by the card, not by a pill. The old
+   pill was uncoloured text on a neutral border, which meant the one thing an
+   operator scans for (which worker is unhappy) was the one thing it did not
+   show. The left border and the dot do that job at a glance; the state is
+   still spelled out in the fact list for anyone who needs the word.
+
+   ops-state-idle intentionally has no accent: "nothing to do" is the resting
+   state of most workers most of the time, and colouring it would make a
+   healthy page look busy. */
+.ops-state-working { border-left-color: var(--success, #22c55e); }
+.ops-state-working .ops-dot {
   background: var(--success, #22c55e);
-  /* Only the running dot animates. A page full of pulsing indicators is
+  /* Only the working dot animates. A page full of pulsing indicators is
      noise; one that moves means "something is happening right now". */
   animation: ops-pulse 1.8s ease-in-out infinite;
 }
 .ops-state-error { border-left-color: var(--danger, #ef4444); }
 .ops-state-error .ops-dot { background: var(--danger, #ef4444); }
-.ops-state-stale { border-left-color: var(--warning, #f59e0b); }
-.ops-state-stale .ops-dot { background: var(--warning, #f59e0b); }
+
+/* The countdown to a watchdog restart. Tabular figures so the digits do not
+   jitter as it ticks -- a number that shifts sideways every second reads as a
+   glitch. */
+.ops-countdown {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
 
 @keyframes ops-pulse {
   0%, 100% { opacity: 1; }
@@ -161,7 +176,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ops-state-running .ops-dot { animation: none; }
+  .ops-state-working .ops-dot { animation: none; }
 }
 
 .ops-worker-detail {
@@ -397,6 +412,19 @@
   .ops-action-grid {
     grid-template-columns: 1fr;
   }
+
+  /* A worker's facts are label/value pairs. On a narrow screen the "auto"
+     label column can grow long enough (localized strings such as
+     "Online / offline") to squeeze the value into one character per line, so
+     the pairs stack instead. */
+  .ops-worker-facts {
+    grid-template-columns: 1fr;
+    gap: 0 0;
+    font-size: 0.8rem;
+  }
+
+  .ops-worker-facts dt { margin-top: 6px; }
+  .ops-worker-facts dt:first-child { margin-top: 0; }
 
   /* Four columns of audit metadata do not fit, and shrinking them makes the
      timestamp unreadable. Stack instead, with the action first. */

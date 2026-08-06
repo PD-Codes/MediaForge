@@ -265,6 +265,13 @@ def run(workers=None) -> int:
         logger.error("[WorkerHost] No worker started -- nothing to do, exiting")
         return 1
 
+    # The stall watchdog belongs in whichever process owns the workers -- here,
+    # in external mode. app.py starts it instead when the workers run in the
+    # web process. Never both: two watchdogs would race to restart the same
+    # worker, and the loser would kill the winner's freshly started thread.
+    from .worker_watchdog import start as _start_watchdog, stop as _stop_watchdog
+    _start_watchdog()
+
     logger.info("[WorkerHost] Running. Ctrl-C or SIGTERM to stop.")
     try:
         while not _stop.wait(5.0):
@@ -272,6 +279,7 @@ def run(workers=None) -> int:
     except KeyboardInterrupt:
         pass
 
+    _stop_watchdog()
     logger.info("[WorkerHost] Stopped")
     _audit.audit("system", "worker_host_stopped", target=",".join(started),
                  severity="notice", actor_name="worker-host")

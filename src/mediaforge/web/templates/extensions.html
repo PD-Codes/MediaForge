@@ -598,8 +598,12 @@
             {{ _('Start from the ready-made examples — each folder is a working module with its own README explaining what it registers and why.') }}
           </div>
         </div>
-        <div class="settings-row-right ext-author-links"
-             style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width: 35%;">
+        {# Layout lives in extensions.css (.ext-author-links). It used to be an
+           inline style with max-width:35%, which combined with
+           .settings-row-right{flex-shrink:0} and .btn{white-space:nowrap} to
+           push the longest button — "Publish on the developer portal", longer
+           still once translated — straight out of the box. #}
+        <div class="settings-row-right ext-author-links">
           <a class="btn btn-secondary" target="_blank" rel="noopener noreferrer"
              href="https://github.com/PD-Codes/MediaForge/tree/main/.examples/thirdparties">
             {{ _('Module examples') }}

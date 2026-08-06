@@ -26,6 +26,7 @@ from ..telemetry import classify as telemetry_classify
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
 from . import worker_registry as _wr
+from . import worker_watchdog as _watchdog
 from .media_publish import publish_output, sweep_stale_temp_files
 from .db import (
     add_to_upscale_queue,
@@ -115,6 +116,10 @@ def _upscale_worker():
     current item "failed" and sleeps 5s before retrying the loop.
     """
     while True:
+        # Bound outside the try, so the finally can always stop it -- inside,
+        # an exception on the very first statement would leave _hb undefined
+        # and turn a worker error into a NameError.
+        _hb = None
         try:
             item = None
             _final_status_set = False
@@ -124,14 +129,24 @@ def _upscale_worker():
             _job_started = time.monotonic()
             settings = None
 
+            # The watchdog asked this worker to come back. Honoured here,
+            # between jobs, which is the only point at which unwinding is
+            # safe: mid-job there is a half-written file and a claimed queue
+            # row. See worker_watchdog.py.
+            if _watchdog.restart_requested("upscale"):
+                logger.warning("[Upscale] Restart requested by the watchdog — unwinding")
+                _wr.idle("upscale", detail="restarted by watchdog")
+                # Also clears _upscale_worker_started; see worker_exiting().
+                _watchdog.worker_exiting("upscale")
+                return
+
             # An active maintenance window can forbid upscaling outright.
             # Checked BEFORE claiming, so a held job stays "queued" instead of
             # being marked running for the length of the window.
             try:
                 from .maintenance import is_allowed as _mw_allows
                 if not _mw_allows("upscale"):
-                    _wr.beat("upscale", state="idle",
-                             detail="held by a maintenance window")
+                    _wr.idle("upscale", detail="held by a maintenance window")
                     time.sleep(30)
                     continue
             except Exception:
@@ -141,11 +156,26 @@ def _upscale_worker():
                 item = claim_next_upscale_queued()
 
             if not item:
-                _wr.beat("upscale", state="idle")
+                _wr.idle("upscale")
                 time.sleep(4)
                 continue
 
-            _wr.working("upscale", detail=item.get("title") or item.get("file_path", ""))
+            # Heartbeat for the whole job, not just its start. Upscaling one
+            # episode routinely runs for hours; beating only at the edges is
+            # what made a perfectly healthy job show up as overdue in the
+            # Operations view, and what would now trip the stall watchdog.
+            _hb = _watchdog.heartbeat_ticker(
+                "upscale", detail=item.get("title") or item.get("file_path", ""))
+            _hb.start()
+
+            try:
+                from .audit_hooks import record_job
+
+                record_job("upscale", "upscale_started",
+                           item.get("title") or item.get("file_path", ""),
+                           job_id=item.get("id"))
+            except Exception:
+                logger.debug("[Upscale] Audit hook failed", exc_info=True)
 
             # An item whose file an encode still has to touch is never
             # handed out in the first place -- claim_next_upscale_queued()
@@ -342,6 +372,26 @@ def _upscale_worker():
             with _upscale_cancel_lock:
                 _upscale_active_cancel_events.pop(item["id"], None)
 
+            # Job over: stamp last_run and go back to idle, so the Operations
+            # view stops showing a stall countdown for a worker with nothing
+            # to do.
+            _wr.done("upscale", detail="")
+
+            try:
+                from .audit_hooks import record_job
+
+                if _was_cancelled:
+                    _action = "upscale_cancelled"
+                elif _overall_failed:
+                    _action = "upscale_failed"
+                else:
+                    _action = "upscale_completed"
+                record_job("upscale", _action,
+                           item.get("title") or item.get("file_path", ""),
+                           job_id=item.get("id"), failed=_overall_failed)
+            except Exception:
+                logger.debug("[Upscale] Audit hook failed", exc_info=True)
+
         except Exception as e:
             logger.error(f"[Upscale] Worker-Fehler: {e}", exc_info=True)
             _wr.fail("upscale", str(e), detail=(item or {}).get("title", ""))
@@ -370,6 +420,14 @@ def _upscale_worker():
                 except Exception as db_err:
                     logger.error(f"[Upscale] Failed to set status to failed for item {item['id']}: {db_err}", exc_info=True)
             time.sleep(5)
+        finally:
+            # Every exit from an iteration goes through here -- normal end,
+            # `continue` out of a guard clause, or an exception. A ticker that
+            # outlived its job would report a finished worker as working, and
+            # the stall watchdog would eventually "restart" a worker that is
+            # sitting idle.
+            if _hb is not None:
+                _hb.stop()
 
 
 def _ensure_upscale_worker():

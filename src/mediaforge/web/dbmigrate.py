@@ -612,7 +612,13 @@ def _m6_worker_heartbeats(conn):
             last_run    TEXT,
             next_run    TEXT,
             last_error  TEXT NOT NULL DEFAULT '',
-            error_at    TEXT
+            error_at    TEXT,
+            -- Per-worker facts the Operations view shows (files found, sites
+            -- online/offline, rows stored). Added here as well as in
+            -- migration 8, so a database created from scratch gets it in one
+            -- step and repair_missing()'s re-run of this migration produces
+            -- the same shape migration 8 would have.
+            extra       TEXT NOT NULL DEFAULT '{}'
         )
     """)
 
@@ -636,6 +642,33 @@ def _m7_api_keys(conn):
             last_used   TEXT
         )
     """)
+
+
+@migration(8, "worker heartbeat extras")
+def _m8_worker_extra(conn):
+    """Per-worker facts the Operations view shows next to the status.
+
+    One JSON blob rather than a column per fact, because what each worker has
+    to report differs (the library scan counts files, the uptime monitor
+    counts online/offline sites, the audit pruner counts rows) and the set
+    grows whenever a worker learns to report something new. Adding a column
+    per worker would mean a migration per UI tweak.
+
+    Nullable with a '{}' default, so an existing row needs no backfill: a
+    worker that has not beaten since the upgrade simply reports no extras.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(worker_heartbeats)")}
+    if not cols:
+        # No such table. PRAGMA table_info() reports that as an empty result
+        # rather than an error, so without this the ALTER below would run and
+        # fail with "no such table" -- taking down the migration run for
+        # exactly the databases repair_missing() exists to rescue (migration 6
+        # recorded as applied, its table never created). Nothing to alter, and
+        # repair_missing() will re-run migration 6, which creates the column.
+        return
+    if "extra" not in cols:
+        conn.execute(
+            "ALTER TABLE worker_heartbeats ADD COLUMN extra TEXT NOT NULL DEFAULT '{}'")
 
 
 # Tables each migration is responsible for creating. Used by repair_missing()
