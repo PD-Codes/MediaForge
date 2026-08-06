@@ -80,6 +80,10 @@
   //
   // The stored key and preference are simply no longer read or written. Any
   // value left over from an earlier version is inert; nothing has to migrate.
+  //
+  // Tried once and reverted: restoring the panel on load. Reported straight
+  // back as a bug -- "the cockpit menu still opens the same window on reload
+  // instead of closing it". Leave it closed.
   function forgetStoredActive() {
     try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
   }

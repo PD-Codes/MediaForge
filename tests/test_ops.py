@@ -452,6 +452,52 @@ def test_health_endpoints_answer_without_a_session(client):
         assert set(body) == {"status"}
 
 
+# ---------------------------------------------------------------------------
+# Worker cards
+# ---------------------------------------------------------------------------
+
+def test_worker_links_are_relative_same_origin_paths():
+    """The card renders this into an href. A module registering a worker must
+    never be able to turn an Operations card into an outbound link."""
+    import re
+
+    from mediaforge.web import worker_registry as wr
+    for name, meta in wr.WORKERS.items():
+        link = meta.get("link")
+        if link is None:
+            continue
+        assert re.fullmatch(r"/[A-Za-z0-9/_-]*", link), (name, link)
+
+
+def test_snapshot_never_lets_a_heartbeat_row_supply_a_link(app):
+    """snapshot() does entry.update(row); a stray column must not win."""
+    from mediaforge.web import worker_registry as wr
+    with app.app_context():
+        wr.beat("autosync", detail="pytest")
+        entry = [w for w in wr.snapshot() if w["worker"] == "autosync"][0]
+        assert entry["link"] == "/autosync"
+        unlisted = [w for w in wr.snapshot() if w["worker"] not in wr.WORKERS]
+        assert all(w["link"] == "" for w in unlisted)
+
+
+def test_uptime_card_says_when_it_looks_again():
+    """"5 up / 0 down" next to a bare "Inactive" is what read as a fault."""
+    from mediaforge.web import worker_registry as wr
+    assert wr.F_NEXT_RUN in wr.WORKERS["uptime"]["fields"]
+
+
+def test_autosync_has_no_next_run_field():
+    """There is no "the" next auto-sync run.
+
+    Every job carries its own interval, weekly slot and retry backoff, so the
+    earliest of forty-two of them is a number that answers a question nobody
+    asked. The card links to /autosync, which shows the real schedule per job.
+    """
+    from mediaforge.web import worker_registry as wr
+    assert wr.F_NEXT_RUN not in wr.WORKERS["autosync"]["fields"]
+    assert wr.WORKERS["autosync"]["link"] == "/autosync"
+
+
 def test_admin_can_read_the_ops_apis(as_user):
     client = as_user("admin")
     for path in ("/api/ops/audit", "/api/ops/groups", "/api/ops/schema",

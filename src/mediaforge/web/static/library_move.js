@@ -207,10 +207,36 @@ function _libMoveFinish(folder) {
   _libMoveFailStreak = 0;
   _libHideMovePill();
   libCloseMoveModal();
-  if (window.showToast) showToast('"' + folder + t("wurde verschoben", "was moved") + '"');
+  // The closing quote goes before the verb, and the space after it is not
+  // optional -- without it this read "Serienamewurde verschoben".
+  _libMoveToast('"' + folder + '" ' + t("wurde verschoben", "was moved"));
   // Only the library page has a list to refresh -- the move can now finish
   // while the user is on any other page, where libLoad() does not exist.
   if (typeof libLoad === "function" && document.getElementById("libGrid")) { libLoad(false); }
+}
+
+/** Toast, or a fallback that is not silence.
+
+    library_move.js is loaded globally from base.html so a move survives
+    navigating away, but showToast() is defined per page (app.js, settings.js,
+    library_video.js, …). A bare `if (window.showToast)` therefore swallowed
+    the completion message on every page that does not define it -- which is
+    exactly the case this feature exists for: the move that finishes while you
+    are somewhere else. */
+function _libMoveToast(message) {
+  if (typeof window.showToast === "function") { window.showToast(message); return; }
+  if (typeof window.mfToast === "function") { window.mfToast(message); return; }
+  // Last resort: a self-removing element built on the shared .toast styles
+  // from feedback.css, which base.html loads on every page -- so this looks
+  // like every other toast instead of like a stray div.
+  try {
+    var el = document.createElement("div");
+    el.className = "toast toast-success show";
+    el.setAttribute("role", "status");
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 5000);
+  } catch (e) { /* nothing sensible left to do */ }
 }
 
 function _libMoveError(msg) {

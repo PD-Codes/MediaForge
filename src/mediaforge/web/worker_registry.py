@@ -90,6 +90,12 @@ F_NEXT_UPDATE = "next_update"
 #             or None for "not watched". Only meaningful for continuous
 #             workers -- a scheduled worker that sleeps for an hour is not
 #             stalled, it is waiting.
+#   link      relative URL of the page that configures this worker, or absent.
+#             The card is a dead end otherwise: "Auto-Sync: next run never"
+#             is only actionable if you can get to the schedules from there.
+#             Relative and server-side on purpose -- the client must not build
+#             URLs, and an absolute one here would be an open-redirect waiting
+#             to happen once modules can register workers.
 #
 # Anything not listed here still works -- beat() accepts any name -- but only
 # listed workers get a row in the Operations view when they have never run.
@@ -101,6 +107,7 @@ WORKERS: dict[str, dict] = {
     "encoding": {
         "label": "worker_encoding", "external": True, "kind": KIND_CONTINUOUS,
         "fields": (F_STATUS, F_STALL), "stall": 900,
+        "link": "/encoding",
     },
     "upscale": {
         "label": "worker_upscale", "external": True, "kind": KIND_CONTINUOUS,
@@ -113,19 +120,32 @@ WORKERS: dict[str, dict] = {
     },
     "autosync": {
         "label": "worker_autosync", "external": True, "kind": KIND_SCHEDULED,
-        "fields": (F_LAST_RUN, F_NEXT_RUN, F_STATUS), "stall": None,
+        # No next_run on purpose. There is no such thing as "the" next
+        # auto-sync run: every job carries its own interval, its own weekly
+        # slot and its own retry backoff, and the earliest of forty-two of
+        # them is a number that answers a question nobody asked. The card
+        # links to /autosync, which shows the schedule per job -- that is the
+        # honest answer.
+        "fields": (F_LAST_RUN, F_STATUS), "stall": None,
+        "link": "/autosync",
     },
     "library_scan": {
         "label": "worker_libscan", "external": True, "kind": KIND_SCHEDULED,
         "fields": (F_LAST_RUN, F_NEXT_RUN, F_STATUS, F_FOUND), "stall": None,
+        "link": "/library",
     },
     "uptime": {
         "label": "worker_uptime", "external": False, "kind": KIND_CONTINUOUS,
-        "fields": (F_STATUS, F_ONLINE), "stall": None,
+        # next_run is shown even though this is a continuous worker: it sleeps
+        # between probe rounds, so "idle" plus "5 up / 0 down" reads like a
+        # contradiction unless the card also says when it looks again.
+        "fields": (F_STATUS, F_ONLINE, F_NEXT_RUN), "stall": None,
+        "link": "/uptime",
     },
     "mediascan": {
         "label": "worker_mediascan", "external": True, "kind": KIND_SCHEDULED,
         "fields": (F_LAST_RUN, F_NEXT_RUN, F_STATUS), "stall": None,
+        "link": "/integrations",
     },
     "tmdb_keywords": {
         "label": "worker_keywords", "external": True, "kind": KIND_SCHEDULED,
@@ -138,6 +158,7 @@ WORKERS: dict[str, dict] = {
     "devinfos": {
         "label": "worker_devinfos", "external": False, "kind": KIND_SCHEDULED,
         "fields": (F_NEXT_UPDATE, F_ENTRIES, F_STATUS), "stall": None,
+        "link": "/devinfos",
     },
     "audit_prune": {
         "label": "worker_auditprune", "external": False, "kind": KIND_SCHEDULED,
@@ -407,6 +428,7 @@ def snapshot() -> list[dict]:
             "external_capable": meta["external"],
             "kind": meta["kind"],
             "fields": list(meta["fields"]),
+            "link": meta.get("link") or "",
             "stall_after": stall_after(name),
             "stall_deadline": None,
             "state": STATE_IDLE,
@@ -428,6 +450,9 @@ def snapshot() -> list[dict]:
             entry["extra"] = extra
             entry["label"] = meta["label"]
             entry["external_capable"] = meta["external"]
+            # The heartbeat row has no say in these -- entry.update(row) above
+            # would otherwise let a stray column overwrite them.
+            entry["link"] = meta.get("link") or ""
             entry["state"] = _normalize_state(row.get("state"))
             try:
                 beat_at = _dt.datetime.fromisoformat(row["last_beat"])
@@ -459,6 +484,9 @@ def snapshot() -> list[dict]:
             "external_capable": False,
             "kind": KIND_CONTINUOUS,
             "fields": [F_STATUS],
+            # Never a link for an unlisted worker: the URL would come from a
+            # module, and the card renders it into an href.
+            "link": "",
             "stall_after": None,
             "stall_deadline": None,
             "state": _normalize_state(row.get("state")),

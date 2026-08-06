@@ -838,6 +838,37 @@ def _lib_stale_targets(targets, hours=None):
     return stale
 
 
+def _lib_next_rescan_iso():
+    """When the auto-rescan loop will look again, or None if it is disabled."""
+    import datetime as _dt
+    hours = _lib_rescan_hours()
+    if not hours:
+        return None
+    return (_dt.datetime.now() + _dt.timedelta(hours=hours)).isoformat(timespec="seconds")
+
+
+def _lib_report_scan_idle(detail="", last_run=False):
+    """Tell the Operations view the scanner is alive and when it looks again.
+
+    Two callers, one reason. The card is fed only by ``_lib_do_scan``, so a
+    steady-state install -- watcher running, nothing stale -- showed
+    "never / never / Inactive" indefinitely and looked broken. Reporting on
+    the watcher path and once at startup is what makes the card describe the
+    scanner rather than only its rare full runs.
+
+    ``last_run`` stamps "a run just happened"; without it this is the softer
+    "alive, waiting", which is what startup means.
+    """
+    try:
+        from .. import worker_registry as _wr
+        if last_run:
+            _wr.done("library_scan", detail=detail, next_run=_lib_next_rescan_iso())
+        else:
+            _wr.idle("library_scan", detail=detail, next_run=_lib_next_rescan_iso())
+    except Exception:
+        logger.debug("[LibraryScan] Could not report scanner state", exc_info=True)
+
+
 def _lib_start_auto_rescan(build_targets, lang_sep_getter):
     """Start the background loop that rescans locations as their cache ages.
 
@@ -851,6 +882,10 @@ def _lib_start_auto_rescan(build_targets, lang_sep_getter):
     Returns the thread (daemon, so it never keeps the process alive).
     """
     def _loop():
+        # Report before the first sleep, the way cache_evict and audit_prune
+        # do (see web/app.py). Otherwise the card stays empty until the first
+        # location actually goes stale, which can be a whole rescan interval.
+        _lib_report_scan_idle(detail="watching")
         while True:
             try:
                 targets = build_targets()
@@ -1474,6 +1509,13 @@ def _lib_watcher_scan_callback(path_key: str, changed_paths=None):
             try:
                 if _lib_apply_partial(path_key, label, cp_id, base_path,
                                       changed_paths, lang_sep):
+                    # The partial path is the one that runs in practice -- a
+                    # finished download lands here, not in the full scan. It
+                    # used to report nothing at all, which is why the
+                    # Operations card said "last run: never" on an install
+                    # whose watcher had been updating the cache all day.
+                    _lib_report_scan_idle(detail="%s (watcher)" % label,
+                                          last_run=True)
                     return
             except Exception:
                 logger.exception("[LibraryScan] Partial update failed, falling back")

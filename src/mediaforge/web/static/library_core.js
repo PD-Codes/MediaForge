@@ -209,7 +209,7 @@ async function libPollScan() {
 
 function libUpdateTimestamp() {
   var el = document.getElementById("libLastScanned");
-  if (el) el.textContent = t("Aktualisiert: ", "Updated: ") + new Date().toLocaleTimeString(window.__LANG === 'de' ? 'de-DE' : 'en-US', { hour: "2-digit", minute: "2-digit" });
+  if (el) el.textContent = t("Aktualisiert: ", "Updated: ") + (window.mfFormatTime ? window.mfFormatTime(new Date()) : "");
 }
 
 function libShowScanBadge(visible) {

@@ -9369,6 +9369,42 @@ msgstr "Raum-Passwort (leer = keins)"
 msgid "Close room for everyone"
 msgstr "Raum für alle schließen"
 
+msgid "Quiet hours"
+msgstr "Ruhezeiten"
+
+msgid "Limit what the workers may do at certain times of day — for example one download and no encoding during working hours. A quiet period is a restriction: outside every period the normal settings apply. Overlapping periods combine to the strictest result."
+msgstr "Begrenze, was die Worker zu bestimmten Tageszeiten dürfen — zum Beispiel ein Download und kein Kodieren während der Arbeitszeit. Eine Ruhezeit ist eine Einschränkung: außerhalb aller Zeiträume gelten die normalen Einstellungen. Überlappende Zeiträume ergeben zusammen das strengste Ergebnis."
+
+msgid "New quiet period"
+msgstr "Neue Ruhezeit"
+
+msgid "No quiet hours configured."
+msgstr "Keine Ruhezeiten eingerichtet."
+
+msgid "Edit quiet period"
+msgstr "Ruhezeit bearbeiten"
+
+msgid "No quiet period active — normal settings apply."
+msgstr "Keine Ruhezeit aktiv — es gelten die normalen Einstellungen."
+
+msgid "Allowed during this period"
+msgstr "Während dieses Zeitraums erlaubt"
+
+msgid "Worker states, database snapshots, quiet hours and diagnostics"
+msgstr "Worker-Zustände, Datenbank-Schnappschüsse, Ruhezeiten und Diagnose"
+
+msgid "Inactive (waiting for the next run)"
+msgstr "Inaktiv (wartet auf den nächsten Lauf)"
+
+msgid "This card belongs to the module %(module)s. Switch it on or off in the module manager."
+msgstr "Diese Karte gehört zum Modul %(module)s. An- und ausschalten lässt es sich im Modulmanager."
+
+msgid "Open module manager"
+msgstr "Modulmanager öffnen"
+
+msgid "Library scan (local folders)"
+msgstr "Bibliotheks-Scan (lokale Ordner)"
+
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"
 

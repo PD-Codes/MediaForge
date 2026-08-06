@@ -918,6 +918,72 @@
     window.__UPTIME_ENABLED = {{ 'true' if uptime_enabled else 'false' }};
     function t(de, en) { return window.__LANG === 'de' ? de : en; }
 
+    // ---------------------------------------------------------------- dates
+    //
+    // Dates follow the APP language, not the browser's. Those are different
+    // settings and they disagree constantly: a German UI on an en-US laptop
+    // was rendering "8/6/2026" next to "6. August", and a bare
+    // toLocaleString() with no locale argument silently follows whatever the
+    // browser feels like — which is why the Operations cards and the UpTime
+    // page showed a different format from the download history on the same
+    // machine.
+    //
+    // The field options are explicit rather than left to the locale's own
+    // "short" style, because de-DE short is "6.8.2026" — day and month
+    // unpadded — and the agreed format is dd.MM.yyyy. Times follow the
+    // language too: 24-hour for German, 12-hour for English.
+    window.mfLocale = function () {
+      return window.__LANG === 'de' ? 'de-DE' : 'en-US';
+    };
+
+    /** Parse anything the backend sends: an ISO string, an epoch in seconds,
+        an epoch in milliseconds, or a Date. Returns null when unusable, so
+        every caller below can decide its own placeholder. */
+    window.mfParseDate = function (value) {
+      if (value == null || value === '') return null;
+      if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+      if (typeof value === 'number') {
+        // Seconds vs milliseconds: anything below ~1e11 cannot be a sensible
+        // millisecond timestamp (that is 1973), so it is seconds.
+        var d = new Date(value < 1e11 ? value * 1000 : value);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      var parsed = new Date(value);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    };
+
+    window.mfFormatDate = function (value) {
+      var d = window.mfParseDate(value);
+      if (!d) return '';
+      return d.toLocaleDateString(window.mfLocale(),
+        { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+
+    window.mfFormatTime = function (value) {
+      var d = window.mfParseDate(value);
+      if (!d) return '';
+      return window.__LANG === 'de'
+        ? d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hour12: false })
+        : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    };
+
+    window.mfFormatDateTime = function (value) {
+      var d = window.mfParseDate(value);
+      if (!d) return '';
+      return window.mfFormatDate(d) + ', ' + window.mfFormatTime(d);
+    };
+
+    /** Numbers with the app language's thousands separator, for the same
+        reason: "60819" and "60.819" and "60,819" were all on one page. */
+    window.mfFormatNumber = function (value, digits) {
+      var n = Number(value);
+      if (value == null || isNaN(n)) return '—';
+      return digits == null
+        ? n.toLocaleString(window.mfLocale())
+        : n.toLocaleString(window.mfLocale(),
+            { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    };
+
     // Language switcher — available on every page (not only settings)
     function setUiLanguage(lang) {
       fetch('/api/user/language', {

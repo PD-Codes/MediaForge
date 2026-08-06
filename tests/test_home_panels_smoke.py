@@ -191,6 +191,22 @@ def test_stored_panel_is_only_returned_when_still_visible(as_user, app):
         db.set_user_ui_prefs(uid, {"home_panel": "queue"})
     assert as_user("user").get("/api/home-panels").get_json()["active"] == "queue"
 
+
+def test_the_client_always_comes_up_closed():
+    """The bar must NOT restore the last open panel.
+
+    This has been implemented and reverted once: arriving at the home page
+    with a panel already expanded, pushing the posters down, for a choice made
+    days ago, was reported as a bug both times. The server still computes
+    `active` for older clients; the current one must ignore it.
+    """
+    from pathlib import Path
+    js = (Path(__file__).resolve().parents[1] / "src" / "mediaforge" / "web"
+          / "static" / "home_panels.js").read_text(encoding="utf-8")
+    assert "forgetStoredActive();" in js
+    assert "data.active" not in js, "home_panels.js restores the stored panel again"
+    assert "mfSaveUserPref" not in js, "home_panels.js persists the open panel again"
+
 # ── the queue is a modal, not a page ─────────────────────────────────────
 
 def test_queue_panel_uses_an_action_and_never_links_to_a_missing_route(as_user, app):

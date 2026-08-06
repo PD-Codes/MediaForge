@@ -15,7 +15,9 @@
 (function () {
   "use strict";
 
-  var LOCALE = window.__LANG === "de" ? "de-DE" : "en-US";
+  // One source of truth for the locale: mfLocale() in base.html derives it
+  // from the APP language, which is a different setting from the browser's.
+  var LOCALE = window.mfLocale ? window.mfLocale() : (window.__LANG === "de" ? "de-DE" : "en-US");
   var PER_PAGE_OPTIONS = [10, 20, 50, 100];
 
   function _initialPerPage() {
@@ -60,18 +62,19 @@
     var d = new Date(String(s).replace(" ", "T") + "Z");
     return isNaN(d.getTime()) ? null : d;
   }
+  // Formatting goes through the shared helpers so the history, the
+  // Operations cards and the UpTime page cannot drift apart again; the UTC
+  // parse above stays here because only this page stores its timestamps that
+  // way, and handing "2026-08-06 18:16:25" to new Date() reads it as local.
   function fmtDateTime(s) {
     var d = parseUTC(s);
     if (!d) return "—";
-    return d.toLocaleString(LOCALE, {
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit",
-    });
+    return window.mfFormatDateTime ? window.mfFormatDateTime(d) : d.toISOString();
   }
   function fmtTime(s) {
     var d = parseUTC(s);
     if (!d) return "—";
-    return d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
+    return window.mfFormatTime ? window.mfFormatTime(d) : d.toISOString();
   }
   function fmtDuration(sec) {
     if (sec == null) return "—";

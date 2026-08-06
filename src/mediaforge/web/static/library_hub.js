@@ -25,7 +25,8 @@ function libHubFmtSize(bytes) {
 }
 
 function libHubNum(n) {
-  return Number(n || 0).toLocaleString(window.__LANG === "de" ? "de-DE" : "en-US");
+  return window.mfFormatNumber ? window.mfFormatNumber(n || 0)
+    : Number(n || 0).toLocaleString(window.__LANG === "de" ? "de-DE" : "en-US");
 }
 
 // One tile's stat line. Returns [] when the shelf is empty, so the caller can

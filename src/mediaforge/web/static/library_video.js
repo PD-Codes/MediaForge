@@ -1150,7 +1150,7 @@ async function libOpenMediaInfo(path, title) {
            '</div>');
 
     h.push('<div class="lib-media-info-label">' + t('Größe', 'Size') + ':</div>');
-    h.push('<div class="lib-media-info-value">' + libFmtSize(data.size_bytes) + ' (' + data.size_bytes.toLocaleString() + ' Bytes)</div>');
+    h.push('<div class="lib-media-info-value">' + libFmtSize(data.size_bytes) + ' (' + (window.mfFormatNumber ? window.mfFormatNumber(data.size_bytes) : String(data.size_bytes)) + ' Bytes)</div>');
 
     h.push('<div class="lib-media-info-label">' + t('Container', 'Container') + ':</div>');
     h.push('<div class="lib-media-info-value">' + libEsc(data.container).toUpperCase() + '</div>');

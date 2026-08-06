@@ -8661,6 +8661,42 @@ msgstr ""
 msgid "Close room for everyone"
 msgstr ""
 
+msgid "Quiet hours"
+msgstr ""
+
+msgid "Limit what the workers may do at certain times of day — for example one download and no encoding during working hours. A quiet period is a restriction: outside every period the normal settings apply. Overlapping periods combine to the strictest result."
+msgstr ""
+
+msgid "New quiet period"
+msgstr ""
+
+msgid "No quiet hours configured."
+msgstr ""
+
+msgid "Edit quiet period"
+msgstr ""
+
+msgid "No quiet period active — normal settings apply."
+msgstr ""
+
+msgid "Allowed during this period"
+msgstr ""
+
+msgid "Worker states, database snapshots, quiet hours and diagnostics"
+msgstr ""
+
+msgid "Inactive (waiting for the next run)"
+msgstr ""
+
+msgid "This card belongs to the module %(module)s. Switch it on or off in the module manager."
+msgstr ""
+
+msgid "Open module manager"
+msgstr ""
+
+msgid "Library scan (local folders)"
+msgstr ""
+
 #~ msgid "Clear entries"
 #~ msgstr ""
 

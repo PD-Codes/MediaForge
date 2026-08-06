@@ -471,14 +471,47 @@ def _start_mediascan_scheduler() -> None:
     global _mediascan_scheduler_thread
     import time as _t
 
+    def _report_waiting():
+        """Say what the scheduler is waiting for, before it waits for it.
+
+        The loop sleeps first, so without this the Operations card read
+        "never / never / Inactive" for a whole day after every restart --
+        indistinguishable from a scanner that never started. Reporting
+        "disabled" explicitly matters just as much: an unconfigured MediaScan
+        looked exactly like a broken one.
+        """
+        try:
+            import datetime as _dt
+
+            from . import worker_registry as _wr
+            nxt = (_dt.datetime.now()
+                   + _dt.timedelta(seconds=_MEDIASCAN_INTERVAL_SECONDS)
+                   ).isoformat(timespec="seconds")
+            source = get_setting("mediascan_source", "") or ""
+            # Empty string, not None: beat() writes next_run with COALESCE, so
+            # None would leave a stale "next run" on a scanner that was just
+            # switched off.
+            if get_setting("mediascan_enabled", "0") != "1":
+                _wr.idle("mediascan", detail="disabled", next_run="")
+            elif not source or source == "folders":
+                _wr.idle("mediascan", detail="no source configured", next_run="")
+            else:
+                _wr.idle("mediascan", detail=source, next_run=nxt)
+        except Exception:
+            logger.debug("[MediaScan] Could not report scheduler state", exc_info=True)
+
     def _loop():
         # Wait 24 h, then refresh, repeat
+        _report_waiting()
         while not _mediascan_scheduler_stop.wait(timeout=_MEDIASCAN_INTERVAL_SECONDS):
             if get_setting("mediascan_enabled", "0") == "1":
                 source = get_setting("mediascan_source", "") or ""
                 if source and source != "folders":
                     logger.info("[MediaScan] 24-h scheduled refresh")
                     _run_mediascan()
+            # Re-report after every tick: the setting may have been switched on
+            # or off while we slept, and the card should say so.
+            _report_waiting()
             _mediascan_scheduler_stop.wait(timeout=1)  # re-check flag quickly
 
     _mediascan_scheduler_stop.clear()

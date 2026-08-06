@@ -1,5 +1,5 @@
 /* Operations UI: groups, rules, language profiles, workers, snapshots,
- * maintenance windows, diagnostics and the audit log.
+ * quiet hours, diagnostics and the audit log.
  *
  * Backs the three admin-only Settings tabs added alongside this file
  * (Rules & Languages / Operations / Audit Log) plus the Groups section inside
@@ -569,10 +569,13 @@
 
   function fmtTime(value) {
     if (!value) { return T("never", "never"); }
-    var d = new Date(value);
+    // Follows the app language, not the browser's -- see mfFormatDateTime in
+    // base.html. A bare toLocaleString() here was showing MM/dd/yyyy on a
+    // German UI whenever the browser happened to be set to English.
+    var out = window.mfFormatDateTime ? window.mfFormatDateTime(value) : "";
     // An unparseable value is shown as-is rather than as "Invalid Date":
     // whatever the worker wrote is more useful than the parser's opinion of it.
-    return isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+    return out || String(value);
   }
 
   // One renderer per field id. The set a worker gets comes from the server
@@ -580,6 +583,18 @@
   // worker is a change there and not here -- the UI has no per-worker branches.
   var WORKER_FIELDS = {
     status: function (w) {
+      // "Inactive" is honest but reads like a fault on a scheduled worker that
+      // is simply between runs -- and that is exactly the card people report
+      // as broken. Scheduled workers therefore say what they are waiting for;
+      // continuous ones keep the short word, where it means "no work right
+      // now" and a longer sentence would just be noise.
+      // next_run in the test as well as the kind: the UpTime monitor is a
+      // continuous worker that still sleeps between probe rounds, and "5 up /
+      // 0 down" next to a bare "Inactive" is what made it look contradictory.
+      if (w.state === "idle" && (w.kind === "scheduled" || w.next_run)) {
+        return [T("status", "Status"),
+                T("state_idle_scheduled", "Inactive (waiting for the next run)")];
+      }
       return [T("status", "Status"), T("state_" + w.state, w.state)];
     },
     stall: function (w) {
@@ -619,6 +634,18 @@
       return '<dt>' + esc(out[0]) + '</dt><dd>' + value + '</dd>';
     }).join("");
 
+    // Deeplink to the page that configures this worker. The href comes from
+    // the server (worker_registry.WORKERS[...]["link"]) and is validated here
+    // as well: only a same-origin relative path is ever rendered, so a worker
+    // registered by a module can never turn a card into an outbound link.
+    var link = typeof w.link === "string" && /^\/[A-Za-z0-9/_-]*$/.test(w.link)
+      ? w.link : "";
+    var title = '<strong>' + esc(T(w.label, w.worker)) + '</strong>';
+    if (link) {
+      title = '<a class="ops-worker-link" href="' + esc(link) + '">' + title +
+              '<span class="ops-worker-link-icon" aria-hidden="true">&rsaquo;</span></a>';
+    }
+
     // No status pill any more: it carried no colour, so it never actually told
     // you the state at a glance. The colour of the whole card does that, and
     // the state is spelled out in the field list.
@@ -626,7 +653,7 @@
       '<div class="ops-worker ops-state-' + esc(w.state) + '">' +
         '<div class="ops-worker-top">' +
           '<span class="ops-dot"></span>' +
-          '<strong>' + esc(T(w.label, w.worker)) + '</strong>' +
+          title +
         '</div>' +
         (w.detail ? '<div class="ops-worker-detail">' + esc(w.detail) + '</div>' : '') +
         '<dl class="ops-worker-facts">' + rows + '</dl>' +
@@ -836,7 +863,7 @@
   });
 
   /* ===============================================================
-   * Maintenance windows
+   * Quiet hours
    * =============================================================== */
   var DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
@@ -864,10 +891,10 @@
           ? '<span class="ops-warn">' + esc(T("window_active", "Active now")) + ": " +
             esc((c.windows || []).join(", ")) + " — " +
             esc(T("max_downloads", "max downloads")) + ": " + esc(c.max_downloads) + "</span>"
-          : esc(T("no_window_active", "No window active — normal settings apply."));
+          : esc(T("no_window_active", "No quiet period active — normal settings apply."));
       }
       if (!windows.length) {
-        box.innerHTML = '<div class="settings-hint">' + esc(T("no_windows", "No maintenance windows.")) + '</div>';
+        box.innerHTML = '<div class="settings-hint">' + esc(T("no_windows", "No quiet hours configured.")) + '</div>';
         return;
       }
       box.innerHTML = windows.map(function (w) {
@@ -909,7 +936,7 @@
         ((mask >> i) & 1 ? " checked" : "") + '><span>' + esc(T("day_" + d, d)) + '</span></label>';
     }).join("");
 
-    openModal(win ? T("edit_window", "Edit window") : T("new_window", "New window"),
+    openModal(win ? T("edit_window", "Edit quiet period") : T("new_window", "New quiet period"),
       '<div class="settings-field"><label class="settings-field-label" for="opsWinName">' +
         esc(T("name", "Name")) + '</label>' +
         '<input type="text" id="opsWinName" value="' + esc((win && win.name) || "") + '"></div>' +
@@ -928,7 +955,7 @@
       '<span class="settings-hint">' + esc(T("wrap_hint", "An end time before the start time wraps over midnight.")) + '</span>' +
       '<div class="settings-field"><span class="settings-field-label">' + esc(T("days", "Days")) + '</span>' +
         '<div class="ops-day-grid">' + dayBoxes + '</div></div>' +
-      '<div class="settings-field"><span class="settings-field-label">' + esc(T("allowed_during_window", "Allowed during this window")) + '</span>' +
+      '<div class="settings-field"><span class="settings-field-label">' + esc(T("allowed_during_window", "Allowed during this period")) + '</span>' +
         '<label class="settings-checkbox-row"><input type="checkbox" class="chb-main" id="opsWinEnc"' +
           (win && win.allow_encoding ? " checked" : "") + '><span>' + esc(T("encoding", "Encoding")) + '</span></label>' +
         '<label class="settings-checkbox-row"><input type="checkbox" class="chb-main" id="opsWinUps"' +

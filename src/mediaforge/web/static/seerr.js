@@ -139,14 +139,14 @@
   }
 
   // ── Dates ────────────────────────────────────────────────────────
-  var LOCALE = window.__LANG === "de" ? "de-DE" : "en-US";
+  var LOCALE = window.mfLocale ? window.mfLocale() : (window.__LANG === "de" ? "de-DE" : "en-US");
 
   function formatCreated(iso) {
     if (!iso) return "";
     try {
-      return new Date(iso).toLocaleDateString(LOCALE, {
-        day: "2-digit", month: "2-digit", year: "numeric",
-      });
+      return window.mfFormatDate ? window.mfFormatDate(iso)
+        : new Date(iso).toLocaleDateString(LOCALE,
+            { day: "2-digit", month: "2-digit", year: "numeric" });
     } catch (e) { return ""; }
   }
 

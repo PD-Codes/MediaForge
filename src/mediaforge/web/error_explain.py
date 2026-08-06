@@ -20,6 +20,11 @@ Design notes
   exception classes: most of these arrive as strings from a subprocess, and
   the same condition surfaces under three different class names depending on
   which library noticed it.
+* Both languages, always. A large part of the raised catalogue is German --
+  the extractors under ``mediaforge/extractors`` speak German, yt-dlp and the
+  OS speak English, and one job mixes both. Every rule below therefore needs
+  its German twin, or the explanation silently degrades to ``unknown`` for
+  exactly the errors users hit most.
 * Unknown stays unknown. A wrong explanation is worse than none -- it sends
   somebody to fix the wrong thing -- so anything unmatched is reported as
   ``unknown`` with the raw text and no advice.
@@ -38,8 +43,10 @@ _RULES: list[tuple[str, object]] = [
     ("disk_full",        "not enough space"),
     ("path_missing",     "custom path"),
     ("path_missing",     "no such file or directory"),
+    ("path_missing",     "datei nicht gefunden"),
     ("permission",       "permission denied"),
     ("permission",       "errno 13"),
+    ("permission",       "nicht überschreibbar"),
     ("file_in_use",      "used by another process"),
     ("file_in_use",      "errno 26"),
 
@@ -50,32 +57,80 @@ _RULES: list[tuple[str, object]] = [
     ("captcha",          "checking your browser"),
     ("rate_limited",     "429"),
     ("rate_limited",     "too many requests"),
+
+    # Our own SSRF/allow-list guard, not the remote site. Must win over the
+    # generic "forbidden" rule below, which would send the user hunting for a
+    # VPN when the block came from MediaForge itself.
+    ("security_blocked", "aus sicherheitsgründen nicht erlaubt"),
+    ("security_blocked", "forbidden address"),
+    ("security_blocked", "ist aus sicherheitsgr"),
+
     ("blocked",          "403"),
     ("blocked",          "forbidden"),
 
     # --- provider / hoster ---------------------------------------------------
+    # The hoster is up but parked. Retrying later is the fix, switching hoster
+    # is not -- so this cannot fall into hoster_dead.
+    ("hoster_maintenance", "wartungsmodus"),
+    ("hoster_maintenance", "maintenance mode"),
+
+    # Language first: "Nicht verfügbar in: Deutsch" would otherwise be eaten
+    # by the German hoster_dead rule further down.
+    ("language_missing", "nicht verfügbar in"),
+    ("language_missing", "no provider data found for language"),
+    ("language_missing", "language"),
+
     ("hoster_dead",      "no video url"),
     ("hoster_dead",      "unable to extract"),
     ("hoster_dead",      "file was deleted"),
     ("hoster_dead",      "video not found"),
     ("hoster_dead",      "410"),
+    # German extractor catalogue (voe/veev/vidoza/vidmoly/filemoon/doodstream).
+    # The hoster name sits *inside* the noun ("Keine VOE-Videoquelle"), so a
+    # plain substring misses -- match the tail of the compound instead.
+    ("hoster_dead",      "videoquelle"),
+    ("hoster_dead",      "keine cdn-url"),
+    ("hoster_dead",      "video nicht verfügbar"),
+    ("hoster_dead",      "wurde entfernt"),
+    # English half of the extractors: "No <Hoster> video source found in page."
+    ("hoster_dead",      re.compile(r"no (?:\S+ )?video source")),
+    ("hoster_dead",      "no usable stream url"),
+    ("hoster_dead",      "no redirect url"),
+    ("hoster_dead",      "empty video base url"),
+    ("hoster_dead",      "cannot extract filecode"),
+
     ("episode_missing",  "episode not found"),
-    ("language_missing", "language"),
+
+    # A hoster we know of but have not written an extractor for yet. Retrying
+    # will never help; the queue falls back to the next hoster.
+    ("not_implemented",  "is not implemented yet"),
+    ("not_implemented",  "not yet implemented"),
+    ("not_implemented",  "is not yet implemented"),
+
     ("provider_layout",  "layout"),
     ("provider_layout",  "unexpected response"),
+    ("provider_layout",  "no html content"),
+    ("provider_layout",  "failed to decode voe string"),
 
     # --- network -------------------------------------------------------------
     ("dns",              "name or service not known"),
     ("dns",              "nodename nor servname"),
     ("dns",              "getaddrinfo"),
+    ("dns",              "nicht auflösbar"),
     ("tls",              "certificate verify failed"),
     ("tls",              "ssl"),
     ("timeout",          "timed out"),
     ("timeout",          "timeout"),
+    ("timeout",          "zeitüberschreitung"),
     ("connection",       "connection reset"),
     ("connection",       "connection refused"),
     ("connection",       "connection aborted"),
     ("connection",       "network is unreachable"),
+    ("connection",       "verbindung"),
+    # "…konnte nach N Versuchen nicht geladen werden: <err>". Deliberately last
+    # in this block: the appended <err> usually names the real cause (timeout,
+    # DNS, TLS) and should win over this catch-all.
+    ("connection",       "nicht geladen werden"),
 
     # --- our own watchdogs ---------------------------------------------------
     ("watchdog_hang",    "watchdog"),
@@ -84,6 +139,11 @@ _RULES: list[tuple[str, object]] = [
     ("cancelled",        "abgebrochen"),
 
     # --- ffmpeg --------------------------------------------------------------
+    # A non-zero exit is a broken input or a bad parameter, never a missing
+    # binary -- the old single "ffmpeg" rule sent people to re-download a
+    # perfectly fine ffmpeg. Order matters: this must precede ffmpeg_missing.
+    ("ffmpeg_failed",    "ffmpeg exited with code"),
+    ("ffmpeg_failed",    "ffprobe exited with code"),
     ("ffmpeg_missing",   "ffmpeg"),
     ("ffmpeg_missing",   "ffprobe"),
 
@@ -101,7 +161,10 @@ CAUSES: dict[str, tuple[str, str, bool, str]] = {
     "captcha":          ("err_captcha", "fix_captcha", True, "info"),
     "rate_limited":     ("err_rate_limited", "fix_rate_limited", True, "info"),
     "blocked":          ("err_blocked", "fix_blocked", True, "warning"),
+    "security_blocked": ("err_security_blocked", "fix_security_blocked", False, "warning"),
     "hoster_dead":      ("err_hoster_dead", "fix_hoster_dead", True, "info"),
+    "hoster_maintenance": ("err_hoster_maintenance", "fix_hoster_maintenance", True, "info"),
+    "not_implemented":  ("err_not_implemented", "fix_not_implemented", False, "info"),
     "episode_missing":  ("err_episode_missing", "fix_episode_missing", False, "info"),
     "language_missing": ("err_language_missing", "fix_language_missing", False, "info"),
     "provider_layout":  ("err_provider_layout", "fix_provider_layout", False, "warning"),
@@ -113,6 +176,7 @@ CAUSES: dict[str, tuple[str, str, bool, str]] = {
     "stalled":          ("err_stalled", "fix_stalled", True, "info"),
     "cancelled":        ("err_cancelled", "fix_cancelled", False, "info"),
     "ffmpeg_missing":   ("err_ffmpeg", "fix_ffmpeg", True, "warning"),
+    "ffmpeg_failed":    ("err_ffmpeg_failed", "fix_ffmpeg_failed", True, "warning"),
     "server_error":     ("err_server", "fix_server", True, "info"),
     "not_found":        ("err_not_found", "fix_not_found", False, "info"),
     "unknown":          ("err_unknown", "fix_unknown", True, "info"),

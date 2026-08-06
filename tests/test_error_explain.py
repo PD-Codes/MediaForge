@@ -30,6 +30,50 @@ def test_known_errors_are_classified(raw, cause):
     assert ee.classify(raw) == cause
 
 
+@pytest.mark.parametrize("raw, cause", [
+    # The two that showed up as "Unbekannter Fehler" in the queue: every rule
+    # used to be English-only while half the extractor catalogue is German.
+    ("Keine VOE-Videoquelle auf der Seite gefunden.", "hoster_dead"),
+    ("Nicht verfügbar in: Deutsch", "language_missing"),
+    ("Nicht verfügbar in: Japanisch mit deutschen Untertiteln", "language_missing"),
+    # The hoster name sits inside the compound noun, so a plain substring on
+    # "keine videoquelle" misses.
+    ("VeeV: Keine Videoquelle gefunden (https://x)", "hoster_dead"),
+    ("VeeV: Keine CDN-URL gefunden (https://x)", "hoster_dead"),
+    ("Vidoza: Video nicht verfügbar oder wurde entfernt.", "hoster_dead"),
+    ("No Filemoon video source found in page.", "hoster_dead"),
+    ("No redirect URL found in VOE response.", "hoster_dead"),
+    ("Dieser VOE-Server ist derzeit im Wartungsmodus.", "hoster_maintenance"),
+    ("get_direct_link_from_luluvdo is not implemented yet.", "not_implemented"),
+    ("The provider 'x' is not yet implemented.", "not_implemented"),
+    ("Host 'evil.internal' ist aus Sicherheitsgründen nicht erlaubt.", "security_blocked"),
+    ("Datei nicht gefunden: /media/x.mkv", "path_missing"),
+    ("no usable stream url", "hoster_dead"),
+])
+def test_german_and_provider_errors_are_classified(raw, cause):
+    assert ee.classify(raw) == cause
+
+
+def test_ffmpeg_exit_code_is_not_a_missing_binary():
+    """A non-zero exit means bad input, not "download ffmpeg again"."""
+    assert ee.classify("ffmpeg exited with code 1") == "ffmpeg_failed"
+    assert ee.classify("ffmpeg: command not found") == "ffmpeg_missing"
+
+
+def test_page_load_retries_keep_the_underlying_cause():
+    """"…konnte nach N Versuchen nicht geladen werden: <err>" — <err> wins."""
+    base = "VOE-Seite konnte nach 3 Versuchen nicht geladen werden: "
+    assert ee.classify(base + "Read timed out") == "timeout"
+    assert ee.classify(base + "certificate verify failed") == "tls"
+    # No recognisable tail: still better than "unknown".
+    assert ee.classify(base + "weird") == "connection"
+
+
+def test_our_own_guard_is_not_reported_as_a_remote_block():
+    """Sending somebody hunting for a VPN when we blocked it ourselves."""
+    assert ee.classify("upstream resolved to a forbidden address") == "security_blocked"
+
+
 def test_specific_rules_win_over_generic_ones():
     """"No space left on device" is an OSError too, and must not be one."""
     assert ee.classify("OSError: [Errno 28] No space left on device") == "disk_full"

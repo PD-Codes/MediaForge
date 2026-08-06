@@ -234,7 +234,7 @@ def _encoding_worker():
             try:
                 from .maintenance import is_allowed as _mw_allows
                 if not _mw_allows("encoding"):
-                    _wr.idle("encoding", detail="held by a maintenance window")
+                    _wr.idle("encoding", detail="held by quiet hours")
                     time.sleep(30)
                     continue
             except Exception:

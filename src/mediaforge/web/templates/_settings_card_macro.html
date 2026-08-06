@@ -12,8 +12,23 @@
    register_generic_settings_routes) via static/extension_cards.js, which
    scans the whole document for .thirdparty-toggle[data-thirdparty-id] —
    so this works no matter which page/tab the card ends up rendered on,
-   with zero extra JS wiring per host. #}
-{% macro render_settings_card(card) %}
+   with zero extra JS wiring per host.
+
+   allow_module_toggle: whether a MODULE-provided card may show its master
+   on/off switch here. Off everywhere by default, and deliberately so.
+
+   A module's master toggle is the same switch as the one in the module
+   manager, and having it on the Integrations page was a one-way door: turning
+   it off makes resolve_settings_cards() drop the card, so the switch you used
+   to disable the module is gone the moment you use it, and the only way back
+   is the module manager anyway. Worse, "off" here means the whole module is
+   off -- every provider, hoster and page it registered -- while the row sits
+   between Crunchyroll and Fernsehserien, where "off" means one integration.
+
+   Built-in integrations (no card.module_name) are unaffected: their toggle is
+   what it looks like, and they keep it. #}
+{% macro render_settings_card(card, allow_module_toggle=false) %}
+{% set show_master_toggle = allow_module_toggle or not card.module_name %}
 <div class="settings-section integ-card collapsed" id="integCard-{{ card.id }}">
   <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('{{ card.id }}')">
     <span class="integ-collapsible-chevron">▸</span>
@@ -40,6 +55,7 @@
   <div class="integ-subsection-hint">{{ card.description }}</div>
   {% endif %}
 
+  {% if show_master_toggle %}
   <!-- Master toggle (generic — backed by /api/settings/thirdparty/<id>) -->
   <div class="settings-row">
     <div class="settings-row-left">
@@ -53,6 +69,22 @@
       </label>
     </div>
   </div>
+  {% else %}
+  <!-- Module card on a host that does not own the on/off decision. A pointer
+       rather than a disabled switch: a greyed-out toggle says "not allowed"
+       and stops there, which is the wrong half of the answer. -->
+  <div class="settings-row">
+    <div class="settings-row-left">
+      <div class="settings-row-label">{{ card.enable_label }}</div>
+      <div class="settings-row-desc">
+        {{ _('This card belongs to the module %(module)s. Switch it on or off in the module manager.', module=card.module_name) }}
+      </div>
+    </div>
+    <div class="settings-row-right">
+      <a class="btn btn-secondary" href="/extensions">{{ _('Open module manager') }}</a>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Extra per-integration fields (generic — also backed by
        /api/settings/thirdparty/<id>, see registry.py's extra_settings).

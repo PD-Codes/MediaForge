@@ -238,7 +238,7 @@
           </div>
           <div class="settings-overview-title">{{ _('Operations') }}</div>
         </div>
-        <div class="settings-overview-desc">{{ _('Worker states, database snapshots, maintenance windows and diagnostics') }}</div>
+        <div class="settings-overview-desc">{{ _('Worker states, database snapshots, quiet hours and diagnostics') }}</div>
         <div class="settings-overview-arrow"><span>{{ _('Configure') }}</span> &#8594;</div>
       </div>
 
@@ -1929,12 +1929,12 @@
   </div><!-- /tab-rules -->
 
   <!-- ══════════════════════════════════════════════════════
-       Tab: Betrieb (workers, schema snapshots, maintenance, diagnostics)
+       Tab: Betrieb (workers, schema snapshots, quiet hours, diagnostics)
   ══════════════════════════════════════════════════════ -->
   <div class="settings-tab-panel" id="tab-operations">
     <div class="page-header" style="margin-bottom:20px;">
       <h1 class="page-title">{{ _('Operations') }}</h1>
-      <p class="page-subtitle">{{ _('Worker states, database snapshots, maintenance windows and diagnostics') }}</p>
+      <p class="page-subtitle">{{ _('Worker states, database snapshots, quiet hours and diagnostics') }}</p>
     </div>
 
     <div class="settings-section">
@@ -1962,16 +1962,16 @@
     </div>
 
     <div class="settings-section">
-      <h2>{{ _('Maintenance windows') }}</h2>
+      <h2>{{ _('Quiet hours') }}</h2>
       <div class="settings-hint" style="margin-bottom:14px;">
-        {{ _('Limit what the workers may do at certain times of day — for example one download and no encoding during working hours. Windows are restrictions: outside every window the normal settings apply. Overlapping windows combine to the strictest result.') }}
+        {{ _('Limit what the workers may do at certain times of day — for example one download and no encoding during working hours. A quiet period is a restriction: outside every period the normal settings apply. Overlapping periods combine to the strictest result.') }}
       </div>
       <div id="opsWindowCurrent" class="settings-hint" style="margin-bottom:12px;"></div>
       <div id="opsWindowList" class="ops-card-grid">
         <div class="settings-hint">{{ _('Loading…') }}</div>
       </div>
       <div class="settings-row" style="margin-top:14px;">
-        <button type="button" class="btn btn-primary" onclick="opsWindowEdit(null)">{{ _('New window') }}</button>
+        <button type="button" class="btn btn-primary" onclick="opsWindowEdit(null)">{{ _('New quiet period') }}</button>
       </div>
     </div>
 
@@ -2189,9 +2189,14 @@ window.OPS_I18N = {
   worker_upscale: {{ _('Upscaling')|tojson }},
   {# Auto-Sync and MediaScan are product names, identical in every language. #}
   worker_autosync: 'Auto-Sync',
-  worker_libscan: {{ _('Library scan')|tojson }},
+  worker_libscan: {{ _('Library scan (local folders)')|tojson }},
   worker_uptime: {{ _('UpTime monitor')|tojson }},
-  worker_mediascan: 'MediaScan',
+  {# "MediaScan" and "Bibliotheks-Scan" were read as the same thing, which is
+     a fair mistake: one scans your folders, the other caches the Plex/Jellyfin
+     library and pokes it to refresh after a download. The product name stays
+     (it is what the Integrations page calls it), the parenthetical is what
+     tells the two cards apart at a glance. #}
+  worker_mediascan: 'MediaScan (Plex/Jellyfin)',
   worker_keywords: {{ _('TMDB keywords')|tojson }},
   worker_cacheevict: {{ _('Cache eviction')|tojson }},
   worker_devinfos: {{ _('Dev infos')|tojson }},
@@ -2200,6 +2205,11 @@ window.OPS_I18N = {
   {# Exactly three worker states. "running"/"stale"/"unknown" are gone -- see
      the STATE_* constants in web/worker_registry.py. #}
   state_idle: {{ _('Inactive')|tojson }},
+  {# A scheduled worker between two runs is not idle in the "something is
+     wrong" sense, which is how the bare word reads on a card that also says
+     "last run: never". Own msgid on purpose: "Inactive" is shared with the
+     rest of the app and must stay short there. #}
+  state_idle_scheduled: {{ _('Inactive (waiting for the next run)')|tojson }},
   state_working: {{ _('Working')|tojson }},
   state_error: {{ _('Error')|tojson }},
 
@@ -2225,16 +2235,16 @@ window.OPS_I18N = {
   integrity: {{ _('integrity')|tojson }},
   confirm_restore: {{ _('Replace the live database with this snapshot? A snapshot of the current state is taken first. The server must be restarted afterwards.')|tojson }},
 
-  no_windows: {{ _('No maintenance windows.')|tojson }},
-  new_window: {{ _('New window')|tojson }},
-  edit_window: {{ _('Edit window')|tojson }},
+  no_windows: {{ _('No quiet hours configured.')|tojson }},
+  new_window: {{ _('New quiet period')|tojson }},
+  edit_window: {{ _('Edit quiet period')|tojson }},
   window_active: {{ _('Active now')|tojson }},
-  no_window_active: {{ _('No window active — normal settings apply.')|tojson }},
+  no_window_active: {{ _('No quiet period active — normal settings apply.')|tojson }},
   max_downloads: {{ _('Max downloads')|tojson }},
   encoding: {{ _('Encoding')|tojson }},
   upscaling: {{ _('Upscaling')|tojson }},
   scanning: {{ _('Library scans')|tojson }},
-  allowed_during_window: {{ _('Allowed during this window')|tojson }},
+  allowed_during_window: {{ _('Allowed during this period')|tojson }},
   days: {{ _('Days')|tojson }},
   from: {{ _('From')|tojson }},
   to: {{ _('To')|tojson }},
@@ -2290,7 +2300,7 @@ window.OPS_I18N = {
 <script src="{{ url_for('static', filename='extension_cards.js') }}"></script>
 <script src="{{ url_for('static', filename='telemetry.js') }}"></script>
 <!-- Operations UI: groups, rules, language profiles, workers, snapshots,
-     maintenance windows, diagnostics, audit log. Loaded after settings.js
+     quiet hours, diagnostics, audit log. Loaded after settings.js
      because it wraps that file's switchTab() to lazy-load its panels. -->
 <script src="{{ url_for('static', filename='ops.js') }}"></script>
 {% endblock %}

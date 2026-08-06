@@ -27,8 +27,10 @@ window._mediaStats = null;
 // Formatting helpers (locale aware: DE uses comma decimals)
 // ---------------------------------------------------------------
 
+// Deliberately delegates: mfLocale() in base.html derives the locale from
+// the APP language, and this page must not have an opinion of its own.
 function statsLocale() {
-  return window.__LANG === "de" ? "de-DE" : "en-US";
+  return window.mfLocale ? window.mfLocale() : (window.__LANG === "de" ? "de-DE" : "en-US");
 }
 
 function fmtInt(n) {
@@ -99,10 +101,7 @@ function fmtDateTime(v) {
   // SQLite gives "YYYY-MM-DD HH:MM:SS"; make it a valid ISO-ish string first.
   var d = new Date(String(v).replace(" ", "T") + (String(v).endsWith("Z") ? "" : "Z"));
   if (isNaN(d.getTime())) return String(v);
-  return d.toLocaleString(statsLocale(), {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit",
-  });
+  return window.mfFormatDateTime ? window.mfFormatDateTime(d) : String(v);
 }
 
 /**

@@ -85,6 +85,52 @@ def test_every_ops_entry_point_named_in_the_template_exists():
     assert not missing, "settings.html calls %s, ops.js does not define them" % missing
 
 
+def test_dates_follow_the_app_language_not_the_browser():
+    """`toLocaleString()` with no locale argument follows the BROWSER.
+
+    That is a different setting from the app language and they disagree
+    constantly -- a German UI on an en-US laptop was rendering MM/dd/yyyy on
+    the Operations cards and dd.MM.yyyy in the download history, on the same
+    machine, in the same session.
+    """
+    base = (WEB / "templates" / "base.html").read_text(encoding="utf-8")
+    for helper in ("window.mfLocale", "window.mfFormatDate",
+                   "window.mfFormatTime", "window.mfFormatDateTime",
+                   "window.mfFormatNumber"):
+        assert helper + " = function" in base, "%s is gone from base.html" % helper
+
+    # No date/number formatter may be left without a locale. pdf.min.js is a
+    # vendored bundle and not ours to touch.
+    bad = []
+    for path in sorted(STATIC.glob("*.js")):
+        if path.name == "pdf.min.js":
+            continue
+        code = _strip_comments(path.read_text(encoding="utf-8"))
+        for call in re.findall(r"toLocale(?:Date|Time)?String\(\s*([^,)]*)", code):
+            arg = call.strip()
+            if arg == "" or arg == "undefined":
+                bad.append("%s: toLocale…String(%s)" % (path.name, arg or "<empty>"))
+    assert not bad, "formatters that follow the browser locale:\n  " + "\n  ".join(bad)
+
+
+def test_only_the_module_manager_may_render_a_module_master_toggle():
+    """A module's on/off switch belongs on exactly one page.
+
+    Everywhere else it is a one-way door: switching a module off makes
+    resolve_settings_cards() drop the card, so the control you just used
+    vanishes and the way back is the module manager anyway.
+    """
+    macro = (WEB / "templates" / "_settings_card_macro.html").read_text(encoding="utf-8")
+    assert "{% if show_master_toggle %}" in macro, \
+        "the master toggle in _settings_card_macro.html is unconditional again"
+
+    for name in ("integrations.html", "notifications.html", "monitoring.html",
+                 "module_settings.html"):
+        html = (WEB / "templates" / name).read_text(encoding="utf-8")
+        assert "allow_module_toggle" not in html, \
+            "%s opts back into rendering module master toggles" % name
+
+
 def test_every_new_settings_tab_has_an_overview_card():
     """The overview grid is how most people reach a tab; a tab that is only in
     the side menu is one half the users never find."""

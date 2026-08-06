@@ -66,12 +66,21 @@
     return Math.floor(d / 86400) + " " + I.dAgo;
   }
 
+  // Day and month only -- the year is noise inside a span that is at most a
+  // few days wide. The locale still comes from the app language (see
+  // mfLocale in base.html): `undefined` here meant the browser's, which is a
+  // different setting and disagreed with the rest of the app.
+  function fmtSpanPart(d) {
+    return d.toLocaleDateString(window.mfLocale ? window.mfLocale() : "en-US",
+                                { day: "2-digit", month: "2-digit" });
+  }
+
   function fmtSpan(s, e) {
     const ds = new Date(s * 1000), de = new Date(e * 1000);
     const sameDay = ds.toDateString() === de.toDateString();
-    const optD = { day: "2-digit", month: "2-digit" }, optT = { hour: "2-digit", minute: "2-digit" };
-    const a = ds.toLocaleDateString(undefined, optD) + " " + ds.toLocaleTimeString(undefined, optT);
-    const b = (sameDay ? "" : de.toLocaleDateString(undefined, optD) + " ") + de.toLocaleTimeString(undefined, optT);
+    const a = fmtSpanPart(ds) + " " + (window.mfFormatTime ? window.mfFormatTime(ds) : "");
+    const b = (sameDay ? "" : fmtSpanPart(de) + " ") +
+              (window.mfFormatTime ? window.mfFormatTime(de) : "");
     return a + " – " + b;
   }
 
@@ -190,7 +199,7 @@
     } else {
       rows = hbs.map(function (h) {
         const stCls = h.status === "up" ? "st-up" : h.status === "degraded" ? "st-degraded" : h.status === "down" ? "st-down" : "st-pending";
-        const tm = new Date(h.ts * 1000).toLocaleString();
+        const tm = window.mfFormatDateTime ? window.mfFormatDateTime(h.ts) : "";
         const rt = h.response_ms != null ? h.response_ms + " ms" : "";
         const m = barMessage(h.status, h.message);
         return '<div class="ucd-row">' +
@@ -471,7 +480,7 @@
     sources.forEach(function (s) { updateCard(s, now); });
 
     const up = document.getElementById("uptimeUpdated");
-    if (up) up.textContent = I.updated + " " + new Date(now * 1000).toLocaleTimeString();
+    if (up) up.textContent = I.updated + " " + (window.mfFormatTime ? window.mfFormatTime(now) : "");
   }
 
   window.uptimeCheckNow = async function () {

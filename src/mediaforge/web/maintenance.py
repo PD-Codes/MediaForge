@@ -1,4 +1,12 @@
-"""Maintenance windows: time-of-day limits on what the workers may do.
+"""Quiet hours: time-of-day limits on what the workers may do.
+
+Naming note: the feature is called "quiet hours" everywhere a user can see it.
+The module, the ``maintenance_windows`` table, the ``/api/ops/maintenance``
+routes and the ``maintenance_window_*`` audit actions keep the old name on
+purpose -- renaming them buys nothing a user would notice and costs a schema
+migration, a breaking API change and a gap in the audit trail, which is a bad
+trade for a label. "Maintenance" was wrong as a *name* because nothing here
+maintains anything; it throttles.
 
 The motivating case is the most common MediaForge deployment there is -- the
 app running on the same machine its owner works on. Four parallel downloads
@@ -6,19 +14,19 @@ plus an ffmpeg encode is fine at 3 a.m. and unbearable at 10 a.m., and the only
 control available today is a global "max parallel downloads" that is either too
 low at night or too high during the day.
 
-A window says: on these weekdays, between these two clock times, allow at most
-N downloads and optionally forbid encoding, upscaling and library scans
-entirely. Windows are *restrictions*; outside any window the normal settings
-apply unchanged, so an install with no windows behaves exactly as before.
+A quiet period says: on these weekdays, between these two clock times, allow at
+most N downloads and optionally forbid encoding, upscaling and library scans
+entirely. Periods are *restrictions*; outside any period the normal settings
+apply unchanged, so an install with no quiet hours behaves exactly as before.
 
-Overlapping windows resolve to the strictest combination rather than to
-"whichever was found first". Two windows that each forbid encoding must not
+Overlapping periods resolve to the strictest combination rather than to
+"whichever was found first". Two periods that each forbid encoding must not
 combine into one that permits it, and an ordering-dependent answer here would
 be the kind of bug nobody reproduces.
 
 Times are stored as minutes since midnight, in the server's local timezone.
-A window whose end is before its start wraps over midnight -- "22:00 to 06:00"
-is one window, not two, because that is how a person describes a night.
+A period whose end is before its start wraps over midnight -- "22:00 to 06:00"
+is one period, not two, because that is how a person describes a night.
 """
 
 from __future__ import annotations

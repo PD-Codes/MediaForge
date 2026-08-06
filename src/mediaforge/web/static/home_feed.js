@@ -776,7 +776,7 @@
   function formatDate(iso) {
     try {
       const d = new Date(iso + "T00:00:00");
-      return d.toLocaleDateString(window.__LANG === "de" ? "de-DE" : "en-US",
+      return d.toLocaleDateString(window.mfLocale ? window.mfLocale() : "en-US",
                                   { weekday: "short", day: "2-digit", month: "2-digit" });
     } catch (e) { return iso; }
   }
