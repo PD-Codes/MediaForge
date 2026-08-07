@@ -901,8 +901,8 @@
 .home-suggest-item:hover { background: var(--bg-hover); }
 
 .home-suggest-item svg { width: 14px; height: 14px; color: var(--text-muted); flex: none; }
-.home-suggest-item > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
+.home-suggest-item > span { flex: unset !important; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-suggest-del { flex: 1 !important; }
 .home-suggest-del {
   font: inherit;
   font-size: 1rem;
@@ -924,7 +924,7 @@
   .home-pcard-hit > img { height: 82px; }
   .home-pcard-play { top: 24px; }
   .home-pcard-bar { top: 76px; }
-  .feed-alert-retry { flex: 1 1 auto; }
+  .feed-alert-retry { flex: 1 1 auto; }  
 }
 
 /* ── Chip row + the way into the Start Page settings ────────────────────
