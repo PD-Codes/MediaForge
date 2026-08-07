@@ -81,6 +81,7 @@ HOST_PROVIDER_MAP = {
     "vidavaca.net": "vidavaca",
     "veev.to": "veev",
     "megaplay.buzz": "megaplay",
+    "echovideo.to": "echovideo", "echovideo.ru": "echovideo",
 }
 
 

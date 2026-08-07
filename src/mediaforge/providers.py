@@ -26,6 +26,8 @@ from .config import (
     MEDIAFORGE_EPISODE_PATTERN,
     MEDIAFORGE_SEASON_PATTERN,
     MEDIAFORGE_SERIES_PATTERN,
+    ANIWAVES_EPISODE_PATTERN,
+    ANIWAVES_SERIES_PATTERN,
     FILMO_MOVIE_PATTERN,
     HANIME_EPISODE_PATTERN,
     HANIME_SERIES_PATTERN,
@@ -58,6 +60,9 @@ from .models.hanime_tv.series import HanimeSeries
 from .models.nineanime_to.episode import NineAnimeEpisode
 from .models.nineanime_to.season import NineAnimeSeason
 from .models.nineanime_to.series import NineAnimeSeries
+from .models.aniwaves_ru.episode import AniwavesEpisode
+from .models.aniwaves_ru.season import AniwavesSeason
+from .models.aniwaves_ru.series import AniwavesSeries
 
 logger = get_logger(__name__)
 
@@ -161,6 +166,24 @@ PROVIDERS = [
         series_cls=NineAnimeSeries,
         season_cls=NineAnimeSeason,
         episode_cls=NineAnimeEpisode,
+    ),
+    # aniwaves.ru (English-only anime; series only, no movies). Should get the
+    # same "off by default, explicit opt-in" UI gate as Hanime/NineAnime above
+    # once settings/search wiring for this provider is built (not yet -- this
+    # registration only makes URL resolution + scraping work). Only the
+    # "Vidplay" hoster is dispatched (extractors/provider/echovideo.py) --
+    # see that module's docstring for the two Byse-network mirrors that were
+    # deliberately left unimplemented.
+    # season_pattern reuses the series pattern since every aniwaves.ru
+    # "series" is exactly one season -- see models/aniwaves_ru/season.py.
+    Provider(
+        name="Aniwaves",
+        series_pattern=ANIWAVES_SERIES_PATTERN,
+        season_pattern=ANIWAVES_SERIES_PATTERN,
+        episode_pattern=ANIWAVES_EPISODE_PATTERN,
+        series_cls=AniwavesSeries,
+        season_cls=AniwavesSeason,
+        episode_cls=AniwavesEpisode,
     ),
 ]
 

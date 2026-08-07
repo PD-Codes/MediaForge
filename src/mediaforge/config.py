@@ -809,6 +809,7 @@ SUPPORTED_PROVIDERS = [
     "Vidara",
     "Vidavaca",
     "Megaplay",
+    "EchoVideo",
     # "Doodstream",
     # "Filemoon",
     # "LoadX",
@@ -850,6 +851,11 @@ PROVIDER_HEADERS_D = {
     # session cookies are bound to it (verified: fetchable with plain HTTP
     # once resolved). See extractors/provider/megaplay.py.
     "Megaplay": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://megaplay.buzz/"},
+    # EchoVideo (aniwaves.ru's "Vidplay" server): resolved master.m3u8 needs
+    # no auth at all (verified: fetchable with no Referer/cookies once
+    # resolved) -- Referer kept here anyway for consistency/future-proofing.
+    # See extractors/provider/echovideo.py.
+    "EchoVideo": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://aniwaves.ru/"},
 }
 
 PROVIDER_HEADERS_W = {
@@ -862,6 +868,7 @@ PROVIDER_HEADERS_W = {
     "Filemoon": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://filemoon.to"},
     "VeeV": {"User-Agent": DEFAULT_USER_AGENT,"Referer": "https://veev.to/"},
     "Megaplay": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://megaplay.buzz/"},
+    "EchoVideo": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://aniwaves.ru/"},
 }
 
 
@@ -1046,6 +1053,36 @@ NINEANIME_SERIES_PATTERN = re.compile(
 # flat top-level paths (/random, /az-list, /filter, ...).
 NINEANIME_EPISODE_PATTERN = re.compile(
     r"^https?://(www\.)?9anime\.or\.at/[a-zA-Z0-9\-]+-episode-\d+[a-zA-Z0-9\-]*/?$",
+    re.IGNORECASE,
+)
+
+# -----------------------------
+# Aniwaves (aniwaves.ru) -- English-only, DISABLED by default (same "off,
+# explicit opt-in" gate as 9anime/hanime above), series only, no movies.
+# -----------------------------
+# A different codebase than 9anime.or.at (client-rendered SPA instead of a
+# WordPress theme) but the same overall shape: series/episode pages carry
+# only SEO metadata (scraped from a JSON-LD <script> block, not classic HTML
+# tags), while the episode list and per-episode hoster ("server") list are
+# both fetched from legacy jQuery-style ajax endpoints that work fine without
+# JS execution -- see models/aniwaves_ru/scraper.py.
+ANIWAVES_BASE_URL = os.environ.get("ANIWAVES_BASE_URL", "https://aniwaves.ru").rstrip("/")
+
+# Series landing page: /watch/<slug>-<id>. The slug is decorative -- the site
+# accepts a bare /watch/<id> too (verified: identical response), which lets
+# AniwavesEpisode resolve its parent series from an episode URL (which only
+# carries the numeric id, see ANIWAVES_EPISODE_PATTERN) without an extra
+# lookup fetch just to recover the slug.
+ANIWAVES_SERIES_PATTERN = re.compile(
+    r"^https?://(www\.)?aniwaves\.ru/watch/(?:[a-zA-Z0-9\-]+-)?\d+/?$",
+    re.IGNORECASE,
+)
+
+# Episode page: /watch/<id>/ep-<n> (flat/synthetic, same numeric id as the
+# series it belongs to -- no separate episode-id lookup needed, unlike
+# 9anime's inline `episodeId:` JS var).
+ANIWAVES_EPISODE_PATTERN = re.compile(
+    r"^https?://(www\.)?aniwaves\.ru/watch/\d+/ep-\d+/?$",
     re.IGNORECASE,
 )
 
