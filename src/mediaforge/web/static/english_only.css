@@ -1,0 +1,57 @@
+/* "EN" marker for English-only content sources (9anime, Aniwaves).
+
+   Own file rather than a few rules buried in style.css/index.css, for the same
+   reason hanime.css exists: the marker appears on three different pages (start
+   page provider header, search/home source chips, settings source toggles) and
+   keeping it in one place is what keeps those three from drifting apart.
+
+   Purely informational -- it explains why a source has no German audio and why
+   it ships switched off. It is NOT an age gate: unlike the 18+ badge in
+   hanime.css nothing here is tied to a confirmation dialog. */
+
+.browse-provider-en,
+.source-badge-en {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+  /* Neutral blue-grey: has to read as a label, not as a warning. */
+  background: linear-gradient(135deg, #4b7bec, #3867d6);
+  /* Never let the badge stretch a flex row on a narrow screen. */
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Inside a settings checkbox row the badge follows the source name, so it
+   needs the same gap the row's own <span> children have. */
+.settings-checkbox-row .source-badge-en {
+  margin-left: 8px;
+}
+
+/* Inside a source chip the badge sits between the label and the "off" suffix
+   and must not grow the chip's line height. */
+.home-chip .source-badge-en {
+  margin-left: 6px;
+  font-size: 0.6rem;
+  padding: 1px 6px;
+  line-height: 1.3;
+}
+
+/* Mobile: the chip row scrolls horizontally and the settings rows wrap, so the
+   badge only needs to get out of the way, not disappear -- a marker that is
+   invisible on a phone would leave exactly the users who see the source for
+   the first time without the explanation. */
+@media (max-width: 640px) {
+  .browse-provider-en,
+  .source-badge-en {
+    font-size: 0.6rem;
+    padding: 1px 6px;
+  }
+  .settings-checkbox-row .source-badge-en {
+    margin-left: 6px;
+  }
+}

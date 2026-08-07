@@ -691,6 +691,110 @@ def fetch_megakino_popular_series():
 
 
 # ---------------------------------------------------------------------------
+# filmo.to — thin wrappers around the model-package scraper
+# ---------------------------------------------------------------------------
+def _filmo_scraper():
+    """Lazily import the filmo.to scraper module (avoids a hard dependency
+    at package-import time for a site most installs won't use)."""
+    from .models.filmo_to import scraper
+    return scraper
+
+
+def filmo_search(keyword):
+    """Search filmo.to and return a list of {title, url, poster_url, ...}.
+
+    Used by: ``web/routes/search.py`` and ``web/routes/autosync.py``.
+    """
+    return _filmo_scraper().search(keyword)
+
+
+def fetch_filmo_new_movies():
+    """Fetch filmo.to's 'new movies' homepage section.
+
+    Used by: the browse route (``web/routes/browse.py``).
+    """
+    return _filmo_scraper().fetch_new_movies()
+
+
+def fetch_filmo_popular_movies():
+    """Fetch filmo.to's 'popular movies' homepage section.
+
+    Used by: the browse route (``web/routes/browse.py``).
+    """
+    return _filmo_scraper().fetch_popular_movies()
+
+
+# ---------------------------------------------------------------------------
+# 9anime.or.at (English-only, opt-in) — thin wrappers around the
+# model-package scraper
+# ---------------------------------------------------------------------------
+def _nineanime_scraper():
+    """Lazily import the 9anime.or.at scraper module (opt-in source, avoids a
+    hard dependency at package-import time for installs that never enable it)."""
+    from .models.nineanime_to import scraper
+    return scraper
+
+
+def nineanime_search(keyword):
+    """Search 9anime.or.at and return a list of {title, url, poster_url, ...}.
+
+    Used by: ``web/routes/search.py`` and ``web/routes/autosync.py``.
+    """
+    return _nineanime_scraper().search(keyword)
+
+
+def fetch_nineanime_new():
+    """Fetch 9anime.or.at's 'newest' homepage listing.
+
+    Used by: the browse route (``web/routes/browse.py``).
+    """
+    return _nineanime_scraper().fetch_new()
+
+
+def fetch_nineanime_popular():
+    """Fetch 9anime.or.at's 'trending' homepage listing.
+
+    Used by: the browse route (``web/routes/browse.py``).
+    """
+    return _nineanime_scraper().fetch_popular()
+
+
+# ---------------------------------------------------------------------------
+# aniwaves.ru (English-only, opt-in) — thin wrappers around the
+# model-package scraper
+# ---------------------------------------------------------------------------
+def _aniwaves_scraper():
+    """Lazily import the aniwaves.ru scraper module (opt-in source, avoids a
+    hard dependency at package-import time for installs that never enable it)."""
+    from .models.aniwaves_ru import scraper
+    return scraper
+
+
+def aniwaves_search(keyword):
+    """Search aniwaves.ru and return a list of {title, url, poster_url, ...}.
+
+    Used by: ``web/routes/search.py`` and ``web/routes/autosync.py``.
+    """
+    return _aniwaves_scraper().search(keyword)
+
+
+def fetch_aniwaves_new():
+    """Fetch aniwaves.ru's 'newest' homepage listing.
+
+    Used by: the browse route (``web/routes/browse.py``).
+    """
+    return _aniwaves_scraper().fetch_new()
+
+
+def fetch_aniwaves_popular():
+    """Fetch aniwaves.ru's 'trending' homepage listing.
+
+    Used by: the browse route (``web/routes/browse.py``).
+    """
+    return _aniwaves_scraper().fetch_popular()
+
+
+# ---------------------------------------------------------------------------
 # hanime.tv (adult / 18+) — thin wrappers around the model-package scraper
 # ---------------------------------------------------------------------------
 def _hanime_scraper():

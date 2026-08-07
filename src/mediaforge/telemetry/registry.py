@@ -359,6 +359,41 @@ DATA_REGISTRY = {
             "en": "Only that push notifications (Telegram/Discord/Pushover/ntfy/...) are configured and were triggered.",
         },
     },
+    # ONE consent toggle for the whole source dimension, on purpose.
+    #
+    # The events it authorises are NOT sent under this key: each one is sent as
+    # "flag.source.<id>" (see events.build_source_usage_event), because the
+    # server counts feature flags per feature_key and ignores the payload -- a
+    # single key would collapse every source into one meaningless counter.
+    #
+    # Splitting the CONSENT the same way would mean eight near-identical
+    # switches in the privacy dialog for one question the user only wants to
+    # answer once ("may MediaForge see which sites I use?"). So consent is
+    # asked once here; is_source_key_enabled() below is what the builder
+    # checks, and it maps every flag.source.* key back onto this toggle.
+    #
+    # hanime.tv is deliberately NOT part of this: it has its own, hard-limited
+    # flag.hanime_tv and must never gain a second data point (see
+    # sanitize.is_adult_provider).
+    "flag.sources": {
+        "stage": 2, "group": "providers",
+        "label": {"de": "Genutzte Quellen-Seiten", "en": "Source sites used"},
+        "explain": {
+            "de": ("Welche der eingebauten Quellen-Seiten (AniWorld, SerienStream, "
+                   "FilmPalast, MegaKino, filmo.to, 9anime, Aniwaves) genutzt werden, "
+                   "und wie oft -- nur der Name der Seite und ein Zähler. Keine Titel, "
+                   "keine Suchbegriffe, keine URLs. Beantwortet für die Entwicklung, "
+                   "welche Quellen sich zu pflegen lohnen. Die 18+-Quelle ist hier "
+                   "ausdrücklich NICHT enthalten, die hat ihren eigenen, strikt "
+                   "begrenzten Punkt."),
+            "en": ("Which of the built-in source sites (AniWorld, SerienStream, "
+                   "FilmPalast, MegaKino, filmo.to, 9anime, Aniwaves) are used, and how "
+                   "often -- the site name and a counter, nothing else. No titles, no "
+                   "search terms, no URLs. It answers which sources are worth "
+                   "maintaining. The 18+ source is explicitly NOT included; it has its "
+                   "own, strictly limited data point."),
+        },
+    },
     "flag.uptime_monitor": {
         "stage": 2, "group": "uptime_monitor",
         "label": {"de": "UpTime-Monitoring genutzt", "en": "UpTime monitoring used"},
@@ -431,6 +466,27 @@ DATA_REGISTRY = {
         },
     },
     # ---- Stage 3: Feature details & errors -----------------------------
+    # Network-level trouble the app worked around on its own. Stage 3 because
+    # it is the "feature details & errors" level and these ARE errors -- just
+    # errors that were survivable, which is exactly why nothing else reports
+    # them today: a DNS fallback or a source that failed to load leaves a
+    # WARNING in one user's log and is invisible everywhere else.
+    "detail.network": {
+        "stage": 3, "group": "system",
+        "label": {"de": "Netzwerk-/Quellen-Störungen", "en": "Network / source problems"},
+        "explain": {
+            "de": ("Wenn der eingestellte DNS-Resolver einen Host nicht auflösen konnte "
+                   "und auf den System-Resolver ausgewichen wurde, und wenn eine "
+                   "Quellen-Seite beim Laden ausgefallen ist. Übertragen wird die "
+                   "Art des Problems und -- nur bei Quellen-Ausfällen -- der Name der "
+                   "Quelle. Niemals der Hostname, der DNS-Server, deine IP oder eine URL."),
+            "en": ("When the configured DNS resolver could not resolve a host and the "
+                   "system resolver was used instead, and when a source site failed to "
+                   "load. What is sent is the kind of problem and -- for source outages "
+                   "only -- the name of the source. Never the hostname, the DNS server, "
+                   "your IP or any URL."),
+        },
+    },
     "detail.autosync": {
         "stage": 3, "group": "autosync",
         "label": {"de": "AutoSync-Statistik", "en": "AutoSync statistics"},
@@ -630,6 +686,54 @@ DATA_REGISTRY = {
         },
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# The source dimension (flag.sources -> flag.source.<id>)
+# ---------------------------------------------------------------------------
+# The built-in source ids that may appear as a flag.source.<id> data_key. A
+# closed list, not a pattern, and deliberately not derived from
+# web/source_policy.py at runtime: that list also carries whatever sources
+# INSTALLED MODULES registered, and a module id is attacker-controlled text
+# that would end up as a feature_key on a public server. Adding a built-in
+# source here is a conscious act, exactly like adding any other data_key.
+#
+# "hanime" is absent on purpose and must stay absent -- see flag.hanime_tv.
+SOURCE_FLAG_IDS = (
+    "aniworld", "sto", "filmpalast", "megakino", "filmo", "nineanime", "aniwaves",
+)
+
+SOURCE_FLAG_PREFIX = "flag.source."
+
+# The single toggle that authorises every one of them.
+SOURCE_FLAG_CONSENT_KEY = "flag.sources"
+
+
+def source_flag_key(source_id) -> str | None:
+    """``"filmo"`` -> ``"flag.source.filmo"``; None for anything not in
+    SOURCE_FLAG_IDS (including the adult source and every module source)."""
+    sid = str(source_id or "").strip().lower()
+    if sid not in SOURCE_FLAG_IDS:
+        return None
+    return SOURCE_FLAG_PREFIX + sid
+
+
+def is_source_flag_key(data_key) -> bool:
+    """True for a well-formed, known ``flag.source.<id>`` key."""
+    key = str(data_key or "")
+    if not key.startswith(SOURCE_FLAG_PREFIX):
+        return False
+    return key[len(SOURCE_FLAG_PREFIX):] in SOURCE_FLAG_IDS
+
+
+def consent_key_for(data_key) -> str:
+    """The registry key whose toggle governs *data_key*.
+
+    Identical to *data_key* for everything except the flag.source.* family,
+    which is authorised by the single flag.sources toggle -- see its entry
+    above for why consent is asked once but sent per source.
+    """
+    return SOURCE_FLAG_CONSENT_KEY if is_source_flag_key(data_key) else data_key
 
 
 def keys_for_stage(stage: int):

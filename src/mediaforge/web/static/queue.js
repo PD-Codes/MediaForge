@@ -262,6 +262,13 @@ window.QHub = (function () {
     if (u.includes("aniworld.to")) return "AniWorld";
     if (u.includes("filmpalast.to")) return "FilmPalast";
     if (u.includes("megakino")) return "MegaKino";
+    // Checked before the bare "s.to"/"serienstream" test below, same as every
+    // entry above it: these hosts are matched on their full domain, so a new
+    // site whose name happens to contain another site's substring cannot be
+    // mislabelled.
+    if (u.includes("filmo.to")) return "filmo.to";
+    if (u.includes("9anime.")) return "9anime";
+    if (u.includes("aniwaves.")) return "Aniwaves";
     if (u.includes("hanime")) return "hanime";
     if (u.includes("s.to") || u.includes("serienstream")) return "SerienStream";
     return "";

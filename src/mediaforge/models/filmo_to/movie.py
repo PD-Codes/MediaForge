@@ -77,6 +77,18 @@ class FilmoMovie:
             _ = self._html  # populates both
         return self.__csrf
 
+    def _invalidate_page(self):
+        """Forget the movie page and everything parsed out of it.
+
+        The next access refetches, which is the whole point: a stale CSRF token
+        can only be replaced by a fresh page, and the provider chips are minted
+        against that same page.
+        """
+        self.__html = None
+        self.__csrf = None
+        self.__meta = None
+        self.__provider_data = None
+
     @property
     def _meta(self):
         if self.__meta is None:
@@ -259,7 +271,18 @@ class FilmoMovie:
         fresh one-shot token on every access, since filmo.to's tokens are
         short-lived and tied to the chip that produced them."""
         chip = self._selected_chip
-        return scraper.resolve_provider_url(chip["data_p"], self._csrf, self.url)
+        try:
+            return scraper.resolve_provider_url(chip["data_p"], self._csrf, self.url)
+        except scraper.FilmoTokenExpired:
+            # The cached page/token went stale -- which is exactly what happens
+            # on the queue worker's second attempt, because this object (and
+            # with it self.__html / self.__csrf) outlives the first one. Drop
+            # everything derived from the page and take it once more; the
+            # chips carry per-token payloads too, so refetching the token
+            # without refetching the chips would not help.
+            self._invalidate_page()
+            chip = self._selected_chip
+            return scraper.resolve_provider_url(chip["data_p"], self._csrf, self.url)
 
     @property
     def stream_url(self):

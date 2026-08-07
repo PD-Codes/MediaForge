@@ -1,4 +1,12 @@
-"""DNS resolver patch — route DNS through a chosen resolver / DoH provider."""
+"""DNS resolver patch — route DNS through a chosen resolver / DoH provider.
+
+Note that the resolver chosen here is not the last word: if it cannot resolve
+a host at all, ``config._SessionProxy.request`` retries that one request
+through the OS resolver and logs a WARNING naming the host. Without that, a
+DoH provider that is blocked or filtered on the user's network took every
+source site offline with a bare NameResolutionError and nothing in the app
+ever tried the resolver the rest of the machine uses successfully.
+"""
 
 import ipaddress as _ipaddress
 import socket as _socket

@@ -45,8 +45,11 @@ _PROVIDER_TO_SOURCE = {
     "AniWorld": "aniworld",
     "SerienStream": "sto",
     "FilmPalast": "filmpalast",
+    "Filmo": "filmo",
     "Megakino": "megakino",
     "MegakinoFilm": "megakino",
+    "NineAnime": "nineanime",
+    "Aniwaves": "aniwaves",
     "Hanime": "hanime",
 }
 

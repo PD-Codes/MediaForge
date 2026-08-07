@@ -586,7 +586,8 @@ async function saveSyncplaySettings() {
 // (GET /api/uptime/status -> sources, which includes sites registered by a
 // module via uptime_monitor.register_monitor_site) and gets a row generated
 // below -- so a module's source can be monitored without editing the template.
-const _UPTIME_BUILTIN_SOURCES = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
+const _UPTIME_BUILTIN_SOURCES = ["aniworld", "sto", "filmpalast", "megakino",
+  "filmo", "nineanime", "aniwaves", "hanime"];
 // Every id the last /api/uptime/status answer knew about; what
 // saveUptimeSettings() iterates when collecting the checkbox states.
 let _UPTIME_SOURCES = _UPTIME_BUILTIN_SOURCES.slice();

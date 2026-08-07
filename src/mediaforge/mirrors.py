@@ -1,7 +1,7 @@
 """Site mirror registry and transparent domain failover.
 
 Some of the scraper sites MediaForge talks to (s.to / serienstream.to,
-aniworld.to, filmpalast.to, megakino.to) regularly go dark on one of their
+aniworld.to, filmpalast.to, megakino.to, ...) regularly go dark on one of their
 domains -- an ISP/CUII DNS block, a Cloudflare/DDoS-Guard hiccup, or a
 domain move -- while the very same content is still reachable through a
 mirror domain or, in the worst case, the bare origin IP.
@@ -55,6 +55,14 @@ DEFAULT_SITE_MIRRORS = {
     "sto":        ["s.to", "serienstream.to", "186.2.175.5"],
     "filmpalast": ["filmpalast.to"],
     "megakino":   ["megakino.to", "megakino.tv", "megakino.org"],
+    # One entry each: no verified alternate domain is known for these three
+    # yet. They are registered anyway so the failover machinery, the DNS
+    # pinning fed from all_hosts() (config._chromium_map_hosts) and the
+    # Settings -> Mirrors editor treat them like every other site -- a user
+    # who finds a working mirror can add it in the UI without a code change.
+    "filmo":      ["filmo.to"],
+    "nineanime":  ["9anime.or.at"],
+    "aniwaves":   ["aniwaves.ru"],
     "hanime":     ["hanime.tv"],
 }
 
@@ -64,6 +72,9 @@ SITE_LABELS = {
     "sto":        "S.TO / SerienStream",
     "filmpalast": "FilmPalast",
     "megakino":   "MegaKino",
+    "filmo":      "filmo.to",
+    "nineanime":  "9anime",
+    "aniwaves":   "Aniwaves",
     "hanime":     "hanime",
 }
 
@@ -85,6 +96,19 @@ _CONNECT_TIMEOUT_CAP = 8.0
 # are therefore worth retrying on the next mirror rather than handing back
 # to the caller.
 _FAILOVER_STATUSES = frozenset({403, 421, 451, 500, 502, 503, 504, 520, 521, 522, 523, 525, 530})
+
+# Statuses that mean "the origin hiccuped", as opposed to "this host is not
+# serving the site". Moving to the next mirror is the right answer for both --
+# but half the sites have exactly ONE known host (filmo.to, 9anime.or.at,
+# aniwaves.ru, filmpalast.to, hanime.tv), and for those "next mirror" does not
+# exist, so a single transient 502 failed the whole request outright. One
+# retry against the same host covers that without pretending a mirror exists.
+_TRANSIENT_STATUSES = frozenset({500, 502, 503, 504, 520, 521, 522, 523, 525})
+# Only ever retried for methods that can be repeated without side effects. A
+# POST is not: filmo.to's /n mints a one-shot token, and sending it twice would
+# burn the payload.
+_RETRYABLE_METHODS = frozenset({"GET", "HEAD"})
+_LAST_HOST_RETRY_DELAY = 1.5
 
 _IPV4_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
@@ -417,6 +441,7 @@ def request_with_failover(session, method, url, budget=None, probe=False, **kwar
     base_headers = kwargs.pop("headers", None) or {}
     last_exc = None
     last_resp = None
+    retried_last = False
 
     candidates = list(iter_candidates(url, from_primary=probe))
 
@@ -466,6 +491,31 @@ def request_with_failover(session, method, url, budget=None, probe=False, **kwar
             if not probe:
                 mark_failed(cand_site, idx)
             continue
+
+        # Last (often only) host, and the failure looks transient: give it one
+        # more go rather than failing the caller. Skipped for probes -- the
+        # UpTime monitor has to report what the site actually answered, not a
+        # retried best-of.
+        if (is_last and not probe and not retried_last
+                and resp.status_code in _TRANSIENT_STATUSES
+                and str(method).upper() in _RETRYABLE_METHODS):
+            retried_last = True
+            logger.debug(
+                "[Mirrors] %s: host %s answered HTTP %s and has no further mirror "
+                "— retrying once in %.1fs",
+                cand_site, urlsplit(cand_url).hostname, resp.status_code,
+                _LAST_HOST_RETRY_DELAY,
+            )
+            time.sleep(_LAST_HOST_RETRY_DELAY)
+            try:
+                resp = session.request(method, cand_url, **call_kwargs)
+            except Exception as exc:
+                last_exc = exc
+                last_resp = None
+                continue
+            if resp.status_code in _FAILOVER_STATUSES:
+                last_resp = resp
+                continue
 
         if not probe:
             mark_ok(cand_site, idx)

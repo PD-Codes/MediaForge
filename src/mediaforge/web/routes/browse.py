@@ -12,6 +12,12 @@ from ...search import fetch_megakino_new_movies
 from ...search import fetch_megakino_new_series
 from ...search import fetch_megakino_popular_movies
 from ...search import fetch_megakino_popular_series
+from ...search import fetch_filmo_new_movies
+from ...search import fetch_filmo_popular_movies
+from ...search import fetch_nineanime_new
+from ...search import fetch_nineanime_popular
+from ...search import fetch_aniwaves_new
+from ...search import fetch_aniwaves_popular
 from ...search import fetch_new_animes
 from ...search import fetch_new_series
 from ...search import fetch_popular_animes
@@ -24,8 +30,11 @@ from ..lang_folders import LANG_FOLDERS
 from ..db import get_tmdb_cache
 from ..db import set_browse_cache
 from ..source_policy import source_enabled as _source_enabled
+from ..source_policy import is_english_only_source as _is_english_only_source
 from ..queue_worker import _hanime_enabled
-from ..queue_worker import _is_filmpalast_url
+from ..queue_worker import _filmo_enabled
+from ..queue_worker import _nineanime_enabled
+from ..queue_worker import _aniwaves_enabled
 from flask import jsonify
 from flask import request
 import os
@@ -78,6 +87,71 @@ def _browse_cache_set(k, v):
         _browse_cache.popitem(last=False)  # evict oldest
 
 
+class _BrowsePending:
+    """Sentinel: "no data yet, but a fetch is running" -- distinct from None,
+    which means "this fetch failed". Falsy on purpose so the many
+    ``if not results`` checks around the codebase keep behaving, while an
+    explicit ``is BROWSE_PENDING`` can tell the two apart."""
+
+    __slots__ = ()
+
+    def __bool__(self):
+        return False
+
+    def __repr__(self):
+        return "<BROWSE_PENDING>"
+
+
+BROWSE_PENDING = _BrowsePending()
+
+
+# One outage report per source per interval. The feed asks several rows of the
+# same source in one go and the page reloads hourly, so an unreported ceiling
+# would turn one site being down into a steady drip of identical events.
+_OUTAGE_REPORT_INTERVAL = 3600.0
+_outage_lock = threading.Lock()
+_outage_last: dict = {}
+
+
+def _report_source_outage(source_id):
+    """Tell telemetry that a source failed to load. Best-effort and rate
+    limited; never raises into the request path."""
+    if not source_id:
+        return
+    try:
+        now = _time.time()
+        with _outage_lock:
+            last = _outage_last.get(source_id, 0.0)
+            if now - last < _OUTAGE_REPORT_INTERVAL:
+                return
+            _outage_last[source_id] = now
+        from ...telemetry import client as _tel_client
+        from ...telemetry import events as _tel_events
+        _tel_client.submit(
+            _tel_events.build_network_detail_event("source_unavailable", source_id))
+    except Exception:
+        logger.debug("[Telemetry] source outage report failed", exc_info=True)
+
+
+def _browse_json(key, fetch_fn, error_message):
+    """The three lines every browse route repeated, in one place.
+
+    - data      -> 200 {"results": [...]}
+    - pending   -> 202 {"results": [], "pending": true}  (client retries)
+    - failure   -> 502 {"error": ...}
+
+    The 202 is the point: a cold start that simply takes longer than the 10 s
+    budget used to be reported as a 502, i.e. as a broken source, and the
+    frontend rendered "Error loading" for a list that was still on its way.
+    """
+    results = _cached_browse(key, fetch_fn)
+    if results is BROWSE_PENDING:
+        return jsonify({"results": [], "pending": True}), 202
+    if results is None:
+        return jsonify({"error": error_message}), 502
+    return jsonify({"results": _proxy_result_list(results)})
+
+
 def _cached_browse(key, fetch_fn):
     # Every lookup and every write goes through the versioned key (see
     # _CARD_SCHEMA), so a card-shape change invalidates the old entries
@@ -116,6 +190,12 @@ def _cached_browse(key, fetch_fn):
                     if results:
                         _browse_cache_set(k, (_time.time(), results))
                         set_browse_cache(k, results)
+                except Exception:
+                    # Previously a bare try/finally: a scraper blowing up in
+                    # this thread left NO trace at all, so a browse list that
+                    # silently went stale looked identical to one that was
+                    # simply not refreshed yet.
+                    logger.exception("[Browse] Background refresh failed for %s", k)
                 finally:
                     with _browse_refresh_mutex:
                         _browse_refresh_locks.pop(k, None)
@@ -131,10 +211,17 @@ def _cached_browse(key, fetch_fn):
     def _cold_fetch(k=key, fn=fetch_fn, ev=_cold_done, out=_cold_result):
         try:
             r = fn()
-            if r is not None:
+            if r is None:
+                # The fetcher itself decided it failed (it returns None rather
+                # than raising). Worth a line: this is exactly what the caller
+                # turns into a 502, and without it the log stays empty.
+                logger.warning("[Browse] Cold fetch for %s returned no data", k)
+            else:
                 _browse_cache_set(k, (_time.time(), r))
                 set_browse_cache(k, r)
                 out[0] = r
+        except Exception:
+            logger.exception("[Browse] Cold fetch failed for %s", k)
         finally:
             ev.set()
             with _browse_refresh_mutex:
@@ -142,7 +229,15 @@ def _cached_browse(key, fetch_fn):
 
     threading.Thread(target=_cold_fetch, daemon=True,
                      name=f"browse-cold-{key}").start()
-    _cold_done.wait(timeout=10)
+    finished = _cold_done.wait(timeout=10)
+    if not finished:
+        # Still scraping. The thread keeps running and will fill the cache, so
+        # the next request (or the client's retry) gets real data -- reporting
+        # a hard failure here would be wrong AND sticky, because the user sees
+        # "Error loading" for a list that is about to arrive. BROWSE_PENDING
+        # lets the route answer "not yet" instead of "broken".
+        logger.info("[Browse] %s still loading after 10s -- answering pending", key)
+        return BROWSE_PENDING
     return _cold_result[0]
 
 
@@ -258,11 +353,21 @@ def _prefetch_cycle():
         if cached is not None:
             continue
 
-        # Try to get IMDB ID from the series page for accurate matching
+        # Try to get IMDB ID from the series page for accurate matching.
+        # Asked of the provider registry rather than of a hardcoded "is this
+        # FilmPalast" test: every movie-only site (FilmPalast, filmo.to, ...)
+        # has series_cls=None, and calling it would raise
+        # "TypeError: 'NoneType' object is not callable" -- swallowed by the
+        # except below, but only after the URL was resolved for nothing. One
+        # check that reads the actual reason covers all of them, including any
+        # source a module registers.
         imdb_id = None
-        if not _is_filmpalast_url(url):
+        try:
+            prov = resolve_provider(url)
+        except Exception:
+            prov = None
+        if prov is not None and prov.series_cls is not None:
             try:
-                prov   = resolve_provider(url)
                 series = prov.series_cls(url=url)
                 imdb_id = getattr(series, "imdb", None) or None
                 # Also check the imdb_id-keyed cache entry
@@ -324,6 +429,9 @@ _FEED_BUILTIN_META = (
     ("sto",        "SerienStream", "#8b7dff"),
     ("filmpalast", "FilmPalast",   "#ffb454"),
     ("megakino",   "MegaKino",     "#4ade80"),
+    ("filmo",      "filmo.to",     "#e8914a"),
+    ("nineanime",  "9anime",       "#f0a020"),
+    ("aniwaves",   "Aniwaves",     "#38bdf8"),
     ("hanime",     "hanime",       "#ff6b9d"),
 )
 
@@ -679,6 +787,18 @@ def _feed_builtin_entries():
         ("megakino",   "popular", "movies", "megakino_popular_movies", fetch_megakino_popular_movies),
         ("megakino",   "new",     "series", "megakino_new_series",     fetch_megakino_new_series),
         ("megakino",   "popular", "series", "megakino_popular_series", fetch_megakino_popular_series),
+        ("filmo",      "new",     "movies", "filmo_new_movies",        fetch_filmo_new_movies),
+        ("filmo",      "popular", "movies", "filmo_popular_movies",    fetch_filmo_popular_movies),
+        # 9anime/Aniwaves are opt-in sources (see source_policy.OPT_IN_SOURCE_IDS):
+        # they are listed here unconditionally like every other built-in, and
+        # _feed_source_enabled() -- which reads the same source_enabled_<id>
+        # setting the settings page writes -- is what keeps them out of the feed
+        # until the user turns them on. No extra gate here, so enabling the
+        # source in Settings is all it takes for them to appear.
+        ("nineanime",  "new",     "series", "nineanime_new",           fetch_nineanime_new),
+        ("nineanime",  "popular", "series", "nineanime_popular",       fetch_nineanime_popular),
+        ("aniwaves",   "new",     "series", "aniwaves_new",            fetch_aniwaves_new),
+        ("aniwaves",   "popular", "series", "aniwaves_popular",        fetch_aniwaves_popular),
         ("hanime",     "new",     "adult",  "hanime_new" + suffix,
          lambda: fetch_hanime_new(show_censored=show_c, show_uncensored=show_u)),
         ("hanime",     "popular", "adult",  "hanime_trending" + suffix,
@@ -784,82 +904,103 @@ def register_browse_routes(app):
         """Return the cached "new animes" browse list. GET /api/new-animes.
 
         Called from static/app.js's `loadAniworldBrowse()`."""
-        results = _cached_browse("new_animes", fetch_new_animes)
-        if results is None:
-            return jsonify({"error": "Failed to fetch new animes"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("new_animes", fetch_new_animes, "Failed to fetch new animes")
     @app.route("/api/popular-animes")
     def api_popular_animes():
         """Return the cached "popular animes" browse list. GET /api/popular-animes.
 
         Called from static/app.js's `loadAniworldBrowse()`."""
-        results = _cached_browse("popular_animes", fetch_popular_animes)
-        if results is None:
-            return jsonify({"error": "Failed to fetch popular animes"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("popular_animes", fetch_popular_animes, "Failed to fetch popular animes")
     @app.route("/api/new-series")
     def api_new_series():
         """Return the cached "new series" browse list (S.TO). GET /api/new-series.
 
         Called from static/app.js's `loadStoBrowse()`."""
-        results = _cached_browse("new_series", fetch_new_series)
-        if results is None:
-            return jsonify({"error": "Failed to fetch new series"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("new_series", fetch_new_series, "Failed to fetch new series")
     @app.route("/api/popular-series")
     def api_popular_series():
         """Return the cached "popular series" browse list (S.TO). GET /api/popular-series.
 
         Called from static/app.js's `loadStoBrowse()`."""
-        results = _cached_browse("popular_series", fetch_popular_series)
-        if results is None:
-            return jsonify({"error": "Failed to fetch popular series"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("popular_series", fetch_popular_series, "Failed to fetch popular series")
     @app.route("/api/new-movies")
     def api_new_movies():
         """Return the cached "new movies" browse list (FilmPalast). GET /api/new-movies.
 
         Called from static/app.js's `loadFilmPalastBrowse()`."""
-        results = _cached_browse("new_movies", _fetch_new_movies)
-        if results is None:
-            return jsonify({"error": "Failed to fetch new movies"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("new_movies", _fetch_new_movies, "Failed to fetch new movies")
     @app.route("/api/megakino/new-movies")
     def api_megakino_new_movies():
         """Return the cached Megakino "new movies" browse list. GET /api/megakino/new-movies.
 
         Called from static/app.js's `loadMegakinoBrowse()`."""
-        results = _cached_browse("megakino_new_movies", fetch_megakino_new_movies)
-        if results is None:
-            return jsonify({"error": "Failed to fetch megakino movies"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("megakino_new_movies", fetch_megakino_new_movies, "Failed to fetch megakino movies")
     @app.route("/api/megakino/popular-movies")
     def api_megakino_popular_movies():
         """Return the cached Megakino "popular movies" browse list. GET /api/megakino/popular-movies.
 
         Called from static/app.js's `loadMegakinoBrowse()`."""
-        results = _cached_browse("megakino_popular_movies", fetch_megakino_popular_movies)
-        if results is None:
-            return jsonify({"error": "Failed to fetch megakino popular movies"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("megakino_popular_movies", fetch_megakino_popular_movies, "Failed to fetch megakino popular movies")
     @app.route("/api/megakino/new-series")
     def api_megakino_new_series():
         """Return the cached Megakino "new series" browse list. GET /api/megakino/new-series.
 
         Called from static/app.js's `loadMegakinoBrowse()`."""
-        results = _cached_browse("megakino_new_series", fetch_megakino_new_series)
-        if results is None:
-            return jsonify({"error": "Failed to fetch megakino series"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("megakino_new_series", fetch_megakino_new_series, "Failed to fetch megakino series")
     @app.route("/api/megakino/popular-series")
     def api_megakino_popular_series():
         """Return the cached Megakino "popular series" browse list. GET /api/megakino/popular-series.
 
         Called from static/app.js's `loadMegakinoBrowse()`."""
-        results = _cached_browse("megakino_popular_series", fetch_megakino_popular_series)
-        if results is None:
-            return jsonify({"error": "Failed to fetch megakino popular series"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
+        return _browse_json("megakino_popular_series", fetch_megakino_popular_series, "Failed to fetch megakino popular series")
+    @app.route("/api/filmo/new-movies")
+    def api_filmo_new_movies():
+        """Return the cached filmo.to "new movies" browse list. GET /api/filmo/new-movies.
+
+        Called from static/app.js's `loadFilmoBrowse()`."""
+        return _browse_json("filmo_new_movies", fetch_filmo_new_movies, "Failed to fetch filmo new movies")
+    @app.route("/api/filmo/popular-movies")
+    def api_filmo_popular_movies():
+        """Return the cached filmo.to "popular movies" browse list. GET /api/filmo/popular-movies.
+
+        Called from static/app.js's `loadFilmoBrowse()`."""
+        return _browse_json("filmo_popular_movies", fetch_filmo_popular_movies, "Failed to fetch filmo popular movies")
+    @app.route("/api/nineanime/new")
+    def api_nineanime_new():
+        """Return the cached 9anime.or.at "newest" browse list. GET /api/nineanime/new.
+
+        Returns an empty list unless the opt-in 9anime source is enabled.
+        Called from static/app.js's `loadNineanimeBrowse()`."""
+        if not _nineanime_enabled():
+            return jsonify({"results": []})
+        return _browse_json("nineanime_new", fetch_nineanime_new, "Failed to fetch 9anime new")
+    @app.route("/api/nineanime/popular")
+    def api_nineanime_popular():
+        """Return the cached 9anime.or.at "trending" browse list. GET /api/nineanime/popular.
+
+        Returns an empty list unless the opt-in 9anime source is enabled.
+        Called from static/app.js's `loadNineanimeBrowse()`."""
+        if not _nineanime_enabled():
+            return jsonify({"results": []})
+        return _browse_json("nineanime_popular", fetch_nineanime_popular, "Failed to fetch 9anime popular")
+    @app.route("/api/aniwaves/new")
+    def api_aniwaves_new():
+        """Return the cached aniwaves.ru "newest" browse list. GET /api/aniwaves/new.
+
+        Returns an empty list unless the opt-in Aniwaves source is enabled.
+        Called from static/app.js's `loadAniwavesBrowse()`."""
+        if not _aniwaves_enabled():
+            return jsonify({"results": []})
+        return _browse_json("aniwaves_new", fetch_aniwaves_new, "Failed to fetch aniwaves new")
+    @app.route("/api/aniwaves/popular")
+    def api_aniwaves_popular():
+        """Return the cached aniwaves.ru "trending" browse list. GET /api/aniwaves/popular.
+
+        Returns an empty list unless the opt-in Aniwaves source is enabled.
+        Called from static/app.js's `loadAniwavesBrowse()`."""
+        if not _aniwaves_enabled():
+            return jsonify({"results": []})
+        return _browse_json("aniwaves_popular", fetch_aniwaves_popular, "Failed to fetch aniwaves popular")
     @app.route("/api/hanime/new")
     def api_hanime_new():
         """Return the cached "new hanime" browse list, filtered by the
@@ -871,13 +1012,11 @@ def register_browse_routes(app):
         if not _hanime_enabled():
             return jsonify({"results": []})
         show_censored, show_uncensored, suffix = _hanime_censorship_prefs()
-        results = _cached_browse(
+        return _browse_json(
             "hanime_new" + suffix,
             lambda: fetch_hanime_new(show_censored=show_censored, show_uncensored=show_uncensored),
+            "Failed to fetch hanime new",
         )
-        if results is None:
-            return jsonify({"error": "Failed to fetch hanime new"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/hanime/trending")
     def api_hanime_trending():
         """Return the cached "trending hanime" browse list, filtered by the
@@ -888,13 +1027,11 @@ def register_browse_routes(app):
         if not _hanime_enabled():
             return jsonify({"results": []})
         show_censored, show_uncensored, suffix = _hanime_censorship_prefs()
-        results = _cached_browse(
+        return _browse_json(
             "hanime_trending" + suffix,
             lambda: fetch_hanime_trending(show_censored=show_censored, show_uncensored=show_uncensored),
+            "Failed to fetch hanime trending",
         )
-        if results is None:
-            return jsonify({"error": "Failed to fetch hanime trending"}), 502
-        return jsonify({"results": _proxy_result_list(results)})
     @app.route("/api/home-feed")
     def api_home_feed():
         """Return the complete new-home-page feed in one answer.
@@ -952,12 +1089,17 @@ def register_browse_routes(app):
         meta = {}
         for sid, label, color in _FEED_BUILTIN_META:
             meta[sid] = {"id": sid, "label": label, "color": color,
-                         "types": set(), "builtin": True}
+                         "types": set(), "builtin": True,
+                         # Display-only marker; see source_policy.
+                         "english_only": _is_english_only_source(sid)}
         for src in iter_home_feed_sources():
             sid = src["source_id"]
             meta.setdefault(sid, {"id": sid, "label": src["label"],
                                   "color": src["color"], "types": set(),
-                                  "builtin": False})
+                                  "builtin": False,
+                                  # A module knows its own catalogue; the core
+                                  # cannot guess it.
+                                  "english_only": False})
             for row, fn in src["fetchers"].items():
                 entries.append((sid, row, src["media_type"],
                                 "tp_%s_%s" % (sid, row), fn))
@@ -999,6 +1141,7 @@ def register_browse_routes(app):
         todo = [e for e in entries if _wanted(e[0], e[2], e[1])]
         fetched = {}
         failures = {}
+        pending = {}
         if todo:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=min(8, len(todo)),
@@ -1015,6 +1158,16 @@ def register_browse_routes(app):
                         results = None
                     if results is None:
                         failures.setdefault(sid, []).append(row)
+                        _report_source_outage(sid)
+                        continue
+                    if results is BROWSE_PENDING:
+                        # Still scraping (cold cache). Not a failure -- saying
+                        # so would put "this source is down" in the feed for a
+                        # row that is simply not ready yet. Reported separately
+                        # so the client knows to ask again in a moment instead
+                        # of leaving the source's cards out until the next
+                        # full reload an hour later.
+                        pending.setdefault(sid, []).append(row)
                         continue
                     fetched.setdefault((row, sid), []).extend(
                         dict(r, source=sid, media_type=mtype) for r in results
@@ -1055,6 +1208,7 @@ def register_browse_routes(app):
                     "id": sid,
                     "label": meta[sid]["label"],
                     "color": meta[sid]["color"],
+                    "english_only": bool(meta[sid].get("english_only")),
                     "enabled": bool(enabled.get(sid)),
                     "types": sorted(meta[sid]["types"]),
                     "builtin": meta[sid]["builtin"],
@@ -1065,6 +1219,14 @@ def register_browse_routes(app):
             "errors": [
                 {"source": sid, "label": labels.get(sid, sid), "rows": sorted(set(rws))}
                 for sid, rws in failures.items()
+            ],
+            # Sources whose first scrape is still running. Deliberately NOT in
+            # "errors": the two need different UI (retry quietly vs. tell the
+            # user the site is down) and merging them is what made a cold
+            # start look like an outage.
+            "pending": [
+                {"source": sid, "label": labels.get(sid, sid), "rows": sorted(set(rws))}
+                for sid, rws in pending.items()
             ],
             "adult": want_adult,
             "config": config,
@@ -1084,10 +1246,12 @@ def register_browse_routes(app):
         out = []
         for sid, label, color in _FEED_BUILTIN_META:
             out.append({"id": sid, "label": label, "color": color, "builtin": True,
+                        "english_only": _is_english_only_source(sid),
                         "enabled": _feed_source_enabled(sid)})
         for src in iter_home_feed_sources():
             out.append({"id": src["source_id"], "label": src["label"],
                         "color": src["color"], "builtin": False,
+                        "english_only": False,
                         "enabled": _feed_source_enabled(src["source_id"])})
         config = feed_effective_config()
         return jsonify({"sources": out, "rows": config["rows"], "config": config,

@@ -59,6 +59,38 @@ _LABEL_TO_LANG = {v: k for k, v in _LANG_LABELS.items()}
 _UNSET = object()
 
 
+def _canonical_hoster(embed_url, site_label):
+    """The hoster name for one server entry.
+
+    9anime labels its servers by QUALITY, not by hoster -- every entry is
+    called "HD" -- while actually embedding several different ones (MegaPlay,
+    and the site's own player on my.1anime.site). Keying provider_data by that
+    label would mean the name the user picks in the dropdown ("OneAnime") never
+    matches the key stored here, so provider_link() would look up "OneAnime" in
+    a dict whose only key is "HD" and come back empty.
+
+    So the host decides, exactly like the extractor dispatch does
+    (extractors.get_direct_link_for resolves by host first). The site's label
+    is kept only when the host is unknown -- better a name that at least
+    matches what the site showed than a blank one.
+    """
+    try:
+        from ...extractors import provider_for_url
+    except ImportError:  # pragma: no cover
+        from mediaforge.extractors import provider_for_url
+    try:
+        from ...config import SUPPORTED_PROVIDERS
+    except ImportError:  # pragma: no cover
+        from mediaforge.config import SUPPORTED_PROVIDERS
+
+    key = provider_for_url(embed_url)
+    if key:
+        for name in SUPPORTED_PROVIDERS:
+            if name.lower() == key:
+                return name
+    return site_label
+
+
 class NineAnimeEpisode:
     """One 9anime episode.
 
@@ -136,6 +168,19 @@ class NineAnimeEpisode:
             self.__title = f"Episode {self.episode_number}"
         return self.__title
 
+    # 9anime is English-only -- there is no separate German title to scrape,
+    # so both aliases just return the one title. Exist purely so the generic
+    # `getattr(ep, "title_de"/"title_en", "")` fallback in
+    # web/routes/search.py's api_episodes() (written for AniWorld/s.to, which
+    # DO have distinct German/English titles) finds something instead of "".
+    @property
+    def title_de(self):
+        return self.title
+
+    @property
+    def title_en(self):
+        return self.title
+
     @property
     def _series_url(self):
         if self.__series_url is _UNSET:
@@ -201,6 +246,11 @@ class NineAnimeEpisode:
     @property
     def selected_provider(self):
         if self.__selected_provider is None:
+            # "Megaplay" as the written-down default is historical: 9anime
+            # embedded only MegaPlay when this model was written. It now
+            # serves most episodes through its own player instead, so the
+            # name is just a preference -- provider_link()/provider_url()
+            # both fall back to whatever the episode actually offers.
             self.__selected_provider = self.__selected_provider_param or os.getenv(
                 "MEDIAFORGE_PROVIDER", "Megaplay")
         return self.__selected_provider
@@ -219,7 +269,10 @@ class NineAnimeEpisode:
                 lang = _TYPE_TO_LANG.get(type_)
                 if lang is None:
                     continue
-                data[lang] = {s["name"]: s["embed_url"] for s in servers}
+                data[lang] = {
+                    _canonical_hoster(s["embed_url"], s["name"]): s["embed_url"]
+                    for s in servers
+                }
             self.__provider_data = data
         return self.__provider_data
 
@@ -228,10 +281,38 @@ class NineAnimeEpisode:
         return [_LANG_LABELS.get(k, k) for k in self.provider_data]
 
     def provider_link(self, language=None, provider=None):
+        """The embed URL for one language+hoster, or None.
+
+        Falls back to whatever the episode DOES offer instead of returning
+        None for a combination that merely does not exist: the default hoster
+        is "Megaplay" (env MEDIAFORGE_PROVIDER), but 9anime nowadays serves
+        most episodes through its own player (OneAnime) and offers MegaPlay on
+        only some -- an exact-match-only lookup therefore came back empty for
+        an episode that plays perfectly well. Same behaviour as
+        :attr:`provider_url` below, which had this fallback from the start;
+        the two disagreeing was the bug.
+        """
         lang_label = language or self.selected_language
         lang_key = _LABEL_TO_LANG.get(lang_label, lang_label)
         provider_dict = self.provider_data.get(lang_key) or {}
-        return provider_dict.get(provider or self.selected_provider)
+        if not provider_dict:
+            return None
+        wanted = provider or self.selected_provider
+        link = provider_dict.get(wanted)
+        if link:
+            return link
+        # Case-insensitive second try before giving up on the name entirely:
+        # the site's label and our canonical spelling differ only in case for
+        # some hosters ("megaplay" vs "Megaplay").
+        for name, url in provider_dict.items():
+            if name.lower() == str(wanted).lower():
+                return url
+        # An explicitly requested hoster that is not offered is an answer in
+        # itself -- only the DEFAULT falls through to "any available", so a
+        # caller asking for one specific hoster still gets None.
+        if provider is not None:
+            return None
+        return next(iter(provider_dict.values()))
 
     @property
     def provider_url(self):

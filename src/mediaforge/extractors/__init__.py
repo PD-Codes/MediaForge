@@ -81,6 +81,13 @@ HOST_PROVIDER_MAP = {
     "vidavaca.net": "vidavaca",
     "veev.to": "veev",
     "megaplay.buzz": "megaplay",
+    # 9anime.or.at's own player. Keyed on the registrable domain rather than
+    # the exact host, because the site addresses it as my.1anime.site today
+    # and the suffix match covers a sibling subdomain without a code change.
+    # Mapping it here is what makes it reachable at all: 9anime labels EVERY
+    # server "HD", so the label identifies nothing and only the resolved host
+    # can pick the extractor.
+    "1anime.site": "oneanime",
     "echovideo.to": "echovideo", "echovideo.ru": "echovideo",
 }
 
@@ -102,6 +109,33 @@ def provider_for_url(url):
         if host == netloc or host.endswith("." + netloc):
             return provider
     return None
+
+
+def canonical_provider_name(provider_key):
+    """The display spelling of a provider key, e.g. ``"voe"`` -> ``"VOE"``.
+
+    :func:`provider_for_url` answers in the *extractor* namespace, which is
+    lower-case because it is a module-name suffix. Everything user-facing --
+    ``config.SUPPORTED_PROVIDERS``, ``PROVIDER_HEADERS_D``/``_W``, the provider
+    dropdown, the queue's "provider" column -- uses the display spelling. The
+    two were being mixed: ``PROVIDER_HEADERS_D.get("voe")`` is None while
+    ``.get("VOE")`` is the header set, so a lookup that went through
+    provider_for_url() silently produced NO headers at all.
+
+    Returns *provider_key* unchanged when nothing matches, so an unknown or
+    already-canonical name passes through untouched.
+    """
+    if not provider_key:
+        return provider_key
+    try:
+        from ..config import SUPPORTED_PROVIDERS
+    except Exception:
+        return provider_key
+    key = str(provider_key).lower()
+    for name in SUPPORTED_PROVIDERS:
+        if name.lower() == key:
+            return name
+    return provider_key
 
 
 def get_direct_link_for(url, fallback_provider=None):

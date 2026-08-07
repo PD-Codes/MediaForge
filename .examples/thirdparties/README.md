@@ -1875,8 +1875,8 @@ registers one demo source and returns `[]`.
 A **CineInfo source** (above) adds *metadata* about a title MediaForge
 already knows about. A **content source** is different: it teaches
 MediaForge about a whole new streaming site to browse and download
-from — the same role AniWorld/SerienStream/FilmPalast/MegaKino/hanime.tv
-play today. This is the one part of the app that predates the plugin
+from — the same role AniWorld/SerienStream/FilmPalast/MegaKino/filmo.to/
+9anime/Aniwaves/hanime.tv play today. This is the one part of the app that predates the plugin
 system, so a full integration is a handful of small, composable
 registrations from your own `register(app)` instead of one call — pick the
 ones you need:
@@ -1966,7 +1966,8 @@ def register(app):
   your `search_fn`, **and** puts your source into the normal search bar —
   it is listed by `GET /api/search/sources`, which is what the WebUI fans
   every keyword out to. `site_id` must not collide with a built-in one
-  (`aniworld`/`sto`/`filmpalast`/`megakino`/`hanime`) or another
+  (`aniworld`/`sto`/`filmpalast`/`megakino`/`filmo`/`nineanime`/`aniwaves`/
+  `hanime`) or another
   registration, and must match `[a-z0-9][a-z0-9_-]{1,39}` — it becomes a
   settings key suffix, a DOM id and part of a CSS class. `label` is what the
   user sees: the heading above your results, your chip under the search

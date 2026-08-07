@@ -205,7 +205,38 @@ _dl_lock = threading.Lock()
 
 
 _EP_URL_SEASON_EPISODE_RE = re.compile(r"staffel-(\d+)/episode-(\d+)", re.IGNORECASE)
-_EP_URL_EPISODE_QS_RE = re.compile(r"[?&]episode=(\d+)", re.IGNORECASE)
+# MegaKino's synthetic "?episode=N" and hanime's synthetic "?ep=N" (see
+# providers.py). One regex for both: `episode=` and `ep=` differ only in the
+# optional "isode", and hanime was silently uncovered before -- its episodes
+# were reported to telemetry as movies with no episode number.
+_EP_URL_EPISODE_QS_RE = re.compile(r"[?&]ep(?:isode)?=(\d+)", re.IGNORECASE)
+# Flat/synthetic episode URLs of the two English-only anime sources:
+#   9anime.or.at/<slug>-episode-12-english-subbed/  -> 12
+#   aniwaves.ru/watch/1234/ep-5                     -> 5
+# Both sites are one-season-per-series (see their season.py), so there is no
+# season number in the URL to extract -- season stays None, exactly like
+# MegaKino's. Without these two the classifier below saw "no episode, no
+# staffel" and filed every anime episode from these sources as a MOVIE.
+_EP_URL_FLAT_EPISODE_RE = re.compile(r"-episode-(\d+)(?:[-/?#]|$)", re.IGNORECASE)
+_EP_URL_EP_PATH_RE = re.compile(r"/ep-(\d+)(?:[/?#]|$)", re.IGNORECASE)
+
+
+def _source_id_for_url(url):
+    """The built-in source id a URL belongs to, or None.
+
+    Asked of the provider registry rather than matched against a list of
+    domains here, so a mirror domain (serienstream.to for s.to, megakino.tv
+    for megakino.to) resolves to the same source as the canonical one.
+    """
+    try:
+        from ..providers import resolve_provider
+        from .routes.direct_link import _PROVIDER_TO_SOURCE
+    except Exception:
+        return None
+    try:
+        return _PROVIDER_TO_SOURCE.get(resolve_provider(url).name)
+    except Exception:
+        return None
 
 
 def _parse_season_episode_from_url(ep_url: str):
@@ -214,13 +245,22 @@ def _parse_season_episode_from_url(ep_url: str):
     there's no already-parsed season/episode int available at this point in
     the queue worker (unlike autosync_worker, which has the season/episode
     objects handy). Covers the aniworld.to/serienstream.to
-    ".../staffel-N/episode-M" shape and megakino.to's "...?episode=N"
-    synthetic URL; returns (None, None) for anything else (e.g. FilmPalast/
-    Direct Link movie URLs, which have no season/episode concept)."""
+    ".../staffel-N/episode-M" shape, the synthetic query-string forms
+    (megakino.to's "...?episode=N", hanime.tv's "...?ep=N") and the flat
+    episode paths of 9anime.or.at ("...-episode-N-english-subbed/") and
+    aniwaves.ru (".../ep-N"); returns (None, None) for anything else (e.g.
+    FilmPalast/filmo.to/Direct Link movie URLs, which have no season/episode
+    concept)."""
     m = _EP_URL_SEASON_EPISODE_RE.search(ep_url or "")
     if m:
         return int(m.group(1)), int(m.group(2))
     m = _EP_URL_EPISODE_QS_RE.search(ep_url or "")
+    if m:
+        return None, int(m.group(1))
+    m = _EP_URL_FLAT_EPISODE_RE.search(ep_url or "")
+    if m:
+        return None, int(m.group(1))
+    m = _EP_URL_EP_PATH_RE.search(ep_url or "")
     if m:
         return None, int(m.group(1))
     return None, None
@@ -456,6 +496,44 @@ def _hanime_enabled() -> bool:
     """
     from .source_policy import source_enabled
     return source_enabled("hanime")
+
+
+def _is_filmo_url(url: str) -> bool:
+    """True for a filmo.to movie URL (single-file movie, no episode list) --
+    the Filmo counterpart of `_is_filmpalast_url` above."""
+    return "filmo.to/movies/" in (url or "")
+
+
+def _filmo_enabled() -> bool:
+    """Whether the (opt-out, on by default) filmo.to source is enabled."""
+    from .source_policy import source_enabled
+    return source_enabled("filmo")
+
+
+def _is_nineanime_url(url: str) -> bool:
+    """True for a 9anime.or.at series or episode URL."""
+    return "9anime.or.at/" in (url or "")
+
+
+def _nineanime_enabled() -> bool:
+    """Whether the (opt-in, non-adult) 9anime.or.at source is enabled --
+    same shape as `_hanime_enabled()`, but without the age-gate semantics:
+    9anime is opt-in because its English-only catalogue doesn't match the
+    German-first sources, not because it is adult content."""
+    from .source_policy import source_enabled
+    return source_enabled("nineanime")
+
+
+def _is_aniwaves_url(url: str) -> bool:
+    """True for an aniwaves.ru series or episode URL."""
+    return "aniwaves.ru/" in (url or "")
+
+
+def _aniwaves_enabled() -> bool:
+    """Whether the (opt-in, non-adult) aniwaves.ru source is enabled -- see
+    `_nineanime_enabled()`."""
+    from .source_policy import source_enabled
+    return source_enabled("aniwaves")
 
 
 def _parse_season_episode(url):
@@ -1237,7 +1315,15 @@ def _queue_worker():
                         provider=item.get("provider"), media_type=_tel_media_type, title=item.get("title"),
                         season=_tel_season, episode=_tel_episode, status="failed",
                         error_message=str(last_error), provider_errors=_provider_errors,
+                        source=_source_id_for_url(ep_url),
                     ))
+                    # Which SITE this came from, as its own stage-2 counter.
+                    # Separate from the download event on purpose: the source
+                    # dimension has its own consent toggle and a user may well
+                    # allow "which sites do you use" while refusing "which
+                    # titles did you download".
+                    telemetry_client.submit(
+                        telemetry_events.build_source_usage_event(_source_id_for_url(ep_url)))
                 elif _episode_cancelled:
                     print_episode_summary(item["title"], ep_url, success="Abgebrochen")
                     _record_download_history(item, ep_url, _ep_start_time, None, 0, "cancelled", language=_ep_language)
@@ -1299,7 +1385,10 @@ def _queue_worker():
                         telemetry_client.submit_all(telemetry_events.build_download_event(
                             provider=item.get("provider"), media_type=_tel_media_type, title=item.get("title"),
                             season=_tel_season, episode=_tel_episode, status="completed",
+                            source=_source_id_for_url(ep_url),
                         ))
+                        telemetry_client.submit(
+                            telemetry_events.build_source_usage_event(_source_id_for_url(ep_url)))
                     else:
                         print_episode_summary(item["title"], ep_url, success="Bereits vorhanden")
                         _record_download_history(item, ep_url, _ep_start_time, _ep_path, 0, "skipped", error="Bereits vorhanden", language=_ep_language)
@@ -1369,7 +1458,11 @@ def _queue_worker():
                 from .notifications import notify_all
                 # Direct Link jobs are always a single file, so they get the
                 # same "Film" notification wording as a FilmPalast movie.
-                _is_movie = _is_filmpalast_url(item.get("url", "")) or item.get("provider") == "Direct"
+                _is_movie = (
+                    _is_filmpalast_url(item.get("url", ""))
+                    or _is_filmo_url(item.get("url", ""))
+                    or item.get("provider") == "Direct"
+                )
                 if status == "completed":
                     _body = "✅ Film heruntergeladen" if _is_movie else f"✅ {len(episodes)} Episode(n) heruntergeladen"
                     _event = "on_completed"
@@ -1426,7 +1519,11 @@ def _queue_worker():
                             from .notifications import notify_all
                             # Direct Link jobs are always a single file, so they get
                             # the same "Film" notification wording as a FilmPalast movie.
-                            _is_movie = _is_filmpalast_url(item.get("url", "")) or item.get("provider") == "Direct"
+                            _is_movie = (
+                                _is_filmpalast_url(item.get("url", ""))
+                                or _is_filmo_url(item.get("url", ""))
+                                or item.get("provider") == "Direct"
+                            )
                             notify_all(
                                 title=item.get("title", "Unbekannt"),
                                 body=f"❌ Download durch internen Fehler abgebrochen: {e}",

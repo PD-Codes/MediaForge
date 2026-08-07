@@ -12,9 +12,11 @@ import os
 import re
 import tempfile
 import threading
+import time
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from urllib.parse import urlparse as _urlparse
 
 import fake_useragent
 from niquests import RequestException, Session
@@ -499,6 +501,90 @@ def _make_session(resolver=None):
     return sess
 
 
+# A DNS answer the configured resolver could not produce. niquests raises this
+# as a plain ConnectionError whose message carries the resolver's wording, so
+# the string is what we have to go on -- there is no dedicated exception type
+# that survives the urllib3-future -> niquests translation.
+#
+# Matched loosely on purpose (any of the fragments is enough): the exact
+# phrasing differs between "Failed to resolve 'x'", "Name or service not known"
+# and "NameResolutionError", and a fragment that stops matching after a
+# niquests update would silently disable the fallback below rather than break
+# anything loudly.
+_DNS_FAILURE_FRAGMENTS = (
+    "nameresolutionerror",
+    "failed to resolve",
+    "name or service not known",
+    "temporary failure in name resolution",
+)
+
+
+def _looks_like_dns_failure(exc) -> bool:
+    """True if *exc* is "I could not turn that hostname into an address"."""
+    text = f"{exc}".lower()
+    return any(frag in text for frag in _DNS_FAILURE_FRAGMENTS)
+
+
+# Hosts the project resolver has just failed on -> when that was noticed.
+# Once a host is in here every further request for it goes straight to the
+# system resolver until the entry expires, instead of paying the failing DoH
+# lookup again on every single request. Three reasons that matters:
+#
+#   * cost -- a browse page or a download does dozens of requests to the same
+#     host, and each one was eating a full resolver timeout before falling back;
+#   * noise -- the warning was written once per request, which buried the log;
+#   * consistency -- a multi-request flow (fetch page, POST token) stayed on
+#     one session instead of alternating between two.
+#
+# Expires so a temporary DoH outage does not permanently retire the project
+# resolver: after the window the next request tries it again, and re-arms this
+# entry only if it fails again.
+_DNS_FALLBACK_TTL = 600.0
+_dns_fallback_lock = threading.Lock()
+_dns_fallback_hosts: dict = {}
+
+
+def _host_of(url):
+    try:
+        return (_urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def _dns_fallback_active(host) -> bool:
+    """True while *host* is known to be unresolvable by the project resolver."""
+    if not host:
+        return False
+    with _dns_fallback_lock:
+        seen = _dns_fallback_hosts.get(host)
+        if seen is None:
+            return False
+        if (time.monotonic() - seen) > _DNS_FALLBACK_TTL:
+            _dns_fallback_hosts.pop(host, None)
+            return False
+        return True
+
+
+def _mark_dns_fallback(host) -> bool:
+    """Record *host* as needing the fallback. Returns True the first time, so
+    the caller logs once per host per window rather than once per request."""
+    if not host:
+        return True
+    with _dns_fallback_lock:
+        first = host not in _dns_fallback_hosts
+        _dns_fallback_hosts[host] = time.monotonic()
+    return first
+
+
+def dns_fallback_hosts() -> list:
+    """Hosts currently served through the system resolver instead of the
+    project one. Read-only; exposed for the DNS diagnostics UI."""
+    with _dns_fallback_lock:
+        now = time.monotonic()
+        return sorted(h for h, ts in _dns_fallback_hosts.items()
+                      if (now - ts) <= _DNS_FALLBACK_TTL)
+
+
 class _SessionProxy:
     """
     Thread-local HTTP session pool.
@@ -521,12 +607,52 @@ class _SessionProxy:
             local.session_resolver = resolver
         return local.session
 
+    def _get_system_session(self):
+        """A second thread-local session that uses the OS resolver.
+
+        Only ever used by the DNS fallback in :meth:`request`. Built lazily so
+        an install whose DoH works never pays for it.
+
+        It SHARES the primary session's cookie jar, and that is not an
+        optimisation -- it is the whole reason this works. Several scrapers run
+        a multi-request flow that only holds together because every step looks
+        like the same browser: filmo.to fetches a movie page (which sets a
+        Laravel session + XSRF cookie and hands out a CSRF token), then POSTs
+        that token to /n. Sending those two requests from two sessions with
+        separate jars drops the session cookie and filmo.to answers
+        "419 Page Expired". The same applies to any DDoS-Guard / Cloudflare
+        clearance cookie earned on an earlier request.
+        """
+        local = object.__getattribute__(self, "_local")
+        if not hasattr(local, "system_session"):
+            session = _make_session("system")
+            try:
+                session.cookies = self._get_session().cookies
+            except Exception:
+                # Never let cookie sharing be the thing that stops the
+                # fallback: a jar of its own still beats no request at all.
+                logger.debug("[DNS] Could not share the cookie jar with the fallback session",
+                             exc_info=True)
+            local.system_session = session
+        return local.system_session
+
     def _swap(self, resolver):
         """Update the resolver and drop this thread's session so it is recreated on next use."""
         object.__setattr__(self, "_resolver", resolver)
+        # A different resolver deserves a clean slate: hosts the OLD one could
+        # not resolve say nothing about the new one, and keeping them pinned to
+        # the system resolver would quietly ignore the setting the user just
+        # changed.
+        with _dns_fallback_lock:
+            _dns_fallback_hosts.clear()
         local = object.__getattribute__(self, "_local")
         if hasattr(local, "session"):
             del local.session
+        # The system-resolver fallback is dropped as well: it holds its own
+        # connection pool, and keeping it across a DNS-mode change would let a
+        # connection opened under the old settings survive the switch.
+        if hasattr(local, "system_session"):
+            del local.system_session
 
     # -- Site-mirror failover -------------------------------------------------
     # Every request for one of the scraper sites (s.to, aniworld.to, ...) is
@@ -541,7 +667,51 @@ class _SessionProxy:
         # former first-party allowlist silently turned verify=False on for the
         # Dev Info feed and the module store. An explicit verify= from the
         # caller still wins, as niquests intends.
-        return request_with_failover(self._get_session(), method, url, **kwargs)
+        resolver = object.__getattribute__(self, "_resolver")
+        # Known-bad host: skip the lookup that is going to fail anyway.
+        if resolver != "system" and _dns_fallback_active(_host_of(url)):
+            return request_with_failover(self._get_system_session(), method, url, **kwargs)
+        try:
+            return request_with_failover(self._get_session(), method, url, **kwargs)
+        except Exception as exc:
+            # The configured resolver could not resolve the host at all. That
+            # is a different class of problem from "the site is down": the
+            # request never left the machine, every mirror in the list failed
+            # for the same reason, and retrying the same way can only fail
+            # again. Before this, such a failure was terminal -- a DoH
+            # provider that is blocked, filtered or simply cannot answer for
+            # one domain took the whole source offline with a bare
+            # "NameResolutionError", and nothing in the app ever tried the
+            # resolver the rest of the machine uses successfully.
+            #
+            # So: exactly one retry through the OS resolver. It is a
+            # last-resort widening, not a silent downgrade -- it happens only
+            # after the project resolver already failed, and it is logged at
+            # WARNING with the host, because it also means this particular
+            # request did NOT go around a possible ISP-level DNS block (which
+            # is the reason the DoH resolver exists in the first place).
+            if resolver == "system" or not _looks_like_dns_failure(exc):
+                raise
+            host = _host_of(url) or url
+            if _mark_dns_fallback(host):
+                # Reported once per host per window, same as the log line, and
+                # WITHOUT the host: which site the user was visiting is not the
+                # point, "the configured resolver failed somewhere" is. Lazy
+                # import + best-effort because config must not depend on the
+                # telemetry package at import time (telemetry imports config).
+                try:
+                    from .telemetry import client as _tel_client
+                    from .telemetry import events as _tel_events
+                    _tel_client.submit(_tel_events.build_network_detail_event("dns_fallback"))
+                except Exception:
+                    pass
+                logger.warning(
+                    "[DNS] Project resolver could not resolve %s (%s) -- using "
+                    "the system resolver for this host for the next %d minutes. "
+                    "If this repeats, check Settings -> Network -> DNS.",
+                    host, type(exc).__name__, int(_DNS_FALLBACK_TTL // 60),
+                )
+            return request_with_failover(self._get_system_session(), method, url, **kwargs)
 
     def get(self, url, **kwargs):
         kwargs.setdefault("allow_redirects", True)
@@ -632,6 +802,9 @@ _CHROMIUM_MAP_HOSTS = (
     "aniworld.to", "www.aniworld.to",
     "filmpalast.to", "www.filmpalast.to",
     "megakino.to", "www.megakino.to",
+    "filmo.to", "www.filmo.to",
+    "9anime.or.at", "www.9anime.or.at",
+    "aniwaves.ru", "www.aniwaves.ru",
 )
 
 def _chromium_map_hosts():
@@ -810,6 +983,7 @@ SUPPORTED_PROVIDERS = [
     "Vidavaca",
     "Megaplay",
     "EchoVideo",
+    "OneAnime",
     # "Doodstream",
     # "Filemoon",
     # "LoadX",
@@ -851,6 +1025,12 @@ PROVIDER_HEADERS_D = {
     # session cookies are bound to it (verified: fetchable with plain HTTP
     # once resolved). See extractors/provider/megaplay.py.
     "Megaplay": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://megaplay.buzz/"},
+    # OneAnime (9anime.or.at's own player on my.1anime.site): /stream/<hash>
+    # answers 403 without a Referer, and it wants the PLAYER's origin, not
+    # 9anime's -- the embed page is the one that wants the 9anime Referer (set
+    # separately in extractors/provider/oneanime.py). Verified live: with this
+    # header the stream 302s to the .mp4, without it the CDN returns 403.
+    "OneAnime": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://my.1anime.site/"},
     # EchoVideo (aniwaves.ru's "Vidplay" server): resolved master.m3u8 needs
     # no auth at all (verified: fetchable with no Referer/cookies once
     # resolved) -- Referer kept here anyway for consistency/future-proofing.
@@ -868,6 +1048,7 @@ PROVIDER_HEADERS_W = {
     "Filemoon": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://filemoon.to"},
     "VeeV": {"User-Agent": DEFAULT_USER_AGENT,"Referer": "https://veev.to/"},
     "Megaplay": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://megaplay.buzz/"},
+    "OneAnime": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://my.1anime.site/"},
     "EchoVideo": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://aniwaves.ru/"},
 }
 

@@ -288,6 +288,52 @@ def normalize_url(url: str) -> str:
     return urlunparse(parsed._replace(path=path))
 
 
+def series_url_for(url: str) -> str:
+    """The series page *url* belongs to -- *url* itself when it already is one.
+
+    A browse card does not always link to a series page. 9anime's "Recently
+    Updated" row, for instance, carries only the newest EPISODE of each entry
+    (the site's own markup offers nothing else: both the poster link and the
+    title link point at the episode), so clicking such a card handed
+    ``/api/series`` an episode URL and ``NineAnimeSeries.__init__`` rejected it
+    with "Invalid 9anime series URL" -- a 500 for a card that was perfectly
+    valid.
+
+    Resolving it here, at click time, rather than making the scraper hand back
+    series URLs is deliberate: the mapping needs one fetch per item, which is
+    1 request when somebody opens a title versus 24 while merely rendering the
+    row.
+
+    Best-effort by design: any failure returns *url* unchanged, so the caller
+    behaves exactly as it did before rather than trading one error for another.
+    Providers that cannot answer the question (no ``series_cls`` -- every
+    movie-only site) are left alone for the same reason.
+    """
+    if not url:
+        return url
+    try:
+        normalized = normalize_url(url)
+        provider = resolve_provider(normalized)
+        if provider.series_cls is None or provider.episode_cls is None:
+            return url
+        # Already a series (or season) page: nothing to do, and importantly no
+        # fetch. Checked first because some sites reuse one pattern for both.
+        for pattern in (provider.series_pattern, provider.season_pattern):
+            if pattern and pattern.fullmatch(normalized):
+                return url
+        if not (provider.episode_pattern and provider.episode_pattern.fullmatch(normalized)):
+            return url
+        series = getattr(provider.episode_cls(url=normalized), "series", None)
+        series_url = getattr(series, "url", None)
+        if series_url:
+            logger.debug("[Providers] Resolved episode URL to its series: %s -> %s",
+                         url, series_url)
+            return series_url
+    except Exception as exc:
+        logger.debug("[Providers] Could not resolve a series URL for %s: %s", url, exc)
+    return url
+
+
 def resolve_provider(url: str) -> Provider:
     """Return the Provider whose series/season/episode pattern matches *url*.
 

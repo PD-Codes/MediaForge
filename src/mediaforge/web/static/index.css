@@ -489,6 +489,27 @@
   background: var(--success);
 }
 
+.browse-provider-filmo {
+  color: #e8914a;
+}
+.browse-provider-filmo::before {
+  background: #e8914a;
+}
+
+.browse-provider-nineanime {
+  color: #f0a020;
+}
+.browse-provider-nineanime::before {
+  background: #f0a020;
+}
+
+.browse-provider-aniwaves {
+  color: #38bdf8;
+}
+.browse-provider-aniwaves::before {
+  background: #38bdf8;
+}
+
 /* A content source registered by a third-party module. The app cannot know a
    colour for a source it has never seen and must not build a class name out
    of a module-supplied id, so every module source shares this one neutral

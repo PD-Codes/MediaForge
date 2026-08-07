@@ -460,10 +460,13 @@ def register_settings_routes(app):
                 # routes/browse.py's feed_effective_config().
                 "home_page": _home_page_defaults(),
                 "sources": {
-                    "order": get_setting("home_source_order", "aniworld,sto,filmpalast,megakino,hanime"),
+                    "order": get_setting("home_source_order", "aniworld,sto,filmpalast,megakino,filmo,nineanime,aniwaves,hanime"),
                     "section_order": {
-                        "aniworld": get_setting("home_section_order_aniworld", "new,popular"),
-                        "sto":      get_setting("home_section_order_sto",      "new,popular"),
+                        "aniworld":  get_setting("home_section_order_aniworld",  "new,popular"),
+                        "sto":       get_setting("home_section_order_sto",       "new,popular"),
+                        "filmo":     get_setting("home_section_order_filmo",     "new,popular"),
+                        "nineanime": get_setting("home_section_order_nineanime", "new,popular"),
+                        "aniwaves":  get_setting("home_section_order_aniwaves",  "new,popular"),
                         "megakino": get_setting("home_section_order_megakino", "new_movies,popular_movies,new_series,popular_series"),
                         "hanime":   get_setting("home_section_order_hanime",   "new,trending"),
                     },
@@ -475,6 +478,18 @@ def register_settings_routes(app):
                         "sto": {
                             "new":     get_setting("source_show_new_sto",     "1"),
                             "popular": get_setting("source_show_popular_sto", "1"),
+                        },
+                        "filmo": {
+                            "new":     get_setting("source_show_new_filmo",     "1"),
+                            "popular": get_setting("source_show_popular_filmo", "1"),
+                        },
+                        "nineanime": {
+                            "new":     get_setting("source_show_new_nineanime",     "1"),
+                            "popular": get_setting("source_show_popular_nineanime", "1"),
+                        },
+                        "aniwaves": {
+                            "new":     get_setting("source_show_new_aniwaves",     "1"),
+                            "popular": get_setting("source_show_popular_aniwaves", "1"),
                         },
                         "megakino": {
                             "new_movies":     get_setting("source_show_new_movies_megakino",     "1"),
@@ -1385,9 +1400,13 @@ def register_settings_routes(app):
             "home_source_order",
             "home_section_order_aniworld", "home_section_order_sto", "home_section_order_hanime",
             "home_section_order_megakino",
+            "home_section_order_filmo", "home_section_order_nineanime", "home_section_order_aniwaves",
             *(("source_enabled_" + _sid) for _sid in _known_source_ids),
             "source_show_new_aniworld", "source_show_popular_aniworld",
             "source_show_new_sto", "source_show_popular_sto",
+            "source_show_new_filmo", "source_show_popular_filmo",
+            "source_show_new_nineanime", "source_show_popular_nineanime",
+            "source_show_new_aniwaves", "source_show_popular_aniwaves",
             "source_show_new_hanime", "source_show_trending_hanime",
             "source_show_censored_hanime", "source_show_uncensored_hanime",
             "source_show_new_movies_megakino", "source_show_popular_movies_megakino",
@@ -1409,7 +1428,7 @@ def register_settings_routes(app):
             if sorted(_parts) != ["new", "trending"]:
                 return jsonify({"error": "Invalid home_section_order_hanime: must be a permutation of new,trending"}), 400
             set_setting("home_section_order_hanime", ",".join(_parts))
-        for _prov in ("aniworld", "sto"):
+        for _prov in ("aniworld", "sto", "filmo", "nineanime", "aniwaves"):
             _k = "home_section_order_" + _prov
             if _k in data:
                 _parts = [p.strip().lower() for p in str(data[_k]).split(",") if p.strip()]
@@ -1421,7 +1440,7 @@ def register_settings_routes(app):
             if _k in data:
                 set_setting(_source_enabled_keys.get(_prov, _k),
                             "1" if str(data[_k]).lower() in ("true", "1") else "0")
-        for _prov in ("aniworld", "sto"):
+        for _prov in ("aniworld", "sto", "filmo", "nineanime", "aniwaves"):
             for _sec in ("new", "popular"):
                 _k = "source_show_" + _sec + "_" + _prov
                 if _k in data:

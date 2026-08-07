@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='hanime.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='english_only.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='devinfo_banner.css') }}">
 {% if devinfo_importants %}<link rel="stylesheet" href="{{ url_for('static', filename='devinfo_important.css') }}">{% endif %}
 <style>
@@ -387,6 +388,7 @@
       'off': _('off'),
       'offline': _('offline'),
       'disabled_in_settings': _('Switched off in Settings'),
+      'english_only': _('English-only source'),
       'filter_none': _('None'),
       'many_sources': _('sources'),
       'many_types': _('types'),
@@ -696,6 +698,39 @@
       <div class="browse-section" id="megakinoPopularSeriesSection" data-section="popular_series">
         <h2 class="browse-heading">{{ _('Popular Series') }}</h2>
         <div class="browse-grid" id="megakinoPopularSeriesGrid"></div>
+      </div>
+    </div>
+    <div class="browse-provider-block" data-provider="filmo">
+      <div class="browse-provider-header browse-provider-filmo">filmo.to</div>
+      <div class="browse-section" id="filmoNewMoviesSection" data-section="new">
+        <h2 class="browse-heading">{{ _('New Movies') }}</h2>
+        <div class="browse-grid" id="filmoNewMoviesGrid"></div>
+      </div>
+      <div class="browse-section" id="filmoPopularMoviesSection" data-section="popular">
+        <h2 class="browse-heading">{{ _('Popular Movies') }}</h2>
+        <div class="browse-grid" id="filmoPopularMoviesGrid"></div>
+      </div>
+    </div>
+    <div class="browse-provider-block" data-provider="nineanime" style="display:none">
+      <div class="browse-provider-header browse-provider-nineanime">9anime <span class="browse-provider-en" title="{{ _('English-only source') }}">EN</span></div>
+      <div class="browse-section" id="nineanimeNewSection" data-section="new">
+        <h2 class="browse-heading">{{ _('New Anime') }}</h2>
+        <div class="browse-grid" id="nineanimeNewGrid"></div>
+      </div>
+      <div class="browse-section" id="nineanimePopularSection" data-section="popular">
+        <h2 class="browse-heading">{{ _('Popular Anime') }}</h2>
+        <div class="browse-grid" id="nineanimePopularGrid"></div>
+      </div>
+    </div>
+    <div class="browse-provider-block" data-provider="aniwaves" style="display:none">
+      <div class="browse-provider-header browse-provider-aniwaves">Aniwaves <span class="browse-provider-en" title="{{ _('English-only source') }}">EN</span></div>
+      <div class="browse-section" id="aniwavesNewSection" data-section="new">
+        <h2 class="browse-heading">{{ _('New Anime') }}</h2>
+        <div class="browse-grid" id="aniwavesNewGrid"></div>
+      </div>
+      <div class="browse-section" id="aniwavesPopularSection" data-section="popular">
+        <h2 class="browse-heading">{{ _('Popular Anime') }}</h2>
+        <div class="browse-grid" id="aniwavesPopularGrid"></div>
       </div>
     </div>
     <div class="browse-provider-block" data-provider="hanime" style="display:none">

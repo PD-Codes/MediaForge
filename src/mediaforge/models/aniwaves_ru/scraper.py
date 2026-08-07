@@ -312,7 +312,7 @@ def fetch_new(limit=24):
     try:
         html = _get("/newest")
     except Exception as e:
-        logger.debug("aniwaves new-episodes fetch failed: %s", e)
+        logger.warning("aniwaves new-episodes fetch failed: %s: %s", type(e).__name__, e)
         return None
     return _parse_item_cards(html, limit)
 
@@ -322,7 +322,7 @@ def fetch_popular(limit=24):
     try:
         html = _get("/trending")
     except Exception as e:
-        logger.debug("aniwaves popular fetch failed: %s", e)
+        logger.warning("aniwaves popular fetch failed: %s: %s", type(e).__name__, e)
         return None
     return _parse_item_cards(html, limit)
 
@@ -357,7 +357,7 @@ def search(keyword, limit=30):
         raw = _get("/ajax/anime/search", params={"keyword": keyword}, ajax=True)
         data = json.loads(raw)
     except Exception as e:
-        logger.debug("aniwaves search failed for %r: %s", keyword, e)
+        logger.warning("aniwaves search failed for %r: %s: %s", keyword, type(e).__name__, e)
         return []
     if not data or data.get("status") != 200:
         return []

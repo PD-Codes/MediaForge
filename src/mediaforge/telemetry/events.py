@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 
 from . import settings
 from .classify import is_cancel_exception_name, is_cancel_status, is_user_cancellation
+from .registry import consent_key_for, source_flag_key
 from .sanitize import (clean_url, collapse_paths_in_text, is_adult_provider,
                         mentions_adult_provider, redact_secrets, redact_urls_in_text,
                         sanitize_exception, shorten_path, strip_browser_launch_noise,
@@ -229,6 +230,75 @@ def build_feature_flag_event(feature_key: str, provider=None):
     return _event(data_key, payload)
 
 
+def build_source_usage_event(source_id):
+    """Build a ``flag.source.<id>`` counter for one built-in source site.
+
+    Answers the one question the download events could not: WHICH SITE the
+    content came from. ``build_download_event``'s ``provider`` is the hoster
+    (VOE, MegaPlay, ...), which says nothing about whether anybody actually
+    uses filmo.to or 9anime -- i.e. nothing about which sources are worth
+    maintaining.
+
+    Three guards, in this order:
+
+    1. Unknown/module source ids produce nothing. ``source_flag_key`` accepts
+       only the closed built-in list, because this value becomes a
+       ``feature_key`` on a public server and a module id is text the module
+       author chose.
+    2. The adult source can never pass guard 1, and is checked again here by
+       name, because "it cannot get here" is not the kind of thing this
+       particular rule should rely on.
+    3. Consent is read from the single ``flag.sources`` toggle
+       (``consent_key_for``), not from the per-source key, which is never
+       shown to the user.
+    """
+    key = source_flag_key(source_id)
+    if key is None:
+        return None
+    if is_adult_provider(source_id) or str(source_id).strip().lower().startswith("hanime"):
+        return None
+    if not settings.is_key_enabled(consent_key_for(key)):
+        return None
+    return _event(key, {})
+
+
+# Actions accepted by build_network_detail_event. A closed set: `action` lands
+# in an indexed column on the server, so it must not be free text.
+NETWORK_ACTIONS = ("dns_fallback", "source_unavailable")
+
+
+def build_network_detail_event(action, source_id=None):
+    """Build a ``detail.network`` event for a network problem the app survived.
+
+    ``action="dns_fallback"``   -- the configured resolver could not resolve a
+    host and the system resolver answered instead. NO metadata at all: the
+    hostname would say which site was being visited, and the resolver name is
+    the user's own network configuration.
+
+    ``action="source_unavailable"`` -- a source site failed to load. Carries
+    the source id only, and only for a built-in source (same closed list as
+    build_source_usage_event, for the same reason).
+
+    Returns None for an unknown action rather than inventing one, so a typo at
+    a call site cannot create a new server-side action value.
+    """
+    if action not in NETWORK_ACTIONS:
+        return None
+    if not settings.is_key_enabled("detail.network"):
+        return None
+    metadata = None
+    if action == "source_unavailable":
+        key = source_flag_key(source_id)
+        if key is None:
+            # An outage we cannot name without leaking a module's id is still
+            # worth counting -- just anonymously.
+            metadata = {"source": "other"}
+        else:
+            metadata = {"source": str(source_id).strip().lower()}
+    return build_feature_detail_event("detail.network", action=action,
+                                      status="handled", metadata=metadata)
+
+
 # The library overview page itself. Every OTHER accepted section name is a
 # media-kind slug straight out of web/media_kinds.py, so this is the only
 # literal that has to live here.
@@ -329,7 +399,8 @@ def build_feature_detail_event(feature_key: str, *, action=None, status=None,
 # ---------------------------------------------------------------------------
 
 def build_download_event(*, provider, media_type, title, season=None, episode=None,
-                          status="completed", error_message=None, provider_errors=None):
+                          status="completed", error_message=None, provider_errors=None,
+                          source=None):
     """Build up to two events (downloads.titles / downloads.errors -- each
     individually toggled by the user) for one finished/failed download.
     Returns a list (possibly empty), never None, so callers can always do
@@ -357,18 +428,31 @@ def build_download_event(*, provider, media_type, title, season=None, episode=No
         return []
     if is_cancel_status(status) or is_user_cancellation(message=error_message):
         return []
+    # The SITE the download came from ("filmo", "nineanime", ...) alongside the
+    # hoster. Only ever a built-in id -- source_flag_key() rejects a module's
+    # own id, which is text its author chose and has no place in a field the
+    # server groups by. None (unknown/module/adult) simply omits the field
+    # rather than sending a placeholder.
+    site = source_flag_key(source)
+    site = source.strip().lower() if site else None
+
     out = []
     if settings.is_key_enabled("downloads.titles"):
-        out.append(_event("downloads.titles", {
+        payload = {
             "provider": provider, "media_type": media_type, "title": title,
             "season": season, "episode": episode, "status": status,
-        }))
+        }
+        if site:
+            payload["source"] = site
+        out.append(_event("downloads.titles", payload))
     if error_message and settings.is_key_enabled("downloads.errors"):
         payload = {
             "provider": provider, "media_type": media_type, "title": title,
             "season": season, "episode": episode, "status": status,
             "error_message": redact_secrets(str(error_message))[:2000],
         }
+        if site:
+            payload["source"] = site
         if provider_errors:
             payload["provider_errors"] = {
                 str(hoster): redact_secrets(redact_urls_in_text(str(msg)))[:500]

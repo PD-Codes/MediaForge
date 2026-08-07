@@ -8608,3 +8608,15 @@ msgstr ""
 msgid "Library scan (local folders)"
 msgstr ""
 
+#: mediaforge/web/templates/index.html:0
+#: mediaforge/web/templates/settings.html:0
+msgid "English-only source"
+msgstr ""
+
+#: mediaforge/web/templates/settings.html:0
+msgid ""
+"9anime and Aniwaves are English-only sources: they offer no German "
+"audio or subtitles, which is why they are switched off by default. "
+"Enabling them needs no age confirmation - they are not adult sources."
+msgstr ""
+

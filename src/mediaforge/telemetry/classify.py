@@ -211,6 +211,20 @@ _UNREACHABLE_EXCEPTION_NAMES = frozenset({
     "NameResolutionError", "DNSError", "gaierror", "herror",
     "RemoteDisconnected", "IncompleteRead", "ChunkedEncodingError",
     "ConnectionClosed", "ConnectionResetError", "ConnectionAbortedError",
+    # Each site model raises its own "<Site>Unavailable" when the source did
+    # not hand back a usable page: a 404, a challenge interstitial, a truncated
+    # body, a maintenance page. That is the source site having a bad day, not a
+    # defect in MediaForge -- exactly what this list exists to keep out of the
+    # crash channel. Listed explicitly rather than matched by the "*Unavailable"
+    # suffix so an unrelated exception that happens to end in that word cannot
+    # silently disappear from the crash reports.
+    "MegakinoUnavailable", "FilmoUnavailable", "NineAnimeUnavailable",
+    "AniwavesUnavailable", "HanimeUnavailable",
+    # filmo.to's "419 Page Expired". Retried automatically (see
+    # models/filmo_to/movie.py's provider_url); if the retry also fails, that
+    # still says something about filmo.to's session handling, not about a bug
+    # here.
+    "FilmoTokenExpired",
 })
 
 # Same principle as the cancellation patterns: specific enough that they cannot

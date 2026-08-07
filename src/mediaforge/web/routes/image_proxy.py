@@ -8,8 +8,11 @@ from ...config import HANIME_API_BASE
 from ...config import HANIME_IMAGE_HOSTS
 from ...config import HANIME_BASE_URL
 from ...config import HANIME_SEARCH_URL
+from ...config import ANIWAVES_BASE_URL
+from ...config import FILMO_BASE_URL
 from ...config import MEDIAFORGE_CONFIG_DIR
 from ...config import MEGAKINO_BASE_URL
+from ...config import NINEANIME_BASE_URL
 from ..db import get_setting
 from ..db import get_tmdb_cache_bulk
 from flask import request
@@ -67,8 +70,16 @@ def _domains_of(*urls):
 # hanime.evil.tld (or any host containing the word) at an internal address and
 # have the server fetch it. Suffix matching only accepts the domain itself and
 # its subdomains.
+# filmo.to, 9anime.or.at and aniwaves.ru all serve their posters from the
+# site itself (filmo.to/img/poster/..., the WordPress theme's uploads dir, the
+# SPA's own /i/ path) or from a subdomain of it, which is exactly what a
+# suffix entry covers -- the same reason MegaKino is in this list rather than
+# in the exact-host set above. Without them every card from these three
+# sources renders the placeholder, because /api/img rejects the poster with
+# 403 "Forbidden host" before it ever fetches it.
 _ALLOWED_IMAGE_DOMAINS = _domains_of(
     MEGAKINO_BASE_URL, HANIME_BASE_URL, HANIME_API_BASE, HANIME_SEARCH_URL,
+    FILMO_BASE_URL, NINEANIME_BASE_URL, ANIWAVES_BASE_URL,
 ) | {h for h in HANIME_IMAGE_HOSTS if h}
 
 

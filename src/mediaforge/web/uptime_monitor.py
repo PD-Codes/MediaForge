@@ -39,6 +39,19 @@ _MONITOR_SITES = {
     "sto":        ("SerienStream", "https://serienstream.to", "serienstream.to", ["serienstream"], {"server": "ddos-guard"}),
     "filmpalast": ("FilmPalast",   "https://filmpalast.to",   "filmpalast.to",   ["filmpalast"],   {"server": "cloudflare"}),
     "megakino":   ("MegaKino",     "https://megakino.to",     "megakino.to",     ["megakino"],     {"server": "cloudflare"}),
+    # The three newest sources ship WITHOUT a header signature ({}), on
+    # purpose. The signatures above were each confirmed against the live site;
+    # for these three no such confirmation exists yet, and guessing one is the
+    # one failure mode this monitor must not have: a wrong signature makes
+    # _headers_match() fail on every single round, which downgrades a perfectly
+    # healthy site to "not verified" and fires a false outage banner. An empty
+    # dict means "no signature configured" -- _probe_site() then skips the
+    # header check and still verifies via status code, final URL and the body
+    # markers, exactly like a site whose CDN was never identified. Fill these
+    # in (curl -I https://<host>) once the fronting CDN is actually known.
+    "filmo":      ("filmo.to",     "https://filmo.to",        "filmo.to",        ["filmo"],        {}),
+    "nineanime":  ("9anime",       "https://9anime.or.at",    "9anime.or.at",    ["9anime"],       {}),
+    "aniwaves":   ("Aniwaves",     "https://aniwaves.ru",     "aniwaves.ru",     ["aniwaves"],     {}),
     "hanime":     ("hanime",       "https://hanime.tv",       "hanime.tv",       ["hanime"],       {"server": "cloudflare"}),
 }
 

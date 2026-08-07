@@ -40,6 +40,25 @@ logger = get_logger(__name__)
 # source is one entry here and nothing else changes.
 ADULT_SOURCE_IDS = frozenset({"hanime"})
 
+# Source ids that default to off for a reason OTHER than being an adult
+# source (English-only catalogue inconsistent with the DE-first providers --
+# see the NineAnime/Aniwaves Provider() comments in providers.py and the
+# ANIWAVES_BASE_URL/NINEANIME_BASE_URL docstrings in config.py). Opt-in like
+# an adult source (source_enabled_default() below folds both sets together),
+# but deliberately kept out of ADULT_SOURCE_IDS: is_adult_source() drives the
+# frontend age-confirmation gate and the age-limited/kids-mode filtering, and
+# neither should trigger just because a source happens to also be opt-in.
+OPT_IN_SOURCE_IDS = frozenset({"nineanime", "aniwaves"})
+
+# Source ids whose catalogue is English-only. Purely a LABEL: the UI shows an
+# "EN" marker on the chip/toggle so a user understands why a source that looks
+# like every other anime site returns no German audio, and it explains why
+# these sources are off by default. Deliberately a separate set from
+# OPT_IN_SOURCE_IDS above even though both currently hold the same two ids --
+# "defaults to off" and "has no German catalogue" are different statements,
+# and a future source could be one without being the other.
+ENGLISH_ONLY_SOURCE_IDS = frozenset({"nineanime", "aniwaves"})
+
 # Values that mean "off" in app_settings. Everything the UI writes is "1"/"0",
 # but a hand-edited DB row or a module's own key may carry a word, and an
 # empty string must not read as enabled.
@@ -51,14 +70,27 @@ def is_adult_source(source_id) -> bool:
     return str(source_id or "").lower() in ADULT_SOURCE_IDS
 
 
+def is_opt_in_source(source_id) -> bool:
+    """True if *source_id* defaults to off WITHOUT being an adult source --
+    see OPT_IN_SOURCE_IDS. Does not imply is_adult_source()."""
+    return str(source_id or "").lower() in OPT_IN_SOURCE_IDS
+
+
+def is_english_only_source(source_id) -> bool:
+    """True if *source_id* only offers English audio/subtitles --
+    see ENGLISH_ONLY_SOURCE_IDS. Display-only; affects no gating."""
+    return str(source_id or "").lower() in ENGLISH_ONLY_SOURCE_IDS
+
+
 def source_enabled_key(source_id) -> str:
     """The app_settings key holding the on/off state of a built-in source."""
     return "source_enabled_" + str(source_id or "")
 
 
 def source_enabled_default(source_id) -> str:
-    """The default value of that key: "0" for an adult source, "1" otherwise."""
-    return "0" if is_adult_source(source_id) else "1"
+    """The default value of that key: "0" for an adult or opt-in source,
+    "1" otherwise."""
+    return "0" if (is_adult_source(source_id) or is_opt_in_source(source_id)) else "1"
 
 
 def setting_is_on(value, default="0") -> bool:
@@ -92,6 +124,9 @@ BUILTIN_SEARCH_SOURCES = (
     {"id": "sto",        "label": "SerienStream"},
     {"id": "filmpalast", "label": "FilmPalast"},
     {"id": "megakino",   "label": "MegaKino"},
+    {"id": "filmo",      "label": "filmo.to"},
+    {"id": "nineanime",  "label": "9anime"},
+    {"id": "aniwaves",   "label": "Aniwaves"},
     {"id": "hanime",     "label": "hanime 18+"},
 )
 
@@ -141,6 +176,8 @@ def search_sources(include_adult: bool = True) -> list:
             "id": _s["id"],
             "label": _s["label"],
             "adult": adult,
+            "opt_in": is_opt_in_source(_s["id"]),
+            "english_only": is_english_only_source(_s["id"]),
             "thirdparty": False,
             "enabled_key": source_enabled_key(_s["id"]),
             "enabled": source_enabled(_s["id"]),
@@ -168,6 +205,9 @@ def search_sources(include_adult: bool = True) -> list:
             "id": site_id,
             "label": entry.get("label") or site_id,
             "adult": adult,
+            "opt_in": False,
+            # A module knows its own catalogue; the core cannot guess it.
+            "english_only": False,
             "thirdparty": True,
             # A module source is opt-out like any built-in, but may point at a
             # settings key it already owns instead of source_enabled_<id>.

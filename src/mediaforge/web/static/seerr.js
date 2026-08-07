@@ -881,11 +881,18 @@
   var MOVIE_SOURCES = [
     { site: "filmpalast", label: "FilmPalast", keep: function () { return true; } },
     { site: "megakino", label: "MegaKino", keep: function (r) { return !r.is_series; } },
+    // filmo.to is movie-only, so every hit belongs in this list.
+    { site: "filmo", label: "filmo.to", keep: function () { return true; } },
   ];
   var SERIES_SOURCES = [
     { site: "aniworld", label: "AniWorld", keep: function () { return true; } },
     { site: "sto", label: "SerienStream", keep: function () { return true; } },
     { site: "megakino", label: "MegaKino", keep: function (r) { return !!r.is_series; } },
+    // 9anime/Aniwaves are series-only and opt-in: the search route returns an
+    // empty list for them unless the source is enabled in Settings, so no
+    // extra gate is needed on this side (same arrangement as hanime below).
+    { site: "nineanime", label: "9anime (EN)", keep: function () { return true; } },
+    { site: "aniwaves", label: "Aniwaves (EN)", keep: function () { return true; } },
     // hanime (adult) comes last and stays empty unless enabled server-side.
     { site: "hanime", label: "hanime 18+", keep: function () { return true; } },
   ];

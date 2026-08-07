@@ -49,6 +49,20 @@ _HEADERS = {
 }
 
 
+class FilmoTokenExpired(Exception):
+    """filmo.to rejected the CSRF token / session as stale (HTTP 419).
+
+    Its own name because it is the one filmo failure that is worth RETRYING
+    rather than reporting: 419 is Laravel's "Page Expired", i.e. literally
+    "reload the page and try again". The movie page is fetched once and its
+    token cached on the FilmoMovie, so on the second download attempt -- or
+    simply a few minutes later -- that cached token can be older than the
+    session behind it, and every further attempt reuses the same dead token
+    and fails identically. See FilmoMovie.provider_url, which refetches once
+    when this is raised.
+    """
+
+
 class FilmoUnavailable(Exception):
     """filmo.to did not hand back a usable page/response.
 
@@ -248,6 +262,13 @@ def resolve_provider_url(data_p, csrf_token, referer, timeout=15):
     resp = GLOBAL_SESSION.post(
         base_url() + "/n", json={"p": data_p}, headers=post_headers, timeout=timeout,
     )
+    if resp.status_code == 419:
+        # Laravel's "Page Expired": the CSRF token no longer matches the
+        # session. Distinct exception so the caller can refetch the movie page
+        # and retry instead of surfacing a number nobody can act on.
+        raise FilmoTokenExpired(
+            f"filmo.to rejected the CSRF token as expired (HTTP 419) for {referer}"
+        )
     resp.raise_for_status()
     try:
         token = (resp.json() or {}).get("x")
@@ -328,7 +349,7 @@ def fetch_new_movies(page=1, limit=24):
     try:
         html = _get("/movies", {"sort": "release_desc", "page": page})
     except Exception as e:
-        logger.debug("Filmo new-movies fetch failed: %s", e)
+        logger.warning("Filmo new-movies fetch failed: %s: %s", type(e).__name__, e)
         return None
     return _parse_cards(html, limit)
 
@@ -338,7 +359,7 @@ def fetch_popular_movies(page=1, limit=24):
     try:
         html = _get("/popular", {"page": page})
     except Exception as e:
-        logger.debug("Filmo popular-movies fetch failed: %s", e)
+        logger.warning("Filmo popular-movies fetch failed: %s: %s", type(e).__name__, e)
         return None
     return _parse_cards(html, limit)
 

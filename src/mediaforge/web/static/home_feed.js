@@ -139,11 +139,18 @@
     let html = '<span class="feed-chip-label">' + mfEscape(HT("sources")) + "</span>";
 
     sources.forEach(function (s) {
+      // "EN" marks an English-only catalogue (source_policy's
+      // ENGLISH_ONLY_SOURCE_IDS). Informational: it explains why the source
+      // carries no German audio and why it ships off, and it gates nothing --
+      // unlike the 18+ type chip below, which really does hold back a fetch.
+      const enBadge = s.english_only
+        ? '<span class="source-badge-en" title="' + mfEscape(HT("english_only")) + '">EN</span>'
+        : "";
       if (!s.enabled) {
         // Switched off in Settings → shown, but as a fact, not as a filter.
         html += '<span class="feed-chip is-disabled" title="' +
           mfEscape(HT("disabled_in_settings")) + '">' +
-          '<span class="feed-chip-dot"></span>' + mfEscape(s.label) +
+          '<span class="feed-chip-dot"></span>' + mfEscape(s.label) + enBadge +
           ' · ' + mfEscape(HT("off")) + "</span>";
         return;
       }
@@ -156,7 +163,7 @@
         (down ? " is-down" : "") + '" data-kind="source" data-value="' +
         mfEscape(s.id) + '" aria-pressed="' + (on ? "true" : "false") + '">' +
         '<span class="feed-chip-dot"' + (down ? "" : dot) + "></span>" +
-        mfEscape(s.label) +
+        mfEscape(s.label) + enBadge +
         (down ? ' · ' + mfEscape(HT("offline")) : "") +
         "</button>";
     });
@@ -229,18 +236,25 @@
       '<div class="mf-multiselect-dropdown">' + items + "</div></div>";
   }
 
+  /** " · EN" for an English-only source, "" otherwise. The mobile dropdown
+      renders plain text labels (msItem escapes them), so the marker has to be
+      part of the string here rather than the badge element the chips use. */
+  function enSuffix(s) {
+    return s && s.english_only ? " · EN" : "";
+  }
+
   function renderMobileFilters(types) {
     let src = "";
     sources.forEach(function (s) {
       if (!s.enabled) {
         // A source switched off in Settings is a fact, not an option — same as
         // the chip, so it is rendered as a disabled entry with the same title.
-        src += msItem(s.id, s.label + " · " + HT("off"), false, true,
+        src += msItem(s.id, s.label + enSuffix(s) + " · " + HT("off"), false, true,
           HT("disabled_in_settings"), "");
         return;
       }
       const down = s.error || downIds.indexOf(s.id) !== -1;
-      src += msItem(s.id, s.label + (down ? " · " + HT("offline") : ""),
+      src += msItem(s.id, s.label + enSuffix(s) + (down ? " · " + HT("offline") : ""),
         sourceOn(s.id), false, "", down ? "" : (s.color || ""));
     });
 
@@ -815,6 +829,12 @@
     });
   }
 
+  // See loadRow() below: how often and how fast a row that reported "still
+  // warming up" is asked again.
+  const ROW_RETRY_MS = 4000;
+  const ROW_MAX_RETRIES = 6;
+  const rowRetries = {};
+
   async function loadRow(row) {
     if (rowState[row] === "loading" || rowState[row] === "done") return;
     rowState[row] = "loading";
@@ -835,6 +855,20 @@
       }
       rows[row] = (data.rows || {})[row] || [];
       rowState[row] = "done";
+      // A source whose server-side cache was cold is still being scraped; the
+      // server says so instead of pretending the source is broken. Ask again
+      // shortly so its cards appear on their own, rather than only after the
+      // next full page load. Bounded, so a source that never finishes cannot
+      // turn this into an endless poll.
+      if (Array.isArray(data.pending) && data.pending.length &&
+          (rowRetries[row] || 0) < ROW_MAX_RETRIES) {
+        rowRetries[row] = (rowRetries[row] || 0) + 1;
+        setTimeout(function () {
+          if (rowState[row] === "done") { rowState[row] = "pending"; loadRow(row); }
+        }, ROW_RETRY_MS);
+      } else if (!Array.isArray(data.pending) || !data.pending.length) {
+        rowRetries[row] = 0;
+      }
     } catch (err) {
       rows[row] = [];
       rowState[row] = "pending";           // the retry button may try again

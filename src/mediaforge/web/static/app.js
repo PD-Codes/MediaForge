@@ -33,6 +33,12 @@ const megakinoNewMoviesGrid = document.getElementById("megakinoNewMoviesGrid");
 const megakinoPopularMoviesGrid = document.getElementById("megakinoPopularMoviesGrid");
 const megakinoNewSeriesGrid = document.getElementById("megakinoNewSeriesGrid");
 const megakinoPopularSeriesGrid = document.getElementById("megakinoPopularSeriesGrid");
+const filmoNewMoviesGrid = document.getElementById("filmoNewMoviesGrid");
+const filmoPopularMoviesGrid = document.getElementById("filmoPopularMoviesGrid");
+const nineanimeNewGrid = document.getElementById("nineanimeNewGrid");
+const nineanimePopularGrid = document.getElementById("nineanimePopularGrid");
+const aniwavesNewGrid = document.getElementById("aniwavesNewGrid");
+const aniwavesPopularGrid = document.getElementById("aniwavesPopularGrid");
 const hanimeNewGrid = document.getElementById("hanimeNewGrid");
 const hanimeTrendingGrid = document.getElementById("hanimeTrendingGrid");
 
@@ -508,6 +514,43 @@ function renderSkeletons(grid, count = 10) {
   }
 }
 
+// ── "Still loading" vs "failed" ────────────────────────────────────────────
+// A browse list whose server-side cache is cold is scraped in the background;
+// if that takes longer than the server's 10 s budget the route answers
+// HTTP 202 with {"results": [], "pending": true} instead of a 502. That is not
+// an error and must not be painted as one: the first visit after a restart
+// would otherwise show "Error loading" for every source that happens to be
+// slow that minute, and the hourly client-side guard (xLoadedAt) would then
+// keep that wrong state on screen for a full hour.
+//
+// So: leave the skeletons up and ask again shortly. Bounded, because a source
+// that never finishes must not poll forever -- after the last attempt whatever
+// arrived (usually an empty row) simply stays.
+const _PENDING_RETRY_MS = 4000;
+const _PENDING_MAX_TRIES = 6;
+const _pendingTries = {};
+
+/**
+ * @param {Array} dataList parsed JSON bodies of the responses just received
+ * @param {string} tag     per-loader counter key
+ * @param {Function} retry re-runs the loader (must clear its xLoadedAt guard)
+ * @returns {boolean} true when a retry was scheduled -- the caller should
+ *   return immediately and keep the skeletons in place.
+ */
+function retryIfPending(dataList, tag, retry) {
+  if (!(dataList || []).some(function (d) { return d && d.pending; })) {
+    _pendingTries[tag] = 0;
+    return false;
+  }
+  const tries = (_pendingTries[tag] = (_pendingTries[tag] || 0) + 1);
+  if (tries > _PENDING_MAX_TRIES) {
+    _pendingTries[tag] = 0;
+    return false;
+  }
+  setTimeout(retry, _PENDING_RETRY_MS);
+  return true;
+}
+
 let stoLoadedAt = 0;
 async function loadStoBrowse() {
   if (stoLoadedAt && Date.now() - stoLoadedAt < 3600000) return;
@@ -522,6 +565,7 @@ async function loadStoBrowse() {
     await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
     const newData = await newResp.json();
     const popData = await popResp.json();
+    if (retryIfPending([newData, popData], "sto", function () { stoLoadedAt = 0; loadStoBrowse(); })) return;
 
     if (newData.results) renderBrowseCards(newSeriesGrid, newData.results);
     else newSeriesGrid.innerHTML = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
@@ -544,6 +588,7 @@ async function loadFilmPalastBrowse() {
     const resp = await fetch("/api/new-movies");
     await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
     const data = await resp.json();
+    if (retryIfPending([data], "filmpalast", function () { fpLoadedAt = 0; loadFilmPalastBrowse(); })) return;
 
     if (data.results) renderBrowseCards(newMoviesGrid, data.results);
     else newMoviesGrid.innerHTML = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
@@ -569,6 +614,7 @@ async function loadMegakinoBrowse() {
     ]);
     await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
     const data = await Promise.all([nmResp.json(), pmResp.json(), nsResp.json(), psResp.json()]);
+    if (retryIfPending(data, "megakino", function () { megakinoLoadedAt = 0; loadMegakinoBrowse(); })) return;
     const targets = [
       [megakinoNewMoviesGrid, data[0]],
       [megakinoPopularMoviesGrid, data[1]],
@@ -583,6 +629,91 @@ async function loadMegakinoBrowse() {
   } catch (e) {
     megakinoLoadedAt = 0;
     grids.forEach(g => { if (g) g.innerHTML = errHtml; });
+  }
+}
+
+let filmoLoadedAt = 0;
+async function loadFilmoBrowse() {
+  if (filmoLoadedAt && Date.now() - filmoLoadedAt < 3600000) return;
+  filmoLoadedAt = Date.now();
+  const grids = [filmoNewMoviesGrid, filmoPopularMoviesGrid];
+  grids.forEach(g => { if (g) renderSkeletons(g); });
+  const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
+  try {
+    const [nmResp, pmResp] = await Promise.all([
+      fetch("/api/filmo/new-movies"),
+      fetch("/api/filmo/popular-movies"),
+    ]);
+    await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
+    const data = await Promise.all([nmResp.json(), pmResp.json()]);
+    if (retryIfPending(data, "filmo", function () { filmoLoadedAt = 0; loadFilmoBrowse(); })) return;
+    const targets = [
+      [filmoNewMoviesGrid, data[0]],
+      [filmoPopularMoviesGrid, data[1]],
+    ];
+    targets.forEach(([grid, d]) => {
+      if (!grid) return;
+      if (d && d.results) renderBrowseCards(grid, d.results);
+      else grid.innerHTML = errHtml;
+    });
+  } catch (e) {
+    filmoLoadedAt = 0;
+    grids.forEach(g => { if (g) g.innerHTML = errHtml; });
+  }
+}
+
+let nineanimeLoadedAt = 0;
+async function loadNineanimeBrowse() {
+  if (nineanimeLoadedAt && Date.now() - nineanimeLoadedAt < 3600000) return;
+  nineanimeLoadedAt = Date.now();
+  if (nineanimeNewGrid) renderSkeletons(nineanimeNewGrid);
+  if (nineanimePopularGrid) renderSkeletons(nineanimePopularGrid);
+  const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
+  try {
+    const [newResp, popResp] = await Promise.all([
+      fetch("/api/nineanime/new"),
+      fetch("/api/nineanime/popular"),
+    ]);
+    await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
+    const newData = await newResp.json();
+    const popData = await popResp.json();
+    if (retryIfPending([newData, popData], "nineanime", function () { nineanimeLoadedAt = 0; loadNineanimeBrowse(); })) return;
+    // Unlike hanime, 9anime's titles are mainstream anime that TMDB does
+    // know about -- no skipTmdb here, so the same CineInfo enrichment
+    // AniWorld/SerienStream cards get applies here too.
+    if (nineanimeNewGrid) (newData.results ? renderBrowseCards(nineanimeNewGrid, newData.results) : (nineanimeNewGrid.innerHTML = errHtml));
+    if (nineanimePopularGrid) (popData.results ? renderBrowseCards(nineanimePopularGrid, popData.results) : (nineanimePopularGrid.innerHTML = errHtml));
+  } catch (e) {
+    nineanimeLoadedAt = 0;
+    if (nineanimeNewGrid) nineanimeNewGrid.innerHTML = errHtml;
+    if (nineanimePopularGrid) nineanimePopularGrid.innerHTML = errHtml;
+  }
+}
+
+let aniwavesLoadedAt = 0;
+async function loadAniwavesBrowse() {
+  if (aniwavesLoadedAt && Date.now() - aniwavesLoadedAt < 3600000) return;
+  aniwavesLoadedAt = Date.now();
+  if (aniwavesNewGrid) renderSkeletons(aniwavesNewGrid);
+  if (aniwavesPopularGrid) renderSkeletons(aniwavesPopularGrid);
+  const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
+  try {
+    const [newResp, popResp] = await Promise.all([
+      fetch("/api/aniwaves/new"),
+      fetch("/api/aniwaves/popular"),
+    ]);
+    await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
+    const newData = await newResp.json();
+    const popData = await popResp.json();
+    if (retryIfPending([newData, popData], "aniwaves", function () { aniwavesLoadedAt = 0; loadAniwavesBrowse(); })) return;
+    // Same reasoning as loadNineanimeBrowse(): Aniwaves' catalogue is
+    // mainstream anime TMDB knows about, so no skipTmdb here either.
+    if (aniwavesNewGrid) (newData.results ? renderBrowseCards(aniwavesNewGrid, newData.results) : (aniwavesNewGrid.innerHTML = errHtml));
+    if (aniwavesPopularGrid) (popData.results ? renderBrowseCards(aniwavesPopularGrid, popData.results) : (aniwavesPopularGrid.innerHTML = errHtml));
+  } catch (e) {
+    aniwavesLoadedAt = 0;
+    if (aniwavesNewGrid) aniwavesNewGrid.innerHTML = errHtml;
+    if (aniwavesPopularGrid) aniwavesPopularGrid.innerHTML = errHtml;
   }
 }
 
@@ -618,6 +749,7 @@ async function loadHanimeBrowse() {
     const errHtml = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
     const newData = await newResp.json();
     const trendData = await trendResp.json();
+    if (retryIfPending([newData, trendData], "hanime", function () { hanimeLoadedAt = 0; loadHanimeBrowse(); })) return;
     const newResults = _filterHanimeCensorship(newData.results);
     const trendResults = _filterHanimeCensorship(trendData.results);
     // skipTmdb: hanime is adult content, not in TMDB's database — CineInfo
@@ -722,6 +854,9 @@ async function showBrowseSections() {
   if (enabled.sto !== "0") loadStoBrowse();
   if (enabled.filmpalast !== "0") loadFilmPalastBrowse();
   if (enabled.megakino !== "0") loadMegakinoBrowse();
+  if (enabled.filmo !== "0") loadFilmoBrowse();
+  if (enabled.nineanime === "1") loadNineanimeBrowse();
+  if (enabled.aniwaves === "1") loadAniwavesBrowse();
   if (enabled.hanime === "1") loadHanimeBrowse();
 
   // Awaited: renderSourceChips() now waits for the source catalogue, and
@@ -748,6 +883,9 @@ const _FALLBACK_SOURCES = [
   { id: "sto",        label: "SerienStream", adult: false, thirdparty: false, css_class: "browse-provider-sto" },
   { id: "filmpalast", label: "FilmPalast",   adult: false, thirdparty: false, css_class: "browse-provider-filmpalast" },
   { id: "megakino",   label: "MegaKino",     adult: false, thirdparty: false, css_class: "browse-provider-megakino" },
+  { id: "filmo",      label: "filmo.to",     adult: false, thirdparty: false, css_class: "browse-provider-filmo" },
+  { id: "nineanime",  label: "9anime",       adult: false, thirdparty: false, english_only: true, css_class: "browse-provider-nineanime" },
+  { id: "aniwaves",   label: "Aniwaves",     adult: false, thirdparty: false, english_only: true, css_class: "browse-provider-aniwaves" },
   { id: "hanime",     label: "hanime 18+",   adult: true,  thirdparty: false, css_class: "browse-provider-hanime" },
 ];
 
@@ -818,10 +956,17 @@ async function renderSourceChips(sources) {
 
   wrap.innerHTML = list.map(function (src) {
     const on = _sourceIsOn(src, enabled);
+    // "EN" marks a source with an English-only catalogue (see
+    // web/source_policy.py's ENGLISH_ONLY_SOURCE_IDS). Informational only --
+    // it is what explains why the source has no German audio and why it ships
+    // switched off; it gates nothing, unlike the 18+ source.
+    const enBadge = src.english_only
+      ? '<span class="source-badge-en" title="' + escapeHtml(t("Nur englischsprachige Quelle", "English-only source")) + '">EN</span>'
+      : "";
     return '<span class="home-chip' + (on ? "" : " is-off") + '" data-source="' + escapeHtml(src.id) + '">' +
       '<span class="home-chip-dot" style="background:' +
         (on ? "var(--success)" : "var(--text-muted)") + '"></span>' +
-      escapeHtml(src.label) +
+      escapeHtml(src.label) + enBadge +
       (on ? "" : " · " + t("aus", "off")) +
       "</span>";
   }).join("");
@@ -1031,7 +1176,7 @@ function dismissUptimeBanner() {
 // hide disabled sources, based on the DB-backed source settings.
 function _applySourceLayout(sources) {
   if (!browseDiv) return;
-  const validProv = ["aniworld", "sto", "filmpalast", "megakino", "hanime"];
+  const validProv = ["aniworld", "sto", "filmpalast", "megakino", "filmo", "nineanime", "aniwaves", "hanime"];
   let order = String((sources && sources.order) || "")
     .split(",").map(p => p.trim().toLowerCase()).filter(p => validProv.indexOf(p) !== -1);
   validProv.forEach(p => { if (order.indexOf(p) === -1) order.push(p); });
@@ -1392,6 +1537,39 @@ function rebuildLanguageSelect(foundLangs = null) {
   }
 
   const isSto = url.includes("s.to") || url.includes("serienstream.to");
+  const isAniworld = url.includes("aniworld.to");
+
+  // Any OTHER site: its languages are whatever the backend reported for THIS
+  // title, not AniWorld's fixed set. Falling through to ANIWORLD_LANGS is what
+  // made every source added after AniWorld/s.to look broken -- the dropdown
+  // offered "German Dub" for an English-only 9anime episode (and never offered
+  // filmo.to's own language labels at all), so the provider lookup, which is
+  // keyed by exactly these strings, found nothing and the modal said
+  // "No source available" for a title that plays fine.
+  //
+  // foundLangs comes from /api/episodes; availableProviders from
+  // /api/providers. Either is a real answer about this title; ANIWORLD_LANGS
+  // is a guess that is only right for one site.
+  if (!isSto && !isAniworld) {
+    const dynamic = [];
+    const add = (l) => { if (l && !dynamic.includes(l)) dynamic.push(l); };
+    if (foundLangs && foundLangs.size) foundLangs.forEach(add);
+    if (!dynamic.length && availableProviders) Object.keys(availableProviders).forEach(add);
+    if (dynamic.length) {
+      dynamic.forEach((l) => {
+        const opt = document.createElement("option");
+        opt.value = l;
+        opt.textContent = l;
+        languageSelect.appendChild(opt);
+      });
+      syncLangAvailPills();
+      return;
+    }
+    // Nothing known yet (the first call happens before either fetch has
+    // returned): leave the dropdown empty rather than filling it with another
+    // site's languages. The later call, with foundLangs, fills it in.
+  }
+
   const langs = isSto ? window.STO_LANGS || {} : window.ANIWORLD_LANGS || {};
 
   if (langSeparationEnabled) {
@@ -1679,6 +1857,7 @@ async function loadAniworldBrowse() {
     await Promise.all([loadDownloadedFolders(), loadAutoSyncJobs(), loadCineinfoSettings(), loadGeneralSettings()]);
     const newData = await newResp.json();
     const popData = await popResp.json();
+    if (retryIfPending([newData, popData], "aniworld", function () { aniLoadedAt = 0; loadAniworldBrowse(); })) return;
 
     if (newData.results) renderBrowseCards(newAnimesGrid, newData.results);
     else newAnimesGrid.innerHTML = `<div class="queue-empty" style="padding: 20px;">${t('Fehler beim Laden', 'Error loading')}</div>`;
@@ -2298,6 +2477,16 @@ async function openSeries(url) {
     document.getElementById("modal").classList.remove("skeleton");
     document.getElementById("modalPoster").style.opacity = "";
 
+    // The server may have resolved an episode URL to its series page (a
+    // 9anime "Recently Updated" card links to the newest episode, not to the
+    // series). Adopt the canonical URL, otherwise every follow-up call --
+    // episodes, download, favourite, Auto-Sync -- would still be keyed to that
+    // one episode.
+    if (seriesData.url && seriesData.url !== currentSeriesUrl) {
+      currentSeriesUrl = seriesData.url;
+      _updateUpscaleCheckbox(currentSeriesUrl);
+    }
+
     currentSeriesTitle = seriesData.title || t("Unbekannt", "Unknown");
     currentSeriesCoverUrl = seriesData.poster_url || "";
     document.getElementById("modalTitle").textContent = currentSeriesTitle;
@@ -2333,8 +2522,19 @@ async function openSeries(url) {
     const epHeading = document.getElementById("episodesHeading");
     if (epHeading) epHeading.style.display = isMovie ? "none" : "";
     if (isMovie && seriesData.available_providers && seriesData.available_providers.length) {
-      availableProviders = { "German Dub": seriesData.available_providers };
-      updateProviderDropdown();
+      // "German Dub" is only correct for the German-only movie sites. filmo.to
+      // carries several languages per movie, each with its own hoster list, so
+      // labelling the whole list German made the provider lookup miss for
+      // every language the dropdown actually offered -- "No source available"
+      // on a movie whose sources were right there. Ask /api/providers instead,
+      // which answers per language for exactly this reason.
+      const _germanOnlyMovieSite = url.includes("filmpalast.to") || url.includes("megakino");
+      if (_germanOnlyMovieSite) {
+        availableProviders = { "German Dub": seriesData.available_providers };
+        updateProviderDropdown();
+      } else {
+        fetchProviders(currentSeriesUrl || url);
+      }
     }
 
     // Hide auto-sync config for movies (not applicable)
@@ -2836,6 +3036,18 @@ async function fetchProviders(episodeUrl) {
     const data = await resp.json();
     if (data.providers) {
       availableProviders = data.providers;
+      // For a site whose languages are not one of the two hardcoded sets,
+      // this answer IS the language list (see rebuildLanguageSelect). Rebuild
+      // before touching the provider dropdown, so the selected language is one
+      // the providers are actually keyed by -- otherwise the very next lookup
+      // misses and reports "No source available".
+      const _u = currentSeriesUrl || "";
+      const _hardcoded = _u.includes("aniworld.to") || _u.includes("s.to") ||
+        _u.includes("serienstream.to") || _u.includes("filmpalast.to") ||
+        _u.includes("megakino") || _u.includes("hanime.tv");
+      if (!_hardcoded && languageSelect && !languageSelect.options.length) {
+        rebuildLanguageSelect();
+      }
       updateProviderDropdown();
     }
   } catch (e) {

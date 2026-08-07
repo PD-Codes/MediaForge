@@ -33,82 +33,39 @@ the Byse-network mirrors costs no content, only redundancy/fallback options.
 Used by: models/aniwaves_ru/episode.py (only site that embeds EchoVideo).
 """
 import logging
-import threading
+
+try:
+    from ._jwplayer_embed import EmbedCache, resolve_jwplayer_embed
+    from ...config import DEFAULT_USER_AGENT
+except ImportError:  # pragma: no cover - direct execution
+    from mediaforge.extractors.provider._jwplayer_embed import EmbedCache, resolve_jwplayer_embed
+    from mediaforge.config import DEFAULT_USER_AGENT
 
 logger = logging.getLogger(__name__)
 
-# embed_url -> {"url": m3u8, "tracks": [{"url","lang","label"}]}
-_cache_lock = threading.Lock()
-_cache: dict[str, dict] = {}
+_cache = EmbedCache()
 
 _REFERER = "https://aniwaves.ru/"
 
-# JS run inside the loaded embed page once the player has initialized, to
-# pull the resolved playlist straight out of JWPlayer's own state instead of
-# re-implementing the client-side assembly that put it there.
-_EXTRACT_JS = r"""
-() => {
-  try {
-    if (!window.jwplayer) return null;
-    const pl = jwplayer().getPlaylist();
-    if (!pl || !pl.length) return null;
-    const item = pl[0];
-    const src = (item.sources || []).find(s => s.type === 'hls') || (item.sources || [])[0];
-    if (!src || !src.file) return null;
-    const tracks = (item.tracks || [])
-      .filter(t => t.kind === 'captions' && t.file)
-      .map(t => ({ url: t.file, lang: (t.label || '').slice(0, 2).toLowerCase(), label: t.label || '' }));
-    return { url: src.file, tracks };
-  } catch (e) {
-    return null;
-  }
-}
-"""
 
-
-def _resolve(embed_url: str, timeout_ms: int = 20_000) -> dict | None:
+def _resolve(embed_url: str, timeout_ms: int = 25_000) -> dict | None:
     """Load *embed_url* in a headless browser and return {"url", "tracks"},
-    or None if the player never produced a source."""
-    with _cache_lock:
-        cached = _cache.get(embed_url)
+    or None if neither the player nor the network produced a source.
+
+    The heavy lifting -- and the reason this is no longer a bare
+    ``jwplayer().getPlaylist()`` read -- lives in _jwplayer_embed.py: the
+    playlist request is watched on the wire as well, so a player that fails to
+    initialise in headless Chromium (no proprietary codecs) no longer means
+    "no video source found" for a stream the page fetched perfectly well.
+    """
+    cached = _cache.get(embed_url)
     if cached is not None:
         return cached
-
-    try:
-        from patchright.sync_api import sync_playwright
-    except ImportError:
-        raise RuntimeError(
-            "patchright nicht installiert. "
-            "Installieren mit: pip install patchright && patchright install chromium"
-        )
-
-    result = None
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        try:
-            context = browser.new_context(ignore_https_errors=True)
-            page = context.new_page()
-            try:
-                page.goto(embed_url, referer=_REFERER, wait_until="domcontentloaded", timeout=timeout_ms)
-                page.wait_for_selector("video", timeout=8000)
-            except Exception as e:
-                logger.debug("EchoVideo: page load issue for %s: %s", embed_url, e)
-
-            for _ in range(20):
-                try:
-                    data = page.evaluate(_EXTRACT_JS)
-                except Exception:
-                    data = None
-                if data and data.get("url"):
-                    result = data
-                    break
-                page.wait_for_timeout(500)
-        finally:
-            browser.close()
-
-    if result:
-        with _cache_lock:
-            _cache[embed_url] = result
+    result = resolve_jwplayer_embed(
+        embed_url, referer=_REFERER, label="EchoVideo",
+        timeout_ms=timeout_ms, user_agent=DEFAULT_USER_AGENT,
+    )
+    _cache.set(embed_url, result)
     return result
 
 

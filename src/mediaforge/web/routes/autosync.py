@@ -4,8 +4,10 @@ Extracted from create_app as a plain route-registration function
 (no Flask blueprint: endpoint names stay bare so url_for() keeps working).
 """
 
+from ...search import aniwaves_search
 from ...search import hanime_search
 from ...search import megakino_search
+from ...search import nineanime_search
 from ...search import query as aniworld_query
 from ...search import query_s_to
 from ..autosync_worker import _normalize_episode_filter
@@ -21,7 +23,9 @@ from ..language_groups import is_group_ref
 from ..language_groups import lang_separation_enabled
 from ..language_groups import language_display
 from ..language_groups import resolve_chain
+from ..queue_worker import _aniwaves_enabled
 from ..queue_worker import _hanime_enabled
+from ..queue_worker import _nineanime_enabled
 from ..queue_worker import _is_job_adaptive_paused
 from ..runtime_state import _SERIES_LINK_PATTERN
 from ..runtime_state import _STO_SERIES_LINK_PATTERN
@@ -44,8 +48,16 @@ logger = get_logger(__name__)
 
 def find_site_candidates(title: str) -> list:
     """Resolve a free-text title to candidate series/movie pages on
-    AniWorld / S.TO / MegaKino (+ hanime if enabled), each scored against
-    `title` by fuzzy string similarity, best match first (top 12).
+    AniWorld / S.TO / MegaKino (+ the opt-in 9anime / Aniwaves / hanime
+    sources, each only when enabled), scored against `title` by fuzzy string
+    similarity, best match first (top 12).
+
+    Series-only on purpose: Auto-Sync's whole job is "watch for episodes that
+    are not there yet", which a single movie page can never produce. That is
+    why MegaKino's movie hits are filtered out below and why the movie-only
+    sites (FilmPalast, filmo.to) are not queried here at all -- offering them
+    would only ever create a job that never has anything to do. They stay
+    fully usable as search/download sources.
 
     Extracted out of api_autosync_site_search's body (see that route,
     still the only in-app caller reachable over HTTP, via
@@ -112,6 +124,39 @@ def find_site_candidates(title: str) -> list:
             })
     except Exception as e:
         logger.debug("[AutosyncSearch] MegaKino search failed: %s", e)
+    # 9anime / Aniwaves: opt-in, non-adult series sources. Only queried when
+    # the user enabled them in Settings -> Sources, same gate the search route
+    # and the browse routes use -- a disabled source must not cost a request.
+    if _nineanime_enabled():
+        try:
+            for item in (nineanime_search(title) or []):
+                url = item.get("url", "")
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                name = _html_unescape(item.get("title") or "Unknown")
+                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+                candidates.append({
+                    "site": "nineanime", "site_label": "9anime (EN)",
+                    "title": name, "url": url, "score": round(score, 3),
+                })
+        except Exception as e:
+            logger.debug("[AutosyncSearch] 9anime search failed: %s", e)
+    if _aniwaves_enabled():
+        try:
+            for item in (aniwaves_search(title) or []):
+                url = item.get("url", "")
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                name = _html_unescape(item.get("title") or "Unknown")
+                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+                candidates.append({
+                    "site": "aniwaves", "site_label": "Aniwaves (EN)",
+                    "title": name, "url": url, "score": round(score, 3),
+                })
+        except Exception as e:
+            logger.debug("[AutosyncSearch] Aniwaves search failed: %s", e)
     if _hanime_enabled():
         try:
             for item in (hanime_search(title) or []):

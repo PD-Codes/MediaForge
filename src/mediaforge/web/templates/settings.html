@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_schedule.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='sources.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='hanime.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='english_only.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='telemetry.css') }}">
 <!-- _settings_card_macro.html's card markup (.integ-card/.integ-collapsible-*/
      .integ-subsection-*) lives in integrations.css -- needed here too since
@@ -718,6 +719,21 @@
         <input type="checkbox" class="chb-main" id="sourceEnabledMegakino" onchange="saveSourceEnabled('megakino')" />
         <span>MegaKino</span>
       </label>
+      <label class="settings-checkbox-row" for="sourceEnabledFilmo">
+        <input type="checkbox" class="chb-main" id="sourceEnabledFilmo" onchange="saveSourceEnabled('filmo')" />
+        <span>filmo.to</span>
+      </label>
+      <label class="settings-checkbox-row" for="sourceEnabledNineanime">
+        <input type="checkbox" class="chb-main" id="sourceEnabledNineanime" onchange="saveSourceEnabled('nineanime')" />
+        <span>9anime</span>
+        <span class="source-badge-en" title="{{ _('English-only source') }}">EN</span>
+      </label>
+      <label class="settings-checkbox-row" for="sourceEnabledAniwaves">
+        <input type="checkbox" class="chb-main" id="sourceEnabledAniwaves" onchange="saveSourceEnabled('aniwaves')" />
+        <span>Aniwaves</span>
+        <span class="source-badge-en" title="{{ _('English-only source') }}">EN</span>
+      </label>
+      <div class="settings-hint">{{ _('9anime and Aniwaves are English-only sources: they offer no German audio or subtitles, which is why they are switched off by default. Enabling them needs no age confirmation - they are not adult sources.') }}</div>
       <label class="settings-checkbox-row" for="sourceEnabledHanime">
         <input type="checkbox" class="chb-main" id="sourceEnabledHanime" onchange="saveSourceEnabled('hanime')" />
         <span>hanime <span class="browse-provider-18">18+</span></span>
@@ -1272,7 +1288,7 @@
         </div>
         <div class="dns-test-block">
           <div class="dns-test-block-title">{{ _('Reachability') }}</div>
-          <!-- Static rows for the five built-in sites, kept as fixed ids so their
+          <!-- Static rows for the built-in sites, kept as fixed ids so their
                order/labels never move around. A third-party module's site (any
                register_monitor_site() entry -- see web/uptime_monitor.py -- that
                isn't one of these five) has no row here: runDnsTest() in
@@ -1294,6 +1310,18 @@
             </div>
             <div class="dns-test-site-row" id="dnsTestRowMegaKino">
               <span class="dns-test-site-name">megakino.to</span>
+              <span class="dns-test-site-result dns-test-idle">—</span>
+            </div>
+            <div class="dns-test-site-row" id="dnsTestRowFilmo">
+              <span class="dns-test-site-name">filmo.to</span>
+              <span class="dns-test-site-result dns-test-idle">—</span>
+            </div>
+            <div class="dns-test-site-row" id="dnsTestRowNineanime">
+              <span class="dns-test-site-name">9anime.or.at</span>
+              <span class="dns-test-site-result dns-test-idle">—</span>
+            </div>
+            <div class="dns-test-site-row" id="dnsTestRowAniwaves">
+              <span class="dns-test-site-name">aniwaves.ru</span>
               <span class="dns-test-site-result dns-test-idle">—</span>
             </div>
             <div class="dns-test-site-row" id="dnsTestRowHanime">

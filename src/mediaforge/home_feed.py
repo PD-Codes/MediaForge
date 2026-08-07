@@ -35,7 +35,10 @@ FEED_ROWS = ("new", "popular")
 FEED_TYPES = ("series", "movies", "adult")
 
 # Source ids the built-in feed already owns.
-RESERVED_SOURCE_IDS = frozenset({"aniworld", "sto", "filmpalast", "megakino", "hanime"})
+RESERVED_SOURCE_IDS = frozenset({
+    "aniworld", "sto", "filmpalast", "megakino", "filmo", "nineanime",
+    "aniwaves", "hanime",
+})
 
 # item_id -> entry dict
 _EXTRA_HOME_FEED_SOURCES: dict = {}

@@ -262,6 +262,17 @@ _AD_SAFE_HOST_SUFFIXES = (
     "serienstream.to",
     "aniworld.to",
     "filmpalast.to",
+    # The rest of the source sites. megakino.to and hanime.tv were missing
+    # here from the start -- _ad_host_allowed() lets the page's OWN host
+    # through unconditionally, so the omission only bit when one of these
+    # sites pulled an asset from a sibling domain during a captcha solve, at
+    # which point it was aborted as if it were an ad. Listed now so every
+    # source is treated the same way.
+    "megakino.to",
+    "hanime.tv",
+    "filmo.to",
+    "9anime.or.at",
+    "aniwaves.ru",
 )
 
 

@@ -323,7 +323,7 @@ def fetch_new(limit=24):
     try:
         html = _get("/")
     except Exception as e:
-        logger.debug("9anime new-episodes fetch failed: %s", e)
+        logger.warning("9anime new-episodes fetch failed: %s: %s", type(e).__name__, e)
         return None
     m = re.search(r"Recently Updated</h2>.*?film_list-wrap\">(.*?)</section>", html, re.S)
     section = m.group(1) if m else html
@@ -335,7 +335,7 @@ def fetch_popular(limit=24):
     try:
         html = _get("/")
     except Exception as e:
-        logger.debug("9anime popular fetch failed: %s", e)
+        logger.warning("9anime popular fetch failed: %s: %s", type(e).__name__, e)
         return None
     return _parse_top_anime(html, tab="top-viewed-day", limit=limit)
 
@@ -346,7 +346,7 @@ def search(keyword, limit=30):
     try:
         html = _get("/", params={"s": keyword})
     except Exception as e:
-        logger.debug("9anime search failed for %r: %s", keyword, e)
+        logger.warning("9anime search failed for %r: %s: %s", keyword, type(e).__name__, e)
         return []
     m = re.search(r'film_list-wrap\">(.*?)</section>', html, re.S)
     section = m.group(1) if m else html

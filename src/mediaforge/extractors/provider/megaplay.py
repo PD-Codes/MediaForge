@@ -24,88 +24,40 @@ Referer.
 Used by: models/nineanime_to/episode.py (only site that embeds MegaPlay).
 """
 import logging
-import threading
+
+try:
+    from ._jwplayer_embed import EmbedCache, resolve_jwplayer_embed
+    from ...config import DEFAULT_USER_AGENT
+except ImportError:  # pragma: no cover - direct execution
+    from mediaforge.extractors.provider._jwplayer_embed import EmbedCache, resolve_jwplayer_embed
+    from mediaforge.config import DEFAULT_USER_AGENT
 
 logger = logging.getLogger(__name__)
 
-# embed_url -> {"url": m3u8, "tracks": [{"url","lang","label"}]}
-_cache_lock = threading.Lock()
-_cache: dict[str, dict] = {}
+_cache = EmbedCache()
 
 _REFERER = "https://9anime.or.at/"
 
-# JS run inside the loaded embed page once the player has initialized, to
-# pull the resolved playlist straight out of JWPlayer's own state instead of
-# re-implementing the obfuscated bundle that put it there.
-_EXTRACT_JS = r"""
-() => {
-  try {
-    if (!window.jwplayer) return null;
-    const pl = jwplayer().getPlaylist();
-    if (!pl || !pl.length) return null;
-    const item = pl[0];
-    const src = (item.sources || []).find(s => s.type === 'hls') || (item.sources || [])[0];
-    if (!src || !src.file) return null;
-    const tracks = (item.tracks || [])
-      .filter(t => t.kind === 'captions' && t.file)
-      .map(t => ({ url: t.file, lang: (t.label || '').slice(0, 2).toLowerCase(), label: t.label || '' }));
-    return { url: src.file, tracks };
-  } catch (e) {
-    return null;
-  }
-}
-"""
 
+def _resolve(embed_url: str, timeout_ms: int = 25_000) -> dict | None:
+    """Load *embed_url* in a headless browser and return {"url", "tracks"},
+    or None if neither the player nor the network produced a source.
 
-def _resolve(embed_url: str, timeout_ms: int = 20_000) -> dict | None:
-    """Load *embed_url* in a headless browser (with the required Referer) and
-    return {"url", "tracks"}, or None if the player never produced a source
-    (dead/removed link -- MegaPlay embeds rot quickly, see module docstring's
-    410 case)."""
-    with _cache_lock:
-        cached = _cache.get(embed_url)
+    Shares its implementation with EchoVideo (see _jwplayer_embed.py): both
+    sites hide the playlist behind the same kind of obfuscated bundle, and both
+    were reading it out of ``jwplayer().getPlaylist()`` alone -- which reports
+    nothing when the player fails to initialise in headless Chromium, even
+    though the page requested the stream just fine. The request itself is
+    watched too now.
+    """
+    cached = _cache.get(embed_url)
     if cached is not None:
         return cached
-
-    try:
-        from patchright.sync_api import sync_playwright
-    except ImportError:
-        raise RuntimeError(
-            "patchright nicht installiert. "
-            "Installieren mit: pip install patchright && patchright install chromium"
-        )
-
-    result = None
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        try:
-            context = browser.new_context(ignore_https_errors=True)
-            page = context.new_page()
-            try:
-                # Playwright's own `referer` kwarg is what gets MegaPlay past
-                # its Referer check -- a plain goto() without it lands on the
-                # site's "410 removed" error page (reproduced with curl during
-                # research: identical page, identical response either way).
-                page.goto(embed_url, referer=_REFERER, wait_until="domcontentloaded", timeout=timeout_ms)
-                page.wait_for_selector("#megaplay-player, video", timeout=8000)
-            except Exception as e:
-                logger.debug("MegaPlay: page load issue for %s: %s", embed_url, e)
-
-            for _ in range(20):
-                try:
-                    data = page.evaluate(_EXTRACT_JS)
-                except Exception:
-                    data = None
-                if data and data.get("url"):
-                    result = data
-                    break
-                page.wait_for_timeout(500)
-        finally:
-            browser.close()
-
-    if result:
-        with _cache_lock:
-            _cache[embed_url] = result
+    result = resolve_jwplayer_embed(
+        embed_url, referer=_REFERER, label="MegaPlay",
+        timeout_ms=timeout_ms, user_agent=DEFAULT_USER_AGENT,
+    )
+    _cache.set(embed_url, result)
     return result
 
 

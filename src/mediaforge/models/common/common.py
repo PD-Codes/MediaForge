@@ -122,14 +122,26 @@ def _effective_provider(episode):
     the download reads it moments later anyway. Falls back defensively so
     episodes without a provider_url (e.g. Direct/Hanime) keep their label."""
     try:
-        from ...extractors import provider_for_url
+        from ...extractors import canonical_provider_name, provider_for_url
     except Exception:
         return getattr(episode, "selected_provider", None)
     try:
         pu = getattr(episode, "provider_url", None)
     except Exception:
         pu = None
-    return provider_for_url(pu) or getattr(episode, "selected_provider", None)
+    # canonical_provider_name() is not cosmetic: provider_for_url() answers in
+    # the extractor namespace ("voe", "oneanime"), while the callers below look
+    # the result up in PROVIDER_HEADERS_D/_W, which are keyed by the display
+    # name ("VOE", "OneAnime"). Without the translation every host this
+    # function DID recognise came back with an empty header set -- so the
+    # hosters that need a Referer (VeeV, MegaPlay, EchoVideo, OneAnime) were
+    # downloaded without one and answered 403, while the ones with an
+    # unrecognised host kept working by accident, because those fall through to
+    # selected_provider, which is already spelled correctly.
+    resolved = provider_for_url(pu)
+    if resolved:
+        return canonical_provider_name(resolved)
+    return getattr(episode, "selected_provider", None)
 
 
 def _read_encoding_settings():
@@ -446,10 +458,27 @@ class _YtdlpQuietLogger:
     def info(self, msg):
         pass
 
+    # yt-dlp lines that are normal operation, not a problem. They are logged
+    # at DEBUG instead of WARNING because a WARNING in this log means "look at
+    # me", and these were making a perfectly healthy download read like a
+    # failure -- the generic-extractor line in particular, which is what
+    # yt-dlp ALWAYS says when it is handed a direct stream URL rather than a
+    # page it has a site plugin for. Every hoster extractor in this project
+    # resolves to exactly such a URL, so that line accompanies every single
+    # successful download.
+    _BENIGN_WARNINGS = (
+        "Live HLS streams are not supported",
+        "Falling back on generic information extractor",
+        "The information of all playlist entries will be held in memory",
+        "Falling back to ffmpeg",
+    )
+
     def warning(self, msg):
-        # Suppress known harmless HLS noise
-        if "Live HLS streams are not supported" not in msg:
-            logger.warning(f"[yt-dlp] {msg}")
+        text = str(msg or "")
+        if any(fragment in text for fragment in self._BENIGN_WARNINGS):
+            logger.debug(f"[yt-dlp] {text}")
+            return
+        logger.warning(f"[yt-dlp] {text}")
 
     def error(self, msg):
         # WARNING, not ERROR, on purpose. yt-dlp reports every dead or blocked

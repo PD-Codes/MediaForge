@@ -124,6 +124,19 @@ class AniwavesEpisode:
             self.__title = f"Episode {self.episode_number}"
         return self.__title
 
+    # aniwaves.ru is English-only -- there is no separate German title to
+    # scrape, so both aliases just return the one title. Exist purely so the
+    # generic `getattr(ep, "title_de"/"title_en", "")` fallback in
+    # web/routes/search.py's api_episodes() (written for AniWorld/s.to, which
+    # DO have distinct German/English titles) finds something instead of "".
+    @property
+    def title_de(self):
+        return self.title
+
+    @property
+    def title_en(self):
+        return self.title
+
     # -----------------------------
     # Relations
     # -----------------------------

@@ -1639,13 +1639,22 @@ function toggleDnsTestPanel() {
   if (opening) runDnsTest();
 }
 
-// Fixed rows for the five built-in sites, already in settings.html with a
+// Fixed rows for the built-in sites, already in settings.html with a
 // stable id each. Anything /api/settings/dns/test reports that ISN'T one of
 // these labels is a third-party module's site (register_monitor_site() --
 // see web/uptime_monitor.py's module docstring: one call feeds both the
 // UpTime dashboard and this test) and gets its row created on the fly by
 // _dnsSiteRow() below, inside the same #dnsTestSiteRows container.
-const DNS_TEST_BUILTIN_SITES = { AniWorld: "dnsTestRowAniWorld", SerienStream: "dnsTestRowSTO", FilmPalast: "dnsTestRowFilmpalast", MegaKino: "dnsTestRowMegaKino", hanime: "dnsTestRowHanime" };
+// Keys are the LABELS from web/uptime_monitor.py's _MONITOR_SITES (the DNS
+// test keys its results by label, see routes/settings.py) -- not the source
+// ids. A label changed there without changing it here simply falls through
+// to the generated row below, so this can never break the page.
+const DNS_TEST_BUILTIN_SITES = {
+  AniWorld: "dnsTestRowAniWorld", SerienStream: "dnsTestRowSTO",
+  FilmPalast: "dnsTestRowFilmpalast", MegaKino: "dnsTestRowMegaKino",
+  "filmo.to": "dnsTestRowFilmo", "9anime": "dnsTestRowNineanime",
+  Aniwaves: "dnsTestRowAniwaves", hanime: "dnsTestRowHanime",
+};
 
 /** Find (or, for a third-party label, create) the row for one DNS-test site. */
 function _dnsSiteRow(label) {
@@ -3434,6 +3443,12 @@ const SOURCE_META = {
   aniworld:   { label: "AniWorld",   cls: "browse-provider-aniworld",   hasSections: true },
   sto:        { label: "SerienStream", cls: "browse-provider-sto",       hasSections: true },
   filmpalast: { label: "FilmPalast", cls: "browse-provider-filmpalast", hasSections: false },
+  filmo:      { label: "filmo.to",   cls: "browse-provider-filmo",      hasSections: true },
+  // englishOnly mirrors source_policy.ENGLISH_ONLY_SOURCE_IDS. Display only:
+  // it adds the "EN" badge below and explains why the source ships off; it is
+  // not an age gate and triggers no confirmation dialog.
+  nineanime:  { label: "9anime",     cls: "browse-provider-nineanime",  hasSections: true, englishOnly: true },
+  aniwaves:   { label: "Aniwaves",   cls: "browse-provider-aniwaves",   hasSections: true, englishOnly: true },
   megakino:   { label: "MegaKino",   cls: "browse-provider-megakino",   hasSections: false, multiSections: [
                   { key: "new_movies",     de: "Neue Filme",     en: "New Movies" },
                   { key: "popular_movies", de: "Beliebte Filme", en: "Popular Movies" },
@@ -3455,9 +3470,17 @@ const SOURCE_META = {
 // which is the list that includes module-registered ones.
 let _sourceState = {
   order: [],
-  section_order: { aniworld: ["new", "popular"], sto: ["new", "popular"], megakino: ["new_movies", "popular_movies", "new_series", "popular_series"], hanime: ["new", "trending"] },
-  sections_visible: { aniworld: { new: true, popular: true }, sto: { new: true, popular: true }, megakino: { new_movies: true, popular_movies: true, new_series: true, popular_series: true }, hanime: { new: true, trending: true, censored: true, uncensored: true } },
-  enabled: { aniworld: true, sto: true, filmpalast: true, megakino: true, hanime: false },
+  section_order: {
+    aniworld: ["new", "popular"], sto: ["new", "popular"],
+    filmo: ["new", "popular"], nineanime: ["new", "popular"], aniwaves: ["new", "popular"],
+    megakino: ["new_movies", "popular_movies", "new_series", "popular_series"], hanime: ["new", "trending"],
+  },
+  sections_visible: {
+    aniworld: { new: true, popular: true }, sto: { new: true, popular: true },
+    filmo: { new: true, popular: true }, nineanime: { new: true, popular: true }, aniwaves: { new: true, popular: true },
+    megakino: { new_movies: true, popular_movies: true, new_series: true, popular_series: true }, hanime: { new: true, trending: true, censored: true, uncensored: true },
+  },
+  enabled: { aniworld: true, sto: true, filmpalast: true, megakino: true, filmo: true, nineanime: false, aniwaves: false, hanime: false },
   hide_in_search: false
 };
 
@@ -3511,7 +3534,7 @@ function _loadSourceSettings(sources) {
   // five built-ins stay as the fallback for an older/failed response.
   const available = Array.isArray(sources.available) && sources.available.length
     ? sources.available
-    : ["aniworld", "sto", "filmpalast", "megakino", "hanime"].map(function (id) {
+    : ["aniworld", "sto", "filmpalast", "megakino", "filmo", "nineanime", "aniwaves", "hanime"].map(function (id) {
         return { id: id, label: (SOURCE_META[id] || {}).label || id, adult: id === "hanime", thirdparty: false };
       });
   _thirdpartySources = available.filter(function (s) { return s.thirdparty; });
@@ -3522,11 +3545,14 @@ function _loadSourceSettings(sources) {
   _sourceState.order = order;
 
   const so = sources.section_order || {};
-  _sourceState.section_order.aniworld = _splitOrder(so.aniworld, ["new", "popular"]);
-  _sourceState.section_order.sto      = _splitOrder(so.sto,      ["new", "popular"]);
+  _sourceState.section_order.aniworld  = _splitOrder(so.aniworld,  ["new", "popular"]);
+  _sourceState.section_order.sto       = _splitOrder(so.sto,       ["new", "popular"]);
+  _sourceState.section_order.filmo     = _splitOrder(so.filmo,     ["new", "popular"]);
+  _sourceState.section_order.nineanime = _splitOrder(so.nineanime, ["new", "popular"]);
+  _sourceState.section_order.aniwaves  = _splitOrder(so.aniwaves,  ["new", "popular"]);
 
   const secVis = sources.sections || {};
-  ["aniworld", "sto"].forEach(p => {
+  ["aniworld", "sto", "filmo", "nineanime", "aniwaves"].forEach(p => {
     const sp = secVis[p] || {};
     _sourceState.sections_visible[p] = { new: sp.new !== "0", popular: sp.popular !== "0" };
   });
@@ -3565,11 +3591,17 @@ function _loadSourceSettings(sources) {
   const cbAni = document.getElementById("sourceEnabledAniworld");
   const cbFp  = document.getElementById("sourceEnabledFilmpalast");
   const cbMk  = document.getElementById("sourceEnabledMegakino");
+  const cbFilmo = document.getElementById("sourceEnabledFilmo");
+  const cbNineanime = document.getElementById("sourceEnabledNineanime");
+  const cbAniwaves = document.getElementById("sourceEnabledAniwaves");
   const cbHan = document.getElementById("sourceEnabledHanime");
   if (cbSto) cbSto.checked = _sourceState.enabled.sto;
   if (cbAni) cbAni.checked = _sourceState.enabled.aniworld;
   if (cbFp)  cbFp.checked  = _sourceState.enabled.filmpalast;
   if (cbMk)  cbMk.checked  = _sourceState.enabled.megakino;
+  if (cbFilmo) cbFilmo.checked = _sourceState.enabled.filmo;
+  if (cbNineanime) cbNineanime.checked = _sourceState.enabled.nineanime;
+  if (cbAniwaves) cbAniwaves.checked = _sourceState.enabled.aniwaves;
   if (cbHan) cbHan.checked = _sourceState.enabled.hanime;
   const cbHide = document.getElementById("sourcesHideInSearch");
   if (cbHide) cbHide.checked = _sourceState.hide_in_search;
@@ -3630,6 +3662,9 @@ function _renderSourceOrder() {
         '<svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><circle cx="7" cy="5" r="1.5"/><circle cx="13" cy="5" r="1.5"/><circle cx="7" cy="10" r="1.5"/><circle cx="13" cy="10" r="1.5"/><circle cx="7" cy="15" r="1.5"/><circle cx="13" cy="15" r="1.5"/></svg>' +
       '</span>' +
       '<span class="source-badge ' + meta.cls + '">' + meta.label + '</span>' +
+      (meta.englishOnly
+        ? '<span class="source-badge-en" title="' + esc(t("Nur englischsprachige Quelle", "English-only source")) + '">EN</span>'
+        : "") +
       '<div class="source-order-actions">' +
         sectionCtrls +
         '<button type="button" class="source-move-btn" title="' + t("Nach oben", "Move up") + '" ' + (idx === 0 ? "disabled" : "") + ' onclick="moveSource(\'' + prov + '\',-1)">' +
@@ -3770,7 +3805,11 @@ function _commitSourceEnabled(prov, enabled) {
  *  ids in settings.html; module sources get the generated
  *  "sourceEnabled_<id>" row from _renderThirdpartySourceToggles(). */
 function _sourceEnabledCheckbox(prov) {
-  const map = { sto: "sourceEnabledSto", aniworld: "sourceEnabledAniworld", filmpalast: "sourceEnabledFilmpalast", megakino: "sourceEnabledMegakino", hanime: "sourceEnabledHanime" };
+  const map = {
+    sto: "sourceEnabledSto", aniworld: "sourceEnabledAniworld", filmpalast: "sourceEnabledFilmpalast",
+    megakino: "sourceEnabledMegakino", filmo: "sourceEnabledFilmo", nineanime: "sourceEnabledNineanime",
+    aniwaves: "sourceEnabledAniwaves", hanime: "sourceEnabledHanime",
+  };
   return document.getElementById(map[prov] || ("sourceEnabled_" + prov));
 }
 

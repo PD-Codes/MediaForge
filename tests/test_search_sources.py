@@ -38,7 +38,8 @@ def test_builtins_are_listed_with_labels_and_css(app):
 
     with app.app_context():
         ids = [s["id"] for s in search_sources()]
-    assert ids[:5] == ["aniworld", "sto", "filmpalast", "megakino", "hanime"]
+    assert ids[:8] == ["aniworld", "sto", "filmpalast", "megakino",
+                       "filmo", "nineanime", "aniwaves", "hanime"]
 
     with app.app_context():
         by_id = {s["id"]: s for s in search_sources()}
@@ -47,6 +48,39 @@ def test_builtins_are_listed_with_labels_and_css(app):
     # The class the WebUI puts on the result header must be a real one.
     assert by_id["sto"]["css_class"] == "browse-provider-sto"
     assert all(s["thirdparty"] is False for s in by_id.values())
+
+
+def test_english_only_sources_are_opt_in_but_not_adult(app):
+    """9anime/Aniwaves default to off like the adult source, but must never be
+    treated AS one: is_adult_source() drives the age-confirmation modal and the
+    kids-mode filtering, and neither may fire for a source that is merely
+    English-only."""
+    from mediaforge.web.source_policy import search_sources
+
+    with app.app_context():
+        by_id = {s["id"]: s for s in search_sources()}
+
+    for sid in ("nineanime", "aniwaves"):
+        assert by_id[sid]["adult"] is False, sid
+        assert by_id[sid]["opt_in"] is True, sid
+        assert by_id[sid]["english_only"] is True, sid
+        assert by_id[sid]["enabled"] is False, sid
+    # filmo.to is a normal opt-out source: German-capable, on by default.
+    assert by_id["filmo"]["opt_in"] is False
+    assert by_id["filmo"]["english_only"] is False
+    assert by_id["filmo"]["enabled"] is True
+
+
+def test_english_only_sources_survive_an_age_limited_session(app):
+    """An age ceiling drops the adult source from the catalogue. The opt-in
+    English-only ones must stay -- they are not adult content, and hiding them
+    would silently make them unreachable for every kids-mode account."""
+    from mediaforge.web.source_policy import search_sources
+
+    with app.app_context():
+        ids = [s["id"] for s in search_sources(include_adult=False)]
+    assert "hanime" not in ids
+    assert "nineanime" in ids and "aniwaves" in ids and "filmo" in ids
 
 
 def test_module_source_appears_and_disappears(app, module_source):

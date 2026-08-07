@@ -9,8 +9,12 @@ from ...config import MEDIAFORGE_CONFIG_DIR
 from ...config import check_redirect_available
 from ...config import probe_redirect
 from ...providers import resolve_provider
+from ...providers import series_url_for
 from ...search import hanime_search
 from ...search import megakino_search
+from ...search import filmo_search
+from ...search import nineanime_search
+from ...search import aniwaves_search
 from ...search import query as aniworld_query
 from ...search import query_s_to
 from ...search import get_search_source
@@ -30,6 +34,11 @@ from ..queue_worker import _is_hanime_url
 from ..queue_worker import _is_megakino_url
 from ..queue_worker import _megakino_is_series
 from ..queue_worker import _megakino_watch
+from ..queue_worker import _is_filmo_url
+from ..queue_worker import _is_nineanime_url
+from ..queue_worker import _nineanime_enabled
+from ..queue_worker import _is_aniwaves_url
+from ..queue_worker import _aniwaves_enabled
 from ..runtime_state import WORKING_PROVIDERS
 from ..runtime_state import _SERIES_LINK_PATTERN
 from ..runtime_state import _STO_SERIES_LINK_PATTERN
@@ -251,13 +260,29 @@ def _filter_and_dedup_providers(providers_map):
     whole point of the check — a few extra GETs per modal open in exchange for
     an accurate list.
     """
+    from ...extractors import provider_for_url
+
     wp_by_lower = {w.lower(): w for w in WORKING_PROVIDERS}
     seen = set()
     out = []
     for name, redirect in providers_map.items():
-        if name not in WORKING_PROVIDERS:
+        # The site's LABEL is only one of two ways to identify a hoster, and
+        # not the reliable one: 9anime calls every server "HD", which matches
+        # nothing in WORKING_PROVIDERS and used to drop the entry here -- the
+        # provider list then came back empty and the modal said "no sources"
+        # for an episode that plays fine. So fall back to the hoster the embed
+        # URL's host belongs to, which is the same signal probe_redirect()
+        # already uses further down to collapse mirror labels.
+        #
+        # An entry is only skipped when NEITHER the label nor the host names a
+        # hoster we have a working extractor for -- that one really is
+        # unplayable, and listing it would just be a dead option in the
+        # dropdown.
+        host_key = provider_for_url(redirect)
+        if name not in WORKING_PROVIDERS and not (host_key and host_key in wp_by_lower):
             continue
         available, host_provider = probe_redirect(redirect, name)
+        host_provider = host_provider or host_key
         if not available:
             continue
         # Collapse mirror labels that resolve to the same host; key by the
@@ -270,6 +295,38 @@ def _filter_and_dedup_providers(providers_map):
         # lands on a known hoster shows that hoster); fall back to the original
         # label when the host is unknown or has no working extractor.
         out.append(wp_by_lower.get(host_provider) or name)
+    return out
+
+
+def _label_by_host(providers_map):
+    """Rename generic server labels to the hoster their embed URL belongs to.
+
+    For a site that labels its servers by quality ("HD") rather than by hoster,
+    the label carries no information a user can act on and no information the
+    download path can dispatch on. This maps each entry onto the canonical
+    hoster name instead, dropping the ones we cannot play.
+
+    Unlike :func:`_filter_and_dedup_providers` this makes no network request:
+    the caller uses it where a live probe is not worth it (see the 9anime
+    branch in api_providers).
+    """
+    from ...extractors import provider_for_url
+
+    wp_by_lower = {w.lower(): w for w in WORKING_PROVIDERS}
+    seen = set()
+    out = []
+    for name, embed in (providers_map or {}).items():
+        key = provider_for_url(embed) or name.lower()
+        canonical = wp_by_lower.get(key)
+        if canonical is None:
+            # Unknown host AND unknown label: nothing could play it.
+            if name not in WORKING_PROVIDERS:
+                continue
+            canonical = name
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        out.append(canonical)
     return out
 
 
@@ -569,6 +626,13 @@ def register_search_routes(app):
             results = _filmpalast_search(keyword)
         elif site == "megakino":
             results = megakino_search(keyword) or []
+        elif site == "filmo":
+            results = filmo_search(keyword) or []
+        elif site == "nineanime":
+            # Opt-in, non-adult source: only search when explicitly enabled.
+            results = (nineanime_search(keyword) or []) if _nineanime_enabled() else []
+        elif site == "aniwaves":
+            results = (aniwaves_search(keyword) or []) if _aniwaves_enabled() else []
         elif site == "hanime":
             # Adult source: only search when explicitly enabled.
             results = (hanime_search(keyword) or []) if _hanime_enabled() else []
@@ -1079,6 +1143,50 @@ def register_search_routes(app):
                 logger.error(f"FilmPalast series fetch failed: {e}", exc_info=True)
                 return jsonify({"error": str(e)}), 500
 
+        # Filmo: movie-only like FilmPalast (no series class), but has its own
+        # lazily-resolved TMDB IMDb id (models/filmo_to/movie.py's `imdb`
+        # property) -- reused as the lookup key for richer TMDB localization,
+        # same as MegaKino below.
+        if _is_filmo_url(url):
+            try:
+                from ...models.filmo_to.movie import FilmoMovie
+                mv = FilmoMovie(url=url)
+                title = mv.title or ""
+                description = mv.description or ""
+                genres = mv.genres or []
+                poster = mv.image_url
+                imdb_id = mv.imdb or None
+
+                from ..db import get_setting
+                api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
+                if api_key:
+                    try:
+                        country = get_setting("cineinfo_country", "DE")
+                        ui_lang = session.get("ui_language", "de")
+                        tmdb_data = _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang)
+                        if tmdb_data.get("found"):
+                            if tmdb_data.get("title_confident"):
+                                title = tmdb_data.get("title") or title
+                            description = tmdb_data.get("overview") or description
+                            if tmdb_data.get("genres"):
+                                genres = tmdb_data.get("genres")
+                    except Exception as _tmdb_exc:
+                        logger.debug("[api_series] TMDB localization failed for Filmo: %s", _tmdb_exc)
+
+                return jsonify({
+                    "title": title,
+                    "poster_url": _poster_proxy(poster),
+                    "description": description,
+                    "genres": genres,
+                    "release_year": str(mv.release_year) if mv.release_year else "",
+                    "is_movie": True,
+                    "imdb_id": imdb_id,
+                    "available_providers": mv.available_providers,
+                })
+            except Exception as e:
+                logger.error(f"Filmo series fetch failed: {e}", exc_info=True)
+                return jsonify({"error": str(e)}), 500
+
         # MegaKino (movie or series) — the /watch URL is shared; the JSON API's
         # "tv" field decides the type.
         if _is_megakino_url(url):
@@ -1156,6 +1264,11 @@ def register_search_routes(app):
                 logger.error(f"MegaKino series/movie fetch failed: {e}", exc_info=True)
                 return jsonify({"error": str(e)}), 500
         try:
+            # A card may link to an EPISODE (9anime's "Recently Updated" row is
+            # the only markup that site offers), and series_cls would reject
+            # that with a 500. Map it to the series page first; a URL that
+            # already is one comes back untouched and costs nothing.
+            url = series_url_for(url)
             prov = resolve_provider(url)
             series = prov.series_cls(url=url)
             poster = getattr(series, "poster_url", None)
@@ -1198,6 +1311,14 @@ def register_search_routes(app):
                     "genres": genres,
                     "release_year": getattr(series, "release_year", ""),
                     "imdb_id": imdb_id,
+                    # The URL this answer is actually about. Normally identical
+                    # to what was asked for; different when an episode URL was
+                    # normalized above (see providers.series_url_for). The
+                    # client adopts it so everything that follows -- episodes,
+                    # downloads, favourites, Auto-Sync -- is keyed to the
+                    # series and not to whichever episode happened to be the
+                    # newest on the day the card was rendered.
+                    "url": url,
                 }
             )
         except Exception as e:
@@ -1217,6 +1338,10 @@ def register_search_routes(app):
 
         # FilmPalast: return a single fake "season 1 / episode 1 = the movie itself"
         if _is_filmpalast_url(url):
+            return jsonify({"seasons": [{"url": url, "season_number": 1, "episode_count": 1, "are_movies": True, "is_single_movie": True}]})
+
+        # Filmo: same movie-only shape as FilmPalast above.
+        if _is_filmo_url(url):
             return jsonify({"seasons": [{"url": url, "season_number": 1, "episode_count": 1, "are_movies": True, "is_single_movie": True}]})
 
         # MegaKino: movie -> single fake season; series -> the one season post
@@ -1245,6 +1370,9 @@ def register_search_routes(app):
                 return jsonify({"error": str(e)}), 500
 
         try:
+            # Same episode-URL normalization as api_series() -- both are called
+            # with whatever URL the card carried.
+            url = series_url_for(url)
             prov = resolve_provider(url)
             series = prov.series_cls(url=url)
             seasons_data = []
@@ -1289,6 +1417,30 @@ def register_search_routes(app):
                 }]})
             except Exception as e:
                 logger.error(f"FilmPalast episodes fetch failed: {e}", exc_info=True)
+                return jsonify({"error": str(e)}), 500
+
+        # Filmo: return the movie itself as a single episode entry, like
+        # FilmPalast above -- but Filmo IS multi-language (unlike FilmPalast's
+        # German-only catalogue), so "languages" reports every language the
+        # movie actually offers instead of a hardcoded single value.
+        if _is_filmo_url(url):
+            try:
+                from ...models.filmo_to.movie import FilmoMovie
+                mv = FilmoMovie(url=url)
+                return jsonify({"episodes": [{
+                    "url": url,
+                    "episode_number": 1,
+                    "season_number": 1,
+                    "title_de": mv.title or "",
+                    "title_en": mv.title or "",
+                    # Movie entries report "downloaded" as False regardless
+                    # here -- same as the FilmPalast/MegaKino movie blocks
+                    # above, which don't call .is_downloaded either.
+                    "downloaded": False,
+                    "languages": mv.available_languages,
+                }]})
+            except Exception as e:
+                logger.error(f"Filmo episodes fetch failed: {e}", exc_info=True)
                 return jsonify({"error": str(e)}), 500
 
         # MegaKino: movie -> single episode; series -> all episodes of the season
@@ -1585,6 +1737,53 @@ def register_search_routes(app):
             except Exception as _lang_exc:
                 logger.debug("[api_episodes] language flag parsing failed: %s", _lang_exc)
 
+            # The flag parsing above reads AniWorld's / s.to's season-page
+            # markup. Every OTHER site that lands in this generic branch
+            # (9anime, aniwaves.ru, and anything a module registers) has no
+            # such markup, so it produced nothing at all -- and an episode
+            # list with "languages": [] makes the frontend keep the language
+            # dropdown it built from AniWorld's fixed language set, which is
+            # how a 9anime episode ended up asking for "German Dub" and being
+            # told "No source available" for a language the site never had.
+            #
+            # So: when the season yielded no flags, ask the episode models
+            # themselves. They know (available_languages), it just costs a
+            # request each, which is why this is a fallback and not the
+            # primary path.
+            if not ep_languages:
+                _eps = list(season.episodes)
+                if _eps and hasattr(_eps[0], "available_languages"):
+                    # Bounded: a pool so a 24-episode season is one round trip
+                    # wide instead of 24 deep, and a ceiling so an absurdly
+                    # long season cannot turn one page open into hundreds of
+                    # requests -- past it every episode inherits the first
+                    # one's languages, which on these single-season anime
+                    # sites is the same answer anyway.
+                    _LANG_PROBE_MAX = 60
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    def _langs_of(_ep):
+                        try:
+                            return _ep.url, list(_ep.available_languages or [])
+                        except Exception as _exc:
+                            logger.debug("[api_episodes] language lookup failed for %s: %s",
+                                         getattr(_ep, "url", "?"), _exc)
+                            return getattr(_ep, "url", ""), []
+
+                    _probe = _eps[:_LANG_PROBE_MAX]
+                    try:
+                        with ThreadPoolExecutor(max_workers=min(8, len(_probe)),
+                                                thread_name_prefix="ep-langs") as _pool:
+                            for _u, _langs in _pool.map(_langs_of, _probe):
+                                if _u:
+                                    ep_languages[_u] = _langs
+                    except Exception as _exc:
+                        logger.debug("[api_episodes] language probe pool failed: %s", _exc)
+                    if len(_eps) > _LANG_PROBE_MAX and ep_languages:
+                        _fallback_langs = next(iter(ep_languages.values()))
+                        for _ep in _eps[_LANG_PROBE_MAX:]:
+                            ep_languages.setdefault(_ep.url, list(_fallback_langs))
+
             episodes_data = []
             # Folder hits for the episodes of THIS season only. ep_folders is
             # series-wide (the scan rglobs the whole title folder), so it would
@@ -1646,6 +1845,75 @@ def register_search_routes(app):
         # hanime: no third-party hoster and one stream -> a single pseudo provider.
         if _is_hanime_url(url):
             return jsonify({"providers": {"Japanese Dub": ["hanime"]}})
+
+        # 9anime.or.at: the server list labels everything by QUALITY ("HD"),
+        # never by hoster -- and it embeds more than one (MegaPlay, plus the
+        # site's own player on my.1anime.site). A label that names no hoster is
+        # useless to both the user and the extractor dispatch, so the hoster is
+        # taken from the embed URL's host instead (_label_by_host).
+        #
+        # No live probe here, deliberately: these embeds are 403 without the
+        # right Referer (see PROVIDER_HEADERS_D["OneAnime"] in config.py), so
+        # probe_redirect() would report a perfectly playable server as dead --
+        # or, via its "network error -> assume available" fallback, report
+        # nothing useful at all. Availability is established at download time,
+        # where the correct headers are sent.
+        if _is_nineanime_url(url):
+            try:
+                prov = resolve_provider(url)
+                episode = prov.episode_cls(url=url)
+                provider_info = {}
+                for lang_key, servers in (episode.provider_data or {}).items():
+                    label = label_for_pair(lang_key) or str(lang_key)
+                    hosters = _label_by_host(servers)
+                    if hosters:
+                        provider_info[label] = hosters
+                return jsonify({"providers": provider_info})
+            except Exception as e:
+                logger.error(f"9anime providers fetch failed: {e}", exc_info=True)
+                return jsonify({"error": str(e)}), 500
+
+        # aniwaves.ru: the site's own "server list" hands back an opaque
+        # per-hoster token, not a fetchable URL (see
+        # models/aniwaves_ru/scraper.py's resolve_source docstring) -- running
+        # it through the generic live-probe below would either waste the
+        # request budget on a guaranteed-garbage fetch or silently depend on
+        # probe_redirect()'s "network error -> assume available" fallback.
+        # Skip the live-availability check and list "EchoVideo" directly for
+        # every language the episode actually offers; the token is resolved
+        # lazily, at download time, by AniwavesEpisode.provider_url.
+        if _is_aniwaves_url(url):
+            try:
+                prov = resolve_provider(url)
+                episode = prov.episode_cls(url=url)
+                provider_info = {lang: ["EchoVideo"] for lang in episode.available_languages}
+                return jsonify({"providers": provider_info})
+            except Exception as e:
+                logger.error(f"Aniwaves providers fetch failed: {e}", exc_info=True)
+                return jsonify({"error": str(e)}), 500
+
+        # Filmo: provider_data keys are the site's own language label strings
+        # (not (Audio, Subtitles) enum pairs -- filmo.to is multi-language per
+        # movie in a shape none of the branches below expect), and its values
+        # are one-shot mint tokens ({"data_p", "movie_link_id"}), not fetchable
+        # URLs -- see models/filmo_to/movie.py's provider_data/provider_url.
+        # Skip the generic normalization and live-probe entirely; list the
+        # hoster names directly per language, filtered to hosters with a
+        # working extractor. Resolution happens lazily, at download time, in
+        # FilmoMovie.provider_url.
+        if _is_filmo_url(url):
+            try:
+                from ...models.filmo_to.movie import FilmoMovie
+                mv = FilmoMovie(url=url)
+                provider_info = {
+                    label: [name for name in hosters if name in WORKING_PROVIDERS]
+                    for label, hosters in mv.provider_data.items()
+                }
+                provider_info = {k: v for k, v in provider_info.items() if v}
+                return jsonify({"providers": provider_info})
+            except Exception as e:
+                logger.error(f"Filmo providers fetch failed: {e}", exc_info=True)
+                return jsonify({"error": str(e)}), 500
 
         # MegaKino: single German language, direct hoster embeds (VOE etc.)
         if _is_megakino_url(url):

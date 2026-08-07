@@ -9405,6 +9405,22 @@ msgstr "Modulmanager öffnen"
 msgid "Library scan (local folders)"
 msgstr "Bibliotheks-Scan (lokale Ordner)"
 
+#: mediaforge/web/templates/index.html:0
+#: mediaforge/web/templates/settings.html:0
+msgid "English-only source"
+msgstr "Nur englischsprachige Quelle"
+
+#: mediaforge/web/templates/settings.html:0
+msgid ""
+"9anime and Aniwaves are English-only sources: they offer no German "
+"audio or subtitles, which is why they are switched off by default. "
+"Enabling them needs no age confirmation - they are not adult sources."
+msgstr ""
+"9anime und Aniwaves sind rein englischsprachige Quellen: Sie bieten "
+"weder deutschen Ton noch deutsche Untertitel, deshalb sind sie "
+"standardmäßig ausgeschaltet. Zum Aktivieren ist keine "
+"Altersbestätigung nötig – es sind keine nicht jugendfreien Quellen."
+
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"
 
