@@ -26,6 +26,7 @@ from .config import (
     MEDIAFORGE_EPISODE_PATTERN,
     MEDIAFORGE_SEASON_PATTERN,
     MEDIAFORGE_SERIES_PATTERN,
+    FILMO_MOVIE_PATTERN,
     HANIME_EPISODE_PATTERN,
     HANIME_SERIES_PATTERN,
     MEGAKINO_EPISODE_PATTERN,
@@ -44,6 +45,7 @@ from .models import (
     SerienstreamSeries,
 )
 from .models.filmpalast_to.episode import FilmPalastEpisode
+from .models.filmo_to.movie import FilmoMovie
 from .models.megakino_to.episode import MegakinoEpisode
 from .models.megakino_to.movie import MegakinoMovie
 from .models.megakino_to.season import MegakinoSeason
@@ -101,6 +103,14 @@ PROVIDERS = [
         name="FilmPalast",
         episode_pattern=FILMPALAST_EPISODE_PATTERN,
         episode_cls=FilmPalastEpisode,
+    ),
+    # Filmo: movies only, same shape as FilmPalast. Multiple languages per
+    # movie (unlike FilmPalast/MegaKino); see models/filmo_to/scraper.py for
+    # the encrypted-payload hoster-resolution flow this site requires.
+    Provider(
+        name="Filmo",
+        episode_pattern=FILMO_MOVIE_PATTERN,
+        episode_cls=FilmoMovie,
     ),
     # MegaKino series episodes: synthetic <watch-post>?episode=N URLs.
     # Movies and series share the plain /watch/<slug>/<id> URL, so it is only

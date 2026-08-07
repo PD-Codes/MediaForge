@@ -1002,6 +1002,22 @@ MEGAKINO_EPISODE_PATTERN = re.compile(
 )
 
 # -----------------------------
+# Filmo (filmo.to) -- movies only
+# -----------------------------
+# filmo.to is a server-rendered (Laravel) site. A movie page embeds one
+# "provider chip" per (language, hoster) pair, each carrying an encrypted
+# ``data-p`` payload instead of a hoster URL -- the real embed only comes back
+# after POSTing that payload to ``urls.openMint`` (``/n``) and following the
+# short-lived ``/n/<token>`` redirect it mints. See models/filmo_to/scraper.py.
+FILMO_BASE_URL = os.environ.get("FILMO_BASE_URL", "https://filmo.to").rstrip("/")
+
+# Movie landing page: /movies/<slug>
+FILMO_MOVIE_PATTERN = re.compile(
+    r"^https?://(www\.)?filmo\.to/movies/[a-zA-Z0-9\-]+/?$",
+    re.IGNORECASE,
+)
+
+# -----------------------------
 # hanime.tv (adult / 18+)  -- DISABLED by default, gated in the UI
 # -----------------------------
 # Base + API endpoints are overridable via env because hanime occasionally
