@@ -32,6 +32,8 @@ from .config import (
     MEGAKINO_EPISODE_PATTERN,
     MEGAKINO_MOVIE_PATTERN,
     MEGAKINO_SERIES_PATTERN,
+    NINEANIME_EPISODE_PATTERN,
+    NINEANIME_SERIES_PATTERN,
     SERIENSTREAM_EPISODE_PATTERN,
     SERIENSTREAM_SEASON_PATTERN,
     SERIENSTREAM_SERIES_PATTERN,
@@ -53,6 +55,9 @@ from .models.megakino_to.series import MegakinoSeries
 from .models.hanime_tv.episode import HanimeEpisode
 from .models.hanime_tv.season import HanimeSeason
 from .models.hanime_tv.series import HanimeSeries
+from .models.nineanime_to.episode import NineAnimeEpisode
+from .models.nineanime_to.season import NineAnimeSeason
+from .models.nineanime_to.series import NineAnimeSeries
 
 logger = get_logger(__name__)
 
@@ -140,6 +145,22 @@ PROVIDERS = [
         series_cls=HanimeSeries,
         season_cls=HanimeSeason,
         episode_cls=HanimeEpisode,
+    ),
+    # 9anime (English-only anime; series only, no movies). Should get the
+    # same "off by default, explicit opt-in" UI gate as Hanime above once
+    # settings/search wiring for this provider is built (not yet -- this
+    # registration only makes URL resolution + scraping work).
+    # Episode URLs are flat/synthetic (see config.NINEANIME_EPISODE_PATTERN);
+    # season_pattern reuses the series pattern since every 9anime "series" is
+    # exactly one season -- see models/nineanime_to/season.py.
+    Provider(
+        name="NineAnime",
+        series_pattern=NINEANIME_SERIES_PATTERN,
+        season_pattern=NINEANIME_SERIES_PATTERN,
+        episode_pattern=NINEANIME_EPISODE_PATTERN,
+        series_cls=NineAnimeSeries,
+        season_cls=NineAnimeSeason,
+        episode_cls=NineAnimeEpisode,
     ),
 ]
 

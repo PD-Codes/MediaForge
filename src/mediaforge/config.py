@@ -808,6 +808,7 @@ SUPPORTED_PROVIDERS = [
     "VeeV",
     "Vidara",
     "Vidavaca",
+    "Megaplay",
     # "Doodstream",
     # "Filemoon",
     # "LoadX",
@@ -845,6 +846,10 @@ PROVIDER_HEADERS_D = {
         "Referer": "https://veev.to/",
         "Origin": "https://veev.to",
     },
+    # The resolved master.m3u8 needs only a Referer -- unlike VeeV, no
+    # session cookies are bound to it (verified: fetchable with plain HTTP
+    # once resolved). See extractors/provider/megaplay.py.
+    "Megaplay": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://megaplay.buzz/"},
 }
 
 PROVIDER_HEADERS_W = {
@@ -856,6 +861,7 @@ PROVIDER_HEADERS_W = {
     "Luluvdo": {"User-Agent": LULUVDO_USER_AGENT},
     "Filemoon": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://filemoon.to"},
     "VeeV": {"User-Agent": DEFAULT_USER_AGENT,"Referer": "https://veev.to/"},
+    "Megaplay": {"User-Agent": DEFAULT_USER_AGENT, "Referer": "https://megaplay.buzz/"},
 }
 
 
@@ -1014,6 +1020,32 @@ FILMO_BASE_URL = os.environ.get("FILMO_BASE_URL", "https://filmo.to").rstrip("/"
 # Movie landing page: /movies/<slug>
 FILMO_MOVIE_PATTERN = re.compile(
     r"^https?://(www\.)?filmo\.to/movies/[a-zA-Z0-9\-]+/?$",
+    re.IGNORECASE,
+)
+
+# -----------------------------
+# 9anime (9anime.or.at) -- English-only, DISABLED by default (same UI gate as
+# hanime.tv below -- not adult content, but a fansub/dub clone site whose
+# catalogue is inconsistent with the DE-first providers, so it should not
+# silently start contributing to search results).
+# -----------------------------
+# A WordPress "9animetv" theme install: series pages are server-rendered, but
+# the episode list and per-episode hoster list are both fetched client-side
+# from the theme's own endpoints -- see models/nineanime_to/scraper.py.
+NINEANIME_BASE_URL = os.environ.get("NINEANIME_BASE_URL", "https://9anime.or.at").rstrip("/")
+
+# Series landing page: /anime/<slug>/
+NINEANIME_SERIES_PATTERN = re.compile(
+    r"^https?://(www\.)?9anime\.or\.at/anime/[a-zA-Z0-9\-]+/?$",
+    re.IGNORECASE,
+)
+
+# Synthetic flat episode URL, e.g.
+# /solo-leveling-season-2-arise-from-the-shadow-episode-1-english-subbed/
+# Requires "-episode-<n>" so this can't accidentally match the site's other
+# flat top-level paths (/random, /az-list, /filter, ...).
+NINEANIME_EPISODE_PATTERN = re.compile(
+    r"^https?://(www\.)?9anime\.or\.at/[a-zA-Z0-9\-]+-episode-\d+[a-zA-Z0-9\-]*/?$",
     re.IGNORECASE,
 )
 
