@@ -1984,6 +1984,26 @@ def register(app):
   `register_provider()`: registering only a provider makes your URLs
   resolvable (pasted links, AutoSync) without claiming your site can answer
   a keyword search. A source that offers both should register both.
+
+- **`register_catalogue(item_id, source_id, label, fetch, kind="series")`**
+  (`mediaforge/catalogue.py`) is the third, optional half: it puts your site
+  on the **Catalogue** page (`/catalogue`), where the user sees your site's
+  COMPLETE list of titles, marks any number of them and hands the whole
+  selection to the download queue or to Auto-Sync at once.
+
+  `fetch()` takes no arguments and returns
+  `[{"title", "url", "alt"}]` — one entry per series, where `url` has to be
+  resolvable by `resolve_provider()` (otherwise nothing can be queued from it)
+  and `alt` is optional lower-cased alternate titles that the page's filter
+  searches alongside the visible one. No poster, no description, no year:
+  neither built-in site puts those on its list page, and the Catalogue page
+  fetches the rich data for ONE title at a time when the user opens its
+  details.
+
+  The result is cached for 12 hours, so `fetch` should do real network work
+  rather than the module holding a copy — and it may be slow, it runs once.
+  Only register this if your site actually publishes such a list; a catalogue
+  assembled by paging through search results is not what this is for.
 - **`register_home_feed_source(item_id, source_id, label, fetchers, media_type="series", color=None)`**
   (`mediaforge/home_feed.py`) puts your source on the start page. `fetchers`
   is `{"new": fn}` and/or `{"popular": fn}`; each `fn()` returns the same

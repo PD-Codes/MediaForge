@@ -1,0 +1,387 @@
+/* ── Catalogue ─────────────────────────────────────────────────────────────
+   The merged A-Z list of every source that publishes one, for bulk selection.
+
+   Own file per the project's per-page rule, and written against the shared
+   tokens in variables.css (--bg-card, --border, --accent, --text-secondary)
+   rather than inventing fallback hex values -- a page that hardcodes
+   #111/#333 looks right in exactly one theme and wrong in the others.
+
+   Layout conventions are taken from the other full pages (see uptime.css):
+   a .catalogue-page wrapper carrying the padding and max width, a
+   .page-header/.page-title/.page-subtitle head, and prefixed classes below. */
+
+.catalogue-page { padding: 26px 30px 56px; max-width: 1180px; margin: 0 auto; }
+
+.cat-header { margin-bottom: 20px; }
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.cat-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.cat-search {
+  flex: 1 1 280px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 0.92rem;
+}
+.cat-search:focus { outline: none; border-color: var(--border-focus); }
+
+.cat-count {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.cat-tool-btn {
+  padding: 9px 15px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s;
+}
+.cat-tool-btn:hover { background: var(--accent-soft); border-color: var(--border-focus); }
+
+/* Source filter chips — the list itself is merged, these only narrow it. */
+.cat-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.83rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cat-chip.is-on { background: var(--accent-soft); border-color: var(--border-focus); }
+.cat-chip.is-off { opacity: .45; cursor: not-allowed; }
+.cat-chip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+
+/* ── The list ────────────────────────────────────────────────────────────── */
+/* Virtualised: .cat-viewport scrolls, .cat-spacer carries the full height of
+   every row and only the visible slice exists in the DOM. Without it the
+   merged ~13k-row list freezes the browser on every keystroke. */
+.cat-viewport {
+  position: relative;
+  height: 60vh;
+  min-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-card);
+}
+
+.cat-spacer { position: relative; width: 100%; }
+.cat-rows { position: absolute; top: 0; left: 0; right: 0; }
+
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+.cat-row:last-child { border-bottom: none; }
+.cat-row:hover { background: rgba(255, 255, 255, 0.03); }
+.cat-row.is-selected { background: var(--accent-soft); }
+
+/* The title takes the space, everything else keeps its natural width -- the
+   first version let the title stretch to the full row, which is why the
+   Details button ended up marooned on the far right. */
+.cat-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+}
+
+.cat-src {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.cat-src-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+.cat-badges { display: flex; gap: 6px; flex: 0 0 auto; }
+.cat-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.cat-badge--library { background: var(--success-bg); color: var(--success); }
+.cat-badge--queued  { background: var(--info-bg);    color: var(--info); }
+.cat-badge--sync    { background: var(--accent-soft); color: var(--text-link); }
+
+.cat-details-btn {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+.cat-details-btn:hover { color: var(--text-primary); border-color: var(--border-focus); }
+
+.cat-empty { padding: 30px 16px; text-align: center; color: var(--text-secondary); }
+
+/* ── Action bar ──────────────────────────────────────────────────────────── */
+.cat-actions {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.cat-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+/* The option controls travel together so a phone can collapse them as a unit. */
+.cat-options { display: contents; }
+
+/* Desktop has the room; the toggle only exists for phones. */
+.cat-options-toggle { display: none; }
+
+.cat-field { display: flex; flex-direction: column; gap: 6px; min-width: 170px; }
+.cat-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: .02em;
+}
+.cat-field select {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 0.88rem;
+}
+.cat-field select:focus { outline: none; border-color: var(--border-focus); }
+
+.cat-selcount { font-weight: 700; font-size: 1.02rem; margin-right: 4px; }
+.cat-selcount small { font-weight: 400; color: var(--text-secondary); }
+
+.cat-warn {
+  flex-basis: 100%;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 0.83rem;
+}
+
+/* ── Job progress ────────────────────────────────────────────────────────── */
+.cat-job {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.cat-job-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+.cat-job-bar { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; margin-top: 10px; }
+.cat-job-fill { height: 100%; background: var(--accent); transition: width .3s ease; }
+.cat-job-stats {
+  display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px;
+  font-size: 0.83rem; color: var(--text-secondary);
+}
+
+/* ── Details modal ───────────────────────────────────────────────────────── */
+.cat-modal-body { display: flex; gap: 18px; flex-wrap: wrap; }
+.cat-modal-poster {
+  flex: 0 0 160px; width: 160px; border-radius: 10px;
+  background: var(--input-bg); aspect-ratio: 2 / 3; object-fit: cover;
+}
+.cat-modal-info { flex: 1 1 260px; min-width: 0; color: var(--text-secondary); font-size: 0.9rem; }
+.cat-modal-genres { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.cat-modal-genres span {
+  font-size: 0.72rem; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-primary);
+}
+.cat-eplist { margin-top: 16px; max-height: 38vh; overflow-y: auto; }
+.cat-season-head {
+  font-weight: 700; font-size: 0.85rem; margin: 14px 0 6px;
+  color: var(--text-primary);
+}
+.cat-ep {
+  display: flex; gap: 10px; padding: 6px 0; font-size: 0.85rem;
+  color: var(--text-secondary); border-bottom: 1px solid var(--border);
+}
+.cat-ep-num { flex: 0 0 54px; color: var(--text-muted); }
+
+/* ── Beta marker ─────────────────────────────────────────────────────────
+   The page works, but it is young and it acts on a lot of data at once --
+   saying so is cheaper than a surprised user. */
+.cat-beta {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-focus);
+  background: var(--accent-soft);
+  color: var(--text-link);
+  font-size: 0.6em;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  cursor: default;
+}
+
+.cat-beta-pill { margin-left: 8px; }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────
+   A phone is where marking fifty series actually happens, so this is a
+   rebuild of the row rather than a shrink of it: the desktop row puts five
+   things on one line, which at 380px leaves the title about eleven
+   characters. Two lines instead — title on top, source and badges under it —
+   and everything you tap gets a real target. */
+@media (max-width: 860px) {
+  .catalogue-page { padding: 16px 12px 24px; }
+
+  .cat-header { margin-bottom: 14px; }
+  .page-title { font-size: 1.5rem; }
+
+  .cat-toolbar { gap: 8px; }
+  .cat-search { flex-basis: 100%; font-size: 16px; /* stops iOS zooming on focus */ }
+  .cat-chips { width: 100%; }
+  .cat-chip { flex: 1 1 auto; justify-content: center; padding: 9px 12px; }
+  .cat-count { width: 100%; order: 9; }
+  .cat-tool-btn { flex: 1 1 auto; padding: 10px 12px; }
+
+  .cat-viewport { height: 52vh; border-radius: 12px; }
+
+  .cat-row {
+    height: auto;
+    min-height: 64px;
+    align-items: center;
+    padding: 9px 12px;
+    /* checkbox | text block | details, with the text block wrapping inside */
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "check title action";
+    column-gap: 10px;
+  }
+  .cat-row > .chb-main { grid-area: check; width: 22px; height: 22px; }
+  .cat-row-title {
+    grid-area: title;
+    white-space: normal;
+    /* Two lines max — a 90-character anime title must not make one row as
+       tall as the viewport. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.25;
+  }
+  /* Source and badges move under the title instead of competing with it. */
+  .cat-src, .cat-badges {
+    grid-area: title;
+    align-self: end;
+    margin-top: 2px;
+  }
+  .cat-src { justify-self: start; padding-top: 30px; }
+  .cat-badges { justify-self: end; padding-top: 30px; }
+  .cat-details-btn { grid-area: action; padding: 9px 12px; }
+
+  .cat-actions {
+    margin-top: 12px;
+    padding: 14px;
+    /* The bar you came to press stops scrolling away. */
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    box-shadow: var(--shadow-lg);
+  }
+  .cat-actions-row { gap: 10px; }
+
+  /* Language, hoster and the missing-episodes switch used to sit here as
+     three full-width controls and ate half the screen -- on the one page
+     where the list IS the content. They are set once and then left alone, so
+     they collapse behind a line that states their current values, and the bar
+     keeps only what you press: the count and the two actions. */
+  .cat-options {
+    display: none;
+    flex: 1 1 100%;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 2px;
+  }
+  .cat-options.is-open { display: flex; }
+  .cat-field { flex: 1 1 100%; min-width: 0; }
+  .cat-field select { font-size: 16px; }
+
+  .cat-options-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex: 1 1 100%;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .cat-options-toggle:active { background: var(--accent-soft); }
+  .cat-options-caret { transition: transform .15s ease; }
+  .cat-options-toggle[aria-expanded="true"] .cat-options-caret { transform: rotate(180deg); }
+
+  .cat-selcount { flex: 0 0 auto; }
+  .cat-actions-row .settings-checkbox-row { flex: 1 1 100%; }
+  .cat-actions-row .btn,
+  .cat-actions-row .cat-tool-btn { flex: 1 1 calc(50% - 5px); padding: 12px; }
+
+  .cat-job { margin-top: 12px; padding: 14px; }
+
+  .cat-modal-body { gap: 12px; }
+  .cat-modal-poster { flex-basis: 104px; width: 104px; }
+  .cat-eplist { max-height: 46vh; }
+}
+
+/* Very narrow phones: one control per line is the honest answer below this. */
+@media (max-width: 420px) {
+  .cat-actions-row .btn,
+  .cat-actions-row .cat-tool-btn { flex-basis: 100%; }
+  .cat-src span { display: none; }
+}

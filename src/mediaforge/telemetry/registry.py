@@ -394,6 +394,18 @@ DATA_REGISTRY = {
                    "own, strictly limited data point."),
         },
     },
+    "flag.catalogue": {
+        "stage": 2, "group": "catalogue",
+        "label": {"de": "Katalog-Sammelauswahl genutzt", "en": "Catalogue bulk selection used"},
+        "explain": {
+            "de": ("Nur, dass die Katalog-Seite genutzt wurde, um mehrere Serien auf "
+                   "einmal in die Warteschlange oder zu Auto-Sync zu geben, und wie oft. "
+                   "Keine Titel, keine Anzahl, keine Quelle."),
+            "en": ("Only that the Catalogue page was used to hand several series to the "
+                   "queue or to Auto-Sync at once, and how often. No titles, no counts, "
+                   "no source."),
+        },
+    },
     "flag.uptime_monitor": {
         "stage": 2, "group": "uptime_monitor",
         "label": {"de": "UpTime-Monitoring genutzt", "en": "UpTime monitoring used"},

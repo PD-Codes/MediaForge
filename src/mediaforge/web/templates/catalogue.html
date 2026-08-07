@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Catalogue') }} — MediaForge{% endblock %}
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='catalogue.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="catalogue-page">
+  <div class="page-header cat-header">
+    <div>
+      <h1 class="page-title">{{ _('Catalogue') }}
+        <span class="cat-beta" title="{{ _('This feature is new and still being worked on.') }}">{{ _('Beta') }}</span>
+      </h1>
+      <p class="page-subtitle">{{ _('Every title the source sites list, in one place. Mark what you want, then queue it or hand it to Auto-Sync — one entry per series.') }}</p>
+    </div>
+  </div>
+
+  <div class="cat-toolbar">
+    <input type="search" class="cat-search" id="catSearch"
+           placeholder="{{ _('Filter by title… (alternate titles are searched too)') }}"
+           autocomplete="off" spellcheck="false">
+    {# The list is merged; these only narrow it down. #}
+    <div class="cat-chips" id="catSourceChips"></div>
+    <span class="cat-count" id="catCount"></span>
+    <button type="button" class="cat-tool-btn" id="catSelectAll">{{ _('Select all shown') }}</button>
+    <button type="button" class="cat-tool-btn" id="catClear">{{ _('Clear selection') }}</button>
+    <button type="button" class="cat-tool-btn" id="catRefresh"
+            title="{{ _('Refetch the lists from the sites') }}">{{ _('Refresh') }}</button>
+  </div>
+
+  <div class="cat-viewport" id="catViewport">
+    <div class="cat-spacer" id="catSpacer">
+      <div class="cat-rows" id="catRows"></div>
+    </div>
+  </div>
+
+  <div class="cat-actions">
+    <div class="cat-actions-row">
+      <span class="cat-selcount" id="catSelCount">0 <small>{{ _('selected') }}</small></span>
+
+      {# Phone only: the three option controls take half the screen on a
+         phone, and they are set once and then left alone -- so they collapse
+         behind a one-line summary of their own values and the bar keeps the
+         part you actually press. Hidden on desktop, where there is room. #}
+      <button type="button" class="cat-options-toggle" id="catOptionsToggle"
+              aria-expanded="false" aria-controls="catOptions">
+        <span id="catOptionsSummary"></span>
+        <span class="cat-options-caret" aria-hidden="true">▾</span>
+      </button>
+
+      <div class="cat-options" id="catOptions">
+      <div class="cat-field">
+        <label for="catLanguage">{{ _('Language') }}</label>
+        {# Filled from the same lists the start page uses (lang_labels /
+           sto_lang_labels / supported_providers), passed in by
+           routes/catalogue.py -- they are NOT global context variables, which
+           is exactly why these two dropdowns came up empty at first. #}
+        <select id="catLanguage">
+          {% set _seen = [] %}
+          {% for _k, _label in (lang_labels | default({})).items() %}
+            {% if _label not in _seen %}{% set _ = _seen.append(_label) %}
+            <option value="{{ _label }}">{{ _label }}</option>{% endif %}
+          {% endfor %}
+          {% for _k, _label in (sto_lang_labels | default({})).items() %}
+            {% if _label not in _seen %}{% set _ = _seen.append(_label) %}
+            <option value="{{ _label }}">{{ _label }}</option>{% endif %}
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="cat-field">
+        <label for="catProvider">{{ _('Hoster') }}</label>
+        <select id="catProvider">
+          {% for _p in (supported_providers | default([])) %}
+          <option value="{{ _p }}">{{ _p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <label class="settings-checkbox-row" style="margin:0;" for="catMissingOnly">
+        <input type="checkbox" class="chb-main" id="catMissingOnly" checked>
+        <span>{{ _('Only missing episodes') }}</span>
+      </label>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="catQueueBtn">{{ _('Add to queue') }}</button>
+      <button type="button" class="cat-tool-btn" id="catSyncBtn">{{ _('Create Auto-Sync jobs') }}</button>
+    </div>
+    <div class="cat-warn" id="catWarn" style="display:none;"></div>
+  </div>
+
+  <div class="cat-job" id="catJob" style="display:none;">
+    <div class="cat-job-head">
+      <strong id="catJobTitle"></strong>
+      <button type="button" class="cat-tool-btn" id="catJobCancel">{{ _('Stop') }}</button>
+    </div>
+    <div class="cat-job-bar"><div class="cat-job-fill" id="catJobFill" style="width:0%"></div></div>
+    <div class="cat-job-stats" id="catJobStats"></div>
+  </div>
+</div>
+
+{# Details — cover, metadata and the episode list for ONE series. Opening it
+   never touches the selection: that is the whole point of a separate modal
+   here rather than the start page's download modal, which owns its own
+   language/provider state and would fight with the bar above. #}
+<div class="modal-overlay stats-modal-overlay" id="catModal" style="display:none"
+  onclick="if(event.target===this)catCloseModal()" role="dialog" aria-modal="true"
+  aria-labelledby="catModalTitle">
+  <div class="card stats-modal-card loaded" style="max-width:840px;">
+    <div class="card-header stats-modal-header">
+      <div class="stats-modal-heading">
+        <div>
+          <h2 class="card-title" id="catModalTitle">…</h2>
+          <p class="stats-modal-sub" id="catModalSub"></p>
+        </div>
+      </div>
+      <button class="modal-close" onclick="catCloseModal()" aria-label="{{ _('Close') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+          stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+    <div class="card-body" id="catModalBody"></div>
+    <div class="card-footer" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <button type="button" class="btn btn-primary" id="catModalToggle"></button>
+      <span style="flex:1"></span>
+      <a href="#" target="_blank" rel="noopener noreferrer" class="cat-tool-btn" id="catModalOpen">{{ _('Open on the site') }}</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.CAT_I18N = {
+    selected: {{ _('selected')|tojson }},
+    of: {{ _('of')|tojson }},
+    entries: {{ _('entries')|tojson }},
+    loading: {{ _('Loading the catalogue…')|tojson }},
+    failed: {{ _('The catalogue could not be loaded.')|tojson }},
+    retry: {{ _('Try again')|tojson }},
+    disabled: {{ _('This source is switched off in Settings.')|tojson }},
+    nothing: {{ _('Nothing matches this filter.')|tojson }},
+    pick_one: {{ _('Mark at least one series first.')|tojson }},
+    in_library: {{ _('In library')|tojson }},
+    queued: {{ _('Queued')|tojson }},
+    syncing: {{ _('Auto-Sync')|tojson }},
+    details: {{ _('Details')|tojson }},
+    add_sel: {{ _('Add to selection')|tojson }},
+    remove_sel: {{ _('Remove from selection')|tojson }},
+    no_episodes: {{ _('No episodes found.')|tojson }},
+    season: {{ _('Season')|tojson }},
+    job_queue: {{ _('Adding to the queue')|tojson }},
+    job_sync: {{ _('Creating Auto-Sync jobs')|tojson }},
+    done: {{ _('Done')|tojson }},
+    cancelled: {{ _('Stopped')|tojson }},
+    created: {{ _('created')|tojson }},
+    skipped: {{ _('skipped')|tojson }},
+    failed_n: {{ _('failed')|tojson }},
+    episodes_n: {{ _('episodes')|tojson }},
+    busy: {{ _('Another bulk job is still running.')|tojson }},
+    too_many: {{ _('Too many series selected at once.')|tojson }},
+    groups: {{ _('Language groups')|tojson }},
+    only_missing_short: {{ _('only missing')|tojson }},
+    all_episodes_short: {{ _('all episodes')|tojson }},
+    {# The warning the user asked for: shown before submitting, never blocking.
+       No %(n)s placeholder -- Flask-Babel's gettext() runs its own %
+       interpolation over the result and would raise KeyError. The count is
+       prefixed in JS instead. #}
+    warn_many: {{ _('series selected. Every one of them is fetched and expanded into its episodes, which takes a while and makes for a long queue.')|tojson }},
+    warn_sync: {{ _('Auto-Sync keeps downloading new episodes for these series from now on.')|tojson }},
+  };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='catalogue.js') }}"></script>
+{% endblock %}

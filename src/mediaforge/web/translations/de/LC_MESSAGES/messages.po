@@ -9421,6 +9421,178 @@ msgstr ""
 "standardmäßig ausgeschaltet. Zum Aktivieren ist keine "
 "Altersbestätigung nötig – es sind keine nicht jugendfreien Quellen."
 
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Catalogue"
+msgstr "Katalog"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid ""
+"The complete list of a source site. Mark everything you want, then "
+"queue it or hand it to Auto-Sync — one entry per series."
+msgstr ""
+"Die vollständige Liste einer Quellen-Seite. Markiere alles, was du "
+"haben willst, und leg es in die Warteschlange oder gib es an Auto-Sync "
+"— je Serie ein Eintrag."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Filter by title… (alternate titles are searched too)"
+msgstr "Nach Titel filtern … (Alternativtitel werden mitgesucht)"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Select all shown"
+msgstr "Alle angezeigten auswählen"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Refetch the list from the site"
+msgstr "Liste neu von der Seite laden"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Only missing episodes"
+msgstr "Nur fehlende Episoden"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Add to queue"
+msgstr "In die Warteschlange"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Create Auto-Sync jobs"
+msgstr "Auto-Sync-Aufträge anlegen"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Stop"
+msgstr "Stoppen"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Open on the site"
+msgstr "Auf der Seite öffnen"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "of"
+msgstr "von"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Loading the catalogue…"
+msgstr "Katalog wird geladen …"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "The catalogue could not be loaded."
+msgstr "Der Katalog konnte nicht geladen werden."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "This source is switched off in Settings."
+msgstr "Diese Quelle ist in den Einstellungen ausgeschaltet."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Nothing matches this filter."
+msgstr "Zu diesem Filter passt nichts."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Mark at least one series first."
+msgstr "Markiere zuerst mindestens eine Serie."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "In library"
+msgstr "In der Bibliothek"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Queued"
+msgstr "In der Warteschlange"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Add to selection"
+msgstr "Zur Auswahl hinzufügen"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Remove from selection"
+msgstr "Aus der Auswahl entfernen"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "No episodes found."
+msgstr "Keine Episoden gefunden."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Season"
+msgstr "Staffel"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Expanding selection…"
+msgstr "Auswahl wird aufgelöst …"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Adding to the queue"
+msgstr "Wird in die Warteschlange gelegt"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Creating Auto-Sync jobs"
+msgstr "Auto-Sync-Aufträge werden angelegt"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Stopped"
+msgstr "Gestoppt"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "created"
+msgstr "angelegt"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "failed"
+msgstr "fehlgeschlagen"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Another bulk job is still running."
+msgstr "Es läuft noch ein anderer Sammelauftrag."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Too many series selected at once."
+msgstr "Zu viele Serien auf einmal ausgewählt."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid ""
+"series selected. Every one of them is fetched and expanded into its "
+"episodes, which takes a while and makes for a long queue."
+msgstr ""
+"Serien ausgewählt. Jede davon wird einzeln abgerufen und in ihre "
+"Episoden aufgelöst — das dauert eine Weile und ergibt eine lange "
+"Warteschlange."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid ""
+"Auto-Sync keeps downloading new episodes for these series from now on."
+msgstr "Auto-Sync lädt für diese Serien ab jetzt dauerhaft neue Episoden."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Language groups"
+msgstr "Sprachgruppen"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Catalogue bulk selection"
+msgstr "Katalog-Sammelauswahl"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid ""
+"Every title the source sites list, in one place. Mark what you want, "
+"then queue it or hand it to Auto-Sync — one entry per series."
+msgstr ""
+"Alle Titel, die die Quellen-Seiten listen, an einem Ort. Markiere was "
+"du willst und leg es in die Warteschlange oder gib es an Auto-Sync — "
+"je Serie ein Eintrag."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "Refetch the lists from the sites"
+msgstr "Listen neu von den Seiten laden"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "This feature is new and still being worked on."
+msgstr "Diese Funktion ist neu und wird noch überarbeitet."
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "only missing"
+msgstr "nur fehlende"
+
+#: mediaforge/web/templates/catalogue.html:0
+msgid "all episodes"
+msgstr "alle Episoden"
+
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"
 

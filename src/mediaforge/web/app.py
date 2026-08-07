@@ -1059,6 +1059,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     from .routes.encoding import register_encoding_routes
     from .routes.upscale import register_upscale_routes
     from .routes.browse import register_browse_routes
+    from .routes.catalogue import register_catalogue_routes
     from .routes.update import register_update_routes
     from .routes.seerr import register_seerr_routes
     from .routes.autosync import register_autosync_routes
@@ -1115,6 +1116,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     register_encoding_routes(app)
     register_upscale_routes(app)
     register_browse_routes(app)
+    register_catalogue_routes(app)
     register_update_routes(app)
     register_seerr_routes(app)
     register_autosync_routes(app)

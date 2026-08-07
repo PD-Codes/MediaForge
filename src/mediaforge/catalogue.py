@@ -1,0 +1,322 @@
+"""Full A-Z catalogue of a source site, and the registry that holds them.
+
+Both AniWorld and SerienStream publish their COMPLETE list of titles on one
+page (``/animes-alphabet``, ``/serien``) -- 2.4k and 10.8k entries in a single
+HTML response. That is a different kind of list from everything in
+``search.py`` (a keyword query) or ``home_feed.py`` (a handful of cards): it is
+the entire catalogue, it changes slowly, and it is what the Catalogue page
+(``web/routes/catalogue.py``) offers for bulk selection.
+
+What a catalogue entry deliberately does NOT have: a poster, a description, a
+year. Neither site puts those on the list page, and fetching them per title
+would mean thousands of requests. The Catalogue page therefore renders titles
+only, and pulls the rich data for ONE title at a time when the user opens its
+details -- through the same ``/api/series`` endpoint the search modal uses.
+
+Alternative titles ARE included, because both sites hand them over for free in
+the list markup (``data-alternative-title`` / ``data-search``). They never
+appear in the UI; they exist so the client-side filter finds "Shingeki no
+Kyojin" when the entry is called "Attack on Titan".
+
+Deliberately free of any ``mediaforge.web`` import: this is core, and the web
+layer imports it, never the other way round -- same rule as home_feed.py.
+"""
+
+from __future__ import annotations
+
+import re
+import threading
+import time
+from html import unescape
+
+from .logger import get_logger
+
+logger = get_logger(__name__)
+
+# How long a fetched catalogue stays fresh. Long on purpose: a site adds a
+# handful of titles a week, and the payload is megabytes -- refetching it on
+# every page open would be the single most expensive thing this app does to a
+# source site.
+CATALOGUE_TTL = 12 * 3600
+
+# Hard ceiling on how many entries one catalogue may contribute. Not a
+# performance guard (the page virtualises its list) but a corruption guard: a
+# challenge page or a redesigned layout can make a regex match tens of
+# thousands of times, and silently accepting that would fill the cache with
+# junk that then looks like a catalogue.
+MAX_ENTRIES = 50_000
+
+
+# ---------------------------------------------------------------------------
+# Parsers
+# ---------------------------------------------------------------------------
+# AniWorld: <li><a data-alternative-title="..." href="/anime/stream/<slug>"
+#               title="... Stream anschauen"> Title</a></li>
+_ANIWORLD_ITEM_RE = re.compile(
+    r'<li>\s*<a\b(?P<attrs>[^>]*?)href="(?P<href>/anime/stream/[^"#?]+)"[^>]*>'
+    r'(?P<title>[^<]*)</a>\s*</li>',
+    re.IGNORECASE,
+)
+_ALT_TITLE_RE = re.compile(r'data-alternative-title="([^"]*)"', re.IGNORECASE)
+
+# SerienStream: <li class="series-item" data-search="..."><a href="/serie/<slug>">Title</a></li>
+_STO_ITEM_RE = re.compile(
+    r'<li[^>]*class="[^"]*series-item[^"]*"(?P<attrs>[^>]*)>\s*'
+    r'<a[^>]*href="(?P<href>/serie/[^"#?]+)"[^>]*>(?P<title>[^<]*)</a>',
+    re.IGNORECASE | re.DOTALL,
+)
+_DATA_SEARCH_RE = re.compile(r'data-search="([^"]*)"', re.IGNORECASE)
+
+
+def _clean(value):
+    return re.sub(r"\s+", " ", unescape(value or "")).strip()
+
+
+def _entry(title, path, base_url, alt=""):
+    title = _clean(title)
+    if not title:
+        return None
+    return {
+        "title": title,
+        "url": base_url.rstrip("/") + path.rstrip("/"),
+        # Lower-cased and whitespace-collapsed here rather than in the browser:
+        # doing it once for 10k entries on the server beats doing it on every
+        # keystroke in every open tab.
+        "alt": _clean(alt).lower(),
+    }
+
+
+def parse_aniworld_catalogue(html, base_url):
+    """[{title, url, alt}] from AniWorld's /animes-alphabet page."""
+    out, seen = [], set()
+    for m in _ANIWORLD_ITEM_RE.finditer(html or ""):
+        alt_m = _ALT_TITLE_RE.search(m.group("attrs") or "")
+        entry = _entry(m.group("title"), m.group("href"), base_url,
+                       alt_m.group(1) if alt_m else "")
+        if entry and entry["url"] not in seen:
+            seen.add(entry["url"])
+            out.append(entry)
+        if len(out) >= MAX_ENTRIES:
+            break
+    return out
+
+
+def parse_sto_catalogue(html, base_url):
+    """[{title, url, alt}] from SerienStream's /serien page."""
+    out, seen = [], set()
+    for m in _STO_ITEM_RE.finditer(html or ""):
+        search_m = _DATA_SEARCH_RE.search(m.group("attrs") or "")
+        entry = _entry(m.group("title"), m.group("href"), base_url,
+                       search_m.group(1) if search_m else "")
+        if entry and entry["url"] not in seen:
+            seen.add(entry["url"])
+            out.append(entry)
+        if len(out) >= MAX_ENTRIES:
+            break
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Built-in catalogues
+# ---------------------------------------------------------------------------
+def _fetch(url, timeout=45):
+    """GET a catalogue page through the project session (mirrors, DoH, ...).
+
+    The generous timeout is not laziness: these responses are 0.7-2.5 MB and
+    the sites are behind DDoS-Guard, so the default read timeout genuinely is
+    too short for the largest of them.
+    """
+    from .config import GLOBAL_SESSION
+    resp = GLOBAL_SESSION.get(url, timeout=timeout)
+    resp.raise_for_status()
+    return resp.text
+
+
+# The base URLs the rest of the app writes its AniWorld / SerienStream links
+# with (see search.py, which spells them exactly like this). Deliberately NOT
+# taken from mirrors.canonical_host(): that returns "s.to" for SerienStream,
+# the domain the project deactivated -- the mirror registry keeps it as the
+# first entry for host-rewriting purposes, but no URL we STORE should be
+# written with it. Entry URLs from here end up in the download queue and in
+# AutoSync jobs, so they have to be spelled the canonical way; GLOBAL_SESSION
+# rewrites the host to whichever mirror is healthy at request time, and
+# nothing downstream ever sees that.
+ANIWORLD_CATALOGUE_URL = "https://aniworld.to/animes-alphabet"
+STO_CATALOGUE_URL = "https://serienstream.to/serien"
+
+
+def fetch_aniworld_catalogue():
+    return parse_aniworld_catalogue(_fetch(ANIWORLD_CATALOGUE_URL), "https://aniworld.to")
+
+
+def fetch_sto_catalogue():
+    return parse_sto_catalogue(_fetch(STO_CATALOGUE_URL), "https://serienstream.to")
+
+
+# id -> entry. Ids match the source ids used everywhere else
+# (web/source_policy.py's BUILTIN_SEARCH_SOURCES), so the Catalogue page can
+# reuse the same enabled/disabled state and the same labels.
+BUILTIN_CATALOGUES = {
+    "aniworld": {
+        "label": "AniWorld",
+        "kind": "anime",
+        "fetch": fetch_aniworld_catalogue,
+    },
+    "sto": {
+        "label": "SerienStream",
+        "kind": "series",
+        "fetch": fetch_sto_catalogue,
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Third-party catalogues
+# ---------------------------------------------------------------------------
+_EXTRA_CATALOGUES: dict = {}  # item_id -> entry
+
+
+def register_catalogue(item_id, source_id, label, fetch, kind="series"):
+    """Add a full-catalogue source from a third-party module's ``register(app)``.
+
+    - ``item_id``: the id already passed to ``register_thirdparty()``, so
+      ``web/thirdparties/registry.py``'s ``unregister_module()`` drops this
+      automatically when the module is disabled or uninstalled.
+    - ``source_id``: must match the id the module used for
+      ``register_provider()`` / ``register_search_source()``, and must not
+      collide with a built-in -- the Catalogue page keys its selection, its
+      enabled state and its bulk actions on it.
+    - ``fetch``: ``fn()`` returning ``[{"title", "url", "alt"}]``. ``url`` has
+      to be resolvable by :func:`mediaforge.providers.resolve_provider`, or
+      nothing can be queued from it. ``alt`` is optional (searchable alternate
+      titles, lower-cased); an empty string is fine.
+    - ``kind``: ``"anime"`` or ``"series"``; only used for the label shown
+      above the list.
+
+    The result is cached for :data:`CATALOGUE_TTL`, so ``fetch`` may do real
+    network work -- and should, rather than holding a copy in the module.
+    """
+    if not callable(fetch):
+        raise ValueError("register_catalogue: fetch must be callable")
+    source_id = str(source_id or "").strip().lower()
+    if not source_id:
+        raise ValueError("register_catalogue: source_id is required")
+    if source_id in BUILTIN_CATALOGUES:
+        raise ValueError("register_catalogue: %r is a built-in catalogue" % source_id)
+    for existing_id, entry in _EXTRA_CATALOGUES.items():
+        if entry["source_id"] == source_id and existing_id != item_id:
+            raise ValueError("register_catalogue: source id already registered: %r" % source_id)
+    _EXTRA_CATALOGUES[item_id] = {
+        "source_id": source_id,
+        "label": str(label or source_id),
+        "kind": kind if kind in ("anime", "series") else "series",
+        "fetch": fetch,
+    }
+    logger.info("[Catalogue] Registered third-party catalogue: %s (%s)", source_id, item_id)
+
+
+def unregister_catalogue(item_id) -> None:
+    """Drop a catalogue previously added via :func:`register_catalogue`."""
+    removed = _EXTRA_CATALOGUES.pop(item_id, None)
+    if removed:
+        _cache_drop(removed["source_id"])
+        logger.info("[Catalogue] Unregistered third-party catalogue: %s (%s)",
+                    removed["source_id"], item_id)
+
+
+def thirdparty_catalogue_ids() -> set:
+    """item_ids that currently own a catalogue -- read-only counterpart of
+    :func:`unregister_catalogue` for the Modulmanager's capability list."""
+    return set(_EXTRA_CATALOGUES)
+
+
+def all_catalogues() -> dict:
+    """{source_id: entry} for every catalogue that exists right now, built-ins
+    first. A module that is switched off is left out, same rule as
+    providers.all_providers()."""
+    out = {sid: dict(meta, source_id=sid) for sid, meta in BUILTIN_CATALOGUES.items()}
+    try:
+        from .module_gate import filter_enabled
+        extra = filter_enabled(_EXTRA_CATALOGUES)
+    except Exception:
+        extra = _EXTRA_CATALOGUES
+    for entry in extra.values():
+        out.setdefault(entry["source_id"], entry)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Cache
+# ---------------------------------------------------------------------------
+# In memory only, deliberately. The DB browse cache holds card lists of a few
+# dozen rows; a catalogue is up to 10k entries per source, and writing that
+# through SQLite on every refresh buys nothing -- the fetch is one request and
+# the data is worthless after a restart anyway (it is a snapshot of a live
+# site, not user data).
+_cache_lock = threading.Lock()
+_cache: dict = {}  # source_id -> (fetched_at, entries)
+_inflight: dict = {}  # source_id -> threading.Event
+
+
+def _cache_drop(source_id):
+    with _cache_lock:
+        _cache.pop(source_id, None)
+
+
+def cached_catalogue(source_id):
+    """The cached entries for *source_id*, or None when nothing is cached."""
+    with _cache_lock:
+        hit = _cache.get(source_id)
+    if not hit:
+        return None
+    fetched_at, entries = hit
+    if (time.time() - fetched_at) > CATALOGUE_TTL:
+        return None
+    return entries
+
+
+def get_catalogue(source_id, force=False):
+    """Entries for *source_id*, fetching if needed. None when it failed.
+
+    Concurrent callers for the same source share one fetch: the Catalogue page
+    is the kind of page people reload, and two tabs must not mean two 2.5 MB
+    downloads from the same site.
+    """
+    if not force:
+        cached = cached_catalogue(source_id)
+        if cached is not None:
+            return cached
+
+    entry = all_catalogues().get(source_id)
+    if entry is None:
+        return None
+
+    with _cache_lock:
+        waiting = _inflight.get(source_id)
+        if waiting is None:
+            _inflight[source_id] = threading.Event()
+    if waiting is not None:
+        # Someone else is already fetching -- wait for them instead of asking
+        # the site a second time.
+        waiting.wait(timeout=120)
+        return cached_catalogue(source_id)
+
+    try:
+        started = time.time()
+        entries = entry["fetch"]() or []
+        if not entries:
+            logger.warning("[Catalogue] %s returned no entries", source_id)
+            return None
+        with _cache_lock:
+            _cache[source_id] = (time.time(), entries)
+        logger.info("[Catalogue] %s: %d entries in %.1fs", source_id, len(entries),
+                    time.time() - started)
+        return entries
+    except Exception as exc:
+        logger.warning("[Catalogue] %s fetch failed: %s: %s", source_id, type(exc).__name__, exc)
+        return None
+    finally:
+        with _cache_lock:
+            done = _inflight.pop(source_id, None)
+        if done is not None:
+            done.set()

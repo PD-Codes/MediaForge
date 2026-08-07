@@ -50,6 +50,7 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 
 ## Highlights
 
+- **Catalogue** — the complete A–Z list AniWorld and SerienStream publish (2.4k and 10.8k titles), with instant filtering, multi-select and a details view per title; hand the whole selection to the download queue or to Auto-Sync in one go
 - **Browse, search & download** full series, seasons or single episodes from aniworld.to, s.to, filmpalast.to, megakino.to, filmo.to, 9anime.or.at, aniwaves.ru and hanime.tv
   - 9anime.or.at and aniwaves.ru are **English-only** sources and ship **switched off** — enable them under Settings → Sources (no age confirmation, they are not adult sources)
 - **Direct Link downloads** — paste any raw media URL (`.m3u8`, MP4 or anything yt-dlp can read), pick a quality variant and queue it like any other download

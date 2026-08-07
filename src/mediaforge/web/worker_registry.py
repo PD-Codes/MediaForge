@@ -151,6 +151,20 @@ WORKERS: dict[str, dict] = {
         "label": "worker_keywords", "external": True, "kind": KIND_SCHEDULED,
         "fields": (F_LAST_RUN, F_NEXT_RUN, F_STATUS), "stall": None,
     },
+    "catalogue": {
+        # On-demand, not a loop: it exists only while a bulk selection from the
+        # Catalogue page is being expanded into queue items or AutoSync jobs
+        # (see web/catalogue_worker.py). That is why it carries no stall
+        # watchdog -- "idle for three days" is its normal, healthy state, and a
+        # countdown against it would be an alarm for nothing.
+        #
+        # F_ENTRIES is reused for "series handled in the current/last run",
+        # which is the one number an operator wants while a long selection is
+        # working through: the card otherwise just says "working" for minutes.
+        "label": "worker_catalogue", "external": False, "kind": KIND_CONTINUOUS,
+        "fields": (F_STATUS, F_LAST_RUN, F_ENTRIES), "stall": None,
+        "link": "/catalogue",
+    },
     "cache_evict": {
         "label": "worker_cacheevict", "external": False, "kind": KIND_SCHEDULED,
         "fields": (F_LAST_RUN, F_NEXT_RUN, F_STATUS), "stall": None,
