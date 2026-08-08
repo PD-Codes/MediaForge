@@ -9714,6 +9714,18 @@ msgstr "Nur diese Einträge zeigen"
 msgid "Nothing in this category right now"
 msgstr "Aktuell nichts in dieser Kategorie"
 
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Preferred source"
+msgstr "Bevorzugte Quelle"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Download this title from here"
+msgstr "Diesen Titel von hier laden"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "First available"
+msgstr "Erstbeste"
+
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"
 

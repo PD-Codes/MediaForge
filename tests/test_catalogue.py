@@ -622,3 +622,62 @@ def test_the_page_loads_app_js(as_user):
     assert "app" in scripts, "app.js is not loaded on the Catalogue page"
     assert scripts.index("app") < scripts.index("catalogue"), \
         "app.js must load before catalogue.js"
+
+
+def test_rows_are_merged_on_the_tmdb_id_and_never_on_the_title():
+    """A title both sites carry becomes one row with a pill per site. Folded on
+    an identical TMDB id ONLY: two sites spelling a title the same way is not
+    evidence that it is the same show -- a remake shares its name with the
+    original, and merging those would hide one show's episodes behind the
+    other's name with no way to tell."""
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] /
+          "src/mediaforge/web/static/catalogue.js").read_text(encoding="utf-8")
+    assert "combineByTmdbId" in js
+    assert "variants" in js and "applyActiveVariant" in js
+    # The picked site travels with the mark, and every site's url counts as
+    # known when the selection is submitted.
+    assert "pickSource" in js
+    assert "e.variants.forEach((v) => known.add(v.url))" in js
+
+
+def test_the_page_offers_a_preferred_source(as_user):
+    """Pressing a pill picks per row; the dropdown decides for everything the
+    user has not pressed. Without one, marking five hundred merged rows would
+    mean five hundred decisions."""
+    html = as_user("admin").get("/catalogue").get_data(as_text=True)
+    assert 'id="catPreferred"' in html
+    assert 'id="catPreferredField"' in html
+    import re
+    for key in ("pick_source", "first_available"):
+        assert re.search(r"\b%s:\s*\"" % key, html), key
+
+
+def test_either_url_of_a_merged_pair_is_accepted(as_user, monkeypatch):
+    """A merged row is one row with two urls behind it, and the pill decides
+    which one travels. The endpoint must accept whichever it gets -- it
+    validates against the stored catalogues, which hold both."""
+    from mediaforge.web.routes import catalogue as routes
+
+    pair = {
+        "aniworld": [{"title": "Attack on Titan", "alt": "",
+                      "url": "https://aniworld.to/anime/stream/aot"}],
+        "sto": [{"title": "Attack on Titan", "alt": "",
+                 "url": "https://serienstream.to/serie/aot"}],
+    }
+    monkeypatch.setattr(routes, "all_catalogues", lambda: {k: {} for k in pair})
+    monkeypatch.setattr(routes.catalogue_store, "all_entries", lambda: pair)
+
+    captured = {}
+    monkeypatch.setattr(routes.catalogue_worker, "start_job",
+                        lambda source, urls, *a, **k: captured.update(
+                            source=source, urls=urls) or {"id": "t", "total": len(urls)})
+
+    for url, expected_source in (
+            ("https://aniworld.to/anime/stream/aot", "aniworld"),
+            ("https://serienstream.to/serie/aot", "sto")):
+        resp = as_user("admin").post("/api/catalogue/bulk", json={"urls": [url]})
+        assert resp.status_code == 202, url
+        assert captured["urls"] == [url]
+        assert captured["source"] == expected_source

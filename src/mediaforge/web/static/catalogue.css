@@ -339,7 +339,41 @@
   color: var(--text-secondary);
   white-space: nowrap;
 }
-.cat-src-dot { width: 7px; height: 7px; border-radius: 50%; }
+.cat-src-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+
+/* ── Source pills on a merged row ──────────────────────────────────────────
+   A title both sites carry is ONE row (folded on an identical TMDB id, never
+   on the title -- see combineByTmdbId). Which site it downloads from is a real
+   choice, and this is where it is made: the pills are buttons, and the active
+   one is filled. A row with a single source keeps the plain .cat-src label,
+   because offering a choice of one is worse than offering none. */
+.cat-src--multi { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+
+.cat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.6;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.cat-pill:hover { border-color: var(--border-focus); color: var(--text-primary); }
+.cat-pill.is-active {
+  background: var(--accent-soft);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+/* The inactive one is legible rather than faded away: it is the other option,
+   not disabled state. */
+.cat-pill:not(.is-active) { opacity: .75; }
 
 .cat-badges { display: flex; gap: 6px; flex: 0 0 auto; }
 .cat-badge {
@@ -765,6 +799,8 @@ body.cat-modal-open { overflow: hidden; }
     line-height: 1.25;
   }
   .cat-row-meta { width: 100%; flex-wrap: wrap; gap: 6px; }
+  /* A pill is pressed with a fingertip here, so it gets a real target. */
+  .cat-pill { min-height: 30px; padding: 4px 10px; }
   .cat-badges { margin-left: auto; }
   /* 44px is the smallest target Apple and Google both still call reliable. */
   .cat-details-btn { flex: 0 0 auto; padding: 11px 14px; min-height: 44px; }
@@ -908,8 +944,11 @@ body.cat-modal-open { overflow: hidden; }
   .cat-actions-row .btn,
   .cat-actions-row .cat-tool-btn { flex-basis: 100%; }
   /* Only the WORD goes; the coloured dot stays, because it is the whole
-     reason a merged list is readable at all and it costs seven pixels. */
-  .cat-src-label { display: none; }
+     reason a merged list is readable at all and it costs seven pixels.
+     On a pill the label has to stay -- a bare dot is not something you can
+     tell is pressable, and it is a choice, not decoration. */
+  .cat-src:not(.cat-src--multi) .cat-src-label { display: none; }
+  .cat-pill { padding: 3px 7px; font-size: 0.66rem; }
   .cat-rail { width: 24px; }
   .cat-rail-letter { font-size: 0.6rem; }
 }

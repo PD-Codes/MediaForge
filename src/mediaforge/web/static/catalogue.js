@@ -47,6 +47,13 @@
   const railBubble = el("catRailBubble");
 
   let sources = [];               // [{id, label, enabled, color}]
+  // Which source a merged row downloads from when the user has not said.
+  // "" means "whichever comes first", i.e. the order sources are listed in.
+  let preferredSource = "";
+  // Per-row overrides from clicking a pill, keyed by the row key (tmdb:<id>).
+  // Only rows actually clicked get an entry, so this stays small even next to
+  // a thirteen-thousand-row catalogue.
+  let sourcePicks = {};
   // ONE merged list across every catalogue, sorted by title. A title that
   // both sites carry stays TWO entries on purpose -- they are two different
   // pages with different languages and different episode counts, and folding
@@ -178,6 +185,10 @@
       // `onStatus` only; a stored `offStatus` from the old inverted chips is
       // ignored rather than migrated -- it would mean the opposite now.
       if (Array.isArray(raw.onStatus)) onStatus = new Set(raw.onStatus);
+      if (typeof raw.preferredSource === "string") preferredSource = raw.preferredSource;
+      if (raw.sourcePicks && typeof raw.sourcePicks === "object") {
+        sourcePicks = raw.sourcePicks;
+      }
       // Restored only when there is still a selection to show, otherwise the
       // page would come up empty with no obvious reason why.
       if (onStatus.has("selection") && !selection.size) onStatus.delete("selection");
@@ -190,6 +201,8 @@
         sort: sortDir,
         offSources: Array.from(offSources),
         onStatus: Array.from(onStatus),
+        preferredSource: preferredSource,
+        sourcePicks: sourcePicks,
       }));
     } catch (e) { /* private mode / quota -- the in-memory state still works */ }
   }
@@ -201,6 +214,7 @@
     sources = data.sources || [];
     // Resolved after the list is in place: colorOf() reads it back out.
     sources.forEach((s) => { s.color = colorOf(s.id); });
+    renderPreferredSource();
     renderChips();
     await loadAll(false);
   }
@@ -252,9 +266,108 @@
       const cmp = a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
       return cmp !== 0 ? cmp : a.source.localeCompare(b.source);
     });
-    entries = merged;
+    entries = combineByTmdbId(merged);
     applyFilter();
     computeLibraryFlags();
+  }
+
+  /** Fold entries that are demonstrably the same show into one row.
+   *
+   * Only on an identical TMDB id, never on the title. Two sites spelling a
+   * title the same way is not evidence that it is the same show -- a remake
+   * shares its name with the original, and folding those together would put
+   * one show's episodes behind the other's name with no way to tell. The id
+   * is the only thing here that cannot be a coincidence.
+   *
+   * Entries the id backfill has not reached yet simply stay separate, which
+   * is the behaviour this page had all along; they join up on their own as
+   * the ids arrive.
+   */
+  function combineByTmdbId(rows) {
+    const out = [];
+    const byId = {};
+    rows.forEach((row) => {
+      const variant = {
+        source: row.source, url: row.url, title: row.title, alt: row.alt,
+      };
+      const id = row.tmdb_id;
+      if (!id) {                       // not resolved yet -- its own row
+        out.push(makeRow(row, [variant], ""));
+        return;
+      }
+      const existing = byId[id];
+      if (!existing) {
+        const merged = makeRow(row, [variant], "tmdb:" + id);
+        byId[id] = merged;
+        out.push(merged);
+        return;
+      }
+      // Same show on another site. Keep the alternate titles of both, so the
+      // filter still finds the row under either site's spelling.
+      if (!existing.variants.some((v) => v.url === variant.url)) {
+        existing.variants.push(variant);
+        existing.variants.sort((a, b) => a.source.localeCompare(b.source));
+      }
+      const extra = [row.title.toLowerCase(), row.alt].filter(Boolean).join(" ");
+      if (extra && existing.alt.indexOf(extra) === -1) {
+        existing.alt = (existing.alt + " " + extra).trim();
+      }
+      if (!existing.imdb_id && row.imdb_id) existing.imdb_id = row.imdb_id;
+      applyActiveVariant(existing);
+    });
+    return out;
+  }
+
+  function makeRow(row, variants, key) {
+    const merged = {
+      key: key || row.url,
+      title: row.title,
+      alt: row.alt || "",
+      tmdb_id: row.tmdb_id || "",
+      imdb_id: row.imdb_id || "",
+      variants: variants,
+      url: row.url,
+      source: row.source,
+    };
+    applyActiveVariant(merged);
+    return merged;
+  }
+
+  /** Decide which of a row's sources it acts on: the user's own pick for this
+   *  row, else the global preferred source, else the first one. */
+  function applyActiveVariant(row) {
+    let pick = null;
+    const chosen = sourcePicks[row.key];
+    if (chosen) pick = row.variants.find((v) => v.source === chosen);
+    if (!pick && preferredSource) {
+      pick = row.variants.find((v) => v.source === preferredSource);
+    }
+    if (!pick) pick = row.variants[0];
+    row.url = pick.url;
+    row.source = pick.source;
+    // The TITLE deliberately does not follow the active source. The list is
+    // sorted A-Z and carries a jump rail keyed to that order; a row that
+    // renames itself when a pill is pressed would sit under the wrong letter
+    // until the next reload. Which site is being read is said where it
+    // matters instead -- on the pills, and in the details modal's subtitle.
+    return row;
+  }
+
+  /** Re-resolve every row's active source. Called when the preference changes
+   *  -- rows the user picked by hand keep their pick. */
+  function reapplyVariants() {
+    entries.forEach(applyActiveVariant);
+  }
+
+  /** A row by ANY of its sources' urls -- selection, queue state and the
+   *  details modal all work with concrete urls, not row keys. */
+  function rowByUrl(url) {
+    return entries.find((e) => e.variants.some((v) => v.url === url));
+  }
+
+  /** Every url a row could be downloaded from. */
+  function urlsOf(row) {
+    return row.variants.map((v) => v.url);
   }
 
   function showMessage(text) {
@@ -369,6 +482,30 @@
     });
   }
 
+  /** The "preferred source" dropdown. Hidden entirely while only one source
+   *  exists -- there is nothing to prefer, and an option with one entry is
+   *  just a control that cannot be used. */
+  function renderPreferredSource() {
+    const field = el("catPreferredField");
+    const sel = el("catPreferred");
+    if (!field || !sel) return;
+    const enabled = sources.filter((s) => s.enabled);
+    if (enabled.length < 2) { field.hidden = true; return; }
+    field.hidden = false;
+    sel.innerHTML = "";
+    sel.appendChild(new Option(t("first_available", "First available"), ""));
+    enabled.forEach((s) => sel.appendChild(new Option(s.label, s.id)));
+    sel.value = preferredSource;
+    sel.onchange = () => {
+      preferredSource = sel.value || "";
+      savePrefs();
+      // Rows the user picked by hand keep their pick; the rest follow.
+      reapplyVariants();
+      applyFilter();
+      updateOptionsSummary();
+    };
+  }
+
   function renderSortButton() {
     const btn = el("catSort");
     if (!btn) return;
@@ -387,18 +524,23 @@
     // filtered within what they leave, so a chip's number always says what
     // pressing it would actually show.
     const base = entries.filter((e) => {
-      if (offSources.has(e.source)) return false;
+      // A merged row belongs to every site it is on, so it survives as long
+      // as ONE of them is still shown.
+      if (e.variants.every((v) => offSources.has(v.source))) return false;
       if (!term) return true;
       return e.title.toLowerCase().indexOf(term) !== -1 ||
         (e.alt && e.alt.indexOf(term) !== -1);
     });
 
+    // Queued/marked is asked of every variant: queueing a title from
+    // SerienStream and then switching the row to AniWorld must not make it
+    // look untouched.
     statusCounts = { library: 0, queued: 0, sync: 0, selection: 0 };
     base.forEach((e) => {
       if (e._lib) statusCounts.library += 1;
-      if (queuedUrls.has(e.url)) statusCounts.queued += 1;
-      if (syncUrls.has(e.url)) statusCounts.sync += 1;
-      if (selection.has(e.url)) statusCounts.selection += 1;
+      if (isQueued(e)) statusCounts.queued += 1;
+      if (isSyncing(e)) statusCounts.sync += 1;
+      if (isPicked(e)) statusCounts.selection += 1;
     });
 
     // Positive and additive: nothing picked means no restriction, several
@@ -407,9 +549,9 @@
     filtered = onStatus.size
       ? base.filter((e) =>
           (onStatus.has("library") && e._lib) ||
-          (onStatus.has("queued") && queuedUrls.has(e.url)) ||
-          (onStatus.has("sync") && syncUrls.has(e.url)) ||
-          (onStatus.has("selection") && selection.has(e.url)))
+          (onStatus.has("queued") && isQueued(e)) ||
+          (onStatus.has("sync") && isSyncing(e)) ||
+          (onStatus.has("selection") && isPicked(e)))
       : base;
     // `entries` is sorted A-Z once at load; reversing the filtered slice is
     // cheaper and keeps the two orders guaranteed to be exact mirrors.
@@ -463,6 +605,10 @@
     });
     statusCounts.library = n;
   }
+
+  const isQueued = (row) => row.variants.some((v) => queuedUrls.has(v.url));
+  const isSyncing = (row) => row.variants.some((v) => syncUrls.has(v.url));
+  const isPicked = (row) => row.variants.some((v) => selection.has(v.url));
 
   // ── A-Z index ────────────────────────────────────────────────────────────
   // Diacritics are folded, so "Ärzte" indexes under A rather than under "#" --
@@ -630,7 +776,7 @@
     for (let i = start; i < end; i++) {
       const e = filtered[i];
       const url = e.url;
-      const isSel = selection.has(url);
+      const isSel = isPicked(e);
       let badges = "";
       // Cached by computeLibraryFlags(); until that pass reaches this entry
       // the visible row is worked out on the spot, so badges appear straight
@@ -638,10 +784,10 @@
       if (e._lib === undefined ? inLibrary(e.title, e) : e._lib) {
         badges += '<span class="cat-badge cat-badge--library">' + esc(t("in_library", "In library")) + "</span>";
       }
-      if (queuedUrls.has(url)) {
+      if (isQueued(e)) {
         badges += '<span class="cat-badge cat-badge--queued">' + esc(t("queued", "Queued")) + "</span>";
       }
-      if (syncUrls.has(url)) {
+      if (isSyncing(e)) {
         badges += '<span class="cat-badge cat-badge--sync">' + esc(t("syncing", "Auto-Sync")) + "</span>";
       }
       // Title and meta travel in one .cat-row-main box so a phone can stack
@@ -652,10 +798,7 @@
         '<input type="checkbox" class="chb-main" ' + (isSel ? "checked" : "") + ' tabindex="-1">' +
         '<div class="cat-row-main">' +
         '<span class="cat-row-title">' + esc(e.title) + "</span>" +
-        '<span class="cat-row-meta">' +
-        '<span class="cat-src"><span class="cat-src-dot" style="background:' +
-        esc(colorOf(e.source)) + '"></span>' +
-        '<span class="cat-src-label">' + esc(labelOf(e.source)) + "</span></span>" +
+        '<span class="cat-row-meta">' + sourcePills(e) +
         '<span class="cat-badges">' + badges + "</span>" +
         "</span></div>" +
         '<button type="button" class="cat-details-btn" data-details="' + esc(url) + '">' +
@@ -670,6 +813,48 @@
     const anchor = filtered[Math.min(filtered.length - 1,
       Math.max(0, Math.round(viewport.scrollTop / h)))];
     setActiveLetter(anchor ? letterOf(anchor.title) : "");
+  }
+
+  /** The source pill(s) for a row.
+   *
+   * One source: a plain label, because there is nothing to choose. Two or
+   * more: real buttons, and pressing one is how you say which site this title
+   * should be downloaded from. That is the only place the choice can sensibly
+   * live -- a merged row is one line, and the two sites behind it differ in
+   * languages and episode counts.
+   */
+  function sourcePills(row) {
+    if (row.variants.length < 2) {
+      return '<span class="cat-src"><span class="cat-src-dot" style="background:' +
+        esc(colorOf(row.source)) + '"></span>' +
+        '<span class="cat-src-label">' + esc(labelOf(row.source)) + "</span></span>";
+    }
+    const pills = row.variants.map((v) => {
+      const active = v.source === row.source;
+      return '<button type="button" class="cat-pill' + (active ? " is-active" : "") +
+        '" data-pick="' + esc(row.key) + '" data-pick-source="' + esc(v.source) +
+        '" aria-pressed="' + (active ? "true" : "false") +
+        '" title="' + esc(t("pick_source", "Download this title from here")) + '">' +
+        '<span class="cat-src-dot" style="background:' + esc(colorOf(v.source)) + '"></span>' +
+        '<span class="cat-src-label">' + esc(labelOf(v.source)) + "</span></button>";
+    }).join("");
+    return '<span class="cat-src cat-src--multi">' + pills + "</span>";
+  }
+
+  /** Switch a merged row to another site. If the row is marked, the mark moves
+   *  with it -- the selection holds concrete urls, and leaving the old one in
+   *  would queue the site the user just switched away from. */
+  function pickSource(key, source) {
+    const row = entries.find((e) => e.key === key);
+    if (!row || row.source === source) return;
+    const wasSelected = isPicked(row);
+    if (wasSelected) row.variants.forEach((v) => selection.delete(v.url));
+    sourcePicks[key] = source;
+    applyActiveVariant(row);
+    if (wasSelected) selection.add(row.url);
+    savePrefs();
+    if (wasSelected) saveSelection();
+    applyFilter();
   }
 
   // ── Interaction ──────────────────────────────────────────────────────────
@@ -689,6 +874,13 @@
   });
 
   rowsHost.addEventListener("click", (ev) => {
+    const pill = ev.target.closest("[data-pick]");
+    if (pill) {
+      ev.stopPropagation();
+      pickSource(pill.getAttribute("data-pick"),
+                 pill.getAttribute("data-pick-source"));
+      return;
+    }
     const detailsBtn = ev.target.closest("[data-details]");
     if (detailsBtn) {
       ev.stopPropagation();
@@ -702,7 +894,13 @@
 
   function toggle(url) {
     if (!url) return;
-    if (selection.has(url)) selection.delete(url); else selection.add(url);
+    const row = rowByUrl(url);
+    if (row) {
+      // One mark per row, never one per site: a merged row is one title and
+      // one download, and the active pill decides where it comes from.
+      if (isPicked(row)) row.variants.forEach((v) => selection.delete(v.url));
+      else selection.add(row.url);
+    } else if (selection.has(url)) { selection.delete(url); } else { selection.add(url); }
     saveSelection();
     // The selection is itself a filter and a chip count, so a change to it is
     // a filter change rather than a repaint.
@@ -717,10 +915,9 @@
   el("catSelectAll").addEventListener("click", () => {
     // "Shown", not "all": with a filter active this is the useful action, and
     // without one it is still bounded by what the source has.
-    filtered.forEach((e) => selection.add(e.url));
+    filtered.forEach((e) => { if (!isPicked(e)) selection.add(e.url); });
     saveSelection();
-    updateCount();
-    render();
+    applyFilter();
   });
 
   el("catClear").addEventListener("click", () => {
@@ -890,7 +1087,7 @@
     modalUrl = url;
     const modal = el("catModal");
     const body = el("catModalBody");
-    const entry = entries.find((e) => e.url === url);
+    const entry = rowByUrl(url);
     el("catModalTitle").textContent = entry ? entry.title : "…";
     el("catModalSub").textContent = "";
     setModalBackdrop("");
@@ -929,10 +1126,14 @@
 
     // Year and source on one line under the title: on this page "which site
     // is this row from" is a real question, and the modal used to drop it.
-    const entry = entries.find((e) => e.url === url);
+    const entry = rowByUrl(url);
     const sub = [];
     if (series && series.release_year) sub.push(String(series.release_year));
-    if (entry) sub.push(labelOf(entry.source));
+    // The site this is being read from, so a merged row still says which of
+    // its two the modal is showing.
+    if (entry) sub.push(labelOf(entry.variants.length > 1
+      ? (rowByUrl(url).variants.find((v) => v.url === url) || {}).source || entry.source
+      : entry.source));
     el("catModalSub").textContent = sub.join(" · ");
 
     const posterUrl = (series && series.poster_url) || "";
@@ -1054,7 +1255,7 @@
 
   // ── Lazy id resolution ───────────────────────────────────────────────────
   async function resolveIds(url) {
-    const entry = entries.find((e) => e.url === url);
+    const entry = rowByUrl(url);
     if (!entry || entry.tmdb_id || entry.imdb_id) return;   // nothing to gain
     try {
       const resp = await fetch("/api/catalogue/resolve", {
@@ -1067,8 +1268,18 @@
       if (!data.tmdb_id && !data.imdb_id) return;
       entry.tmdb_id = data.tmdb_id || "";
       entry.imdb_id = data.imdb_id || "";
-      // The row's "In library" badge may be decidable now that there is an id.
-      render();
+      // An id may also mean this row is the same show as another one, which
+      // is decided when the list is rebuilt -- so rebuild it.
+      if (entry.tmdb_id) {
+        const flat = [];
+        entries.forEach((e) => e.variants.forEach((v) => flat.push({
+          title: v.title, url: v.url, alt: v.alt, source: v.source,
+          tmdb_id: e.tmdb_id, imdb_id: e.imdb_id,
+        })));
+        entries = combineByTmdbId(flat);
+        computeLibraryFlags();
+      }
+      applyFilter();
     } catch (e) { /* the title path still answers */ }
   }
 
@@ -1195,7 +1406,10 @@
     // several sites goes in one request -- but a url left over in
     // localStorage from a source that has since been switched off would only
     // come back as "unknown", so it is dropped here.
-    const known = new Set(entries.map((e) => e.url));
+    // Every site a row sits on, not just the active one: a mark made before
+    // the pill was switched still points at the other site's url.
+    const known = new Set();
+    entries.forEach((e) => e.variants.forEach((v) => known.add(v.url)));
     const urls = Array.from(selection).filter((u) => known.has(u));
     if (!urls.length) { toast(t("pick_one", "Mark something first.")); return; }
 
@@ -1245,9 +1459,13 @@
     if (!host) return;
     const lang = el("catLanguage");
     const prov = el("catProvider");
+    const pref = el("catPreferred");
+    const prefField = el("catPreferredField");
     const bits = [
       (lang.options[lang.selectedIndex] || {}).text || "",
       (prov.options[prov.selectedIndex] || {}).text || "",
+      (prefField && !prefField.hidden && pref && pref.value)
+        ? ((pref.options[pref.selectedIndex] || {}).text || "") : "",
       el("catMissingOnly").checked
         ? t("only_missing_short", "only missing")
         : t("all_episodes_short", "all episodes"),

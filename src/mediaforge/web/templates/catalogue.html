@@ -112,6 +112,14 @@
         </select>
       </div>
 
+      {# Which site a merged row downloads from when the user has not pressed
+         one of its pills. Only matters for titles both sites carry; filled
+         from the source list in JS. #}
+      <div class="cat-field" id="catPreferredField" hidden>
+        <label for="catPreferred">{{ _('Preferred source') }}</label>
+        <select id="catPreferred"></select>
+      </div>
+
       <div class="cat-field">
         <label for="catProvider">{{ _('Hoster') }}</label>
         <select id="catProvider">
@@ -235,6 +243,10 @@
     sort_az: {{ _('A–Z')|tojson }},
     sort_za: {{ _('Z–A')|tojson }},
     sort_label: {{ _('Sort order')|tojson }},
+    {# Merged rows: a title both sites carry is one row with one pill per
+       site, and pressing a pill is how you pick where it comes from. #}
+    pick_source: {{ _('Download this title from here')|tojson }},
+    first_available: {{ _('First available')|tojson }},
     {# Status strip. The lists are served from the database and refreshed in
        the background, so the page has to be able to say which of those is
        happening right now. #}
