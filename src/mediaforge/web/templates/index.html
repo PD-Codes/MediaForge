@@ -378,7 +378,13 @@
   {# Every string the home page renders client-side, translated here so it
      goes through the same Flask-Babel catalogue as the rest of the app
      instead of a hardcoded de/en pair in JavaScript. Rendered for both home
-     variants -- the search box below is shared. #}
+     variants -- the search box below is shared.
+
+     The `status_*` keys are the filter dropdown that answers "have I already
+     got this?", as opposed to the Type menu's "what is it?". Both of its
+     entries are on by default, and both are worded exactly like the badges
+     they remove ("Vorhanden" and the Sync pill) -- a different word for the
+     same thing is a filter people have to try out to understand. #}
   <script>
     window.__HOME_I18N = {{ {
       'sources': _('Sources'),
@@ -392,6 +398,13 @@
       'filter_none': _('None'),
       'many_sources': _('sources'),
       'many_types': _('types'),
+      'status': _('Status'),
+      'many_status': _('states'),
+      'status_all': _('Everything'),
+      'status_library': _('Already downloaded'),
+      'status_autosync': _('On Auto-Sync'),
+      'status_library_hint': _('Switch off to hide titles you already have'),
+      'status_autosync_hint': _('Switch off to hide titles an Auto-Sync job already covers'),
       'also_on': _('Also available from other sources — click to choose'),
       'empty_filters': _('Nothing to show with these filters.'),
       'source_down': _('{} is not responding right now.'),

@@ -9726,6 +9726,26 @@ msgstr "Diesen Titel von hier laden"
 msgid "First available"
 msgstr "Erstbeste"
 
+#: src/mediaforge/web/templates/index.html:0
+msgid "Already downloaded"
+msgstr "Vorhanden"
+
+#: src/mediaforge/web/templates/index.html:0
+msgid "On Auto-Sync"
+msgstr "Im Auto-Sync"
+
+#: src/mediaforge/web/templates/index.html:0
+msgid "states"
+msgstr "Zustände"
+
+#: src/mediaforge/web/templates/index.html:0
+msgid "Switch off to hide titles you already have"
+msgstr "Abwählen, um bereits vorhandene Titel auszublenden"
+
+#: src/mediaforge/web/templates/index.html:0
+msgid "Switch off to hide titles an Auto-Sync job already covers"
+msgstr "Abwählen, um Titel auszublenden, für die schon ein Auto-Sync-Auftrag läuft"
+
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"
 

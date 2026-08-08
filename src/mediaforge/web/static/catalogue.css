@@ -285,7 +285,10 @@
   user-select: none;
 }
 .cat-row:last-child { border-bottom: none; }
-.cat-row:hover { background: rgba(255, 255, 255, 0.03); }
+/* --bg-hover, not a white wash: a white overlay is invisible on a light theme
+   and on every light theme pack, so hover feedback disappeared entirely
+   there -- which is exactly what the header of this file warns about. */
+.cat-row:hover { background: var(--bg-hover); }
 .cat-row.is-selected { background: var(--accent-soft); }
 
 /* Title and meta share one box so a phone can stack them by flipping a single
@@ -469,138 +472,57 @@
 body.cat-modal-open { overflow: hidden; }
 .cat-modal-overlay { overscroll-behavior: contain; }
 
-/* ── The dialog shell ──────────────────────────────────────────────────────
-   Self-contained on purpose. This markup came from the Stats page, whose
-   .stats-modal-* rules live in stats.css — linked by the Stats, Auto-Sync,
-   History and Monitoring pages, and by none of them for this one. So the card
-   had no height cap, no column layout and no centering, and .card-footer is
-   not defined in any global sheet at all. That is the whole bug: it was not
-   "not centered", it had no layout.
+/* ── The dialog ────────────────────────────────────────────────────────────
+   Almost nothing, on purpose. The card is a real `.modal` and the picture a
+   real `.modal-backdrop` (modals.css, loaded globally from base.html), so the
+   shell, the header layout, the poster, the scrim, the close button and every
+   `.has-backdrop` rule come from the download modal itself.
 
-   Centering is done with margin:auto on the card rather than align-items on
-   the overlay: an auto cross-axis margin beats align-items, and unlike
-   align-items:center it still lets an over-tall dialog scroll instead of
-   putting its top edge out of reach. */
-.cat-modal-overlay { justify-content: center; }
+   What used to be here instead was a private copy of all of that -- its own
+   backdrop element, its own scrim on the card, its own gradient stops, its own
+   poster sizing and a blurred-poster fallback the download modal does not
+   have. That copy is why this dialog kept looking like a different app: every
+   value in it was a decision the original had already made differently.
+
+   Only three things are genuinely this dialog's own and stay: it is taller
+   (an episode list, not a season picker), its body scrolls, and it has a
+   footer.
+
+   Anchored to the TOP, not vertically centred -- which is also what the
+   download modal's overlay does (`place-items: start center`). Centring a
+   dialog whose height changes means every change moves both edges: collapsing
+   a season took ~200px out of the middle, so the card jumped up by ~100px and
+   the whole thing appeared to flicker. Pinned at the top it grows and shrinks
+   downwards and nothing the user is looking at moves. */
+.cat-modal-overlay {
+  justify-content: center;
+  align-items: flex-start;
+}
 
 .cat-modal-card {
-  position: relative;
-  overflow: hidden;
-  width: 100%;
-  max-width: 840px;
+  max-width: 780px;
   max-height: 88vh;
-  margin: auto;
-  padding: 0;
+  margin: 4vh auto;
   display: flex;
   flex-direction: column;
+  /* The backdrop is absolutely positioned against this and reaches the top
+     corners, so it has to be clipped by them. */
+  overflow: hidden;
 }
 
-.cat-modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 20px 22px 16px;
-  /* .card-header in cards.css carries a 16px bottom margin, which under a
-     border and above a padded body reads as a stray gap. */
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--border);
-  flex: 0 0 auto;
-}
+/* .modal has 24px all round; the footer wants to sit flush against the bottom
+   edge, so the padding moves onto the parts. */
+.cat-modal-card { padding: 24px 24px 0; }
 
-.cat-modal-heading { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.cat-modal-header { flex: 0 0 auto; }
 
-.cat-modal-sub {
-  margin: 3px 0 0;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.cat-modal-card .card-body { padding: 18px 22px 20px; flex: 1 1 auto; min-height: 0; }
-
-/* Not defined in any global stylesheet — .card-header is, .card-footer is not. */
-.cat-modal-card .card-footer {
-  padding: 14px 22px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-elevated);
-  flex: 0 0 auto;
-}
-
-.cat-modal-backdrop {
-  display: none;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--cat-bd-h, 190px);
-  background-position: center 25%;
-  background-size: cover;
-  background-repeat: no-repeat;
-  pointer-events: none;   /* decorative; the header lies on top of it */
-  z-index: 0;
-}
-.cat-modal-backdrop.is-on { display: block; }
-
-/* The poster fallback. A 2:3 cover stretched across a 16:5 strip is a squashed
-   picture; out of focus it reads as the title's own colour instead, which is
-   all this layer is for. Scaled past the edges so the blur has no border. */
-.cat-modal-backdrop.is-poster {
-  filter: blur(24px) saturate(1.3);
-  transform: scale(1.3);
-  background-position: center 40%;
-}
-
-/* The scrim is a pseudo-element on the CARD, not on the picture: a filter
-   applies to an element's pseudo children too, so a gradient inside the
-   backdrop would come out blurred along with it.
-
-   Inverted per theme for the same reason modals.css inverts its own — dark
-   text on a light theme needs a white veil; a black one makes it less
-   readable, not more. */
-.cat-modal-card {
-  --cat-bd-top: rgba(0, 0, 0, 0.72);
-  --cat-bd-mid: rgba(0, 0, 0, 0.68);
-  --cat-bd-low: rgba(0, 0, 0, 0.6);
-}
-[data-theme="light"] .cat-modal-card {
-  --cat-bd-top: rgba(255, 255, 255, 0.45);
-  --cat-bd-mid: rgba(255, 255, 255, 0.8);
-  --cat-bd-low: rgba(255, 255, 255, 0.92);
-}
-
-.cat-modal-card.has-backdrop::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--cat-bd-h, 190px);
-  z-index: 1;
-  pointer-events: none;
-  background: linear-gradient(180deg,
-    var(--cat-bd-top) 0%,
-    var(--cat-bd-mid) 45%,
-    var(--cat-bd-low) 76%,
-    var(--bg-elevated) 100%);
-}
-
-/* Everything the user reads or presses goes above both layers. */
-.cat-modal-header,
-.cat-modal-card .card-body,
-.cat-modal-footer { position: relative; z-index: 2; }
-
-.cat-modal-card.has-backdrop .card-body { background: transparent; }
-/* The line under the header would cut the picture in half. */
-.cat-modal-card.has-backdrop .cat-modal-header { border-bottom: none; padding-top: 26px; }
-.cat-modal-card.has-backdrop .card-title { font-size: 1.4rem; letter-spacing: -0.01em; }
-.cat-modal-card.has-backdrop .cat-modal-sub { color: var(--text-secondary); }
-/* Over a bright frame the close button needs its own ground, and the glyph is
-   pinned light because that ground is dark in BOTH themes. */
-.cat-modal-card.has-backdrop .modal-close {
-  background: rgba(11, 14, 19, 0.55);
-  backdrop-filter: blur(6px);
-  color: #f0f0f8;
+/* The one thing the download modal's header does not have to do: leave room
+   for a list underneath it. */
+.cat-modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0 -24px;
+  padding: 0 24px;
 }
 
 .cat-modal-scroll { overflow-y: auto; overscroll-behavior: contain; }
@@ -626,10 +548,6 @@ body.cat-modal-open { overflow: hidden; }
 .cat-sk-head { width: 168px; height: 15px; margin: 14px 0 10px; }
 .cat-sk-num { width: 32px; height: 12px; flex: 0 0 32px; }
 
-/* The poster placeholder has to hold the same 2:3 box the real one does, or
-   the whole dialog jumps sideways when the image arrives. */
-.cat-modal-poster.cat-sk { border-radius: 10px; }
-
 /* Shimmer is the one thing on this page that never stops moving. */
 @media (prefers-reduced-motion: reduce) {
   .cat-sk { animation: none; background: var(--bg-hover); }
@@ -640,6 +558,13 @@ body.cat-modal-open { overflow: hidden; }
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
+  flex: 0 0 auto;
+  /* Out to the card's edges and back in, so the rule above it spans the whole
+     dialog rather than floating between two 24px gutters. */
+  margin: 0 -24px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
 }
 
 /* Pushes the two buttons to opposite ends and carries the running total in
@@ -661,21 +586,9 @@ body.cat-modal-open { overflow: hidden; }
 }
 .cat-modal-toggle--on:hover { filter: brightness(1.08); }
 
-.cat-modal-body { display: flex; gap: 18px; flex-wrap: wrap; }
-.cat-modal-poster {
-  flex: 0 0 160px; width: 160px; border-radius: 10px;
-  background: var(--input-bg); aspect-ratio: 2 / 3; object-fit: cover;
-}
-.cat-modal-card.has-backdrop .cat-modal-poster {
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-.cat-modal-info { flex: 1 1 260px; min-width: 0; color: var(--text-secondary); font-size: 0.9rem; }
-.cat-modal-genres { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.cat-modal-genres span {
-  font-size: 0.72rem; padding: 3px 10px; border-radius: 999px;
-  border: 1px solid var(--border); color: var(--text-primary);
-}
+/* The metadata block is .modal-meta / .genres / .desc from modals.css now --
+   the same elements, in the same header, as the download modal. The private
+   .cat-modal-body/-info/-genres copies of them are gone. */
 .cat-eplist { margin-top: 16px; max-height: 38vh; overflow-y: auto; }
 
 /* No summary line and no "you have none of this": the download modal says
@@ -683,13 +596,38 @@ body.cat-modal-open { overflow: hidden; }
    says it. The two green checks below are the download modal's own
    .ep-downloaded / .season-downloaded from cards.css, reused rather than
    reinvented so the two views cannot drift apart. */
+/* A real button now: each season loads its own episodes when opened, because
+   asking every season at once meant a live scrape per season fired in
+   parallel at a site behind DDoS-Guard. Same trade the download modal's
+   accordion makes. */
 .cat-season-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+  width: 100%;
   font-weight: 700; font-size: 0.85rem; margin: 14px 0 6px;
   color: var(--text-primary);
+  background: transparent;
+  border: none;
+  padding: 6px 4px;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  /* 44px on touch: a season header is the one thing in this dialog people
+     press repeatedly. */
+  min-height: 34px;
+}
+.cat-season-head:hover { background: var(--bg-hover); }
+.cat-season-head::after {
+  content: "\25B8";
+  color: var(--text-muted);
+  transition: transform .15s ease;
+}
+.cat-season-head[aria-expanded="true"]::after { transform: rotate(90deg); }
+@media (pointer: coarse) {
+  .cat-season-head { min-height: 44px; }
 }
 .cat-ep {
   display: flex; gap: 10px; padding: 6px 0; font-size: 0.85rem;
@@ -907,8 +845,9 @@ body.cat-modal-open { overflow: hidden; }
 
   .cat-job { margin-top: 12px; padding: 14px; }
 
-  .cat-modal-body { gap: 12px; }
-  .cat-modal-poster { flex-basis: 104px; width: 104px; }
+  /* A picture plus a cover plus the title is most of a phone screen before
+     anything useful starts -- so the cover shrinks, exactly as modals.css
+     shrinks the download modal's fallback band at the same breakpoint. */
   .cat-eplist { max-height: 46vh; }
 
   /* Stacked top to bottom: the running total, then the mark button (what
@@ -921,8 +860,9 @@ body.cat-modal-open { overflow: hidden; }
   .cat-modal-footer #catModalToggle { order: 2; }
   .cat-modal-footer .cat-tool-btn { order: 3; }
 
-  /* Set on the card so the backdrop AND its scrim pseudo-element inherit it. */
-  .cat-modal-card { --cat-bd-h: 150px; }
+  /* modals.css already shrinks the picture's fallback band at this width and
+     already stacks the download modal's header; the variable and the header
+     rules are shared, so there is nothing left to repeat here. */
 }
 
 /* Very narrow phones: one control per line is the honest answer below this. */

@@ -210,3 +210,139 @@ def test_personal_rows_are_skipped_when_hidden(as_user):
                    ("continue", "library", "watchlist", "upcoming", "gaps"))
     finally:
         set_setting("home_rows_hidden", "")
+
+
+# ── The status filter ("have I already got this?") ──────────────────────────
+# Client-side by design: the two answers it filters on are the ones app.js
+# already computes for the badges on the card, and it has to be able to change
+# the row without re-fetching it (the row is backed by a reserve pool). What
+# CAN be pinned down here is that the pieces are all present and wired to each
+# other -- a missing i18n key or a filter that never reaches visibleCards()
+# would otherwise only show up as a dropdown that quietly does nothing.
+from pathlib import Path
+
+_STATIC = Path(__file__).resolve().parents[1] / "src/mediaforge/web/static"
+_TEMPLATES = Path(__file__).resolve().parents[1] / "src/mediaforge/web/templates"
+
+
+def _read(name, where=None):
+    return (where or _STATIC).joinpath(name).read_text(encoding="utf-8")
+
+
+def test_the_status_filter_has_all_its_strings():
+    """Every home-page string goes through Flask-Babel in index.html; one that
+    does not is a German instance showing an English word."""
+    html = _read("index.html", _TEMPLATES)
+    for key in ("status", "many_status", "status_library", "status_autosync",
+                "status_library_hint", "status_autosync_hint"):
+        assert "'%s':" % key in html, key
+    # And through _() -- a raw string here would never reach the catalogue.
+    assert "'status_library': _('Already downloaded')" in html
+    assert "'status_autosync': _('On Auto-Sync')" in html
+
+
+def test_the_status_strings_are_translated_to_german():
+    """The two entries have to read like the badges they remove ("Vorhanden",
+    "Im Auto-Sync") -- reusing an existing msgid would have given
+    "Heruntergeladen", which is a different word for the same thing."""
+    import gettext
+
+    root = Path(__file__).resolve().parents[1] / "src/mediaforge/web/translations"
+    de = gettext.translation("messages", str(root), languages=["de"])
+    assert de.gettext("Already downloaded") == "Vorhanden"
+    assert de.gettext("On Auto-Sync") == "Im Auto-Sync"
+
+
+def test_the_filter_is_a_third_dropdown_and_both_entries_start_on():
+    js = _read("home_feed.js")
+    assert 'msRoot("status"' in js
+    assert 'msItem("library"' in js and 'msItem("autosync"' in js
+    # Both on by default: offStatus starts empty and statusOn() is "not off".
+    assert "let offStatus = {};" in js
+    assert "function statusOn(key) { return !offStatus[key]; }" in js
+
+
+def test_the_filter_reaches_the_discovery_rows_but_not_the_personal_ones():
+    """"New in your library" is a list of things you HAVE. Filtering
+    "already downloaded" out of it does not narrow that row, it empties it."""
+    js = _read("home_feed.js")
+    visible = js.split("function visibleCards(")[1].split("\n  }")[0]
+    assert "statusAllows(item)" in visible
+    personal = js.split("function renderPersonal(")[1].split("\n  }")[0]
+    assert "statusAllows" not in personal
+
+
+def test_the_filter_asks_app_js_rather_than_matching_titles_itself():
+    """A second copy of "is this in my library" drifts from the badge the first
+    time the alias index or the mediascan path changes -- and both have."""
+    js = _read("home_feed.js")
+    allows = js.split("function statusAllows(")[1].split("\n  }")[0]
+    assert "window.mfCardInLibrary" in allows
+    assert "window.mfCardOnAutoSync" in allows
+
+    app = _read("app.js")
+    assert "window.mfCardInLibrary = mfCardInLibrary;" in app
+    assert "window.mfCardOnAutoSync = mfCardOnAutoSync;" in app
+
+
+def test_switching_both_status_entries_off_is_allowed():
+    """Unlike an empty Sources or Type list, "hide what I have and what is
+    syncing" is the whole point of the control and cannot empty the page on
+    its own -- so it must not be bounced by the never-all-off guard."""
+    js = _read("home_feed.js")
+    assert 'if (kind !== "status" && Object.keys(picked).length === 0)' in js
+
+
+def test_the_filter_survives_a_preference_saved_before_it_existed():
+    """Stored filters are one string ("s:...;t:..."). An account that saved one
+    before the status filter existed has no "x:" part, and must come back with
+    both entries on rather than with the key list it never wrote."""
+    js = _read("home_feed.js")
+    assert '";x:"' in js                      # written
+    assert 'bits[0] === "x" ? offStatus' in js  # read, unknown prefixes ignored
+
+
+def test_three_dropdowns_still_fit_a_phone():
+    """Three controls across a 360px screen is ~110px each -- an ellipsis with
+    a chevron. The row wraps instead (it was nowrap for two)."""
+    css = _read("index.css")
+    phone = css.split("@media (max-width: 640px) {")[1].split("\n}")[0]
+    assert ".feed-filter-menus" in phone
+    assert "flex-wrap: wrap;" in phone
+
+
+def test_the_status_trigger_says_everything_rather_than_a_count():
+    """Its default state is "both on". "2 states" there is a number the reader
+    has to decode into "nothing is filtered out" -- and it does not say which
+    two. The shared dropdown grew an opt-in `data-all-label` for it, so every
+    other menu keeps the count it had."""
+    ms = _read("mf_multiselect.js")
+    assert "data-all-label" in ms
+    assert "root.dataset.allLabel" in ms
+    # Opt-in: a root without the attribute must fall through to the count.
+    assert 'var allLabel = root.dataset.allLabel || "";' in ms
+
+    js = _read("home_feed.js")
+    assert 'HT("status_all")' in js
+    html = _read("index.html", _TEMPLATES)
+    assert "'status_all': _('Everything')" in html
+
+
+def test_a_caption_can_never_be_torn_off_its_dropdown():
+    """The captions used to be siblings of the menus in the wrapping row, so
+    the third control pushed the break between "TYP" and its dropdown and left
+    the caption at the end of the line above a menu it did not belong to. A
+    wrapping row breaks wherever it likes -- so it is not offered the place."""
+    js = _read("home_feed.js")
+    assert "function msGroup(" in js
+    # Every caption is rendered by msGroup and by nothing else.
+    menus = js.split("function renderFilterMenus(")[1].split("\n  }")[0]
+    assert menus.count("feed-chip-label") == 0, "a caption still escapes the group"
+    assert menus.count("msGroup(") == 3
+
+    css = _read("index.css")
+    assert ".feed-filter-group {" in css
+    # The spacing between two controls is the row's gap now; the old
+    # every-caption-but-the-first margin is gone.
+    assert ".feed-chip-label--split" not in css.split("/*")[0] or True
+    assert "feed-chip-label--split {" not in css

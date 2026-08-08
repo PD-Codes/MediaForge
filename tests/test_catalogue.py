@@ -14,6 +14,23 @@ import pytest
 from mediaforge import catalogue
 
 
+# The bulk worker really does reach the download queue now (it used to filter
+# every episode away -- see _already_on_disk), so these tests really do create
+# queue items. The queue worker started by create_app() would then try to
+# download the fake urls and log at ERROR, which another test in the suite
+# asserts never happens. Paused for this module: the item is claimed and then
+# waits, which is all these tests need to see.
+@pytest.fixture(autouse=True)
+def _queue_paused(app):
+    from mediaforge.web import runtime_state
+
+    with app.app_context():
+        runtime_state.set_queue_paused(True)
+    yield
+    with app.app_context():
+        runtime_state.set_queue_paused(False)
+
+
 # ── Parsers ─────────────────────────────────────────────────────────────────
 ANIWORLD_HTML = '''
 <div id="seriesContainer"><div class="genre"><ul>
@@ -136,17 +153,32 @@ def test_bulk_rejects_malformed_requests(as_user, body, expected):
     assert resp.status_code == expected
 
 
-def test_bulk_refuses_urls_that_are_not_in_the_catalogue(as_user, monkeypatch):
+# ── Storing a catalogue for the route tests ─────────────────────────────────
+# The bulk and resolve endpoints validate submitted urls with an INDEXED query
+# against the stored rows now, instead of loading every source's full list into
+# Python. Stubbing catalogue_store.all_entries() therefore no longer stubs
+# anything they use -- so these tests put real rows in the real table, which is
+# what they should have done all along: the query being exercised is the one
+# that runs in production.
+@pytest.fixture()
+def stored(app):
+    def _store(per_source):
+        from mediaforge.web.db import save_catalogue
+        with app.app_context():
+            for source_id, entries in per_source.items():
+                save_catalogue(source_id, entries)
+    return _store
+
+
+def test_bulk_refuses_urls_that_are_not_in_the_catalogue(as_user, stored):
     """The catalogue is the closed set of things this page may act on. Without
     this check the endpoint would scrape any url it is handed -- a request
     forgery tool with a queue attached."""
-    from mediaforge.web.routes import catalogue as routes
-
-    # Validated against the STORED lists now (web/catalogue_store), not a live
-    # fetch: a POST must not be able to trigger two multi-megabyte downloads
-    # just to answer "is this url in a catalogue".
-    monkeypatch.setattr(routes.catalogue_store, "all_entries", lambda: {
-        "aniworld": [{"title": "A", "url": "https://aniworld.to/anime/stream/a", "alt": ""}]})
+    # Validated against the STORED rows, not a live fetch: a POST must not be
+    # able to trigger two multi-megabyte downloads just to answer "is this url
+    # in a catalogue".
+    stored({"aniworld": [
+        {"title": "A", "url": "https://aniworld.to/anime/stream/a", "alt": ""}]})
     resp = as_user("admin").post("/api/catalogue/bulk", json={
         "urls": ["https://evil.invalid/x", "https://aniworld.to/anime/stream/not-listed"],
     })
@@ -154,7 +186,7 @@ def test_bulk_refuses_urls_that_are_not_in_the_catalogue(as_user, monkeypatch):
     assert "no known urls" in resp.get_json()["error"]
 
 
-def test_there_is_no_selection_ceiling(as_user, monkeypatch):
+def test_there_is_no_selection_ceiling(as_user, monkeypatch, stored):
     """Marking the whole catalogue is a legitimate thing to want. The cost of a
     huge selection is handled where it belongs -- one series at a time in a
     background job that can be stopped -- not by refusing the request."""
@@ -164,8 +196,7 @@ def test_there_is_no_selection_ceiling(as_user, monkeypatch):
 
     fake = [{"title": str(i), "url": "https://aniworld.to/anime/stream/s%d" % i, "alt": ""}
             for i in range(1200)]
-    monkeypatch.setattr(routes.catalogue_store, "all_entries",
-                        lambda: {"aniworld": fake})
+    stored({"aniworld": fake})
     monkeypatch.setattr(routes, "all_catalogues", lambda: {"aniworld": {}})
     # Nothing is actually expanded: the worker is what would scrape.
     monkeypatch.setattr(routes.catalogue_worker, "start_job",
@@ -177,7 +208,7 @@ def test_there_is_no_selection_ceiling(as_user, monkeypatch):
     assert resp.get_json()["total"] == 1200
 
 
-def test_a_selection_may_span_several_sources(as_user, monkeypatch):
+def test_a_selection_may_span_several_sources(as_user, monkeypatch, stored):
     """The page shows one merged list, so there is no "the" source to check
     against -- each url is resolved against whichever catalogue holds it."""
     from mediaforge.web.routes import catalogue as routes
@@ -187,7 +218,7 @@ def test_a_selection_may_span_several_sources(as_user, monkeypatch):
         "sto": [{"title": "B", "url": "https://serienstream.to/serie/b", "alt": ""}],
     }
     monkeypatch.setattr(routes, "all_catalogues", lambda: {k: {} for k in per_source})
-    monkeypatch.setattr(routes.catalogue_store, "all_entries", lambda: per_source)
+    stored(per_source)
     captured = {}
 
     def _start(source, urls, *a, **k):
@@ -241,7 +272,7 @@ def test_the_page_renders_its_controls(as_user):
                  'id="catRailBubble"',      # the letter shown while dragging
                  'id="catActions"',         # the bar that hides when empty
                  'id="catModalCard"',
-                 'cat-modal-backdrop',      # details modal header image
+                 'class="modal-backdrop"',  # details modal header image
                  'class="cat-list-wrap"'):
         assert hook in html, hook
 
@@ -656,7 +687,7 @@ def test_the_page_offers_a_preferred_source(as_user):
         assert re.search(r"\b%s:\s*\"" % key, html), key
 
 
-def test_either_url_of_a_merged_pair_is_accepted(as_user, monkeypatch):
+def test_either_url_of_a_merged_pair_is_accepted(as_user, monkeypatch, stored):
     """A merged row is one row with two urls behind it, and the pill decides
     which one travels. The endpoint must accept whichever it gets -- it
     validates against the stored catalogues, which hold both."""
@@ -669,7 +700,7 @@ def test_either_url_of_a_merged_pair_is_accepted(as_user, monkeypatch):
                  "url": "https://serienstream.to/serie/aot"}],
     }
     monkeypatch.setattr(routes, "all_catalogues", lambda: {k: {} for k in pair})
-    monkeypatch.setattr(routes.catalogue_store, "all_entries", lambda: pair)
+    stored(pair)
 
     captured = {}
     monkeypatch.setattr(routes.catalogue_worker, "start_job",
@@ -758,7 +789,20 @@ import types
 
 class _FakeEpisode:
     def __init__(self, url, number, downloaded):
-        self.url, self.episode_number, self.is_downloaded = url, number, downloaded
+        self.url, self.episode_number = url, number
+        # The REAL shape. `is_downloaded` is not a boolean on any model: every
+        # one of them returns models/common/common.check_downloaded()'s dict,
+        # and a non-empty dict is always truthy. The bulk worker read it as a
+        # flag, so every episode of every series counted as already on disk,
+        # the whole selection came back "skipped" and not one queue item was
+        # ever created -- a configured bulk action started no download at all.
+        # The old fake used a plain bool and could never have caught that.
+        self.is_downloaded = {
+            "exists": bool(downloaded),
+            "video_langs": set(),
+            "audio_langs": set(),
+            "height": 0, "width": 0, "bitrate": 0,
+        }
 
 
 class _FakeSeason:
@@ -842,3 +886,350 @@ def test_an_autosync_job_is_stored_and_not_duplicated(app, fake_provider):
         after = [j for j in db.get_autosync_jobs() if j.get("series_url") == url]
         assert len(after) == 1
         assert after[0]["language"] == "German Dub"
+
+
+# ── "Already on disk", read correctly ───────────────────────────────────────
+def test_a_check_downloaded_dict_is_not_a_boolean():
+    """The regression itself, in one line.
+
+    Every model's `is_downloaded` is check_downloaded()'s dict. Truthiness of
+    that dict says nothing at all -- it is non-empty either way -- so a bulk
+    expansion that used it as a flag dropped EVERY episode and produced an
+    empty queue item, which is what "the catalogue starts no download" was.
+    """
+    from mediaforge.web.catalogue_worker import _already_on_disk
+
+    absent = {"exists": False, "video_langs": set(), "audio_langs": set(),
+              "height": 0, "width": 0, "bitrate": 0}
+    present = dict(absent, exists=True)
+
+    assert bool(absent), "guard: the dict is truthy even when nothing is there"
+    assert _already_on_disk(types.SimpleNamespace(is_downloaded=absent)) is False
+    assert _already_on_disk(types.SimpleNamespace(is_downloaded=present)) is True
+    # Older/simpler models and third-party ones may answer with a plain bool.
+    assert _already_on_disk(types.SimpleNamespace(is_downloaded=False)) is False
+    assert _already_on_disk(types.SimpleNamespace(is_downloaded=True)) is True
+    # An episode that cannot answer at all is "not there", never "skip it".
+    assert _already_on_disk(types.SimpleNamespace()) is False
+
+
+def test_only_missing_keeps_the_episodes_that_are_missing(fake_provider):
+    """Two seasons of three, episode 1 of each already on disk -> four left."""
+    from mediaforge.web.catalogue_worker import _episodes_for
+
+    title, episodes, total = _episodes_for("https://aniworld.to/anime/stream/x", True)
+    assert title == "Testserie"
+    assert total == 6
+    assert len(episodes) == 4
+    assert all("/1" != url[-2:] for url in episodes)
+
+    _, everything, total_again = _episodes_for("https://aniworld.to/anime/stream/x", False)
+    assert len(everything) == total_again == 6
+
+
+def test_a_series_without_any_episodes_is_reported_not_swallowed(app, monkeypatch):
+    """A series page that yields nothing is a FAILURE with a reason, not a
+    silent "skipped" -- the counter that told the user nothing about why their
+    selection produced an empty queue."""
+    import mediaforge.providers as provs
+
+    class _Empty:
+        def __init__(self, url=None):
+            self.url, self.title, self.seasons = url, "Leer", []
+
+    monkeypatch.setattr(provs, "resolve_provider",
+                        lambda url: types.SimpleNamespace(series_cls=_Empty))
+    with app.app_context():
+        state = _run_job(app, source="aniworld",
+                         urls=["https://aniworld.to/anime/stream/empty"],
+                         language="German Dub", provider="VOE", mode="queue",
+                         missing_only=True)
+    assert state["failed"] == 1 and state["queued"] == 0
+    assert "no episodes" in state["errors"][0]["error"]
+
+
+def test_the_state_endpoint_uses_the_queues_own_status_words():
+    """`pending` and `paused` are not download_queue statuses (see the CHECK
+    constraint in db/queue.py); a pause is global, not per item. Filtering on
+    them matched nothing, so a series that had just been queued never got its
+    "Queued" badge -- which reads exactly like nothing happened."""
+    import inspect
+
+    from mediaforge.web.db import queue as queue_db
+    from mediaforge.web.routes import catalogue as cat_routes
+
+    src = inspect.getsource(cat_routes.register_catalogue_routes)
+    body = src.split("def api_catalogue_state")[1].split("@app.route")[0]
+    # Only lines that actually run -- the comment above it names the wrong
+    # words on purpose, to say why they were wrong.
+    code = "\n".join(ln for ln in body.splitlines() if not ln.strip().startswith("#"))
+    assert '("queued", "running")' in code
+    assert "pending" not in code and "paused" not in code
+
+    # And those words have to be the ones the schema allows.
+    assert "'queued'" in queue_db._CREATE_QUEUE_TABLE
+    assert "'pending'" not in queue_db._CREATE_QUEUE_TABLE
+    assert "'paused'" not in queue_db._CREATE_QUEUE_TABLE
+
+
+# ── The details modal's backdrop ────────────────────────────────────────────
+# ── Static assets, read from disk ───────────────────────────────────────────
+# The details modal is now the download modal's markup driven by modals.css,
+# and the seasons load one at a time. Neither is visible in a rendered page --
+# both are decisions in the js/css -- so these read the files.
+from pathlib import Path as _Path
+
+_STATIC = _Path(__file__).resolve().parents[1] / "src/mediaforge/web/static"
+
+
+def _read(name):
+    return (_STATIC / name).read_text(encoding="utf-8")
+
+
+def test_the_details_modal_is_the_download_modals_own_markup(as_user):
+    """Not "styled after" it -- the same classes, so the same rules in
+    modals.css paint both and the two cannot drift. The private copy
+    (.cat-modal-backdrop, a scrim on the card, its own poster sizing, a
+    blurred-poster fallback) is what kept this dialog looking like a different
+    application."""
+    html = as_user("admin").get("/catalogue").get_data(as_text=True)
+    card = html.split('id="catModalCard"')[1].split("cat-modal-footer")[0]
+    for cls in ('class="modal-backdrop"', 'class="modal-header cat-modal-header"',
+                'class="modal-poster-col"', 'class="modal-meta"',
+                'class="genres"', 'class="desc"'):
+        assert cls in card, cls
+    # The cover is IN the header, lying on the picture -- it used to be
+    # rendered into the body, below everything the backdrop covered.
+    header = card.split('class="modal-header')[1].split("cat-modal-scroll")[0]
+    assert 'id="catModalPoster"' in header
+
+    css = _read("catalogue.css")
+    assert ".cat-modal-backdrop" not in css, "the private copy is back"
+    assert "is-poster" not in css, "the blurred-poster fallback is back"
+
+
+def test_the_backdrop_height_is_measured_with_the_apps_own_variable():
+    """--cat-bd-h was this page's private name for --mf-backdrop-h, and nothing
+    ever wrote it, so the modal always used the CSS fallback band. It follows
+    the header now, through the same variable app.js uses."""
+    js = _read("catalogue.js")
+    assert 'setProperty("--mf-backdrop-h"' in js
+    assert "--cat-bd-h" not in js
+    assert "ResizeObserver" in js
+
+
+def test_the_cineinfo_settings_are_actually_loaded():
+    """upgradeBackdropFromTmdb() reads window.cineinfoSettings and returns on
+    its first line without it. Nothing on this page ever loaded them, so the
+    TMDB backdrop could never appear at all -- the blurred poster everybody
+    saw was the fallback, permanently."""
+    js = _read("catalogue.js")
+    assert "loadCineinfoSettings()" in js
+
+
+def test_a_season_loads_its_own_episodes():
+    """Every season's episodes used to be fetched in parallel the moment the
+    dialog opened -- one live scrape per season, simultaneously, at a site
+    behind DDoS-Guard. A twelve-season series meant twelve requests before
+    anything was on screen."""
+    js = _read("catalogue.js")
+    episodes = js.split("function loadEpisodes(")[1].split("async function toggleSeason(")[0]
+    assert "/api/episodes" not in episodes, "the season list still fetches episodes"
+    assert "Promise.all" not in episodes
+    # One request, in the handler, for the season that was opened.
+    toggle = js.split("async function toggleSeason(")[1].split("\n  }")[0]
+    assert "/api/episodes" in toggle
+    assert 'dataset.loaded === "1"' in toggle, "an open/close cycle refetches"
+
+
+# ── Performance, where it is measurable ─────────────────────────────────────
+def test_the_url_lookups_use_their_index(app):
+    """EXPLAIN QUERY PLAN rather than a stopwatch: a plan that says SCAN is the
+    bug, whatever the row count happens to be on the machine running this."""
+    from mediaforge.web.db import save_catalogue
+    from mediaforge.web.db._core import get_db
+
+    with app.app_context():
+        save_catalogue("aniworld", [
+            {"title": "T%d" % i, "url": "https://aniworld.to/anime/stream/p%d" % i,
+             "alt": ""} for i in range(50)])
+        conn = get_db()
+        try:
+            def plan(sql, params=()):
+                return " ".join(r["detail"] for r in
+                                conn.execute("EXPLAIN QUERY PLAN " + sql, params))
+
+            # find_catalogue_entry / catalogue_sources_for_urls
+            by_url = plan("SELECT source_id FROM catalogue_entries WHERE url IN (?, ?)",
+                          ("x", "x/"))
+            assert "idx_catalogue_entries_url" in by_url, by_url
+
+            # load_catalogue's ORDER BY
+            listing = plan("SELECT title, url FROM catalogue_entries "
+                           "WHERE source_id = ? ORDER BY title COLLATE NOCASE, url",
+                           ("aniworld",))
+            assert "USE TEMP B-TREE" not in listing, listing
+
+            # The id backfill's queue. The ORDER BY used to be an expression
+            # ("ids_checked_at IS NOT NULL, ids_checked_at"), which produces the
+            # same order -- SQLite sorts NULLs first anyway -- while making the
+            # sort unindexable: a full scan plus a temp B-tree every twelve
+            # seconds for the hour and a half the backfill runs.
+            backfill = plan(
+                "SELECT source_id, url, title FROM catalogue_entries "
+                "WHERE ids_checked_at IS NULL OR (tmdb_id IS NULL AND ids_checked_at < ?) "
+                "ORDER BY ids_checked_at LIMIT ?", (0, 5))
+            assert "USE TEMP B-TREE" not in backfill, backfill
+        finally:
+            conn.close()
+
+
+def test_finding_one_entry_does_not_read_the_others(app, monkeypatch):
+    from mediaforge.web import db
+    from mediaforge.web.db import find_catalogue_entry, save_catalogue
+
+    with app.app_context():
+        save_catalogue("aniworld", [
+            {"title": "Wanted", "url": "https://aniworld.to/anime/stream/w", "alt": ""}])
+        loads = []
+        monkeypatch.setattr(db, "load_catalogue", lambda *a, **k: loads.append(1) or [])
+        assert find_catalogue_entry("https://aniworld.to/anime/stream/w")["title"] == "Wanted"
+        # Trailing slash, and a url nobody stored.
+        assert find_catalogue_entry("https://aniworld.to/anime/stream/w/")
+        assert find_catalogue_entry("https://evil.invalid/x") == {}
+        assert not loads
+
+
+def test_the_library_check_reduces_the_folder_list_once():
+    """downloadedFolderFor() lower-cased and loose-keyed every folder again for
+    every title it was asked about. Fine for the cards a start page renders,
+    ~4.7 seconds of solid main-thread work for the Catalogue page's 13k rows
+    against a few hundred folders -- twice, because the page runs two passes."""
+    app_js = (_STATIC / "app.js").read_text(encoding="utf-8")
+    assert "function _buildFolderIndex()" in app_js
+    body = app_js.split("function downloadedFolderFor(title) {")[1].split("\n}")[0]
+    assert "_dlFoldersLower" in body and "_dlFoldersLoose" in body
+    assert "downloadedFolders.find(" not in body, "still scanning the raw list"
+    # The TITLE is still normalised once per call, which is the point. What
+    # must not be here is normalising a FOLDER -- that is the per-title-times-
+    # per-folder work the index replaces.
+    for folder_side in ("normalizeQuotes(f", "_looseTitleKey(f)", "f.toLowerCase()"):
+        assert folder_side not in body, folder_side
+
+
+def test_the_library_pass_waits_for_the_library():
+    """Without the index every one of the thirteen thousand answers is "no",
+    and the whole pass runs again the moment /api/downloaded-folders lands --
+    the same seconds of work, twice, exactly when the page is trying to become
+    usable."""
+    js = _read("catalogue.js")
+    assert "if (!libIndexReady) return;" in js
+    assert "libIndexReady = true;" in js
+
+
+def test_the_virtual_rows_are_the_height_the_stylesheet_gives_them():
+    """The spacer is rows x this number. Too small and the list is shorter than
+    its content: the last rows cannot be scrolled to. It said 44/54 at 720px
+    against a stylesheet that says 46 and, below 860px, a 64px minimum."""
+    js = _read("catalogue.js")
+    css = _read("catalogue.css")
+
+    def const(name):
+        return int(js.split("const %s = " % name)[1].split(";")[0])
+
+    row = css.split(".cat-row {")[1].split("}")[0]
+    assert "height: %dpx;" % const("ROW_HEIGHT_DESKTOP") in row
+
+    phone = css.split("@media (max-width: 860px) {")[1]
+    phone_row = phone.split(".cat-row {")[1].split("}")[0]
+    assert "min-height: %dpx;" % const("ROW_HEIGHT_MOBILE") in phone_row
+    assert '"(max-width: 860px)"' in js, "the JS breakpoint left the stylesheet's"
+
+
+def test_a_selection_of_urls_that_no_longer_exist_is_pruned():
+    """The stored selection was only ever added to. A url from a source that
+    was later switched off stayed for good: the counter kept reporting things
+    nothing could submit, and on a phone the action bar could never reach zero
+    and so never got out of the way again."""
+    js = _read("catalogue.js")
+    assert "function pruneStoredState()" in js
+    load_all = js.split("entries = combineByTmdbId(merged);")[1].split("\n  }")[0]
+    assert "pruneStoredState();" in load_all
+
+
+def test_a_failed_source_list_offers_a_retry_instead_of_an_empty_page():
+    js = _read("catalogue.js")
+    body = js.split("async function loadSources() {")[1].split("\n  }")[0]
+    assert "showRetry();" in body
+
+
+def test_resolving_one_id_does_not_rebuild_thirteen_thousand_rows():
+    """An id only merges rows if some OTHER row already carries the same one.
+    Rebuilding unconditionally meant every details open on an unresolved title
+    re-merged the whole list and re-ran every library check."""
+    js = _read("catalogue.js")
+    body = js.split("async function resolveIds(url) {")[1].split("\n  }")[0]
+    assert "const twin =" in body
+    assert "if (twin) {" in body
+
+
+def test_the_row_hover_survives_a_light_theme():
+    """A white wash is invisible on a light theme and on every light theme
+    pack -- which is exactly what this stylesheet's own header warns about."""
+    css = _read("catalogue.css")
+    hover = css.split(".cat-row:hover")[1].split("}")[0]
+    assert "var(--bg-hover)" in hover
+    assert "rgba(255" not in hover
+
+
+# ── Three things that only show up on screen ────────────────────────────────
+def test_the_backdrop_does_not_read_a_let_declared_global_off_window():
+    """app.js declares `let cineinfoSettings`, and a top-level `let` never
+    becomes a property of the global object -- so `window.cineinfoSettings` is
+    undefined however loaded the settings are. Reading it that way meant the
+    backdrop check saw no data every single time, and the dialog showed no
+    picture at all."""
+    app_js = (_STATIC / "app.js").read_text(encoding="utf-8")
+    assert "let cineinfoSettings" in app_js, \
+        "if this became a var/window assignment, simplify the reader below"
+
+    js = _read("catalogue.js")
+    # In CODE, not in the comment that explains why it must not be there.
+    code = "\n".join(ln for ln in js.splitlines()
+                     if not ln.lstrip().startswith(("*", "//", "/*")))
+    assert "window.cineinfoSettings" not in code
+    assert "function cineinfoSettingsOrNull()" in js
+    # The bare identifier resolves across two classic scripts; the typeof guard
+    # is for a page that does not load app.js at all.
+    assert 'typeof cineinfoSettings !== "undefined"' in js
+
+
+def test_marking_a_row_does_not_replay_the_other_rows_checkboxes():
+    """.chb-main plays wave-bounce/draw-check whenever a NEW element enters the
+    document already :checked. Rebuilding the slice with innerHTML on every
+    render therefore made every already-marked row look freshly clicked -- on
+    each new mark, and on every scroll frame."""
+    js = _read("catalogue.js")
+    render = js.split("  function render() {")[1].split("\n  }")[0]
+    assert "rowsHost.innerHTML = html" not in render
+    assert "makeRowNode()" in render and "paintRow(" in render
+
+    paint = js.split("function paintRow(node, e) {")[1].split("\n  }")[0]
+    # Assigning the same value is free; assigning a different one is what may
+    # animate, which is right exactly when the state really changed.
+    assert "if (node._box.checked !== isSel)" in paint
+
+    css = (_STATIC / "forms.css").read_text(encoding="utf-8")
+    assert "animation: wave-bounce" in css, "the animation this is about is gone"
+
+
+def test_the_dialog_is_anchored_to_the_top_so_it_cannot_jump():
+    """Centring a dialog whose height changes moves BOTH edges: collapsing a
+    season took ~200px out of the middle, so the card jumped up by half of that
+    and the whole thing appeared to flicker. The download modal's overlay is
+    top-anchored for the same reason (place-items: start center)."""
+    css = _read("catalogue.css")
+    overlay = css.split(".cat-modal-overlay {\n")[1].split("}")[0]
+    assert "align-items: flex-start;" in overlay
+    card = css.split(".cat-modal-card {")[1].split("}")[0]
+    assert "margin: auto;" not in card

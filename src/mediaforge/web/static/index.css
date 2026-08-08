@@ -562,56 +562,88 @@
 .feed-filter-menus {
   display: flex;
   align-items: center;
-  gap: 8px;
+  /* Between GROUPS. Bigger than the gap inside one (8px, below), which is what
+     makes the three read as three controls rather than six loose elements. */
+  gap: 16px;
   min-width: 0;
   flex: 1 1 auto;
   flex-wrap: wrap;
 }
 
-.feed-filter-menus .mf-multiselect {
-  width: auto;
+/* One caption plus its menu, as a single unit.
+   The caption used to be a sibling of the dropdown in the wrapping row, so
+   with a third control added the line break fell BETWEEN them: the screenshot
+   that started this read "QUELLEN [2 Quellen]  TYP" / "[2 Typen]  STATUS
+   [Alles]" -- every caption above the wrong menu. A wrapping flex row breaks
+   wherever it likes; the fix is to stop offering it that place. */
+.feed-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  /* Wide enough for two source names before the component falls back to its
-     "N sources" summary (data-max-names="1"), narrow enough that both plus
-     both labels plus the settings button fit one line on a laptop. */
-  flex: 0 1 220px;
+  /* All three the same width, and all three shrink together. The basis is what
+     they settle at when the row has room; the shrink is what keeps them equal
+     when it does not -- three differently sized boxes were the other half of
+     what made the row look accidental. */
+  flex: 0 1 210px;
+  max-width: 300px;
 }
 
-/* The two dropdown captions. .feed-chip-set and the .feed-chip pill rules that
+.feed-filter-menus .mf-multiselect {
+  width: auto;
+  /* Never below a readable summary: with three controls in the row the shrink
+     factor would otherwise squeeze "Im Auto-Sync" down to an ellipsis on a
+     narrow laptop. */
+  min-width: 120px;
+  /* Takes whatever the caption leaves. Sized by the GROUP now, not by itself. */
+  flex: 1 1 auto;
+}
+
+/* The dropdown captions. .feed-chip-set and the .feed-chip pill rules that
    used to live here are gone with the pill row (see renderFilterMenus() in
-   static/home_feed.js) -- these two are all that survived, because the labels
-   did. */
+   static/home_feed.js) -- this one is all that survived, because the labels
+   did. .feed-chip-label--split went with the regrouping: the spacing between
+   two controls is the parent's `gap` now, not a margin on every caption but
+   the first. */
 .feed-chip-label {
   font-size: 0.7rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
   white-space: nowrap;
-}
-
-.feed-chip-label--split {
-  margin-left: 8px;
+  flex: 0 0 auto;
 }
 
 .feed-section {
   margin-top: 18px;
 }
 
-/* On a phone the two labels are what has to go, not the controls: "SOURCES"
-   and "TYPE" are guessable from the dropdown summaries ("3 sources", "Series"),
-   and dropping them buys each control the width it needs to show a name rather
-   than a count. */
+/* On a phone the labels are what has to go, not the controls: "SOURCES",
+   "TYPE" and "STATUS" are guessable from the dropdown summaries ("3 sources",
+   "Series", "In library"), and dropping them buys each control the width it
+   needs to show a name rather than a count.
+
+   Three controls no longer fit on one phone line, so the row WRAPS (it used to
+   be nowrap for two): at 360px, three across leaves ~110px each, which is an
+   ellipsis with a chevron next to it. Two per line, the third below. */
 @media (max-width: 640px) {
   .feed-filter-menus {
     width: 100%;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .feed-filter-menus .feed-chip-label { display: none; }
 
-  .feed-filter-menus .mf-multiselect {
-    flex: 1 1 0;
+  /* Without their captions the groups ARE the dropdowns: two per line, the
+     third below. Three across a 360px screen is ~110px each, which is an
+     ellipsis with a chevron next to it. */
+  .feed-filter-group {
+    flex: 1 1 44%;
+    max-width: none;
   }
+
+  .feed-filter-menus .mf-multiselect { min-width: 0; }
 }
 
 /* The FSK-locked 18+ entry is listed but is a fact rather than an option. (A

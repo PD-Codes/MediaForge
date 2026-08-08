@@ -22,8 +22,16 @@
   const T = window.CAT_I18N || {};
   const t = (key, fallback) => T[key] || fallback || key;
 
-  const ROW_HEIGHT_DESKTOP = 44;
-  const ROW_HEIGHT_MOBILE = 54;
+  // These MUST match .cat-row in catalogue.css, breakpoint included: the
+  // spacer's height is rows x this, so a value that is too small makes the
+  // list shorter than its content and the last rows unreachable. They said
+  // 44/54 at 720px against a stylesheet that says 46 and (below 860px, not
+  // 720) a 64px minimum -- so on a tablet the desktop height was used for a
+  // row half again as tall, and the bottom of the catalogue could not be
+  // scrolled to at all.
+  const ROW_HEIGHT_DESKTOP = 46;
+  const ROW_HEIGHT_MOBILE = 64;
+  const ROW_BREAKPOINT = "(max-width: 860px)";
   const OVERSCAN = 8;             // rows rendered above/below the viewport
   const WARN_THRESHOLD = 25;      // selection size that earns the warning
   // Below this many rows the A-Z rail is hidden: a list you can flick through
@@ -85,6 +93,9 @@
   // the library index or the list itself changes.
   let libPass = 0;
   let libFlagsReady = false;
+  // Whether app.js has actually loaded the library index. Until it has, a
+  // library pass is thirteen thousand guaranteed "no" answers.
+  let libIndexReady = false;
   let sortDir = "asc";            // "asc" | "desc"
   let letterFirst = {};           // letter -> first index into `filtered`
   let railLetters = [];           // letters in rail order, "#" for the rest
@@ -117,7 +128,7 @@
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
   ));
 
-  const rowHeight = () => (window.matchMedia("(max-width: 720px)").matches
+  const rowHeight = () => (window.matchMedia(ROW_BREAKPOINT).matches
     ? ROW_HEIGHT_MOBILE : ROW_HEIGHT_DESKTOP);
 
   /** Is this already in the library? One place, every index we have.
@@ -209,8 +220,19 @@
 
   // ── Data ─────────────────────────────────────────────────────────────────
   async function loadSources() {
-    const resp = await fetch("/api/catalogue/sources");
-    const data = await resp.json();
+    // Every failure path here has to end at showRetry(). Without the try the
+    // promise simply rejected -- a session that expired or one dropped
+    // request left the page permanently empty, with no message and no way to
+    // ask again, which is indistinguishable from an empty catalogue.
+    let data;
+    try {
+      const resp = await fetch("/api/catalogue/sources");
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      data = await resp.json();
+    } catch (e) {
+      showRetry();
+      return;
+    }
     sources = data.sources || [];
     // Resolved after the list is in place: colorOf() reads it back out.
     sources.forEach((s) => { s.color = colorOf(s.id); });
@@ -267,8 +289,39 @@
       return cmp !== 0 ? cmp : a.source.localeCompare(b.source);
     });
     entries = combineByTmdbId(merged);
+    pruneStoredState();
     applyFilter();
     computeLibraryFlags();
+  }
+
+  /** Drop remembered urls that no longer exist.
+   *
+   *  The selection and the per-row source picks live in localStorage and were
+   *  only ever added to. A url from a source that has since been switched off,
+   *  uninstalled, or dropped from the site stayed in the set for good: the
+   *  counter kept reporting "12 selected" for twelve things nothing could ever
+   *  submit, and on a phone the action bar could never reach zero and so never
+   *  got out of the way again.
+   *
+   *  Only ever called once the lists are actually loaded -- pruning against a
+   *  failed fetch would throw away a perfectly good selection. */
+  function pruneStoredState() {
+    if (!entries.length) return;
+    const known = new Set();
+    const keys = new Set();
+    entries.forEach((e) => {
+      keys.add(e.key);
+      e.variants.forEach((v) => known.add(v.url));
+    });
+
+    let dropped = 0;
+    selection.forEach((url) => { if (!known.has(url)) { selection.delete(url); dropped++; } });
+    let picksDropped = false;
+    Object.keys(sourcePicks).forEach((key) => {
+      if (!keys.has(key)) { delete sourcePicks[key]; picksDropped = true; }
+    });
+    if (dropped) saveSelection();
+    if (picksDropped) savePrefs();
   }
 
   /** Fold entries that are demonstrably the same show into one row.
@@ -575,6 +628,11 @@
    * when the page has just become usable.
    */
   function computeLibraryFlags() {
+    // Nothing to compare against yet. The pass would walk thirteen thousand
+    // rows to answer "no" to all of them and then run again the moment
+    // /api/downloaded-folders lands -- the same seconds of work, twice, at
+    // exactly the moment the page is trying to become usable.
+    if (!libIndexReady) return;
     const pass = ++libPass;
     libFlagsReady = false;
     let i = 0;
@@ -598,7 +656,11 @@
     const term = (searchInput.value || "").trim().toLowerCase();
     let n = 0;
     entries.forEach((e) => {
-      if (offSources.has(e.source)) return;
+      // The SAME source test applyFilter() uses: a merged row is hidden only
+      // when every one of its sources is off. Testing the active variant
+      // alone made the chip's number disagree with the number of rows
+      // pressing it actually shows.
+      if (e.variants.every((v) => offSources.has(v.source))) return;
       if (term && e.title.toLowerCase().indexOf(term) === -1 &&
           !(e.alt && e.alt.indexOf(term) !== -1)) return;
       if (e._lib) n += 1;
@@ -621,10 +683,20 @@
     return (ch >= "A" && ch <= "Z") ? ch : "#";
   }
 
+  /** The row's letter, computed once and kept on the row.
+   *
+   *  letterOf() allocates two strings (normalize + a regex replace) per call,
+   *  and buildLetterIndex() runs over every filtered row on every keystroke.
+   *  At 13k rows that is 26k allocations per character typed. */
+  function letterOfRow(row) {
+    if (row._letter === undefined) row._letter = letterOf(row.title);
+    return row._letter;
+  }
+
   function buildLetterIndex() {
     letterFirst = {};
     for (let i = 0; i < filtered.length; i++) {
-      const letter = letterOf(filtered[i].title);
+      const letter = letterOfRow(filtered[i]);
       if (letterFirst[letter] === undefined) letterFirst[letter] = i;
     }
     const alpha = [];
@@ -681,8 +753,27 @@
   // Geometry rather than elementFromPoint: the letters are evenly distributed,
   // and a finger dragging over the rail must resolve even when it strays a few
   // pixels outside it.
+  // Cached for the duration of a drag. Each pointermove used to read three
+  // rects and then write a style and a scrollTop, which forces a synchronous
+  // layout per move event; neither the rail nor its host moves while a finger
+  // is on it.
+  let railRectCache = null;
+  let railHostRectCache = null;
+
+  function railRects() {
+    if (!railRectCache) railRectCache = rail.getBoundingClientRect();
+    const host = railBubble && railBubble.parentElement;
+    if (host && !railHostRectCache) railHostRectCache = host.getBoundingClientRect();
+    return { rail: railRectCache, host: railHostRectCache };
+  }
+
+  function dropRailRects() {
+    railRectCache = null;
+    railHostRectCache = null;
+  }
+
   function letterAtY(clientY) {
-    const rect = rail.getBoundingClientRect();
+    const rect = railRects().rail;
     if (!rect.height || !railLetters.length) return "";
     const rel = Math.min(rect.height - 1, Math.max(0, clientY - rect.top));
     return railLetters[Math.floor(rel / (rect.height / railLetters.length))] || "";
@@ -698,8 +789,9 @@
     if (!host) return;
     railBubble.textContent = letter;
     railBubble.hidden = false;          // measure it laid out, not hidden
-    const railRect = rail.getBoundingClientRect();
-    const hostRect = host.getBoundingClientRect();
+    const rects = railRects();
+    const railRect = rects.rail;
+    const hostRect = rects.host || host.getBoundingClientRect();
     const step = railRect.height / railLetters.length;
     const idx = railLetters.indexOf(letter);
     railBubble.style.top =
@@ -720,6 +812,7 @@
     };
     rail.addEventListener("pointerdown", (ev) => {
       dragging = true;
+      dropRailRects();                  // measure once, at the start of the drag
       // Pointer capture is what makes the drag keep working once the finger
       // leaves the 22px-wide rail, which on a phone it immediately does.
       try { rail.setPointerCapture(ev.pointerId); } catch (e) { /* older engines */ }
@@ -731,7 +824,7 @@
       handle(ev.clientY);
       ev.preventDefault();
     });
-    const endDrag = () => { dragging = false; hideRailBubble(); };
+    const endDrag = () => { dragging = false; hideRailBubble(); dropRailRects(); };
     rail.addEventListener("pointerup", endDrag);
     rail.addEventListener("pointercancel", endDrag);
     rail.addEventListener("pointerleave", () => { if (!dragging) hideRailBubble(); });
@@ -760,6 +853,68 @@
   }
 
   // ── Virtualised rendering ────────────────────────────────────────────────
+  // Rows are PATCHED, not rebuilt. The slice used to be re-created with one
+  // innerHTML assignment on every render -- and .chb-main (forms.css) plays a
+  // wave-bounce on the box and a draw-check on the tick whenever a *new*
+  // element comes into the document already `:checked`. So marking a second
+  // row re-created the first one's checkbox and replayed its animation: the
+  // row you marked a moment ago looked like it had just been clicked again.
+  // Scrolling replayed it too, for every marked row that came into view.
+  //
+  // Reusing the nodes fixes that at the source and is cheaper besides: a
+  // scroll frame now writes a few strings instead of parsing HTML for
+  // thirty-odd rows.
+  function makeRowNode() {
+    const node = document.createElement("div");
+    node.className = "cat-row";
+    node.innerHTML =
+      '<input type="checkbox" class="chb-main" tabindex="-1">' +
+      '<div class="cat-row-main">' +
+      '<span class="cat-row-title"></span>' +
+      '<span class="cat-row-meta"></span>' +
+      "</div>" +
+      '<button type="button" class="cat-details-btn"></button>';
+    node._box = node.firstElementChild;
+    node._title = node.querySelector(".cat-row-title");
+    node._meta = node.querySelector(".cat-row-meta");
+    node._btn = node.querySelector(".cat-details-btn");
+    node._btn.textContent = t("details", "Details");
+    return node;
+  }
+
+  function paintRow(node, e) {
+    const isSel = isPicked(e);
+    node.dataset.url = e.url;
+    node.classList.toggle("is-selected", isSel);
+    // Only when it actually differs: assigning `checked` an identical value is
+    // free, but assigning it a DIFFERENT one is what may animate, and that is
+    // correct exactly when the state really changed.
+    if (node._box.checked !== isSel) node._box.checked = isSel;
+    if (node._title.textContent !== e.title) node._title.textContent = e.title;
+
+    let badges = "";
+    // Cached by computeLibraryFlags(); until that pass reaches this entry the
+    // visible row is worked out on the spot, so badges appear straight away
+    // instead of after the whole list has been walked.
+    if (e._lib === undefined ? inLibrary(e.title, e) : e._lib) {
+      badges += '<span class="cat-badge cat-badge--library">' + esc(t("in_library", "In library")) + "</span>";
+    }
+    if (isQueued(e)) {
+      badges += '<span class="cat-badge cat-badge--queued">' + esc(t("queued", "Queued")) + "</span>";
+    }
+    if (isSyncing(e)) {
+      badges += '<span class="cat-badge cat-badge--sync">' + esc(t("syncing", "Auto-Sync")) + "</span>";
+    }
+    // The source label is not decoration: the list is merged, and a title both
+    // sites carry is two rows that are otherwise identical.
+    const meta = sourcePills(e) + '<span class="cat-badges">' + badges + "</span>";
+    if (node._meta._mfSig !== meta) {
+      node._meta._mfSig = meta;
+      node._meta.innerHTML = meta;
+    }
+    node._btn.dataset.details = e.url;
+  }
+
   function render() {
     const h = rowHeight();
     if (!filtered.length) {
@@ -771,40 +926,18 @@
     const start = Math.max(0, Math.floor(viewport.scrollTop / h) - OVERSCAN);
     const visible = Math.ceil(viewport.clientHeight / h) + OVERSCAN * 2;
     const end = Math.min(filtered.length, start + visible);
+    const want = end - start;
 
-    let html = "";
-    for (let i = start; i < end; i++) {
-      const e = filtered[i];
-      const url = e.url;
-      const isSel = isPicked(e);
-      let badges = "";
-      // Cached by computeLibraryFlags(); until that pass reaches this entry
-      // the visible row is worked out on the spot, so badges appear straight
-      // away instead of after the whole list has been walked.
-      if (e._lib === undefined ? inLibrary(e.title, e) : e._lib) {
-        badges += '<span class="cat-badge cat-badge--library">' + esc(t("in_library", "In library")) + "</span>";
-      }
-      if (isQueued(e)) {
-        badges += '<span class="cat-badge cat-badge--queued">' + esc(t("queued", "Queued")) + "</span>";
-      }
-      if (isSyncing(e)) {
-        badges += '<span class="cat-badge cat-badge--sync">' + esc(t("syncing", "Auto-Sync")) + "</span>";
-      }
-      // Title and meta travel in one .cat-row-main box so a phone can stack
-      // them without the grid-area gymnastics the first version needed.
-      // The source label is not decoration: the list is merged, and a title
-      // both sites carry is two rows that are otherwise identical.
-      html += '<div class="cat-row' + (isSel ? " is-selected" : "") + '" data-url="' + esc(url) + '">' +
-        '<input type="checkbox" class="chb-main" ' + (isSel ? "checked" : "") + ' tabindex="-1">' +
-        '<div class="cat-row-main">' +
-        '<span class="cat-row-title">' + esc(e.title) + "</span>" +
-        '<span class="cat-row-meta">' + sourcePills(e) +
-        '<span class="cat-badges">' + badges + "</span>" +
-        "</span></div>" +
-        '<button type="button" class="cat-details-btn" data-details="' + esc(url) + '">' +
-        esc(t("details", "Details")) + "</button></div>";
+    // showMessage() replaces the host's children with a message, so anything
+    // left over from it has to go before the pool can be trusted.
+    if (rowsHost.firstElementChild &&
+        !rowsHost.firstElementChild.classList.contains("cat-row")) {
+      rowsHost.innerHTML = "";
     }
-    rowsHost.innerHTML = html;
+    while (rowsHost.children.length > want) rowsHost.lastElementChild.remove();
+    while (rowsHost.children.length < want) rowsHost.appendChild(makeRowNode());
+    for (let i = 0; i < want; i++) paintRow(rowsHost.children[i], filtered[start + i]);
+
     rowsHost.style.transform = "translateY(" + (start * h) + "px)";
 
     // Keep the rail in step with where the list actually is. Rounded rather
@@ -812,7 +945,7 @@
     // viewport is the one that should light up.
     const anchor = filtered[Math.min(filtered.length - 1,
       Math.max(0, Math.round(viewport.scrollTop / h)))];
-    setActiveLetter(anchor ? letterOf(anchor.title) : "");
+    setActiveLetter(anchor ? letterOfRow(anchor) : "");
   }
 
   /** The source pill(s) for a row.
@@ -966,28 +1099,88 @@
     el("catModal").style.display = "none";
     modalUrl = "";
     setModalBackdrop("");
+    setModalPoster("");
     // The list behind the modal has its own scroll container, so closing has
     // to give the page AND the body their scrolling back.
     document.body.classList.remove("cat-modal-open");
   };
 
-  // ── Modal backdrop ───────────────────────────────────────────────────────
-  // Two sources, in order: TMDB's landscape still when CineInfo can supply one
-  // (same option the download modal honours -- a user who switched backdrops
-  // off there does not want them here either), and the title's own poster,
-  // blurred, when it cannot. A 2:3 poster stretched across a 16:5 strip is
-  // unreadable sharp and perfectly good out of focus.
-  let backdropToken = 0;
+  /** The cover. `state` is a url, "sk" for the loading placeholder, or "" to
+   *  clear. It is the download modal's own `<img>` in the download modal's own
+   *  poster column (see .modal .modal-header img in modals.css), so it lies on
+   *  the backdrop and carries the same shadow without this file sizing it. */
+  function setModalPoster(state) {
+    const img = el("catModalPoster");
+    const col = img && img.parentElement;
+    if (!img) return;
+    if (state === "sk") {
+      img.style.display = "none";
+      if (col) col.classList.toggle("cat-poster-sk",
+        document.body.classList.contains("skeleton-loader"));
+      return;
+    }
+    if (col) col.classList.remove("cat-poster-sk");
+    if (state) {
+      img.src = state;
+      img.style.display = "";
+    } else {
+      img.removeAttribute("src");
+      img.style.display = "none";
+    }
+  }
 
-  function setModalBackdrop(url, isPoster) {
+  // ── Modal backdrop ───────────────────────────────────────────────────────
+  // TMDB's landscape still, through the same option the download modal
+  // honours: a user who switched backdrops off under CineInfo does not want
+  // them here either. There is deliberately NO fallback any more -- a 2:3
+  // poster blurred across a 16:5 strip was this dialog's own invention, it is
+  // not what the download modal does, and it is what made the header come out
+  // as a dark smear instead of artwork. No picture, no backdrop, exactly like
+  // everywhere else.
+  let backdropToken = 0;
+  let backdropRO = null;
+
+  /** The picture's height, measured off the header. Same measurement, same
+   *  variable and same +10px as app.js's _mfSyncBackdropHeight(): a CSS length
+   *  cannot know how far the title wraps, and the fade has to land just below
+   *  the last line of text rather than cutting through it. */
+  function syncBackdropHeight() {
+    const card = el("catModalCard");
+    const header = card && card.querySelector(".modal-header");
+    if (!card || !header || !card.classList.contains("has-backdrop")) return;
+    const top = card.getBoundingClientRect().top;
+    const bottom = header.getBoundingClientRect().bottom;
+    // A closed dialog measures 0 -- leave the CSS fallback rather than write a
+    // 0px height that would hide the picture on the next open.
+    if (bottom <= top) return;
+    card.style.setProperty("--mf-backdrop-h", Math.round(bottom - top + 10) + "px");
+  }
+
+  function watchBackdropHeight(on) {
+    if (backdropRO) { backdropRO.disconnect(); backdropRO = null; }
+    const card = el("catModalCard");
+    const header = card && card.querySelector(".modal-header");
+    if (!on || !header) return;
+    if (typeof ResizeObserver === "function") {
+      backdropRO = new ResizeObserver(syncBackdropHeight);
+      backdropRO.observe(header);
+    }
+    syncBackdropHeight();
+  }
+
+  function setModalBackdrop(url) {
     const node = el("catModalBackdrop");
     const card = el("catModalCard");
     if (!node || !card) return;
     const token = ++backdropToken;
     if (!url) {
       node.style.backgroundImage = "";
-      node.classList.remove("is-on", "is-poster");
+      node.classList.remove("is-on");
       card.classList.remove("has-backdrop");
+      // Dropped with it: a shorter title opened next would otherwise inherit
+      // this one's picture height for a frame.
+      card.style.removeProperty("--mf-backdrop-h");
+      watchBackdropHeight(false);
       return;
     }
     // Preloaded: flipping the class before the image decodes shows an empty
@@ -996,17 +1189,41 @@
     img.onload = function () {
       if (token !== backdropToken) return;   // a newer modal won
       node.style.backgroundImage = 'url("' + String(url).replace(/"/g, "%22") + '")';
-      node.classList.toggle("is-poster", !!isPoster);
       node.classList.add("is-on");
       card.classList.add("has-backdrop");
+      watchBackdropHeight(true);
     };
     img.src = url;
   }
 
-  // app.js owns the CineInfo settings and the image proxy; both are optional
-  // here, and without them the poster fallback still gives the modal a header.
+  /** app.js's CineInfo settings, or null.
+   *
+   *  NOT `window.cineinfoSettings`. app.js declares it as `let
+   *  cineinfoSettings`, and a top-level `let` does not become a property of
+   *  the global object -- so `window.cineinfoSettings` is `undefined` no
+   *  matter how loaded the settings are. Reading it that way is why this
+   *  page's backdrop was dead: the check passed no data, every time. The bare
+   *  identifier does resolve across two classic scripts, guarded by `typeof`
+   *  for the case where app.js is not on the page at all (which is exactly
+   *  how inLibrary() reads mediascanActive a few hundred lines up). */
+  function cineinfoSettingsOrNull() {
+    try {
+      return (typeof cineinfoSettings !== "undefined" && cineinfoSettings)
+        ? cineinfoSettings : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** The backdrop, from TMDB, exactly as the download modal gets it. */
   async function upgradeBackdropFromTmdb(title, forUrl) {
-    const settings = window.cineinfoSettings;
+    let settings = cineinfoSettingsOrNull();
+    if (!settings && typeof window.loadCineinfoSettings === "function") {
+      // Returns the settings object itself, so there is no need to go looking
+      // for it a second time.
+      try { settings = await window.loadCineinfoSettings(); } catch (e) { settings = null; }
+    }
+    if (!settings) settings = cineinfoSettingsOrNull();
     if (!settings || !settings.tmdb_api_key) return;
     if ((settings.show_backdrop == null ? "1" : settings.show_backdrop) === "0") return;
     try {
@@ -1017,8 +1234,8 @@
       const path = (data && data.raw_details && data.raw_details.backdrop_path) || "";
       if (!path) return;
       const full = "https://image.tmdb.org/t/p/w780" + path;
-      setModalBackdrop(typeof window.proxyImg === "function" ? window.proxyImg(full) : full, false);
-    } catch (e) { /* the poster fallback is already on screen */ }
+      setModalBackdrop(typeof window.proxyImg === "function" ? window.proxyImg(full) : full);
+    } catch (e) { /* no picture is a normal outcome, not an error state */ }
   }
 
   document.addEventListener("keydown", (ev) => {
@@ -1066,23 +1283,16 @@
     if (!document.body.classList.contains("skeleton-loader")) {
       return '<div class="cat-empty">' + esc(t("loading", "Loading…")) + "</div>";
     }
-    const line = (w) => '<div class="cat-sk cat-sk-line" style="width:' + w + '"></div>';
-    let chips = "";
-    for (let i = 0; i < 3; i++) chips += '<span class="cat-sk cat-sk-chip"></span>';
     let eps = "";
     for (let i = 0; i < 5; i++) {
       eps += '<div class="cat-ep"><span class="cat-sk cat-sk-num"></span>' +
         '<span class="cat-sk cat-sk-line" style="width:' + (72 - i * 8) + '%"></span></div>';
     }
-    return '<div class="cat-modal-body">' +
-      '<div class="cat-modal-poster cat-sk"></div>' +
-      '<div class="cat-modal-info">' +
-      '<div class="cat-modal-genres">' + chips + "</div>" +
-      line("100%") + line("97%") + line("92%") + line("58%") +
-      "</div></div>" +
-      '<div class="cat-eplist">' +
-      '<div class="cat-sk cat-sk-head"></div>' + eps +
-      "</div>";
+    // Only the episode list is faked now: the title, the cover, the genres and
+    // the description are real elements in the real header (see the template),
+    // so they fill in where they already are instead of being drawn twice.
+    return '<div class="cat-eplist">' +
+      '<div class="cat-sk cat-sk-head"></div>' + eps + "</div>";
   }
 
   async function openDetails(url) {
@@ -1092,7 +1302,10 @@
     const entry = rowByUrl(url);
     el("catModalTitle").textContent = entry ? entry.title : "…";
     el("catModalSub").textContent = "";
+    el("catModalGenres").innerHTML = "";
+    el("catModalDesc").textContent = "";
     setModalBackdrop("");
+    setModalPoster("sk");
     body.innerHTML = loadingMarkup();
     syncModalToggle();
     modal.style.display = "flex";
@@ -1138,95 +1351,131 @@
       : entry.source));
     el("catModalSub").textContent = sub.join(" · ");
 
-    const posterUrl = (series && series.poster_url) || "";
-    if (posterUrl) setModalBackdrop(posterUrl, true);
+    // The cover and the metadata go into the HEADER -- the download modal's
+    // own .modal-poster-col / .modal-meta / .genres / .desc, not a second set
+    // of elements in the body.
+    setModalPoster((series && series.poster_url) || "");
     if (title) upgradeBackdropFromTmdb(title, url);
 
-    const poster = posterUrl
-      ? '<img class="cat-modal-poster" src="' + esc(posterUrl) + '" alt="" loading="lazy">'
-      : '<div class="cat-modal-poster"></div>';
-    const genres = ((series && series.genres) || [])
+    el("catModalGenres").innerHTML = ((series && series.genres) || [])
       .map((g) => "<span>" + esc(g) + "</span>").join("");
-    const description = (series && series.description) || "";
+    el("catModalDesc").textContent = (series && series.description) || "";
 
-    body.innerHTML =
-      '<div class="cat-modal-body">' + poster +
-      '<div class="cat-modal-info">' +
-      (genres ? '<div class="cat-modal-genres">' + genres + "</div>" : "") +
-      (description ? "<p>" + esc(description) + "</p>" : "") +
-      "</div></div>" +
-      '<div class="cat-eplist" id="catEpList"></div>';
+    body.innerHTML = '<div class="cat-eplist" id="catEpList"></div>';
 
     loadEpisodes(seasons, url);
   }
 
-  async function loadEpisodes(seasons, url) {
+  /** The season list, and the episodes of ONE season at a time.
+   *
+   *  It used to fire /api/episodes for EVERY season at once, in parallel. Each
+   *  of those is a live scrape of the source site, so a twelve-season series
+   *  meant twelve simultaneous requests to a site behind DDoS-Guard before the
+   *  dialog showed anything -- which is what made opening a title crawl, and
+   *  which is also just rude.
+   *
+   *  So: the headers are rendered from /api/seasons alone (that answer is
+   *  already in hand), the first season expands itself, and any other opens
+   *  when you ask for it. Exactly how the download modal's accordion behaves,
+   *  and the same trade it makes.
+   */
+  function loadEpisodes(seasons, url) {
     const host = el("catEpList");
     if (!host) return;
     if (!seasons.length) {
       host.innerHTML = '<div class="cat-empty">' + esc(t("no_episodes", "No episodes.")) + "</div>";
       return;
     }
-    // Same shape as the list that is about to replace it, so the dialog does
-    // not grow a second time once the episodes arrive.
-    if (document.body.classList.contains("skeleton-loader")) {
-      let sk = '<div class="cat-sk cat-sk-head"></div>';
-      for (let i = 0; i < 6; i++) {
-        sk += '<div class="cat-ep"><span class="cat-sk cat-sk-num"></span>' +
-          '<span class="cat-sk cat-sk-line" style="width:' + (76 - i * 7) + '%"></span></div>';
-      }
-      host.innerHTML = sk;
-    } else {
-      host.innerHTML = '<div class="cat-empty">' + esc(t("loading", "Loading…")) + "</div>";
+
+    host.innerHTML = seasons.map((season, idx) => {
+      const num = season.season_number != null ? season.season_number : idx + 1;
+      return '<div class="cat-season" data-season="' + esc(season.url || "") + '">' +
+        '<button type="button" class="cat-season-head" aria-expanded="false">' +
+        "<span>" + esc(t("season", "Season")) + " " + esc(num) + "</span>" +
+        '<span class="cat-season-mark"></span></button>' +
+        '<div class="cat-season-body" hidden></div></div>';
+    }).join("");
+
+    host.querySelectorAll(".cat-season-head").forEach((head) => {
+      head.addEventListener("click", () => toggleSeason(head, url));
+    });
+    // The first season is what people came to look at; anything past it is a
+    // request nobody asked for yet.
+    const first = host.querySelector(".cat-season-head");
+    if (first) toggleSeason(first, url);
+  }
+
+  async function toggleSeason(head, url) {
+    const section = head.closest(".cat-season");
+    const body = section && section.querySelector(".cat-season-body");
+    if (!body) return;
+    const open = head.getAttribute("aria-expanded") === "true";
+    if (open) {
+      head.setAttribute("aria-expanded", "false");
+      body.hidden = true;
+      return;
     }
+    head.setAttribute("aria-expanded", "true");
+    body.hidden = false;
+    if (section.dataset.loaded === "1" || section.dataset.loading === "1") return;
+    section.dataset.loading = "1";
+
+    body.innerHTML = document.body.classList.contains("skeleton-loader")
+      ? Array.from({ length: 5 }, (_, i) =>
+          '<div class="cat-ep"><span class="cat-sk cat-sk-num"></span>' +
+          '<span class="cat-sk cat-sk-line" style="width:' + (76 - i * 7) + '%"></span></div>')
+        .join("")
+      : '<div class="cat-empty">' + esc(t("loading", "Loading…")) + "</div>";
+
+    let data = { episodes: [] };
     try {
-      const lists = await Promise.all(seasons.map((s) =>
-        fetch("/api/episodes?url=" + encodeURIComponent(s.url))
-          .then((r) => r.json()).catch(() => ({ episodes: [] }))));
-      if (modalUrl !== url) return;
-      // /api/episodes already reports `downloaded` per episode -- the same
-      // filesystem check the bulk worker's "only missing episodes" runs. It
-      // was simply thrown away here, so a title you have half of looked
-      // identical to one you have none of.
-      //
-      // Rendered exactly the way the download modal renders it (see
-      // renderSeasons() in app.js): a green check after the episode number,
-      // and a second one on the season header when the whole season is
-      // there. Same .ep-downloaded / .season-downloaded classes from
-      // cards.css, so the two views cannot drift apart -- and, like the
-      // download modal, NOTHING is said about episodes that are missing.
-      // "Nothing on disk yet" is a sentence nobody needs; the absence of a
-      // check already says it.
-      let html = "";
-      lists.forEach((data, idx) => {
-        const eps = data.episodes || [];
-        if (!eps.length) return;
-        const season = seasons[idx] || {};
-        const allDownloaded = eps.every((ep) => ep.downloaded);
-        html += '<div class="cat-season-head"><span>' +
-          esc(t("season", "Season")) + " " +
-          esc(season.season_number != null ? season.season_number : idx + 1) +
-          " · " + eps.length + " " + esc(t("episodes_n", "episodes")) + "</span>" +
-          (allDownloaded
-            ? '<span class="season-downloaded" title="' +
-              esc(t("all_downloaded", "All episodes downloaded")) + '">\u2713</span>'
-            : "") +
-          "</div>";
-        eps.forEach((ep) => {
-          html += '<div class="cat-ep">' +
-            '<span class="cat-ep-num">E' +
-            esc(ep.episode_number != null ? ep.episode_number : "?") + "</span>" +
-            (ep.downloaded
-              ? '<span class="ep-downloaded" title="' +
-                esc(t("downloaded", "Downloaded")) + '">\u2713</span>'
-              : "") +
-            "<span>" + esc(ep.title_de || ep.title_en || "") + "</span></div>";
-        });
-      });
-      host.innerHTML = html || '<div class="cat-empty">' + esc(t("no_episodes", "No episodes.")) + "</div>";
+      const resp = await fetch("/api/episodes?url=" +
+        encodeURIComponent(section.dataset.season || ""));
+      data = await resp.json();
     } catch (e) {
-      host.innerHTML = '<div class="cat-empty">' + esc(t("failed", "Failed.")) + "</div>";
+      section.dataset.loading = "";
+      body.innerHTML = '<div class="cat-empty">' + esc(t("failed", "Failed.")) + "</div>";
+      return;
     }
+    if (modalUrl !== url) return;          // a different title was opened
+    section.dataset.loading = "";
+    section.dataset.loaded = "1";
+
+    const eps = data.episodes || [];
+    if (!eps.length) {
+      body.innerHTML = '<div class="cat-empty">' + esc(t("no_episodes", "No episodes.")) + "</div>";
+      return;
+    }
+    // /api/episodes already reports `downloaded` per episode -- the same
+    // filesystem check the bulk worker's "only missing episodes" runs.
+    //
+    // Rendered exactly the way the download modal renders it (see
+    // renderSeasons() in app.js): a green check after the episode number, and
+    // a second one on the season header when the whole season is there. Same
+    // .ep-downloaded / .season-downloaded classes from cards.css, so the two
+    // views cannot drift apart -- and, like the download modal, NOTHING is
+    // said about episodes that are missing. The absence of a check is the
+    // whole message.
+    const mark = head.querySelector(".cat-season-mark");
+    if (mark) {
+      mark.innerHTML = eps.every((ep) => ep.downloaded)
+        ? '<span class="season-downloaded" title="' +
+          esc(t("all_downloaded", "All episodes downloaded")) + '">\u2713</span>'
+        : "";
+    }
+    const count = head.querySelector("span");
+    if (count) {
+      count.textContent += " · " + eps.length + " " + t("episodes_n", "episodes");
+    }
+    body.innerHTML = eps.map((ep) =>
+      '<div class="cat-ep">' +
+      '<span class="cat-ep-num">E' +
+      esc(ep.episode_number != null ? ep.episode_number : "?") + "</span>" +
+      (ep.downloaded
+        ? '<span class="ep-downloaded" title="' +
+          esc(t("downloaded", "Downloaded")) + '">\u2713</span>'
+        : "") +
+      "<span>" + esc(ep.title_de || ep.title_en || "") + "</span></div>").join("");
   }
 
   // ── Language groups ──────────────────────────────────────────────────────
@@ -1270,9 +1519,16 @@
       if (!data.tmdb_id && !data.imdb_id) return;
       entry.tmdb_id = data.tmdb_id || "";
       entry.imdb_id = data.imdb_id || "";
-      // An id may also mean this row is the same show as another one, which
-      // is decided when the list is rebuilt -- so rebuild it.
-      if (entry.tmdb_id) {
+      // An id can also mean this row is the same show as another one. That
+      // only matters if some OTHER row already carries the same id -- so look
+      // for one, and rebuild the thirteen thousand rows only then. Rebuilding
+      // unconditionally meant every details open on an unresolved title (most
+      // of them, until the backfill finishes) re-merged the whole list and
+      // re-ran every library check, with the "In library" chip flicking to
+      // "…" and back each time.
+      const twin = entry.tmdb_id && entries.some(
+        (e) => e !== entry && e.tmdb_id === entry.tmdb_id);
+      if (twin) {
         const flat = [];
         entries.forEach((e) => e.variants.forEach((v) => flat.push({
           title: v.title, url: v.url, alt: v.alt, source: v.source,
@@ -1588,11 +1844,27 @@
   loadLanguageGroups().then(updateOptionsSummary);
   // Populate app.js's library indexes for this page. Without it every
   // "In library" check on the Catalogue page answered no -- see inLibrary().
+  // The CineInfo settings decide whether a TMDB backdrop may be shown at all
+  // and carry the key it needs. Nothing on this page ever loaded them, so
+  // `cineinfoSettings` stayed null, upgradeBackdropFromTmdb() returned on its
+  // first line every time, and the details dialog never once displayed a real
+  // backdrop -- what everyone was looking at was the fallback.
+  if (typeof window.loadCineinfoSettings === "function") {
+    window.loadCineinfoSettings().catch(() => { /* the modal works without it */ });
+  }
   if (typeof window.loadDownloadedFolders === "function") {
     window.loadDownloadedFolders().then(() => {
+      libIndexReady = true;
       // The index the flags were computed against has just changed.
       if (entries.length) computeLibraryFlags();
-    }).catch(() => { /* best-effort, same as app.js */ });
+    }).catch(() => {
+      // Nothing to check against, but the page must not sit at "…" forever:
+      // an unanswerable question is answered "no", not left pending.
+      libIndexReady = true;
+      if (entries.length) computeLibraryFlags();
+    });
+  } else {
+    libIndexReady = true;
   }
   loadState().then(loadSources);
   resumeJob();

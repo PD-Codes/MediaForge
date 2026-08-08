@@ -11,7 +11,8 @@
  * Opt in by putting `data-mf-multiselect` on the root element:
  *
  *   <div class="mf-multiselect" data-mf-multiselect
- *        data-none-label="No site" data-many-label="sites">
+ *        data-none-label="No site" data-many-label="sites"
+ *        data-all-label="All sites">
  *     <button type="button" class="mf-multiselect-trigger"
  *             aria-expanded="false" aria-haspopup="true">
  *       <span class="mf-multiselect-label">No site</span>
@@ -83,17 +84,28 @@
     });
   }
 
-  // "nothing" / "A, B" / "3 sites" — kept short so the trigger does not have
-  // to ellipsize in a narrow table cell.
+  // "nothing" / "everything" / "A, B" / "3 sites" — kept short so the trigger
+  // does not have to ellipsize in a narrow table cell.
+  //
+  // `data-all-label` is opt-in and only used when EVERY pickable entry is
+  // checked: on a menu whose default state is "all on", "2 states" is a
+  // number the reader has to decode into "nothing is filtered out", and it
+  // says nothing about which two. Callers that do not set the attribute keep
+  // the old count. Disabled entries are left out of the comparison -- an item
+  // that cannot be checked must not stop the menu from being "all".
   function refresh(root) {
     var target = root.querySelector(".mf-multiselect-label");
     if (!target) return;
     var picked = labels(root);
     var noneLabel = root.dataset.noneLabel || (isGerman() ? "Nichts ausgewählt" : "Nothing selected");
     var manyLabel = root.dataset.manyLabel || (isGerman() ? "ausgewählt" : "selected");
+    var allLabel = root.dataset.allLabel || "";
     var maxNames = parseInt(root.dataset.maxNames || "2", 10);
+    var pickable = boxes(root).filter(function (box) { return !box.disabled; });
     if (!picked.length) target.textContent = noneLabel;
-    else if (picked.length <= maxNames) target.textContent = picked.join(", ");
+    else if (allLabel && pickable.length > 1 && picked.length === pickable.length) {
+      target.textContent = allLabel;
+    } else if (picked.length <= maxNames) target.textContent = picked.join(", ");
     else target.textContent = picked.length + " " + manyLabel;
   }
 

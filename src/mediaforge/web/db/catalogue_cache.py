@@ -64,6 +64,21 @@ def init_catalogue_cache_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_catalogue_entries_ids "
             "ON catalogue_entries(ids_checked_at)"
         )
+        # "Is this url in a catalogue, and which one?" -- the question every
+        # details open and every bulk submit asks. The primary key is
+        # (source_id, url), which cannot serve a lookup by url alone, so both
+        # callers used to answer it by loading all ~13k rows into Python and
+        # scanning them. Once per details modal.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_catalogue_entries_url "
+            "ON catalogue_entries(url)"
+        )
+        # load_catalogue()'s own ORDER BY. Without it every list read pays a
+        # temp B-tree sort over ten thousand rows.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_catalogue_entries_sorted "
+            "ON catalogue_entries(source_id, title COLLATE NOCASE, url)"
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS catalogue_meta (
@@ -209,6 +224,74 @@ def load_catalogue(source_id: str) -> list:
              "tmdb_id": r["tmdb_id"] or "", "imdb_id": r["imdb_id"] or ""}
             for r in rows
         ]
+    finally:
+        conn.close()
+
+
+def find_catalogue_entry(url: str) -> dict:
+    """The stored entry for one url, or ``{}``.
+
+    Indexed lookup (``idx_catalogue_entries_url``). Both callers used to answer
+    this by loading every source's full list into Python and comparing strings
+    -- ~13k rows and ~13k comparisons to find one row, on every details open.
+
+    A url can in principle be stored under two source ids (a module claiming a
+    built-in's url is rejected at registration, but nothing stops two modules
+    from listing the same page). The first match wins, deterministically, so
+    two calls about the same url cannot disagree.
+    """
+    key = str(url or "").strip().rstrip("/")
+    if not key:
+        return {}
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT source_id, url, title, alt, tmdb_id, imdb_id, ids_checked_at "
+            "FROM catalogue_entries WHERE url IN (?, ?) ORDER BY source_id LIMIT 1",
+            (key, key + "/"),
+        ).fetchone()
+        return dict(row) if row else {}
+    finally:
+        conn.close()
+
+
+def catalogue_sources_for_urls(urls) -> dict:
+    """``{url: source_id}`` for those *urls* that are in a catalogue.
+
+    The bulk endpoint's validation. Chunked because SQLite caps a statement at
+    999 host parameters by default and a legitimate selection is the whole
+    catalogue; returns normalised (trailing-slash-free) keys so the caller can
+    look up what it sent.
+    """
+    keys = []
+    seen = set()
+    for raw in urls or []:
+        key = str(raw or "").strip().rstrip("/")
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    if not keys:
+        return {}
+
+    out = {}
+    conn = get_db()
+    try:
+        # 400 keys -> 800 parameters with the trailing-slash variant.
+        for start in range(0, len(keys), 400):
+            chunk = keys[start:start + 400]
+            params = []
+            for key in chunk:
+                params.append(key)
+                params.append(key + "/")
+            marks = ",".join("?" for _ in params)
+            rows = conn.execute(
+                "SELECT source_id, url FROM catalogue_entries "
+                "WHERE url IN (%s)" % marks,
+                params,
+            ).fetchall()
+            for row in rows:
+                out.setdefault(row["url"].rstrip("/"), row["source_id"])
+        return out
     finally:
         conn.close()
 
@@ -393,11 +476,16 @@ def catalogue_entries_without_ids(limit: int = 50, retry_after: float = 0.0) -> 
     conn = get_db()
     try:
         if retry_after > 0:
+            # ORDER BY the COLUMN, not an expression over it: SQLite sorts
+            # NULLs first anyway, so "ids_checked_at IS NOT NULL, ids_checked_at"
+            # produced the same order while making the sort unindexable -- a
+            # full scan of every row plus a temp B-tree, every twelve seconds
+            # for the hour and a half the backfill runs.
             rows = conn.execute(
                 "SELECT source_id, url, title FROM catalogue_entries "
                 "WHERE ids_checked_at IS NULL "
                 "   OR (tmdb_id IS NULL AND ids_checked_at < ?) "
-                "ORDER BY ids_checked_at IS NOT NULL, ids_checked_at LIMIT ?",
+                "ORDER BY ids_checked_at LIMIT ?",
                 (_time.time() - retry_after, int(limit)),
             ).fetchall()
         else:

@@ -158,46 +158,45 @@
    here rather than the start page's download modal, which owns its own
    language/provider state and would fight with the bar above.
 
-   Styled after the download modal: a backdrop image behind the header that
-   the title and the poster sit ON, rather than a plain grey dialog. Same
-   rules as there — the picture is TMDB's when CineInfo can supply one and the
-   blurred poster otherwise, and without either the modal looks exactly like
-   it did before the feature existed.
+   It is the DOWNLOAD MODAL'S OWN MARKUP, class for class: .modal, its
+   .modal-backdrop, its .modal-header with the poster column and .modal-meta,
+   its .genres and .desc. Those rules live in modals.css, which base.html
+   loads on every page, so this dialog is not "styled after" that one -- it IS
+   that one, and the two cannot drift.
+
+   The previous version was a private copy (.cat-modal-backdrop, a scrim on
+   the card, a blurred-poster fallback, its own gradient stops). Every one of
+   those was a decision the download modal had already made differently, which
+   is exactly why it kept coming out looking like something else. What is left
+   below is only what this dialog has and that one does not: a scrolling
+   episode list and a footer.
 
    There is deliberately no link out to the source site. #}
 <div class="modal-overlay cat-modal-overlay" id="catModal" style="display:none"
   onclick="if(event.target===this)catCloseModal()" role="dialog" aria-modal="true"
   aria-labelledby="catModalTitle">
-  {# The shell classes are all cat-*. This markup was copied from the Stats
-     page, whose modal classes live in stats.css — a stylesheet that is linked
-     per page and never on this one. The dialog therefore had no max-height,
-     no column layout and no centering whatsoever, which is exactly how it
-     ended up glued to the top of the screen. Everything it needs is in
-     catalogue.css now, per the project's one-stylesheet-per-page rule. #}
-  <div class="card cat-modal-card loaded" id="catModalCard">
-    <div class="cat-modal-backdrop" id="catModalBackdrop" aria-hidden="true"></div>
-    <div class="card-header cat-modal-header">
-      <div class="cat-modal-heading">
-        <div>
-          <h2 class="card-title" id="catModalTitle">…</h2>
-          <p class="cat-modal-sub" id="catModalSub"></p>
-        </div>
+  <div class="modal cat-modal-card" id="catModalCard">
+    <button class="close" onclick="catCloseModal()" aria-label="{{ _('Close') }}">&times;</button>
+    <div class="modal-backdrop" id="catModalBackdrop" aria-hidden="true"></div>
+    <div class="modal-header cat-modal-header">
+      <div class="modal-poster-col">
+        <img id="catModalPoster" src="" alt="" style="display:none">
       </div>
-      <button class="modal-close" onclick="catCloseModal()" aria-label="{{ _('Close') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-          stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
+      <div class="modal-meta">
+        <h2 id="catModalTitle">…</h2>
+        <div class="year" id="catModalSub"></div>
+        <div class="genres" id="catModalGenres"></div>
+        <div class="desc" id="catModalDesc"></div>
+      </div>
     </div>
-    <div class="card-body cat-modal-scroll" id="catModalBody"></div>
+    <div class="cat-modal-scroll" id="catModalBody"></div>
     {# A single button that does NOT close the dialog is the whole confusion:
        people press it expecting to be done and nothing visibly happens. So:
        an explicit Close on the left, the running selection total in the
        middle (the action bar that normally shows it is behind the modal), and
        the mark/unmark button on the right, which now states which of the two
        it currently is. #}
-    <div class="card-footer cat-modal-footer">
+    <div class="cat-modal-footer">
       <button type="button" class="cat-tool-btn" onclick="catCloseModal()">{{ _('Close') }}</button>
       <span class="cat-modal-selinfo" id="catModalSelInfo" aria-live="polite"></span>
       <button type="button" class="btn btn-primary" id="catModalToggle" aria-pressed="false"></button>

@@ -64,6 +64,12 @@
   let personal = {};
   let offSources = {};                     // id -> true when switched off
   let offTypes = { adult: true };          // 18+ starts off
+  // "Vorhanden" / "Im Auto-Sync": both ON by default, because the default
+  // discovery row is "what is new", not "what is new and not mine". Switching
+  // one off hides the cards carrying that badge and the reserve pool moves the
+  // next cards up (see visibleCards).
+  const STATUS_KEYS = ["library", "autosync"];
+  let offStatus = {};                      // key -> true when switched off
   let feedError = "";
   let downIds = [];                        // reported down by the UpTime monitor
 
@@ -86,9 +92,16 @@
     hasStoredFilters = true;
     offSources = {};
     offTypes = {};
+    // NOT reset from a stored value that predates the status filter: an
+    // account that saved its filters before this existed has no "x:" part, and
+    // clearing the defaults on that basis would silently switch both entries
+    // on for everyone... which is what they already are. Kept explicit so the
+    // next key added here does not get it wrong.
+    offStatus = {};
     raw.split(";").forEach(function (part) {
       const bits = part.split(":");
-      const target = bits[0] === "s" ? offSources : (bits[0] === "t" ? offTypes : null);
+      const target = bits[0] === "s" ? offSources
+        : (bits[0] === "t" ? offTypes : (bits[0] === "x" ? offStatus : null));
       if (!target) return;
       (bits[1] || "").split(",").forEach(function (id) { if (id) target[id] = true; });
     });
@@ -97,7 +110,8 @@
   function saveFilters() {
     const value =
       "s:" + Object.keys(offSources).filter(function (k) { return offSources[k]; }).join(",") +
-      ";t:" + Object.keys(offTypes).filter(function (k) { return offTypes[k]; }).join(",");
+      ";t:" + Object.keys(offTypes).filter(function (k) { return offTypes[k]; }).join(",") +
+      ";x:" + STATUS_KEYS.filter(function (k) { return offStatus[k]; }).join(",");
     try { localStorage.setItem(LS_KEY, value); } catch (e) { /* private mode */ }
     if (typeof window.mfSaveUserPref === "function") {
       const patch = {};
@@ -109,6 +123,7 @@
   // ------------------------------------------------------------ chip helpers
   function sourceOn(id) { return !offSources[id]; }
   function typeOn(key) { return !offTypes[key]; }
+  function statusOn(key) { return !offStatus[key]; }
   function adultWanted() { return typeOn("adult"); }
 
   function activeSources() {
@@ -182,10 +197,15 @@
       "<span>" + dot + mfEscape(label) + "</span></label>";
   }
 
-  function msRoot(kind, manyLabel, items) {
+  /** *allLabel* is optional and only shows when every entry is checked. The
+   *  status menu's default state IS "everything checked", and "2 states" there
+   *  is a number the reader has to decode into "nothing is filtered out". */
+  function msRoot(kind, manyLabel, items, allLabel) {
     return '<div class="mf-multiselect feed-ms" data-mf-multiselect data-feed-kind="' +
       kind + '" data-none-label="' + mfEscape(HT("filter_none")) +
-      '" data-many-label="' + mfEscape(manyLabel) + '" data-max-names="1">' +
+      '" data-many-label="' + mfEscape(manyLabel) + '"' +
+      (allLabel ? ' data-all-label="' + mfEscape(allLabel) + '"' : "") +
+      ' data-max-names="1">' +
       '<button type="button" class="mf-multiselect-trigger" aria-expanded="false" ' +
       'aria-haspopup="true"><span class="mf-multiselect-label"></span>' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
@@ -233,12 +253,33 @@
         : msItem("adult", "18+", typeOn("adult"), false, "", "");
     }
 
+    // "Have I already got this?" -- a different question from "what is it",
+    // which is why it is its own dropdown rather than two more entries in the
+    // Type menu. Both entries are ON by default; switching one off removes the
+    // cards that carry that badge from the discovery rows.
+    const st =
+      msItem("library", HT("status_library"), statusOn("library"), false,
+             HT("status_library_hint"), "") +
+      msItem("autosync", HT("status_autosync"), statusOn("autosync"), false,
+             HT("status_autosync_hint"), "");
+
+    // A caption and its menu travel in ONE box. They used to be siblings in
+    // the wrapping row, so with three controls the line break fell between
+    // "TYP" and its dropdown and left the caption stranded at the end of the
+    // first line, above a menu it no longer looked like it belonged to. The
+    // row still wraps -- it has to -- but now only BETWEEN groups.
     return '<div class="feed-filter-menus">' +
-      '<span class="feed-chip-label">' + mfEscape(HT("sources")) + "</span>" +
-      msRoot("source", HT("many_sources"), src) +
-      '<span class="feed-chip-label feed-chip-label--split">' +
-      mfEscape(HT("type")) + "</span>" +
-      msRoot("type", HT("many_types"), ty) + "</div>";
+      msGroup(HT("sources"), msRoot("source", HT("many_sources"), src)) +
+      msGroup(HT("type"), msRoot("type", HT("many_types"), ty)) +
+      msGroup(HT("status"),
+              msRoot("status", HT("many_status"), st, HT("status_all"))) +
+      "</div>";
+  }
+
+  function msGroup(label, menu) {
+    return '<div class="feed-filter-group">' +
+      '<span class="feed-chip-label">' + mfEscape(label) + "</span>" + menu +
+      "</div>";
   }
 
   /** Push the current filter state back into the checkboxes and re-compute the
@@ -247,7 +288,8 @@
     if (!window.mfMultiSelect) return;
     document.querySelectorAll("#feedFilters .mf-multiselect[data-feed-kind]")
       .forEach(function (root) {
-        const on = root.dataset.feedKind === "source" ? sourceOn : typeOn;
+        const kind = root.dataset.feedKind;
+        const on = kind === "source" ? sourceOn : (kind === "status" ? statusOn : typeOn);
         root.querySelectorAll('.mf-multiselect-dropdown input[type="checkbox"]')
           .forEach(function (box) {
             if (!box.disabled) box.checked = on(box.value);
@@ -270,9 +312,21 @@
     // Guard rails, same as the chips: never all sources off, never all types
     // off. Unlike a chip the checkbox has already flipped, so the rejected
     // state has to be put back visibly.
-    if (Object.keys(picked).length === 0) { syncMultiselects(); return; }
+    //
+    // The status menu is deliberately exempt: "hide what I already have AND
+    // what is already syncing" is a sensible thing to ask for -- it is the
+    // whole point of the filter -- and unlike an empty source or type list it
+    // cannot empty the page on its own.
+    if (kind !== "status" && Object.keys(picked).length === 0) {
+      syncMultiselects();
+      return;
+    }
 
-    if (kind === "source") {
+    if (kind === "status") {
+      STATUS_KEYS.forEach(function (key) {
+        if (picked[key]) delete offStatus[key]; else offStatus[key] = true;
+      });
+    } else if (kind === "source") {
       activeSources().forEach(function (s) {
         if (picked[s.id]) delete offSources[s.id]; else offSources[s.id] = true;
       });
@@ -429,8 +483,35 @@
   function visibleCards(row) {
     return (rows[row] || []).filter(function (item) {
       return sourceEnabled(item.source) && sourceOn(item.source) &&
-        typeOn(item.media_type);
+        typeOn(item.media_type) && statusAllows(item);
     }).slice(0, ROW_MAX);
+  }
+
+  /** The status filter, for DISCOVERY rows only.
+   *
+   *  Deliberately not applied to the personal rows: "New in your library" is
+   *  a list of things you have, and "Continue watching" is a list of things
+   *  you have started -- filtering "already in the library" out of those does
+   *  not narrow them, it empties them. The personal rows answer a question
+   *  the user already asked by name; the discovery rows are the ones where
+   *  "and skip what I've got" is a useful thing to say.
+   *
+   *  The two answers come from app.js (mfCardInLibrary / mfCardOnAutoSync) --
+   *  the exact functions behind the two badges on the card, so the filter and
+   *  the badge cannot disagree. Missing helpers mean app.js has not finished
+   *  loading; showing the card is the safe answer there, and renderRows() runs
+   *  again once the library index lands. */
+  function statusAllows(item) {
+    if (!offStatus.library && !offStatus.autosync) return true;   // both on
+    if (offStatus.library && typeof window.mfCardInLibrary === "function" &&
+        window.mfCardInLibrary(item)) {
+      return false;
+    }
+    if (offStatus.autosync && typeof window.mfCardOnAutoSync === "function" &&
+        window.mfCardOnAutoSync(item)) {
+      return false;
+    }
+    return true;
   }
 
   function showSection(row, visible) {
@@ -972,6 +1053,10 @@
         if (!hasStoredFilters) {
           offSources = {};
           offTypes = {};
+          // No instance default for the status filter on purpose: "hide what
+          // I already have" is a statement about ONE account's library, and an
+          // admin cannot make it for everybody. Both entries start on.
+          offStatus = {};
           (config.sources_off || []).forEach(function (id) { offSources[id] = true; });
           (config.types_off || []).forEach(function (ty) { offTypes[ty] = true; });
         }

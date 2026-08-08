@@ -137,6 +137,16 @@ let mediascanImdbIds = new Set();
 // resolved server-side from TMDB (web/library_aliases.py). Object rather than
 // Map because it arrives as JSON and is only ever read by key.
 let downloadedAliases = {};
+// The folder list, pre-reduced to the two forms downloadedFolderFor() compares
+// against. Built ONCE per library load instead of per title: the two passes
+// used to run normalizeQuotes()+toLowerCase() and _looseTitleKey() on every
+// folder for every title asked about, which is fine for the handful of cards a
+// start page renders and catastrophic for the Catalogue page's thirteen
+// thousand rows -- 13k x ~800 folders x two regex replaces measured at ~4.7
+// seconds of solid main-thread work per pass, and the page runs two passes.
+// With the folder side precomputed the same work is ~0.2s.
+let _dlFoldersLower = [];   // normalizeQuotes(folder.toLowerCase())
+let _dlFoldersLoose = [];   // _looseTitleKey(folder)
 let mediascanTitles = new Set(); // normalised titles from Plex/Jellyfin as fallback
 // The same titles reduced to letters and digits (_looseTitleKey). A second
 // index rather than a loop, so the fallback stays O(1) per card.
@@ -552,6 +562,9 @@ async function loadDownloadedFolders() {
     // through the library (web/library_aliases.py), which is why the string
     // match stays in place rather than being replaced by this.
     downloadedAliases = data.aliases || {};
+    // The folder list just changed, so the derived index has to follow it --
+    // before any badge or library check can ask about it.
+    _buildFolderIndex();
   } catch (e) {
     /* best-effort */
   }
@@ -1369,6 +1382,10 @@ function downloadedFolderFor(title) {
 
   // Folder-based check (used when mediascan is inactive)
   if (!downloadedFolders.length) return "";
+  // Built lazily so a caller that runs before loadDownloadedFolders() finished
+  // (or after something assigned downloadedFolders directly) still gets an
+  // index rather than a wrong answer.
+  if (_dlFoldersLower.length !== downloadedFolders.length) _buildFolderIndex();
   const clean = normalizeQuotes(
     unesc(title)
       .replace(/\s*\(.*$/, "")
@@ -1376,16 +1393,31 @@ function downloadedFolderFor(title) {
       .trim()
       .toLowerCase(),
   );
-  // 2. Strict folder-name prefix.
-  const strict = downloadedFolders.find((f) =>
-    normalizeQuotes(f.toLowerCase()).startsWith(clean));
-  if (strict) return strict;
+  // 2. Strict folder-name prefix. Against the PRE-REDUCED list: this used to
+  // lower-case and normalise every folder again for every title it was asked
+  // about (see _dlFoldersLower).
+  for (let i = 0; i < _dlFoldersLower.length; i++) {
+    if (_dlFoldersLower[i].startsWith(clean)) return downloadedFolders[i];
+  }
 
   // 3. Punctuation-insensitive (see _looseTitleKey). Only ever adds matches the
   // strict pass above missed.
   if (!aliasKey) return "";
-  return downloadedFolders.find(
-    (f) => _looseFolderHolds(_looseTitleKey(f), aliasKey)) || "";
+  for (let i = 0; i < _dlFoldersLoose.length; i++) {
+    if (_looseFolderHolds(_dlFoldersLoose[i], aliasKey)) return downloadedFolders[i];
+  }
+  return "";
+}
+
+/** Reduce the folder list to the two forms the passes above compare against.
+ *
+ *  One pass over the folders instead of one pass per title. Called whenever
+ *  the library index changes; the length check in downloadedFolderFor() is the
+ *  safety net for anything that replaces `downloadedFolders` without saying so.
+ */
+function _buildFolderIndex() {
+  _dlFoldersLower = downloadedFolders.map((f) => normalizeQuotes(String(f).toLowerCase()));
+  _dlFoldersLoose = downloadedFolders.map(_looseTitleKey);
 }
 
 // Shortest folder key allowed to win a REVERSE match -- see _looseFolderHolds.
@@ -1523,6 +1555,55 @@ function addDownloadedBadgeMulti(card, titles) {
   }
   if (candidates.some((title) => isDownloaded(title))) _attachDownloadedBadge(card);
 }
+
+/* ── The two badges, as questions ──────────────────────────────────────────
+   The same answers addDownloadedBadgeMulti() and addSyncBadge() act on, but
+   returned instead of attached, so a caller can DECIDE something with them
+   rather than only decorate a card that already exists.
+
+   Exported because the home feed's status filter ("hide what I already have")
+   has to agree with the badge on the card, card for card. Re-implementing
+   either check there would be a second opinion that drifts the first time the
+   alias index, the mediascan path or the loose title key changes -- and all
+   three have changed before. On the registry for the same reason a module may
+   render browse cards at all: a module row is filtered by the same dropdown.
+
+   Both take a card ITEM (the {title, url, ...} shape /api/home-feed and the
+   browse endpoints return), not a DOM node. */
+function mfCardInLibrary(item) {
+  if (!item) return false;
+  // hanime cards carry the episode title while the folder is named after the
+  // franchise -- both candidates, exactly like addDownloadedBadgeMulti().
+  const candidates = [item.series_title, item.title].filter(Boolean);
+  if (!candidates.length) return false;
+  if (mediascanActive) {
+    if (candidates.some((title) => _isDownloadedByTitle(title))) return true;
+    // The badge gets a second chance from the TMDB id once CineInfo has
+    // enriched the card (see _applyTmdbToCard); when the id is already on the
+    // item, take it here too rather than answering "no" to a card that is
+    // about to grow the badge.
+    return item.tmdb && item.tmdb.tmdb_id
+      ? _isDownloadedByTmdb(item.tmdb.tmdb_id) : false;
+  }
+  return candidates.some((title) => isDownloaded(title));
+}
+
+function mfCardOnAutoSync(item) {
+  if (!item) return false;
+  const url = (item.url || "").replace(/\/+$/, "").toLowerCase();
+  if (url && autoSyncUrlMap[url]) return true;
+  // A job created from the other site of a merged card points at the other
+  // url, so the title is the fallback -- same pairing addSyncBadgeForTmdb()
+  // uses when a card has no provider url at all.
+  const candidates = [item.series_title, item.title]
+    .filter(Boolean).map(_normalizeForMediascan).filter(Boolean);
+  if (!candidates.length) return false;
+  return Object.values(autoSyncUrlMap).some((job) =>
+    candidates.indexOf(_normalizeForMediascan(job.title || "")) !== -1);
+}
+
+window.mfCardInLibrary = mfCardInLibrary;
+window.mfCardOnAutoSync = mfCardOnAutoSync;
 
 function _createSyncBadge(card) {
   const badge = document.createElement("div");

@@ -82,24 +82,44 @@ def _public(job):
     }
 
 
-def get_job(job_id):
+def _owned_by(job, username, is_admin) -> bool:
+    """May this account see or stop *job*?
+
+    Jobs were global: every account's progress card showed every other
+    account's job, and any job id could be cancelled by anybody who guessed
+    it. An admin still sees all of them -- that is the point of an admin --
+    and a job created while auth was off has no owner and belongs to whoever
+    is asking.
+    """
+    if is_admin:
+        return True
+    owner = job.get("username")
+    return owner is None or owner == username
+
+
+def get_job(job_id, username=None, is_admin=True):
     with _lock:
         job = _jobs.get(job_id)
-        return _public(job) if job else None
+    if not job or not _owned_by(job, username, is_admin):
+        return None
+    return _public(job)
 
 
-def list_jobs():
+def list_jobs(username=None, is_admin=True):
     with _lock:
-        return [_public(_jobs[j]) for j in _order if j in _jobs]
+        jobs = [_jobs[j] for j in _order if j in _jobs]
+    return [_public(j) for j in jobs if _owned_by(j, username, is_admin)]
 
 
-def cancel_job(job_id) -> bool:
+def cancel_job(job_id, username=None, is_admin=True) -> bool:
     """Stop after the series currently being expanded. Already-created queue
     items are NOT removed -- they are real work the user asked for, and the
     queue has its own controls for them."""
     with _lock:
         job = _jobs.get(job_id)
-    if not job or job["status"] != "running":
+    if not job or not _owned_by(job, username, is_admin):
+        return False
+    if job["status"] != "running":
         return False
     job["cancel"].set()
     return True
@@ -130,13 +150,48 @@ def _note_error(job, label, exc):
         job["errors"].append({"title": label, "error": f"{type(exc).__name__}: {exc}"[:200]})
 
 
+def _already_on_disk(episode) -> bool:
+    """Whether this episode's file is already there.
+
+    ``episode.is_downloaded`` is NOT a boolean: every model returns the dict
+    ``models/common/common.check_downloaded()`` builds
+    (``{"exists": ..., "video_langs": ..., "audio_langs": ..., ...}``), and a
+    non-empty dict is always truthy. Reading it as a flag therefore answered
+    "yes, already downloaded" for EVERY episode of EVERY series, the whole
+    selection came back as "skipped", and not one queue item was ever created.
+    That is the entire reason a configured bulk action started no download.
+
+    The cheap path check comes first on purpose: ``is_downloaded`` runs a full
+    ffprobe on every file it finds, and a bulk expansion over a few hundred
+    episodes only needs a yes/no.
+    """
+    path = getattr(episode, "_episode_path", None)
+    if path is not None:
+        try:
+            from pathlib import Path
+            return Path(path).exists()
+        except (OSError, TypeError, ValueError):
+            pass
+    try:
+        state = getattr(episode, "is_downloaded", False)
+    except Exception:
+        return False
+    if isinstance(state, dict):
+        return bool(state.get("exists"))
+    return bool(state)
+
+
 def _episodes_for(series_url, missing_only):
-    """(title, [episode_url]) for one series, or (title, []) when there is
-    nothing to download.
+    """(title, [episode_url], total) for one series.
 
     ``missing_only`` drops episodes already on disk. The queue worker skips
     those anyway ("Bereits vorhanden"), but a queue item holding 300 episodes
     of which 299 are done is a queue item nobody can read.
+
+    ``total`` is how many episodes the series has BEFORE that filter, so the
+    caller can tell "everything is already here" apart from "this series has
+    no episodes at all" -- two very different things that both used to be
+    reported as one silent "skipped".
     """
     from ..providers import resolve_provider
 
@@ -147,16 +202,14 @@ def _episodes_for(series_url, missing_only):
     title = getattr(series, "title", "") or series_url
 
     episode_urls = []
+    total = 0
     for season in series.seasons:
         for episode in season.episodes:
-            if missing_only:
-                try:
-                    if getattr(episode, "is_downloaded", False):
-                        continue
-                except Exception:
-                    pass
+            total += 1
+            if missing_only and _already_on_disk(episode):
+                continue
             episode_urls.append(episode.url)
-    return title, episode_urls
+    return title, episode_urls, total
 
 
 def _beat(state, detail="", error=None, handled=None, last_run=None):
@@ -201,7 +254,14 @@ def _run(job):
                                       added_by=job["username"], cover_url=cover)
                     job["queued"] += 1
             else:
-                title, episodes = _episodes_for(url, job["missing_only"])
+                title, episodes, total = _episodes_for(url, job["missing_only"])
+                if not total:
+                    # No episodes AT ALL is not "nothing left to do", it is a
+                    # series page that could not be read -- reported rather
+                    # than folded into the same silent counter as "already
+                    # complete", which is how a job that produced nothing gave
+                    # no clue why.
+                    raise ValueError("no episodes found on the series page")
                 if not episodes:
                     job["skipped"] += 1
                 elif is_series_queued_or_running(url, job["language"],

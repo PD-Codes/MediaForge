@@ -32,6 +32,12 @@ logger = get_logger(__name__)
 # expanding series one at a time (see catalogue_worker._SERIES_DELAY).
 MAX_ACTIVE_JOBS = 2
 
+# Not a selection limit -- see the note above. This bounds the REQUEST: the
+# whole catalogue is around 13k urls, so anything past this cannot be a real
+# selection, and validating an arbitrarily long list is a denial of service
+# that costs the sender one JSON body.
+MAX_SUBMITTED_URLS = 60_000
+
 
 def _catalogue_sources():
     """Every catalogue that exists, with the enabled state the rest of the app
@@ -184,21 +190,25 @@ def register_catalogue_routes(app):
 
         # Must be a url we actually hold -- otherwise this is a "look up
         # anything on TMDB for me" endpoint with the app's API key attached.
-        from ..db import load_catalogue
-        for sid in all_catalogues():
-            for entry in load_catalogue(sid):
-                if entry["url"].rstrip("/") != url:
-                    continue
-                if entry.get("tmdb_id") or entry.get("imdb_id"):
-                    return jsonify({"tmdb_id": entry.get("tmdb_id", ""),
-                                    "imdb_id": entry.get("imdb_id", ""),
-                                    "cached": True})
-                from .. import catalogue_ids
-                result = catalogue_ids.resolve_entry(sid, entry["url"], entry["title"])
-                return jsonify({"tmdb_id": result.get("tmdb_id", ""),
-                                "imdb_id": result.get("imdb_id", ""),
-                                "cached": False})
-        return jsonify({"error": "unknown url"}), 404
+        #
+        # ONE indexed row read. This used to load every source's complete list
+        # into Python and compare ~13,000 strings to find one entry, on every
+        # single details open -- which is most of what made opening a title
+        # feel slow.
+        from ..db import find_catalogue_entry
+        entry = find_catalogue_entry(url)
+        if not entry:
+            return jsonify({"error": "unknown url"}), 404
+        if entry.get("tmdb_id") or entry.get("imdb_id"):
+            return jsonify({"tmdb_id": entry.get("tmdb_id") or "",
+                            "imdb_id": entry.get("imdb_id") or "",
+                            "cached": True})
+        from .. import catalogue_ids
+        result = catalogue_ids.resolve_entry(
+            entry["source_id"], entry["url"], entry["title"])
+        return jsonify({"tmdb_id": result.get("tmdb_id", ""),
+                        "imdb_id": result.get("imdb_id", ""),
+                        "cached": False})
 
     @app.route("/api/catalogue/state")
     def api_catalogue_state():
@@ -210,16 +220,29 @@ def register_catalogue_routes(app):
         holds the downloaded-folder list for its own badges and matches on it
         locally (see isDownloaded() in app.js).
         """
+        from ..request_context import get_current_user_info
+        username, is_admin = get_current_user_info()
+
         queued, syncing = set(), set()
         try:
             for item in (get_queue() or []):
                 url = (item.get("series_url") or "").rstrip("/")
-                if url and item.get("status") in ("pending", "running", "paused"):
+                # The download_queue's own vocabulary (see db/queue.py's CHECK
+                # constraint): queued / running / completed / partial / failed
+                # / cancelled. "pending" and "paused" are not statuses at all
+                # -- a pause is global, not per item -- so this matched nothing
+                # and the "Queued" badge never appeared for a series that had
+                # just been added, which reads exactly like "nothing happened".
+                if url and item.get("status") in ("queued", "running"):
                     queued.add(url)
         except Exception as exc:
             logger.debug("[Catalogue] queue state failed: %s", exc)
         try:
-            for job in (get_autosync_jobs() or []):
+            # Scoped exactly like GET /api/autosync itself (routes/autosync.py):
+            # admins see everything, everybody else sees their own. Asking
+            # unscoped here handed any logged-in account the full list of
+            # series every other account is syncing -- through a badge.
+            for job in (get_autosync_jobs(username=None if is_admin else username) or []):
                 url = (job.get("series_url") or "").rstrip("/")
                 if url:
                     syncing.add(url)
@@ -243,9 +266,29 @@ def register_catalogue_routes(app):
         if mode not in ("queue", "autosync"):
             return jsonify({"error": "mode must be queue or autosync"}), 400
 
+        from ..request_context import get_current_user_info
+        username, is_admin = get_current_user_info()
+
+        # Creating AutoSync jobs is admin-only everywhere else in the app:
+        # POST /api/autosync sits in app.py's _admin_only set. This endpoint
+        # reaches add_autosync_job() directly, so without this check it was a
+        # way for any logged-in account to create unlimited recurring jobs --
+        # the exact action that gate exists to prevent, and in bulk. The queue
+        # mode is deliberately NOT gated: a one-off download is what every
+        # account may do (see /api/download).
+        if mode == "autosync" and not is_admin:
+            return jsonify({"error": "not permitted", "code": "admin_only"}), 403
+
         urls = data.get("urls") or []
         if not isinstance(urls, list) or not urls:
             return jsonify({"error": "urls list is required"}), 400
+        # No ceiling on the SELECTION (see the note at the top of this file),
+        # but a hard one on the request BODY: past the total number of stored
+        # entries every further element is guaranteed junk, and validating a
+        # million of them is a denial of service with a JSON body.
+        if len(urls) > MAX_SUBMITTED_URLS:
+            return jsonify({"error": "too many urls in one request",
+                            "code": "too_many"}), 413
 
         # Only urls that are actually in ONE OF the catalogues. The page shows
         # every source merged into a single list, so a selection legitimately
@@ -257,20 +300,25 @@ def register_catalogue_routes(app):
         # multi-megabyte downloads just to answer "is this url in a catalogue" --
         # and after the move to the DB there is always something stored unless
         # the app has genuinely never fetched anything.
-        known = {}
-        for sid, entries in catalogue_store.all_entries().items():
-            for entry in entries:
-                known.setdefault(entry["url"].rstrip("/"), sid)
-        if not known:
+        # One indexed query per 400 urls, instead of loading every source's
+        # full list into Python and building a 13k-entry dict per request.
+        from ..db import catalogue_entry_count, catalogue_sources_for_urls
+        known = catalogue_sources_for_urls(urls)
+        if not known and not catalogue_entry_count():
             return jsonify({"error": "catalogue unavailable"}), 503
 
         wanted, unknown, sources_used = [], 0, set()
+        # A set beside the list: `url not in wanted` was a linear scan of a
+        # list the docstring above invites to hold thirteen thousand entries,
+        # which is ~85 million comparisons for one press of "select all".
+        seen = set()
         for raw in urls:
             url = str(raw or "").strip().rstrip("/")
-            if url in known and url not in wanted:
+            if url in known and url not in seen:
+                seen.add(url)
                 wanted.append(url)
                 sources_used.add(known[url])
-            elif url:
+            elif url and url not in seen:
                 unknown += 1
         if not wanted:
             return jsonify({"error": "no known urls in selection"}), 400
@@ -321,13 +369,21 @@ def register_catalogue_routes(app):
 
     @app.route("/api/catalogue/bulk")
     def api_catalogue_bulk_list():
-        """Recent bulk jobs, newest last. GET /api/catalogue/bulk."""
-        return jsonify({"jobs": catalogue_worker.list_jobs()})
+        """Recent bulk jobs, newest last. GET /api/catalogue/bulk.
+
+        Own jobs only; admins see every account's. The page resumes its
+        progress card from this, and a card reporting somebody else's job is
+        both a leak and a lie about what the user did."""
+        from ..request_context import get_current_user_info
+        username, is_admin = get_current_user_info()
+        return jsonify({"jobs": catalogue_worker.list_jobs(username, is_admin)})
 
     @app.route("/api/catalogue/bulk/<job_id>")
     def api_catalogue_bulk_job(job_id):
         """One bulk job's progress. GET /api/catalogue/bulk/<job_id>."""
-        job = catalogue_worker.get_job(str(job_id or ""))
+        from ..request_context import get_current_user_info
+        username, is_admin = get_current_user_info()
+        job = catalogue_worker.get_job(str(job_id or ""), username, is_admin)
         if job is None:
             return jsonify({"error": "unknown job"}), 404
         return jsonify(job)
@@ -338,7 +394,12 @@ def register_catalogue_routes(app):
         POST /api/catalogue/bulk/<job_id>/cancel.
 
         Queue items it already created stay: they are real work the user asked
-        for, and the queue has its own controls for them."""
-        if not catalogue_worker.cancel_job(str(job_id or "")):
+        for, and the queue has its own controls for them.
+
+        Somebody else's job is "not running" as far as this account is
+        concerned -- a job id was all it took to stop another user's work."""
+        from ..request_context import get_current_user_info
+        username, is_admin = get_current_user_info()
+        if not catalogue_worker.cancel_job(str(job_id or ""), username, is_admin):
             return jsonify({"error": "job is not running"}), 400
         return jsonify({"ok": True})
