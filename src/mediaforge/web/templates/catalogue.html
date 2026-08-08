@@ -263,5 +263,17 @@
 {% endblock %}
 
 {% block scripts %}
+{# app.js FIRST, and not optional. It owns the answer to "do I already have
+   this": the download-folder list, the server-side alias index, the
+   Plex/Jellyfin index and the three-stage matching in downloadedFolderFor().
+   This page was reading those globals without ever loading the file that
+   defines them, so every "In library" check silently answered no — on a
+   library with thousands of titles the page reported zero.
+
+   Loading it is what the other non-start pages do (favourites, calendar,
+   seerr, advanced-search), and it is the only way this page and the start
+   page cannot disagree about what "downloaded" means. Reimplementing the
+   matching here would have been a second opinion that drifts. #}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 <script src="{{ url_for('static', filename='catalogue.js') }}"></script>
 {% endblock %}

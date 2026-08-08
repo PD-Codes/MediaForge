@@ -605,3 +605,20 @@ def test_status_chips_filter_for_a_category_not_against_it():
     assert "chip_empty" in js
     # The expensive library check is cached rather than redone per keystroke.
     assert "computeLibraryFlags" in js
+
+
+def test_the_page_loads_app_js(as_user):
+    """The bug behind "I have thousands of titles and the catalogue says 0".
+
+    app.js owns the download-folder list, the server-side alias index, the
+    Plex/Jellyfin index and the three-stage matching in downloadedFolderFor().
+    This page read those globals without ever loading the file that defines
+    them, so every library check answered no -- silently, because they are all
+    behind `typeof` guards. It has to load first, before catalogue.js."""
+    html = as_user("admin").get("/catalogue").get_data(as_text=True)
+    import re
+
+    scripts = re.findall(r"/static/(app|catalogue)\.js", html)
+    assert "app" in scripts, "app.js is not loaded on the Catalogue page"
+    assert scripts.index("app") < scripts.index("catalogue"), \
+        "app.js must load before catalogue.js"
