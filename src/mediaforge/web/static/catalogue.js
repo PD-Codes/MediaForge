@@ -58,12 +58,26 @@
   let queuedUrls = new Set();
   let syncUrls = new Set();
   let offSources = new Set();     // source ids the chips have narrowed away
-  // Status chips follow the same model as the source chips: a chip is ON by
-  // default and turning it off hides the rows in that category. A row in none
-  // of the categories is always visible -- these narrow the list, they never
-  // define it.
-  let offStatus = new Set();      // subset of "library" | "queued" | "sync"
-  let onlySelected = false;       // show nothing but what is marked
+  // Status chips are POSITIVE filters: none picked shows everything, picking
+  // one shows only that category, picking several shows their union.
+  //
+  // They started out mirroring the source chips (on by default, click to
+  // hide) and that was a mistake: "AniWorld" reads as a thing you are
+  // including, but "In library" reads as a thing you want to filter FOR, so
+  // clicking it and getting everything you do NOT have looks broken.
+  let onStatus = new Set();       // subset of "library"|"queued"|"sync"|"selection"
+
+  // How many entries each chip would show, over the source+search filter but
+  // before the status filter -- so the number says what pressing it gets you.
+  let statusCounts = { library: 0, queued: 0, sync: 0, selection: 0 };
+
+  // "Is this in the library" is the expensive one: app.js answers it by
+  // scanning the download-folder list per title, which over 13k entries is
+  // far too slow to redo on every keystroke. It is computed once in the
+  // background and cached on the entry; libPass invalidates that cache when
+  // the library index or the list itself changes.
+  let libPass = 0;
+  let libFlagsReady = false;
   let sortDir = "asc";            // "asc" | "desc"
   let letterFirst = {};           // letter -> first index into `filtered`
   let railLetters = [];           // letters in rail order, "#" for the rest
@@ -153,16 +167,20 @@
   // ── View preferences ─────────────────────────────────────────────────────
   // Sort direction and the chip state survive a reload, because they describe
   // how this user reads the catalogue rather than what they are doing right
-  // now. `onlySelected` is the exception: it is restored only when there is
-  // still a selection to show, otherwise the page would come up empty with no
-  // obvious reason why.
+  // now. The "Only selection" chip is the exception: it is restored only when
+  // there is still a selection to show, otherwise the page would come up
+  // empty with no obvious reason why.
   function loadPrefs() {
     try {
       const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {};
       if (raw.sort === "desc") sortDir = "desc";
       if (Array.isArray(raw.offSources)) offSources = new Set(raw.offSources);
-      if (Array.isArray(raw.offStatus)) offStatus = new Set(raw.offStatus);
-      onlySelected = !!raw.onlySelected && selection.size > 0;
+      // `onStatus` only; a stored `offStatus` from the old inverted chips is
+      // ignored rather than migrated -- it would mean the opposite now.
+      if (Array.isArray(raw.onStatus)) onStatus = new Set(raw.onStatus);
+      // Restored only when there is still a selection to show, otherwise the
+      // page would come up empty with no obvious reason why.
+      if (onStatus.has("selection") && !selection.size) onStatus.delete("selection");
     } catch (e) { /* the defaults above are a perfectly good page */ }
   }
 
@@ -171,8 +189,7 @@
       localStorage.setItem(PREFS_KEY, JSON.stringify({
         sort: sortDir,
         offSources: Array.from(offSources),
-        offStatus: Array.from(offStatus),
-        onlySelected: onlySelected,
+        onStatus: Array.from(onStatus),
       }));
     } catch (e) { /* private mode / quota -- the in-memory state still works */ }
   }
@@ -237,6 +254,7 @@
     });
     entries = merged;
     applyFilter();
+    computeLibraryFlags();
   }
 
   function showMessage(text) {
@@ -292,44 +310,63 @@
     { id: "library", key: "in_library", fallback: "In library", cls: "cat-chip--library" },
     { id: "queued", key: "queued", fallback: "Queued", cls: "cat-chip--queued" },
     { id: "sync", key: "syncing", fallback: "Auto-Sync", cls: "cat-chip--sync" },
+    { id: "selection", key: "only_selection", fallback: "Only selection",
+      cls: "cat-chip--only" },
   ];
 
+  const statusNodes = {};   // id -> {btn, label, count}
+
+  // Built once. The counts change on every keystroke, and rebuilding four
+  // buttons that often would throw away keyboard focus mid-interaction.
   function renderStatusChips() {
     const host = el("catStatusChips");
     if (!host) return;
     host.innerHTML = "";
-    STATUS_CHIPS.forEach((s) => {
-      const on = !offStatus.has(s.id);
+    STATUS_CHIPS.forEach((chip) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "cat-chip cat-chip--status " + s.cls + (on ? " is-on" : "");
-      btn.textContent = t(s.key, s.fallback);
-      btn.title = t("chip_hint", "Show or hide these entries");
-      btn.setAttribute("aria-pressed", on ? "true" : "false");
+      btn.className = "cat-chip cat-chip--status " + chip.cls;
+      const label = document.createElement("span");
+      label.textContent = t(chip.key, chip.fallback);
+      const count = document.createElement("span");
+      count.className = "cat-chip-count";
+      btn.appendChild(label);
+      btn.appendChild(count);
       btn.addEventListener("click", () => {
-        if (offStatus.has(s.id)) offStatus.delete(s.id); else offStatus.add(s.id);
+        if (btn.disabled) return;
+        if (onStatus.has(chip.id)) onStatus.delete(chip.id); else onStatus.add(chip.id);
         savePrefs();
-        renderStatusChips();
         viewport.scrollTop = 0;
         applyFilter();
       });
+      statusNodes[chip.id] = { btn: btn, label: label, count: count };
       host.appendChild(btn);
     });
+    updateStatusChips();
+  }
 
-    const sel = document.createElement("button");
-    sel.type = "button";
-    sel.className = "cat-chip cat-chip--status cat-chip--only" + (onlySelected ? " is-on" : "");
-    sel.textContent = t("only_selection", "Only selection");
-    sel.title = t("only_selection_hint", "Show only what is marked");
-    sel.setAttribute("aria-pressed", onlySelected ? "true" : "false");
-    sel.addEventListener("click", () => {
-      onlySelected = !onlySelected;
-      savePrefs();
-      renderStatusChips();
-      viewport.scrollTop = 0;
-      applyFilter();
+  function updateStatusChips() {
+    STATUS_CHIPS.forEach((chip) => {
+      const node = statusNodes[chip.id];
+      if (!node) return;
+      const on = onStatus.has(chip.id);
+      const total = statusCounts[chip.id] || 0;
+      // The library count is only meaningful once the background pass has
+      // been through the list; until then the chip shows no number rather
+      // than a wrong one.
+      const known = chip.id !== "library" || libFlagsReady;
+      node.count.textContent = known ? String(total) : "…";
+      node.btn.classList.toggle("is-on", on);
+      node.btn.setAttribute("aria-pressed", on ? "true" : "false");
+      // A chip that cannot change anything says so instead of looking broken
+      // when nothing happens -- which is exactly how the old ones read.
+      const dead = known && total === 0 && !on;
+      node.btn.disabled = dead;
+      node.btn.classList.toggle("is-empty", dead);
+      node.btn.title = dead
+        ? t("chip_empty", "Nothing in this category right now")
+        : t("chip_hint", "Show only these entries");
     });
-    host.appendChild(sel);
   }
 
   function renderSortButton() {
@@ -345,31 +382,86 @@
   // find "Attack on Titan".
   function applyFilter() {
     const term = (searchInput.value || "").trim().toLowerCase();
-    const hideLibrary = offStatus.has("library");
-    const hideQueued = offStatus.has("queued");
-    const hideSync = offStatus.has("sync");
-    // app.js owns the downloaded-folder list; on a page where it has not
-    // loaded, "in library" is simply unknown and must not hide anything.
-    const canCheckLibrary = hideLibrary && (
-      typeof window.isDownloaded === "function" ||
-      typeof window._isDownloadedByTitle === "function");
 
-    filtered = entries.filter((e) => {
+    // Source chips and the search box first: everything below is counted and
+    // filtered within what they leave, so a chip's number always says what
+    // pressing it would actually show.
+    const base = entries.filter((e) => {
       if (offSources.has(e.source)) return false;
-      if (onlySelected && !selection.has(e.url)) return false;
-      if (hideQueued && queuedUrls.has(e.url)) return false;
-      if (hideSync && syncUrls.has(e.url)) return false;
-      if (canCheckLibrary && inLibrary(e.title, e)) return false;
       if (!term) return true;
       return e.title.toLowerCase().indexOf(term) !== -1 ||
         (e.alt && e.alt.indexOf(term) !== -1);
     });
+
+    statusCounts = { library: 0, queued: 0, sync: 0, selection: 0 };
+    base.forEach((e) => {
+      if (e._lib) statusCounts.library += 1;
+      if (queuedUrls.has(e.url)) statusCounts.queued += 1;
+      if (syncUrls.has(e.url)) statusCounts.sync += 1;
+      if (selection.has(e.url)) statusCounts.selection += 1;
+    });
+
+    // Positive and additive: nothing picked means no restriction, several
+    // picked means their union ("queued OR auto-sync"), which is the useful
+    // reading of two filters that describe the same kind of property.
+    filtered = onStatus.size
+      ? base.filter((e) =>
+          (onStatus.has("library") && e._lib) ||
+          (onStatus.has("queued") && queuedUrls.has(e.url)) ||
+          (onStatus.has("sync") && syncUrls.has(e.url)) ||
+          (onStatus.has("selection") && selection.has(e.url)))
+      : base;
     // `entries` is sorted A-Z once at load; reversing the filtered slice is
     // cheaper and keeps the two orders guaranteed to be exact mirrors.
     if (sortDir === "desc") filtered.reverse();
     buildLetterIndex();
+    updateStatusChips();
     updateCount();
     render();
+  }
+
+  /** Work out `_lib` for every entry, in slices, without blocking the page.
+   *
+   * app.js answers "is this in the library" by scanning the download-folder
+   * list per title -- fine for the handful of cards a start page renders,
+   * hopeless for thirteen thousand rows on every keystroke. So it is done
+   * once, cached on the entry, and redone only when the list or the library
+   * index actually changes.
+   *
+   * Sliced rather than one loop: a single pass over 13k titles against a few
+   * hundred folders freezes the tab for a second or two, and this runs right
+   * when the page has just become usable.
+   */
+  function computeLibraryFlags() {
+    const pass = ++libPass;
+    libFlagsReady = false;
+    let i = 0;
+    const step = () => {
+      if (pass !== libPass) return;          // a newer pass took over
+      const end = Math.min(entries.length, i + 800);
+      for (; i < end; i++) {
+        entries[i]._lib = inLibrary(entries[i].title, entries[i]);
+      }
+      if (i < entries.length) { setTimeout(step, 0); return; }
+      libFlagsReady = true;
+      // The count is real now, and if the library chip is active the list
+      // itself was provisional until this moment.
+      if (onStatus.has("library")) applyFilter();
+      else { recountLibrary(); updateStatusChips(); render(); }
+    };
+    step();
+  }
+
+  function recountLibrary() {
+    const term = (searchInput.value || "").trim().toLowerCase();
+    let n = 0;
+    entries.forEach((e) => {
+      if (offSources.has(e.source)) return;
+      if (term && e.title.toLowerCase().indexOf(term) === -1 &&
+          !(e.alt && e.alt.indexOf(term) !== -1)) return;
+      if (e._lib) n += 1;
+    });
+    statusCounts.library = n;
   }
 
   // ── A-Z index ────────────────────────────────────────────────────────────
@@ -540,9 +632,10 @@
       const url = e.url;
       const isSel = selection.has(url);
       let badges = "";
-      // Decided client-side against the index app.js already holds; asking
-      // the server per row would be eleven thousand requests.
-      if (inLibrary(e.title, e)) {
+      // Cached by computeLibraryFlags(); until that pass reaches this entry
+      // the visible row is worked out on the spot, so badges appear straight
+      // away instead of after the whole list has been walked.
+      if (e._lib === undefined ? inLibrary(e.title, e) : e._lib) {
         badges += '<span class="cat-badge cat-badge--library">' + esc(t("in_library", "In library")) + "</span>";
       }
       if (queuedUrls.has(url)) {
@@ -611,11 +704,9 @@
     if (!url) return;
     if (selection.has(url)) selection.delete(url); else selection.add(url);
     saveSelection();
-    // With "Only selection" active the row that was just unmarked no longer
-    // belongs in the list at all, so this is a filter change, not a repaint.
-    if (onlySelected) { applyFilter(); return; }
-    updateCount();
-    render();
+    // The selection is itself a filter and a chip count, so a change to it is
+    // a filter change rather than a repaint.
+    applyFilter();
   }
 
   searchInput.addEventListener("input", () => {
@@ -637,10 +728,9 @@
     saveSelection();
     // Leaving "Only selection" on here would answer "clear" with an empty
     // list and no visible reason, so clearing switches it back off.
-    if (onlySelected) {
-      onlySelected = false;
+    if (onStatus.has("selection")) {
+      onStatus.delete("selection");
       savePrefs();
-      renderStatusChips();
     }
     applyFilter();
   });
@@ -1280,7 +1370,7 @@
   }
 
   loadSelection();
-  loadPrefs();              // after loadSelection: onlySelected depends on it
+  loadPrefs();              // after loadSelection: the selection chip needs it
   syncActionsBar(selection.size);   // before the first fetch, so the bar never
                                     // flashes into view on an empty selection
   renderStatusChips();
@@ -1291,9 +1381,8 @@
   // "In library" check on the Catalogue page answered no -- see inLibrary().
   if (typeof window.loadDownloadedFolders === "function") {
     window.loadDownloadedFolders().then(() => {
-      // The list may already be on screen; re-run the filter so the badges
-      // (and the "In library" chip) reflect what was just loaded.
-      if (entries.length) applyFilter();
+      // The index the flags were computed against has just changed.
+      if (entries.length) computeLibraryFlags();
     }).catch(() => { /* best-effort, same as app.js */ });
   }
   loadState().then(loadSources);

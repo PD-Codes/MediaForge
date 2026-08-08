@@ -37,8 +37,15 @@ logger = get_logger(__name__)
 # How old a stored catalogue may get before a refresh is triggered. Long on
 # purpose: a site adds a handful of titles a week, the payload is megabytes,
 # and refetching it more often than this is the single most expensive thing
-# this app does to a source site.
-CATALOGUE_TTL = 12 * 3600
+# this app does to a source site. Once a day is plenty for an A-Z list.
+CATALOGUE_TTL = 24 * 3600
+
+# How often the background loop asks "is anything due?". This is a couple of
+# cheap DB reads, not a fetch -- it is CATALOGUE_TTL above that decides how
+# often a source is actually contacted, and this only controls how promptly a
+# list that has come due is picked up. Hourly means a source is refetched
+# about once a day, close to the hour it was last fetched.
+CHECK_INTERVAL = 3600
 
 # A failed refresh is not retried at TTL speed -- a site that is down stays
 # down for a while, and hammering it every page open is both rude and useless.
@@ -49,6 +56,7 @@ FAILED_RETRY = 30 * 60
 COLD_FETCH_TIMEOUT = 90
 
 _lock = threading.Lock()
+_loop_stop = threading.Event()
 _refreshing: dict = {}     # source_id -> {"since": float, "phase": str}
 _last_attempt: dict = {}   # source_id -> float, including failed ones
 _cold_waiters: dict = {}   # source_id -> threading.Event
@@ -298,6 +306,24 @@ def refresh_stale(force=False) -> int:
     return started
 
 
+def _refresh_loop():
+    """Ask once an hour whether anything has passed :data:`CATALOGUE_TTL`.
+
+    A timer rather than only refreshing when the page is opened: with
+    stale-while-revalidate the page never waits either way, but somebody who
+    opens the Catalogue once a week should not be the one who discovers the
+    list is a week old. It also means the refetch happens at some quiet
+    moment rather than while they are using the page.
+    """
+    while not _loop_stop.wait(CHECK_INTERVAL):
+        try:
+            started = refresh_stale()
+            if started:
+                logger.debug("[Catalogue] periodic check started %d refresh(es)", started)
+        except Exception as exc:
+            logger.debug("[Catalogue] periodic check failed: %s", exc)
+
+
 def _install_unregister_hook():
     """Drop a module's stored catalogue when the module goes away.
 
@@ -326,6 +352,9 @@ def init(refresh_on_start=True) -> None:
     _install_unregister_hook()
     _beat()
     if refresh_on_start:
-        # Deferred: startup should not wait on the network, and a source that
-        # is stale by twelve hours is not stale by twelve more seconds.
+        # Deferred: startup should not wait on the network, and a list that is
+        # a day old is not worse for another twelve seconds.
         threading.Timer(12.0, lambda: refresh_stale()).start()
+        _loop_stop.clear()
+        threading.Thread(target=_refresh_loop, daemon=True,
+                         name="catalogue-refresh-loop").start()

@@ -93,18 +93,43 @@
   flex: 0 0 auto;
 }
 
-/* Status chips carry the badge colour of the rows they control, so the link
-   between "hide Queued" and the blue Queued badge needs no explaining.
-   Off-state stays legible rather than dimmed to nothing: an active filter is
-   the single most important thing to notice on this page. */
+/* Status chips are POSITIVE filters: unpressed means "no restriction", pressed
+   means "only these". They carry the badge colour of the rows they select, so
+   the link between the Queued chip and the blue Queued badge on a row needs no
+   explaining. Unpressed is a plain outline rather than a struck-through label
+   -- the earlier chips were inverted (on by default, click to hide) and read
+   as broken, because pressing "In library" showed everything you do NOT have. */
 .cat-chip--status { color: var(--text-secondary); }
-.cat-chip--status.is-on { color: var(--text-primary); }
 .cat-chip--library.is-on { background: var(--success-bg); color: var(--success); border-color: var(--success); }
 .cat-chip--queued.is-on  { background: var(--info-bg);    color: var(--info);    border-color: var(--info); }
 .cat-chip--sync.is-on    { background: var(--accent-soft); color: var(--text-link); border-color: var(--border-focus); }
 .cat-chip--only.is-on    { background: var(--accent-soft); color: var(--text-link); border-color: var(--border-focus); }
-.cat-chip--status:not(.is-on) { text-decoration: line-through; opacity: .6; }
-.cat-chip--only:not(.is-on) { text-decoration: none; opacity: 1; }
+
+/* The count is what turns "nothing happened" into "there are none of these".
+   Tabular figures so the chip does not jump about as the number changes while
+   you type in the filter box. */
+.cat-chip-count {
+  margin-left: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: .85;
+}
+.cat-chip--status.is-on .cat-chip-count { background: rgba(0, 0, 0, 0.18); }
+[data-theme="light"] .cat-chip--status.is-on .cat-chip-count { background: rgba(255, 255, 255, 0.5); }
+
+/* Nothing in this category, so there is nothing to press. Saying that is the
+   whole point: a chip that silently does nothing is the bug being fixed. */
+.cat-chip--status.is-empty,
+.cat-chip--status:disabled {
+  opacity: .4;
+  cursor: default;
+}
+.cat-chip--status:disabled:hover { background: transparent; border-color: var(--border); }
 
 /* Reads as a control rather than a label, and stays the same width in both
    directions so the toolbar does not shift when it is pressed. */

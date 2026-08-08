@@ -251,7 +251,7 @@ def test_labels_built_in_js_are_translatable(as_user):
     import re
 
     html = as_user("admin").get("/catalogue").get_data(as_text=True)
-    for key in ("chip_hint", "only_selection", "only_selection_hint",
+    for key in ("chip_hint", "chip_empty", "only_selection",
                 "sort_az", "sort_za", "sort_label"):
         assert re.search(r"\b%s:\s*\"" % key, html), key
 
@@ -584,3 +584,24 @@ def test_the_backfill_does_not_monopolise_the_shared_tmdb_budget():
     # Each entry is several TMDB calls (search, details, providers, videos),
     # so the worker count has to stay well under the per-second budget.
     assert catalogue_ids.LOOKUP_WORKERS * 4 < getattr(_tmdb_rl, "rate", 40)
+
+
+def test_status_chips_filter_for_a_category_not_against_it():
+    """They started out inverted -- on by default, click to hide -- and read as
+    broken: pressing "In library" showed everything you do NOT have. They are
+    positive filters now, and each one carries the count of what pressing it
+    would show, so a category with nothing in it says so instead of silently
+    doing nothing."""
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] /
+          "src/mediaforge/web/static/catalogue.js").read_text(encoding="utf-8")
+    assert "onStatus" in js
+    # The inverted state must be gone entirely, including from the saved
+    # preferences -- a restored `offStatus` would now mean the opposite.
+    assert "offStatus.has" not in js
+    assert "onlySelected =" not in js
+    assert "cat-chip-count" in js
+    assert "chip_empty" in js
+    # The expensive library check is cached rather than redone per keystroke.
+    assert "computeLibraryFlags" in js

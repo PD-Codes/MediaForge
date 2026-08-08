@@ -9631,16 +9631,8 @@ msgid "Jump to letter"
 msgstr "Zu Buchstabe springen"
 
 #: src/mediaforge/web/templates/catalogue.html:0
-msgid "Show or hide these entries"
-msgstr "Diese Einträge ein- oder ausblenden"
-
-#: src/mediaforge/web/templates/catalogue.html:0
 msgid "Only selection"
 msgstr "Nur Auswahl"
-
-#: src/mediaforge/web/templates/catalogue.html:0
-msgid "Show only what is marked"
-msgstr "Nur zeigen, was markiert ist"
 
 #: src/mediaforge/web/templates/catalogue.html:0
 msgid "A–Z"
@@ -9713,6 +9705,14 @@ msgstr "Alle Episoden heruntergeladen"
 #: src/mediaforge/web/templates/settings.html:0
 msgid "Catalogue title matching"
 msgstr "Katalog-Titelabgleich"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Show only these entries"
+msgstr "Nur diese Einträge zeigen"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Nothing in this category right now"
+msgstr "Aktuell nichts in dieser Kategorie"
 
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"

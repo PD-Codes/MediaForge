@@ -2115,7 +2115,7 @@ def register(app):
   `register_home_feed_source()`.
 
   The result is stored in the database (`catalogue_entries`), not in memory,
-  and refreshed in the background roughly every 12 hours. Two consequences for
+  and refreshed in the background about once a day. Two consequences for
   a module author: `fetch` may be slow and should do real network work rather
   than the module holding a copy — it runs once per refresh, never in a user's
   request — and your list keeps working across restarts and while your site is
