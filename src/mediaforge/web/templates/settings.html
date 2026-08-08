@@ -663,6 +663,51 @@
         </button>
       </div>
       <div class="settings-hint">{{ _('The interface language a newly created account starts with. Everyone can change it later on their profile page.') }}</div>
+
+      {# The eight "Advanced Settings" toggles from the profile page, as an
+         INSTANCE default. They had no instance level at all before: theme and
+         accent cascaded account -> instance -> built-in, these went straight
+         from the account to a per-browser localStorage mirror, so every new
+         account started with all of them off regardless of how the instance
+         was set up. Same checkbox style (chb-main) and the same labels as
+         profile.html, on purpose -- an admin should recognise what they are
+         setting a default for. #}
+      <h3 class="settings-subtitle">{{ _('Advanced Settings') }}</h3>
+      <div class="settings-hint">{{ _('These are the extra design options from the profile page. What is ticked here is what a newly created account starts with; everyone can change it later on their own profile.') }}</div>
+      <div id="defaultUiToggles">
+        <label class="settings-checkbox-row" for="defGlowEffect">
+          <input type="checkbox" class="chb-main" id="defGlowEffect" data-default-ui="ui_glow_effect" onchange="saveDefaultUiToggles()" />
+          <span>{{ _('Add glow effect') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defHeaderColor">
+          <input type="checkbox" class="chb-main" id="defHeaderColor" data-default-ui="ui_header_color" onchange="saveDefaultUiToggles()" />
+          <span>{{ _('Change header color with accent color') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defHeaderColorHelp">
+          <input type="checkbox" class="chb-main" id="defHeaderColorHelp" data-default-ui="ui_header_color_help" onchange="saveDefaultUiToggles()" />
+          <span>{{ _('Fade header color for easier readability') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defSkeletonLoader">
+          <input type="checkbox" class="chb-main" id="defSkeletonLoader" data-default-ui="ui_skeleton_loader" onchange="saveDefaultUiToggles()" />
+          <span>{{ _('Skeleton Loader') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defChooseBorder">
+          <input type="checkbox" class="chb-main" id="defChooseBorder" data-default-ui="ui_choose_border" onchange="saveDefaultUiToggles()" />
+          <span>{{ _('Color highlight for selection') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defActiveDownloadGlow">
+          <input type="checkbox" class="chb-main" id="defActiveDownloadGlow" data-default-ui="ui_active_download_glow" onchange="saveDefaultUiToggles()" />
+          <span>{{ _('Color highlight for currently downloading items') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defClickEffect">
+          <input type="checkbox" class="chb-main" id="defClickEffect" data-default-ui="ui_click_effect" onchange="saveDefaultUiToggles()" />
+          <span>{{ _('"Button Press" animation when clicking a button or link') }}</span>
+        </label>
+        <label class="settings-checkbox-row" for="defIconMove">
+          <input type="checkbox" class="chb-main" id="defIconMove" data-default-ui="ui_icon_move" onchange="saveDefaultUiToggles()" />
+          <span>{{ _('Icon animations') }}</span>
+        </label>
+      </div>
     </div>
     {% endif %}
     <div class="settings-section">

@@ -8697,6 +8697,17 @@ msgstr ""
 msgid "Library scan (local folders)"
 msgstr ""
 
+#: mediaforge/web/templates/extensions.html:0
+msgid "Configure its settings under Module Settings"
+msgstr ""
+
+#: mediaforge/web/templates/settings.html:0
+msgid ""
+"These are the extra design options from the profile page. What is ticked "
+"here is what a newly created account starts with; everyone can change it "
+"later on their own profile."
+msgstr ""
+
 #~ msgid "Clear entries"
 #~ msgstr ""
 

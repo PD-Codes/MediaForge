@@ -26,6 +26,11 @@ from .browse import _prefetch_cycle
 from ..db import get_custom_paths
 from ..db import get_setting
 from ...languages import label_for_pair
+# One shared rule for "does this folder hold this title?". It used to be an
+# inline folder.name.lower().startswith(title) in each of the three branches
+# below, which is why "already downloaded" depended on WHICH provider you
+# arrived from -- see titles_match()'s docstring.
+from ...models.common.common import titles_match
 from ..lang_folders import LANG_FOLDERS
 from ..episode_marker import EPISODE_MARKER_RE
 from ..queue_worker import _hanime_enabled
@@ -1492,7 +1497,7 @@ def register_search_routes(app):
                             if not base.is_dir():
                                 continue
                             for folder in base.iterdir():
-                                if folder.is_dir() and folder.name.lower().startswith(title_clean):
+                                if folder.is_dir() and titles_match(folder.name, title_clean):
                                     for f in folder.rglob("*"):
                                         if f.is_file():
                                             mm = ep_re.search(f.name)
@@ -1552,7 +1557,7 @@ def register_search_routes(app):
                             if not base.is_dir():
                                 continue
                             for folder in base.iterdir():
-                                if folder.is_dir() and folder.name.lower().startswith(title_clean):
+                                if folder.is_dir() and titles_match(folder.name, title_clean):
                                     for f in folder.rglob("*"):
                                         if f.is_file():
                                             mm = ep_re.search(f.name)
@@ -1644,10 +1649,7 @@ def register_search_routes(app):
                         if not base.is_dir():
                             continue
                         for folder in base.iterdir():
-                            if (
-                                not folder.is_dir()
-                                or not folder.name.lower().startswith(title_clean)
-                            ):
+                            if not folder.is_dir() or not titles_match(folder.name, title_clean):
                                 continue
                             for f in folder.rglob("*"):
                                 if f.is_file():
@@ -1978,11 +1980,28 @@ def register_search_routes(app):
                 # mediaforge.languages -- never re-declare a local copy here,
                 # that is exactly how "English Dub (German Sub)" once went
                 # missing and left the dropdown empty for Ger-Sub episodes.
+                #
+                # ...and, since the same branch catches every module-registered
+                # provider: a plain STRING key ("German Dub") is accepted as the
+                # label it already is. label_for_pair() cannot unpack a string,
+                # returned None, and the `continue` below then threw the entry
+                # away -- which is why a module's series modal came up with an
+                # empty language and hoster dropdown while the built-ins were
+                # fine. Modules were told to return exactly this shape (see
+                # .examples/thirdparties/README.md), so the documented contract
+                # and the code disagreed and the code lost silently.
                 for key, providers in pd.items():
-                    label = label_for_pair(key)
+                    if isinstance(key, str):
+                        label = key.strip()
+                    else:
+                        label = label_for_pair(key)
                     if not label or (disable_eng_sub and label == "English Sub"):
                         continue
-                    raw_by_label[label] = dict(providers)
+                    # Merge rather than assign: a module may legitimately spell
+                    # the same label twice (a tuple key and a string key that
+                    # resolve to one label), and the second would otherwise
+                    # silently drop the first one's hosters.
+                    raw_by_label.setdefault(label, {}).update(dict(providers))
 
             # Single unified live-availability check + mirror de-dup for every
             # label / site, movies and series alike (previously movies-only).

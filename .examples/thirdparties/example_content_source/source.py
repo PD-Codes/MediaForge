@@ -211,10 +211,23 @@ class ExampleSourceEpisode:
 
     @property
     def provider_data(self):
-        """{language: {hoster_label: url}} -- the same shape every built-in
-        site's episode.provider_data returns. A real module fills this from
-        the parsed episode page; here it's a fixed placeholder resolved by
-        nothing (see download() below)."""
+        """{language: {hoster_label: url}} -- the shape GET /api/providers
+        turns into the series modal's Language and Hoster dropdowns.
+
+        The language key may be a plain STRING, i.e. the label the user is
+        going to see, which is what a module normally has anyway. (The
+        built-in sites mostly key by an (Audio, Subtitles) enum pair instead;
+        both are accepted. Until July 2026 only the tuple form was, and a
+        string key was silently dropped -- an empty Language and Hoster
+        dropdown for every module-registered site.)
+
+        The hoster label matters beyond display: a hoster survives the
+        live-availability filter only if there is a working extractor for it,
+        i.e. either this label or the embed URL's host resolves to something
+        registered via register_hoster().
+
+        A real module fills this from the parsed episode page; here it's a
+        fixed placeholder resolved by nothing (see download() below)."""
         return {"German Dub": {"ExampleHoster": f"{self.url}#stream"}}
 
     @property

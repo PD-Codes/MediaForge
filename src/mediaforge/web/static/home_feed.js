@@ -115,6 +115,14 @@
     return sources.filter(function (s) { return s.enabled; });
   }
 
+  /** Is this source switched ON in Settings? Unknown ids answer true: a card
+      whose source the chip list has not heard of yet (a module registered
+      between two requests) should be shown, not silently swallowed. */
+  function sourceEnabled(id) {
+    const src = sourceById(id);
+    return src ? !!src.enabled : true;
+  }
+
   function availableTypes() {
     const seen = {};
     sources.forEach(function (s) {
@@ -139,6 +147,13 @@
     let html = '<span class="feed-chip-label">' + mfEscape(HT("sources")) + "</span>";
 
     sources.forEach(function (s) {
+      // A source switched off in Settings is left out entirely. It used to be
+      // rendered as a greyed-out "· off" fact, on the theory that explaining
+      // an absence beats an unexplained gap -- but on an instance that only
+      // uses two of the nine sources that turned the chip row into a list of
+      // things you cannot have. The place that explains it is Settings ->
+      // Sources, which is where the switch is.
+      if (!s.enabled) return;
       // "EN" marks an English-only catalogue (source_policy's
       // ENGLISH_ONLY_SOURCE_IDS). Informational: it explains why the source
       // carries no German audio and why it ships off, and it gates nothing --
@@ -146,14 +161,6 @@
       const enBadge = s.english_only
         ? '<span class="source-badge-en" title="' + mfEscape(HT("english_only")) + '">EN</span>'
         : "";
-      if (!s.enabled) {
-        // Switched off in Settings → shown, but as a fact, not as a filter.
-        html += '<span class="feed-chip is-disabled" title="' +
-          mfEscape(HT("disabled_in_settings")) + '">' +
-          '<span class="feed-chip-dot"></span>' + mfEscape(s.label) + enBadge +
-          ' · ' + mfEscape(HT("off")) + "</span>";
-        return;
-      }
       const down = s.error || downIds.indexOf(s.id) !== -1;
       const on = sourceOn(s.id);
       const dot = s.color
@@ -246,13 +253,10 @@
   function renderMobileFilters(types) {
     let src = "";
     sources.forEach(function (s) {
-      if (!s.enabled) {
-        // A source switched off in Settings is a fact, not an option — same as
-        // the chip, so it is rendered as a disabled entry with the same title.
-        src += msItem(s.id, s.label + enSuffix(s) + " · " + HT("off"), false, true,
-          HT("disabled_in_settings"), "");
-        return;
-      }
+      // Left out, same as the desktop chip above -- an unpickable entry in a
+      // dropdown is worse than a chip, because you have to open it to find out
+      // it does nothing.
+      if (!s.enabled) return;
       const down = s.error || downIds.indexOf(s.id) !== -1;
       src += msItem(s.id, s.label + enSuffix(s) + (down ? " · " + HT("offline") : ""),
         sourceOn(s.id), false, "", down ? "" : (s.color || ""));
@@ -481,9 +485,21 @@
   }
 
   // ------------------------------------------------------------ rendering
+  /** The cards a row actually shows.
+   *
+   *  The list it filters is a POOL (loadRow asks with pool=1), so hiding a
+   *  source does not shorten the row -- the cards behind the cut move up and
+   *  the row keeps its configured length for as long as there is anything
+   *  left to show.
+   *
+   *  sourceEnabled() is checked as well as sourceOn(): a source switched off
+   *  in Settings is not fetched at all, but a card could still be sitting in
+   *  the pool from before the setting changed (the browse cache outlives the
+   *  toggle by up to an hour), and that card must not be shown. */
   function visibleCards(row) {
     return (rows[row] || []).filter(function (item) {
-      return sourceOn(item.source) && typeOn(item.media_type);
+      return sourceEnabled(item.source) && sourceOn(item.source) &&
+        typeOn(item.media_type);
     }).slice(0, ROW_MAX);
   }
 
@@ -841,9 +857,14 @@
     const grid = showSection(row, true);
     if (grid && !grid.children.length) renderSkeletons(grid, 12);
     try {
+      // pool=1: ask for MORE cards than the row shows. Switching a source chip
+      // off filters client-side, and without a reserve the row simply got
+      // shorter -- the configured cards-per-row is a promise about the layout,
+      // not about how many sources happen to be on. visibleCards() slices back
+      // down to ROW_MAX, so the surplus only ever moves up into gaps.
       const resp = await fetch("/api/home-feed/row/" + encodeURIComponent(row) +
                                "?adult=" + (adultWanted() ? "1" : "0") +
-                               "&limit=" + ROW_MAX);
+                               "&pool=1&limit=" + ROW_MAX);
       const data = await resp.json();
       // Every row response carries the full source list, including the
       // media types that row's sources publish -- the type chips cannot be
@@ -853,6 +874,9 @@
         sources = data.sources;
         renderFilters();
       }
+      // The server tells us how many of the pool to actually show, so the two
+      // sides cannot disagree about the cards-per-row setting.
+      if (typeof data.limit === "number" && data.limit > 0) ROW_MAX = data.limit;
       rows[row] = (data.rows || {})[row] || [];
       rowState[row] = "done";
       // A source whose server-side cache was cold is still being scraped; the

@@ -409,7 +409,9 @@
           <div class="settings-row-desc">
             <code style="opacity:.6;font-size:.9em;">{{ item.id }}</code>
             {% if item.section %} · {{ _('Sidebar') }}: {{ _(item.section|capitalize) }}{% endif %}
-            · {{ _('Settings') }}: {{ _(item.settings_host|capitalize) }} / {{ item.settings_tab }}
+            · {{ _('Settings') }}:
+            {%- if item.settings_host in ['integrations', 'settings'] %} {{ _('Module Settings') }}
+            {%- else %} {{ _(item.settings_host|capitalize) }} / {{ item.settings_tab }}{% endif %}
             {%- if item.has_dashboard_widget %} · {{ _('Dashboard widget') }}{% endif -%}
             {%- if item.has_provider_pill %} · {{ _('Provider pill') }}{% endif %}
             {%- if item.requires_enabled %} · {{ _('Requires') }}: {{ item.requires_enabled|join(', ') }}{% endif %}
@@ -432,13 +434,28 @@
           </label>
         </div>
       </div>
+      {# Where "Open module" goes. Module cards no longer render on the
+         Integrations page (its Third Party tab is for the integrations
+         MediaForge ships) and never rendered inside the Settings page's own
+         tabs, so both of those hosts resolve to Module Settings -- the page
+         that actually holds the card. Only hosts that really keep a card of
+         their own (Notifications, Monitoring) still get a direct link.
+         Linking to a page that does not render the card is worse than no
+         button: it looks like the module lost its settings. #}
+      {% set _mod_hosts = ['integrations', 'settings'] %}
+      {% set _open_url = url_for('module_settings_page') ~ '?open=' ~ item.id
+                         if item.settings_host in _mod_hosts
+                         else url_for(item.settings_host + '_page') ~ '?open=' ~ item.id ~ '#' ~ item.settings_tab %}
       <div class="settings-row" style="border-bottom:none;">
         <div class="settings-row-left">
           <div class="settings-row-label">{{ _('Open module') }}</div>
-          <div class="settings-row-desc">{{ _('Configure its settings on the') }} {{ _(item.settings_host|capitalize) }} {{ _('page') }}</div>
+          <div class="settings-row-desc">
+            {% if item.settings_host in _mod_hosts %}{{ _('Configure its settings under Module Settings') }}
+            {% else %}{{ _('Configure its settings on the') }} {{ _(item.settings_host|capitalize) }} {{ _('page') }}{% endif %}
+          </div>
         </div>
         <div class="settings-row-right">
-          <a class="btn btn-secondary" style="text-decoration:none;display:inline-block;" href="{{ url_for(item.settings_host + '_page') }}?open={{ item.id }}#{{ item.settings_tab }}">{{ _('Open module') }} →</a>
+          <a class="btn btn-secondary" style="text-decoration:none;display:inline-block;" href="{{ _open_url }}">{{ _('Open module') }} →</a>
         </div>
       </div>
       {% endif %}

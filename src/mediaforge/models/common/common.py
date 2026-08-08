@@ -346,6 +346,75 @@ def clean_title(title) -> str:
     return FORBIDDEN_CHARS.sub("", _html_unescape(str(title))).strip()
 
 
+# Shortest key that may take part in a REVERSE folder match -- see
+# titles_match() for why the two directions are not treated the same.
+_LOOSE_MIN_REVERSE = 10
+
+
+def loose_title_key(title) -> str:
+    """Punctuation-insensitive comparison key for a series/movie title.
+
+    The Python twin of static/app.js's ``_looseTitleKey``; the two must agree,
+    because the same "is this already on disk?" question is answered on both
+    sides (the badge on a card, and the per-episode ticks in the download
+    modal) and a user who sees the badge but no ticks has been told two
+    different things about one file.
+
+    Reduces a title to letters and digits: a year suffix and everything after
+    it goes, then every space, quote, colon and dash. That is what lets a
+    folder written by one provider ("Kaguya-sama Love is War") be recognised
+    from another provider's spelling ("Kaguya-sama: Love is War").
+    """
+    if not title:
+        return ""
+    text = _html_unescape(str(title)).lower()
+    # Straighten the quote characters scrapes disagree about before dropping
+    # them, so the two sides cannot differ by an apostrophe alone.
+    for src, dst in (("‘", "'"), ("’", "'"), ("′", "'"),
+                     ("`", "'"), ("“", '"'), ("”", '"'),
+                     ("„", '"')):
+        text = text.replace(src, dst)
+    head = text.split("(")[0]
+    return "".join(c for c in head if c.isalnum())
+
+
+def titles_match(folder_name, title) -> bool:
+    """Does *folder_name* on disk hold *title*?
+
+    The old rule was ``folder.lower().startswith(provider_title.lower())`` in
+    four different places, and it is the reason "already downloaded" worked
+    from one provider and not from another: the folder is stamped with the
+    title of whichever provider downloaded it FIRST, and every other provider
+    then compares its own spelling against it. AniWorld's "Call of the Night"
+    matched; a site that calls the same show "Call of the Night: Yofukashi no
+    Uta" did not, because a longer title is not a prefix of a shorter folder.
+
+    So the comparison goes both ways -- but not symmetrically:
+
+    * folder starts with title  -- always accepted. This is the original rule
+      and covers the normal "Solo Leveling" card vs. "Solo Leveling Season 2"
+      folder case.
+    * title starts with folder  -- accepted only when the folder key is at
+      least ``_LOOSE_MIN_REVERSE`` characters. Without that floor a "Naruto"
+      folder would claim "Naruto Shippuden" and a "One Piece" folder would
+      claim "One Piece Film Red": short titles are prefixes of unrelated
+      shows far too often, and a wrong "already downloaded" is worse than a
+      missing one -- it stops a download the user asked for.
+
+    Titles that share no prefix at all ("Attack on Titan" / "Shingeki no
+    Kyojin") cannot be solved by string comparison and are deliberately out of
+    scope here; that needs a provider-independent id stored at download time.
+    """
+    folder_key = loose_title_key(folder_name)
+    title_key = loose_title_key(title)
+    if not folder_key or not title_key:
+        return False
+    if folder_key.startswith(title_key):
+        return True
+    return (len(folder_key) >= _LOOSE_MIN_REVERSE
+            and title_key.startswith(folder_key))
+
+
 def check_downloaded(episode_path):
     result = {
         "exists": False,

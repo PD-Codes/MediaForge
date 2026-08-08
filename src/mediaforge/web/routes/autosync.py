@@ -98,32 +98,42 @@ def find_site_candidates(title: str) -> list:
                 "title": name, "url": url, "score": round(score, 3),
             })
 
-    try:
-        _collect(aniworld_query(title), "aniworld", "AniWorld",
-                 "https://aniworld.to", _SERIES_LINK_PATTERN)
-    except Exception as e:
-        logger.debug("[AutosyncSearch] AniWorld search failed: %s", e)
-    try:
-        _collect(query_s_to(title), "sto", "S.TO",
-                 "https://serienstream.to", _STO_SERIES_LINK_PATTERN)
-    except Exception as e:
-        logger.debug("[AutosyncSearch] S.TO search failed: %s", e)
-    try:
-        for item in (megakino_search(title) or []):
-            url = item.get("url", "")
-            if not item.get("is_series"):  # Auto-Sync tracks series only
-                continue
-            if url in seen:
-                continue
-            seen.add(url)
-            name = _html_unescape(item.get("title") or "Unknown")
-            score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-            candidates.append({
-                "site": "megakino", "site_label": "MegaKino",
-                "title": name, "url": url, "score": round(score, 3),
-            })
-    except Exception as e:
-        logger.debug("[AutosyncSearch] MegaKino search failed: %s", e)
+    # Same gate the opt-in sources below already used, now applied to the three
+    # that were queried unconditionally: a source switched off in Settings ->
+    # Sources must not cost a request here either. It read as a bug from the
+    # outside -- switching AniWorld off still produced AniWorld candidates, and
+    # an AutoSync job created against a disabled source can never run.
+    from ..source_policy import source_enabled as _src_on
+
+    if _src_on("aniworld"):
+        try:
+            _collect(aniworld_query(title), "aniworld", "AniWorld",
+                     "https://aniworld.to", _SERIES_LINK_PATTERN)
+        except Exception as e:
+            logger.debug("[AutosyncSearch] AniWorld search failed: %s", e)
+    if _src_on("sto"):
+        try:
+            _collect(query_s_to(title), "sto", "S.TO",
+                     "https://serienstream.to", _STO_SERIES_LINK_PATTERN)
+        except Exception as e:
+            logger.debug("[AutosyncSearch] S.TO search failed: %s", e)
+    if _src_on("megakino"):
+        try:
+            for item in (megakino_search(title) or []):
+                url = item.get("url", "")
+                if not item.get("is_series"):  # Auto-Sync tracks series only
+                    continue
+                if url in seen:
+                    continue
+                seen.add(url)
+                name = _html_unescape(item.get("title") or "Unknown")
+                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+                candidates.append({
+                    "site": "megakino", "site_label": "MegaKino",
+                    "title": name, "url": url, "score": round(score, 3),
+                })
+        except Exception as e:
+            logger.debug("[AutosyncSearch] MegaKino search failed: %s", e)
     # 9anime / Aniwaves: opt-in, non-adult series sources. Only queried when
     # the user enabled them in Settings -> Sources, same gate the search route
     # and the browse routes use -- a disabled source must not cost a request.
@@ -172,6 +182,48 @@ def find_site_candidates(title: str) -> list:
                 })
         except Exception as e:
             logger.debug("[AutosyncSearch] hanime search failed: %s", e)
+
+    # Module-registered sources (register_search_source). They were missing
+    # entirely, so a module could add a content source to the app and its
+    # series still could not be put under Auto-Sync -- the one thing that makes
+    # a series source useful long-term. thirdparty_search_sources() already
+    # drops sources whose module is switched off, and get_search_source()
+    # re-checks it, so a disabled module cannot be scraped from here.
+    #
+    # An adult module source is skipped unless the adult source is on, matching
+    # how the built-in hanime branch above is gated: an 18+ hit appearing in a
+    # lookup nobody asked for is not a missing feature.
+    try:
+        from ...search import thirdparty_search_sources, get_search_source
+        for src in thirdparty_search_sources():
+            site_id = src["site_id"]
+            if src.get("adult") and not _hanime_enabled():
+                continue
+            # A module may reuse a settings key it already owns instead of the
+            # source_enabled_<id> convention -- pass it through, or the check
+            # reads a key nothing ever writes and every such source counts as
+            # off (or on) by accident rather than by the user's choice.
+            if not _src_on(site_id, key=src.get("enabled_key")):
+                continue
+            entry = get_search_source(site_id)
+            if not entry:
+                continue
+            try:
+                for item in (entry["search_fn"](title) or []):
+                    url = item.get("url") or item.get("link") or ""
+                    if not url or url in seen:
+                        continue
+                    seen.add(url)
+                    name = _html_unescape(item.get("title") or item.get("name") or "Unknown")
+                    score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+                    candidates.append({
+                        "site": site_id, "site_label": src.get("label") or site_id,
+                        "title": name, "url": url, "score": round(score, 3),
+                    })
+            except Exception as e:
+                logger.debug("[AutosyncSearch] %s search failed: %s", site_id, e)
+    except Exception as e:
+        logger.debug("[AutosyncSearch] module sources unavailable: %s", e)
 
     candidates.sort(key=lambda c: c["score"], reverse=True)
     return candidates[:12]

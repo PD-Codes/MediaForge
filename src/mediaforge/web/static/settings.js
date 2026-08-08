@@ -184,6 +184,9 @@ async function loadSettings() {
       defaultThemeMode.value = data.default_theme_mode === "light" ? "light" : "dark";
     }
     if (data.default_ui_language) markDefaultLanguage(data.default_ui_language);
+    // null means "never configured" -- the boxes stay unticked, which is what
+    // the effective behaviour is until an admin saves them once.
+    loadDefaultUiToggles(data.default_ui_toggles);
     const defaultAccentHex = document.getElementById("defaultAccentHex");
     if (defaultAccentHex && data.default_accent !== undefined) {
       defaultAccentHex.value = data.default_accent || "";
@@ -3215,6 +3218,43 @@ function clearAppearanceDefaultAccent() {
   const hex = document.getElementById("defaultAccentHex");
   if (hex) hex.value = "";
   saveAppearanceDefaults();
+}
+
+// ── Instance default for the extra design toggles (Design tab, admin only) ──
+// The eight ui_* toggles from the profile page, as a default for accounts that
+// have never touched them. Sent as one comma-separated list rather than eight
+// booleans on purpose: "" is then a real, storable answer ("an admin
+// deliberately turned all eight off") and is what tells base.html to stop
+// falling back to the per-browser localStorage mirror. Eight separate keys
+// could not express that -- eight zeroes and "never configured" would look
+// identical.
+function loadDefaultUiToggles(raw) {
+  const picked = {};
+  String(raw == null ? "" : raw).split(",").forEach(function (k) {
+    const key = k.trim();
+    if (key) picked[key] = true;
+  });
+  document.querySelectorAll("[data-default-ui]").forEach(function (box) {
+    box.checked = !!picked[box.dataset.defaultUi];
+  });
+}
+
+function saveDefaultUiToggles() {
+  const picked = [];
+  document.querySelectorAll("[data-default-ui]").forEach(function (box) {
+    if (box.checked) picked.push(box.dataset.defaultUi);
+  });
+  fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ default_ui_toggles: picked.join(",") }),
+  }).then(async function (resp) {
+    const body = await resp.json().catch(function () { return {}; });
+    if (!resp.ok) throw new Error(body.error || String(resp.status));
+    showToast(t("Standard gespeichert", "Default saved"));
+  }).catch(function (err) {
+    showToast(t("Konnte nicht gespeichert werden", "Could not be saved") + ": " + err.message);
+  });
 }
 
 /* The eight "Advanced appearance" handlers (saveGlowEffect, saveHeaderColor,

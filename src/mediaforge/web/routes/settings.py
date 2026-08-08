@@ -384,6 +384,13 @@ def register_settings_routes(app):
                 "default_theme_mode":        get_setting("default_theme_mode", "dark"),
                 "default_accent":            get_setting("default_accent", ""),
                 "default_ui_language":       get_setting("default_ui_language", "en"),
+                # The eight extra design toggles as an instance default, as a
+                # comma-separated list of ui_* keys. `None` (key never written)
+                # is a meaningful value here and must survive to the client:
+                # it means "no admin has configured this", which is what keeps
+                # base.html on its old per-browser fallback instead of
+                # repainting every existing install on upgrade.
+                "default_ui_toggles":        get_setting("default_ui_toggles", None),
                 "autostart_enabled":         autostart_enabled,
                 "open_browser_on_startup":   open_browser_on_startup,
                 "is_docker":                 is_docker,
@@ -1342,6 +1349,19 @@ def register_settings_routes(app):
             if lang not in allowed:
                 return jsonify({"error": "Invalid language"}), 400
             set_setting("default_ui_language", lang)
+        if "default_ui_toggles" in data:
+            # Whitelisted against the canonical list in app.py rather than
+            # stored as given: this value is read back and turned into body
+            # classes for every account on the instance, so an unknown key has
+            # no business being persisted. "" is a real value (all eight off,
+            # explicitly configured) and is what distinguishes "the admin
+            # turned everything off" from "no admin ever looked".
+            from ..app import UI_TOGGLE_KEYS
+            raw = data["default_ui_toggles"]
+            picked = raw if isinstance(raw, list) else str(raw or "").split(",")
+            clean = [k for k in UI_TOGGLE_KEYS
+                     if k in {str(p).strip() for p in picked}]
+            set_setting("default_ui_toggles", ",".join(clean))
 
         if "tray_mode" in data:
             val = "1" if str(data["tray_mode"]).lower() in ("true", "1") else "0"

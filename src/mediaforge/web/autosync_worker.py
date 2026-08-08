@@ -27,6 +27,7 @@ from .language_groups import (
 )
 from .queue_worker import _dl_lock
 from .episode_marker import EPISODE_MARKER_RE
+from ..models.common.common import titles_match
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
 from .runtime_state import (
@@ -685,7 +686,11 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             eps: dict = {}
             if base.is_dir() and title_clean:
                 for folder in base.iterdir():
-                    if not folder.is_dir() or not folder.name.lower().startswith(title_clean):
+                    # Same rule the download dialog uses (titles_match): a
+                    # plain startswith() here meant a job created from one
+                    # provider could not see episodes a different provider had
+                    # already written, and re-downloaded the lot.
+                    if not folder.is_dir() or not titles_match(folder.name, title_clean):
                         continue
                     for f in folder.rglob("*"):
                         if f.is_file():

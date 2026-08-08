@@ -117,7 +117,7 @@ sidebar and a settings page. Its parameters:
 | `enable_label` / `enable_desc`  | Label/description for the card's enable toggle. `enable_label` defaults to `"Enable {label}"`. |
 | `extra_settings`                   | Optional list of additional setting fields below the master toggle — text/number/secret/select, not just booleans. See "Richer settings fields" below. |
 | `section`                        | Which sidebar category your link (if any) appears under: `"discover"` (default), `"management"`, `"syncplay"` or `"system"` — matching base.html's four sidebar categories. A `"syncplay"` entry only ever renders while SyncPlay itself is enabled (`syncplay_enabled` setting), same gating as the built-in SyncPlay link. Ignored if you didn't set `endpoint`/`icon_svg`. |
-| `settings_host` / `settings_tab`   | Which settings page your card is shown on: `"integrations"` (default), `"notifications"`, `"monitoring"` or `"settings"`. **Where on that page is the host's decision, not yours** — `settings_tab` is a request the host may override. See "Settings placement" below for the full picture. |
+| `settings_host` / `settings_tab`   | Which settings page your card is shown on: `"integrations"` (default), `"notifications"`, `"monitoring"` or `"settings"`. `"integrations"` and `"settings"` both land on **Module Manager → Module Settings** (`/module-settings`) — the Integrations page does not render module cards any more. **Where on that page is the host's decision, not yours** — `settings_tab` is a request the host may override. See "Settings placement" below for the full picture. |
 | `settings_tab_label` / `settings_tab_icon_svg` | Label (and, on the Notifications page only, icon) for the tab/pill button — only used when `settings_tab` creates a *new* tab/pill (see below). Ignored when attaching to an existing one. |
 | `priority`                       | Sort key (lower = earlier) for ordering this item among *other registered items* in the same sidebar section / settings tab / set of new tabs / dashboard widgets. Never reorders MediaForge's own built-in entries. Defaults to `0`; ties keep registration order. |
 | `dashboard_widget_template`          | Optional Jinja template name/path rendered as a widget on the home page. See "Dashboard widgets" below. |
@@ -134,8 +134,9 @@ sidebar and a settings page. Its parameters:
   under (Discover/Management/System) — nothing else needs to change to
   move it, just re-register with a different `section`.
 - Your settings card automatically gets a collapsible card (title, badges,
-  description, one enable toggle) on whichever tab/pill `settings_host` +
-  `settings_tab` point at — you don't write any HTML or JS for this. The
+  description, one enable toggle) on whichever page/tab `settings_host`
+  resolves to — by default the Module Settings page under the Module
+  Manager — and you don't write any HTML or JS for this. The
   toggle reads/writes through the shared `GET/PUT
   /api/settings/thirdparty/<item_id>` endpoint, which maps straight to
   `enabled_setting_key`.
@@ -157,7 +158,16 @@ sidebar and a settings page. Its parameters:
 same way: a vertical **floating side menu** (`.floating-side-menu`, sticky on
 desktop, an off-canvas drawer on mobile) next to the page content — see
 `_settings_menu.html`/`_notifications_menu.html`/`_monitoring_nav.html` and
-`integrations.html`'s own in-template menu.
+`module_settings.html`.
+
+Since July 2026 **the Integrations page no longer renders module cards at all.**
+Its "Third Party" tab is reserved for the integrations MediaForge itself ships
+(Crunchyroll, Fernsehserien.de, ComicVine, …). `settings_host="integrations"` —
+still the default — puts your card on **Module Manager → Module Settings**
+(`/module-settings`), exactly where `settings_host="settings"` goes. The reason
+is where the user already is: a module is installed, updated and removed in the
+Module Manager, so that is where it is configured. Two pages editing the same
+values is two places to look and one to forget.
 
 **Where on that page the card lands is the host's decision.** `settings_tab` is
 a request, not an instruction — the placement rules live in
@@ -166,9 +176,9 @@ time, so everything downstream sees where the card really is:
 
 | `settings_host` | Where the card ends up | What happens to `settings_tab` |
 |---|---|---|
-| `"integrations"` (default) | Always the **Third Party** tab. | **Ignored**, silently. |
-| `"notifications"` | Always a tab of its own in the Notifications menu. | A built-in channel id (`"discord"`, …) or the bare default is replaced by `module_<item_id>`. A genuinely custom id is kept. |
-| `"monitoring"` | Always a tab of its own in the Monitoring menu. | Same rule as Notifications. |
+| `"integrations"` (default) | The **Module Settings** page under the Module Manager — *not* the Integrations page. | Still normalised to `"thirdparty"`, but nothing renders it any more. It survives only so stored values and the Modulmanager's capability list never trip over a host/tab pair nobody has seen. |
+| `"notifications"` | Always a tab of its own in the Notifications menu, **and** additionally listed on Module Settings. | A built-in channel id (`"discord"`, …) or the bare default is replaced by `module_<item_id>`. A genuinely custom id is kept. |
+| `"monitoring"` | Always a tab of its own in the Monitoring menu, **and** additionally listed on Module Settings. | Same rule as Notifications. |
 | `"settings"` | The **Module Settings** page under the Module Manager. | Ignored there — that page groups by host, not by tab. |
 
 The reason is the question a user actually asks. "What have my modules added to
@@ -180,17 +190,19 @@ gives it one.
 Nothing breaks if your module was written for the old behaviour: it still
 registers fine, its card just moves to where users look for it.
 
-On top of its own place, **every** module card is listed on the **Module
-Settings** page under the Module Manager, grouped by host ("Own settings",
-"Integrations", "Notifications") — the one complete list of what installed
-modules can be configured to do. That is not a copy: both places render the same
-card through the same generic `/api/settings/thirdparty/<id>` API, so editing
-either one is the same edit.
+**Module Settings is the complete list.** Every module card is listed there,
+grouped by host ("Own settings", "Integrations", "Notifications") — the one
+answer to "what can the modules I installed be configured to do?". For
+`"integrations"`/`"settings"` that is the *only* place the card exists; for
+`"notifications"`/`"monitoring"` it is *additional* to the module's own tab on
+that page. The second listing is not a copy: both places render the same card
+through the same generic `/api/settings/thirdparty/<id>` API, so editing either
+one is the same edit.
 
-A module tab is appended to the host's floating side menu, grouped under a
-**"Modules"** heading and carrying the module **"M" pill** — plus, on hosts with
-an overview grid (Settings, Monitoring), a tile there. Feed that tile with two
-optional info fields:
+A module tab — so, a `"notifications"` or `"monitoring"` module — is appended to
+the host's floating side menu, grouped under a **"Modules"** heading and carrying
+the module **"M" pill**, plus a tile on the host's overview grid where it has one
+(Monitoring). Feed that tile with two optional info fields:
 
 - `overview_description` — text shown on the overview tile (defaults to
   `description`).
@@ -200,13 +212,14 @@ optional info fields:
 `resolve_dynamic_tabs(host)` surfaces `id`, `label`, `icon_svg`, `description`,
 `module_name` and `is_module` so the template can render all of these places
 (menu entry, overview tile where applicable, panel). Note it has nothing left to
-return for `"integrations"` — that host has no module tabs by design.
+return for `"integrations"` or `"settings"` — those hosts have no module tabs by
+design, their cards live on Module Settings.
 
 This is entirely independent of `section`/the sidebar: an integration can
 have a sidebar link *and* a settings card, just a settings card (no
 `endpoint`/`icon_svg` — e.g. a pure extra notification channel with
-nothing to browse), or just a sidebar link (no settings beyond the
-implicit enable toggle, by leaving `settings_tab` at its default).
+nothing to browse), or just a sidebar link plus nothing but the implicit
+enable toggle on Module Settings (by adding no `extra_settings`).
 
 ## Dependencies between integrations
 
@@ -1138,7 +1151,14 @@ reason if it isn't fully loaded, its `MODULE_NAME`/`MODULE_DESCRIPTION`/
 metadata" above) alongside MediaForge's own version, and a
 fully working enable/disable toggle (plus any `extra_settings`) for
 everything it registered — the page isn't just diagnostic, it's a real
-place to turn a module on/off. Nothing to opt into: this is fed by
+place to turn a module on/off. Each registered item also gets an **"Open
+module"** button linking to the page that really renders its card:
+`/module-settings?open=<item_id>` for `settings_host` `"integrations"` or
+`"settings"`, and `<page>?open=<item_id>#<tab>` only for `"notifications"` /
+`"monitoring"`. The `?open=` deep link is handled by `static/extension_cards.js`
+— which loads wherever a card is rendered, so the jump expands the right card
+and scrolls it into view on every host (it used to live in `integrations.js` and
+therefore only worked on that one page). Nothing to opt into: this is fed by
 `web/thirdparties/__init__.py`'s `discover_and_register()` automatically
 (see `registry.py`'s `record_module_status()` /
 `resolve_extensions_overview()` / `resolve_card()`), so it's the first
@@ -1183,6 +1203,16 @@ Two consequences to know about:
   overlay/backdrop chrome lives. Without it the overlay has no positioning
   at all and renders as a plain block below your page content, which looks
   exactly like the button doing nothing.
+- **The include is self-sufficient — you pass it nothing.** It used to need
+  three view kwargs (`lang_labels`, `sto_lang_labels`, `supported_providers`)
+  to fill its Language and Hoster options, and only four core routes actually
+  passed them, so on every other page — including yours — the include produced
+  two empty dropdowns and no error at all. That was the other half of the
+  "modules show no language or provider" bug. All three now come from a global
+  context processor, so `{% include "shared_modals.html" %}` renders complete
+  options on any page with no changes to your view function.
+  `supported_providers` is read per request, which means a hoster you add with
+  `register_hoster()` appears in the dropdown without a restart.
 
 ## Reusable UI components
 
@@ -1203,8 +1233,8 @@ in your own page is harmless but no longer needed.
 | Component | Classes | Defined in | Notes |
 |---|---|---|---|
 | Badges/tags | `.badge` + `.badge-accent`/`-success`/`-warning`/`-error`/`-neutral` | `tabs-badges.css` | `<span class="badge badge-accent">Beta</span>` |
-| Service pills (in-content mode selector) | `.service-pills` (wrapper) / `.service-pill` (+ `.active`) | `settings_rows.css` | A horizontal pill row for switching between a few modes *within* one panel — e.g. Settings › Encoding's Copy/H.264/H.265/Expert/Upscaling selector (`_encoding_body.html`). For page-level sub-navigation use the floating side menu below instead — that's what `settings_host`/`settings_tab` (see "Settings placement" above) plugs your own tab into automatically. |
-| Floating side menu (page sub-navigation) | `.settings-tabs.floating-side-menu` (wrapper) / `.settings-tab` (+ `.active`, + `.settings-tab-module` for module-contributed entries) on `.settings-container.has-floating-menu`; panels are `.settings-tab-panel` (+ `.active`) | `shell.css` (menu/drawer chrome) + `settings_rows.css` (tab/panel base) | The vertical sticky menu used by Settings, Integrations, Monitoring and Notifications; auto-generated for `settings_host`/`settings_tab` entries via `resolve_dynamic_tabs()`, so a third-party rarely hand-writes this — see `_settings_menu.html`/`_notifications_menu.html` if you're building a brand-new page with its own such menu. Comes with the mobile off-canvas drawer for free (see "Mobile / responsive design" below). |
+| Service pills (in-content mode selector) | `.service-pills` (wrapper) / `.service-pill` (+ `.active`) | `settings_rows.css` | A horizontal pill row for switching between a few modes *within* one panel — e.g. Settings › Encoding's Copy/H.264/H.265/Expert/Upscaling selector (`_encoding_body.html`). For page-level sub-navigation use the floating side menu below instead — that's what `settings_host="notifications"`/`"monitoring"` (see "Settings placement" above) plugs your own tab into automatically. |
+| Floating side menu (page sub-navigation) | `.settings-tabs.floating-side-menu` (wrapper) / `.settings-tab` (+ `.active`, + `.settings-tab-module` for module-contributed entries) on `.settings-container.has-floating-menu`; panels are `.settings-tab-panel` (+ `.active`) | `shell.css` (menu/drawer chrome) + `settings_rows.css` (tab/panel base) | The vertical sticky menu used by Settings, Integrations, Monitoring, Notifications and Module Settings; auto-generated for `settings_host="notifications"`/`"monitoring"` entries via `resolve_dynamic_tabs()`, so a third-party rarely hand-writes this — see `_settings_menu.html`/`_notifications_menu.html` if you're building a brand-new page with its own such menu. Comes with the mobile off-canvas drawer for free (see "Mobile / responsive design" below). |
 | Toggle switch | `.toggle` (wrapper) / `.toggle-slider` | `tables.css` | `<label class="toggle"><input type="checkbox" .../><span class="toggle-slider"></span></label>`. Inside a settings card, add `class="thirdparty-toggle" data-thirdparty-id="..."` and it wires itself up for free — see `_settings_card_macro.html` / `static/extension_cards.js` |
 | Checkbox | `chb-main` (on the `<input type="checkbox">` itself) | `forms.css` | `<input type="checkbox" class="chb-main" .../>` — MediaForge's *only* plain-checkbox style (as opposed to the on/off `.toggle` switch above): a purple accent box with an animated SVG checkmark, used everywhere from Settings to Auto-Sync to SyncPlay to custom multi-select dropdowns. Use this, not a bare unstyled `<input type="checkbox">`, for anything that reads as "check one or more of these" rather than "flip this setting on/off". Building one from JS: `el.className = "chb-main ..."` works exactly like in a template. |
 | Number stepper (−/+) | *(none needed)* | `forms.css` + `number_input.js` | Any `<input type="number">` is auto-enhanced on page load (and for anything added to the DOM later) — no markup, no JS, of your own |
@@ -1301,7 +1331,15 @@ Notes:
   page loads `app.js` *and* includes `shared_modals.html`, and otherwise
   navigates to the home search — so it works either way. The Calendar page
   links both, which is why its search results open in place; do the same on
-  your own page if you want that flow instead of a page change.
+  your own page if you want that flow instead of a page change. The include
+  needs no view kwargs of its own (see "Templates and static files" above).
+- **That lookup fans out over every enabled source.** `runAniSearch()` used to
+  query four hardcoded site ids (`aniworld`, `sto`, `filmpalast`, `megakino`);
+  it now iterates every switched-on search source in the user's own source
+  order, honouring the "hide disabled sources in search" preference, with adult
+  sources still opt-in. So a source you register with
+  `register_search_source()` is reachable from this modal's "Search streams"
+  button too, not only from the main search box — no extra registration.
 - Close/Escape/backdrop-click are wired by the component itself. Do not
   add your own handlers for them.
 
@@ -1378,6 +1416,9 @@ MFPlayer.open(path, "Title", startSeconds, { subtitle: "S01E04" });
 // Direct Play: stream straight from a provider, no download.
 // The last argument is the full {language: [hoster, ...]} matrix, i.e. the
 // body of GET /api/providers?url=... — it is what fills the source picker.
+// Both keys are plain strings there: the language is the label the user
+// sees ("German Dub"), which is exactly what your episode's provider_data
+// may use as its own key — see register_provider below.
 MFPlayer.openSource(episodeUrl, "Title", "VOE", "German Dub", 0, null, null, matrix);
 
 MFPlayer.close();
@@ -1622,11 +1663,10 @@ which puts it in the same `~/.mediaforge/thirdparties/` on their machine.
    `url_for(...)` reference in the templates, `static_url_path`, and the
    `item_id`/`enabled_setting_key`/`endpoint` values passed to
    `register_thirdparty(...)` in `__init__.py`. While you're there, also
-   pick `section` (which sidebar category, if any) and `settings_host`/
-   `settings_tab` (which settings page/tab, existing or new) — see
-   "Settings placement" below; the defaults reproduce the original
-   Discover-link + Third-Party-tab behaviour if you don't need anything
-   else.
+   pick `section` (which sidebar category, if any) and `settings_host`
+   (which settings page) — see "Settings placement" below; the defaults
+   give you a Discover sidebar link plus a card on Module Manager →
+   Module Settings, which is all most modules need.
 3. Replace `service.py`'s placeholder logic with whatever your integration
    actually does.
 4. Replace the template content, CSS and JS with your real UI. Keep using
@@ -1644,8 +1684,9 @@ which puts it in the same `~/.mediaforge/thirdparties/` on their machine.
    both mean `register(app)` either isn't defined or raised an exception,
    and the rest of the app keeps running regardless (one broken
    integration never takes down the others or the core app).
-7. Enable it in Settings → Integrations → Third Party. The sidebar entry
-   appears immediately (no restart).
+7. Enable it in Module Manager → Module Settings (or straight from the
+   Module Manager's own toggle). The sidebar entry appears immediately (no
+   restart).
 
 ## Reference implementations, by pattern
 
@@ -1656,24 +1697,25 @@ read top to bottom in a few minutes.
 | Folder | Sidebar item? | Settings card? | What it shows |
 |---|---|---|---|
 | `example_own_menu/` | Own page, `section="management"` | Just the implicit enable toggle | The *smallest* "own page" integration: one Blueprint, one route, one template. Start here if you're adding something browsable. |
-| `example_integration/` | Own page, `section="discover"` | Extra `select` field, on the shared "Third Party" tab | The same pattern as `example_own_menu/`, at real-integration scale: caching (`provider_cache`), `extra_settings`, a translation catalog, its own CSS/JS. Copy this one as your starting point for anything non-trivial. |
+| `example_integration/` | Own page, `section="discover"` | Extra `select` field, on Module Settings | The same pattern as `example_own_menu/`, at real-integration scale: caching (`provider_cache`), `extra_settings`, a translation catalog, its own CSS/JS. Copy this one as your starting point for anything non-trivial. |
 | `example_attach_tab/` | None | One extra toggle, appended into the *existing* Notifications → ntfy pill | The smallest "settings-only" integration — a single `__init__.py`, no Blueprint at all. Start here if you're adding one or two options to something conceptually already covered by an existing tab. |
-| `example_new_tab/` | None | Its own *brand-new* tab on the Integrations page | Same "settings-only, no Blueprint" shape as `example_attach_tab/`, but `settings_tab` doesn't match an existing id, so it gets a dedicated tab instead of attaching to one. Start here if your settings don't belong inside any existing tab. |
-| `example_advanced/` | Own page, `section="syncplay"` | Just the implicit enable toggle, on a *brand-new* Settings-page tab (`settings_host="settings"`) | `requires_enabled` (soft runtime dependency on `example_own_menu`) and `auth_required="admin"` (admin-only routes) together, plus placing a link under the SyncPlay sidebar category instead of Discover/Management/System. Start here for anything SyncPlay-adjacent, Settings-hosted, dependent on another integration, or admin-only. |
-| `src/mediaforge/web/thirdparties/anime_seasons/` | Own page, `section="discover"` | Extra `toggle` field, on the shared tab | A real, shipped integration (fetches seasonal anime listings from the Jikan/MyAnimeList API) — external HTTP calls with rate-limiting, a persistent cache, and a richer page (a season picker plus a card grid reusing the app's existing browse-card enrichment pipeline). Read this once you've outgrown the demo examples. |
+| `example_new_tab/` | None | One card on Module Settings (it *asks* for a tab of its own via `settings_tab`) | Same "settings-only, no Blueprint" shape as `example_attach_tab/`, kept as the demo of what a `settings_tab` request does now: on `settings_host="integrations"` it is normalised away and the card lands on Module Settings like every other module card. Ask for `settings_host="notifications"`/`"monitoring"` if you really need a tab of your own. |
+| `example_advanced/` | Own page, `section="syncplay"` | Just the implicit enable toggle, on Module Settings (`settings_host="settings"`) | `requires_enabled` (soft runtime dependency on `example_own_menu`) and `auth_required="admin"` (admin-only routes) together, plus placing a link under the SyncPlay sidebar category instead of Discover/Management/System. Start here for anything SyncPlay-adjacent, Settings-hosted, dependent on another integration, or admin-only. |
+| `src/mediaforge/web/thirdparties/anime_seasons/` | Own page, `section="discover"` | Extra `toggle` field, on Module Settings | A real, shipped integration (fetches seasonal anime listings from the Jikan/MyAnimeList API) — external HTTP calls with rate-limiting, a persistent cache, and a richer page (a season picker plus a card grid reusing the app's existing browse-card enrichment pipeline). Read this once you've outgrown the demo examples. |
 | `example_ui_components/` | Own page, `section="management"` | Just the implicit enable toggle | Not a placement pattern — a live, click-through gallery of the core UI classes from "Reusable UI components" above, with copyable markup under each one. Enable it and browse it whenever you're building a new page and want it to look native. |
-| `example_content_source/` | None | Its own dynamic tab | Not a sidebar/settings placement pattern — registers a whole demo streaming site (`register_provider` + `register_search_source` + `register_home_feed_source` + `register_site_mirrors` + `register_monitor_site` together), fully offline (`.invalid` domain, no network calls). Start here if you're adding a new streaming site as a module — see "Content sources" below. |
-| `example_subtitle_source/` | None | Just the implicit enable toggle, on the shared tab | Settings-only again, but for `register_subtitle_source`: one demo external subtitle source, hooked into the last step of the download path's subtitle chain next to the built-in OpenSubtitles lookup. Offline-safe (it only logs and returns `[]`). Start here if your module should supply subtitles — see "Subtitle sources" below. |
-| `example_hooks/` | None | Just the implicit enable toggle, on the shared tab | The smallest "settings-only" shape again, but for `register_notification_channel` + `register_event_hook` instead of `extra_settings` — both just log. Start here if your module needs to react to a download/AutoSync event instead of adding a settings field. |
+| `example_content_source/` | None | One card on Module Settings | Not a sidebar/settings placement pattern — registers a whole demo streaming site (`register_provider` + `register_search_source` + `register_home_feed_source` + `register_site_mirrors` + `register_monitor_site` together), fully offline (`.invalid` domain, no network calls). Start here if you're adding a new streaming site as a module — see "Content sources" below. |
+| `example_subtitle_source/` | None | Just the implicit enable toggle, on Module Settings | Settings-only again, but for `register_subtitle_source`: one demo external subtitle source, hooked into the last step of the download path's subtitle chain next to the built-in OpenSubtitles lookup. Offline-safe (it only logs and returns `[]`). Start here if your module should supply subtitles — see "Subtitle sources" below. |
+| `example_hooks/` | None | Just the implicit enable toggle, on Module Settings | The smallest "settings-only" shape again, but for `register_notification_channel` + `register_event_hook` instead of `extra_settings` — both just log. Start here if your module needs to react to a download/AutoSync event instead of adding a settings field. |
 
 `example_own_menu/` vs. `example_attach_tab/` / `example_new_tab/` is the
 "eigenes Menü" vs. "eigener Tab" choice mentioned earlier in this
 document: does your integration need a page of its own (own menu entry,
 own Blueprint, own route), or is it just a knob on something that already
 exists (settings card only, no Blueprint, no page)? Both are first-class —
-neither is a fallback for the other — and `settings_tab` further splits
-the second case into "attach to an existing tab" vs. "get a new one",
-independently of whether you also have a sidebar item.
+neither is a fallback for the other — and `settings_host` further splits
+the second case into "a card on Module Settings" vs. "a tab of my own on
+Notifications/Monitoring", independently of whether you also have a sidebar
+item.
 
 ## Design rationale (why it's built this way)
 
@@ -1958,6 +2000,21 @@ def register(app):
   (e.g. `models/megakino_to/`, the newest and closest in shape to a
   from-scratch site) as the reference for that interface; it isn't
   re-documented here since it's the same either way, built-in or not.
+
+  One part of it *is* worth spelling out, because the code and this document
+  disagreed about it until July 2026: your `episode.provider_data` may key its
+  languages by **plain string** — `{"German Dub": {"VOE": "https://…"}}`, the
+  label the user is going to see. `GET /api/providers` used to understand only
+  the built-ins' `(Audio, Subtitles)` enum tuples and silently threw a string
+  key away, which is why a module's series modal came up with an empty Language
+  *and* an empty Hoster dropdown. A string key is now taken as the label it
+  already is, and tuple keys keep working unchanged — if you spell the same
+  label both ways, the hosters are merged rather than one overwriting the other.
+  What still applies to every site, built-in or not, is the live-availability
+  filter: a hoster only survives it if there is a working extractor for it, i.e.
+  either its label or its embed URL's host resolves to something registered (see
+  "Hosters (`register_hoster`)" below). An embed nobody can extract is dropped from the
+  dropdown on purpose — offering it would only fail at download time.
 - **`register_search_source(item_id, site_id, search_fn, label=None,
   adult=False, enabled_key=None)`**
   (`mediaforge/search.py`) is the search half: it makes
@@ -1965,7 +2022,11 @@ def register(app):
   itself, the one every built-in site's search already goes through) reach
   your `search_fn`, **and** puts your source into the normal search bar —
   it is listed by `GET /api/search/sources`, which is what the WebUI fans
-  every keyword out to. `site_id` must not collide with a built-in one
+  every keyword out to. Since July 2026 that includes the **shared detail
+  modal's "Search streams" button**: `runAniSearch()` iterates every enabled
+  source in the user's source order instead of the four hardcoded built-in site
+  ids it used to ask, so your source is reachable from a calendar entry, a
+  Seerr request or a module page — not just from the search field. `site_id` must not collide with a built-in one
   (`aniworld`/`sto`/`filmpalast`/`megakino`/`filmo`/`nineanime`/`aniwaves`/
   `hanime`) or another
   registration, and must match `[a-z0-9][a-z0-9_-]{1,39}` — it becomes a
@@ -2019,7 +2080,19 @@ def register(app):
   `"adult"` is only ever fetched when the user turned the 18+ chip on.
   `source_id` must not collide with a built-in one or another registration.
   Your source is enabled unless `source_enabled_<source_id>` is `"0"`, so an
-  `extra_settings` toggle under that key gives the user a real off switch.
+  `extra_settings` toggle under that key gives the user a real off switch. A
+  source switched off in Settings is left out of the feed's filter row
+  entirely — it is no longer rendered as a greyed-out chip nobody can use.
+
+  Two things about row length are worth knowing if you call the feed yourself.
+  `GET /api/home-feed` and `GET /api/home-feed/row/<row>` accept **`&pool=1`**:
+  with it the server builds a reserve of up to `limit * 4` cards (hard ceiling
+  150) instead of exactly `limit`, and the response carries a new top-level
+  **`limit`** field telling you how many of them to show. That is what the home
+  page uses, because its chips filter client-side: without a reserve, switching
+  one source off simply made the row shorter, which reads as "the page lost
+  content" rather than "that source is hidden". Without `pool=1` the old
+  behaviour (exactly `limit` cards) is unchanged.
 - **`register_site_mirrors(item_id, site_id, hosts, label=None)`**
   (`mediaforge/mirrors.py`) is optional, for a site that (like most of the
   built-in ones) sometimes moves domains or gets DNS-blocked. It adds an

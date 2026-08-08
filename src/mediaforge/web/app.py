@@ -94,6 +94,31 @@ from .markdown_utils import render_markdown
 from ..telemetry.hooks import init_telemetry
 
 
+# The eight "Advanced Settings" design toggles (profile.html -> Appearance,
+# stored per account in user_ui_prefs as ui_<name>; base.html paints them as
+# body classes). Module level rather than inside create_app() because
+# routes/settings.py validates the instance-default list against it -- a
+# whitelist that lives inside a factory function is a whitelist nobody else can
+# use, and the alternative is a second hand-maintained copy.
+#
+# This tuple must stay in step with base.html's window._MF_UI_TOGGLES: a name in
+# one and not the other is a toggle that silently ignores the instance default.
+UI_TOGGLE_KEYS = (
+    "ui_glow_effect", "ui_header_color", "ui_header_color_help",
+    "ui_skeleton_loader", "ui_choose_border", "ui_active_download_glow",
+    "ui_click_effect", "ui_icon_move",
+)
+
+# S.TO's language ids, as the series page numbers them. Four routes carried a
+# private copy of this literal; it is one dict now because shared_modals.html
+# gets it from a context processor (see _inject_shared_modal_context).
+STO_LANG_LABELS = {
+    "1": "German Dub",
+    "2": "English Dub",
+    "3": "English Dub (German Sub)",
+}
+
+
 def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     """Build and configure the Flask app: i18n, auth/session/CSRF, DB init,
     background workers, security headers, and route registration.
@@ -258,11 +283,35 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             accent = (_get_setting("default_accent", "") or "").strip()
         except Exception:
             mode, accent = "dark", ""
+        # Instance default for the eight design toggles. Until now these had no
+        # middle level at all: theme/accent cascaded account -> instance ->
+        # built-in, but the toggles went straight from the account to a
+        # localStorage mirror. So a brand-new account started with all eight off
+        # no matter how the instance was set up, and looked different from every
+        # other account on the same install -- which is what "the extra design
+        # options are missing on new accounts" actually was.
+        #
+        # Stored as ONE comma-separated key rather than eight, so "the admin has
+        # never configured this" is a value the template can see (key absent ->
+        # None) and not something it has to infer from eight zeroes. That
+        # distinction is what lets base.html keep the old localStorage fallback
+        # for existing installs instead of blanking their look on upgrade.
+        try:
+            raw = _get_setting("default_ui_toggles", None)
+        except Exception:
+            raw = None
+        ui_default = None
+        if raw is not None:
+            picked = {p.strip() for p in str(raw).split(",") if p.strip()}
+            ui_default = {key: ("1" if key in picked else "0")
+                          for key in UI_TOGGLE_KEYS}
         return {
             "theme_mode": mode if mode in ("dark", "light") else "dark",
             # "" means "the built-in accent" -- base.html already has one and
             # duplicating the literal here is one more place to keep in step.
             "accent": accent if _ACCENT_RE.match(accent) else "",
+            # None = never configured, keep the pre-existing behaviour.
+            "ui": ui_default,
         }
 
     if auth_enabled:
@@ -476,8 +525,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 # reads a setting per item. module_settings.html is the only
                 # caller, and it calls it once.
                 "get_module_settings": resolve_module_settings,
-                # Back-compat: Integrations page's "Third Party" tab, unchanged.
-                "thirdparty_cards": resolve_settings_cards("integrations", "thirdparty"),
+                # (Module cards used to be pushed onto the Integrations page's
+                # "Third Party" tab from here as `thirdparty_cards`. They are
+                # configured in Module Manager -> Module Settings now, which is
+                # also where a module is installed and removed; see
+                # resolve_module_settings() and templates/integrations.html.
+                # Dropping it also takes a walk over every registered item plus
+                # one DB read each OFF every single template render.)
                 # Generic hooks any settings template can call directly to pull
                 # in cards for one of its own tabs/pills, or to discover which
                 # brand-new tabs/pills it needs to render for the rest (see
@@ -569,7 +623,8 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 # reads a setting per item. module_settings.html is the only
                 # caller, and it calls it once.
                 "get_module_settings": resolve_module_settings,
-                "thirdparty_cards": resolve_settings_cards("integrations", "thirdparty"),
+                # (No `thirdparty_cards` -- module cards live on the Module
+                # Settings page now, not on Integrations' Third Party tab.)
                 "get_settings_cards": resolve_settings_cards,
                 "get_dynamic_tabs": resolve_dynamic_tabs,
                 # Modulmanager (templates/extensions.html) uses this to
@@ -580,6 +635,31 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "provider_pill_scripts": resolve_provider_pill_scripts(),
                 "dashboard_widgets": resolve_dashboard_widgets(),
             }
+
+    # ── Everything templates/shared_modals.html needs, on every page ────────
+    # The series/download modal is an include, and it built its language and
+    # hoster <option>s straight out of three template variables. Four routes
+    # passed them (index, advanced search, seerr, catalogue) and everybody else
+    # did not -- so on the calendar page, and on ANY page a module renders, the
+    # include produced two empty dropdowns and no error to explain it. That is
+    # the "modules show no language or provider" report.
+    #
+    # A context processor rather than a fifth copy of the kwargs: an include
+    # that only works if the view remembered to feed it is an include a module
+    # author cannot use, and .examples/thirdparties/README.md tells them to use
+    # exactly this one. The routes that already pass these keep working -- view
+    # kwargs shadow the context processor, and the values are identical.
+    #
+    # WORKING_PROVIDERS is read per request on purpose: extractors.register_
+    # hoster() mutates it at runtime, so a module that brings its own hoster
+    # appears in the dropdown without a restart.
+    @app.context_processor
+    def _inject_shared_modal_context():
+        return {
+            "lang_labels": LANG_LABELS,
+            "sto_lang_labels": STO_LANG_LABELS,
+            "supported_providers": WORKING_PROVIDERS,
+        }
 
     # Initialize download queue, custom paths and autosync (works with or without auth)
     init_queue_db()

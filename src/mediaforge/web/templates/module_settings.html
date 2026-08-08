@@ -29,7 +29,11 @@
       <span class="integ-subsection-title">{{ group.label }}</span>
       <span class="integ-subsection-badge">{{ group.cards|length }}</span>
     </div>
-    {% if group.host != 'settings' %}
+    {# Only hosts that really render a second card say so. "integrations" no
+       longer does -- module cards were taken off the Integrations page's Third
+       Party tab, so this page is the only place they exist -- and claiming
+       otherwise would send people looking for a card that is not there. #}
+    {% if group.host in ['notifications', 'monitoring'] %}
     <div class="integ-subsection-hint">
       {{ _('These modules also keep their card on that page. Both places edit the same settings.') }}
     </div>

@@ -422,6 +422,18 @@ _FEED_ROW_ORDER = ("new", "popular", "movies")
 _FEED_LIMIT_DEFAULT = 30
 _FEED_LIMIT_MAX = 60
 
+# How many cards a row is built from when the caller asks for a reserve pool
+# (`?pool=1`). The home page shows `limit` cards, but its source/type chips
+# filter client-side -- without a reserve, switching a source off simply made
+# the row shorter, which reads as "the page lost content" rather than "that
+# source is hidden". With the pool the row keeps its configured length and the
+# next-best cards move up. The multiplier is not a guess: with the chips the
+# user can hide all but one source, so the pool has to survive the worst case
+# while staying bounded, hence the hard ceiling below (a row can never cost
+# more than _FEED_POOL_MAX cards of scraping/serialisation).
+_FEED_POOL_FACTOR = 4
+_FEED_POOL_MAX = 150
+
 # id -> (label, chip colour). Only the built-ins; module sources bring their
 # own label/colour through the registry.
 _FEED_BUILTIN_META = (
@@ -1082,6 +1094,14 @@ def register_browse_routes(app):
         else:
             limit = config["limit"]
         limit = max(1, min(limit, _FEED_LIMIT_MAX))
+        # `pool=1` asks for a reserve on top of the visible count so the client
+        # can hide a source without the row shrinking (see _FEED_POOL_FACTOR).
+        # Opt-in rather than always-on: /api/home-feed also feeds the Start
+        # Page settings preview, and a preview that shows four times the cards
+        # the real page shows is a preview of the wrong thing.
+        collect = limit
+        if request.args.get("pool") == "1":
+            collect = max(1, min(limit * _FEED_POOL_FACTOR, _FEED_POOL_MAX))
         hidden = set(config["hidden"])
 
         # 1. Everything that could contribute: built-ins + module sources.
@@ -1199,10 +1219,14 @@ def register_browse_routes(app):
                         bucket.setdefault(sid, []).extend(movies)
             else:
                 bucket = {sid: items for (r, sid), items in fetched.items() if r == row}
-            rows[row] = _feed_collect(bucket, order, limit, taken, index, labels)
+            rows[row] = _feed_collect(bucket, order, collect, taken, index, labels)
 
         return {
             "rows": rows,
+            # What the client should SHOW, independent of how many cards it was
+            # given. Named separately from config.limit so a per-request
+            # ?limit= (the settings preview) still wins on the client.
+            "limit": limit,
             "sources": [
                 {
                     "id": sid,

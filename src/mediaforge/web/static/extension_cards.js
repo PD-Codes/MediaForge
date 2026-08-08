@@ -241,3 +241,35 @@ async function saveThirdpartyExtraField(id, key, el) {
 }
 
 document.addEventListener("DOMContentLoaded", loadThirdpartyToggles);
+
+// ─── Deep link from the Modulmanager ("Open module" button) ────────────────
+// extensions.html links to <page>?open=<item_id>[#<tab>]. Force-expands that
+// one card (overriding its collapsed-by-default state) and scrolls it into
+// view, so "Open module" lands the admin on the right field rather than the
+// right page.
+//
+// Lives here, not in integrations.js, because this file is the one that every
+// card-rendering page loads: Integrations, Notifications and Module Settings.
+// While it sat in integrations.js the button worked on exactly one of the
+// three. Pages that never render a card simply find no #integCard-<id> and
+// this does nothing.
+(function openDeepLinkedThirdpartyCard() {
+  var openId = "";
+  try { openId = new URLSearchParams(window.location.search).get("open") || ""; } catch (e) { /* no URLSearchParams */ }
+  if (!openId) return;
+  document.addEventListener("DOMContentLoaded", function () {
+    // Deferred a tick: restoreIntegCollapse() (which this overrides for this
+    // one card) runs synchronously while this file loads, and giving layout a
+    // moment to settle makes the scrollIntoView land correctly even on slower
+    // first paints.
+    setTimeout(function () {
+      var card = document.getElementById("integCard-" + openId);
+      if (!card) return;
+      card.classList.remove("collapsed");
+      try { localStorage.setItem("integCollapsed_" + openId, "0"); } catch (e) { /* private mode */ }
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.add("integ-card-highlight");
+      setTimeout(function () { card.classList.remove("integ-card-highlight"); }, 2200);
+    }, 60);
+  });
+})();

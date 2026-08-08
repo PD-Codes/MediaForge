@@ -134,6 +134,9 @@ let downloadedFolders = [];
 let mediascanTmdbIds = new Set();
 let mediascanImdbIds = new Set();
 let mediascanTitles = new Set(); // normalised titles from Plex/Jellyfin as fallback
+// The same titles reduced to letters and digits (_looseTitleKey). A second
+// index rather than a loop, so the fallback stays O(1) per card.
+let mediascanLooseTitles = new Set();
 let mediascanActive = false;  // true when source is plex/jellyfin (not folders)
 
 // Auto-Sync URLs set (series_url -> job object)
@@ -467,6 +470,14 @@ async function loadDownloadedFolders() {
       mediascanTmdbIds = new Set((md.tmdb_ids || []).map(id => String(id)));
       mediascanImdbIds = new Set((md.imdb_ids || []).map(id => String(id)));
       mediascanTitles = new Set((md.titles || []));
+      // Second index, punctuation-insensitive. Same defect as the folder scan:
+      // the media server's spelling of a title and the provider's spelling
+      // differ by a colon or a dash often enough that an exact Set lookup
+      // reports "not downloaded" for something plainly on the shelf. Built
+      // once here rather than looped per card, so the per-card cost stays a
+      // pair of O(1) lookups on libraries with tens of thousands of entries.
+      mediascanLooseTitles = new Set(
+        (md.titles || []).map(_looseTitleKey).filter(Boolean));
       mediascanActive = true;
       // Re-evaluate any already-rendered badges that have a tmdb data attribute
       _refreshMediascanBadges();
@@ -474,6 +485,7 @@ async function loadDownloadedFolders() {
       mediascanTmdbIds = new Set();
       mediascanImdbIds = new Set();
       mediascanTitles = new Set();
+      mediascanLooseTitles = new Set();
       mediascanActive = false;
     }
   } catch (e) {
@@ -1246,7 +1258,32 @@ function isDownloaded(title) {
   // matches the strict pass above missed.
   const loose = _looseTitleKey(title);
   if (!loose) return false;
-  return downloadedFolders.some((f) => _looseTitleKey(f).startsWith(loose));
+  return downloadedFolders.some((f) => _looseFolderHolds(_looseTitleKey(f), loose));
+}
+
+// Shortest folder key allowed to win a REVERSE match -- see _looseFolderHolds.
+const LOOSE_MIN_REVERSE = 10;
+
+/** Does a folder whose loose key is *folderKey* hold the title *titleKey*?
+ *
+ *  Both directions, because the folder on disk is named after whichever
+ *  provider downloaded it FIRST and every other provider then compares its own
+ *  spelling against that name. That asymmetry is why the badge appeared when
+ *  you came from AniWorld and not when you came from a site that spells the
+ *  same show "<title>: <romaji subtitle>".
+ *
+ *  The reverse direction needs a length floor: without it a "Naruto" folder
+ *  would claim "Naruto Shippuden" and "One Piece" would claim "One Piece Film
+ *  Red". A wrong "already downloaded" is the more expensive mistake -- it stops
+ *  a download the user asked for -- so short keys only match forwards.
+ *
+ *  The Python twin is titles_match() in models/common/common.py; the card badge
+ *  and the modal's episode ticks answer the same question and must not
+ *  disagree. */
+function _looseFolderHolds(folderKey, titleKey) {
+  if (!folderKey || !titleKey) return false;
+  if (folderKey.startsWith(titleKey)) return true;
+  return folderKey.length >= LOOSE_MIN_REVERSE && titleKey.startsWith(folderKey);
 }
 
 function _normalizeForMediascan(title) {
@@ -1272,7 +1309,14 @@ function _isDownloadedByTitle(title) {
   const norm = _normalizeForMediascan(title);
   // O(1) Set lookup — prefix loop removed: normalization already strips
   // Season/Part suffixes on both sides, so exact match is sufficient.
-  return norm ? mediascanTitles.has(norm) : false;
+  if (norm && mediascanTitles.has(norm)) return true;
+  // ...except that _normalizeForMediascan keeps spaces and underscores, so
+  // "Kaguya-sama: Love is War" and "Kaguya sama Love is War" still miss each
+  // other. The loose index (letters and digits only) closes that gap without
+  // giving up the O(1) lookup. Still exact, not prefix: a media server holds
+  // one entry per show, so there is no "Season 2 folder" case to catch here.
+  const loose = _looseTitleKey(title);
+  return loose ? mediascanLooseTitles.has(loose) : false;
 }
 
 // Shared vertical stacking for every top-right corner pill (Vorhanden, Sync,
@@ -1568,6 +1612,15 @@ function rebuildLanguageSelect(foundLangs = null) {
     // Nothing known yet (the first call happens before either fetch has
     // returned): leave the dropdown empty rather than filling it with another
     // site's languages. The later call, with foundLangs, fills it in.
+    //
+    // The `return` is the point of that sentence and was missing: without it
+    // execution fell through to ANIWORLD_LANGS below and a module's modal was
+    // handed AniWorld's five language labels. The provider lookup is keyed by
+    // exactly these strings, so every one of them then resolved to "no source
+    // available" -- an empty Hoster dropdown under a full-looking Language one,
+    // which is the shape the module bug report describes.
+    syncLangAvailPills();
+    return;
   }
 
   const langs = isSto ? window.STO_LANGS || {} : window.ANIWORLD_LANGS || {};
@@ -3028,13 +3081,22 @@ function getSelectedEpisodeUrls() {
   ).map((cb) => cb.value);
 }
 
+// Note the emptiness check on data.providers below. `{}` is truthy, so an
+// answer with no hosters at all used to be accepted as a valid provider
+// matrix: availableProviders became {}, which is not null, so
+// updateProviderDropdown() ran, found no key for any language and left a
+// single disabled "No source available" entry in the Hoster dropdown.
+// Treating "empty" as "no answer" keeps the server-rendered static hoster
+// list in place instead -- usable, and the real cause (a module whose
+// provider_data the backend could not read) stays visible in the log rather
+// than showing up as a dead dropdown.
 async function fetchProviders(episodeUrl) {
   try {
     const resp = await fetch(
       "/api/providers?url=" + encodeURIComponent(episodeUrl),
     );
     const data = await resp.json();
-    if (data.providers) {
+    if (data.providers && Object.keys(data.providers).length) {
       availableProviders = data.providers;
       // For a site whose languages are not one of the two hardcoded sets,
       // this answer IS the language list (see rebuildLanguageSelect). Rebuild
@@ -4995,12 +5057,31 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
   };
 
   try {
+    // Every source that exists right now -- built-in or module-registered --
+    // in the user's own order, exactly like the main search box (doSearch()).
+    // This used to be four hardcoded ids (aniworld, sto, filmpalast, megakino),
+    // which meant this modal could not find a title on filmo, 9anime, Aniwaves
+    // or on ANY source a module registers: a module could add a provider to the
+    // app and its own titles would still be unreachable from the one dialog
+    // that starts a download. It also asked disabled sources, so switching a
+    // source off in Settings changed nothing here.
+    //
+    // Adult sources stay opt-in (an 18+ result appearing in a lookup nobody
+    // asked for is not a missing feature), and everything else follows the
+    // same "hide_disabled_in_search" preference the main search honours.
+    let _srcSettings = {};
+    try { _srcSettings = ((await loadGeneralSettings()) || {}).sources || {}; } catch (e) { _srcSettings = {}; }
+    const _en = _srcSettings.enabled || {};
+    const _hide = _srcSettings.hide_disabled_in_search === "1";
+    const _sources = _sortSourcesByUserOrder(await loadSearchSources(), _srcSettings.order)
+      .filter(function (src) {
+        const on = _sourceIsOn(src, _en);
+        return src.adult ? on : (on || !_hide);
+      });
+
     let allPromises = [];
     searchTitles.forEach(kw => {
-      allPromises.push(searchSite("aniworld", kw));
-      allPromises.push(searchSite("sto", kw));
-      allPromises.push(searchSite("filmpalast", kw));
-      allPromises.push(searchSite("megakino", kw));
+      _sources.forEach(src => allPromises.push(searchSite(src.id, kw)));
     });
 
     const resultsArrays = await Promise.all(allPromises.map(p => p.catch(() => [])));
@@ -5058,7 +5139,13 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
     });
 
     if (allResults.length === 0) {
-      grid.innerHTML = `<div class="adv-empty-state">${t("Keine exakten Treffer für " + escapeHtml(displayTitle) + " auf AniWorld, SerienStream oder FilmPalast gefunden.", "No exact matches for " + escapeHtml(displayTitle) + " found on AniWorld, SerienStream or FilmPalast.")}</div>`;
+      // Names the sources that were ACTUALLY asked rather than the three that
+      // used to be hardcoded here. The lookup now fans out over every enabled
+      // source (see above), so a fixed list of names was both wrong and the
+      // one thing that could make a user think a source they enabled was
+      // never queried.
+      const _asked = _sources.map(s => s.label || s.id).join(", ");
+      grid.innerHTML = `<div class="adv-empty-state">${t("Keine exakten Treffer für " + escapeHtml(displayTitle) + " auf " + escapeHtml(_asked) + " gefunden.", "No exact matches for " + escapeHtml(displayTitle) + " found on " + escapeHtml(_asked) + ".")}</div>`;
       return;
     }
 

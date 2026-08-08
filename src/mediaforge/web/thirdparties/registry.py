@@ -116,12 +116,15 @@ _DEFAULT_SETTINGS_TAB = "thirdparty"
 # hunt for, and "which tab did that module choose?" is not a question a user
 # should have to ask.
 #
-#   integrations  -> always the "Third Party" tab. That tab exists to answer
-#                    "what have my modules added to this page", so a module
-#                    hiding on the CineInfo or Seerr tab defeats its purpose.
-#                    settings_tab is ignored here, deliberately and silently:
-#                    a module written for the old behaviour keeps working, its
-#                    card just moves to where users look for it.
+#   integrations  -> the Module Settings page under the Module Manager, same
+#                    as "settings". The Integrations page no longer renders
+#                    module cards at all: a module is installed, updated and
+#                    removed in the Module Manager, and having its settings
+#                    live somewhere else meant two pages to check and one to
+#                    forget. settings_tab is still normalised to "thirdparty"
+#                    (and still ignored) so nothing that reads the stored value
+#                    -- the Modulmanager's capability list, older tests --
+#                    trips over a host/tab pair it has never seen.
 #   notifications -> always a tab of its own, never appended to a built-in
 #                    channel's panel. Telegram's tab is Telegram's.
 #   monitoring    -> same, a tab of its own.
@@ -1823,9 +1826,15 @@ def resolve_card(item_id):
 def resolve_settings_cards(host="integrations", tab="thirdparty"):
     """Return every *enabled* registered card targeting a given
     (settings_host, settings_tab) pair, ready for that tab/pill's template
-    to render -- e.g. resolve_settings_cards("integrations", "thirdparty")
-    populates the Integrations "Third Party" tab. Sorted by priority
-    (registration order among ties).
+    to render -- e.g. resolve_settings_cards("notifications", "module_x").
+    Sorted by priority (registration order among ties).
+
+    Note that ("integrations", "thirdparty") is no longer rendered anywhere:
+    module cards moved to Module Settings wholesale (see
+    resolve_module_settings() and the _FORCED_TABS comment above). The call
+    still answers correctly -- templates.notifications/monitoring use this
+    function for their own hosts, and a module that queries it should not
+    start getting an exception.
 
     Disabled modules are filtered out here (checked live, per request --
     same read this module uses everywhere else, e.g. resolve_menu_items()):
@@ -1867,9 +1876,14 @@ def resolve_module_settings():
     this page entirely, which made "Module Settings" a page that showed *some*
     module settings and gave no hint that others existed somewhere else. Every
     enabled item with settings is now collected here, grouped by where its card
-    also lives, so this page is the one complete list. The card keeps its
-    original place as well; both copies drive the same generic
-    /api/settings/thirdparty/<id> API, so editing either one is the same edit.
+    also lives, so this page is the one complete list.
+
+    For settings_host="integrations" this page is the ONLY place the card
+    exists: the Integrations page stopped rendering module cards (see the
+    _FORCED_TABS comment). "notifications"/"monitoring" do still keep a card of
+    their own, and both copies drive the same generic
+    /api/settings/thirdparty/<id> API, so editing either one is the same edit
+    -- module_settings.html says so for those two groups only.
 
     Returns groups rather than a flat list::
 

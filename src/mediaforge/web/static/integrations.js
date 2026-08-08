@@ -42,32 +42,12 @@ function switchIntegTab(name) {
 })();
 
 // ─── Deep link from the Modulmanager ("Open module" button) ───────────────
-// extensions.html links here as .../integrations?open=<item_id>#<tab> — the
-// #tab half is already handled by restoreIntegTab() above (tab ids are read
-// generically off the DOM, so this works for dynamic tabs too); this part
-// additionally force-expands that one item's settings card (overriding its
-// collapsed-by-default state) and scrolls it into view, so "Open module"
-// actually lands the admin on the right field instead of just the right tab.
-(function openDeepLinkedThirdpartyCard() {
-  var openId = "";
-  try { openId = new URLSearchParams(window.location.search).get("open") || ""; } catch (e) {}
-  if (!openId) return;
-  document.addEventListener("DOMContentLoaded", function () {
-    // Deferred a tick: extension_cards.js's restoreIntegCollapse() (which
-    // this overrides for this one card) runs synchronously as its own
-    // script loads, but giving layout a moment to settle first makes the
-    // scrollIntoView land correctly even on slower first paints.
-    setTimeout(function () {
-      var card = document.getElementById("integCard-" + openId);
-      if (!card) return;
-      card.classList.remove("collapsed");
-      try { localStorage.setItem("integCollapsed_" + openId, "0"); } catch (e) {}
-      card.scrollIntoView({ behavior: "smooth", block: "center" });
-      card.classList.add("integ-card-highlight");
-      setTimeout(function () { card.classList.remove("integ-card-highlight"); }, 2200);
-    }, 60);
-  });
-})();
+// The ?open=<item_id> half moved to static/extension_cards.js, which is loaded
+// by EVERY page that renders extension cards -- Integrations, Notifications
+// and (since module cards left the Third Party tab) Module Settings. Keeping
+// it here meant "Open module" only worked on the one page that happens to load
+// this file. restoreIntegTab() above still handles the #tab half, which is
+// genuinely this page's business.
 
 // ─── Third Party tab: collapsible integration cards ───────────────────────
 // toggleIntegCollapse/restoreIntegCollapse and the thirdparty-toggle load/

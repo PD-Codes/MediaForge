@@ -1402,12 +1402,22 @@
 
     function _initExtendedSettings() {
       var prefs = window._USER_PREFS || {};
+      // Instance default for these toggles (Settings -> Design, admin only).
+      // null when no admin ever configured it -- then the old localStorage
+      // fallback stays in charge, so upgrading an install does not silently
+      // repaint everybody's UI.
+      var uiDefaults = (window._APPEARANCE_DEFAULTS || {}).ui || null;
       window._MF_UI_TOGGLES.forEach(function (s) {
-        // The account wins; localStorage is only consulted for an account
-        // that has never set the key (an upgrade from the old behaviour).
+        // Three levels, same order as the theme/accent cascade above: what THIS
+        // account picked, what the admin set as the instance default, and
+        // finally the per-browser localStorage mirror. The middle level is what
+        // makes a freshly created account look like the instance it was created
+        // on instead of like a factory reset.
         var active;
         if (typeof prefs[s.pref] === 'string' && prefs[s.pref] !== '') {
           active = prefs[s.pref] === '1';
+        } else if (uiDefaults && typeof uiDefaults[s.pref] === 'string') {
+          active = uiDefaults[s.pref] === '1';
         } else {
           active = localStorage.getItem(s.ls) === 'true';
         }

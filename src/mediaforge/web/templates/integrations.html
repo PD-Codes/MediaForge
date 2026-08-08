@@ -1147,14 +1147,15 @@
 
     <!-- Card moved to separate tab -->
 
-    <!-- ══ Auto-registered third-party integrations (web/thirdparties/<name>/) ══
-         Each integration calls register_thirdparty(...) from its own
-         register(app) — see web/thirdparties/registry.py — so a new
-         integration folder shows up here automatically, no template edits
-         required. -->
-    {% for card in thirdparty_cards %}
-    {{ ext.render_settings_card(card) }}
-    {% endfor %}
+    <!-- ══ Module cards deliberately do NOT render here ══════════════════════
+         Modules that call register_thirdparty(settings_host="integrations")
+         used to have their settings card duplicated onto this tab as well as
+         onto Module Manager → Module Settings. Two pages editing the same
+         values is two places to look and one place to forget: a module is
+         installed, updated and removed in the Module Manager, so that is where
+         it is configured. This tab is now only for the integrations MediaForge
+         itself ships (Crunchyroll, Fernsehserien.de, ComicVine, …).
+         See web/thirdparties/registry.py's resolve_module_settings(). -->
 
   </div><!-- /tab-thirdparty -->
 
