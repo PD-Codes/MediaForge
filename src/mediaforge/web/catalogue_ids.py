@@ -46,21 +46,32 @@ from ..logger import get_logger
 
 logger = get_logger(__name__)
 
-# How many titles are looked up at once. The bottleneck is the round trip to
-# TMDB, not TMDB's own limit -- one at a time meant a title every two to three
-# seconds and a full catalogue taking most of a day. Four in parallel is a few
-# per second, and a 13k-entry catalogue lands in well under an hour.
+# How many titles are looked up at once, and how hard each worker pushes.
 #
-# Four and not forty: `lookup_media` spends the process-wide budget of 40 req/s
-# that the UI shares, and one entry is several requests (search, details,
-# providers, videos). Four workers use maybe a third of that, which leaves the
-# modal a user is actually looking at answering immediately -- and a backfill
-# that makes the app feel slow is a backfill nobody wants running.
-LOOKUP_WORKERS = 4
+# These were four workers and a 0.15s breather, which resolved about eight
+# titles a second. That number was measured against a stub; against the real
+# TMDB it means something quite different, because ONE title is three to eight
+# HTTPS requests (search, details, watch providers, and often content ratings
+# and videos on top). Eight titles a second is therefore twenty-five to sixty
+# requests a second, sustained, starting the moment the app boots -- and it
+# made the whole application feel slow, not just this page.
+#
+# Two workers with a half-second breather is roughly two to three titles a
+# second: a full 13k catalogue in about an hour and a half, and a background
+# job that stays in the background. The pooled session in tmdb_cache is what
+# makes even this affordable; before it, every one of those requests paid for
+# a fresh TLS handshake.
+LOOKUP_WORKERS = 2
 
-# Breather between two lookups WITHIN one worker. Small; it exists so a
-# catalogue that is entirely TMDB-cache hits does not turn into a tight loop.
-LOOKUP_DELAY = 0.15
+# Breather between two lookups WITHIN one worker. Deliberately generous: this
+# is the main brake, and a backfill nobody notices is worth far more than one
+# that finishes in half the time.
+LOOKUP_DELAY = 0.5
+
+# The backfill does not start with the app. Boot is the busiest moment there
+# is -- workers starting, caches warming, the user opening the first page --
+# and a job with hours of work ahead of it can wait a minute.
+START_DELAY = 90
 
 # Rows per batch: resolved in parallel, then written in ONE transaction. Small
 # enough that the progress on the page moves every few seconds and that a
@@ -261,8 +272,12 @@ def _run():
     _beat(STATE_IDLE, detail="stopped")
 
 
-def start() -> bool:
-    """Start the backfill thread. Idempotent."""
+def start(delay=0.0) -> bool:
+    """Start the backfill thread. Idempotent.
+
+    *delay* holds it back for that many seconds -- used at boot, where the
+    work is hours long and the first minute is the one the user is watching.
+    """
     global _thread
     if _thread is not None and _thread.is_alive():
         # Already running: at least make it look for work now, which is what
@@ -271,9 +286,15 @@ def start() -> bool:
         return False
     _stop.clear()
     _kick.clear()
-    _thread = threading.Thread(target=_run, daemon=True, name="catalogue-ids")
+
+    def _boot():
+        if delay and _stop.wait(delay):
+            return
+        _run()
+
+    _thread = threading.Thread(target=_boot, daemon=True, name="catalogue-ids")
     _thread.start()
-    logger.info("[CatalogueIds] backfill worker started")
+    logger.info("[CatalogueIds] backfill worker started (delay %.0fs)", delay)
     return True
 
 

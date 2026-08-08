@@ -7,6 +7,8 @@ list into hundreds of scrapes, so every guard on it matters more than the happy
 path.
 """
 
+import time
+
 import pytest
 
 from mediaforge import catalogue
@@ -743,3 +745,100 @@ def test_an_idle_wait_can_be_interrupted():
     catalogue_ids.wake()
     assert done.wait(timeout=5), "wake() did not interrupt the idle wait"
     catalogue_ids._kick.clear()
+
+
+# ── The bulk worker, actually run ───────────────────────────────────────────
+# Every other test in this file stubs start_job out, which is precisely why
+# nobody noticed that _run() died on its first line: catalogue_worker lives in
+# mediaforge/web/ but its imports were written with the depth a module in
+# mediaforge/web/routes/ needs, so `..db` resolved to the non-existent
+# `mediaforge.db`. The whole feature had never worked. These run the thread.
+import types
+
+
+class _FakeEpisode:
+    def __init__(self, url, number, downloaded):
+        self.url, self.episode_number, self.is_downloaded = url, number, downloaded
+
+
+class _FakeSeason:
+    def __init__(self, number):
+        self.season_number = number
+        # Episode 1 of each season is already on disk.
+        self.episodes = [_FakeEpisode("https://aniworld.to/e/%d/%d" % (number, i), i, i == 1)
+                         for i in (1, 2, 3)]
+
+
+class _FakeSeries:
+    def __init__(self, url=None):
+        self.url, self.title = url, "Testserie"
+        self.poster_url = "http://example.invalid/p.jpg"
+        self.seasons = [_FakeSeason(1), _FakeSeason(2)]
+
+
+@pytest.fixture()
+def fake_provider(monkeypatch):
+    import mediaforge.providers as provs
+    monkeypatch.setattr(provs, "resolve_provider",
+                        lambda url: types.SimpleNamespace(series_cls=_FakeSeries))
+    return provs
+
+
+def _run_job(app, **kwargs):
+    from mediaforge.web import catalogue_worker
+
+    job = catalogue_worker.start_job(**kwargs)
+    for _ in range(100):
+        time.sleep(0.05)
+        state = catalogue_worker.get_job(job["id"])
+        if state["status"] != "running":
+            return state
+    raise AssertionError("bulk job did not finish")
+
+
+def test_a_queue_job_really_reaches_the_queue(app, fake_provider):
+    from mediaforge.web import db
+
+    url = "https://aniworld.to/anime/stream/queue-me"
+    with app.app_context():
+        state = _run_job(app, source="aniworld", urls=[url], language="German Dub",
+                         provider="VOE", mode="queue", missing_only=True)
+        assert state["status"] == "finished"
+        assert state["failed"] == 0, state["errors"]
+        assert state["queued"] == 1
+        # Six episodes, two of them already on disk.
+        assert state["episodes"] == 4
+
+        item = [i for i in db.get_queue() if i.get("series_url") == url]
+        assert len(item) == 1
+        assert item[0]["title"] == "Testserie"
+        assert item[0]["language"] == "German Dub"
+        assert item[0]["provider"] == "VOE"
+        assert item[0]["source"] == "catalogue"
+
+
+def test_an_autosync_job_is_stored_and_not_duplicated(app, fake_provider):
+    from mediaforge.web import db
+
+    url = "https://aniworld.to/anime/stream/sync-me"
+    with app.app_context():
+        state = _run_job(app, source="aniworld", urls=[url], language="German Dub",
+                         provider="VOE", mode="autosync")
+        assert state["status"] == "finished" and state["failed"] == 0, state["errors"]
+        assert state["queued"] == 1
+
+        jobs = [j for j in db.get_autosync_jobs() if j.get("series_url") == url]
+        assert len(jobs) == 1
+        assert jobs[0]["title"] == "Testserie"
+        assert jobs[0]["language"] == "German Dub"
+        assert jobs[0]["provider"] == "VOE"
+        assert jobs[0].get("cover_url")
+
+        # An existing job is left alone rather than reset: it may carry a
+        # filter, a custom path or a language the user chose deliberately.
+        again = _run_job(app, source="aniworld", urls=[url], language="English Dub",
+                         provider="Vidoza", mode="autosync")
+        assert again["skipped"] == 1 and again["queued"] == 0
+        after = [j for j in db.get_autosync_jobs() if j.get("series_url") == url]
+        assert len(after) == 1
+        assert after[0]["language"] == "German Dub"

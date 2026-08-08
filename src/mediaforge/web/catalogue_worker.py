@@ -138,7 +138,7 @@ def _episodes_for(series_url, missing_only):
     those anyway ("Bereits vorhanden"), but a queue item holding 300 episodes
     of which 299 are done is a queue item nobody can read.
     """
-    from ...providers import resolve_provider
+    from ..providers import resolve_provider
 
     provider = resolve_provider(series_url)
     if provider.series_cls is None:
@@ -173,8 +173,8 @@ def _beat(state, detail="", error=None, handled=None, last_run=None):
 
 
 def _run(job):
-    from ..db import add_autosync_job, add_to_queue, find_autosync_by_url
-    from ..db import is_series_queued_or_running
+    from .db import add_autosync_job, add_to_queue, find_autosync_by_url
+    from .db import is_series_queued_or_running
     from .worker_registry import STATE_ERROR, STATE_IDLE, STATE_WORKING
 
     _beat(STATE_WORKING, detail=f"{job['mode']}: 0/{job['total']}", error="", handled=0)
@@ -192,7 +192,7 @@ def _run(job):
                 if find_autosync_by_url(url):
                     job["skipped"] += 1
                 else:
-                    from ...providers import resolve_provider
+                    from ..providers import resolve_provider
                     prov = resolve_provider(url)
                     series = prov.series_cls(url=url) if prov.series_cls else None
                     title = getattr(series, "title", "") or url

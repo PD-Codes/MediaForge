@@ -14,7 +14,23 @@ entry point; everything above it is core-internal (leading underscore).
 import threading
 import time
 
-import requests as _rq_tmdb
+import requests as _requests_tmdb
+
+# A Session, not the bare `requests` module. `requests.get()` builds a new
+# connection -- and a full TLS handshake -- for every single call, and one
+# lookup_media() is three to eight of them (search, details, providers, and
+# possibly content ratings, release dates and videos). That was affordable
+# while TMDB was only touched when someone opened a modal; it stopped being
+# affordable when the catalogue id backfill started doing it in a loop, and
+# the handshake storm was felt across the whole app.
+#
+# pool_maxsize covers the backfill's workers plus whatever the UI is doing at
+# the same time. Sessions are safe to share between threads for plain
+# request calls -- urllib3's pool does the locking.
+_rq_tmdb = _requests_tmdb.Session()
+_rq_tmdb.headers.update({"User-Agent": "MediaForge/1.0"})
+_rq_tmdb.mount("https://", _requests_tmdb.adapters.HTTPAdapter(
+    pool_connections=4, pool_maxsize=16, max_retries=0))
 
 from .db import get_setting, get_tmdb_cache, set_tmdb_cache
 from .autosync_worker import _title_is_confident

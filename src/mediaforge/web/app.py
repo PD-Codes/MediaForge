@@ -832,7 +832,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # restart (see web/catalogue_ids.py).
     try:
         from . import catalogue_ids as _catalogue_ids
-        _catalogue_ids.start()
+        _catalogue_ids.start(delay=_catalogue_ids.START_DELAY)
     except Exception as _cid_exc:
         get_logger(__name__).warning("[CatalogueIds] worker start failed: %s", _cid_exc)
 
