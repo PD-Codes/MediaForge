@@ -221,3 +221,71 @@ def test_the_bulk_worker_is_in_the_operations_view():
     # No stall watchdog: idle for days is this worker's normal, healthy state.
     assert entry["stall"] is None
     assert entry["link"] == "/catalogue"
+
+
+# ── The page's own controls ─────────────────────────────────────────────────
+# Rendering assertions rather than behaviour ones: the JS is what implements
+# the rail, the chips and the sort toggle, but every one of them needs a hook
+# in the template, and a hook that silently disappears is a feature that
+# silently stops existing.
+def test_the_page_renders_its_controls(as_user):
+    html = as_user("admin").get("/catalogue").get_data(as_text=True)
+    for hook in ('id="catSort"',            # A-Z / Z-A toggle
+                 'id="catStatusChips"',     # library / queued / sync filters
+                 'id="catRail"',            # A-Z jump rail
+                 'id="catRailBubble"',      # the letter shown while dragging
+                 'id="catActions"',         # the bar that hides when empty
+                 'id="catModalCard"',
+                 'cat-modal-backdrop',      # details modal header image
+                 'class="cat-list-wrap"'):
+        assert hook in html, hook
+
+
+def test_labels_built_in_js_are_translatable(as_user):
+    """Anything the JS renders has to come through CAT_I18N -- a string typed
+    into catalogue.js never reaches the .po catalogue and stays English in
+    every language, forever."""
+    import re
+
+    html = as_user("admin").get("/catalogue").get_data(as_text=True)
+    for key in ("chip_hint", "only_selection", "only_selection_hint",
+                "sort_az", "sort_za", "sort_label"):
+        assert re.search(r"\b%s:\s*\"" % key, html), key
+
+
+def test_the_page_does_not_link_out_to_the_source_site(as_user):
+    """Deliberate: the Catalogue page never offers to open aniworld.to or
+    serienstream.to in a browser tab."""
+    html = as_user("admin").get("/catalogue").get_data(as_text=True)
+    assert 'id="catModalOpen"' not in html
+    assert "Open on the site" not in html
+
+
+def test_a_module_may_supply_its_own_source_colour():
+    """The merged list marks every row with its source's colour, so a
+    third-party catalogue has to be able to set one -- and only a literal hex
+    may get through, because the value is rendered into a style attribute."""
+    from mediaforge import catalogue as cat
+
+    try:
+        cat.register_catalogue("mod-colour", "mysite", "MySite",
+                               lambda: [], color="#7c5cff")
+        assert cat.all_catalogues()["mysite"]["color"] == "#7c5cff"
+
+        # CSS injected through the colour is dropped, not escaped.
+        cat.register_catalogue("mod-colour", "mysite", "MySite",
+                               lambda: [], color="red; background:url(x)")
+        assert cat.all_catalogues()["mysite"]["color"] == ""
+    finally:
+        cat.unregister_catalogue("mod-colour")
+
+    # Built-ins carry theirs too, so the page has one source of truth.
+    assert cat.BUILTIN_CATALOGUES["aniworld"]["color"].startswith("#")
+    assert cat.BUILTIN_CATALOGUES["sto"]["color"].startswith("#")
+
+
+def test_the_sources_endpoint_reports_the_colour(as_user):
+    data = as_user("admin").get("/api/catalogue/sources").get_json()
+    by_id = {s["id"]: s for s in data["sources"]}
+    assert by_id["aniworld"]["color"].startswith("#")
+    assert by_id["sto"]["color"].startswith("#")

@@ -9622,6 +9622,41 @@ msgstr "Die Serie konnte nicht ausgeblendet werden."
 #: mediaforge/web/templates/shared_modals.html:0
 msgid "Searching streams..."
 msgstr "Suche Streams …"
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Switch between A–Z and Z–A"
+msgstr "Zwischen A–Z und Z–A umschalten"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Jump to letter"
+msgstr "Zu Buchstabe springen"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Show or hide these entries"
+msgstr "Diese Einträge ein- oder ausblenden"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Only selection"
+msgstr "Nur Auswahl"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Show only what is marked"
+msgstr "Nur zeigen, was markiert ist"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "A–Z"
+msgstr "A–Z"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Z–A"
+msgstr "Z–A"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Sort order"
+msgstr "Sortierung"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Options"
+msgstr "Optionen"
 
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"

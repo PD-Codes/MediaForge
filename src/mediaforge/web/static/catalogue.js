@@ -26,7 +26,15 @@
   const ROW_HEIGHT_MOBILE = 54;
   const OVERSCAN = 8;             // rows rendered above/below the viewport
   const WARN_THRESHOLD = 25;      // selection size that earns the warning
+  // Below this many rows the A-Z rail is hidden: a list you can flick through
+  // in one gesture does not need an index, and an index over twelve entries
+  // is mostly empty letters.
+  const RAIL_MIN_ROWS = 60;
   const STORE_KEY = "mf-catalogue-selection";
+  // View preferences (sort direction, which chips are off). A separate key
+  // from the selection on purpose: clearing a selection is a frequent,
+  // deliberate act and must not also reset how the page is set up.
+  const PREFS_KEY = "mf-catalogue-prefs";
 
   const el = (id) => document.getElementById(id);
   const viewport = el("catViewport");
@@ -35,6 +43,8 @@
   const spacer = el("catSpacer");
   const rowsHost = el("catRows");
   const searchInput = el("catSearch");
+  const rail = el("catRail");
+  const railBubble = el("catRailBubble");
 
   let sources = [];               // [{id, label, enabled, color}]
   // ONE merged list across every catalogue, sorted by title. A title that
@@ -48,12 +58,25 @@
   let queuedUrls = new Set();
   let syncUrls = new Set();
   let offSources = new Set();     // source ids the chips have narrowed away
+  // Status chips follow the same model as the source chips: a chip is ON by
+  // default and turning it off hides the rows in that category. A row in none
+  // of the categories is always visible -- these narrow the list, they never
+  // define it.
+  let offStatus = new Set();      // subset of "library" | "queued" | "sync"
+  let onlySelected = false;       // show nothing but what is marked
+  let sortDir = "asc";            // "asc" | "desc"
+  let letterFirst = {};           // letter -> first index into `filtered`
+  let railLetters = [];           // letters in rail order, "#" for the rest
+  let activeLetter = "";
   let jobPoll = null;
   let loadedCount = 0;            // catalogues that answered
 
-  // Stable per-source colour for the row label and the chip dot. Taken from
-  // the same palette the home feed uses for its source chips, so a source
-  // looks the same wherever it appears.
+  // Stable per-source colour for the row dot and the chip dot, taken from the
+  // same palette the home feed uses so a source looks the same wherever it
+  // appears. The SERVER's colour wins when it has one: built-ins carry theirs
+  // in catalogue.py and a third-party module supplies its own through
+  // register_catalogue(color=...) -- this map is only the fallback for a
+  // source that predates that, plus a last-resort neutral.
   const SOURCE_COLORS = {
     aniworld: "#6aa9ff",
     sto: "#8b7dff",
@@ -63,7 +86,10 @@
     nineanime: "#f0a020",
     aniwaves: "#38bdf8",
   };
-  const colorOf = (id) => SOURCE_COLORS[id] || "#8b8bff";
+  const colorOf = (id) => {
+    const known = sources.find((s) => s.id === id);
+    return (known && known.color) || SOURCE_COLORS[id] || "#8b8bff";
+  };
   const labelOf = (id) => (sources.find((s) => s.id === id) || {}).label || id;
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
@@ -87,11 +113,40 @@
     } catch (e) { /* private mode / quota — the in-memory Set still works */ }
   }
 
+  // ── View preferences ─────────────────────────────────────────────────────
+  // Sort direction and the chip state survive a reload, because they describe
+  // how this user reads the catalogue rather than what they are doing right
+  // now. `onlySelected` is the exception: it is restored only when there is
+  // still a selection to show, otherwise the page would come up empty with no
+  // obvious reason why.
+  function loadPrefs() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {};
+      if (raw.sort === "desc") sortDir = "desc";
+      if (Array.isArray(raw.offSources)) offSources = new Set(raw.offSources);
+      if (Array.isArray(raw.offStatus)) offStatus = new Set(raw.offStatus);
+      onlySelected = !!raw.onlySelected && selection.size > 0;
+    } catch (e) { /* the defaults above are a perfectly good page */ }
+  }
+
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        sort: sortDir,
+        offSources: Array.from(offSources),
+        offStatus: Array.from(offStatus),
+        onlySelected: onlySelected,
+      }));
+    } catch (e) { /* private mode / quota -- the in-memory state still works */ }
+  }
+
   // ── Data ─────────────────────────────────────────────────────────────────
   async function loadSources() {
     const resp = await fetch("/api/catalogue/sources");
     const data = await resp.json();
-    sources = (data.sources || []).map((s) => Object.assign({}, s, { color: colorOf(s.id) }));
+    sources = data.sources || [];
+    // Resolved after the list is in place: colorOf() reads it back out.
+    sources.forEach((s) => { s.color = colorOf(s.id); });
     renderChips();
     await loadAll(false);
   }
@@ -173,8 +228,10 @@
       if (!s.enabled) {
         btn.title = t("disabled", "Switched off in Settings.");
       } else {
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
         btn.addEventListener("click", () => {
           if (offSources.has(s.id)) offSources.delete(s.id); else offSources.add(s.id);
+          savePrefs();
           renderChips();
           viewport.scrollTop = 0;
           applyFilter();
@@ -184,20 +241,217 @@
     });
   }
 
+  // ── Status chips ─────────────────────────────────────────────────────────
+  // The three badges a row can carry, as filters. Hiding "In library" is what
+  // turns an eleven-thousand-row list into the few hundred titles you do NOT
+  // have yet, which is the state most bulk selections start from.
+  const STATUS_CHIPS = [
+    { id: "library", key: "in_library", fallback: "In library", cls: "cat-chip--library" },
+    { id: "queued", key: "queued", fallback: "Queued", cls: "cat-chip--queued" },
+    { id: "sync", key: "syncing", fallback: "Auto-Sync", cls: "cat-chip--sync" },
+  ];
+
+  function renderStatusChips() {
+    const host = el("catStatusChips");
+    if (!host) return;
+    host.innerHTML = "";
+    STATUS_CHIPS.forEach((s) => {
+      const on = !offStatus.has(s.id);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cat-chip cat-chip--status " + s.cls + (on ? " is-on" : "");
+      btn.textContent = t(s.key, s.fallback);
+      btn.title = t("chip_hint", "Show or hide these entries");
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+      btn.addEventListener("click", () => {
+        if (offStatus.has(s.id)) offStatus.delete(s.id); else offStatus.add(s.id);
+        savePrefs();
+        renderStatusChips();
+        viewport.scrollTop = 0;
+        applyFilter();
+      });
+      host.appendChild(btn);
+    });
+
+    const sel = document.createElement("button");
+    sel.type = "button";
+    sel.className = "cat-chip cat-chip--status cat-chip--only" + (onlySelected ? " is-on" : "");
+    sel.textContent = t("only_selection", "Only selection");
+    sel.title = t("only_selection_hint", "Show only what is marked");
+    sel.setAttribute("aria-pressed", onlySelected ? "true" : "false");
+    sel.addEventListener("click", () => {
+      onlySelected = !onlySelected;
+      savePrefs();
+      renderStatusChips();
+      viewport.scrollTop = 0;
+      applyFilter();
+    });
+    host.appendChild(sel);
+  }
+
+  function renderSortButton() {
+    const btn = el("catSort");
+    if (!btn) return;
+    btn.textContent = sortDir === "asc" ? t("sort_az", "A\u2013Z") : t("sort_za", "Z\u2013A");
+    btn.setAttribute("aria-label", t("sort_label", "Sort order"));
+  }
+
   // ── Filter ───────────────────────────────────────────────────────────────
   // Matches the visible title AND the site's own alternate titles, which the
   // catalogue carries for exactly this reason: "Shingeki no Kyojin" should
   // find "Attack on Titan".
   function applyFilter() {
     const term = (searchInput.value || "").trim().toLowerCase();
+    const hideLibrary = offStatus.has("library");
+    const hideQueued = offStatus.has("queued");
+    const hideSync = offStatus.has("sync");
+    // app.js owns the downloaded-folder list; on a page where it has not
+    // loaded, "in library" is simply unknown and must not hide anything.
+    const canCheckLibrary = hideLibrary && typeof window.isDownloaded === "function";
+
     filtered = entries.filter((e) => {
       if (offSources.has(e.source)) return false;
+      if (onlySelected && !selection.has(e.url)) return false;
+      if (hideQueued && queuedUrls.has(e.url)) return false;
+      if (hideSync && syncUrls.has(e.url)) return false;
+      if (canCheckLibrary && window.isDownloaded(e.title)) return false;
       if (!term) return true;
       return e.title.toLowerCase().indexOf(term) !== -1 ||
         (e.alt && e.alt.indexOf(term) !== -1);
     });
+    // `entries` is sorted A-Z once at load; reversing the filtered slice is
+    // cheaper and keeps the two orders guaranteed to be exact mirrors.
+    if (sortDir === "desc") filtered.reverse();
+    buildLetterIndex();
     updateCount();
     render();
+  }
+
+  // ── A-Z index ────────────────────────────────────────────────────────────
+  // Diacritics are folded, so "Ärzte" indexes under A rather than under "#" --
+  // otherwise the bucket that is supposed to hold the odd numeric title also
+  // collects every umlaut on the page.
+  function letterOf(title) {
+    let s = String(title || "").trim();
+    if (s.normalize) s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const ch = (s.charAt(0) || "").toUpperCase();
+    return (ch >= "A" && ch <= "Z") ? ch : "#";
+  }
+
+  function buildLetterIndex() {
+    letterFirst = {};
+    for (let i = 0; i < filtered.length; i++) {
+      const letter = letterOf(filtered[i].title);
+      if (letterFirst[letter] === undefined) letterFirst[letter] = i;
+    }
+    const alpha = [];
+    for (let c = 65; c <= 90; c++) alpha.push(String.fromCharCode(c));
+    // "#" leads in A-Z order and trails in Z-A order, matching where
+    // localeCompare actually puts those titles in the list.
+    railLetters = sortDir === "desc"
+      ? alpha.slice().reverse().concat(["#"])
+      : ["#"].concat(alpha);
+    renderRail();
+  }
+
+  function renderRail() {
+    if (!rail) return;
+    if (filtered.length < RAIL_MIN_ROWS) {
+      rail.innerHTML = "";
+      rail.hidden = true;
+      return;
+    }
+    rail.hidden = false;
+    rail.innerHTML = railLetters.map((letter) =>
+      '<span class="cat-rail-letter' +
+      (letterFirst[letter] === undefined ? " is-empty" : "") +
+      (letter === activeLetter ? " is-active" : "") +
+      '" data-letter="' + esc(letter) + '">' + esc(letter) + "</span>").join("");
+  }
+
+  function setActiveLetter(letter) {
+    if (letter === activeLetter) return;
+    activeLetter = letter;
+    if (!rail || rail.hidden) return;
+    const nodes = rail.querySelectorAll(".cat-rail-letter");
+    for (let i = 0; i < nodes.length; i++) {
+      nodes[i].classList.toggle("is-active",
+        nodes[i].getAttribute("data-letter") === letter);
+    }
+  }
+
+  // A letter with no entries still gets a hit target: dragging past it jumps
+  // to the next letter that DOES exist, so the rail never feels dead.
+  function jumpToLetter(letter) {
+    const start = railLetters.indexOf(letter);
+    if (start < 0) return;
+    for (let i = start; i < railLetters.length; i++) {
+      const target = letterFirst[railLetters[i]];
+      if (target !== undefined) {
+        viewport.scrollTop = target * rowHeight();
+        setActiveLetter(railLetters[i]);
+        return;
+      }
+    }
+  }
+
+  // Geometry rather than elementFromPoint: the letters are evenly distributed,
+  // and a finger dragging over the rail must resolve even when it strays a few
+  // pixels outside it.
+  function letterAtY(clientY) {
+    const rect = rail.getBoundingClientRect();
+    if (!rect.height || !railLetters.length) return "";
+    const rel = Math.min(rect.height - 1, Math.max(0, clientY - rect.top));
+    return railLetters[Math.floor(rel / (rect.height / railLetters.length))] || "";
+  }
+
+  function showRailBubble(letter) {
+    if (!railBubble || !rail) return;
+    // parentElement, NOT offsetParent: the bubble is display:none until it is
+    // shown, and a display:none element has no offsetParent -- reading it
+    // first meant the bubble never appeared on the first drag at all. Its
+    // parent (.cat-list-wrap) is the positioned ancestor either way.
+    const host = railBubble.parentElement;
+    if (!host) return;
+    railBubble.textContent = letter;
+    railBubble.hidden = false;          // measure it laid out, not hidden
+    const railRect = rail.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    const step = railRect.height / railLetters.length;
+    const idx = railLetters.indexOf(letter);
+    railBubble.style.top =
+      (railRect.top - hostRect.top + step * (idx + 0.5)) + "px";
+  }
+
+  function hideRailBubble() {
+    if (railBubble) railBubble.hidden = true;
+  }
+
+  if (rail) {
+    let dragging = false;
+    const handle = (clientY) => {
+      const letter = letterAtY(clientY);
+      if (!letter) return;
+      showRailBubble(letter);
+      jumpToLetter(letter);
+    };
+    rail.addEventListener("pointerdown", (ev) => {
+      dragging = true;
+      // Pointer capture is what makes the drag keep working once the finger
+      // leaves the 22px-wide rail, which on a phone it immediately does.
+      try { rail.setPointerCapture(ev.pointerId); } catch (e) { /* older engines */ }
+      handle(ev.clientY);
+      ev.preventDefault();
+    });
+    rail.addEventListener("pointermove", (ev) => {
+      if (!dragging) return;
+      handle(ev.clientY);
+      ev.preventDefault();
+    });
+    const endDrag = () => { dragging = false; hideRailBubble(); };
+    rail.addEventListener("pointerup", endDrag);
+    rail.addEventListener("pointercancel", endDrag);
+    rail.addEventListener("pointerleave", () => { if (!dragging) hideRailBubble(); });
   }
 
   function updateCount() {
@@ -207,6 +461,7 @@
     const n = selection.size;
     el("catSelCount").textContent = n + " " + t("selected", "selected");
     updateWarning(n);
+    syncActionsBar(n);
   }
 
   // The warning the user asked for: informative, never blocking. There is no
@@ -252,15 +507,32 @@
       if (syncUrls.has(url)) {
         badges += '<span class="cat-badge cat-badge--sync">' + esc(t("syncing", "Auto-Sync")) + "</span>";
       }
+      // Title and meta travel in one .cat-row-main box so a phone can stack
+      // them without the grid-area gymnastics the first version needed.
+      // The source label is not decoration: the list is merged, and a title
+      // both sites carry is two rows that are otherwise identical.
       html += '<div class="cat-row' + (isSel ? " is-selected" : "") + '" data-url="' + esc(url) + '">' +
         '<input type="checkbox" class="chb-main" ' + (isSel ? "checked" : "") + ' tabindex="-1">' +
+        '<div class="cat-row-main">' +
         '<span class="cat-row-title">' + esc(e.title) + "</span>" +
+        '<span class="cat-row-meta">' +
+        '<span class="cat-src"><span class="cat-src-dot" style="background:' +
+        esc(colorOf(e.source)) + '"></span>' +
+        '<span class="cat-src-label">' + esc(labelOf(e.source)) + "</span></span>" +
         '<span class="cat-badges">' + badges + "</span>" +
+        "</span></div>" +
         '<button type="button" class="cat-details-btn" data-details="' + esc(url) + '">' +
         esc(t("details", "Details")) + "</button></div>";
     }
     rowsHost.innerHTML = html;
     rowsHost.style.transform = "translateY(" + (start * h) + "px)";
+
+    // Keep the rail in step with where the list actually is. Rounded rather
+    // than floored: at a boundary the letter the user reads at the top of the
+    // viewport is the one that should light up.
+    const anchor = filtered[Math.min(filtered.length - 1,
+      Math.max(0, Math.round(viewport.scrollTop / h)))];
+    setActiveLetter(anchor ? letterOf(anchor.title) : "");
   }
 
   // ── Interaction ──────────────────────────────────────────────────────────
@@ -271,7 +543,13 @@
     viewport._raf = requestAnimationFrame(() => { viewport._raf = null; render(); });
   });
 
-  window.addEventListener("resize", () => render());
+  // Throttled like the scroll handler: a resize fires in a burst (and on
+  // phones on every address-bar nudge), and each render walks the slice.
+  let resizeRaf = null;
+  window.addEventListener("resize", () => {
+    if (resizeRaf) return;
+    resizeRaf = requestAnimationFrame(() => { resizeRaf = null; render(); });
+  });
 
   rowsHost.addEventListener("click", (ev) => {
     const detailsBtn = ev.target.closest("[data-details]");
@@ -289,6 +567,9 @@
     if (!url) return;
     if (selection.has(url)) selection.delete(url); else selection.add(url);
     saveSelection();
+    // With "Only selection" active the row that was just unmarked no longer
+    // belongs in the list at all, so this is a filter change, not a repaint.
+    if (onlySelected) { applyFilter(); return; }
     updateCount();
     render();
   }
@@ -310,11 +591,28 @@
   el("catClear").addEventListener("click", () => {
     selection.clear();
     saveSelection();
-    updateCount();
-    render();
+    // Leaving "Only selection" on here would answer "clear" with an empty
+    // list and no visible reason, so clearing switches it back off.
+    if (onlySelected) {
+      onlySelected = false;
+      savePrefs();
+      renderStatusChips();
+    }
+    applyFilter();
   });
 
   el("catRefresh").addEventListener("click", () => loadAll(true));
+
+  const sortBtn = el("catSort");
+  if (sortBtn) {
+    sortBtn.addEventListener("click", () => {
+      sortDir = sortDir === "asc" ? "desc" : "asc";
+      savePrefs();
+      renderSortButton();
+      viewport.scrollTop = 0;
+      applyFilter();
+    });
+  }
 
   // ── Details modal ────────────────────────────────────────────────────────
   // Deliberately its own modal rather than the start page's download modal:
@@ -325,7 +623,61 @@
   window.catCloseModal = function () {
     el("catModal").style.display = "none";
     modalUrl = "";
+    setModalBackdrop("");
+    // The list behind the modal has its own scroll container, so closing has
+    // to give the page AND the body their scrolling back.
+    document.body.classList.remove("cat-modal-open");
   };
+
+  // ── Modal backdrop ───────────────────────────────────────────────────────
+  // Two sources, in order: TMDB's landscape still when CineInfo can supply one
+  // (same option the download modal honours -- a user who switched backdrops
+  // off there does not want them here either), and the title's own poster,
+  // blurred, when it cannot. A 2:3 poster stretched across a 16:5 strip is
+  // unreadable sharp and perfectly good out of focus.
+  let backdropToken = 0;
+
+  function setModalBackdrop(url, isPoster) {
+    const node = el("catModalBackdrop");
+    const card = el("catModalCard");
+    if (!node || !card) return;
+    const token = ++backdropToken;
+    if (!url) {
+      node.style.backgroundImage = "";
+      node.classList.remove("is-on", "is-poster");
+      card.classList.remove("has-backdrop");
+      return;
+    }
+    // Preloaded: flipping the class before the image decodes shows an empty
+    // band first and then pops the picture in.
+    const img = new Image();
+    img.onload = function () {
+      if (token !== backdropToken) return;   // a newer modal won
+      node.style.backgroundImage = 'url("' + String(url).replace(/"/g, "%22") + '")';
+      node.classList.toggle("is-poster", !!isPoster);
+      node.classList.add("is-on");
+      card.classList.add("has-backdrop");
+    };
+    img.src = url;
+  }
+
+  // app.js owns the CineInfo settings and the image proxy; both are optional
+  // here, and without them the poster fallback still gives the modal a header.
+  async function upgradeBackdropFromTmdb(title, forUrl) {
+    const settings = window.cineinfoSettings;
+    if (!settings || !settings.tmdb_api_key) return;
+    if ((settings.show_backdrop == null ? "1" : settings.show_backdrop) === "0") return;
+    try {
+      const resp = await fetch("/api/tmdb/info?title=" + encodeURIComponent(title));
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (modalUrl !== forUrl) return;       // a different title was opened
+      const path = (data && data.raw_details && data.raw_details.backdrop_path) || "";
+      if (!path) return;
+      const full = "https://image.tmdb.org/t/p/w780" + path;
+      setModalBackdrop(typeof window.proxyImg === "function" ? window.proxyImg(full) : full, false);
+    } catch (e) { /* the poster fallback is already on screen */ }
+  }
 
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && el("catModal").style.display !== "none") window.catCloseModal();
@@ -338,9 +690,24 @@
 
   function syncModalToggle() {
     const btn = el("catModalToggle");
-    btn.textContent = selection.has(modalUrl)
+    const marked = selection.has(modalUrl);
+    // A leading check / plus makes the CURRENT state readable at a glance;
+    // the label alone reads as an instruction either way round.
+    btn.textContent = (marked ? "\u2713 " : "+ ") + (marked
       ? t("remove_sel", "Remove from selection")
-      : t("add_sel", "Add to selection");
+      : t("add_sel", "Add to selection"));
+    btn.classList.toggle("btn-primary", !marked);
+    btn.classList.toggle("cat-modal-toggle--on", marked);
+    btn.setAttribute("aria-pressed", marked ? "true" : "false");
+
+    // The action bar carries the running total, and it is behind the modal —
+    // without this, marking something here has no visible consequence at all.
+    const info = el("catModalSelInfo");
+    if (info) {
+      info.textContent = selection.size
+        ? selection.size + " " + t("selected", "selected")
+        : "";
+    }
   }
 
   async function openDetails(url) {
@@ -350,10 +717,14 @@
     const entry = entries.find((e) => e.url === url);
     el("catModalTitle").textContent = entry ? entry.title : "…";
     el("catModalSub").textContent = "";
-    el("catModalOpen").href = url;
+    setModalBackdrop("");
     body.innerHTML = '<div class="cat-empty">' + esc(t("loading", "Loading…")) + "</div>";
     syncModalToggle();
     modal.style.display = "flex";
+    // Without this the thirteen-thousand-row list keeps scrolling under the
+    // dialog, which on a phone means closing it lands you somewhere else
+    // entirely. The overlay carries overscroll-behavior for the same reason.
+    document.body.classList.add("cat-modal-open");
 
     try {
       const [seriesResp, seasonsResp] = await Promise.all([
@@ -371,20 +742,33 @@
 
   function renderDetails(series, seasons, url) {
     const body = el("catModalBody");
-    if (series && series.title) el("catModalTitle").textContent = series.title;
-    el("catModalSub").textContent = series && series.release_year ? series.release_year : "";
+    const title = (series && series.title) || "";
+    if (title) el("catModalTitle").textContent = title;
 
-    const poster = series && series.poster_url
-      ? '<img class="cat-modal-poster" src="' + esc(series.poster_url) + '" alt="" loading="lazy">'
-      : '<div class="cat-modal-poster" style="aspect-ratio:2/3"></div>';
+    // Year and source on one line under the title: on this page "which site
+    // is this row from" is a real question, and the modal used to drop it.
+    const entry = entries.find((e) => e.url === url);
+    const sub = [];
+    if (series && series.release_year) sub.push(String(series.release_year));
+    if (entry) sub.push(labelOf(entry.source));
+    el("catModalSub").textContent = sub.join(" · ");
+
+    const posterUrl = (series && series.poster_url) || "";
+    if (posterUrl) setModalBackdrop(posterUrl, true);
+    if (title) upgradeBackdropFromTmdb(title, url);
+
+    const poster = posterUrl
+      ? '<img class="cat-modal-poster" src="' + esc(posterUrl) + '" alt="" loading="lazy">'
+      : '<div class="cat-modal-poster"></div>';
     const genres = ((series && series.genres) || [])
       .map((g) => "<span>" + esc(g) + "</span>").join("");
+    const description = (series && series.description) || "";
 
     body.innerHTML =
       '<div class="cat-modal-body">' + poster +
       '<div class="cat-modal-info">' +
       (genres ? '<div class="cat-modal-genres">' + genres + "</div>" : "") +
-      "<p>" + esc((series && series.description) || "") + "</p>" +
+      (description ? "<p>" + esc(description) + "</p>" : "") +
       "</div></div>" +
       '<div class="cat-eplist" id="catEpList"></div>';
 
@@ -454,9 +838,11 @@
   async function submit(mode) {
     if (!selection.size) { toast(t("pick_one", "Mark something first.")); return; }
 
-    // Only the entries of the ACTIVE source travel: the server validates the
-    // urls against that source's catalogue, so a selection spanning two
-    // sources has to be submitted per source.
+    // Only urls that are in a LOADED catalogue travel. The server resolves
+    // each one against whichever catalogue holds it, so a selection spanning
+    // several sites goes in one request -- but a url left over in
+    // localStorage from a source that has since been switched off would only
+    // come back as "unknown", so it is dropped here.
     const known = new Set(entries.map((e) => e.url));
     const urls = Array.from(selection).filter((u) => known.has(u));
     if (!urls.length) { toast(t("pick_one", "Mark something first.")); return; }
@@ -517,13 +903,32 @@
     host.textContent = bits.join(" · ");
   }
 
+  // On a phone this opens the whole sheet, not just the option panel: the
+  // Auto-Sync button and the warning live behind it too (see .cat-actions
+  // .is-open in catalogue.css), which is what keeps the collapsed bar to a
+  // single line.
   const optionsToggle = el("catOptionsToggle");
   if (optionsToggle) {
     optionsToggle.addEventListener("click", () => {
-      const panel = el("catOptions");
-      const open = panel.classList.toggle("is-open");
+      const actions = el("catActions");
+      const open = el("catOptions").classList.toggle("is-open");
+      if (actions) actions.classList.toggle("is-open", open);
       optionsToggle.setAttribute("aria-expanded", open ? "true" : "false");
     });
+  }
+
+  // Empty selection means there is nothing the bar can do, so on a phone it
+  // gets out of the way entirely -- that is the whole point of the rebuild,
+  // and it is worth more than any amount of shrinking the controls.
+  function syncActionsBar(count) {
+    const actions = el("catActions");
+    if (!actions) return;
+    actions.classList.toggle("is-empty", count === 0);
+    if (count === 0 && actions.classList.contains("is-open")) {
+      actions.classList.remove("is-open");
+      el("catOptions").classList.remove("is-open");
+      if (optionsToggle) optionsToggle.setAttribute("aria-expanded", "false");
+    }
   }
   ["catLanguage", "catProvider", "catMissingOnly"].forEach((id) => {
     const node = el(id);
@@ -555,7 +960,9 @@
           clearInterval(jobPoll);
           jobPoll = null;
           el("catJobCancel").style.display = "none";
-          loadState().then(render);   // badges are stale now
+          // Badges are stale now -- and with a status chip off they decide
+          // which rows exist, so this is applyFilter(), not render().
+          loadState().then(applyFilter);
         }
       } catch (e) { /* transient — the next tick tries again */ }
     };
@@ -611,6 +1018,11 @@
   }
 
   loadSelection();
+  loadPrefs();              // after loadSelection: onlySelected depends on it
+  syncActionsBar(selection.size);   // before the first fetch, so the bar never
+                                    // flashes into view on an empty selection
+  renderStatusChips();
+  renderSortButton();
   updateOptionsSummary();
   loadLanguageGroups().then(updateOptionsSummary);
   loadState().then(loadSources);

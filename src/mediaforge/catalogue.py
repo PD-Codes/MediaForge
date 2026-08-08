@@ -160,14 +160,30 @@ BUILTIN_CATALOGUES = {
     "aniworld": {
         "label": "AniWorld",
         "kind": "anime",
+        "color": "#6aa9ff",
         "fetch": fetch_aniworld_catalogue,
     },
     "sto": {
         "label": "SerienStream",
         "kind": "series",
+        "color": "#8b7dff",
         "fetch": fetch_sto_catalogue,
     },
 }
+
+
+def _safe_color(value) -> str:
+    """Allow only a literal hex colour through -- the value is rendered into a
+    style attribute on the Catalogue page, and a module is not a trusted
+    source of CSS. Same rule and same reason as home_feed._safe_color()."""
+    if not value:
+        return ""
+    text = str(value).strip()
+    if len(text) not in (4, 7) or not text.startswith("#"):
+        return ""
+    if any(c not in "0123456789abcdefABCDEF" for c in text[1:]):
+        return ""
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +192,7 @@ BUILTIN_CATALOGUES = {
 _EXTRA_CATALOGUES: dict = {}  # item_id -> entry
 
 
-def register_catalogue(item_id, source_id, label, fetch, kind="series"):
+def register_catalogue(item_id, source_id, label, fetch, kind="series", color=None):
     """Add a full-catalogue source from a third-party module's ``register(app)``.
 
     - ``item_id``: the id already passed to ``register_thirdparty()``, so
@@ -192,6 +208,13 @@ def register_catalogue(item_id, source_id, label, fetch, kind="series"):
       titles, lower-cased); an empty string is fine.
     - ``kind``: ``"anime"`` or ``"series"``; only used for the label shown
       above the list.
+    - ``color``: optional CSS hex colour (e.g. ``"#7c5cff"``) for the dot next
+      to this source's name, on its filter chip and on every one of its rows.
+      The page merges all catalogues into ONE list, so that dot is what tells
+      a module's entries apart from a built-in's; without it the source falls
+      back to a shared neutral colour and looks like every other third party.
+      Only a literal ``#rgb``/``#rrggbb`` is accepted -- the value ends up in a
+      style attribute.
 
     The result is cached for :data:`CATALOGUE_TTL`, so ``fetch`` may do real
     network work -- and should, rather than holding a copy in the module.
@@ -210,6 +233,7 @@ def register_catalogue(item_id, source_id, label, fetch, kind="series"):
         "source_id": source_id,
         "label": str(label or source_id),
         "kind": kind if kind in ("anime", "series") else "series",
+        "color": _safe_color(color),
         "fetch": fetch,
     }
     logger.info("[Catalogue] Registered third-party catalogue: %s (%s)", source_id, item_id)

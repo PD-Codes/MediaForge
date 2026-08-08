@@ -44,6 +44,11 @@ def _catalogue_sources():
             "id": sid,
             "label": meta["label"],
             "kind": meta.get("kind", "series"),
+            # The merged list marks every row with its source's colour, so a
+            # third-party catalogue has to be able to supply one -- same as
+            # register_home_feed_source(). Already validated as a literal hex
+            # by catalogue._safe_color(); "" means "use the page's fallback".
+            "color": meta.get("color") or "",
             "enabled": bool(source_enabled(sid)),
             "cached": cached_catalogue(sid) is not None,
         })

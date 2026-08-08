@@ -73,12 +73,60 @@
 .cat-chip.is-off { opacity: .45; cursor: not-allowed; }
 .cat-chip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 
+/* Second toolbar row: what narrows the list, as opposed to what acts on it. */
+.cat-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.cat-filters .cat-count { margin-left: auto; }
+
+/* A hairline between the source group and the status group. Cheaper than a
+   second label row and enough to say "these are two different questions". */
+.cat-chip-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 22px;
+  background: var(--border);
+  flex: 0 0 auto;
+}
+
+/* Status chips carry the badge colour of the rows they control, so the link
+   between "hide Queued" and the blue Queued badge needs no explaining.
+   Off-state stays legible rather than dimmed to nothing: an active filter is
+   the single most important thing to notice on this page. */
+.cat-chip--status { color: var(--text-secondary); }
+.cat-chip--status.is-on { color: var(--text-primary); }
+.cat-chip--library.is-on { background: var(--success-bg); color: var(--success); border-color: var(--success); }
+.cat-chip--queued.is-on  { background: var(--info-bg);    color: var(--info);    border-color: var(--info); }
+.cat-chip--sync.is-on    { background: var(--accent-soft); color: var(--text-link); border-color: var(--border-focus); }
+.cat-chip--only.is-on    { background: var(--accent-soft); color: var(--text-link); border-color: var(--border-focus); }
+.cat-chip--status:not(.is-on) { text-decoration: line-through; opacity: .6; }
+.cat-chip--only:not(.is-on) { text-decoration: none; opacity: 1; }
+
+/* Reads as a control rather than a label, and stays the same width in both
+   directions so the toolbar does not shift when it is pressed. */
+.cat-sort-btn { min-width: 68px; text-align: center; font-variant-numeric: tabular-nums; }
+
 /* ── The list ────────────────────────────────────────────────────────────── */
 /* Virtualised: .cat-viewport scrolls, .cat-spacer carries the full height of
    every row and only the visible slice exists in the DOM. Without it the
    merged ~13k-row list freezes the browser on every keystroke. */
+/* Viewport and rail side by side. `position: relative` is what the drag
+   bubble positions itself against. */
+.cat-list-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
 .cat-viewport {
   position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 60vh;
   min-height: 320px;
   overflow-y: auto;
@@ -87,6 +135,62 @@
   border-radius: 14px;
   background: var(--bg-card);
 }
+
+/* ── A-Z rail ──────────────────────────────────────────────────────────────
+   An index for a list that is thirteen thousand rows long, where the scrollbar
+   thumb is three pixels tall and a flick moves you past four letters.
+   `touch-action: none` is not optional: without it the browser claims the drag
+   as a page scroll and the rail works for exactly one tap. */
+.cat-rail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  width: 22px;
+  padding: 6px 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  user-select: none;
+  touch-action: none;
+  cursor: pointer;
+}
+.cat-rail[hidden] { display: none; }
+
+.cat-rail-letter {
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-secondary);
+  pointer-events: none;      /* the rail itself resolves the position */
+}
+/* A letter no entry starts with is kept in place rather than dropped: the rail
+   only works as a mental map if A is always at the top and Z always at the
+   bottom, whatever the filter is doing. */
+.cat-rail-letter.is-empty { opacity: .3; }
+.cat-rail-letter.is-active {
+  color: var(--text-link);
+  transform: scale(1.35);
+}
+
+.cat-rail-bubble {
+  position: absolute;
+  right: 34px;
+  transform: translateY(-50%);
+  z-index: 6;
+  min-width: 40px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+}
+.cat-rail-bubble[hidden] { display: none; }
 
 .cat-spacer { position: relative; width: 100%; }
 .cat-rows { position: absolute; top: 0; left: 0; right: 0; }
@@ -105,9 +209,19 @@
 .cat-row:hover { background: rgba(255, 255, 255, 0.03); }
 .cat-row.is-selected { background: var(--accent-soft); }
 
-/* The title takes the space, everything else keeps its natural width -- the
-   first version let the title stretch to the full row, which is why the
-   Details button ended up marooned on the far right. */
+/* Title and meta share one box so a phone can stack them by flipping a single
+   flex-direction, instead of the grid-area overlap the first version used.
+   The title takes the space, everything else keeps its natural width -- letting
+   the title stretch to the full row is what marooned the Details button on the
+   far right. */
+.cat-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .cat-row-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -115,6 +229,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.92rem;
+}
+
+.cat-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .cat-src {
@@ -176,6 +297,7 @@
 
 /* Desktop has the room; the toggle only exists for phones. */
 .cat-options-toggle { display: none; }
+.cat-options-short { display: none; }
 
 .cat-field { display: flex; flex-direction: column; gap: 6px; min-width: 170px; }
 .cat-field label {
@@ -199,6 +321,7 @@
 
 .cat-warn {
   flex-basis: 100%;
+  order: 20;
   margin-top: 10px;
   padding: 9px 12px;
   border-radius: 10px;
@@ -223,11 +346,130 @@
   font-size: 0.83rem; color: var(--text-secondary);
 }
 
-/* ── Details modal ───────────────────────────────────────────────────────── */
+/* ── Details modal ─────────────────────────────────────────────────────────
+   Built after the download modal (see modals.css): a picture behind the header
+   that the title sits ON, rather than a grey dialog with a thumbnail in it. */
+
+/* Without this the 13k-row list keeps scrolling under the open dialog. The
+   overlay's own overscroll-behavior stops the chain once it hits its end;
+   this stops the document behind it moving at all. */
+body.cat-modal-open { overflow: hidden; }
+.cat-modal-overlay { overscroll-behavior: contain; }
+
+.cat-modal-card { position: relative; overflow: hidden; }
+
+.cat-modal-backdrop {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--cat-bd-h, 190px);
+  background-position: center 25%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  pointer-events: none;   /* decorative; the header lies on top of it */
+  z-index: 0;
+}
+.cat-modal-backdrop.is-on { display: block; }
+
+/* The poster fallback. A 2:3 cover stretched across a 16:5 strip is a squashed
+   picture; out of focus it reads as the title's own colour instead, which is
+   all this layer is for. Scaled past the edges so the blur has no border. */
+.cat-modal-backdrop.is-poster {
+  filter: blur(24px) saturate(1.3);
+  transform: scale(1.3);
+  background-position: center 40%;
+}
+
+/* The scrim is a pseudo-element on the CARD, not on the picture: a filter
+   applies to an element's pseudo children too, so a gradient inside the
+   backdrop would come out blurred along with it.
+
+   Inverted per theme for the same reason modals.css inverts its own — dark
+   text on a light theme needs a white veil; a black one makes it less
+   readable, not more. */
+.cat-modal-card {
+  --cat-bd-top: rgba(0, 0, 0, 0.72);
+  --cat-bd-mid: rgba(0, 0, 0, 0.68);
+  --cat-bd-low: rgba(0, 0, 0, 0.6);
+}
+[data-theme="light"] .cat-modal-card {
+  --cat-bd-top: rgba(255, 255, 255, 0.45);
+  --cat-bd-mid: rgba(255, 255, 255, 0.8);
+  --cat-bd-low: rgba(255, 255, 255, 0.92);
+}
+
+.cat-modal-card.has-backdrop::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--cat-bd-h, 190px);
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg,
+    var(--cat-bd-top) 0%,
+    var(--cat-bd-mid) 45%,
+    var(--cat-bd-low) 76%,
+    var(--bg-elevated) 100%);
+}
+
+/* Everything the user reads or presses goes above both layers. */
+.cat-modal-header,
+.cat-modal-card .card-body,
+.cat-modal-footer { position: relative; z-index: 2; }
+
+.cat-modal-card.has-backdrop .card-body { background: transparent; }
+/* The line under the header would cut the picture in half. */
+.cat-modal-card.has-backdrop .cat-modal-header { border-bottom: none; padding-top: 26px; }
+.cat-modal-card.has-backdrop .card-title { font-size: 1.4rem; letter-spacing: -0.01em; }
+.cat-modal-card.has-backdrop .stats-modal-sub { color: var(--text-secondary); }
+/* Over a bright frame the close button needs its own ground, and the glyph is
+   pinned light because that ground is dark in BOTH themes. */
+.cat-modal-card.has-backdrop .modal-close {
+  background: rgba(11, 14, 19, 0.55);
+  backdrop-filter: blur(6px);
+  color: #f0f0f8;
+}
+
+.cat-modal-scroll { overflow-y: auto; overscroll-behavior: contain; }
+
+.cat-modal-footer {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Pushes the two buttons to opposite ends and carries the running total in
+   between -- the action bar that normally shows it is behind the modal. */
+.cat-modal-selinfo {
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+/* Marked: the button stops being the call to action and becomes a state you
+   can undo, so it drops the filled style and says so with a check. */
+.cat-modal-toggle--on {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success);
+}
+.cat-modal-toggle--on:hover { filter: brightness(1.08); }
+
 .cat-modal-body { display: flex; gap: 18px; flex-wrap: wrap; }
 .cat-modal-poster {
   flex: 0 0 160px; width: 160px; border-radius: 10px;
   background: var(--input-bg); aspect-ratio: 2 / 3; object-fit: cover;
+}
+.cat-modal-card.has-backdrop .cat-modal-poster {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 .cat-modal-info { flex: 1 1 260px; min-width: 0; color: var(--text-secondary); font-size: 0.9rem; }
 .cat-modal-genres { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
@@ -281,27 +523,44 @@
 
   .cat-toolbar { gap: 8px; }
   .cat-search { flex-basis: 100%; font-size: 16px; /* stops iOS zooming on focus */ }
-  .cat-chips { width: 100%; }
+  .cat-chips { flex: 1 1 100%; }
   .cat-chip { flex: 1 1 auto; justify-content: center; padding: 9px 12px; }
-  .cat-count { width: 100%; order: 9; }
+  /* A 1px vertical line between two stacked rows of chips says nothing. */
+  .cat-chip-sep { display: none; }
+  .cat-filters { gap: 8px; margin-bottom: 10px; }
+  .cat-filters .cat-count { margin-left: 0; width: 100%; }
+  .cat-count { width: 100%; }
   .cat-tool-btn { flex: 1 1 auto; padding: 10px 12px; }
+  .cat-sort-btn { flex: 0 0 auto; }
 
   .cat-viewport { height: 52vh; border-radius: 12px; }
 
+  /* Wider rail and bigger letters: this is the one control on the page that is
+     driven by a fingertip rather than a cursor. */
+  .cat-list-wrap { gap: 4px; }
+  .cat-rail { width: 26px; }
+  .cat-rail-letter { font-size: 0.66rem; }
+  .cat-rail-bubble { right: 38px; min-width: 48px; font-size: 1.15rem; padding: 8px 12px; }
+
+  /* Plain flex, stacked: title on top, source and badges under it. The first
+     version stacked them by putting three elements in one grid area and
+     pushing two of them down with padding-top: 30px — which broke the moment a
+     title wrapped to its second line and the meta row landed on top of it. */
   .cat-row {
     height: auto;
     min-height: 64px;
     align-items: center;
     padding: 9px 12px;
-    /* checkbox | text block | details, with the text block wrapping inside */
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas: "check title action";
-    column-gap: 10px;
+    gap: 10px;
   }
-  .cat-row > .chb-main { grid-area: check; width: 22px; height: 22px; }
+  .cat-row > .chb-main { flex: 0 0 auto; width: 22px; height: 22px; }
+  .cat-row-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
   .cat-row-title {
-    grid-area: title;
+    width: 100%;
     white-space: normal;
     /* Two lines max — a 90-character anime title must not make one row as
        tall as the viewport. */
@@ -311,77 +570,163 @@
     overflow: hidden;
     line-height: 1.25;
   }
-  /* Source and badges move under the title instead of competing with it. */
-  .cat-src, .cat-badges {
-    grid-area: title;
-    align-self: end;
-    margin-top: 2px;
-  }
-  .cat-src { justify-self: start; padding-top: 30px; }
-  .cat-badges { justify-self: end; padding-top: 30px; }
-  .cat-details-btn { grid-area: action; padding: 9px 12px; }
+  .cat-row-meta { width: 100%; flex-wrap: wrap; gap: 6px; }
+  .cat-badges { margin-left: auto; }
+  /* 44px is the smallest target Apple and Google both still call reliable. */
+  .cat-details-btn { flex: 0 0 auto; padding: 11px 14px; min-height: 44px; }
 
+  /* ── The action bar, rebuilt ────────────────────────────────────────────
+     It used to be a permanent card holding a count, three option controls and
+     two full-width buttons — roughly a third of a phone screen, on the one
+     page where the list IS the content, and it was there even with nothing
+     selected and therefore nothing it could do.
+
+     Two changes. It is GONE until something is marked, and marked it is one
+     line: the count, the primary action, and a toggle. Language, hoster, the
+     missing-episodes switch, Auto-Sync and the warning all live behind that
+     toggle, whose label states the current option values so collapsing them
+     hides nothing. */
   .cat-actions {
-    margin-top: 12px;
-    padding: 14px;
+    margin-top: 10px;
+    padding: 8px 10px;
     /* The bar you came to press stops scrolling away. */
     position: sticky;
     bottom: 0;
     z-index: 5;
     box-shadow: var(--shadow-lg);
+    /* Clears the home indicator on a notched phone. */
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   }
-  .cat-actions-row { gap: 10px; }
+  /* Nothing marked, nothing to do, no bar. This is the whole point. */
+  .cat-actions.is-empty { display: none; }
 
-  /* Language, hoster and the missing-episodes switch used to sit here as
-     three full-width controls and ate half the screen -- on the one page
-     where the list IS the content. They are set once and then left alone, so
-     they collapse behind a line that states their current values, and the bar
-     keeps only what you press: the count and the two actions. */
+  .cat-actions-row {
+    gap: 8px;
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+
   .cat-options {
     display: none;
+    order: 10;
     flex: 1 1 100%;
     flex-direction: column;
     gap: 10px;
-    margin-top: 2px;
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
   }
   .cat-options.is-open { display: flex; }
   .cat-field { flex: 1 1 100%; min-width: 0; }
   .cat-field select { font-size: 16px; }
 
+  /* Collapsed the toggle is a 44px square that says "…"; the option summary
+     it carries is only readable once there is a line to put it on, so it is
+     revealed with the sheet rather than squeezed into the bar. */
   .cat-options-toggle {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    flex: 1 1 100%;
-    padding: 9px 12px;
+    justify-content: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    order: 5;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 10px;
     border-radius: 10px;
-    border: 1px dashed var(--border);
+    border: 1px solid var(--border);
     background: transparent;
     color: var(--text-secondary);
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     text-align: left;
     cursor: pointer;
   }
   .cat-options-toggle:active { background: var(--accent-soft); }
+  .cat-options-toggle #catOptionsSummary { display: none; }
+  .cat-options-short { display: inline; font-weight: 600; }
   .cat-options-caret { transition: transform .15s ease; }
   .cat-options-toggle[aria-expanded="true"] .cat-options-caret { transform: rotate(180deg); }
 
-  .cat-selcount { flex: 0 0 auto; }
+  /* Open: the toggle grows into a full-width line that shows what is set. */
+  .cat-actions.is-open .cat-actions-row { flex-wrap: wrap; }
+  .cat-actions.is-open .cat-options-toggle {
+    flex: 1 1 100%;
+    order: 10;
+    justify-content: space-between;
+    margin-top: 8px;
+  }
+  .cat-actions.is-open .cat-options-toggle #catOptionsSummary { display: inline; }
+  .cat-actions.is-open .cat-options-short { display: none; }
+  .cat-actions.is-open .cat-options { order: 11; }
+
+  .cat-selcount {
+    flex: 0 0 auto;
+    font-size: 0.95rem;
+    white-space: nowrap;
+  }
   .cat-actions-row .settings-checkbox-row { flex: 1 1 100%; }
-  .cat-actions-row .btn,
-  .cat-actions-row .cat-tool-btn { flex: 1 1 calc(50% - 5px); padding: 12px; }
+
+  /* Collapsed: "Add to queue" takes the room that is left, Auto-Sync and the
+     warning are behind the toggle. Auto-Sync is the rarer of the two and the
+     one that keeps downloading forever, so it is the one that earns a tap. */
+  .cat-actions-row .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: 11px 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #catSyncBtn { display: none; }
+  .cat-warn { display: none; }
+  .cat-actions.is-open #catSyncBtn {
+    display: block;
+    order: 12;
+    flex: 1 1 100%;
+    min-height: 44px;
+    margin-top: 8px;
+  }
+  .cat-actions.is-open .cat-warn { display: block; order: 13; }
 
   .cat-job { margin-top: 12px; padding: 14px; }
 
   .cat-modal-body { gap: 12px; }
   .cat-modal-poster { flex-basis: 104px; width: 104px; }
   .cat-eplist { max-height: 46vh; }
+
+  /* Stacked top to bottom: the running total, then the mark button (what
+     people came for), then Close. Explicit orders rather than column-reverse,
+     which puts them in the opposite sequence to the one you would guess. */
+  .cat-modal-footer { flex-direction: column; align-items: stretch; gap: 8px; }
+  .cat-modal-footer .btn,
+  .cat-modal-footer .cat-tool-btn { width: 100%; min-height: 44px; }
+  .cat-modal-selinfo { order: 1; text-align: center; }
+  .cat-modal-footer #catModalToggle { order: 2; }
+  .cat-modal-footer .cat-tool-btn { order: 3; }
+
+  /* Set on the card so the backdrop AND its scrim pseudo-element inherit it. */
+  .cat-modal-card { --cat-bd-h: 150px; }
 }
 
 /* Very narrow phones: one control per line is the honest answer below this. */
 @media (max-width: 420px) {
   .cat-actions-row .btn,
   .cat-actions-row .cat-tool-btn { flex-basis: 100%; }
-  .cat-src span { display: none; }
+  /* Only the WORD goes; the coloured dot stays, because it is the whole
+     reason a merged list is readable at all and it costs seven pixels. */
+  .cat-src-label { display: none; }
+  .cat-rail { width: 24px; }
+  .cat-rail-letter { font-size: 0.6rem; }
+}
+
+/* Coarse pointers get a rail they can actually hit, regardless of width. */
+@media (pointer: coarse) {
+  .cat-rail { width: 28px; }
+}
+
+/* The active letter scales up; honour a user who asked for less of that. */
+@media (prefers-reduced-motion: reduce) {
+  .cat-rail-letter.is-active { transform: none; text-decoration: underline; }
+  .cat-job-fill { transition: none; }
 }

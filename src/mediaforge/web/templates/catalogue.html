@@ -15,35 +15,65 @@
     </div>
   </div>
 
+  {# Two rows on purpose: what you PRESS on the first, what you NARROW BY on
+     the second. With source chips, status chips, a count and four buttons on
+     one line the wrap order changed with every source a user enabled. #}
   <div class="cat-toolbar">
     <input type="search" class="cat-search" id="catSearch"
            placeholder="{{ _('Filter by title… (alternate titles are searched too)') }}"
            autocomplete="off" spellcheck="false">
-    {# The list is merged; these only narrow it down. #}
-    <div class="cat-chips" id="catSourceChips"></div>
-    <span class="cat-count" id="catCount"></span>
+    <button type="button" class="cat-tool-btn cat-sort-btn" id="catSort"
+            title="{{ _('Switch between A–Z and Z–A') }}">A–Z</button>
     <button type="button" class="cat-tool-btn" id="catSelectAll">{{ _('Select all shown') }}</button>
     <button type="button" class="cat-tool-btn" id="catClear">{{ _('Clear selection') }}</button>
     <button type="button" class="cat-tool-btn" id="catRefresh"
             title="{{ _('Refetch the lists from the sites') }}">{{ _('Refresh') }}</button>
   </div>
 
-  <div class="cat-viewport" id="catViewport">
-    <div class="cat-spacer" id="catSpacer">
-      <div class="cat-rows" id="catRows"></div>
-    </div>
+  <div class="cat-filters">
+    {# The list is merged; these only narrow it down. Sources on the left,
+       the three row badges as filters on the right — same chip, same "on by
+       default, click to hide" rule for both groups. #}
+    <div class="cat-chips" id="catSourceChips"></div>
+    <span class="cat-chip-sep" aria-hidden="true"></span>
+    <div class="cat-chips" id="catStatusChips"></div>
+    <span class="cat-count" id="catCount"></span>
   </div>
 
-  <div class="cat-actions">
+  {# The rail lives beside the viewport rather than inside it: overlaying the
+     scrollbar means the two fight for the same 16px on desktop, and a finger
+     resting on the rail must not also scroll the list underneath. #}
+  <div class="cat-list-wrap">
+    <div class="cat-viewport" id="catViewport">
+      <div class="cat-spacer" id="catSpacer">
+        <div class="cat-rows" id="catRows"></div>
+      </div>
+    </div>
+    <div class="cat-rail" id="catRail" role="navigation"
+         aria-label="{{ _('Jump to letter') }}" hidden></div>
+    {# Shown while dragging the rail — on a phone the finger covers the letter
+       it is on, so the current one is repeated to its left. #}
+    <div class="cat-rail-bubble" id="catRailBubble" aria-hidden="true" hidden></div>
+  </div>
+
+  {# The bar is only in the way when there is nothing to act on, so on a phone
+     it is not there at all until something is marked (see .is-empty in
+     catalogue.css). Collapsed it is one line: the count, the primary action
+     and a toggle; language, hoster, the missing-episodes switch, Auto-Sync
+     and the warning all live behind that toggle. Desktop has the room and
+     shows the lot. #}
+  <div class="cat-actions" id="catActions">
     <div class="cat-actions-row">
       <span class="cat-selcount" id="catSelCount">0 <small>{{ _('selected') }}</small></span>
 
-      {# Phone only: the three option controls take half the screen on a
-         phone, and they are set once and then left alone -- so they collapse
-         behind a one-line summary of their own values and the bar keeps the
-         part you actually press. Hidden on desktop, where there is room. #}
+      {# Phone only: opens the sheet. The label carries the current option
+         values, so collapsing them never hides what is set. #}
       <button type="button" class="cat-options-toggle" id="catOptionsToggle"
               aria-expanded="false" aria-controls="catOptions">
+        {# Collapsed the bar has room for a word, not for three option values,
+           and a bare caret says nothing about what it opens. The summary takes
+           over as soon as the sheet is open. #}
+        <span class="cat-options-short">{{ _('Options') }}</span>
         <span id="catOptionsSummary"></span>
         <span class="cat-options-caret" aria-hidden="true">▾</span>
       </button>
@@ -102,12 +132,21 @@
 {# Details — cover, metadata and the episode list for ONE series. Opening it
    never touches the selection: that is the whole point of a separate modal
    here rather than the start page's download modal, which owns its own
-   language/provider state and would fight with the bar above. #}
-<div class="modal-overlay stats-modal-overlay" id="catModal" style="display:none"
+   language/provider state and would fight with the bar above.
+
+   Styled after the download modal: a backdrop image behind the header that
+   the title and the poster sit ON, rather than a plain grey dialog. Same
+   rules as there — the picture is TMDB's when CineInfo can supply one and the
+   blurred poster otherwise, and without either the modal looks exactly like
+   it did before the feature existed.
+
+   There is deliberately no link out to the source site. #}
+<div class="modal-overlay stats-modal-overlay cat-modal-overlay" id="catModal" style="display:none"
   onclick="if(event.target===this)catCloseModal()" role="dialog" aria-modal="true"
   aria-labelledby="catModalTitle">
-  <div class="card stats-modal-card loaded" style="max-width:840px;">
-    <div class="card-header stats-modal-header">
+  <div class="card stats-modal-card cat-modal-card loaded" id="catModalCard" style="max-width:840px;">
+    <div class="cat-modal-backdrop" id="catModalBackdrop" aria-hidden="true"></div>
+    <div class="card-header stats-modal-header cat-modal-header">
       <div class="stats-modal-heading">
         <div>
           <h2 class="card-title" id="catModalTitle">…</h2>
@@ -121,11 +160,17 @@
         </svg>
       </button>
     </div>
-    <div class="card-body" id="catModalBody"></div>
-    <div class="card-footer" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-      <button type="button" class="btn btn-primary" id="catModalToggle"></button>
-      <span style="flex:1"></span>
-      <a href="#" target="_blank" rel="noopener noreferrer" class="cat-tool-btn" id="catModalOpen">{{ _('Open on the site') }}</a>
+    <div class="card-body cat-modal-scroll" id="catModalBody"></div>
+    {# A single button that does NOT close the dialog is the whole confusion:
+       people press it expecting to be done and nothing visibly happens. So:
+       an explicit Close on the left, the running selection total in the
+       middle (the action bar that normally shows it is behind the modal), and
+       the mark/unmark button on the right, which now states which of the two
+       it currently is. #}
+    <div class="card-footer cat-modal-footer">
+      <button type="button" class="cat-tool-btn" onclick="catCloseModal()">{{ _('Close') }}</button>
+      <span class="cat-modal-selinfo" id="catModalSelInfo" aria-live="polite"></span>
+      <button type="button" class="btn btn-primary" id="catModalToggle" aria-pressed="false"></button>
     </div>
   </div>
 </div>
@@ -162,6 +207,14 @@
     groups: {{ _('Language groups')|tojson }},
     only_missing_short: {{ _('only missing')|tojson }},
     all_episodes_short: {{ _('all episodes')|tojson }},
+    {# Status chips and the sort toggle are built in JS, so their labels have
+       to travel through here like everything else on this page. #}
+    chip_hint: {{ _('Show or hide these entries')|tojson }},
+    only_selection: {{ _('Only selection')|tojson }},
+    only_selection_hint: {{ _('Show only what is marked')|tojson }},
+    sort_az: {{ _('A–Z')|tojson }},
+    sort_za: {{ _('Z–A')|tojson }},
+    sort_label: {{ _('Sort order')|tojson }},
     {# The warning the user asked for: shown before submitting, never blocking.
        No %(n)s placeholder -- Flask-Babel's gettext() runs its own %
        interpolation over the result and would raise KeyError. The count is
