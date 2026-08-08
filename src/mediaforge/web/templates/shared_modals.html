@@ -20,7 +20,15 @@
     </button>
     <div class="ani-search-container">
       <h2 id="aniSearchTitle">{{ _('Searching...') }}</h2>
-      <div id="aniSearchSpinner" class="spinner" style="display:none;">{{ _('Searching streams on AniWorld, SerienStream & FilmPalast...') }}</div>
+      {# Source-agnostic on purpose. It used to name AniWorld, SerienStream and
+         FilmPalast, which stopped being true the moment the lookup started
+         fanning out over every enabled source -- and a message naming three
+         sites is exactly what makes a user think the fourth one they switched
+         on is being ignored. static/app.js's runAniSearch() overwrites this
+         with the sources it is actually asking, and this string is what shows
+         until it knows. #}
+      <div id="aniSearchSpinner" class="spinner" style="display:none;"
+           data-default-text="{{ _('Searching streams...') }}">{{ _('Searching streams...') }}</div>
       <div id="aniSearchResults" class="results-poster-grid"></div>
     </div>
   </div>

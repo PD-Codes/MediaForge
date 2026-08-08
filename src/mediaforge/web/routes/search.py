@@ -29,8 +29,11 @@ from ...languages import label_for_pair
 # One shared rule for "does this folder hold this title?". It used to be an
 # inline folder.name.lower().startswith(title) in each of the three branches
 # below, which is why "already downloaded" depended on WHICH provider you
-# arrived from -- see titles_match()'s docstring.
-from ...models.common.common import titles_match
+# arrived from -- see titles_match()'s docstring. folder_holds_title() adds the
+# alias index on top, which is what catches a provider that calls the same show
+# by a different name entirely (web/library_aliases.py).
+from ..library_aliases import alias_index as _alias_index
+from ..library_aliases import folder_holds_title as _folder_holds
 from ..lang_folders import LANG_FOLDERS
 from ..episode_marker import EPISODE_MARKER_RE
 from ..queue_worker import _hanime_enabled
@@ -1476,6 +1479,10 @@ def register_search_routes(app):
                 downloaded_eps = set()
                 try:
                     title_clean = (series.title_cleaned or "").lower()
+                    # Built once per request, not per folder: alias_index() is a
+                    # table read, and this sits directly outside a loop over
+                    # every folder in every scan root.
+                    _aliases = _alias_index()
                     if title_clean:
                         raw = os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")
                         dl_base = _P(raw).expanduser() if raw else (_P.home() / "Downloads")
@@ -1497,7 +1504,7 @@ def register_search_routes(app):
                             if not base.is_dir():
                                 continue
                             for folder in base.iterdir():
-                                if folder.is_dir() and titles_match(folder.name, title_clean):
+                                if folder.is_dir() and _folder_holds(folder.name, title_clean, _aliases):
                                     for f in folder.rglob("*"):
                                         if f.is_file():
                                             mm = ep_re.search(f.name)
@@ -1535,6 +1542,10 @@ def register_search_routes(app):
                 downloaded_eps = set()
                 try:
                     title_clean = (series.title_cleaned or "").lower()
+                    # Built once per request, not per folder: alias_index() is a
+                    # table read, and this sits directly outside a loop over
+                    # every folder in every scan root.
+                    _aliases = _alias_index()
                     if title_clean:
                         raw = os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")
                         dl_base = _P(raw).expanduser() if raw else (_P.home() / "Downloads")
@@ -1557,7 +1568,7 @@ def register_search_routes(app):
                             if not base.is_dir():
                                 continue
                             for folder in base.iterdir():
-                                if folder.is_dir() and titles_match(folder.name, title_clean):
+                                if folder.is_dir() and _folder_holds(folder.name, title_clean, _aliases):
                                     for f in folder.rglob("*"):
                                         if f.is_file():
                                             mm = ep_re.search(f.name)
@@ -1629,6 +1640,7 @@ def register_search_routes(app):
             # than making the common case a list.
             ep_folders = {}
             try:
+                _aliases = _alias_index()      # once per request, see above
                 title_clean = ""
                 if series:
                     title_clean = (
@@ -1649,7 +1661,7 @@ def register_search_routes(app):
                         if not base.is_dir():
                             continue
                         for folder in base.iterdir():
-                            if not folder.is_dir() or not titles_match(folder.name, title_clean):
+                            if not folder.is_dir() or not _folder_holds(folder.name, title_clean, _aliases):
                                 continue
                             for f in folder.rglob("*"):
                                 if f.is_file():

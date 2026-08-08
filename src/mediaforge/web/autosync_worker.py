@@ -27,7 +27,8 @@ from .language_groups import (
 )
 from .queue_worker import _dl_lock
 from .episode_marker import EPISODE_MARKER_RE
-from ..models.common.common import titles_match
+from .library_aliases import alias_index as _alias_index
+from .library_aliases import folder_holds_title as _folder_holds
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
 from .runtime_state import (
@@ -663,6 +664,10 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
         # Shared with the library scanner and the download dialog -- a local
         # copy here is how the two drifted apart in the first place.
         ep_re = EPISODE_MARKER_RE
+        # One table read per sync run. _scan_base() below is called once per
+        # scan root and loops every folder inside it, so resolving the index
+        # inside that loop would be a query per folder per root.
+        _alias_cache = _alias_index()
 
         # mtime-based scan cache: {base_path_str -> (mtime, {(s, e): [paths]})}
         # Avoids re-scanning the same folder multiple times within one sync run.
@@ -686,11 +691,14 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             eps: dict = {}
             if base.is_dir() and title_clean:
                 for folder in base.iterdir():
-                    # Same rule the download dialog uses (titles_match): a
-                    # plain startswith() here meant a job created from one
-                    # provider could not see episodes a different provider had
-                    # already written, and re-downloaded the lot.
-                    if not folder.is_dir() or not titles_match(folder.name, title_clean):
+                    # Same rule the download dialog uses: a plain startswith()
+                    # here meant a job created from one provider could not see
+                    # episodes a different provider had already written, and
+                    # re-downloaded the lot. folder_holds_title() adds the alias
+                    # index, which covers a provider that calls the show by a
+                    # different name entirely.
+                    if not folder.is_dir() or not _folder_holds(folder.name, title_clean,
+                                                                _alias_cache):
                         continue
                     for f in folder.rglob("*"):
                         if f.is_file():

@@ -8708,6 +8708,22 @@ msgid ""
 "later on their own profile."
 msgstr ""
 
+#: mediaforge/web/templates/index.html:0
+msgid "Not interested — hide this series"
+msgstr ""
+
+#: mediaforge/web/templates/index.html:0
+msgid "Hidden. You can bring it back on the statistics page."
+msgstr ""
+
+#: mediaforge/web/templates/index.html:0
+msgid "Could not hide this series."
+msgstr ""
+
+#: mediaforge/web/templates/shared_modals.html:0
+msgid "Searching streams..."
+msgstr ""
+
 #~ msgid "Clear entries"
 #~ msgstr ""
 

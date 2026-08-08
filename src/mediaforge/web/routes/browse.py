@@ -410,6 +410,57 @@ def ensure_prefetch_worker():
     logger.info("[Prefetch] Background worker started (interval=%d min)", _PREFETCH_INTERVAL // 60)
 
 
+def downloaded_folder_names() -> list:
+    """Every folder name under the download root and every custom path.
+
+    Sorted and deduplicated, names only -- the same answer
+    /api/downloaded-folders serves. A module-level function rather than inline
+    in the route because web/library_aliases.py needs the identical list: two
+    answers to "what is on disk" would let the alias table describe folders the
+    badge check never sees, and vice versa.
+
+    Non-recursive by design: a series folder is a direct child of a root (or of
+    a language folder under it), and walking deeper would list season folders as
+    if they were titles.
+    """
+    from pathlib import Path
+
+    raw = os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")
+    if raw:
+        p = Path(raw).expanduser()
+        if not p.is_absolute():
+            p = Path.home() / p
+        dl_path = p
+    else:
+        dl_path = Path.home() / "Downloads"
+
+    lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
+
+    scan_roots = [dl_path]
+    for cp in get_custom_paths():
+        cp_path = Path(cp["path"]).expanduser()
+        if not cp_path.is_absolute():
+            cp_path = Path.home() / cp_path
+        scan_roots.append(cp_path)
+
+    folders = set()
+    for root in scan_roots:
+        bases = [root / lf for lf in LANG_FOLDERS] if lang_sep else [root]
+        for base in bases:
+            try:
+                if not base.is_dir():
+                    continue
+                for entry in base.iterdir():
+                    if entry.is_dir():
+                        folders.add(entry.name)
+            except OSError:
+                # An unreadable or vanished root is not an error worth failing
+                # the whole listing over -- the other roots are still a useful
+                # answer, and this runs on a background thread too.
+                continue
+    return sorted(folders)
+
+
 # ── Home feed (the new home page) ────────────────────────────────────────
 # The feed page used to fetch all eleven browse lists separately and assemble
 # the rows in JavaScript. That cost eleven round-trips per visit and, worse,
@@ -1541,46 +1592,28 @@ def register_browse_routes(app):
         custom paths), used to flag already-downloaded titles in browse
         views. GET /api/downloaded-folders.
 
+        Also returns `aliases`: {loose_title_key: folder} for every alternative
+        name a folder is known by (web/library_aliases.py). Folder names only
+        ever answer to the spelling of whichever provider downloaded them, so
+        without this a title reached from a source that calls it something else
+        reports as missing -- see library_aliases' module docstring. Read from
+        the table, never resolved here: resolving is a TMDB lookup per folder
+        and has no business happening inside a page load.
+
         Called from static/app.js's `loadDownloadedFolders()`."""
-        from pathlib import Path
         # If MediaScan is active and using a media-server source,
         # signal the frontend to skip the folder check entirely.
         ms_enabled = get_setting("mediascan_enabled", "0") == "1"
         ms_source  = get_setting("mediascan_source",  "") or ""
         if ms_enabled and ms_source and ms_source != "folders":
-            return jsonify({"folders": [], "source": "mediascan", "mediascan_source": ms_source})
+            return jsonify({"folders": [], "aliases": {}, "source": "mediascan",
+                            "mediascan_source": ms_source})
 
-
-        raw = os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")
-        if raw:
-            p = Path(raw).expanduser()
-            if not p.is_absolute():
-                p = Path.home() / p
-            dl_path = p
-        else:
-            dl_path = Path.home() / "Downloads"
-
-        lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
-        lang_folders = LANG_FOLDERS
-
-        # Collect all paths to scan (default + custom)
-        scan_roots = [dl_path]
-        for cp in get_custom_paths():
-            cp_path = Path(cp["path"]).expanduser()
-            if not cp_path.is_absolute():
-                cp_path = Path.home() / cp_path
-            scan_roots.append(cp_path)
-
-        folders = set()
-        for root in scan_roots:
-            if lang_sep:
-                bases = [root / lf for lf in lang_folders]
-            else:
-                bases = [root]
-            for base in bases:
-                if not base.is_dir():
-                    continue
-                for entry in base.iterdir():
-                    if entry.is_dir():
-                        folders.add(entry.name)
-        return jsonify({"folders": sorted(folders)})
+        folders = downloaded_folder_names()
+        aliases = {}
+        try:
+            from ..library_aliases import alias_index
+            aliases = alias_index()
+        except Exception:
+            logger.debug("[Browse] Alias index unavailable", exc_info=True)
+        return jsonify({"folders": folders, "aliases": aliases})

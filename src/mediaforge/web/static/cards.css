@@ -435,8 +435,12 @@
   display: block;
 }
 
+/* position:relative so .browse-src-pill can anchor to the TOP edge of this
+   block -- which is the bottom edge of the poster, the only stable landmark
+   on the card. See .browse-src-pill for what went wrong without it. */
 .browse-info {
   padding: 9px 10px 11px;
+  position: relative;
 }
 
 .browse-title {
@@ -815,9 +819,19 @@ body.player-open #playerOverlay * {
    several sources and the heading no longer says which one a poster is from.
    Lives here next to .browse-card so module widgets that render browse cards
    can use the same label. */
+/* Anchored 8px above the TOP of .browse-info, i.e. 8px inside the poster's
+   bottom edge. It used to be `bottom: 8px` -- but .browse-info had no
+   `position`, so that resolved against .browse-card and measured 8px up from
+   the bottom of the WHOLE card, text block included. The pill therefore sat
+   in a fixed band that the card's own text moved through: with a genre string
+   it covered the genre line, and while the genre was still empty (the normal
+   state until CineInfo answers, and the state the bug was reported in) the
+   card shrank by one line and the pill landed squarely on the TITLE.
+   `bottom: calc(100% + 8px)` on a positioned .browse-info is independent of
+   how tall the text block is, which is the whole point. */
 .browse-src-pill {
   position: absolute;
-  bottom: 8px;
+  bottom: calc(100% + 8px);
   left: 8px;
   z-index: 2;
   font-size: 0.58rem;

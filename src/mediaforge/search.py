@@ -846,7 +846,8 @@ _SITE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
 
 
 def register_search_source(item_id: str, site_id: str, search_fn, label: str | None = None,
-                           adult: bool = False, enabled_key: str | None = None) -> None:
+                           adult: bool = False, enabled_key: str | None = None,
+                           media_types=None) -> None:
     """Register a keyword search function for a third-party content source.
 
     - ``item_id``: the id the module already passed to ``register_thirdparty()``
@@ -875,6 +876,14 @@ def register_search_source(item_id: str, site_id: str, search_fn, label: str | N
       writes for module sources automatically -- pass this only to reuse an
       existing key. Either way the source defaults to *on*: it was installed
       on purpose.
+    - ``media_types``: what this source publishes -- any of ``"movies"``,
+      ``"series"``, ``"adult"``. Optional; omitting it means "both films and
+      series", which is the safe default (a source asked about something it
+      does not have simply returns nothing, whereas a source left out of a
+      lookup looks broken). Used where a lookup already knows what it is after
+      and should not spend a request on a source that cannot have it -- the
+      Seerr page asks only movie sources about a movie request. Declare it if
+      your source is one-sided; it saves your site a request per search.
 
     Registering the search half is what puts a module's content source into
     the *normal search box*: ``GET /api/search/sources`` lists it and the
@@ -898,12 +907,19 @@ def register_search_source(item_id: str, site_id: str, search_fn, label: str | N
     for existing_id, entry in _EXTRA_SEARCH_SOURCES.items():
         if entry["site_id"] == site_id and existing_id != item_id:
             raise ValueError(f"register_search_source: site id already registered: {site_id!r}")
+    _clean_types = tuple(
+        t for t in (media_types or ()) if t in ("movies", "series", "adult"))
     _EXTRA_SEARCH_SOURCES[item_id] = {
         "site_id": site_id,
         "search_fn": search_fn,
         "label": label or site_id,
         "adult": bool(adult),
         "enabled_key": enabled_key or None,
+        # () means "not declared" -- source_policy.source_media_types() turns
+        # that into the both-types default rather than storing the default
+        # here, so a later change of mind about the default reaches sources
+        # that were registered before it.
+        "media_types": _clean_types,
     }
     logger.info("[Search] Registered third-party search source: %s (%s)", site_id, item_id)
 
@@ -945,6 +961,7 @@ def thirdparty_search_sources() -> list:
             "label": e.get("label") or e["site_id"],
             "adult": bool(e.get("adult")),
             "enabled_key": e.get("enabled_key"),
+            "media_types": list(e.get("media_types") or ()),
         }
         for e in filter_enabled(_EXTRA_SEARCH_SOURCES).values()
     ]

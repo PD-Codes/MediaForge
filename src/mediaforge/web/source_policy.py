@@ -132,6 +132,54 @@ BUILTIN_SEARCH_SOURCES = (
 
 BUILTIN_SEARCH_SOURCE_IDS = tuple(_s["id"] for _s in BUILTIN_SEARCH_SOURCES)
 
+# What each built-in source actually publishes. Written down here because two
+# places in the WebUI need it and both used to carry their own copy: the Seerr
+# page (a movie request must not be looked up on a series-only site) and the
+# home feed's Movies row. static/seerr.js had three hardcoded "movie sources"
+# and six hardcoded "series sources", so a source added later -- filmo.to, or
+# anything a module registers -- was simply never asked.
+#
+# Kept next to BUILTIN_SEARCH_SOURCES rather than in routes/browse.py, which
+# holds the other copy (_feed_builtin_entries): that module imports the whole
+# scraping stack, and this one is deliberately cheap enough for the request
+# path. Data moves here, imports do not.
+#
+# "adult" is a media type of its own, matching mediaforge/home_feed.py's
+# FEED_TYPES -- the 18+ gate has to be able to drop a source without also
+# deciding whether it is a film or a series.
+BUILTIN_SOURCE_MEDIA_TYPES = {
+    "aniworld":   ("series",),
+    "sto":        ("series",),
+    "filmpalast": ("movies",),
+    # The one source that does both, which is why it is also the only one whose
+    # results have to be split by the item's own is_series flag.
+    "megakino":   ("movies", "series"),
+    "filmo":      ("movies",),
+    "nineanime":  ("series",),
+    "aniwaves":   ("series",),
+    "hanime":     ("adult", "series"),
+}
+
+# What a source that never declared anything is assumed to publish. Both, on
+# purpose: a module source left out of a lookup is a module that silently does
+# not work, while one asked about a media type it does not have simply answers
+# with nothing.
+DEFAULT_SOURCE_MEDIA_TYPES = ("movies", "series")
+
+
+def source_media_types(source_id, declared=None) -> tuple:
+    """Which media types *source_id* publishes.
+
+    *declared* is what a module passed to ``register_search_source`` (or None).
+    A built-in is looked up in :data:`BUILTIN_SOURCE_MEDIA_TYPES`; anything
+    else falls back to :data:`DEFAULT_SOURCE_MEDIA_TYPES`.
+    """
+    if declared:
+        clean = tuple(t for t in declared if t in ("movies", "series", "adult"))
+        if clean:
+            return clean
+    return BUILTIN_SOURCE_MEDIA_TYPES.get(source_id, DEFAULT_SOURCE_MEDIA_TYPES)
+
 
 def builtin_source_label(source_id) -> str:
     """Display label of a built-in source, or the id itself if unknown."""
@@ -182,6 +230,9 @@ def search_sources(include_adult: bool = True) -> list:
             "enabled_key": source_enabled_key(_s["id"]),
             "enabled": source_enabled(_s["id"]),
             "css_class": "browse-provider-" + _s["id"],
+            # So a caller can ask only the sources that could possibly have the
+            # thing it is looking for -- see source_media_types().
+            "media_types": list(source_media_types(_s["id"])),
         })
 
     # Imported lazily: mediaforge.search pulls in the scraping stack, and this
@@ -218,6 +269,8 @@ def search_sources(include_adult: bool = True) -> list:
             "enabled": source_enabled(site_id, key=entry.get("enabled_key"),
                                       default="1"),
             "css_class": "browse-provider-thirdparty",
+            "media_types": list(source_media_types(
+                site_id, entry.get("media_types"))),
         })
 
     return out

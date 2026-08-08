@@ -364,6 +364,15 @@ def loose_title_key(title) -> str:
     it goes, then every space, quote, colon and dash. That is what lets a
     folder written by one provider ("Kaguya-sama Love is War") be recognised
     from another provider's spelling ("Kaguya-sama: Love is War").
+
+    One deliberate asymmetry with the JS twin: ``str.isalnum()`` keeps CJK and
+    Cyrillic, while the JS regex (``[^a-z0-9]``) drops them. So a purely
+    non-Latin title yields a key here and an empty string there. That is safe
+    in the one direction it matters -- the browser's keys are a subset of the
+    server's, so a key the browser builds always exists server-side -- and
+    making them identical would mean either losing non-Latin titles server-side
+    or rewriting the JS key, which is stored in nothing but is compared against
+    values that are. Left alone on purpose.
     """
     if not title:
         return ""

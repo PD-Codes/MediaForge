@@ -14,6 +14,30 @@
 // are defined synchronously during page load, well before any onchange
 // fires.
 
+// ...with one exception this file now covers itself. showToast is defined by
+// autosync.js / integrations.js / settings.js / notifications.html, and
+// templates/module_settings.html loads none of them -- so every save on that
+// page threw ReferenceError on the success line, then threw again in its own
+// catch, and the user got no confirmation and no error either. A minimal
+// fallback here is better than making a page load a 3000-line settings script
+// for one function; a page that HAS the real one keeps it.
+// Same behaviour and the same #toast element base.html already renders (see
+// feedback.css's .toast/.toast.show), so it looks identical to the real one --
+// it is only ever installed where none exists.
+if (typeof window.showToast !== "function") {
+  window.showToast = function (message, type) {
+    const host = document.getElementById("toast");
+    if (!host) return;
+    host.textContent = String(message == null ? "" : message);
+    host.className = "toast" + (type ? " toast-" + type : "");
+    host.classList.remove("show");
+    void host.offsetWidth;                 // restart the transition
+    host.classList.add("show");
+    clearTimeout(host._mfHide);
+    host._mfHide = setTimeout(function () { host.classList.remove("show"); }, 4000);
+  };
+}
+
 // Each card (Crunchyroll, Fernsehserien.de, any auto-registered one) can be
 // expanded/collapsed; the state is remembered per-card in localStorage,
 // mirroring the AutoSync group-collapse pattern (see autosync.js /
@@ -155,13 +179,23 @@ function toggleIntegCollapse(name) {
 // simple "just a toggle" case, and the same fetch also populates every
 // other field type the card declared (text/number/secret/select — see
 // registry.py's extra_settings "type").
+// Iterates the CARDS, not the master toggles. It used to walk
+// `.thirdparty-toggle[data-thirdparty-id]` and do all of the below inside that
+// loop -- but _settings_card_macro.html renders no master toggle for a module
+// card (show_master_toggle), so on the Module Settings page the query matched
+// nothing, the GET was never sent, and every field on every card sat at its
+// markup default while the stored values were ignored. Keying on the card
+// itself makes the load independent of which controls that card happens to
+// render.
 async function loadThirdpartyToggles() {
-  document.querySelectorAll(".thirdparty-toggle[data-thirdparty-id]").forEach(async function (el) {
-    const id = el.dataset.thirdpartyId;
+  document.querySelectorAll(".integ-card[data-thirdparty-id]").forEach(async function (card) {
+    const id = card.dataset.thirdpartyId;
     try {
       const resp = await fetch("/api/settings/thirdparty/" + encodeURIComponent(id));
       const d = await resp.json();
-      el.checked = d.enabled === "1";
+      // Only present when this page renders the master toggle.
+      const el = card.querySelector('.thirdparty-toggle[data-thirdparty-id="' + id + '"]');
+      if (el) el.checked = d.enabled === "1";
       // Extra per-integration fields for this same card (see registry.py's
       // extra_settings) -- one fetch already has everything needed, so
       // populate them here instead of a second request per field.
@@ -178,7 +212,16 @@ async function loadThirdpartyToggles() {
         .querySelectorAll('.thirdparty-extra-field[data-thirdparty-id="' + id + '"][data-extra-key]')
         .forEach(function (fieldEl) {
           const value = extra[fieldEl.dataset.extraKey];
-          if (value !== undefined) fieldEl.value = value;
+          // "" is a real answer ("nothing stored"), but overwriting the
+          // template-rendered default with it would throw the default away --
+          // and an empty numeric stepper is exactly what looked broken. A
+          // stored empty value and "never set" are indistinguishable over this
+          // API, so the default wins for the blank case.
+          if (value !== undefined && value !== "") fieldEl.value = value;
+          // number_input.js mirrors the input's value into its stepper display
+          // when it enhances the field; a value that arrives afterwards has to
+          // tell it to catch up, or the box shows the old one.
+          fieldEl.dispatchEvent(new Event("mf-value-set", { bubbles: true }));
         });
     } catch (e) { /* best-effort */ }
   });
@@ -219,13 +262,40 @@ async function saveThirdpartyExtraSetting(id, key, el) {
   }
 }
 
+/** Find the input/select a save call is about.
+ *
+ *  *el* is whatever the markup passed: the field itself (a <select>'s
+ *  onchange) or the Save button next to it. Resolving by data attribute
+ *  instead of by DOM position is deliberate -- the markup used to pass
+ *  `this.previousElementSibling`, and static/number_input.js wraps a number
+ *  input in a stepper <div> and moves the input inside it, so the button's
+ *  previous sibling silently became the wrapper. `wrapper.value` is undefined,
+ *  JSON.stringify drops an undefined property, and the PUT went out with an
+ *  empty `extra` object -- server answers 200, nothing is written, no error
+ *  anywhere. Positional DOM lookups and progressive enhancement do not mix.
+ */
+function _resolveExtraField(id, key, el) {
+  if (el && el.classList && el.classList.contains("thirdparty-extra-field")) return el;
+  const sel = '.thirdparty-extra-field[data-thirdparty-id="' + id +
+    '"][data-extra-key="' + key + '"]';
+  // Search the card first: two cards can legitimately declare the same key,
+  // and a document-wide query would then save the wrong one's value.
+  const card = el && el.closest ? el.closest(".integ-card") : null;
+  return (card && card.querySelector(sel)) || document.querySelector(sel);
+}
+
 // Non-toggle extra field (text/number/secret/select — registry.py's
 // extra_settings "type"). Unlike the toggle, this only ever fires on
 // explicit user action (a select's onchange, or the input's Save button),
 // never gates a sidebar entry, so no page reload — same reasoning as
 // saveThirdpartyExtraSetting() above.
 async function saveThirdpartyExtraField(id, key, el) {
-  const value = el ? el.value : "";
+  const field = _resolveExtraField(id, key, el);
+  if (!field) {
+    showToast(t("Feld nicht gefunden", "Field not found"));
+    return;
+  }
+  const value = field.value;
   try {
     const resp = await fetch("/api/settings/thirdparty/" + encodeURIComponent(id), {
       method: "PUT",

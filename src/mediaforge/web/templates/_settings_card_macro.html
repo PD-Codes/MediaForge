@@ -29,7 +29,16 @@
    what it looks like, and they keep it. #}
 {% macro render_settings_card(card, allow_module_toggle=false) %}
 {% set show_master_toggle = allow_module_toggle or not card.module_name %}
-<div class="settings-section integ-card collapsed" id="integCard-{{ card.id }}">
+{# data-thirdparty-id on the CARD, not just on the master toggle. static/
+   extension_cards.js's loadThirdpartyToggles() used to iterate
+   `.thirdparty-toggle[data-thirdparty-id]` and read the card's stored values
+   from inside that loop -- so on a page where the master toggle is not
+   rendered (a module card, see show_master_toggle below) it found nothing,
+   never issued the GET, and every extra field, extra toggle and select on the
+   card stayed at its markup default. That is the "the number box is empty and
+   nothing is saved" report: the card was never loaded in the first place. #}
+<div class="settings-section integ-card collapsed" id="integCard-{{ card.id }}"
+     data-thirdparty-id="{{ card.id }}">
   <div class="integ-subsection-header integ-collapsible-header" style="padding:unset !important;" onclick="toggleIntegCollapse('{{ card.id }}')">
     <span class="integ-collapsible-chevron">▸</span>
     <span class="integ-subsection-title">{{ card.title }}</span>
@@ -111,11 +120,24 @@
         {% endfor %}
       </select>
       {% else %}
+      {# value= renders the declared default straight away. Without it the field
+         was blank until the async GET landed -- and on a "number" field styled
+         as a stepper an empty box reads as "there is no default", which is what
+         was reported. The GET still wins and overwrites this with the stored
+         value; a secret is never pre-filled (the GET hands back a mask). #}
       <div class="integ-input-row" style="gap:6px;">
         <input type="{{ 'password' if extra.type == 'secret' else ('number' if extra.type == 'number' else 'text') }}"
                class="thirdparty-extra-field" data-thirdparty-id="{{ card.id }}" data-extra-key="{{ extra.key }}"
+               {% if extra.type != 'secret' and extra.default %}value="{{ extra.default }}"{% endif %}
                placeholder="{{ extra.placeholder }}" autocomplete="off" style="min-width:160px;" />
-        <button class="btn btn-secondary" onclick="saveThirdpartyExtraField('{{ card.id }}', '{{ extra.key }}', this.previousElementSibling)">{{ _('Save') }}</button>
+        {# `this`, not `this.previousElementSibling`: static/number_input.js
+           wraps a number field in a stepper <div> and MOVES the input inside
+           it, so the button's previous sibling became the wrapper and
+           `el.value` was undefined -- the PUT then carried an empty `extra`
+           object and the server had nothing to write, while still answering
+           200. saveThirdpartyExtraField() resolves the field by data attribute
+           now, which no wrapper can break. #}
+        <button class="btn btn-secondary" onclick="saveThirdpartyExtraField('{{ card.id }}', '{{ extra.key }}', this)">{{ _('Save') }}</button>
       </div>
       {% endif %}
     </div>

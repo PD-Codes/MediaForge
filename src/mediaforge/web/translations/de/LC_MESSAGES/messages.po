@@ -9607,6 +9607,22 @@ msgstr ""
 "angehakt ist, damit startet ein neu erstelltes Konto; ändern kann es danach "
 "jeder selbst im eigenen Profil."
 
+#: mediaforge/web/templates/index.html:0
+msgid "Not interested — hide this series"
+msgstr "Kein Interesse — diese Serie ausblenden"
+
+#: mediaforge/web/templates/index.html:0
+msgid "Hidden. You can bring it back on the statistics page."
+msgstr "Ausgeblendet. Auf der Statistikseite kannst du sie zurückholen."
+
+#: mediaforge/web/templates/index.html:0
+msgid "Could not hide this series."
+msgstr "Die Serie konnte nicht ausgeblendet werden."
+
+#: mediaforge/web/templates/shared_modals.html:0
+msgid "Searching streams..."
+msgstr "Suche Streams …"
+
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"
 

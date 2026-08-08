@@ -656,6 +656,29 @@ pair the toggle uses — no per-integration route needed unless you need
 something these four types can't express (a test-connection button,
 dynamically-fetched options, ...).
 
+### What changed, and what it means for you
+
+Module settings cards on the **Module Settings** page did not load their stored
+values at all: the loader keyed off the card's master enable toggle, which a
+module card does not render, so it gave up before it reached the extra fields. A
+card therefore always came up looking empty no matter what was in the database.
+That is fixed, and three smaller things with it:
+
+- **A `number` field renders its declared `default` immediately.** Previously an
+  unset key showed an empty box, so the value your module actually used was
+  invisible until someone saved something. Declare a `default` on every
+  `extra_settings` field and it will be what the user sees.
+- **Whole numbers are stored without a decimal point.** A `number` field's
+  stored value is a plain integer string (`"20"`, not `"20.0"`) whenever the
+  value is whole, so `int(get_setting(MY_KEY, "20"))` works on your own key
+  without a `float()` in between. Non-whole values are stored as typed.
+- **The Save button resolves its field by data attribute**, not by walking the
+  DOM next to itself, so the browser's number stepper can no longer wedge itself
+  between the button and its input.
+
+Nothing to change in a module for any of this — but it is worth knowing that a
+declared `default` is now load-bearing rather than decorative.
+
 ## Secrets (`"secret"` fields and `MODULE_SENSITIVE_SETTINGS`)
 
 A `"secret"` field is more than a `type="password"` input. MediaForge treats
@@ -2016,7 +2039,7 @@ def register(app):
   "Hosters (`register_hoster`)" below). An embed nobody can extract is dropped from the
   dropdown on purpose — offering it would only fail at download time.
 - **`register_search_source(item_id, site_id, search_fn, label=None,
-  adult=False, enabled_key=None)`**
+  adult=False, enabled_key=None, media_types=None)`**
   (`mediaforge/search.py`) is the search half: it makes
   `POST /api/search {"site": "<site_id>", "keyword": "..."}` (the endpoint
   itself, the one every built-in site's search already goes through) reach
@@ -2040,6 +2063,27 @@ def register(app):
   writes for you — either way the source defaults to **on**, since it was
   installed on purpose. Exceptions inside `search_fn` are caught by the route
   and logged, same as everything else in this document.
+
+  `media_types` is a list of any of `"movies"`, `"series"` and `"adult"`, and
+  says what your site actually publishes:
+
+  ```python
+  register_search_source("my_source", site_id="my_source", search_fn=_search,
+                         media_types=["movies"])   # films only
+  ```
+
+  It is **optional**, and leaving it out means both films and series — a source
+  left out of a lookup is a source that silently does not work, while one asked
+  about a media type it does not have simply answers with nothing. It is used
+  where a lookup already knows what it is after and should not spend a request
+  on a source that cannot have it: the Seerr requests page asks only movie
+  sources about a movie request, and only series sources about a series
+  request. So declaring it saves your site one request per such search; the
+  ordinary search box still asks every enabled source, because a keyword says
+  nothing about what it is. Server-side the built-in equivalents live in
+  `web/source_policy.py`'s `BUILTIN_SOURCE_MEDIA_TYPES`, and
+  `GET /api/search/sources` now returns `media_types` per source so a client can
+  make the same decision.
 
   Note that this is deliberately a *separate* call from
   `register_provider()`: registering only a provider makes your URLs
@@ -2074,23 +2118,25 @@ def register(app):
   `None` means "upstream failed" and is reported to the user as such;
   returning `[]` means "nothing new", which is a different thing. The feed
   interleaves your cards with the built-in ones, drops a title you share
-  with another source into a single card that names both, and gives you a
-  chip in the filter row (`color` is its dot; anything that is not a plain
-  hex literal is dropped). `media_type="movies"` also feeds the Movies row,
+  with another source into a single card that names both, and gives you an
+  entry in the home page's **Sources** dropdown (`color` is its dot; anything
+  that is not a plain hex literal is dropped — the row of clickable chips this
+  used to be is gone at every width, since nine sources made it a twelve-pill
+  ribbon that wrapped onto a second line). `media_type="movies"` also feeds the Movies row,
   `"adult"` is only ever fetched when the user turned the 18+ chip on.
   `source_id` must not collide with a built-in one or another registration.
   Your source is enabled unless `source_enabled_<source_id>` is `"0"`, so an
   `extra_settings` toggle under that key gives the user a real off switch. A
-  source switched off in Settings is left out of the feed's filter row
-  entirely — it is no longer rendered as a greyed-out chip nobody can use.
+  source switched off in Settings is left out of the feed's filter list
+  entirely — it is no longer rendered as a greyed-out entry nobody can use.
 
   Two things about row length are worth knowing if you call the feed yourself.
   `GET /api/home-feed` and `GET /api/home-feed/row/<row>` accept **`&pool=1`**:
   with it the server builds a reserve of up to `limit * 4` cards (hard ceiling
   150) instead of exactly `limit`, and the response carries a new top-level
   **`limit`** field telling you how many of them to show. That is what the home
-  page uses, because its chips filter client-side: without a reserve, switching
-  one source off simply made the row shorter, which reads as "the page lost
+  page uses, because its Sources/Type dropdowns filter client-side: without a
+  reserve, deselecting one source simply made the row shorter, which reads as "the page lost
   content" rather than "that source is hidden". Without `pool=1` the old
   behaviour (exactly `limit` cards) is unchanged.
 - **`register_site_mirrors(item_id, site_id, hosts, label=None)`**
@@ -2141,7 +2187,11 @@ def register(app):
   Seerr "find streams" modal. Nothing to opt into — registering the search
   half *is* the opt-in. This used to be a known gap: those five consumers
   each hardcoded the built-in site ids, so a module source was reachable by
-  pasted URL but never asked a keyword.
+  pasted URL but never asked a keyword. The Seerr page was the last of them: its
+  "find streams for this request" search asked three hardcoded sites for a film
+  and six for a series, and now asks every enabled source whose `media_types`
+  match the request, in the user's own source order, honouring "hide disabled
+  sources in search" (adult sources still opt-in).
 - **Still not automatic — read this before assuming a registered source is
   "done":**
   - **The classic home page still has its rows in the template.**

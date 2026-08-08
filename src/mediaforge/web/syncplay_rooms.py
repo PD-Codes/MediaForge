@@ -46,8 +46,19 @@ except Exception:  # pragma: no cover - logging fallback
 
 # Drop a member that has not sent a heartbeat / polled in this long.
 MEMBER_TIMEOUT = 30.0
-# Drop an empty room after this long (lets a host briefly reload without losing it).
-ROOM_GRACE = 60.0
+# Drop an empty room after this long. Five minutes, not the 60 s this constant
+# used to hold: a room is a place people arrange to meet, and closing it a
+# minute after the last person's connection dropped punishes a reconnect, a
+# short phone call or a browser restart. Note that a member whose browser dies
+# is only removed after MEMBER_TIMEOUT, so the room actually survives roughly
+# MEMBER_TIMEOUT + ROOM_GRACE past the last sign of life -- deliberate: the
+# grace period should start when the room is *known* empty, not when someone
+# went quiet.
+#
+# For most of this file's life nothing called is_expired() at all (there was no
+# reaper), so empty rooms lived until an explicit close or a restart. See
+# start_room_reaper() at the bottom.
+ROOM_GRACE = 300.0
 # Bounded chat history kept server-side for late joiners.
 CHAT_HISTORY = 100
 
@@ -333,7 +344,12 @@ class Room:
         self.invites: dict[str, dict] = {}
 
         self.lock = threading.RLock()
-        self._empty_since: float | None = None
+        # A brand-new room IS empty, and stamping it here rather than only in
+        # remove_member() is what makes it reapable. Left at None it never
+        # expired -- which covered exactly the two rooms nobody ever notices:
+        # one restored by ensure_room() on startup that nobody rejoined, and
+        # one created by a client that failed before its join landed.
+        self._empty_since: float | None = time.time()
 
     # -- playstate ----------------------------------------------------------
     def effective_position(self, now: float | None = None) -> float:
@@ -1291,3 +1307,110 @@ def ensure_room(name: str) -> None:
     with _registry_lock:
         if name not in _rooms:
             _rooms[name] = Room(name)
+
+
+# ── Empty-room reaper ───────────────────────────────────────────────────────
+# Rooms live in memory only (_rooms), so an abandoned one used to sit there
+# until an explicit close or a restart: its name kept showing in the lobby, kept
+# being written back into app_settings on every persist, and kept its name
+# reserved against anyone wanting to create a fresh room by that name.
+#
+# A thread rather than piggybacking on the existing call sites: _reap() (which
+# only ever dropped idle MEMBERS) runs from join() and from list_rooms(), and
+# the lobby poll that drives list_rooms() self-gates on not being in a room.
+# On an instance where everyone is inside a room and nobody sits in the lobby,
+# nothing would ever run.
+
+REAPER_INTERVAL = 30.0
+
+_reaper_stop = threading.Event()
+_reaper_started = False
+_reaper_lock = threading.Lock()
+
+
+def reap_empty_rooms(on_change=None) -> list:
+    """Close every room that has been empty longer than ROOM_GRACE.
+
+    Returns the names it closed. *on_change* is called once, after the fact,
+    only when something was actually closed -- that is where the caller
+    persists the shortened room list (a reaped room that is still in
+    app_settings comes straight back on the next restart via ensure_room()).
+
+    Same lock order and the same deferred telemetry as close_by_name(): idle
+    members are reaped first so a room whose last member's browser died is
+    seen as empty at all, then expiry is judged, and _report_sessions_ended()
+    runs outside both locks because it reads SQLite.
+    """
+    closed: list[str] = []
+    ended_counts: list[int] = []
+    try:
+        with _registry_lock:
+            for name in list(_rooms.keys()):
+                room = _rooms.get(name)
+                if room is None:
+                    continue
+                with room.lock:
+                    dropped = room.reap_idle_members(ended_counts=ended_counts)
+                    if dropped:
+                        for m in dropped:
+                            _token_index.pop(m.token, None)
+                        room.broadcast(room.members_event())
+                    if not room.is_expired():
+                        continue
+                    # Broadcast anyway: a member the reap above just dropped may
+                    # still hold an open SSE stream, and "closed" is what tells
+                    # its client to stop and go back to the lobby instead of
+                    # retrying a room that no longer exists.
+                    room.broadcast({"type": "closed"})
+                    for tok in list(room.members.keys()):
+                        _token_index.pop(tok, None)
+                    room.members.clear()
+                    _rooms.pop(name, None)
+                    closed.append(name)
+    finally:
+        _report_sessions_ended(ended_counts)
+    if closed:
+        logger.info("[SyncPlay] Closed %d room(s) empty for over %.0fs: %s",
+                    len(closed), ROOM_GRACE, ", ".join(closed))
+        if on_change is not None:
+            try:
+                on_change(closed)
+            except Exception:
+                logger.exception("[SyncPlay] Reaper on_change failed")
+    return closed
+
+
+def start_room_reaper(on_change=None) -> None:
+    """Start the background reaper. Idempotent.
+
+    Modelled on web/worker_watchdog.py's start(): a named daemon thread, a stop
+    Event so the wait is interruptible, an idempotence flag under a lock, and
+    per-iteration exception isolation so one bad pass cannot kill the loop.
+    """
+    global _reaper_started
+    with _reaper_lock:
+        if _reaper_started:
+            return
+        _reaper_started = True
+        # Cleared inside the lock, so a stop() racing a start() cannot leave the
+        # freshly started thread looking at a set Event.
+        _reaper_stop.clear()
+
+    def _loop():
+        while not _reaper_stop.wait(REAPER_INTERVAL):
+            try:
+                reap_empty_rooms(on_change)
+            except Exception:
+                logger.exception("[SyncPlay] Room reaper pass failed")
+
+    threading.Thread(target=_loop, daemon=True, name="syncplay-room-reaper").start()
+    logger.info("[SyncPlay] Empty-room reaper started (every %.0fs, grace %.0fs)",
+                REAPER_INTERVAL, ROOM_GRACE)
+
+
+def stop_room_reaper() -> None:
+    """Stop the reaper. Used by tests; the thread is a daemon otherwise."""
+    global _reaper_started
+    _reaper_stop.set()
+    with _reaper_lock:
+        _reaper_started = False

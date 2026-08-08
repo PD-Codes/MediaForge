@@ -59,6 +59,43 @@ _tmdb_rl = _TmdbRateLimiter(rate=40.0)
 _tmdb_inflight: dict = {}
 _tmdb_inflight_lock = threading.Lock()
 
+def all_titles(details) -> list:
+    """Every name a TMDB record is known by, de-duplicated, order preserved.
+
+    Draws on four things, in decreasing reliability: the localized title
+    (``name``/``title``, in whatever language the request asked for), the
+    original-language title (``original_name``/``original_title``), and the
+    ``alternative_titles`` block -- which TMDB spells ``results`` for a series
+    and ``titles`` for a film, hence the two lookups.
+
+    This exists so "is this already on disk?" can stop being a question about
+    spelling. A folder is named after whichever provider downloaded it first,
+    and a provider that calls the same show by its romaji or English name was
+    reported as "not downloaded" no matter how good the string comparison was.
+    Tolerates any shape: a details dict from an older cache entry (written
+    before alternative_titles was requested) simply yields the two it has.
+    """
+    out = []
+
+    def _add(value):
+        text = str(value or "").strip()
+        if text and text not in out:
+            out.append(text)
+
+    if not isinstance(details, dict):
+        return out
+    _add(details.get("name"))
+    _add(details.get("title"))
+    _add(details.get("original_name"))
+    _add(details.get("original_title"))
+    alt = details.get("alternative_titles")
+    if isinstance(alt, dict):
+        for entry in (alt.get("results") or alt.get("titles") or []):
+            if isinstance(entry, dict):
+                _add(entry.get("title"))
+    return out
+
+
 def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
     """
     Look up TMDB data for a title/IMDB-ID and cache in SQLite for 24 h.
@@ -204,7 +241,15 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
             tid  = best["id"]
             mt   = best["media_type"]
         # 3. Fetch details, watch-providers, FSK
-        details  = _call("/" + mt + "/" + str(tid), {"append_to_response": "credits,external_ids"})
+        # alternative_titles rides along on a request that is being made anyway
+        # (append_to_response costs no extra call and no extra rate-limiter
+        # slot). It is what makes a title recognisable under a name other than
+        # the one this instance's UI language happens to use -- a folder written
+        # as "Horizon in the Middle of Nowhere" and a card titled
+        # "Kyoukaisen-jou no Horizon" are the same show, and `name` +
+        # `original_name` alone do not bridge the two. See all_titles() below.
+        details  = _call("/" + mt + "/" + str(tid),
+                         {"append_to_response": "credits,external_ids,alternative_titles"})
         genres   = [g["name"] for g in details.get("genres", [])]
         wp_data  = _call("/" + mt + "/" + str(tid) + "/watch/providers")
         c_data   = wp_data.get("results", {}).get(country, {})
@@ -293,6 +338,12 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
                         details.get("title"), details.get("original_title")]
         out = {"found": True, "tmdb_id": tid, "media_type": mt,
                "title": details.get("name") or details.get("title") or "",
+               # Every name this show is known by, localized/original/alternative.
+               # Lifted to the top level rather than left inside raw_details so a
+               # caller does not have to know that "tv" spells it `name` and
+               # "movie" spells it `title`, nor which of two shapes TMDB uses for
+               # alternative titles.
+               "titles": all_titles(details),
                "title_confident": _title_is_confident(title, _title_cands),
                "overview": details.get("overview") or "",
                "genres": genres, "providers": providers, "fsk": fsk,

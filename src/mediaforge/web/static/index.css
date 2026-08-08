@@ -548,148 +548,104 @@
   border-radius: 22px;
 }
 
-/* Label + its chips travel together across a wrap. */
-.feed-chip-set {
-  display: inline-flex;
+/* ── Filter row: "SOURCES [ ▾ ]  TYPE [ ▾ ]" ────────────────────────────
+   Two dropdowns side by side, with the page-settings button next to them
+   (.feed-customize, further down). This replaced a row of clickable pills --
+   one per source plus one per type -- which on a nine-source instance was a
+   twelve-pill ribbon that wrapped onto a second line and pushed the content
+   rows down the page. The dropdowns are also what the phone layout already
+   used, so there is one control here now instead of two variants of it.
+
+   The dropdowns are sized rather than left to grow: an .mf-multiselect is
+   width:100% in forms.css, and unconstrained they would each take half the
+   toolbar and leave the settings button hanging off the end. */
+.feed-filter-menus {
+  display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
 }
 
+.feed-filter-menus .mf-multiselect {
+  width: auto;
+  min-width: 0;
+  /* Wide enough for two source names before the component falls back to its
+     "N sources" summary (data-max-names="1"), narrow enough that both plus
+     both labels plus the settings button fit one line on a laptop. */
+  flex: 0 1 220px;
+}
+
+/* The two dropdown captions. .feed-chip-set and the .feed-chip pill rules that
+   used to live here are gone with the pill row (see renderFilterMenus() in
+   static/home_feed.js) -- these two are all that survived, because the labels
+   did. */
 .feed-chip-label {
   font-size: 0.7rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .feed-chip-label--split {
   margin-left: 8px;
 }
 
-.feed-chip {
-  font: inherit;
-  font-size: 0.78rem;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
-}
-
-.feed-chip:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.feed-chip.is-on {
-  background: var(--accent-soft);
-  border-color: var(--border-focus);
-  color: var(--text-primary);
-}
-
 .feed-section {
   margin-top: 18px;
 }
 
-/* Desktop keeps the chips; the dropdowns only exist below the breakpoint.
-   This has to sit BEFORE the media query: a media query adds no specificity,
-   so an equally specific rule placed after it would win at every width and
-   the dropdowns would never show. */
-.feed-filters-mobile { display: none; }
-
-/* On a phone the pill row would eat half the screen — it scrolls sideways
-   instead of wrapping into four lines. */
+/* On a phone the two labels are what has to go, not the controls: "SOURCES"
+   and "TYPE" are guessable from the dropdown summaries ("3 sources", "Series"),
+   and dropping them buys each control the width it needs to show a name rather
+   than a count. */
 @media (max-width: 640px) {
-  .feed-filters {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    border-radius: var(--radius-md);
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .feed-filters::-webkit-scrollbar { display: none; }
-  .feed-chip { flex: none; }
-  .feed-chip-label { flex: none; }
-
-  /* Phone: the chips step aside for the two dropdowns. */
-  .feed-filters > .feed-chip,
-  .feed-filters > .feed-chip-label,
-  .feed-filters > .feed-chip-set { display: none; }
-
-  .feed-filters-mobile {
-    display: flex;
-    gap: 8px;
+  .feed-filter-menus {
     width: 100%;
-    min-width: 0;
+    flex-wrap: nowrap;
   }
 
-  /* .mf-multiselect is width:100% in forms.css — overridden here instead of
-     touching the shared rule, so the two sit side by side. */
-  .feed-filters-mobile .mf-multiselect {
+  .feed-filter-menus .feed-chip-label { display: none; }
+
+  .feed-filter-menus .mf-multiselect {
     flex: 1 1 0;
-    width: auto;
-    min-width: 0;
   }
 }
 
-/* A source switched off in Settings (or the FSK-locked 18+ entry) is shown,
-   but is a fact rather than an option — like .feed-chip.is-disabled. */
-.feed-filters-mobile .mf-multiselect-item.is-disabled {
+/* The FSK-locked 18+ entry is listed but is a fact rather than an option. (A
+   source switched off in Settings is not listed at all -- see
+   renderFilterMenus() -- so this only ever styles the age-limit case now.) */
+.feed-filter-menus .mf-multiselect-item.is-disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.feed-filters-mobile .mf-multiselect-item.is-disabled:hover {
+.feed-filter-menus .mf-multiselect-item.is-disabled:hover {
   background: transparent;
   color: var(--text-secondary);
 }
 
 /* The item text is one <span>, so the source dot has to be inline. */
-.feed-filters-mobile .feed-chip-dot {
+.feed-filter-menus .feed-chip-dot {
   display: inline-block;
   margin-right: 8px;
   vertical-align: middle;
 }
 
 
-/* ── Chip row, second pass ──────────────────────────────────────────────
-   The chips now do both jobs at once: they say whether a source is on,
-   off (Settings) or unreachable (UpTime), and they filter. Which is why a
-   disabled source is a <span> and an available one is a <button> -- there
-   is nothing to toggle about a source you switched off in Settings. */
-.feed-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
+/* The per-source colour dot, now only rendered inside a dropdown entry. The
+   .feed-chip / .feed-chip.is-on / .is-disabled / .is-down rules that used to
+   surround it went with the pill row: "off" is no longer shown at all (a
+   switched-off source is not listed), and "offline" is part of the entry's own
+   label rather than a border colour. */
 .feed-chip-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--text-muted);
   flex: none;
-}
-
-.feed-chip.is-on .feed-chip-dot {
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.feed-chip.is-disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.feed-chip.is-down {
-  border-color: rgba(240, 85, 106, 0.45);
-  color: #ff8a99;
-}
-
-.feed-chip.is-down .feed-chip-dot {
-  background: var(--error, #f0556a);
 }
 
 /* ── "A source is not answering" ────────────────────────────────────────
@@ -755,6 +711,10 @@
   flex: 0 0 auto;
   width: 168px;
   scroll-snap-align: start;
+  /* Containing block for controls that sit BESIDE the card button rather than
+     inside it -- .home-pcard-dismiss on a gap card. Without it the button
+     escaped to whatever ancestor happened to be positioned, i.e. the row. */
+  position: relative;
 }
 
 .home-pcard-hit {
@@ -976,9 +936,10 @@
 
 .feed-toolbar .feed-tools { grid-area: tools; }
 
-/* stretch, not start: the button reads as part of the chip row, so it has to
-   be the same height as it -- and that height is whatever the chips wrap to,
-   which no fixed value can follow. */
+/* stretch, not start: the button reads as part of the filter row, so it has to
+   be the same height as it -- and that height is whatever the row comes out at
+   (one line of dropdowns normally, two once the labels and controls no longer
+   fit), which no fixed value can follow. */
 .feed-toolbar .feed-customize { grid-area: customize; align-self: stretch; }
 
 .feed-customize {
@@ -1805,7 +1766,8 @@ a.hp-item:focus-visible {
    this ring is the only thing telling a keyboard user where they are. It is
    deliberately loud. */
 .browse-card:focus-visible,
-.home-pcard-hit:focus-visible {
+.home-pcard-hit:focus-visible,
+.home-pcard-dismiss:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: var(--radius-lg, 14px);
@@ -1813,6 +1775,67 @@ a.hp-item:focus-visible {
 
 /* ── Gaps row ─────────────────────────────────────────────────────────── */
 .home-pcard.is-gap .home-pcard-hit { border-color: rgba(248, 113, 113, 0.42); }
+
+/* "Not interested" on a gap card. Top-RIGHT, the one corner a gap card leaves
+   free (.home-pcard-flag owns top-left, and .home-pcard-badge is only used by
+   the continue-watching row). A sibling of the card button, not a child of it,
+   so it needs its own stacking context above the poster. */
+.home-pcard-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background: rgba(13, 13, 20, 0.78);
+  color: var(--text-secondary, #cbd5e1);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  /* Always visible, not hover-only: this row exists on the touch layout too,
+     where there is no hover to reveal it with. */
+  opacity: 0.72;
+  transition: opacity var(--transition, 0.15s), background var(--transition, 0.15s),
+              border-color var(--transition, 0.15s);
+}
+
+.home-pcard-dismiss:hover {
+  opacity: 1;
+  background: rgba(248, 113, 113, 0.92);
+  border-color: rgba(248, 113, 113, 0.92);
+  color: #2a0708;
+}
+
+.home-pcard-dismiss[disabled] { opacity: 0.35; cursor: default; }
+
+/* Touch targets have to clear 44px even though the visible pill is 24px --
+   the tap area is grown outwards, so the button does not get bigger on a
+   phone, it just becomes hittable. */
+@media (hover: none) {
+  .home-pcard-dismiss {
+    opacity: 0.9;
+  }
+  .home-pcard-dismiss::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+}
+
+/* In the list density the card is a row and the poster is a thumbnail, so an
+   absolutely positioned corner button would land on the artwork. It moves to
+   the end of the row instead, like the other row-level controls. */
+.home-density-list .home-pcard-dismiss {
+  position: static;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
 
 .home-pcard-flag,
 .home-pcard-badge {

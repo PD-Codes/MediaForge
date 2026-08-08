@@ -133,6 +133,10 @@ let downloadedFolders = [];
 // MediaScan: TMDB/IMDB ID sets populated when source = mediascan
 let mediascanTmdbIds = new Set();
 let mediascanImdbIds = new Set();
+// {loose_title_key: folder}. Alternative names the library's folders answer to,
+// resolved server-side from TMDB (web/library_aliases.py). Object rather than
+// Map because it arrives as JSON and is only ever read by key.
+let downloadedAliases = {};
 let mediascanTitles = new Set(); // normalised titles from Plex/Jellyfin as fallback
 // The same titles reduced to letters and digits (_looseTitleKey). A second
 // index rather than a loop, so the fallback stays O(1) per card.
@@ -213,6 +217,73 @@ function _reEnrichPendingCards() {
 const _tmdbPending = new Map(); // title → [card, ...]
 let _tmdbBatchTimer = null;
 
+// Answers we already have, by title. Two jobs:
+//  - a card rendered for a title another card already resolved is enriched
+//    without a request at all;
+//  - it is what mfPrewarmTmdb() fills, so a card that does not exist yet can
+//    still have its data ready by the time it does.
+// Unbounded on purpose within a page load: the payload is small, the page is
+// one session, and evicting would only re-fetch something we asked for once.
+const _tmdbMemo = new Map();    // title → payload
+// Titles a prewarm is already in flight for, so two rows sharing a title do
+// not both ask.
+const _tmdbPrewarmed = new Set();
+
+/** Resolve TMDB/CineInfo data for titles whose cards are NOT on the page yet.
+ *
+ *  The home feed fetches a reserve of cards beyond the number it shows (see
+ *  routes/browse.py's pool), so hiding a source refills the row from cards the
+ *  client already holds. Those cards render with no genres, no rating and no
+ *  FSK until the IntersectionObserver notices them and a batch comes back --
+ *  which is a visible flicker of empty metadata every time a filter is
+ *  switched, on data that was sitting one request away the whole time.
+ *
+ *  This asks for it up front and remembers the answer, so a filter switch is
+ *  a re-render rather than a round-trip. Deliberately fire-and-forget and
+ *  low-priority: nothing waits for it, and a failure just means the old
+ *  lazy path handles those cards as before.
+ *
+ *  /api/tmdb/batch caps a request at 25 titles, so this chunks -- and it runs
+ *  the chunks one after another rather than all at once, because the point is
+ *  to be finished before the user touches a filter, not to be first in the
+ *  connection queue ahead of the poster images.
+ */
+window.mfPrewarmTmdb = async function (titles) {
+  if (!Array.isArray(titles) || !titles.length) return;
+  if (!cineinfoSettings) {
+    try { await loadGeneralSettings(); } catch (e) { return; }
+  }
+  if (!cineinfoSettings || !cineinfoSettings.tmdb_api_key) return;
+  const want = [];
+  titles.forEach(function (t) {
+    const title = String(t || "").trim();
+    if (!title || _tmdbMemo.has(title) || _tmdbPrewarmed.has(title)) return;
+    _tmdbPrewarmed.add(title);
+    want.push(title);
+  });
+  if (!want.length) return;
+  for (let i = 0; i < want.length; i += 25) {
+    const chunk = want.slice(i, i + 25);
+    try {
+      const resp = await fetch("/api/tmdb/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titles: chunk }),
+        priority: "low",
+      });
+      if (!resp.ok) continue;
+      const results = await resp.json();
+      Object.keys(results || {}).forEach(function (title) {
+        if (results[title]) _tmdbMemo.set(title, results[title]);
+      });
+    } catch (e) {
+      // A failed chunk must not poison the titles in it -- drop them from the
+      // in-flight set so the ordinary lazy path can still ask for them.
+      chunk.forEach(function (title) { _tmdbPrewarmed.delete(title); });
+    }
+  }
+};
+
 async function _flushTmdbBatch() {
   _tmdbBatchTimer = null;
   if (!_tmdbPending.size) return;
@@ -246,12 +317,26 @@ async function _flushTmdbBatch() {
     const results = await resp.json();
     batch.forEach(([title, cards]) => {
       const tmdb = results[title];
-      if (tmdb) cards.forEach(card => _applyTmdbToCard(card, tmdb));
+      if (!tmdb) return;
+      // Remember it: the same title reappears constantly (a row refilled after
+      // a filter switch, the same series in "New" and in "Movies"), and asking
+      // again for something already answered is the flicker this memo removes.
+      _tmdbMemo.set(title, tmdb);
+      cards.forEach(card => _applyTmdbToCard(card, tmdb));
     });
   } catch (e) { /* best-effort */ }
 }
 
 function _queueTmdbEnrich(card, title) {
+  // Already answered once this page load -- paint it now. This is what makes a
+  // row refilled after a filter switch appear complete instead of empty for
+  // one batch interval, and it is also the payoff for mfPrewarmTmdb().
+  const known = _tmdbMemo.get(title);
+  if (known) {
+    if (cineinfoSettings) _applyTmdbToCard(card, known);
+    else loadGeneralSettings().then(() => _applyTmdbToCard(card, known));
+    return;
+  }
   if (!_tmdbPending.has(title)) _tmdbPending.set(title, []);
   _tmdbPending.get(title).push(card);
   clearTimeout(_tmdbBatchTimer);
@@ -459,6 +544,14 @@ async function loadDownloadedFolders() {
       downloadedFolders = data.folders || [];
       mediascanActive = false;
     }
+    // {loose_title_key: folder} for every alternative name a folder answers
+    // to. This is the only thing that can match a title spelled entirely
+    // differently by another provider -- the string comparison below handles
+    // punctuation and word order, not "Kyoukaisen-jou no Horizon" vs "Horizon
+    // in the Middle of Nowhere". Empty until the background resolver has been
+    // through the library (web/library_aliases.py), which is why the string
+    // match stays in place rather than being replaced by this.
+    downloadedAliases = data.aliases || {};
   } catch (e) {
     /* best-effort */
   }
@@ -952,6 +1045,16 @@ function _sourceIsOn(src, enabledMap) {
   return !!src.enabled;
 }
 
+// Explicit exports for the pages that ask their own questions of the source
+// catalogue -- static/seerr.js builds the Seerr search fan-out from these.
+// A top-level function declaration already lands on window in a classic
+// script, so this changes nothing at runtime; it is here so the three of them
+// read as a public trio and nobody "cleans up" one into a const and quietly
+// breaks another file.
+window.loadGeneralSettings = loadGeneralSettings;
+window._sortSourcesByUserOrder = _sortSourcesByUserOrder;
+window._sourceIsOn = _sourceIsOn;
+
 // ── "Who is being asked" chips under the search field ───────────────────────
 // A search fans out to every *enabled* source, and the most common surprise is
 // finding nothing because a source is switched off. So the chips state the
@@ -1241,8 +1344,31 @@ function _looseTitleKey(s) {
 }
 
 function isDownloaded(title) {
+  return !!downloadedFolderFor(title);
+}
+
+/** Which folder holds *title*, or "" if none does.
+ *
+ *  Three passes, cheapest and most certain first:
+ *   1. the alias index -- an exact answer, because the server resolved this
+ *      folder against TMDB and recorded every name the show is known by. This
+ *      is the only pass that can match across languages.
+ *   2. a strict folder-name prefix match.
+ *   3. a punctuation-insensitive, bidirectional match (_looseFolderHolds).
+ *
+ *  Passes 2 and 3 remain because pass 1 is only as complete as the background
+ *  resolver has got, and is empty entirely on an instance with no TMDB key.
+ */
+function downloadedFolderFor(title) {
+  if (!title) return "";
+  // 1. Alias index. Checked before the folder list is even consulted: it costs
+  // one lookup and, unlike the string passes, it cannot be wrong -- the server
+  // only records aliases for a confident TMDB match.
+  const aliasKey = _looseTitleKey(title);
+  if (aliasKey && downloadedAliases[aliasKey]) return downloadedAliases[aliasKey];
+
   // Folder-based check (used when mediascan is inactive)
-  if (!downloadedFolders.length || !title) return false;
+  if (!downloadedFolders.length) return "";
   const clean = normalizeQuotes(
     unesc(title)
       .replace(/\s*\(.*$/, "")
@@ -1250,15 +1376,16 @@ function isDownloaded(title) {
       .trim()
       .toLowerCase(),
   );
-  if (downloadedFolders.some((f) =>
-    normalizeQuotes(f.toLowerCase()).startsWith(clean),
-  )) return true;
+  // 2. Strict folder-name prefix.
+  const strict = downloadedFolders.find((f) =>
+    normalizeQuotes(f.toLowerCase()).startsWith(clean));
+  if (strict) return strict;
 
-  // Second pass, punctuation-insensitive (see _looseTitleKey). Only ever adds
-  // matches the strict pass above missed.
-  const loose = _looseTitleKey(title);
-  if (!loose) return false;
-  return downloadedFolders.some((f) => _looseFolderHolds(_looseTitleKey(f), loose));
+  // 3. Punctuation-insensitive (see _looseTitleKey). Only ever adds matches the
+  // strict pass above missed.
+  if (!aliasKey) return "";
+  return downloadedFolders.find(
+    (f) => _looseFolderHolds(_looseTitleKey(f), aliasKey)) || "";
 }
 
 // Shortest folder key allowed to win a REVERSE match -- see _looseFolderHolds.
@@ -4898,7 +5025,15 @@ function openAniSearchModal(title, tmdbId, type, posterPath, presetLocalizedTitl
 
   const cleanTitle = title.trim().replace(/!+$/, "");
   document.getElementById('aniSearchTitle').textContent = t(`Suche nach "${cleanTitle}"...`, `Searching for "${cleanTitle}"...`);
-  document.getElementById('aniSearchSpinner').style.display = 'block';
+  const _sp = document.getElementById('aniSearchSpinner');
+  // Back to the neutral placeholder on every open: runAniSearch() replaces it
+  // with the source list it resolves, and without this reset the SECOND open
+  // would still be showing the first search's list while the new one is being
+  // resolved.
+  if (_sp) {
+    if (_sp.dataset.defaultText) _sp.textContent = _sp.dataset.defaultText;
+    _sp.style.display = 'block';
+  }
   document.getElementById('aniSearchResults').innerHTML = '';
 
   // presetLocalizedTitle: an already-known localized (e.g. German) title,
@@ -5078,6 +5213,17 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
         const on = _sourceIsOn(src, _en);
         return src.adult ? on : (on || !_hide);
       });
+
+    // Say which sources are being asked, now that we know. The template's
+    // placeholder is source-agnostic (it used to name three sites and went
+    // stale the moment this became dynamic), and "searching AniWorld,
+    // SerienStream, filmo.to" is the answer to the only question a user has
+    // while a spinner runs.
+    const _spinner = document.getElementById('aniSearchSpinner');
+    if (_spinner && _sources.length) {
+      const _names = _sources.map(s => s.label || s.id).join(", ");
+      _spinner.textContent = t("Suche Streams auf ", "Searching streams on ") + _names + "…";
+    }
 
     let allPromises = [];
     searchTitles.forEach(kw => {

@@ -132,86 +132,37 @@
     return seen;
   }
 
-  /** One chip row for both jobs. There used to be two rows stacked on top of
-      each other -- a read-only status row and a clickable filter row, both
-      listing the same five names, which is a puzzle rather than a control. */
+  /** The filter row: two dropdowns, "Sources" and "Type".
+   *
+   *  It used to render TWO variants of the same state -- a row of clickable
+   *  pills, and, below 640px, two .mf-multiselect dropdowns -- with CSS
+   *  choosing between them by width. That is two sets of markup, two sets of
+   *  event handling and two sets of guard rails for one control, and on an
+   *  instance with nine sources plus three type pills the desktop variant was a
+   *  twelve-pill ribbon that wrapped to two lines and pushed the rows down the
+   *  page. The dropdowns say the same thing in two controls and leave room for
+   *  the settings button beside them, so they are now the only variant at every
+   *  width and the pills are gone.
+   *
+   *  What was lost with the pills and is deliberately not rebuilt: the "· off"
+   *  and "· offline" suffixes were pill text. "off" is moot (a disabled source
+   *  is not listed at all any more, see below) and "offline" is still carried
+   *  in each dropdown entry's own label. */
   function renderFilters() {
     const wrap = document.getElementById("feedFilters");
     if (!wrap) return;
     // renderFilters() runs again on every row response. Replacing innerHTML
-    // while one of the mobile dropdowns is open would make it disappear mid
-    // interaction, so the render is deferred until it closes.
+    // while a dropdown is open would make it disappear mid interaction, so the
+    // render is deferred until it closes.
     if (multiselectOpen()) { filtersDirty = true; return; }
     filtersDirty = false;
-    const types = availableTypes();
-    let html = '<span class="feed-chip-label">' + mfEscape(HT("sources")) + "</span>";
-
-    sources.forEach(function (s) {
-      // A source switched off in Settings is left out entirely. It used to be
-      // rendered as a greyed-out "· off" fact, on the theory that explaining
-      // an absence beats an unexplained gap -- but on an instance that only
-      // uses two of the nine sources that turned the chip row into a list of
-      // things you cannot have. The place that explains it is Settings ->
-      // Sources, which is where the switch is.
-      if (!s.enabled) return;
-      // "EN" marks an English-only catalogue (source_policy's
-      // ENGLISH_ONLY_SOURCE_IDS). Informational: it explains why the source
-      // carries no German audio and why it ships off, and it gates nothing --
-      // unlike the 18+ type chip below, which really does hold back a fetch.
-      const enBadge = s.english_only
-        ? '<span class="source-badge-en" title="' + mfEscape(HT("english_only")) + '">EN</span>'
-        : "";
-      const down = s.error || downIds.indexOf(s.id) !== -1;
-      const on = sourceOn(s.id);
-      const dot = s.color
-        ? ' style="background:' + mfEscape(s.color) + '"'
-        : "";
-      html += '<button type="button" class="feed-chip' + (on ? " is-on" : "") +
-        (down ? " is-down" : "") + '" data-kind="source" data-value="' +
-        mfEscape(s.id) + '" aria-pressed="' + (on ? "true" : "false") + '">' +
-        '<span class="feed-chip-dot"' + (down ? "" : dot) + "></span>" +
-        mfEscape(s.label) + enBadge +
-        (down ? ' · ' + mfEscape(HT("offline")) : "") +
-        "</button>";
-    });
-
-    // The type chips and their "TYPE" label are one group, so a wrap can
-    // never leave the label stranded at the end of the source line with its
-    // own chips on the next one -- which is what it looked like before, and
-    // read as if "TYPE" belonged to the last source.
-    html += '<span class="feed-chip-set">' +
-      '<span class="feed-chip-label feed-chip-label--split">' +
-      mfEscape(HT("type")) + "</span>";
-    if (types.series) {
-      html += typeChip("series", HT("series"));
-    }
-    if (types.movies) {
-      html += typeChip("movies", HT("movies"));
-    }
-    if (types.adult) {
-      // With an age ceiling in force the 18+ source is never fetched at all
-      // (routes/browse.py drops it before the request goes out), so the chip
-      // is shown as a locked fact rather than a toggle that does nothing.
-      const ceiling = parseInt(window.__HOME_MAX_FSK || "", 10);
-      html += (ceiling >= 0 && ceiling < 18)
-        ? '<span class="feed-chip is-disabled" title="' +
-          mfEscape(HT("mode_notice").replace("{}", String(ceiling))) + '">' +
-          '<span class="feed-chip-dot"></span>18+ · ' + mfEscape(HT("off")) + "</span>"
-        : typeChip("adult", "18+");
-    }
-    html += "</span>";
-
-    // Both variants are always emitted and CSS picks one (index.css): the
-    // chips above 640px, the two dropdowns below it. That is cheaper and less
-    // brittle than a resize listener re-rendering the row.
-    html += renderMobileFilters(types);
-    wrap.innerHTML = html;
+    wrap.innerHTML = renderFilterMenus(availableTypes());
     syncMultiselects();
   }
 
-  // ------------------------------------------------- mobile filter dropdowns
-  // Under 640px the chip row would be a sideways-scrolling ribbon of a dozen
-  // pills. Same state, same guard rails, but as two .mf-multiselect dropdowns
+  // ------------------------------------------------------- filter dropdowns
+  // Same state, same guard rails as the old pill row, but as two
+  // .mf-multiselect dropdowns
   // (static/mf_multiselect.js owns open/close/label; this file only renders
   // the markup and reacts to its events).
   let filtersDirty = false;
@@ -243,19 +194,22 @@
       '<div class="mf-multiselect-dropdown">' + items + "</div></div>";
   }
 
-  /** " · EN" for an English-only source, "" otherwise. The mobile dropdown
-      renders plain text labels (msItem escapes them), so the marker has to be
-      part of the string here rather than the badge element the chips use. */
+  /** " · EN" for an English-only source, "" otherwise. A dropdown entry is a
+      plain text label (msItem escapes it), so the marker has to be part of the
+      string rather than a badge element. */
   function enSuffix(s) {
     return s && s.english_only ? " · EN" : "";
   }
 
-  function renderMobileFilters(types) {
+  /** The two dropdowns, each preceded by its own label so the row reads
+      "SOURCES [ … ]  TYPE [ … ]" the way the pill row did. */
+  function renderFilterMenus(types) {
     let src = "";
     sources.forEach(function (s) {
-      // Left out, same as the desktop chip above -- an unpickable entry in a
-      // dropdown is worse than a chip, because you have to open it to find out
-      // it does nothing.
+      // A source switched off in Settings is left out entirely rather than
+      // listed as unpickable: an entry you have to open a menu to discover does
+      // nothing is worse than no entry. Settings -> Sources is where the switch
+      // is and where the absence is explained.
       if (!s.enabled) return;
       const down = s.error || downIds.indexOf(s.id) !== -1;
       src += msItem(s.id, s.label + enSuffix(s) + (down ? " · " + HT("offline") : ""),
@@ -266,6 +220,12 @@
     if (types.series) ty += msItem("series", HT("series"), typeOn("series"), false, "", "");
     if (types.movies) ty += msItem("movies", HT("movies"), typeOn("movies"), false, "", "");
     if (types.adult) {
+      // With an age ceiling in force the 18+ source is never fetched at all
+      // (routes/browse.py drops it before the request goes out), so the entry
+      // is a locked fact rather than a toggle that does nothing. This is the one
+      // disabled entry that earns its place -- unlike a switched-off source, an
+      // absent 18+ entry would look like a bug to the account that set the
+      // limit.
       const ceiling = parseInt(window.__HOME_MAX_FSK || "", 10);
       ty += (ceiling >= 0 && ceiling < 18)
         ? msItem("adult", "18+ · " + HT("off"), false, true,
@@ -273,8 +233,11 @@
         : msItem("adult", "18+", typeOn("adult"), false, "", "");
     }
 
-    return '<div class="feed-filters-mobile">' +
+    return '<div class="feed-filter-menus">' +
+      '<span class="feed-chip-label">' + mfEscape(HT("sources")) + "</span>" +
       msRoot("source", HT("many_sources"), src) +
+      '<span class="feed-chip-label feed-chip-label--split">' +
+      mfEscape(HT("type")) + "</span>" +
       msRoot("type", HT("many_types"), ty) + "</div>";
   }
 
@@ -347,16 +310,17 @@
     if (ev.key === "Escape") window.setTimeout(flushFilters, 0);
   });
 
-  function typeChip(key, label) {
-    const on = typeOn(key);
-    return '<button type="button" class="feed-chip' + (on ? " is-on" : "") +
-      '" data-kind="type" data-value="' + mfEscape(key) + '" aria-pressed="' +
-      (on ? "true" : "false") + '">' + mfEscape(label) + "</button>";
-  }
+  // typeChip() and the .feed-chip click handler that went with it are gone: the
+  // filter row is two dropdowns at every width now (see renderFilters), and the
+  // mf-multiselect-change listener above is the single place that applies a
+  // filter change. Keeping a second, pill-shaped path around for a control that
+  // is no longer rendered is how the two drift apart -- the pill handler had
+  // already accumulated a fix (the 18+ reload) that the dropdown path needed
+  // separately.
 
-  /** What the UpTime monitor knows, mirrored into the chips. app.js calls
-      this through markSourceChipsDown() so there is still exactly one place
-      that polls /api/uptime/status. */
+  /** What the UpTime monitor knows, mirrored into the filter dropdowns. app.js
+      calls this through markSourceChipsDown() so there is still exactly one
+      place that polls /api/uptime/status. */
   window.mfFeedMarkDown = function (ids) {
     downIds = Array.isArray(ids) ? ids.slice() : [];
     if (sources.length) { renderFilters(); renderAlerts(); }
@@ -365,40 +329,6 @@
   feed.addEventListener("click", function (ev) {
     const retry = ev.target.closest(".feed-alert-retry");
     if (retry) { window.reloadHomeFeed(); return; }
-
-    const btn = ev.target.closest(".feed-chip");
-    if (!btn || btn.tagName !== "BUTTON") return;
-    const kind = btn.dataset.kind;
-    const value = btn.dataset.value;
-
-    if (kind === "source") {
-      const on = sourceOn(value);
-      // Never leave every source off — that is an empty page, not a filter.
-      if (on && activeSources().filter(function (s) {
-        return s.id !== value && sourceOn(s.id);
-      }).length === 0) return;
-      if (on) offSources[value] = true; else delete offSources[value];
-    } else if (kind === "type") {
-      const on = typeOn(value);
-      const others = Object.keys(availableTypes()).filter(function (k) {
-        return k !== value && typeOn(k);
-      });
-      if (on && others.length === 0) return;
-      if (on) offTypes[value] = true; else delete offTypes[value];
-      // The 18+ source is only ever *fetched* when the chip is on, so turning
-      // it on has to go back to the server once.
-      // reload() never existed -- this threw a ReferenceError, so switching
-      // the 18+ chip ON never fetched the source it exists to fetch and the
-      // row stayed empty until a full page reload.
-      if (value === "adult" && !offTypes.adult) {
-        saveFilters(); renderFilters(); window.reloadHomeFeed(); return;
-      }
-    } else {
-      return;
-    }
-    saveFilters();
-    renderFilters();
-    renderRows();
   });
 
   // ------------------------------------------------------------ source pill
@@ -753,6 +683,9 @@
         const art = it.poster_url
           ? '<img src="' + mfEscape(it.poster_url) + '" alt="" loading="lazy">'
           : fauxArt(it.title);
+        // The ignore button is a SIBLING of the card button, not a child of
+        // it: the card body is itself a <button>, so nesting would be invalid
+        // markup and the outer click would fire on the way out anyway.
         return pcard(
           '<button type="button" class="home-pcard-hit" data-gap="' +
           mfEscape(it.title) + '">' + art +
@@ -760,7 +693,11 @@
           mfEscape(HT("missing_count").replace("{}", String(it.missing_count || 0))) +
           "</span>" +
           '<span class="home-pcard-title">' + mfEscape(it.title) + "</span>" +
-          '<span class="home-pcard-sub">' + mfEscape(slots + more) + "</span></button>",
+          '<span class="home-pcard-sub">' + mfEscape(slots + more) + "</span></button>" +
+          '<button type="button" class="home-pcard-dismiss" data-gap-ignore="' +
+          mfEscape(it.folder || it.title) + '" title="' +
+          mfEscape(HT("gap_ignore")) + '" aria-label="' +
+          mfEscape(HT("gap_ignore")) + '">×</button>',
           it.poster_url ? "has-art is-gap" : "is-gap");
       }).join("");
       grid.querySelectorAll("[data-gap]").forEach(function (btn) {
@@ -771,6 +708,39 @@
           const input = document.getElementById("searchInput");
           if (input) input.value = btn.dataset.gap;
           if (typeof doSearch === "function") doSearch();
+        });
+      });
+      // "Not interested in this one." Writes the same media_ignored entry the
+      // statistics page uses (POST /api/media/ignore with the "__all__" slot),
+      // so a series dismissed here is also gone from /stats' incomplete list
+      // and can be taken back there -- one ignore list, two places that respect
+      // it, rather than a home-page-only hide nobody can undo.
+      grid.querySelectorAll("[data-gap-ignore]").forEach(function (btn) {
+        btn.addEventListener("click", async function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const folder = btn.dataset.gapIgnore;
+          btn.disabled = true;
+          try {
+            const resp = await fetch("/api/media/ignore", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ items: [{ folder: folder, title: folder, all: true }] }),
+            });
+            const data = await resp.json().catch(function () { return {}; });
+            if (!resp.ok || data.error) throw new Error(data.error || ("HTTP " + resp.status));
+            // Drop it from the local copy and re-render rather than refetching:
+            // the server already agreed, and /api/home-feed/personal reads the
+            // whole library to rebuild this row.
+            personal.gaps = (personal.gaps || []).filter(function (g) {
+              return (g.folder || g.title) !== folder;
+            });
+            renderPersonal();
+            if (typeof window.showToast === "function") window.showToast(HT("gap_ignored"));
+          } catch (err) {
+            btn.disabled = false;
+            if (typeof window.showToast === "function") window.showToast(HT("gap_ignore_failed"));
+          }
         });
       });
     }
@@ -901,6 +871,37 @@
     dedupeRows();
     renderRows();
     applyUptimeStatus();
+    prewarmRowMetadata(row);
+  }
+
+  /** Resolve CineInfo/TMDB data for the cards this row is HOLDING but not
+   *  showing.
+   *
+   *  The row is backed by a reserve pool (loadRow asks with pool=1) so hiding a
+   *  source refills it instead of shortening it. Those replacement cards used
+   *  to arrive blank -- no genres, no rating, no age rating -- because the
+   *  enrichment is driven by an IntersectionObserver on cards that are on the
+   *  page, and a card in the reserve is not. So every filter switch showed a
+   *  row of half-empty cards for as long as a batch took.
+   *
+   *  Asking for the reserve's metadata now means a filter switch is a
+   *  re-render. Only the surplus is prewarmed: the visible cards are already
+   *  being enriched by the observer, and asking for them here would double the
+   *  requests to save nothing. Adult cards are skipped for the same reason
+   *  renderRows() passes skipTmdb for them -- they are not in TMDB.
+   */
+  function prewarmRowMetadata(row) {
+    if (typeof window.mfPrewarmTmdb !== "function") return;
+    const pool = rows[row] || [];
+    if (pool.length <= ROW_MAX) return;      // nothing held back
+    const titles = [];
+    pool.slice(ROW_MAX).forEach(function (item) {
+      if (item.media_type === "adult") return;
+      if (item.title) titles.push(item.title);
+    });
+    // Fire-and-forget: nothing on this page waits for it, and a failure just
+    // leaves those cards to the ordinary lazy path.
+    window.mfPrewarmTmdb(titles);
   }
 
   /** Rows that are already on screen load now; the rest load when they are

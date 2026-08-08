@@ -93,6 +93,15 @@
 
     syncDisabled(input, plusBtn, minusBtn);
     input.addEventListener("input", function () { syncDisabled(input, plusBtn, minusBtn); });
+    // A value written by script rather than typed fires no "input" event, so
+    // the +/- buttons kept the enabled/disabled state of the value they were
+    // built with. Cards whose stored settings arrive from an async GET after
+    // enhancement (extension_cards.js's loadThirdpartyToggles) hit this: a
+    // field that loaded its maximum still had an active "+", and one that
+    // loaded its minimum still had an active "-".
+    input.addEventListener("mf-value-set", function () {
+      syncDisabled(input, plusBtn, minusBtn);
+    });
   }
 
   function scan(root) {

@@ -1803,6 +1803,13 @@ def _build_card(item):
                 "description": _gt(s["description"]) if s.get("description") else "",
                 "type": s["type"],
                 "placeholder": _gt(s["placeholder"]) if s.get("placeholder") else "",
+                # The declared default, so the template can render it as the
+                # field's initial value. It used to be left out, which meant a
+                # field showed nothing at all until the async GET landed -- and
+                # a numeric stepper with an empty box looks like a control with
+                # no default rather than one that is still loading. Not
+                # translated: a default is a value, not a label.
+                "default": s.get("default", ""),
                 "options": [(value, _gt(label)) for value, label in s["options"]],
             }
             for s in item.get("extra_settings", [])
@@ -2170,8 +2177,18 @@ def register_generic_settings_routes(app):
             if field_type == "toggle":
                 set_setting(key, "1" if str(value).lower() in ("true", "1") else "0")
             elif field_type == "number":
+                # A whole number is stored WITHOUT a decimal point. str(float())
+                # turned a timeout of 20 into "20.0", and a module doing the
+                # obvious int(get_setting(...)) on its own key then got a
+                # ValueError -- the field validated fine and broke the module
+                # that declared it. Fractional values (a 0..1 threshold) keep
+                # their decimals.
                 try:
-                    set_setting(key, str(float(value)) if value not in (None, "") else "")
+                    if value in (None, ""):
+                        set_setting(key, "")
+                    else:
+                        num = float(value)
+                        set_setting(key, str(int(num)) if num.is_integer() else str(num))
                 except (TypeError, ValueError):
                     continue
             elif field_type == "select":

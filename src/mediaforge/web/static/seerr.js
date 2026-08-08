@@ -878,41 +878,77 @@
 
   // ── Search modal (find streams for a request) ────────────────────
 
-  var MOVIE_SOURCES = [
-    { site: "filmpalast", label: "FilmPalast", keep: function () { return true; } },
-    { site: "megakino", label: "MegaKino", keep: function (r) { return !r.is_series; } },
-    // filmo.to is movie-only, so every hit belongs in this list.
-    { site: "filmo", label: "filmo.to", keep: function () { return true; } },
-  ];
-  var SERIES_SOURCES = [
-    { site: "aniworld", label: "AniWorld", keep: function () { return true; } },
-    { site: "sto", label: "SerienStream", keep: function () { return true; } },
-    { site: "megakino", label: "MegaKino", keep: function (r) { return !!r.is_series; } },
-    // 9anime/Aniwaves are series-only and opt-in: the search route returns an
-    // empty list for them unless the source is enabled in Settings, so no
-    // extra gate is needed on this side (same arrangement as hanime below).
-    { site: "nineanime", label: "9anime (EN)", keep: function () { return true; } },
-    { site: "aniwaves", label: "Aniwaves (EN)", keep: function () { return true; } },
-    // hanime (adult) comes last and stays empty unless enabled server-side.
-    { site: "hanime", label: "hanime 18+", keep: function () { return true; } },
-  ];
+  // Which sources a request is looked up on.
+  //
+  // This used to be two hardcoded arrays -- three "movie sources" and six
+  // "series sources" -- plus a third list for module sources, concatenated at
+  // search time. Three problems with that, all reported: a built-in added after
+  // the arrays were written was never asked, a module source was asked about
+  // both media types whether or not it had them, and a source switched off in
+  // Settings was still sent a request (the server answered with an empty list,
+  // so it cost a round-trip and looked like the source simply had nothing).
+  //
+  // It is one list now, resolved from GET /api/search/sources, in the user's
+  // own source order, filtered exactly the way the main search box filters
+  // (app.js's doSearch) and then narrowed to the media type of the request.
+  // `media_types` comes from web/source_policy.py -- the server is where that
+  // knowledge belongs, and a module can declare it via register_search_source.
+  var _sources = [];
 
-  // Sources an installed module registered. Appended to both lists above with
-  // an unconditional keep(): the movie/series split is expressed by the
-  // built-ins' own `keep` predicates (they know their result shape), and a
-  // module source declares no such distinction -- so its hits are offered in
-  // both contexts rather than silently dropped from one.
-  var _extraSources = [];
-  function _loadExtraSources() {
+  /** Resolve the source list once per page load (loadSearchSources caches). */
+  function _loadSources() {
     if (typeof window.loadSearchSources !== "function") return Promise.resolve([]);
-    return window.loadSearchSources().then(function (list) {
-      _extraSources = (list || [])
-        .filter(function (s) { return s.thirdparty; })
-        .map(function (s) {
-          return { site: s.id, label: s.label || s.id, keep: function () { return true; } };
+    var settingsP = typeof window.loadGeneralSettings === "function"
+      ? Promise.resolve(window.loadGeneralSettings()).catch(function () { return {}; })
+      : Promise.resolve({});
+    return Promise.all([window.loadSearchSources(), settingsP])
+      .then(function (both) {
+        var list = both[0] || [];
+        var cfg = ((both[1] || {}).sources) || {};
+        var on = cfg.enabled || {};
+        var hide = cfg.hide_disabled_in_search === "1";
+        if (typeof window._sortSourcesByUserOrder === "function") {
+          list = window._sortSourcesByUserOrder(list, cfg.order);
+        }
+        _sources = list.filter(function (s) {
+          var isOn = typeof window._sourceIsOn === "function"
+            ? window._sourceIsOn(s, on) : s.enabled !== false;
+          // An adult source is opt-in, everything else follows the user's
+          // "hide disabled sources in search" preference -- same rule as the
+          // main search box, so the two cannot disagree about what was asked.
+          return s.adult ? isOn : (isOn || !hide);
         });
-      return _extraSources;
-    }).catch(function () { return []; });
+        return _sources;
+      }).catch(function () { return []; });
+  }
+
+  /** The subset of _sources that can plausibly have *what*, "movies" or
+   *  "series". A source that declared nothing is assumed to have both (the
+   *  server's default) -- being asked about something it does not carry costs
+   *  one empty answer, while being left out looks like a broken source. */
+  function _sourcesFor(what) {
+    return _sources.filter(function (s) {
+      var types = s.media_types && s.media_types.length
+        ? s.media_types : ["movies", "series"];
+      return types.indexOf(what) !== -1;
+    }).map(function (s) {
+      var both = (s.media_types || []).indexOf("movies") !== -1 &&
+        (s.media_types || []).indexOf("series") !== -1;
+      return {
+        site: s.id,
+        label: s.label || s.id,
+        // Only a source that carries BOTH has to split its own results, and
+        // only MegaKino actually reports is_series -- so the predicate is
+        // applied where the flag exists and skipped where it does not, rather
+        // than `!r.is_series` wrongly keeping everything from every other site.
+        keep: both
+          ? function (r) {
+            if (typeof r.is_series === "undefined") return true;
+            return what === "series" ? !!r.is_series : !r.is_series;
+          }
+          : function () { return true; },
+      };
+    });
   }
 
   function openSearchModal(reqId) {
@@ -937,9 +973,9 @@
 
     openOverlay("seerrSearchOverlay");
     if (input) input.focus();
-    // Resolved before the first fan-out so a module source is included in it;
-    // loadSearchSources() caches, so this is one request per page load.
-    _loadExtraSources().then(function () { if (req.title) doSearch(); });
+    // Resolved before the first fan-out so every source is included in it;
+    // both helpers cache, so this is one request per page load.
+    _loadSources().then(function () { if (req.title) doSearch(); });
   }
 
   function closeSearchModal() { closeOverlay("seerrSearchOverlay"); }
@@ -955,8 +991,14 @@
       '<span class="seerr-spinner" aria-hidden="true"></span>' +
       esc(t("Suche läuft…", "Searching…")) + "</div>";
 
-    var sources = (S.ctxIsMovie ? MOVIE_SOURCES : SERIES_SOURCES).concat(_extraSources);
+    var sources = _sourcesFor(S.ctxIsMovie ? "movies" : "series");
     var mySeq = ++S.searchSeq;
+    if (!sources.length) {
+      container.innerHTML = '<div class="seerr-search-empty">' +
+        esc(t("Keine passende Quelle ist eingeschaltet.",
+              "No matching source is switched on.")) + "</div>";
+      return;
+    }
 
     Promise.all(sources.map(function (src) {
       return fetch("/api/search", {
@@ -973,15 +1015,24 @@
         .catch(function () { return []; });   // one dead source must not kill the search
     })).then(function (lists) {
       if (mySeq !== S.searchSeq) return;      // a newer search already won
-      // Interleave the first two sources so both appear near the top, then
-      // append the rest in declared order.
+      // Round-robin across every source, in the user's source order, so the
+      // list does not open with twenty hits from whichever site answered
+      // longest. It used to interleave exactly lists[0] and lists[1] and append
+      // the rest -- "the first two" named FilmPalast+MegaKino or
+      // AniWorld+SerienStream back when the arrays were literals, and names
+      // nothing once the list is resolved at runtime.
       var combined = [];
-      var a = lists[0] || [], b = lists[1] || [];
-      for (var i = 0; i < Math.max(a.length, b.length); i++) {
-        if (i < a.length) combined.push(a[i]);
-        if (i < b.length) combined.push(b[i]);
+      var depth = 0;
+      var deepest = 0;
+      for (var n = 0; n < lists.length; n++) {
+        deepest = Math.max(deepest, (lists[n] || []).length);
       }
-      for (var j = 2; j < lists.length; j++) combined = combined.concat(lists[j] || []);
+      for (depth = 0; depth < deepest; depth++) {
+        for (var k = 0; k < lists.length; k++) {
+          var items = lists[k] || [];
+          if (depth < items.length) combined.push(items[depth]);
+        }
+      }
       renderSearchResults(combined);
     });
   }

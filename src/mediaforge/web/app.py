@@ -278,9 +278,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     _ACCENT_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
     def _resolve_appearance_defaults():
+        # Imported here rather than closed over. `_get_setting` is bound further
+        # down inside a conditional block of create_app(), so whether this
+        # function could read a setting at all depended on that block having
+        # run -- and when it had not, every read raised NameError straight into
+        # the except below and this quietly reported the built-in defaults.
+        # That is why an admin could set a default theme or accent and see no
+        # effect: the value was stored and then never read back.
+        from .db import get_setting as _setting
         try:
-            mode = (_get_setting("default_theme_mode", "dark") or "dark").strip()
-            accent = (_get_setting("default_accent", "") or "").strip()
+            mode = (_setting("default_theme_mode", "dark") or "dark").strip()
+            accent = (_setting("default_accent", "") or "").strip()
         except Exception:
             mode, accent = "dark", ""
         # Instance default for the eight design toggles. Until now these had no
@@ -297,7 +305,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # distinction is what lets base.html keep the old localStorage fallback
         # for existing installs instead of blanking their look on upgrade.
         try:
-            raw = _get_setting("default_ui_toggles", None)
+            raw = _setting("default_ui_toggles", None)
         except Exception:
             raw = None
         ui_default = None
@@ -772,6 +780,16 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     _start_uptime_monitor()
     init_devinfos_db()
     _start_devinfos_poller()
+    # Resolves the alternative names each library folder answers to, so
+    # "already downloaded" stops depending on which provider you arrived from.
+    # Background and incremental (one TMDB lookup per folder, spread over
+    # passes, result stored permanently); no-op without a TMDB key. See
+    # web/library_aliases.py.
+    try:
+        from .library_aliases import start_alias_resolver
+        start_alias_resolver()
+    except Exception:
+        logger.exception("[Aliases] Resolver could not be started")
     # Telemetry: sys.excepthook + Flask error handler + background sender
     # thread. Consent-gated (see mediaforge/telemetry/settings.py) — safe to
     # always initialize since nothing is ever sent before the user has
@@ -1115,8 +1133,19 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         from . import syncplay_rooms as _sp_boot
         for _rn in _json_boot.loads(get_setting("syncplay_rooms", "[]") or "[]"):
             _sp_boot.ensure_room(_rn)
+        # Close rooms nobody is in any more. Without this an abandoned room
+        # lived until an explicit close or a restart: it stayed listed in the
+        # lobby, kept being written back here on every persist, and kept its
+        # name reserved. The callback writes the shortened list back -- a reaped
+        # room still in app_settings would be recreated by the loop above on the
+        # very next start.
+        def _sp_reaped(_names):
+            from .db import set_json_setting as _set_json
+            _set_json("syncplay_rooms", _sp_boot.all_room_names())
+
+        _sp_boot.start_room_reaper(_sp_reaped)
     except Exception:
-        pass
+        logger.exception("[SyncPlay] Room restore/reaper setup failed")
 
     # Stream endpoints SyncPlay guests need for library playback. Exempted from
     # login_required (see _exempt) and gated here: logged-in OR valid sp guest.

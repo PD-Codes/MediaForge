@@ -23,7 +23,134 @@ def init_library_db():
                 is_scanning INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Alternative names for a folder on disk, so "is this already
+        # downloaded?" stops depending on which provider you arrived from. A
+        # folder is named after whichever provider downloaded it first; every
+        # other provider then compares its own spelling of the title against
+        # that name, and a provider that calls the show something else entirely
+        # ("Kyoukaisen-jou no Horizon" vs "Horizon in the Middle of Nowhere")
+        # could never match no matter how good the string comparison was.
+        #
+        # Its own table rather than a column on library_cache: that table holds
+        # ONE row per scan target with the whole title tree as an opaque JSON
+        # blob, so it can be neither queried nor updated per folder. And not in
+        # tmdb_cache either -- that is a 24 h TTL key-value store keyed by the
+        # asking title, whereas this has to survive eviction (it is a fact about
+        # a folder, not a cached response) and be searchable by any of the names.
+        #
+        # `folder` is stored lower-cased, matching get_media_ignores()'s
+        # convention -- the same folder arriving with different casing from two
+        # scan roots must not become two rows.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS library_aliases (
+                folder      TEXT PRIMARY KEY,
+                tmdb_id     TEXT NOT NULL DEFAULT '',
+                media_type  TEXT NOT NULL DEFAULT '',
+                aliases     TEXT NOT NULL DEFAULT '[]',
+                resolved_at REAL NOT NULL DEFAULT 0
+            )
+        """)
         conn.commit()
+    finally:
+        conn.close()
+
+
+def set_library_aliases(folder, aliases, tmdb_id="", media_type="") -> None:
+    """Record the alternative names *folder* is known by.
+
+    An empty *aliases* list is a meaningful result and is stored as such: it
+    means "we asked and TMDB had nothing useful", and writing it is what stops
+    the resolver asking about the same folder on every pass. `resolved_at` is
+    what a caller uses to decide a row is old enough to be worth re-checking.
+    """
+    import json as _json
+    import time as _time
+    key = str(folder or "").strip().lower()
+    if not key:
+        return
+    clean = []
+    for name in (aliases or []):
+        text = str(name or "").strip()
+        if text and text not in clean:
+            clean.append(text)
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT INTO library_aliases (folder, tmdb_id, media_type, aliases, resolved_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(folder) DO UPDATE SET
+                   tmdb_id = excluded.tmdb_id,
+                   media_type = excluded.media_type,
+                   aliases = excluded.aliases,
+                   resolved_at = excluded.resolved_at""",
+            (key, str(tmdb_id or ""), str(media_type or ""),
+             _json.dumps(clean, ensure_ascii=False), _time.time()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_library_aliases() -> dict:
+    """``{folder_lower: {"tmdb_id", "media_type", "aliases", "resolved_at"}}``.
+
+    One query for the whole table on purpose: the callers ("does any folder
+    hold this title?") need to test an arbitrary name against every folder, so
+    a per-folder lookup would be a query per card.
+    """
+    import json as _json
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT folder, tmdb_id, media_type, aliases, resolved_at FROM library_aliases"
+        ).fetchall()
+    except Exception:
+        # Table not created yet (a caller that runs before init_library_db()).
+        return {}
+    finally:
+        conn.close()
+    out = {}
+    for r in rows:
+        try:
+            aliases = _json.loads(r["aliases"] or "[]")
+        except Exception:
+            aliases = []
+        out[r["folder"]] = {
+            "tmdb_id": r["tmdb_id"] or "",
+            "media_type": r["media_type"] or "",
+            "aliases": aliases if isinstance(aliases, list) else [],
+            "resolved_at": r["resolved_at"] or 0,
+        }
+    return out
+
+
+def prune_library_aliases(known_folders) -> int:
+    """Drop rows for folders that are no longer on disk. Returns the count.
+
+    Without this the table grows forever: a renamed or deleted folder leaves a
+    row that keeps claiming its aliases, so a title could report as downloaded
+    on the strength of a folder that does not exist any more.
+    """
+    keep = {str(f or "").strip().lower() for f in (known_folders or []) if f}
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT folder FROM library_aliases").fetchall()
+        stale = [r["folder"] for r in rows if r["folder"] not in keep]
+        if not stale:
+            return 0
+        # Chunked: SQLite caps the number of bound parameters, and a large
+        # library can exceed it in one statement.
+        for i in range(0, len(stale), 400):
+            chunk = stale[i:i + 400]
+            conn.execute(
+                "DELETE FROM library_aliases WHERE folder IN (%s)"
+                % ",".join("?" * len(chunk)),
+                chunk,
+            )
+        conn.commit()
+        return len(stale)
+    except Exception:
+        return 0
     finally:
         conn.close()
 

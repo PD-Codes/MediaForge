@@ -213,10 +213,13 @@ from .seerr import (  # noqa: F401
 )
 from .library import (  # noqa: F401
     get_all_library_cache,
+    get_library_aliases,
     get_library_cache_status,
     init_library_db,
     invalidate_library_cache,
+    prune_library_aliases,
     prune_library_cache,
+    set_library_aliases,
     set_library_cache,
     set_library_scanning,
 )
