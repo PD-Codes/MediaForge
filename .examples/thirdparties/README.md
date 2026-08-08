@@ -1985,7 +1985,7 @@ def register(app):
   resolvable (pasted links, AutoSync) without claiming your site can answer
   a keyword search. A source that offers both should register both.
 
-- **`register_catalogue(item_id, source_id, label, fetch, kind="series")`**
+- **`register_catalogue(item_id, source_id, label, fetch, kind="series", color=None)`**
   (`mediaforge/catalogue.py`) is the third, optional half: it puts your site
   on the **Catalogue** page (`/catalogue`), where the user sees your site's
   COMPLETE list of titles, marks any number of them and hands the whole
@@ -1999,6 +1999,15 @@ def register(app):
   neither built-in site puts those on its list page, and the Catalogue page
   fetches the rich data for ONE title at a time when the user opens its
   details.
+
+  `color` is an optional literal hex colour (`"#7c5cff"`, `"#7cf"`) for the
+  dot next to your source's name — on its filter chip and on every one of its
+  rows. The page merges all catalogues into ONE alphabetical list, so that dot
+  is what tells your entries apart from a built-in's; leave it out and your
+  source shares a neutral colour with every other third party. Anything that
+  is not a plain `#rgb`/`#rrggbb` is dropped, because the value is rendered
+  into a style attribute. Same parameter, same rule as
+  `register_home_feed_source()`.
 
   The result is cached for 12 hours, so `fetch` should do real network work
   rather than the module holding a copy — and it may be slow, it runs once.
