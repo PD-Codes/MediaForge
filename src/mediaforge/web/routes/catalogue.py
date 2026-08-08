@@ -11,9 +11,9 @@ Extracted from create_app as a plain route-registration function
 
 from flask import jsonify, render_template, request
 
-from ...catalogue import all_catalogues, cached_catalogue, get_catalogue
+from ...catalogue import all_catalogues
 from ...logger import get_logger
-from .. import catalogue_worker
+from .. import catalogue_store, catalogue_worker
 from ..db import get_autosync_jobs, get_queue
 from ..source_policy import source_enabled
 
@@ -38,6 +38,8 @@ def _catalogue_sources():
     uses. A source switched off in Settings is listed but marked, rather than
     hidden: it is the same list everywhere else in the app, and silently
     dropping an entry is how a user ends up thinking a source disappeared."""
+    from ..db import catalogue_meta
+    stored = catalogue_meta()
     out = []
     for sid, meta in all_catalogues().items():
         out.append({
@@ -50,7 +52,9 @@ def _catalogue_sources():
             # by catalogue._safe_color(); "" means "use the page's fallback".
             "color": meta.get("color") or "",
             "enabled": bool(source_enabled(sid)),
-            "cached": cached_catalogue(sid) is not None,
+            # "cached" now means "there are rows in the DB", which survives a
+            # restart -- the old in-memory answer was False after every one.
+            "cached": bool(stored.get(sid, {}).get("count")),
         })
     return out
 
@@ -102,10 +106,86 @@ def register_catalogue_routes(app):
             return jsonify({"source": source_id, "entries": [], "disabled": True})
 
         force = request.args.get("refresh") == "1"
-        entries = get_catalogue(source_id, force=force)
+        entries, meta = catalogue_store.get_entries(source_id, force=force)
         if entries is None:
             return jsonify({"error": "catalogue unavailable", "source": source_id}), 503
-        return jsonify({"source": source_id, "entries": entries, "count": len(entries)})
+        # A stale list is a normal answer, not an error: it is served straight
+        # from the DB while the refresh runs behind it, and the page says how
+        # old it is rather than showing a spinner over perfectly good data.
+        return jsonify({
+            "source": source_id,
+            "entries": entries,
+            "count": len(entries),
+            "fetched_at": meta.get("fetched_at") or 0,
+            "stale": bool(meta.get("status") == "failed"),
+            "refreshing": source_id in catalogue_store.status()["refreshing"],
+        })
+
+    @app.route("/api/catalogue/status")
+    def api_catalogue_status():
+        """Freshness and background progress. GET /api/catalogue/status.
+
+        Polled by the page while anything is running. Deliberately separate
+        from /api/catalogue/state (which is about the QUEUE): this one is
+        about the catalogue's own housekeeping -- which list is being
+        refetched, how old each one is, and how far the id resolution has
+        got. A background job the user cannot see is a background job the
+        user assumes is broken.
+        """
+        return jsonify(catalogue_store.status())
+
+    @app.route("/api/catalogue/refresh", methods=["POST"])
+    def api_catalogue_refresh():
+        """Ask for a refetch of one source or all of them.
+        POST /api/catalogue/refresh {"source": "aniworld"}.
+
+        Answers 202 and returns immediately -- the work happens in the
+        background and the page follows it through /api/catalogue/status.
+        """
+        data = request.get_json(silent=True) or {}
+        source_id = str(data.get("source") or "").strip().lower()
+        if source_id:
+            if source_id not in all_catalogues():
+                return jsonify({"error": "unknown catalogue"}), 404
+            started = 1 if catalogue_store.start_refresh(source_id) else 0
+        else:
+            started = catalogue_store.refresh_stale(force=True)
+        return jsonify({"started": started, "status": catalogue_store.status()}), 202
+
+    @app.route("/api/catalogue/resolve", methods=["POST"])
+    def api_catalogue_resolve():
+        """Resolve ONE entry's TMDB/IMDb id now. POST /api/catalogue/resolve.
+
+        The lazy half of the id resolution: the backfill crawls the whole
+        catalogue over hours, but a title the user just opened is one they
+        care about right now, so it jumps the queue. One TMDB lookup, cached
+        for 24h and rate-limited process-wide like every other one.
+
+        Already-resolved entries answer from the database without touching
+        TMDB at all.
+        """
+        data = request.get_json(silent=True) or {}
+        url = str(data.get("url") or "").strip().rstrip("/")
+        if not url:
+            return jsonify({"error": "url is required"}), 400
+
+        # Must be a url we actually hold -- otherwise this is a "look up
+        # anything on TMDB for me" endpoint with the app's API key attached.
+        from ..db import load_catalogue
+        for sid in all_catalogues():
+            for entry in load_catalogue(sid):
+                if entry["url"].rstrip("/") != url:
+                    continue
+                if entry.get("tmdb_id") or entry.get("imdb_id"):
+                    return jsonify({"tmdb_id": entry.get("tmdb_id", ""),
+                                    "imdb_id": entry.get("imdb_id", ""),
+                                    "cached": True})
+                from .. import catalogue_ids
+                result = catalogue_ids.resolve_entry(sid, entry["url"], entry["title"])
+                return jsonify({"tmdb_id": result.get("tmdb_id", ""),
+                                "imdb_id": result.get("imdb_id", ""),
+                                "cached": False})
+        return jsonify({"error": "unknown url"}), 404
 
     @app.route("/api/catalogue/state")
     def api_catalogue_state():
@@ -160,11 +240,12 @@ def register_catalogue_routes(app):
         # What has not changed is the reason for checking at all: a bulk
         # endpoint that scrapes whatever url it is handed is a request forgery
         # tool with a download queue attached.
+        # Reads the stored lists only. A POST must not be able to trigger two
+        # multi-megabyte downloads just to answer "is this url in a catalogue" --
+        # and after the move to the DB there is always something stored unless
+        # the app has genuinely never fetched anything.
         known = {}
-        for sid in all_catalogues():
-            entries = get_catalogue(sid)
-            if entries is None:
-                continue
+        for sid, entries in catalogue_store.all_entries().items():
             for entry in entries:
                 known.setdefault(entry["url"].rstrip("/"), sid)
         if not known:

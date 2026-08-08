@@ -47,6 +47,7 @@ from .db import (
     init_notification_db,
     init_upscale_queue_db,
     init_encoding_queue_db,
+    init_catalogue_cache_db,
     init_mediascan_db,
     init_watch_progress_db,
     init_reading_progress_db,
@@ -763,6 +764,18 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                     get_logger(__name__).debug("[DB] Evicted %d expired browse cache entries", removed)
             except Exception as exc:
                 get_logger(__name__).warning("[DB] Browse cache eviction failed: %s", exc)
+            try:
+                # A module removed while the app was down never got to call
+                # unregister_catalogue(), and an orphaned catalogue is ~10k
+                # rows nothing will ever read again.
+                from ..catalogue import all_catalogues as _all_cat
+                from .db import evict_catalogue_cache as _evict_cat
+                dropped = _evict_cat(list(_all_cat()))
+                if dropped:
+                    get_logger(__name__).debug(
+                        "[DB] Evicted %d orphaned catalogue(s)", dropped)
+            except Exception as exc:
+                get_logger(__name__).warning("[DB] Catalogue eviction failed: %s", exc)
             _wr.done("cache_evict", next_run=_next_run_iso())
 
     threading.Thread(target=_tmdb_cache_eviction_loop, daemon=True,
@@ -773,6 +786,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     init_upscale_queue_db()
     init_encoding_queue_db()
     init_mediascan_db()
+    # Catalogue lists live in the DB now, so the Catalogue page answers from
+    # disk instead of waiting on two multi-megabyte downloads (see
+    # web/catalogue_store.py). init() also schedules the first staleness
+    # check, deferred so startup never waits on the network.
+    init_catalogue_cache_db()
     init_watch_progress_db()
     init_reading_progress_db()
     init_reading_bookmarks_db()
@@ -798,6 +816,25 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     _load_queue_paused_from_db()
     # Start MediaScan 24-h background scheduler
     _start_mediascan_scheduler()
+
+    # Catalogue store: registers the module-unregister hook and schedules the
+    # first staleness check (deferred inside init(), so startup never waits on
+    # a source site). Refreshing here rather than on page open is what turns
+    # the first Catalogue open of the day into an instant one.
+    try:
+        from . import catalogue_store as _catalogue_store
+        _catalogue_store.init()
+    except Exception as _cat_exc:
+        get_logger(__name__).warning("[Catalogue] store init failed: %s", _cat_exc)
+
+    # Title -> TMDB/IMDb id backfill. Starts unconditionally and idles itself
+    # when no TMDB key is configured, so configuring one later does not need a
+    # restart (see web/catalogue_ids.py).
+    try:
+        from . import catalogue_ids as _catalogue_ids
+        _catalogue_ids.start()
+    except Exception as _cid_exc:
+        get_logger(__name__).warning("[CatalogueIds] worker start failed: %s", _cid_exc)
 
     # Auto-generate external API key on first run
     if not get_setting("external_api_key", ""):

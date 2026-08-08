@@ -191,6 +191,12 @@ def _safe_color(value) -> str:
 # ---------------------------------------------------------------------------
 _EXTRA_CATALOGUES: dict = {}  # item_id -> entry
 
+# Called with the source_id when a third-party catalogue is unregistered.
+# A hook rather than a direct call, because the thing that needs to react --
+# the DB store in web/catalogue_store.py -- lives in the web layer, and this
+# module must not import from there (see the module docstring).
+UNREGISTER_HOOKS: list = []
+
 
 def register_catalogue(item_id, source_id, label, fetch, kind="series", color=None):
     """Add a full-catalogue source from a third-party module's ``register(app)``.
@@ -244,6 +250,11 @@ def unregister_catalogue(item_id) -> None:
     removed = _EXTRA_CATALOGUES.pop(item_id, None)
     if removed:
         _cache_drop(removed["source_id"])
+        for hook in list(UNREGISTER_HOOKS):
+            try:
+                hook(removed["source_id"])
+            except Exception as exc:
+                logger.debug("[Catalogue] unregister hook failed: %s", exc)
         logger.info("[Catalogue] Unregistered third-party catalogue: %s (%s)",
                     removed["source_id"], item_id)
 

@@ -9658,6 +9658,62 @@ msgstr "Sortierung"
 msgid "Options"
 msgstr "Optionen"
 
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Update now"
+msgstr "Jetzt aktualisieren"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Updating"
+msgstr "Aktualisiere"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "List updated just now"
+msgstr "Liste gerade aktualisiert"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "List from"
+msgstr "Liste von vor"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "The last update failed — showing the previous list."
+msgstr "Die letzte Aktualisierung ist fehlgeschlagen — es wird die vorherige Liste gezeigt."
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Matching titles against TMDB"
+msgstr "Titel werden mit TMDB abgeglichen"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Title matching complete"
+msgstr "Titelabgleich abgeschlossen"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "min ago"
+msgstr "Min."
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "h ago"
+msgstr "Std."
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "d ago"
+msgstr "Tagen"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Catalogue list refresh"
+msgstr "Katalog-Listenaktualisierung"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "Downloaded"
+msgstr "Heruntergeladen"
+
+#: src/mediaforge/web/templates/catalogue.html:0
+msgid "All episodes downloaded"
+msgstr "Alle Episoden heruntergeladen"
+
+#: src/mediaforge/web/templates/settings.html:0
+msgid "Catalogue title matching"
+msgstr "Katalog-Titelabgleich"
+
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"
 

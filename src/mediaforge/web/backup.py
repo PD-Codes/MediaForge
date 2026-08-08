@@ -44,8 +44,11 @@ _SETTING_DENYLIST = frozenset({
 
 # Category catalog. "settings" is special-cased; every other category is a
 # set of concrete tables. Cache tables (tmdb_cache, provider_cache,
-# browse_cache, library_cache, mediascan_cache, uptime_heartbeats,
-# devinfo_posts) are deliberately absent -- they are never backed up.
+# browse_cache, catalogue_entries, catalogue_meta, library_cache,
+# mediascan_cache, uptime_heartbeats, devinfo_posts) are deliberately absent --
+# they are never backed up. The catalogue tables in particular are a snapshot
+# of a live website: restoring yesterday elsewhere buys nothing a refresh does
+# not, and they are the largest tables in the database.
 BACKUP_CATEGORIES: dict = {
     "settings":       {"kind": "settings", "default": True},
     "favourites":     {"kind": "tables", "default": True,

@@ -2114,8 +2114,25 @@ def register(app):
   into a style attribute. Same parameter, same rule as
   `register_home_feed_source()`.
 
-  The result is cached for 12 hours, so `fetch` should do real network work
-  rather than the module holding a copy — and it may be slow, it runs once.
+  The result is stored in the database (`catalogue_entries`), not in memory,
+  and refreshed in the background roughly every 12 hours. Two consequences for
+  a module author: `fetch` may be slow and should do real network work rather
+  than the module holding a copy — it runs once per refresh, never in a user's
+  request — and your list keeps working across restarts and while your site is
+  down, because the last good snapshot is what the page serves. A refresh that
+  returns an empty list is treated as a failure and does NOT overwrite that
+  snapshot, so a parser that breaks on a redesign degrades to "stale" rather
+  than to "gone". Uninstalling the module drops its rows.
+
+  Titles from your catalogue are matched against TMDB in the background and the
+  resulting TMDB/IMDb ids are stored alongside your rows, which is what lets
+  the page say "you already have this" exactly rather than by comparing
+  normalised titles. Nothing is required of the module for that — but the
+  cleaner your `title` is (the site's own title, not a slug and not decorated
+  with "Stream" or a year), the more of your entries resolve. A match TMDB is
+  not confident about is discarded rather than stored, so a bad title costs
+  precision, never correctness.
+
   Only register this if your site actually publishes such a list; a catalogue
   assembled by paging through search results is not what this is for.
 - **`register_home_feed_source(item_id, source_id, label, fetchers, media_type="series", color=None)`**

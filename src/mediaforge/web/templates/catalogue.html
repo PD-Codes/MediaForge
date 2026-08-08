@@ -40,6 +40,20 @@
     <span class="cat-count" id="catCount"></span>
   </div>
 
+  {# Freshness and background work, in the one place the work is about. The
+     lists come from the database now, so the page never waits on a source
+     site -- but "instantly served from yesterday's copy" has to SAY so, and a
+     refresh or an id resolution nobody can see is one the user assumes is
+     broken. Hidden entirely when nothing is running and everything is fresh. #}
+  <div class="cat-status" id="catStatus" hidden>
+    <span class="cat-status-spin" id="catStatusSpin" aria-hidden="true"></span>
+    <span class="cat-status-text" id="catStatusText"></span>
+    <div class="cat-status-bar" id="catStatusBar" hidden>
+      <div class="cat-status-fill" id="catStatusFill" style="width:0%"></div>
+    </div>
+    <button type="button" class="cat-status-btn" id="catStatusRefresh">{{ _('Update now') }}</button>
+  </div>
+
   {# The rail lives beside the viewport rather than inside it: overlaying the
      scrollbar means the two fight for the same 16px on desktop, and a finger
      resting on the rail must not also scroll the list underneath. #}
@@ -141,16 +155,22 @@
    it did before the feature existed.
 
    There is deliberately no link out to the source site. #}
-<div class="modal-overlay stats-modal-overlay cat-modal-overlay" id="catModal" style="display:none"
+<div class="modal-overlay cat-modal-overlay" id="catModal" style="display:none"
   onclick="if(event.target===this)catCloseModal()" role="dialog" aria-modal="true"
   aria-labelledby="catModalTitle">
-  <div class="card stats-modal-card cat-modal-card loaded" id="catModalCard" style="max-width:840px;">
+  {# The shell classes are all cat-*. This markup was copied from the Stats
+     page, whose modal classes live in stats.css — a stylesheet that is linked
+     per page and never on this one. The dialog therefore had no max-height,
+     no column layout and no centering whatsoever, which is exactly how it
+     ended up glued to the top of the screen. Everything it needs is in
+     catalogue.css now, per the project's one-stylesheet-per-page rule. #}
+  <div class="card cat-modal-card loaded" id="catModalCard">
     <div class="cat-modal-backdrop" id="catModalBackdrop" aria-hidden="true"></div>
-    <div class="card-header stats-modal-header cat-modal-header">
-      <div class="stats-modal-heading">
+    <div class="card-header cat-modal-header">
+      <div class="cat-modal-heading">
         <div>
           <h2 class="card-title" id="catModalTitle">…</h2>
-          <p class="stats-modal-sub" id="catModalSub"></p>
+          <p class="cat-modal-sub" id="catModalSub"></p>
         </div>
       </div>
       <button class="modal-close" onclick="catCloseModal()" aria-label="{{ _('Close') }}">
@@ -215,6 +235,23 @@
     sort_az: {{ _('A–Z')|tojson }},
     sort_za: {{ _('Z–A')|tojson }},
     sort_label: {{ _('Sort order')|tojson }},
+    {# Status strip. The lists are served from the database and refreshed in
+       the background, so the page has to be able to say which of those is
+       happening right now. #}
+    refreshing_one: {{ _('Updating')|tojson }},
+    updated_just_now: {{ _('List updated just now')|tojson }},
+    updated_ago: {{ _('List from')|tojson }},
+    refresh_failed: {{ _('The last update failed — showing the previous list.')|tojson }},
+    resolving_ids: {{ _('Matching titles against TMDB')|tojson }},
+    ids_done: {{ _('Title matching complete')|tojson }},
+    ago_minutes: {{ _('min ago')|tojson }},
+    ago_hours: {{ _('h ago')|tojson }},
+    ago_days: {{ _('d ago')|tojson }},
+    {# Per-episode "already on disk" markers, worded exactly as the download
+       modal words them -- the two views share the CSS, so they share the
+       tooltips too. Nothing is said about episodes that are MISSING. #}
+    downloaded: {{ _('Downloaded')|tojson }},
+    all_downloaded: {{ _('All episodes downloaded')|tojson }},
     {# The warning the user asked for: shown before submitting, never blocking.
        No %(n)s placeholder -- Flask-Babel's gettext() runs its own %
        interpolation over the result and would raise KeyError. The count is

@@ -165,6 +165,29 @@ WORKERS: dict[str, dict] = {
         "fields": (F_STATUS, F_LAST_RUN, F_ENTRIES), "stall": None,
         "link": "/catalogue",
     },
+    "catalogue_sync": {
+        # Distinct from "catalogue" above: that one expands a user's bulk
+        # SELECTION into queue items, this one keeps the A-Z lists themselves
+        # up to date in the DB (see web/catalogue_store.py). They fail for
+        # different reasons and an operator needs to tell them apart.
+        #
+        # No stall watchdog for the same reason: refreshing twice a day is
+        # healthy, and a countdown against that is an alarm for nothing.
+        # F_ENTRIES carries how many catalogue rows are stored in total.
+        "label": "worker_catalogue_sync", "external": False, "kind": KIND_CONTINUOUS,
+        "fields": (F_STATUS, F_LAST_RUN, F_ENTRIES), "stall": None,
+        "link": "/catalogue",
+    },
+    "catalogue_ids": {
+        # Resolves catalogue titles to TMDB/IMDb ids so "do I already have
+        # this" stops being a fuzzy title comparison (see web/catalogue_ids.py).
+        # Runs for hours at a deliberate crawl and then sits idle for weeks, so
+        # no stall watchdog -- and it is idle by design without a TMDB key,
+        # which is not a fault either.
+        "label": "worker_catalogue_ids", "external": False, "kind": KIND_CONTINUOUS,
+        "fields": (F_STATUS, F_LAST_RUN, F_ENTRIES), "stall": None,
+        "link": "/catalogue",
+    },
     "cache_evict": {
         "label": "worker_cacheevict", "external": False, "kind": KIND_SCHEDULED,
         "fields": (F_LAST_RUN, F_NEXT_RUN, F_STATUS), "stall": None,
