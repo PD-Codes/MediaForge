@@ -99,6 +99,43 @@
   const rowHeight = () => (window.matchMedia("(max-width: 720px)").matches
     ? ROW_HEIGHT_MOBILE : ROW_HEIGHT_DESKTOP);
 
+  /** Is this already in the library? One place, every index we have.
+   *
+   * Three answers in order of how much they can be trusted:
+   *
+   *   1. The entry's own TMDB/IMDb id against the Plex/Jellyfin index. An
+   *      exact match -- this is the whole reason the ids are resolved (see
+   *      web/catalogue_ids.py). Only some entries have one; the backfill
+   *      fills them in over hours and the rest fall through.
+   *   2. The normalised TITLE against that same index.
+   *   3. The normalised title against the download-folder list.
+   *
+   * 2 and 3 are app.js's own functions, picked between exactly the way
+   * addDownloadedBadge() picks between them -- this page must not grow a
+   * second opinion about what "downloaded" means. All of it is behind
+   * `typeof` guards because app.js is not guaranteed to be on the page.
+   */
+  function inLibrary(title, entry) {
+    if (!title && !entry) return false;
+    try {
+      if (typeof mediascanActive !== "undefined" && mediascanActive) {
+        if (entry && entry.tmdb_id &&
+            typeof window._isDownloadedByTmdb === "function" &&
+            window._isDownloadedByTmdb(entry.tmdb_id)) {
+          return true;
+        }
+        if (entry && entry.imdb_id && typeof mediascanImdbIds !== "undefined" &&
+            mediascanImdbIds.has(String(entry.imdb_id))) {
+          return true;
+        }
+        if (typeof window._isDownloadedByTitle === "function") {
+          return window._isDownloadedByTitle(title);
+        }
+      }
+    } catch (e) { /* app.js absent -- fall through to the folder list */ }
+    return typeof window.isDownloaded === "function" && window.isDownloaded(title);
+  }
+
   // ── Selection persistence ────────────────────────────────────────────────
   function loadSelection() {
     try {
@@ -180,7 +217,13 @@
       if (!res.ok || !res.data || !res.data.entries) return;
       loadedCount += 1;
       res.data.entries.forEach((e) => {
-        merged.push({ title: e.title, url: e.url, alt: e.alt || "", source: res.id });
+        // tmdb_id/imdb_id come straight from the stored catalogue and are what
+        // makes the library check exact rather than a title guess. Empty for
+        // any entry the backfill has not reached yet.
+        merged.push({
+          title: e.title, url: e.url, alt: e.alt || "", source: res.id,
+          tmdb_id: e.tmdb_id || "", imdb_id: e.imdb_id || "",
+        });
       });
     });
 
@@ -307,14 +350,16 @@
     const hideSync = offStatus.has("sync");
     // app.js owns the downloaded-folder list; on a page where it has not
     // loaded, "in library" is simply unknown and must not hide anything.
-    const canCheckLibrary = hideLibrary && typeof window.isDownloaded === "function";
+    const canCheckLibrary = hideLibrary && (
+      typeof window.isDownloaded === "function" ||
+      typeof window._isDownloadedByTitle === "function");
 
     filtered = entries.filter((e) => {
       if (offSources.has(e.source)) return false;
       if (onlySelected && !selection.has(e.url)) return false;
       if (hideQueued && queuedUrls.has(e.url)) return false;
       if (hideSync && syncUrls.has(e.url)) return false;
-      if (canCheckLibrary && window.isDownloaded(e.title)) return false;
+      if (canCheckLibrary && inLibrary(e.title, e)) return false;
       if (!term) return true;
       return e.title.toLowerCase().indexOf(term) !== -1 ||
         (e.alt && e.alt.indexOf(term) !== -1);
@@ -495,10 +540,9 @@
       const url = e.url;
       const isSel = selection.has(url);
       let badges = "";
-      // "In library" is decided client-side against the downloaded-folder list
-      // the app already holds — see isDownloaded() in app.js. Asking the server
-      // per row would be eleven thousand requests.
-      if (typeof window.isDownloaded === "function" && window.isDownloaded(e.title)) {
+      // Decided client-side against the index app.js already holds; asking
+      // the server per row would be eleven thousand requests.
+      if (inLibrary(e.title, e)) {
         badges += '<span class="cat-badge cat-badge--library">' + esc(t("in_library", "In library")) + "</span>";
       }
       if (queuedUrls.has(url)) {
@@ -601,7 +645,16 @@
     applyFilter();
   });
 
-  el("catRefresh").addEventListener("click", () => loadAll(true));
+  el("catRefresh").addEventListener("click", () => {
+    // Asks the STORE for a refetch and follows it through the status strip;
+    // the list on screen stays usable the whole time. loadAll(true) alone
+    // would only re-request the same stored rows.
+    fetch("/api/catalogue/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }).then(() => pollStatus()).catch(() => loadAll(true));
+  });
 
   const sortBtn = el("catSort");
   if (sortBtn) {
@@ -710,6 +763,39 @@
     }
   }
 
+  // ── Loading state ────────────────────────────────────────────────────────
+  // Shaped like the answer, not like a spinner: poster block, genre chips,
+  // four description lines, a season head and five episode rows. That is what
+  // stops the dialog resizing under the cursor the moment the data lands --
+  // and with the modal centred, a "Loading…" line would put the card at a
+  // third of its final height and then jump.
+  //
+  // Gated on body.skeleton-loader exactly like the download modal (see
+  // openSeries() in app.js): it is an appearance setting, and a user who
+  // turned shimmer off gets the plain line instead.
+  function loadingMarkup() {
+    if (!document.body.classList.contains("skeleton-loader")) {
+      return '<div class="cat-empty">' + esc(t("loading", "Loading…")) + "</div>";
+    }
+    const line = (w) => '<div class="cat-sk cat-sk-line" style="width:' + w + '"></div>';
+    let chips = "";
+    for (let i = 0; i < 3; i++) chips += '<span class="cat-sk cat-sk-chip"></span>';
+    let eps = "";
+    for (let i = 0; i < 5; i++) {
+      eps += '<div class="cat-ep"><span class="cat-sk cat-sk-num"></span>' +
+        '<span class="cat-sk cat-sk-line" style="width:' + (72 - i * 8) + '%"></span></div>';
+    }
+    return '<div class="cat-modal-body">' +
+      '<div class="cat-modal-poster cat-sk"></div>' +
+      '<div class="cat-modal-info">' +
+      '<div class="cat-modal-genres">' + chips + "</div>" +
+      line("100%") + line("97%") + line("92%") + line("58%") +
+      "</div></div>" +
+      '<div class="cat-eplist">' +
+      '<div class="cat-sk cat-sk-head"></div>' + eps +
+      "</div>";
+  }
+
   async function openDetails(url) {
     modalUrl = url;
     const modal = el("catModal");
@@ -718,13 +804,19 @@
     el("catModalTitle").textContent = entry ? entry.title : "…";
     el("catModalSub").textContent = "";
     setModalBackdrop("");
-    body.innerHTML = '<div class="cat-empty">' + esc(t("loading", "Loading…")) + "</div>";
+    body.innerHTML = loadingMarkup();
     syncModalToggle();
     modal.style.display = "flex";
     // Without this the thirteen-thousand-row list keeps scrolling under the
     // dialog, which on a phone means closing it lands you somewhere else
     // entirely. The overlay carries overscroll-behavior for the same reason.
     document.body.classList.add("cat-modal-open");
+
+    // A title the user just opened jumps the backfill's queue -- it is the one
+    // entry out of thirteen thousand they demonstrably care about. Fire and
+    // forget: the answer only changes a badge, and an already-resolved entry
+    // costs the server a database read.
+    resolveIds(url);
 
     try {
       const [seriesResp, seasonsResp] = await Promise.all([
@@ -782,24 +874,60 @@
       host.innerHTML = '<div class="cat-empty">' + esc(t("no_episodes", "No episodes.")) + "</div>";
       return;
     }
-    host.innerHTML = '<div class="cat-empty">' + esc(t("loading", "Loading…")) + "</div>";
+    // Same shape as the list that is about to replace it, so the dialog does
+    // not grow a second time once the episodes arrive.
+    if (document.body.classList.contains("skeleton-loader")) {
+      let sk = '<div class="cat-sk cat-sk-head"></div>';
+      for (let i = 0; i < 6; i++) {
+        sk += '<div class="cat-ep"><span class="cat-sk cat-sk-num"></span>' +
+          '<span class="cat-sk cat-sk-line" style="width:' + (76 - i * 7) + '%"></span></div>';
+      }
+      host.innerHTML = sk;
+    } else {
+      host.innerHTML = '<div class="cat-empty">' + esc(t("loading", "Loading…")) + "</div>";
+    }
     try {
       const lists = await Promise.all(seasons.map((s) =>
         fetch("/api/episodes?url=" + encodeURIComponent(s.url))
           .then((r) => r.json()).catch(() => ({ episodes: [] }))));
       if (modalUrl !== url) return;
+      // /api/episodes already reports `downloaded` per episode -- the same
+      // filesystem check the bulk worker's "only missing episodes" runs. It
+      // was simply thrown away here, so a title you have half of looked
+      // identical to one you have none of.
+      //
+      // Rendered exactly the way the download modal renders it (see
+      // renderSeasons() in app.js): a green check after the episode number,
+      // and a second one on the season header when the whole season is
+      // there. Same .ep-downloaded / .season-downloaded classes from
+      // cards.css, so the two views cannot drift apart -- and, like the
+      // download modal, NOTHING is said about episodes that are missing.
+      // "Nothing on disk yet" is a sentence nobody needs; the absence of a
+      // check already says it.
       let html = "";
       lists.forEach((data, idx) => {
         const eps = data.episodes || [];
         if (!eps.length) return;
         const season = seasons[idx] || {};
-        html += '<div class="cat-season-head">' + esc(t("season", "Season")) + " " +
+        const allDownloaded = eps.every((ep) => ep.downloaded);
+        html += '<div class="cat-season-head"><span>' +
+          esc(t("season", "Season")) + " " +
           esc(season.season_number != null ? season.season_number : idx + 1) +
-          " · " + eps.length + " " + esc(t("episodes_n", "episodes")) + "</div>";
+          " · " + eps.length + " " + esc(t("episodes_n", "episodes")) + "</span>" +
+          (allDownloaded
+            ? '<span class="season-downloaded" title="' +
+              esc(t("all_downloaded", "All episodes downloaded")) + '">\u2713</span>'
+            : "") +
+          "</div>";
         eps.forEach((ep) => {
-          html += '<div class="cat-ep"><span class="cat-ep-num">E' +
-            esc(ep.episode_number != null ? ep.episode_number : "?") + "</span><span>" +
-            esc(ep.title_de || ep.title_en || "") + "</span></div>";
+          html += '<div class="cat-ep">' +
+            '<span class="cat-ep-num">E' +
+            esc(ep.episode_number != null ? ep.episode_number : "?") + "</span>" +
+            (ep.downloaded
+              ? '<span class="ep-downloaded" title="' +
+                esc(t("downloaded", "Downloaded")) + '">\u2713</span>'
+              : "") +
+            "<span>" + esc(ep.title_de || ep.title_en || "") + "</span></div>";
         });
       });
       host.innerHTML = html || '<div class="cat-empty">' + esc(t("no_episodes", "No episodes.")) + "</div>";
@@ -832,6 +960,140 @@
       });
       if (optgroup.children.length) sel.appendChild(optgroup);
     } catch (e) { /* groups are optional; the plain languages still work */ }
+  }
+
+  // ── Lazy id resolution ───────────────────────────────────────────────────
+  async function resolveIds(url) {
+    const entry = entries.find((e) => e.url === url);
+    if (!entry || entry.tmdb_id || entry.imdb_id) return;   // nothing to gain
+    try {
+      const resp = await fetch("/api/catalogue/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url }),
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.tmdb_id && !data.imdb_id) return;
+      entry.tmdb_id = data.tmdb_id || "";
+      entry.imdb_id = data.imdb_id || "";
+      // The row's "In library" badge may be decidable now that there is an id.
+      render();
+    } catch (e) { /* the title path still answers */ }
+  }
+
+  // ── Status strip ─────────────────────────────────────────────────────────
+  // The lists come from the database now (web/catalogue_store.py), so the page
+  // answers instantly and the refetch happens behind it. That is only an
+  // improvement if the page SAYS what it is showing and what is going on --
+  // otherwise "instant" is indistinguishable from "stuck on an old copy".
+  //
+  // Polls only while something is running, and stops as soon as nothing is.
+  let statusPoll = null;
+  let lastIdsRunning = false;
+
+  const num = (value) => (typeof window.mfFormatNumber === "function"
+    ? window.mfFormatNumber(value)
+    : String(value));
+
+  function humanAge(seconds) {
+    if (seconds < 90) return "";                       // "just now" instead
+    const mins = Math.round(seconds / 60);
+    if (mins < 60) return mins + " " + t("ago_minutes", "min ago");
+    const hours = Math.round(mins / 60);
+    if (hours < 48) return hours + " " + t("ago_hours", "h ago");
+    return Math.round(hours / 24) + " " + t("ago_days", "d ago");
+  }
+
+  function renderStatus(data) {
+    const host = el("catStatus");
+    if (!host) return false;
+    const text = el("catStatusText");
+    const bar = el("catStatusBar");
+    const spin = el("catStatusSpin");
+    const sources = (data && data.sources) || [];
+    const ids = (data && data.ids) || {};
+    const busy = (data && data.refreshing) || [];
+
+    let message = "";
+    let showBar = false;
+    let spinning = false;
+
+    if (busy.length) {
+      // Which list, by name: with several sources "updating" alone leaves the
+      // user guessing which one they are waiting on.
+      const names = sources.filter((s) => s.refreshing).map((s) => s.label);
+      message = t("refreshing_one", "Updating") + " " + (names.join(", ") || busy.join(", ")) + "…";
+      spinning = true;
+    } else if (ids.running && ids.total) {
+      // The id backfill runs for a long time over thousands of rows, so this
+      // one gets a real bar and real numbers -- "working" for an hour is not
+      // a progress report.
+      const pct = Math.min(100, Math.round((ids.checked / ids.total) * 100));
+      message = t("resolving_ids", "Matching titles against TMDB") + " · " +
+        num(ids.checked) + " / " + num(ids.total) + " (" + pct + "%)";
+      showBar = true;
+      spinning = true;
+      el("catStatusFill").style.width = pct + "%";
+    } else if (sources.some((s) => s.failed)) {
+      message = t("refresh_failed", "The last update failed.");
+    } else {
+      // Nothing running: report the age of the OLDEST list, because that is
+      // the one that decides how much the page can be trusted.
+      const stamps = sources.filter((s) => s.fetched_at).map((s) => s.fetched_at);
+      if (stamps.length) {
+        const age = (Date.now() / 1000) - Math.min.apply(null, stamps);
+        const human = humanAge(age);
+        message = human
+          ? t("updated_ago", "List from") + " " + human
+          : t("updated_just_now", "List updated just now");
+      }
+    }
+
+    // A finished backfill is worth one line; a permanently visible "complete"
+    // badge is not.
+    if (lastIdsRunning && !ids.running && ids.total) {
+      message = t("ids_done", "Title matching complete") + " · " +
+        num(ids.resolved || 0) + " / " + num(ids.total);
+    }
+    lastIdsRunning = !!ids.running;
+
+    text.textContent = message;
+    host.hidden = !message;
+    bar.hidden = !showBar;
+    spin.hidden = !spinning;
+    host.classList.toggle("is-busy", spinning);
+    host.classList.toggle("is-failed", !spinning && sources.some((s) => s.failed));
+    return spinning;
+  }
+
+  async function pollStatus() {
+    try {
+      const resp = await fetch("/api/catalogue/status");
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      const busy = renderStatus(data);
+      if (busy && !statusPoll) {
+        statusPoll = setInterval(pollStatus, 3000);
+      } else if (!busy && statusPoll) {
+        clearInterval(statusPoll);
+        statusPoll = null;
+        // A refresh that just finished replaced the rows underneath us.
+        loadAll(false);
+      }
+      return busy;
+    } catch (e) { return false; }
+  }
+
+  const statusRefreshBtn = el("catStatusRefresh");
+  if (statusRefreshBtn) {
+    statusRefreshBtn.addEventListener("click", () => {
+      fetch("/api/catalogue/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }).then(() => pollStatus()).catch(() => { /* the strip stays as it was */ });
+    });
   }
 
   // ── Bulk submit ──────────────────────────────────────────────────────────
@@ -1025,6 +1287,16 @@
   renderSortButton();
   updateOptionsSummary();
   loadLanguageGroups().then(updateOptionsSummary);
+  // Populate app.js's library indexes for this page. Without it every
+  // "In library" check on the Catalogue page answered no -- see inLibrary().
+  if (typeof window.loadDownloadedFolders === "function") {
+    window.loadDownloadedFolders().then(() => {
+      // The list may already be on screen; re-run the filter so the badges
+      // (and the "In library" chip) reflect what was just loaded.
+      if (entries.length) applyFilter();
+    }).catch(() => { /* best-effort, same as app.js */ });
+  }
   loadState().then(loadSources);
   resumeJob();
+  pollStatus();
 })();

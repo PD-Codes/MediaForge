@@ -110,6 +110,73 @@
    directions so the toolbar does not shift when it is pressed. */
 .cat-sort-btn { min-width: 68px; text-align: center; font-variant-numeric: tabular-nums; }
 
+/* ── Status strip ──────────────────────────────────────────────────────────
+   Freshness and background progress. Sits between the filters and the list
+   because that is what it is about; hidden entirely when there is nothing to
+   say, so the common case costs no vertical space at all. */
+.cat-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.cat-status[hidden] { display: none; }
+.cat-status.is-busy { border-color: var(--border-focus); }
+.cat-status.is-failed { border-color: var(--warning); color: var(--warning); }
+
+.cat-status-text { flex: 0 1 auto; min-width: 0; }
+
+.cat-status-spin {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: cat-spin .8s linear infinite;
+}
+.cat-status-spin[hidden] { display: none; }
+
+@keyframes cat-spin { to { transform: rotate(360deg); } }
+
+/* Only the id backfill gets a bar: it is the only one of these jobs that has
+   a real denominator. A refetch is one HTTP request -- a bar for it would be
+   a lie that fills at a made-up rate. */
+.cat-status-bar {
+  flex: 1 1 140px;
+  min-width: 100px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.cat-status-bar[hidden] { display: none; }
+.cat-status-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width .4s ease;
+}
+
+.cat-status-btn {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 5px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+.cat-status-btn:hover { background: var(--accent-soft); border-color: var(--border-focus); }
+
 /* ── The list ────────────────────────────────────────────────────────────── */
 /* Virtualised: .cat-viewport scrolls, .cat-spacer carries the full height of
    every row and only the visible slice exists in the DOM. Without it the
@@ -356,7 +423,63 @@
 body.cat-modal-open { overflow: hidden; }
 .cat-modal-overlay { overscroll-behavior: contain; }
 
-.cat-modal-card { position: relative; overflow: hidden; }
+/* ── The dialog shell ──────────────────────────────────────────────────────
+   Self-contained on purpose. This markup came from the Stats page, whose
+   .stats-modal-* rules live in stats.css — linked by the Stats, Auto-Sync,
+   History and Monitoring pages, and by none of them for this one. So the card
+   had no height cap, no column layout and no centering, and .card-footer is
+   not defined in any global sheet at all. That is the whole bug: it was not
+   "not centered", it had no layout.
+
+   Centering is done with margin:auto on the card rather than align-items on
+   the overlay: an auto cross-axis margin beats align-items, and unlike
+   align-items:center it still lets an over-tall dialog scroll instead of
+   putting its top edge out of reach. */
+.cat-modal-overlay { justify-content: center; }
+
+.cat-modal-card {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: 840px;
+  max-height: 88vh;
+  margin: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cat-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 20px 22px 16px;
+  /* .card-header in cards.css carries a 16px bottom margin, which under a
+     border and above a padded body reads as a stray gap. */
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.cat-modal-heading { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+
+.cat-modal-sub {
+  margin: 3px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.cat-modal-card .card-body { padding: 18px 22px 20px; flex: 1 1 auto; min-height: 0; }
+
+/* Not defined in any global stylesheet — .card-header is, .card-footer is not. */
+.cat-modal-card .card-footer {
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex: 0 0 auto;
+}
 
 .cat-modal-backdrop {
   display: none;
@@ -425,7 +548,7 @@ body.cat-modal-open { overflow: hidden; }
 /* The line under the header would cut the picture in half. */
 .cat-modal-card.has-backdrop .cat-modal-header { border-bottom: none; padding-top: 26px; }
 .cat-modal-card.has-backdrop .card-title { font-size: 1.4rem; letter-spacing: -0.01em; }
-.cat-modal-card.has-backdrop .stats-modal-sub { color: var(--text-secondary); }
+.cat-modal-card.has-backdrop .cat-modal-sub { color: var(--text-secondary); }
 /* Over a bright frame the close button needs its own ground, and the glyph is
    pinned light because that ground is dark in BOTH themes. */
 .cat-modal-card.has-backdrop .modal-close {
@@ -435,6 +558,36 @@ body.cat-modal-open { overflow: hidden; }
 }
 
 .cat-modal-scroll { overflow-y: auto; overscroll-behavior: contain; }
+
+/* ── Skeleton placeholders ─────────────────────────────────────────────────
+   Reuses appearance.css's `skeleton-shimmer` keyframes and the same gradient
+   the rest of the app shimmers with, so the loading state of this dialog is
+   the loading state of every other one. The JS only emits these elements when
+   body.skeleton-loader is on (it is an appearance setting), which is why the
+   rules here do not need to check for it themselves. */
+.cat-sk {
+  background: linear-gradient(90deg,
+    var(--bg-elevated) 25%, var(--bg-hover) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite linear;
+  border-radius: 6px;
+  display: block;
+}
+
+.cat-sk-line { height: 13px; margin-bottom: 9px; }
+.cat-sk-line:last-child { margin-bottom: 0; }
+.cat-sk-chip { width: 74px; height: 22px; border-radius: 999px; }
+.cat-sk-head { width: 168px; height: 15px; margin: 14px 0 10px; }
+.cat-sk-num { width: 32px; height: 12px; flex: 0 0 32px; }
+
+/* The poster placeholder has to hold the same 2:3 box the real one does, or
+   the whole dialog jumps sideways when the image arrives. */
+.cat-modal-poster.cat-sk { border-radius: 10px; }
+
+/* Shimmer is the one thing on this page that never stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .cat-sk { animation: none; background: var(--bg-hover); }
+}
 
 .cat-modal-footer {
   display: flex;
@@ -478,13 +631,24 @@ body.cat-modal-open { overflow: hidden; }
   border: 1px solid var(--border); color: var(--text-primary);
 }
 .cat-eplist { margin-top: 16px; max-height: 38vh; overflow-y: auto; }
+
+/* No summary line and no "you have none of this": the download modal says
+   nothing about missing episodes either, and the absence of a check already
+   says it. The two green checks below are the download modal's own
+   .ep-downloaded / .season-downloaded from cards.css, reused rather than
+   reinvented so the two views cannot drift apart. */
 .cat-season-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
   font-weight: 700; font-size: 0.85rem; margin: 14px 0 6px;
   color: var(--text-primary);
 }
 .cat-ep {
   display: flex; gap: 10px; padding: 6px 0; font-size: 0.85rem;
   color: var(--text-secondary); border-bottom: 1px solid var(--border);
+  align-items: center;
 }
 .cat-ep-num { flex: 0 0 54px; color: var(--text-muted); }
 
@@ -534,6 +698,11 @@ body.cat-modal-open { overflow: hidden; }
   .cat-sort-btn { flex: 0 0 auto; }
 
   .cat-viewport { height: 52vh; border-radius: 12px; }
+
+  /* The strip wraps rather than squeezing the message into three words. */
+  .cat-status { padding: 8px 10px; font-size: 0.76rem; }
+  .cat-status-text { flex: 1 1 100%; }
+  .cat-status-btn { margin-left: 0; min-height: 34px; }
 
   /* Wider rail and bigger letters: this is the one control on the page that is
      driven by a fingertip rather than a cursor. */
@@ -728,5 +897,6 @@ body.cat-modal-open { overflow: hidden; }
 /* The active letter scales up; honour a user who asked for less of that. */
 @media (prefers-reduced-motion: reduce) {
   .cat-rail-letter.is-active { transform: none; text-decoration: underline; }
-  .cat-job-fill { transition: none; }
+  .cat-job-fill, .cat-status-fill { transition: none; }
+  .cat-status-spin { animation: none; border-top-color: var(--accent); }
 }

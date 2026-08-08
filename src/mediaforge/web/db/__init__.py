@@ -306,6 +306,20 @@ from .upscale import (  # noqa: F401
     set_upscale_status,
     update_upscale_progress,
 )
+from .catalogue_cache import (  # noqa: F401
+    catalogue_entries_without_ids,
+    catalogue_entry_count,
+    catalogue_id_progress,
+    catalogue_meta,
+    drop_catalogue,
+    evict_catalogue_cache,
+    init_catalogue_cache_db,
+    load_catalogue,
+    mark_catalogue_failed,
+    save_catalogue,
+    set_catalogue_ids,
+    set_catalogue_ids_bulk,
+)
 from .browse_cache import (  # noqa: F401
     clear_mediascan_cache,
     evict_browse_cache,
