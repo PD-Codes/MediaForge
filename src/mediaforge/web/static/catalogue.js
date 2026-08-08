@@ -932,10 +932,12 @@
     applyFilter();
   });
 
+  // The one refresh control on the page. It asks the STORE for a refetch and
+  // follows it through the status strip, so the list on screen stays usable
+  // the whole time -- loadAll(true) alone would only re-request the same
+  // stored rows. The server also nudges the id backfill, so this really does
+  // mean "bring everything up to date" and not just "refetch the titles".
   el("catRefresh").addEventListener("click", () => {
-    // Asks the STORE for a refetch and follows it through the status strip;
-    // the list on screen stays usable the whole time. loadAll(true) alone
-    // would only re-request the same stored rows.
     fetch("/api/catalogue/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1384,17 +1386,6 @@
       }
       return busy;
     } catch (e) { return false; }
-  }
-
-  const statusRefreshBtn = el("catStatusRefresh");
-  if (statusRefreshBtn) {
-    statusRefreshBtn.addEventListener("click", () => {
-      fetch("/api/catalogue/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      }).then(() => pollStatus()).catch(() => { /* the strip stays as it was */ });
-    });
   }
 
   // ── Bulk submit ──────────────────────────────────────────────────────────

@@ -2309,7 +2309,7 @@ msgstr "Stummschalten (M)"
 #: src/mediaforge/web/templates/base.html:1761
 #: src/mediaforge/web/templates/index.html:474
 msgid "Volume"
-msgstr "Lautstärke"
+msgstr "Heute Geladen"
 
 #: src/mediaforge/web/templates/base.html:1769
 msgid "CC"

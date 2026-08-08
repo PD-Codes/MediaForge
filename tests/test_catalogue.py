@@ -681,3 +681,65 @@ def test_either_url_of_a_merged_pair_is_accepted(as_user, monkeypatch):
         assert resp.status_code == 202, url
         assert captured["urls"] == [url]
         assert captured["source"] == expected_source
+
+
+def test_there_is_exactly_one_refresh_control(as_user):
+    """The status strip used to carry a second one a few pixels below the
+    toolbar's, doing exactly the same thing."""
+    html = as_user("admin").get("/catalogue").get_data(as_text=True)
+    assert 'id="catRefresh"' in html
+    assert 'id="catStatusRefresh"' not in html
+
+
+def test_refreshing_also_wakes_the_id_backfill(as_user, monkeypatch):
+    """"Update" means "bring everything up to date". Refetching the lists is
+    only half of it: the ids are what merges the two sites' rows and what
+    decides "already in my library", and the backfill otherwise sits in an
+    idle wait for up to fifteen minutes.
+
+    Spies on the call rather than on the event: a worker really is running in
+    these tests, and it clears the event the moment it wakes -- so asserting
+    on the flag is a race the test would lose about half the time."""
+    from mediaforge.web import catalogue_ids
+    from mediaforge.web.routes import catalogue as routes
+
+    monkeypatch.setattr(routes.catalogue_store, "refresh_stale", lambda force=False: 0)
+    woken = []
+    monkeypatch.setattr(catalogue_ids, "start", lambda: woken.append(True))
+
+    assert as_user("admin").post("/api/catalogue/refresh", json={}).status_code == 202
+    assert woken, "the id worker was not woken"
+
+
+def test_storing_a_catalogue_wakes_the_id_backfill(app, monkeypatch):
+    """New titles have just landed and their ids are what make them mergeable;
+    they must not wait for the next idle timeout."""
+    from mediaforge.web import catalogue_ids, catalogue_store
+
+    woken = []
+    monkeypatch.setattr(catalogue_ids, "wake", lambda: woken.append(True))
+    with app.app_context():
+        catalogue_store._do_refresh("aniworld", {"fetch": lambda: [
+            {"title": "Woken", "url": "https://aniworld.to/anime/stream/woken", "alt": ""}]})
+    assert woken
+
+
+def test_an_idle_wait_can_be_interrupted():
+    """Without this the whole feature is "press Update, wait a quarter of an
+    hour, see whether anything happened"."""
+    import threading
+
+    from mediaforge.web import catalogue_ids
+
+    catalogue_ids._stop.clear()
+    catalogue_ids._kick.clear()
+    done = threading.Event()
+
+    def _sleeper():
+        catalogue_ids._idle(30)      # would block for half a minute
+        done.set()
+
+    threading.Thread(target=_sleeper, daemon=True).start()
+    catalogue_ids.wake()
+    assert done.wait(timeout=5), "wake() did not interrupt the idle wait"
+    catalogue_ids._kick.clear()

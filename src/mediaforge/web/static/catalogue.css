@@ -156,7 +156,7 @@
 .cat-status.is-busy { border-color: var(--border-focus); }
 .cat-status.is-failed { border-color: var(--warning); color: var(--warning); }
 
-.cat-status-text { flex: 0 1 auto; min-width: 0; }
+.cat-status-text { flex: 1 1 auto; min-width: 0; }
 
 .cat-status-spin {
   flex: 0 0 auto;
@@ -188,19 +188,6 @@
   background: var(--accent);
   transition: width .4s ease;
 }
-
-.cat-status-btn {
-  margin-left: auto;
-  flex: 0 0 auto;
-  padding: 5px 11px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 0.76rem;
-  cursor: pointer;
-}
-.cat-status-btn:hover { background: var(--accent-soft); border-color: var(--border-focus); }
 
 /* ── The list ────────────────────────────────────────────────────────────── */
 /* Virtualised: .cat-viewport scrolls, .cat-spacer carries the full height of
@@ -761,7 +748,6 @@ body.cat-modal-open { overflow: hidden; }
   /* The strip wraps rather than squeezing the message into three words. */
   .cat-status { padding: 8px 10px; font-size: 0.76rem; }
   .cat-status-text { flex: 1 1 100%; }
-  .cat-status-btn { margin-left: 0; min-height: 34px; }
 
   /* Wider rail and bigger letters: this is the one control on the page that is
      driven by a fingertip rather than a cursor. */

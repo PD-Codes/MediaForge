@@ -82,6 +82,32 @@ RECHECK_AFTER = 30 * 24 * 3600
 
 _thread = None
 _stop = threading.Event()
+# Interrupts an idle wait without stopping the worker. Set by wake(), which is
+# what makes "Update now" and a finished catalogue refresh take effect at once
+# instead of whenever the next IDLE_SLEEP happens to expire.
+_kick = threading.Event()
+
+
+def _idle(seconds) -> bool:
+    """Wait up to *seconds*. Returns True when the worker should stop.
+
+    An interruptible sleep rather than a plain one: with a fifteen-minute idle
+    period, a user who presses Update and then watches nothing happen for a
+    quarter of an hour has every reason to think the feature is broken.
+    """
+    _kick.wait(timeout=seconds)
+    _kick.clear()
+    return _stop.is_set()
+
+
+def wake() -> None:
+    """Ask the worker to look for work right now.
+
+    Called when a catalogue refresh has just stored new entries, and from the
+    Catalogue page's refresh button. Safe to call when the worker is busy or
+    not running -- it only clears an idle wait.
+    """
+    _kick.set()
 
 
 def _imdb_from(info) -> str:
@@ -165,7 +191,7 @@ def _run():
             # sits in, and someone who has just pasted their key in Settings
             # should see the backfill start, not wait a quarter of an hour
             # wondering whether it is broken.
-            if _stop.wait(UNCONFIGURED_SLEEP):
+            if _idle(UNCONFIGURED_SLEEP):
                 break
             continue
 
@@ -177,7 +203,7 @@ def _run():
             _beat(STATE_IDLE,
                   detail="%d/%d resolved" % (progress["resolved"], progress["total"]),
                   handled=progress["checked"])
-            if _stop.wait(IDLE_SLEEP):
+            if _idle(IDLE_SLEEP):
                 break
             continue
 
@@ -228,7 +254,7 @@ def _run():
         _beat(STATE_WORKING,
               detail="%d/%d checked" % (progress["checked"], progress["total"]),
               handled=progress["checked"])
-        if errors >= LOOKUP_WORKERS and _stop.wait(IDLE_SLEEP):
+        if errors >= LOOKUP_WORKERS and _idle(IDLE_SLEEP):
             break
 
     set_ids_running(False)
@@ -239,8 +265,12 @@ def start() -> bool:
     """Start the backfill thread. Idempotent."""
     global _thread
     if _thread is not None and _thread.is_alive():
+        # Already running: at least make it look for work now, which is what
+        # a caller asking to "start" it actually wants.
+        wake()
         return False
     _stop.clear()
+    _kick.clear()
     _thread = threading.Thread(target=_run, daemon=True, name="catalogue-ids")
     _thread.start()
     logger.info("[CatalogueIds] backfill worker started")
@@ -249,3 +279,4 @@ def start() -> bool:
 
 def stop() -> None:
     _stop.set()
+    _kick.set()      # so an idle wait returns immediately instead of at timeout

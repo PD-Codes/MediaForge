@@ -94,6 +94,15 @@ def _do_refresh(source_id, entry):
         count = save_catalogue(source_id, entries)
         logger.info("[Catalogue] %s: stored %d entries in %.1fs",
                     source_id, count, time.time() - started)
+        # New titles have just landed, and their ids are what makes them
+        # mergeable and matchable. Without this nudge they would sit
+        # unresolved until the backfill's next idle timeout -- up to fifteen
+        # minutes after a refresh the user watched finish.
+        try:
+            from . import catalogue_ids
+            catalogue_ids.wake()
+        except Exception as exc:
+            logger.debug("[Catalogue] could not wake the id worker: %s", exc)
         return True
     except Exception as exc:
         # Not an error event, and deliberately not raised: the stored copy is

@@ -48,10 +48,12 @@
   <div class="cat-status" id="catStatus" hidden>
     <span class="cat-status-spin" id="catStatusSpin" aria-hidden="true"></span>
     <span class="cat-status-text" id="catStatusText"></span>
+    {# No refresh button here: the toolbar above already has one, and two
+       controls that do exactly the same thing a few pixels apart is worse
+       than either of them alone. #}
     <div class="cat-status-bar" id="catStatusBar" hidden>
       <div class="cat-status-fill" id="catStatusFill" style="width:0%"></div>
     </div>
-    <button type="button" class="cat-status-btn" id="catStatusRefresh">{{ _('Update now') }}</button>
   </div>
 
   {# The rail lives beside the viewport rather than inside it: overlaying the

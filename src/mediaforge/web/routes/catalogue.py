@@ -150,6 +150,19 @@ def register_catalogue_routes(app):
             started = 1 if catalogue_store.start_refresh(source_id) else 0
         else:
             started = catalogue_store.refresh_stale(force=True)
+
+        # Refreshing the LISTS is only half of what a user means by "update".
+        # The ids are what merges the two sites' rows and what decides
+        # "already in my library", and the backfill otherwise sits in an idle
+        # wait for up to fifteen minutes. A store that has just saved new
+        # entries wakes it too (see catalogue_store._do_refresh); this covers
+        # the case where nothing needed refetching but ids are still pending.
+        try:
+            from .. import catalogue_ids
+            catalogue_ids.start()      # no-op when running, and wakes it either way
+        except Exception as exc:
+            logger.debug("[Catalogue] could not wake the id worker: %s", exc)
+
         return jsonify({"started": started, "status": catalogue_store.status()}), 202
 
     @app.route("/api/catalogue/resolve", methods=["POST"])
