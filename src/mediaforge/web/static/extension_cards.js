@@ -188,15 +188,34 @@ function toggleIntegCollapse(name) {
 // itself makes the load independent of which controls that card happens to
 // render.
 async function loadThirdpartyToggles() {
-  document.querySelectorAll(".integ-card[data-thirdparty-id]").forEach(async function (card) {
-    const id = card.dataset.thirdpartyId;
+  // Card-scoped ids -- the normal case (Integrations / Notifications /
+  // Module Settings render one card per third-party id).
+  const ids = new Set();
+  document.querySelectorAll(".integ-card[data-thirdparty-id]").forEach(function (card) {
+    ids.add(card.dataset.thirdpartyId);
+  });
+  // ...plus toggles that live in a card which is NOT keyed by a single
+  // third-party id. The Modulmanager (extensions.html) is exactly that: one
+  // .mm-card per INSTALLED MODULE, which may register several settings cards,
+  // so the card carries data-module-id instead. Keying the load only on
+  // .integ-card[data-thirdparty-id] meant no GET was ever sent for those
+  // toggles, so an enabled module still showed its "Enable module" switch in
+  // the off position until the user touched it.
+  document.querySelectorAll(".thirdparty-toggle[data-thirdparty-id]").forEach(function (el) {
+    ids.add(el.dataset.thirdpartyId);
+  });
+  ids.forEach(async function (id) {
     try {
       const resp = await fetch("/api/settings/thirdparty/" + encodeURIComponent(id));
       const d = await resp.json();
-      // Only present when this page renders the master toggle.
-      const el = card.querySelector('.thirdparty-toggle[data-thirdparty-id="' + id + '"]');
-      if (el) el.checked = d.enabled === "1";
-      // Extra per-integration fields for this same card (see registry.py's
+      // Only present when this page renders the master toggle. Queried
+      // document-wide (and via forEach) because the same id can legitimately
+      // be rendered twice on one page -- e.g. the Modulmanager card and a
+      // settings card for the same module.
+      document
+        .querySelectorAll('.thirdparty-toggle[data-thirdparty-id="' + id + '"]')
+        .forEach(function (el) { el.checked = d.enabled === "1"; });
+      // Extra per-integration fields for this same id (see registry.py's
       // extra_settings) -- one fetch already has everything needed, so
       // populate them here instead of a second request per field.
       const extra = d.extra || {};
