@@ -224,7 +224,10 @@ DATA_REGISTRY = {
                 "Arbeitsspeicher-Gesamtgröße, erkannte Grafikkarte(n) samt Treiberversion, die von "
                 "ffmpeg unterstützten sowie die tatsächlich funktionierenden Hardware-Beschleunigungen, "
                 "und die Versionen zentraler Komponenten (ffmpeg, yt-dlp, mpv, Captcha-Browser). Enthält "
-                "keinen Geräte- oder Benutzernamen, keine IP-Adresse und keine Dateipfade."
+                "keinen Geräte- oder Benutzernamen, keine IP-Adresse und keine Dateipfade. "
+                "Hinweis: Die App überträgt keine IP-Adresse. Der Server sieht die Adresse "
+                "deiner Verbindung jedoch technisch bedingt und speichert sie befristet – "
+                "siehe PRIVACY.md, Abschnitt „Deine Netzwerkadresse“."
             ),
             "en": (
                 "Technical baseline data of this installation, to correctly classify crash and error "
@@ -238,7 +241,9 @@ DATA_REGISTRY = {
                 "detected graphics card(s) with driver version, the hardware accelerations ffmpeg "
                 "supports as well as the ones that actually work, and the versions of core "
                 "components (ffmpeg, yt-dlp, mpv, captcha browser). Never includes a device or user "
-                "name, IP address or file paths."
+                "name, IP address or file paths. Note: the app transmits no IP address. The server "
+                "does see your connection's address as a technical necessity and stores it for a "
+                "limited time — see PRIVACY.md, section \"Your network address\"."
             ),
         },
     },
