@@ -71,7 +71,8 @@
 
   function onModalKey(ev) { if (ev.key === "Escape") { closeModal(); } }
 
-  function openModal(title, bodyHtml, onSave) {
+  function openModal(title, bodyHtml, onSave, opts) {
+    opts = opts || {};
     closeModal();
     modalEl = document.createElement("div");
     modalEl.className = "ops-modal-backdrop";
@@ -83,7 +84,8 @@
         '</div>' +
         '<div class="ops-modal-body">' + bodyHtml + '</div>' +
         '<div class="ops-modal-foot">' +
-          '<button type="button" class="btn btn-ghost" data-act="cancel">' + esc(T("cancel", "Cancel")) + '</button>' +
+          '<button type="button" class="btn btn-ghost" data-act="cancel">' +
+            esc(opts.cancelLabel || T("cancel", "Cancel")) + '</button>' +
           (onSave ? '<button type="button" class="btn btn-primary" data-act="save">' + esc(T("save", "Save")) + '</button>' : '') +
         '</div>' +
       '</div>';
@@ -1087,7 +1089,16 @@
           }
         }).then(function (res) {
           loadApiKeys();
+          // Close THIS dialog before opening the key dialog, then answer
+          // `false` so openModal's own closeModal() does not run afterwards.
+          // Both dialogs share a single modalEl, so the old order (open the
+          // key dialog, then let the save handler close "the" modal) tore
+          // the new key off the screen the instant it appeared -- leaving
+          // the truncated `mf_…` prefix in the list as the only trace of a
+          // secret that cannot be shown again.
+          closeModal();
           showNewKey(res.key);
+          return false;
         });
       });
   };
@@ -1101,10 +1112,17 @@
         "Copy it now. Only a hash is stored, so this key cannot be shown again — if you lose it, revoke it and create another.")) +
       '</p>' +
       '<div class="settings-field">' +
-        '<input type="text" id="opsNewKeyValue" readonly value="' + esc(plaintext) + '" ' +
-        'style="font-family:monospace;font-size:0.82rem;"></div>' +
+        '<label class="settings-field-label" for="opsNewKeyValue">' +
+          esc(T("your_new_key", "Your new key")) + '</label>' +
+        // A textarea rather than an input: the key is longer than the dialog
+        // is wide, and a single-line field would scroll most of the secret
+        // out of sight in the one moment it is ever visible.
+        '<textarea id="opsNewKeyValue" class="ops-secret-value" rows="2" readonly ' +
+          'spellcheck="false" autocomplete="off">' + esc(plaintext) + '</textarea>' +
+      '</div>' +
       '<button type="button" class="btn btn-primary" id="opsCopyKey">' +
-        esc(T("copy", "Copy")) + '</button>', null);
+        esc(T("copy", "Copy")) + '</button>',
+      null, { cancelLabel: T("done", "Done") });
 
     var field = document.getElementById("opsNewKeyValue");
     if (field) { field.focus(); field.select(); }

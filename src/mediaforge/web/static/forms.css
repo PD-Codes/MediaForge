@@ -128,6 +128,10 @@ input[type="password"],
 input[type="number"],
 input[type="url"],
 input[type="time"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"],
 select,
 textarea {
   background: var(--input-bg);
@@ -169,6 +173,74 @@ select {
   background-position: right 10px center !important;
   background-size: 18px !important;
   padding-right: 30px !important;
+}
+
+/* ===================================================================
+   DATE / TIME INPUTS
+   The native field parts (the mm/dd/yyyy spinner text and the calendar
+   button) are shadow-DOM pseudo elements that ignore `color`, so they
+   are tinted explicitly here. `color-scheme` is repeated on the element
+   itself because the native picker panel reads it from the input, not
+   from :root, in some engines -- without it a dark theme opens a white
+   calendar popup.
+   =================================================================== */
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"],
+input[type="time"] {
+  color-scheme: dark;
+  min-height: 42px;
+}
+[data-theme="light"] input[type="date"],
+[data-theme="light"] input[type="datetime-local"],
+[data-theme="light"] input[type="month"],
+[data-theme="light"] input[type="week"],
+[data-theme="light"] input[type="time"] {
+  color-scheme: light;
+}
+input[type="date"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit,
+input[type="month"]::-webkit-datetime-edit,
+input[type="week"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit {
+  color: var(--text-primary);
+  font-family: inherit;
+  font-weight: 400;
+}
+/* An empty date field shows its format hint (mm/dd/yyyy) through these
+   parts. There is no CSS selector for "date input with no value", so the
+   hint is muted via the field-text parts, which only carry literal
+   placeholder glyphs while the field is untouched. */
+input[type="date"]::-webkit-datetime-edit-text,
+input[type="datetime-local"]::-webkit-datetime-edit-text {
+  color: var(--text-muted);
+  padding: 0 1px;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="week"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.65);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  transition: filter var(--transition), background var(--transition);
+}
+[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="light"] input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+[data-theme="light"] input[type="month"]::-webkit-calendar-picker-indicator,
+[data-theme="light"] input[type="week"]::-webkit-calendar-picker-indicator,
+[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.25);
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="month"]::-webkit-calendar-picker-indicator:hover,
+input[type="week"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+  background: var(--accent-soft);
 }
 
 /* ===================================================================

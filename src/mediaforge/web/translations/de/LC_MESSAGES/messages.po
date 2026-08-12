@@ -9746,6 +9746,10 @@ msgstr "Abwählen, um bereits vorhandene Titel auszublenden"
 msgid "Switch off to hide titles an Auto-Sync job already covers"
 msgstr "Abwählen, um Titel auszublenden, für die schon ein Auto-Sync-Auftrag läuft"
 
+#: src/mediaforge/web/templates/settings.html:2215
+msgid "Your new key"
+msgstr "Dein neuer Schlüssel"
+
 #~ msgid "Clear entries"
 #~ msgstr "Einträge löschen"
 

@@ -8724,6 +8724,10 @@ msgstr ""
 msgid "Searching streams..."
 msgstr ""
 
+#: src/mediaforge/web/templates/settings.html:2215
+msgid "Your new key"
+msgstr ""
+
 #~ msgid "Clear entries"
 #~ msgstr ""
 

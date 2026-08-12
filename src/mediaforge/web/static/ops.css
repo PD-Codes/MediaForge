@@ -439,6 +439,19 @@
   gap: 14px;
 }
 
+/* One-time secret (a freshly created API key). Monospace, wrapped and
+   selectable in full: this is the only moment the plaintext exists. */
+.ops-secret-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  resize: none;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .ops-modal-foot {
   border-top: 1px solid var(--border);
   justify-content: flex-end;
