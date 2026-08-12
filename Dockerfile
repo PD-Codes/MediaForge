@@ -138,8 +138,25 @@ RUN uv sync --frozen --no-dev --no-install-project && \
     chmod -R 755 /opt/ms-playwright /app/.venv
 
 # Copy source and install the full project
+#
+# The base image's system pip is removed afterwards. It is unused -- uv builds
+# and owns /app/.venv, and web/thirdparties/deps.py installs module
+# dependencies with uv when uv is present -- but it is not harmless: pip ships
+# vendored copies of its own dependencies (pip/_vendor/vendor.txt), and Trivy
+# reports every advisory against them as a finding in this image. That is where
+# GHSA-6v7p-g79w-8964 (msgpack 1.1.2) and CVE-2025-47273 (setuptools 70.3.0)
+# came from -- both pinned by pip itself, so neither is fixable by upgrading
+# anything, and neither is reachable because nothing here runs pip.
+# ensurepip's bundled wheels carry the same vendored copies and go with it.
 COPY --chown=mediaforge:mediaforge src/ /app/src/
 RUN uv sync --frozen --no-dev && \
+    PY_LIB="$(/usr/local/bin/python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" && \
+    rm -rf "$PY_LIB"/pip "$PY_LIB"/pip-*.dist-info \
+           "$PY_LIB"/setuptools "$PY_LIB"/setuptools-*.dist-info \
+           "$PY_LIB"/pkg_resources \
+           "$PY_LIB"/wheel "$PY_LIB"/wheel-*.dist-info \
+           /usr/local/lib/python3.*/ensurepip/_bundled \
+           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.* && \
     chown -R mediaforge:mediaforge /app/.venv /app/src
 
 # Entrypoint script for logged startup sequence

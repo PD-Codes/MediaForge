@@ -165,23 +165,64 @@ def format_missing(missing) -> str:
     )
 
 
+def _uv_binary() -> str:
+    """Path to a usable ``uv``, or "".
+
+    uv is preferred over pip wherever both exist, and in the Docker image it is
+    the only one of the two that is there at all: the image builds its
+    environment with ``uv sync``, which creates a venv WITHOUT pip, and the
+    base image's system pip is deliberately removed (it ships vendored copies
+    of msgpack and setuptools that the vulnerability scan flags, and nothing
+    imports them at runtime). Before this, the Install button in the
+    Modulmanager could only ever answer "pip is not available in this Python
+    environment" inside the container.
+    """
+    return shutil.which("uv") or ""
+
+
+def _installer_cmd(args: list) -> list:
+    """The argv that installs `args`, where `args` uses the options both tools
+    share (``--target``, ``--upgrade``, the requirement strings).
+
+    Each tool's own non-interactive flags stay in its own branch: uv accepts
+    neither ``--no-input`` nor ``--disable-pip-version-check`` and exits with a
+    usage error on them. ``--python`` pins uv to the interpreter MediaForge is
+    running on -- without it uv resolves environment markers against whatever
+    interpreter it finds first, which on a NAS is not necessarily this one.
+    """
+    uv = _uv_binary()
+    if uv:
+        # --link-mode=copy: the cache and ~/.mediaforge/ are routinely on
+        # different filesystems (a container tmpfs cache and a mounted config
+        # volume), where uv cannot hardlink and prints a warning that lands
+        # verbatim in the Modulmanager's output box. Copying is what it falls
+        # back to anyway.
+        return [uv, "pip", "install", "--python", sys.executable,
+                "--link-mode=copy"] + args
+    return [sys.executable, "-m", "pip", "install",
+            "--no-input", "--disable-pip-version-check"] + args
+
+
 def pip_available() -> tuple:
-    """(ok, reason). False in a PyInstaller build, where there is no pip and no
-    interpreter to run it with -- the admin gets told that instead of watching a
-    button do nothing."""
+    """(ok, reason). False in a PyInstaller build, where there is no installer
+    and no interpreter to run it with -- the admin gets told that instead of
+    watching a button do nothing.
+
+    Named for pip because that is what the API and the UI call it; either uv or
+    pip satisfies it.
+    """
     if getattr(sys, "frozen", False):
         return False, ("This is a packaged build with no Python environment to install "
                        "into. Install the dependency yourself, or use the Docker/pip "
                        "install of MediaForge.")
+    uv = _uv_binary()
+    probe = [uv, "--version"] if uv else [sys.executable, "-m", "pip", "--version"]
     try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "pip", "--version"],
-            capture_output=True, text=True, timeout=30,
-        )
+        proc = subprocess.run(probe, capture_output=True, text=True, timeout=30)
     except Exception as exc:
-        return False, f"pip is not runnable here: {exc}"
+        return False, f"the package installer is not runnable here: {exc}"
     if proc.returncode != 0:
-        return False, "pip is not available in this Python environment"
+        return False, "neither uv nor pip is available in this Python environment"
     return True, ""
 
 
@@ -262,10 +303,7 @@ def install(requirements) -> dict:
                 "still_missing": missing_requirements(requirements)}
 
     target = deps_dir()
-    cmd = [
-        sys.executable, "-m", "pip", "install",
-        "--no-input",
-        "--disable-pip-version-check",
+    cmd = _installer_cmd([
         "--target", str(target),
         # Without this pip refuses to touch a package already present in the
         # target dir, so an upgrade of a module dependency would silently do
@@ -273,17 +311,21 @@ def install(requirements) -> dict:
         # site-packages is not a --target and is never written to.
         "--upgrade",
         *requirements,
-    ]
-    logger.info("[ModuleDeps] Installing %s into %s", ", ".join(requirements), target)
+    ])
+    logger.info("[ModuleDeps] Installing %s into %s with %s",
+                ", ".join(requirements), target, Path(cmd[0]).name)
+
+    tool = Path(cmd[0]).name
 
     with _install_lock:
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=_PIP_TIMEOUT)
         except subprocess.TimeoutExpired:
-            return {"ok": False, "installed": [], "error": f"pip timed out after {_PIP_TIMEOUT}s",
+            return {"ok": False, "installed": [],
+                    "error": f"{tool} timed out after {_PIP_TIMEOUT}s",
                     "output": "", "still_missing": missing_requirements(requirements)}
         except Exception as exc:
-            logger.exception("[ModuleDeps] pip run failed")
+            logger.exception("[ModuleDeps] %s run failed", tool)
             return {"ok": False, "installed": [], "error": str(exc), "output": "",
                     "still_missing": missing_requirements(requirements)}
 
@@ -299,8 +341,9 @@ def install(requirements) -> dict:
     still_missing = missing_requirements(requirements)
 
     if proc.returncode != 0:
-        logger.warning("[ModuleDeps] pip failed (exit %s): %s", proc.returncode, output[-2000:])
-        return {"ok": False, "installed": [], "error": f"pip failed (exit {proc.returncode})",
+        logger.warning("[ModuleDeps] %s failed (exit %s): %s",
+                       tool, proc.returncode, output[-2000:])
+        return {"ok": False, "installed": [], "error": f"{tool} failed (exit {proc.returncode})",
                 "output": output[-4000:], "still_missing": still_missing}
 
     if still_missing:
