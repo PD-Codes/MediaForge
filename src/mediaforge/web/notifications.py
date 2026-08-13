@@ -73,6 +73,60 @@ def _report_push_sent():
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def tr(lang: str | None, de: str, en: str) -> str:
+    """Tiny DE/EN string picker -- the backend equivalent of the frontend's
+    t(de, en) helper (static/app.js) -- for every user-facing string the
+    notification layer builds itself. Deliberately NOT used for raw scraper
+    exception text (str(e)): that originates deep in the site models and
+    isn't ours to translate here.
+
+    Lives here (and not in autosync_worker.py, where it started out) because
+    the queue worker, the auto-sync worker, the notification routes and the
+    channel builders below all need the same picker.
+    """
+    return de if lang == "de" else en
+
+
+def notif_lang(username: str | None) -> str:
+    """Best-effort UI language ('en' or 'de') for *username*.
+
+    Flask's request-bound session -- and therefore app.py's get_locale() --
+    isn't available from the daemon threads that send notifications, but the
+    per-user language preference is persisted in the DB and can be read
+    directly from here. Falls back to "en" (the same default used everywhere
+    else -- see get_locale() / db.get_user_language()) if there is no user,
+    the lookup fails, or the users table doesn't exist (no-auth mode, see
+    db.get_user_id_by_username()'s docstring).
+    """
+    try:
+        from .db import get_user_id_by_username, get_user_language
+        uid = get_user_id_by_username(username)
+        if uid is None:
+            return "en"
+        return get_user_language(uid)
+    except Exception:
+        return "en"
+
+
+def media_count_text(lang: str | None, count: int, is_movie: bool) -> str:
+    """"1 Episode" / "12 Episoden" / "Film" -- the one place that decides how
+    a job's contents are named. A movie job is a single file and must never be
+    called an episode or a series, and a one-episode job must not read
+    "Episode(n)"."""
+    if is_movie:
+        return tr(lang, "Film", "Movie")
+    if count == 1:
+        return tr(lang, "1 Episode", "1 episode")
+    return tr(lang, f"{count} Episoden", f"{count} episodes")
+
+
+def error_count_text(lang: str | None, count: int) -> str:
+    """"1 Fehler" / "3 Fehler" / "1 error" / "3 errors"."""
+    if lang == "de":
+        return f"{count} Fehler"
+    return f"{count} error" if count == 1 else f"{count} errors"
+
+
 def _pref_enabled(prefs: dict, key: str, default: bool = True) -> bool:
     val = prefs.get(key)
     if val is None:
@@ -106,7 +160,7 @@ def _get_user_prefs(username: str | None) -> dict:
 
 
 
-def _format_errors_text(errors: list, max_items: int = 5) -> str:
+def _format_errors_text(errors: list, max_items: int = 5, lang: str | None = None) -> str:
     """Format a list of {url, error} dicts into a compact human-readable string."""
     if not errors:
         return ""
@@ -116,8 +170,9 @@ def _format_errors_text(errors: list, max_items: int = 5) -> str:
         err = (e.get("error") or "?")[:100]
         lines.append(f"  • {ep}: {err}")
     text = "\n".join(lines)
-    if len(errors) > max_items:
-        text += f"\n  ... und {len(errors) - max_items} weitere"
+    rest = len(errors) - max_items
+    if rest > 0:
+        text += tr(lang, f"\n  ... und {rest} weitere", f"\n  ... and {rest} more")
     return text
 
 def _post_json(url: str, payload: dict, headers: dict | None = None) -> int:
@@ -293,7 +348,8 @@ def notify_webpush(
 # Discord Webhook
 # ---------------------------------------------------------------------------
 
-def notify_discord(title: str, status: str, episode_count: int, errors: list, is_movie: bool = False) -> None:
+def notify_discord(title: str, status: str, episode_count: int, errors: list,
+                   is_movie: bool = False, lang: str | None = None) -> None:
     if _get_setting("notif_discord_enabled", "1") == "0":
         return
     webhook_url = (
@@ -305,33 +361,42 @@ def notify_discord(title: str, status: str, episode_count: int, errors: list, is
     if status == "completed" and not errors:
         event_key   = "on_completed"
         color       = 0x57F287
-        status_text = "Erfolgreich abgeschlossen"
+        status_text = tr(lang, "Erfolgreich abgeschlossen", "Completed successfully")
     elif status == "completed" and errors:
         event_key   = "on_errors"
         color       = 0xFEE75C
-        status_text = "Abgeschlossen mit " + str(len(errors)) + " Fehler(n)"
+        status_text = tr(lang,
+                         "Abgeschlossen mit " + error_count_text("de", len(errors)),
+                         "Completed with " + error_count_text("en", len(errors)))
     elif status == "partial":
         event_key   = "on_partial"
         color       = 0xE67E22
-        status_text = "Teilweise erfolgreich"
+        status_text = tr(lang, "Teilweise erfolgreich", "Partially successful")
     elif status == "failed":
         event_key   = "on_errors"
         color       = 0xED4245
-        status_text = "Download fehlgeschlagen"
+        status_text = tr(lang, "Download fehlgeschlagen", "Download failed")
     elif status == "cancelled":
         event_key   = "on_cancelled"
         color       = 0x95A5A6
-        status_text = "Download abgebrochen"
+        status_text = tr(lang, "Download abgebrochen", "Download cancelled")
     else:
         return
 
     if _get_setting("notif_discord_" + event_key, "1") == "0":
         return
 
-    count_label = "Film" if is_movie else "Episoden"
+    # A movie is one file: name it, don't count it. Only episode jobs get a
+    # number, and that number decides singular vs. plural.
+    if is_movie:
+        count_field = {"name": tr(lang, "Inhalt", "Content"),
+                       "value": tr(lang, "Film", "Movie"), "inline": True}
+    else:
+        count_field = {"name": tr(lang, "Episoden", "Episodes"),
+                       "value": str(episode_count), "inline": True}
     fields = [
-        {"name": count_label, "value": str(episode_count), "inline": True},
-        {"name": "Status",    "value": status_text,        "inline": True},
+        count_field,
+        {"name": "Status", "value": status_text, "inline": True},
     ]
     if errors:
         lines = []
@@ -341,8 +406,10 @@ def notify_discord(title: str, status: str, episode_count: int, errors: list, is
             lines.append("- " + url_part + ": " + err_part)
         error_text = "\n".join(lines)
         if len(errors) > 5:
-            error_text += "\n... und " + str(len(errors) - 5) + " weitere"
-        fields.append({"name": "Fehler", "value": error_text, "inline": False})
+            error_text += tr(lang, "\n... und " + str(len(errors) - 5) + " weitere",
+                             "\n... and " + str(len(errors) - 5) + " more")
+        fields.append({"name": tr(lang, "Fehler", "Errors"),
+                       "value": error_text, "inline": False})
 
     payload = {
         "embeds": [{
@@ -363,7 +430,7 @@ def notify_discord(title: str, status: str, episode_count: int, errors: list, is
     threading.Thread(target=_send, daemon=True).start()
 
 
-def notify_discord_autosync(title: str, new_count: int) -> None:
+def notify_discord_autosync(title: str, new_count: int, lang: str | None = None) -> None:
     if _get_setting("notif_discord_enabled", "1") == "0":
         return
     webhook_url = (
@@ -380,8 +447,11 @@ def notify_discord_autosync(title: str, new_count: int) -> None:
             "title":     title,
             "color":     0x5865F2,
             "fields":    [
-                {"name": "Neue Folgen", "value": str(new_count), "inline": True},
-                {"name": "Status",      "value": "Online verfuegbar", "inline": True},
+                {"name": tr(lang, "Neue Folge" if new_count == 1 else "Neue Folgen",
+                            "New episode" if new_count == 1 else "New episodes"),
+                 "value": str(new_count), "inline": True},
+                {"name": "Status",
+                 "value": tr(lang, "Online verfuegbar", "Available online"), "inline": True},
             ],
             "footer":    {"text": "MediaForge - Auto-Sync"},
             "timestamp": _utc_iso(),
@@ -470,8 +540,10 @@ def notify_telegram(
         logger.debug("[Telegram] Skipping — event %s disabled in user prefs (username=%s)", event, username)
         return
 
-    err_text = _format_errors_text(errors or [])
-    full_body = _tg_escape(body) + ("\n\n*Fehler:*\n" + _tg_escape(err_text) if err_text else "")
+    _lang     = notif_lang(username)
+    err_text  = _format_errors_text(errors or [], lang=_lang)
+    _err_head = tr(_lang, "\n\n*Fehler:*\n", "\n\n*Errors:*\n")
+    full_body = _tg_escape(body) + (_err_head + _tg_escape(err_text) if err_text else "")
     text    = "*" + _tg_escape(title) + "*\n" + full_body
     url     = "https://api.telegram.org/bot" + bot_token + "/sendMessage"
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "MarkdownV2"}
@@ -538,8 +610,9 @@ def notify_pushover(
     if event and not _pref_enabled(prefs, "pushover_" + _pref_event):
         return
 
-    err_text = _format_errors_text(errors or [])
-    full_body = body + ("\n\nFehler:\n" + err_text if err_text else "")
+    _lang = notif_lang(username)
+    err_text = _format_errors_text(errors or [], lang=_lang)
+    full_body = body + (tr(_lang, "\n\nFehler:\n", "\n\nErrors:\n") + err_text if err_text else "")
     payload = {"token": app_token, "user": user_key, "title": title, "message": full_body}
 
     def _send():
@@ -584,8 +657,9 @@ def notify_whatsapp(
     if not phone.startswith("whatsapp:"):
         phone = "whatsapp:" + phone
 
-    err_text = _format_errors_text(errors or [])
-    full_body = body + ("\n\nFehler:\n" + err_text if err_text else "")
+    _lang = notif_lang(username)
+    err_text = _format_errors_text(errors or [], lang=_lang)
+    full_body = body + (tr(_lang, "\n\nFehler:\n", "\n\nErrors:\n") + err_text if err_text else "")
     text      = title + "\n" + full_body
     api_url   = "https://api.twilio.com/2010-04-01/Accounts/" + sid + "/Messages.json"
     post_data = urllib.parse.urlencode({"From": from_num, "To": phone, "Body": text}).encode()
@@ -627,7 +701,9 @@ def send_discord_sync(webhook_url, payload):
     import json as _json2
     url = webhook_url.strip()
     if not url:
-        return 0, "Webhook-URL nicht konfiguriert"
+        # The route already rejects an empty webhook with a localized message,
+        # so this is a guard, not a user-facing string.
+        return 0, "webhook url not configured"
     data = _json2.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url, data=data,
@@ -706,8 +782,9 @@ def notify_ntfy(
     if event and not _pref_enabled(prefs, "ntfy_" + _pref_event):
         return
 
-    err_text = _format_errors_text(errors or [])
-    full_body = body + ("\n\nFehler:\n" + err_text if err_text else "")
+    _lang = notif_lang(username)
+    err_text = _format_errors_text(errors or [], lang=_lang)
+    full_body = body + (tr(_lang, "\n\nFehler:\n", "\n\nErrors:\n") + err_text if err_text else "")
 
     # build URL and headers
     topic_quoted = urllib.parse.quote(topic, safe="")
@@ -789,8 +866,11 @@ def notify_all(
             logger.error("[Notif] WhatsApp notification failed: %s", exc, exc_info=True)
     
         try:
+            # Discord has no per-user prefs, but the embed labels still follow
+            # the language of the user this notification is about.
+            _lang = notif_lang(username)
             if event == "on_autosync":
-                notify_discord_autosync(title=title, new_count=episode_count)
+                notify_discord_autosync(title=title, new_count=episode_count, lang=_lang)
             elif event in ("on_sync_error", "on_disk_space_low", "on_sync_hold", "on_sync_resume"):
                 notify_discord_system(title=title, body=body, event=event)
             elif status is not None:
@@ -800,6 +880,7 @@ def notify_all(
                     episode_count=episode_count,
                     errors=errors or [],
                     is_movie=is_movie,
+                    lang=_lang,
                 )
         except Exception as exc:
             logger.error("[Notif] Discord notification failed: %s", exc, exc_info=True)

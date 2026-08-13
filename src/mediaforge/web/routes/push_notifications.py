@@ -251,13 +251,18 @@ def register_push_notifications_routes(app):
         """
         from flask import session as _sess
         # Both admins and users can trigger this (bot token must be set by admin)
-        from ..notifications import telegram_detect_chat_id
+        from ..notifications import telegram_detect_chat_id, tr
+        _lang = _sess.get("ui_language") or "en"
         token = get_setting("notif_telegram_bot_token") or ""
         if not token:
-            return jsonify({"error": "Bot-Token wurde noch nicht konfiguriert"}), 400
+            return jsonify({"error": tr(_lang,
+                "Bot-Token wurde noch nicht konfiguriert",
+                "The bot token has not been configured yet")}), 400
         chat_id = telegram_detect_chat_id(token)
         if chat_id is None:
-            return jsonify({"error": "Keine Nachricht gefunden. Schreib dem Bot zuerst eine Nachricht."}), 404
+            return jsonify({"error": tr(_lang,
+                "Keine Nachricht gefunden. Schreib dem Bot zuerst eine Nachricht.",
+                "No message found. Send the bot a message first.")}), 404
         return jsonify({"chat_id": chat_id})
     @app.route("/api/notif/test", methods=["POST"])
     def api_notif_test():
@@ -273,21 +278,27 @@ def register_push_notifications_routes(app):
         data     = request.get_json(silent=True) or {}
         service  = data.get("service", "")
 
+        from ..notifications import tr
+        _lang = _sess.get("ui_language") or "en"
+        _test_body = tr(_lang,
+            "🔔 Test-Benachrichtigung erfolgreich!",
+            "🔔 Test notification successful!")
+
         if service == "webpush":
             from ..notifications import notify_webpush
-            notify_webpush("MediaForge", "🔔 Test-Benachrichtigung erfolgreich!", username=username)
+            notify_webpush("MediaForge", _test_body, username=username)
         elif service == "telegram":
             from ..notifications import notify_telegram
-            notify_telegram("MediaForge", "🔔 Test-Benachrichtigung erfolgreich!", username=username)
+            notify_telegram("MediaForge", _test_body, username=username)
         elif service == "pushover":
             from ..notifications import notify_pushover
-            notify_pushover("MediaForge", "🔔 Test-Benachrichtigung erfolgreich!", username=username)
+            notify_pushover("MediaForge", _test_body, username=username)
         elif service == "whatsapp":
             from ..notifications import notify_whatsapp
-            notify_whatsapp("MediaForge", "🔔 Test-Benachrichtigung erfolgreich!", username=username)
+            notify_whatsapp("MediaForge", _test_body, username=username)
         elif service == "ntfy":
             from ..notifications import notify_ntfy
-            notify_ntfy("MediaForge", "🔔 Test-Benachrichtigung erfolgreich!", username=username)
+            notify_ntfy("MediaForge", _test_body, username=username)
         elif service == "discord":
             if _sess.get("user_role") != "admin":
                 return jsonify({"error": "admin access required"}), 403
@@ -296,14 +307,16 @@ def register_push_notifications_routes(app):
             import os as _os
             _wh_url = (_gs("notif_discord_webhook_url") or _os.environ.get("MEDIAFORGE_DISCORD_WEBHOOK", "")).strip()
             if not _wh_url:
-                return jsonify({"error": "Kein Webhook konfiguriert"}), 400
+                return jsonify({"error": tr(_lang,
+                    "Kein Webhook konfiguriert", "No webhook configured")}), 400
             import json as _json
             _payload = {
                 "embeds": [{
                     "title": "MediaForge — Test",
                     "color": 0x57F287,
                     "fields": [
-                        {"name": "Status", "value": "Test erfolgreich ✅", "inline": True},
+                        {"name": "Status", "value": tr(_lang,
+                            "Test erfolgreich ✅", "Test successful ✅"), "inline": True},
                     ],
                     "footer": {"text": "MediaForge"},
                 }]
@@ -312,7 +325,9 @@ def register_push_notifications_routes(app):
             if _code in (200, 204):
                 return jsonify({"ok": True, "http": _code})
             else:
-                return jsonify({"error": f"Discord antwortete HTTP {_code}: {_err or ''}"}), 502
+                return jsonify({"error": tr(_lang,
+                    f"Discord antwortete HTTP {_code}: {_err or ''}",
+                    f"Discord responded HTTP {_code}: {_err or ''}")}), 502
         else:
             return jsonify({"error": "unknown service"}), 400
 

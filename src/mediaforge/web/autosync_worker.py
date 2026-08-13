@@ -165,33 +165,18 @@ def _title_is_confident(source, candidates, threshold=0.86):
 def _job_notif_lang(job):
     """Best-effort UI language ('en' or 'de') for the user who created *job*.
 
-    Used to localize the handful of user-facing strings this background
-    worker builds itself (custom-path hold/resume, unsupported-provider, the
-    generic failure wrapper). Flask's request-bound session -- and therefore
-    app.py's get_locale() -- isn't available from a daemon thread, but the
-    per-user language preference is persisted in the DB and can be read
-    directly from here. Falls back to "en" (the same default used everywhere
-    else -- see get_locale() / db.get_user_language()) if the job has no
-    creator, the lookup fails, or the users table doesn't exist (no-auth
-    mode, see db.get_user_id_by_username()'s docstring).
+    Thin wrapper around notifications.notif_lang(), which is now the single
+    implementation shared by the queue worker, this worker and the
+    notification channels themselves.
     """
-    try:
-        from .db import get_user_id_by_username, get_user_language
-        uid = get_user_id_by_username(job.get("added_by"))
-        if uid is None:
-            return "en"
-        return get_user_language(uid)
-    except Exception:
-        return "en"
+    from .notifications import notif_lang
+    return notif_lang(job.get("added_by"))
 
 
 def _tr(lang, de, en):
-    """Tiny DE/EN string picker -- the backend equivalent of the frontend's
-    t(de, en) helper (static/app.js) -- for the few notification/error
-    strings this file builds itself. Deliberately NOT used for raw scraper
-    exception text (str(e)): that originates deep in the site models and
-    isn't ours to translate here."""
-    return de if lang == "de" else en
+    """Shared DE/EN string picker -- see notifications.tr()."""
+    from .notifications import tr
+    return tr(lang, de, en)
 
 
 def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
@@ -996,8 +981,12 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             notify_all(
                 title=job["title"],
                 body=_tr(_lang,
-                    f"⬇️ {total_new_queued} neue Folge(n) werden heruntergeladen",
-                    f"⬇️ {total_new_queued} new episode(s) are being downloaded"),
+                    f"⬇️ {total_new_queued} neue Folge wird heruntergeladen"
+                    if total_new_queued == 1 else
+                    f"⬇️ {total_new_queued} neue Folgen werden heruntergeladen",
+                    f"⬇️ {total_new_queued} new episode is being downloaded"
+                    if total_new_queued == 1 else
+                    f"⬇️ {total_new_queued} new episodes are being downloaded"),
                 event="on_autosync",
                 username=job.get("added_by"),
                 episode_count=total_new_queued,

@@ -359,10 +359,17 @@ def _check_disk_space_and_notify(username: str | None = None, check_path: str | 
     _last_disk_notif_time = now
 
     try:
-        from .notifications import notify_all
+        from .notifications import notify_all, notif_lang, tr
+        _lang = notif_lang(username)
         notify_all(
-            title="⚠️ Speicherplatz niedrig",
-            body=f"Nur noch {free_gb:.1f} GB frei (Limit: {min_gb:.0f} GB). Download wird trotzdem gestartet.",
+            title=tr(_lang, "⚠️ Speicherplatz niedrig", "⚠️ Low disk space"),
+            body=tr(
+                _lang,
+                f"Nur noch {free_gb:.1f} GB frei (Limit: {min_gb:.0f} GB). "
+                "Download wird trotzdem gestartet.",
+                f"Only {free_gb:.1f} GB left (limit: {min_gb:.0f} GB). "
+                "The download is being started anyway.",
+            ),
             event="on_disk_space_low",
             username=username,
         )
@@ -1469,24 +1476,44 @@ def _queue_worker():
                 _wr.done("queue", detail="%s: %s" % (item.get("title", ""), status))
 
                 # Send notifications (all services)
-                from .notifications import notify_all
+                from .notifications import (
+                    notify_all, notif_lang, tr, media_count_text, error_count_text)
                 # Direct Link jobs are always a single file, so they get the
                 # same "Film" notification wording as a FilmPalast movie.
                 _is_movie = (
                     _is_movie_url(item.get("url", ""))
                     or item.get("provider") == "Direct"
                 )
+                _lang  = notif_lang(item.get("username"))
+                _what  = media_count_text(_lang, len(episodes), _is_movie)
+                _errs  = error_count_text(_lang, len(errors))
                 if status == "completed":
-                    _body = "✅ Film heruntergeladen" if _is_movie else f"✅ {len(episodes)} Episode(n) heruntergeladen"
+                    _body = (tr(_lang, "✅ Film heruntergeladen", "✅ Movie downloaded")
+                             if _is_movie else
+                             tr(_lang, f"✅ {_what} heruntergeladen",
+                                f"✅ {_what} downloaded"))
                     _event = "on_completed"
                 elif status == "partial":
-                    _body = f"❌ Film-Download fehlgeschlagen ({len(errors)} Fehler)" if _is_movie else f"⚠️ {successful} von {len(episodes)} Episode(n) heruntergeladen, {len(errors)} Fehler offen"
+                    # `successful > 0` is what makes a job partial, so a movie
+                    # job here HAS its file -- only older failures are still
+                    # open. Saying "movie download failed" was simply wrong.
+                    _body = (tr(_lang,
+                                f"⚠️ Film heruntergeladen, {_errs} offen",
+                                f"⚠️ Movie downloaded, {_errs} still open")
+                             if _is_movie else
+                             tr(_lang,
+                                f"⚠️ {successful} von {_what} heruntergeladen, {_errs} offen",
+                                f"⚠️ {successful} of {_what} downloaded, {_errs} still open"))
                     _event = "on_partial"
                 else:
-                    _body = f"❌ Download fehlgeschlagen ({len(errors)} Fehler)"
+                    _body = (tr(_lang, f"❌ Film-Download fehlgeschlagen ({_errs})",
+                                f"❌ Movie download failed ({_errs})")
+                             if _is_movie else
+                             tr(_lang, f"❌ Download fehlgeschlagen ({_errs})",
+                                f"❌ Download failed ({_errs})"))
                     _event = "on_errors"
                 notify_all(
-                    title=item.get("title", "Unbekannt"),
+                    title=item.get("title") or tr(_lang, "Unbekannt", "Unknown"),
                     body=_body,
                     event=_event,
                     username=item.get("username"),
@@ -1503,10 +1530,11 @@ def _queue_worker():
                     _schedule_mediascan_delayed(delay=120.0)
             else:
                 _final_status_set = True
-                from .notifications import notify_all
+                from .notifications import notify_all, notif_lang, tr
+                _lang = notif_lang(item.get("username"))
                 notify_all(
-                    title=item.get("title", "Unbekannt"),
-                    body="⏹️ Download abgebrochen",
+                    title=item.get("title") or tr(_lang, "Unbekannt", "Unknown"),
+                    body=tr(_lang, "⏹️ Download abgebrochen", "⏹️ Download cancelled"),
                     event="on_cancelled",
                     username=item.get("username"),
                     status="cancelled",
@@ -1529,16 +1557,21 @@ def _queue_worker():
                         set_queue_status(item["id"], "failed")
 
                         try:
-                            from .notifications import notify_all
+                            from .notifications import notify_all, notif_lang, tr
                             # Direct Link jobs are always a single file, so they get
                             # the same "Film" notification wording as a FilmPalast movie.
                             _is_movie = (
                                 _is_movie_url(item.get("url", ""))
                                 or item.get("provider") == "Direct"
                             )
+                            _lang = notif_lang(item.get("username"))
                             notify_all(
-                                title=item.get("title", "Unbekannt"),
-                                body=f"❌ Download durch internen Fehler abgebrochen: {e}",
+                                title=item.get("title") or tr(_lang, "Unbekannt", "Unknown"),
+                                body=tr(
+                                    _lang,
+                                    f"❌ Download durch internen Fehler abgebrochen: {e}",
+                                    f"❌ Download aborted by an internal error: {e}",
+                                ),
                                 event="on_errors",
                                 username=item.get("username"),
                                 status="failed",
