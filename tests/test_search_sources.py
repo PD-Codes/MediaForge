@@ -214,6 +214,30 @@ def test_search_fanout_is_derived_not_positional():
     a list -- the old five-positional-argument renderResultsBoth() could not
     represent a sixth source at all."""
     text = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
-    assert "renderResultsBySource" in text
+    assert "buildSourceSection" in text
     assert "function renderResultsBoth" not in text
     assert "loadSearchSources" in text
+
+
+def test_search_renders_per_source_not_after_all_of_them():
+    """Results appear as each source answers.
+
+    Every consumer fans out one request per source and used to await
+    Promise.all before painting anything, so the whole list arrived at the
+    speed of the slowest site -- up to the 15 s per-request timeout when one
+    was dead. Pinned here because "await Promise.all(...)" reads harmless and
+    is the natural thing to write back.
+    """
+    app_js = (_STATIC / "app.js").read_text(encoding="utf-8", errors="replace")
+    # doSearch(): one slot per source, filled when THAT source answers.
+    assert "buildSourceSection({" in app_js
+    # runAniSearch(): one card appended per arriving answer.
+    assert "forEach(appendResult)" in app_js
+    for dead in ("const _sections = await Promise.all",
+                 "const resultsArrays = await Promise.all"):
+        assert dead not in app_js, f"{dead!r} is back -- search waits for the slowest source again"
+
+    seerr_js = (_STATIC / "seerr.js").read_text(encoding="utf-8", errors="replace")
+    assert "Promise.all(sources.map(" not in seerr_js
+    # Re-rendering per answer must not re-scrape the posters.
+    assert "_posterCache" in seerr_js

@@ -1000,8 +1000,18 @@
       return;
     }
 
-    Promise.all(sources.map(function (src) {
-      return fetch("/api/search", {
+    // Painted per source as it answers, not after Promise.all: one slow site
+    // used to hold back every hit the others had already returned.
+    //
+    // The list is still assembled round-robin across the sources in the
+    // user's order (so it does not open with twenty hits from one site), but
+    // only over the sources that have answered SO FAR -- each answer rebuilds
+    // it. Cheap: this is a handful of arrays and one innerHTML per source.
+    var lists = sources.map(function () { return []; });
+    var answered = 0;
+
+    sources.forEach(function (src, i) {
+      fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ keyword: q, site: src.site }),
@@ -1012,29 +1022,43 @@
             return { url: r.url, title: r.title, source: src.label };
           });
         })
-        .catch(function () { return []; });   // one dead source must not kill the search
-    })).then(function (lists) {
-      if (mySeq !== S.searchSeq) return;      // a newer search already won
-      // Round-robin across every source, in the user's source order, so the
-      // list does not open with twenty hits from whichever site answered
-      // longest. It used to interleave exactly lists[0] and lists[1] and append
-      // the rest -- "the first two" named FilmPalast+MegaKino or
-      // AniWorld+SerienStream back when the arrays were literals, and names
-      // nothing once the list is resolved at runtime.
-      var combined = [];
-      var depth = 0;
-      var deepest = 0;
-      for (var n = 0; n < lists.length; n++) {
-        deepest = Math.max(deepest, (lists[n] || []).length);
-      }
-      for (depth = 0; depth < deepest; depth++) {
-        for (var k = 0; k < lists.length; k++) {
-          var items = lists[k] || [];
-          if (depth < items.length) combined.push(items[depth]);
-        }
-      }
-      renderSearchResults(combined);
+        .catch(function () { return []; })   // one dead source must not kill the search
+        .then(function (items) {
+          if (mySeq !== S.searchSeq) return; // a newer search already won
+          lists[i] = items;
+          answered++;
+          // "No results" only once everyone has spoken -- claiming it while
+          // requests are still running would be wrong for as long as the
+          // next answer takes.
+          if (!lists.some(function (l) { return l.length; }) && answered < sources.length) return;
+          var combined = [];
+          var deepest = 0;
+          for (var n = 0; n < lists.length; n++) {
+            deepest = Math.max(deepest, lists[n].length);
+          }
+          for (var depth = 0; depth < deepest; depth++) {
+            for (var k = 0; k < lists.length; k++) {
+              if (depth < lists[k].length) combined.push(lists[k][depth]);
+            }
+          }
+          renderSearchResults(combined);
+        });
     });
+  }
+
+  // series url -> Promise<poster_url|null>. The result list is re-rendered
+  // once per answering source now, and /api/series SCRAPES the site -- without
+  // this, a poster would be fetched again for every re-render.
+  var _posterCache = {};
+
+  function _posterFor(url) {
+    if (!_posterCache[url]) {
+      _posterCache[url] = fetch("/api/series?url=" + encodeURIComponent(url))
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) { return (data && data.poster_url) || null; })
+        .catch(function () { return null; });   // the poster is decoration
+    }
+    return _posterCache[url];
   }
 
   function renderSearchResults(results) {
@@ -1057,18 +1081,15 @@
     // placeholder in place.
     results.forEach(function (r, i) {
       if (!r.url) return;
-      fetch("/api/series?url=" + encodeURIComponent(r.url))
-        .then(function (res) { return res.ok ? res.json() : null; })
-        .then(function (data) {
-          if (!data || !data.poster_url) return;
-          var slot = container.querySelector('[data-poster-slot="' + i + '"]');
-          if (!slot) return;
-          var src = safeUrl(typeof proxyImg === "function" ? proxyImg(data.poster_url) : data.poster_url);
-          if (!src) return;
-          slot.innerHTML = '<img src="' + escAttr(src) + '" alt="" loading="lazy" decoding="async">';
-          slot.classList.remove("seerr-card-poster-placeholder");
-        })
-        .catch(function () { /* the poster is decoration */ });
+      _posterFor(r.url).then(function (poster) {
+        if (!poster) return;
+        var slot = container.querySelector('[data-poster-slot="' + i + '"]');
+        if (!slot) return;
+        var src = safeUrl(typeof proxyImg === "function" ? proxyImg(poster) : poster);
+        if (!src) return;
+        slot.innerHTML = '<img src="' + escAttr(src) + '" alt="" loading="lazy" decoding="async">';
+        slot.classList.remove("seerr-card-poster-placeholder");
+      });
     });
   }
 

@@ -839,7 +839,7 @@ async function loadAniwavesBrowse() {
 // hanime items (both the New/Trending lists and the general title-search
 // results mix censored and uncensored entries) — not separate sections, so
 // this filters an item array rather than hiding a whole grid/section. Shared
-// by loadHanimeBrowse() (home page New/Trending) and renderResultsBySource()
+// by loadHanimeBrowse() (home page New/Trending) and buildSourceSection()
 // (title search) so both respect the same setting identically.
 function _filterHanimeCensorship(results) {
   const hnVis = (generalSettings && generalSettings.sources && generalSettings.sources.sections && generalSettings.sources.sections.hanime) || {};
@@ -2474,18 +2474,57 @@ async function doSearch() {
     // the user's own order -- see loadSearchSources(). An adult source is
     // always opt-in; everything else is only skipped when the user asked for
     // disabled sources to be left out of search ("hide_disabled_in_search").
-    let _sources = _sortSourcesByUserOrder(await loadSearchSources(), _srcSettings.order);
-    const _sections = await Promise.all(_sources.map(async function (src) {
-      const on = _sourceIsOn(src, _en);
-      const ask = src.adult ? on : (on || !_hide);
-      let results = ask ? await searchSite(src.id).catch(() => []) : [];
-      // The censorship filter is a property of the hanime source's own
-      // metadata (r.censored), so it applies to whichever source reports it,
-      // not to a hardcoded site id.
-      results = _filterHanimeCensorship(results) || [];
-      return { source: src, results: results };
+    const _asked = _sortSourcesByUserOrder(await loadSearchSources(), _srcSettings.order)
+      .filter(function (src) {
+        const on = _sourceIsOn(src, _en);
+        return src.adult ? on : (on || !_hide);
+      });
+
+    // One request per source (that was always the case), but the results are
+    // painted the moment THAT source answers instead of when the slowest one
+    // does: awaiting Promise.all meant a site that needed 12 s held back the
+    // one that answered in 200 ms, and a dead source held everything until
+    // searchSite()'s 15 s timeout fired.
+    //
+    // The slots are created up front, in the user's source order, so a source
+    // that answers late still lands in its own place rather than wherever the
+    // network happened to put it. An empty slot is removed again.
+    resultsDiv.innerHTML = "";
+    const _slots = _asked.map(function (src) {
+      const slot = document.createElement("div");
+      slot.className = "browse-provider-block";
+      const skel = document.createElement("div");
+      skel.className = "results-poster-grid";
+      slot.appendChild(skel);
+      renderSkeletons(skel, 6);   // no-op unless the user has skeletons on
+      resultsDiv.appendChild(slot);
+      return slot;
+    });
+
+    let _anyResults = false;
+    await Promise.all(_asked.map(function (src, i) {
+      return searchSite(src.id).catch(() => []).then(function (results) {
+        // The censorship filter is a property of the hanime source's own
+        // metadata (r.censored), so it applies to whichever source reports
+        // it, not to a hardcoded site id.
+        const block = buildSourceSection({
+          source: src,
+          results: _filterHanimeCensorship(results) || [],
+        });
+        if (!block) { _slots[i].remove(); return; }
+        _slots[i].replaceWith(block);
+        _anyResults = true;
+      });
     }));
-    renderResultsBySource(_sections);
+
+    // Only once every source has had its say -- an empty state shown while
+    // requests are still running would be wrong for the whole time it takes
+    // the next one to answer.
+    if (!_anyResults) {
+      resultsDiv.innerHTML =
+        '<div style="width:100%;text-align:center;color:#888;padding:40px">' +
+        escapeHtml(t("Keine Ergebnisse gefunden.", "No results found.")) + "</div>";
+    }
   } catch (e) {
     showToast(t("Suche fehlgeschlagen: ", "Search failed: " + e.message));
   } finally {
@@ -2515,76 +2554,67 @@ function renderResults(results) {
 }
 
 /**
- * Render search results grouped by the source they came from.
- * @param {Array} sections [{source, results}] as produced by doSearch() --
- *   one entry per source that exists, in the user's own order. Replaces the
- *   old five-positional-argument renderResultsBoth(), which could not
- *   represent a sixth source at all.
+ * One source's result block, ready to be dropped into #results.
+ * doSearch() appends these one at a time, the moment each source answers,
+ * instead of building the whole result list once every source has replied.
+ * Replaces the old five-positional-argument renderResultsBoth(), which could
+ * not represent a sixth source at all.
+ * @param {{source: Object, results: Array}} sec
+ * @returns {HTMLElement|null} null when that source had no hits.
  */
-function renderResultsBySource(sections) {
-  sections = (sections || []).filter(function (s) { return s && s.source; });
-  resultsDiv.innerHTML = "";
-  if (!sections.some(function (s) { return (s.results || []).length; })) {
-    resultsDiv.innerHTML =
-      '<div style="width:100%;text-align:center;color:#888;padding:40px">' +
-      escapeHtml(t("Keine Ergebnisse gefunden.", "No results found.")) + "</div>";
-    return;
-  }
+function buildSourceSection(sec) {
+  sec.results = sec.results || [];
+  if (!sec.results.length) return null;
 
-  sections.forEach(function (sec) {
-    sec.results = sec.results || [];
-    if (!sec.results.length) return;
+  const block = document.createElement("div");
+  block.className = "browse-provider-block";
 
-    const block = document.createElement("div");
-    block.className = "browse-provider-block";
+  const header = document.createElement("div");
+  // A module source has no colour of its own in the shipped CSS, so
+  // source_policy hands it the neutral browse-provider-thirdparty class
+  // rather than a class name that does not exist.
+  header.className = "browse-provider-header " +
+    (sec.source.css_class || "browse-provider-thirdparty");
+  // textContent, not innerHTML: the label comes from a module.
+  header.textContent = sec.source.label || sec.source.id;
+  block.appendChild(header);
 
-    const header = document.createElement("div");
-    // A module source has no colour of its own in the shipped CSS, so
-    // source_policy hands it the neutral browse-provider-thirdparty class
-    // rather than a class name that does not exist.
-    header.className = "browse-provider-header " +
-      (sec.source.css_class || "browse-provider-thirdparty");
-    // textContent, not innerHTML: the label comes from a module.
-    header.textContent = sec.source.label || sec.source.id;
-    block.appendChild(header);
+  const grid = document.createElement("div");
+  grid.className = "results-poster-grid";
 
-    const grid = document.createElement("div");
-    grid.className = "results-poster-grid";
-
-    sec.results.forEach(function (r) {
-      const card = document.createElement("div");
-      card.className = "browse-card";
-      card.dataset.url = r.url;
-      card.onclick = () => openSeries(r.url);
-      card.innerHTML =
-        (r.censored ? '<div class="hanime-pill hanime-pill-' + esc(String(r.censored).toLowerCase()) + '">' + esc(_hanimeCensLabel(r.censored)) + '</div>' : '') +
-        '<img src="" alt="" style="width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--bg-elevated);display:block">' +
-        '<div class="browse-info"><div class="browse-title">' + esc(r.title) + '</div><div class="browse-genre">' + esc(r.genre || '') + '</div></div>';
-      // Same franchise-vs-episode title split as renderBrowseCards (hanime).
-      addDownloadedBadgeMulti(card, [r.series_title, r.title]);
-      addSyncBadge(card, r.url);
-      grid.appendChild(card);
-      loadPoster(r.url, card.querySelector("img"));
-      // hanime is adult content and isn't in TMDB's database, so — same as
-      // the dedicated hanime Browse tab (renderBrowseCards' skipTmdb option)
-      // — skip the TMDB/Crunchyroll/Fernsehserien lookup chain entirely here
-      // too; it would just be a wasted (or wrong-match) request per card.
-      // Genre/FSK hover info still works, fed from hanime's own tags.
-      // Keyed off "is this an adult source", not off the literal id, so a
-      // module's 18+ source is treated the same way.
-      if (sec.source.adult) {
-        const hanimeTags = (r.tags && r.tags.length)
-          ? r.tags
-          : (r.genre ? r.genre.split(",").map(g => g.trim()).filter(Boolean) : []);
-        renderBrowseHoverCards(card, null, hanimeTags, 18);
-        return;
-      }
-      enrichCardWithTmdb(card, r.title);
-    });
-
-    block.appendChild(grid);
-    resultsDiv.appendChild(block);
+  sec.results.forEach(function (r) {
+    const card = document.createElement("div");
+    card.className = "browse-card";
+    card.dataset.url = r.url;
+    card.onclick = () => openSeries(r.url);
+    card.innerHTML =
+      (r.censored ? '<div class="hanime-pill hanime-pill-' + esc(String(r.censored).toLowerCase()) + '">' + esc(_hanimeCensLabel(r.censored)) + '</div>' : '') +
+      '<img src="" alt="" style="width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--bg-elevated);display:block">' +
+      '<div class="browse-info"><div class="browse-title">' + esc(r.title) + '</div><div class="browse-genre">' + esc(r.genre || '') + '</div></div>';
+    // Same franchise-vs-episode title split as renderBrowseCards (hanime).
+    addDownloadedBadgeMulti(card, [r.series_title, r.title]);
+    addSyncBadge(card, r.url);
+    grid.appendChild(card);
+    loadPoster(r.url, card.querySelector("img"));
+    // hanime is adult content and isn't in TMDB's database, so — same as
+    // the dedicated hanime Browse tab (renderBrowseCards' skipTmdb option)
+    // — skip the TMDB/Crunchyroll/Fernsehserien lookup chain entirely here
+    // too; it would just be a wasted (or wrong-match) request per card.
+    // Genre/FSK hover info still works, fed from hanime's own tags.
+    // Keyed off "is this an adult source", not off the literal id, so a
+    // module's 18+ source is treated the same way.
+    if (sec.source.adult) {
+      const hanimeTags = (r.tags && r.tags.length)
+        ? r.tags
+        : (r.genre ? r.genre.split(",").map(g => g.trim()).filter(Boolean) : []);
+      renderBrowseHoverCards(card, null, hanimeTags, 18);
+      return;
+    }
+    enrichCardWithTmdb(card, r.title);
   });
+
+  block.appendChild(grid);
+  return block;
 }
 
 /**
@@ -5311,10 +5341,6 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
       _sources.forEach(src => allPromises.push(searchSite(src.id, kw)));
     });
 
-    const resultsArrays = await Promise.all(allPromises.map(p => p.catch(() => [])));
-
-    document.getElementById('aniSearchSpinner').style.display = 'none';
-
     let displayTitle = primaryCleaned;
     if (localizedCleaned && localizedCleaned.toLowerCase() !== primaryCleaned.toLowerCase()) {
       displayTitle += ` / ${localizedCleaned}`;
@@ -5323,60 +5349,39 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
       displayTitle += ` / ${enCleaned}`;
     }
     document.getElementById('aniSearchTitle').textContent = t(`Ergebnisse für "${displayTitle}"`, `Results for "${displayTitle}"`);
-    grid.innerHTML = '';
 
-    let allResults = [];
-    resultsArrays.forEach(arr => {
-      allResults = allResults.concat(arr);
-    });
-
-    // Deduplicate by URL
-    const seenUrls = new Set();
-    allResults = allResults.filter(r => {
-      if (seenUrls.has(r.url)) return false;
-      seenUrls.add(r.url);
-      return true;
-    });
+    const normalizeForCompare = (str) => {
+      return str.toLowerCase()
+                .replace(/’/g, "'")
+                .replace(/[–—―]/g, "-")
+                .replace(/\s*-\s*/g, "-") // remove spaces around hyphens first
+                .replace(/-/g, " ")       // treat hyphens as spaces
+                .replace(/\s+/g, " ")
+                .trim();
+    };
 
     // HARD FILTER: Only keep results where title contains ANY of our keywords, or keyword contains title (apostrophe-insensitive & hyphen-insensitive)
-    allResults = allResults.filter(r => {
+    const titleMatches = (r) => {
       if (!r.title) return false;
-      
-      const normalizeForCompare = (str) => {
-        return str.toLowerCase()
-                  .replace(/’/g, "'")
-                  .replace(/[–—―]/g, "-")
-                  .replace(/\s*-\s*/g, "-") // remove spaces around hyphens first
-                  .replace(/-/g, " ")       // treat hyphens as spaces
-                  .replace(/\s+/g, " ")
-                  .trim();
-      };
-
       const tNorm = normalizeForCompare(r.title);
-
       return searchTitles.some(kw => {
         const kNorm = normalizeForCompare(kw);
-        
         if (tNorm.includes(kNorm) || kNorm.includes(tNorm)) return true;
-        
         const tNoApos = tNorm.replace(/'/g, "");
         const kNoApos = kNorm.replace(/'/g, "");
         return tNoApos.includes(kNoApos) || kNoApos.includes(tNoApos);
       });
-    });
+    };
 
-    if (allResults.length === 0) {
-      // Names the sources that were ACTUALLY asked rather than the three that
-      // used to be hardcoded here. The lookup now fans out over every enabled
-      // source (see above), so a fixed list of names was both wrong and the
-      // one thing that could make a user think a source they enabled was
-      // never queried.
-      const _asked = _sources.map(s => s.label || s.id).join(", ");
-      grid.innerHTML = `<div class="adv-empty-state">${t("Keine exakten Treffer für " + escapeHtml(displayTitle) + " auf " + escapeHtml(_asked) + " gefunden.", "No exact matches for " + escapeHtml(displayTitle) + " found on " + escapeHtml(_asked) + ".")}</div>`;
-      return;
-    }
+    const seenUrls = new Set();
+    let painted = 0;
+    const appendResult = (r) => {
+      if (!r || !r.url || seenUrls.has(r.url)) return;   // dedup across sources AND title variants
+      seenUrls.add(r.url);
+      if (!titleMatches(r)) return;
+      // The loading skeleton stays up until the first real hit lands.
+      if (!painted++) grid.innerHTML = '';
 
-    allResults.forEach(r => {
       const card = document.createElement('div');
       card.className = 'browse-card';
       card.style.cursor = 'pointer';
@@ -5408,7 +5413,30 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
 
       // Always fetch poster from the source site (like the normal search does)
       advLoadPoster(r.url, card.querySelector('img'));
-    });
+    };
+
+    // Every answer is painted as it arrives instead of after Promise.all.
+    // This modal fans out over every source AND every title variant, so it
+    // waits on the slowest of N×M requests -- up to searchSite()'s 15 s
+    // timeout for a dead site, during which hits that were already in hand
+    // stayed invisible.
+    await Promise.all(allPromises.map(p =>
+      p.catch(() => []).then(arr => (arr || []).forEach(appendResult))
+    ));
+
+    document.getElementById('aniSearchSpinner').style.display = 'none';
+
+    // Only after every source has answered -- an empty state while requests
+    // are still running would claim "nothing found" too early.
+    if (!painted) {
+      // Names the sources that were ACTUALLY asked rather than the three that
+      // used to be hardcoded here. The lookup now fans out over every enabled
+      // source (see above), so a fixed list of names was both wrong and the
+      // one thing that could make a user think a source they enabled was
+      // never queried.
+      const _asked = _sources.map(s => s.label || s.id).join(", ");
+      grid.innerHTML = `<div class="adv-empty-state">${t("Keine exakten Treffer für " + escapeHtml(displayTitle) + " auf " + escapeHtml(_asked) + " gefunden.", "No exact matches for " + escapeHtml(displayTitle) + " found on " + escapeHtml(_asked) + ".")}</div>`;
+    }
 
   } catch (e) {
     document.getElementById('aniSearchSpinner').style.display = 'none';
