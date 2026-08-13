@@ -1319,6 +1319,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "settings_page",
             "api_settings",
             "api_settings_update",
+            # The generic module settings API (thirdparties/registry.py).
+            # Every module's settings card is read and written through this
+            # one pair of routes, so leaving them at login_required meant any
+            # logged-in account could read a module's configuration -- and
+            # PUT could switch a module on or off, and write its extra
+            # settings, which is the same class of decision as installing one
+            # (already admin-only via api_store_install). Secrets are masked
+            # on the way out, but the enabled flag, every non-secret setting
+            # and the "is a token configured" answer were all readable.
+            "api_thirdparty_settings_get",
+            "api_thirdparty_settings_put",
             # The Integrations page itself: its sidebar link was already
             # admin-only (base.html), the route was not -- same mismatch the
             # Module Manager had.
@@ -1470,10 +1481,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         from .routes.ops import ADMIN_ONLY_OPS_ENDPOINTS
         _admin_only |= set(ADMIN_ONLY_OPS_ENDPOINTS)
 
-        # Used by the _exempt set below: every /api/v1/ endpoint authenticates
-        # with an API key instead of a session, so none of them may be wrapped
-        # in login_required.
-        from .routes.v1_api import _V1_ENDPOINT_SCOPES
+        # Used by secure_endpoints() below: every /api/v1/ endpoint
+        # authenticates with an API key instead of a session, so none of them
+        # may be wrapped in login_required. Imported as the accessor, not as
+        # the dict -- see where it is called.
+        from .routes.v1_api import v1_endpoint_scopes
 
         # Published so it can be asserted on (tests/test_admin_gating.py):
         # authorisation lives in this hand-maintained set, not on the routes,
@@ -1613,17 +1625,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_stream_status",
             "api_stream_stop",
             "api_stream_active",
-            # External REST API — authenticated via API key, not session.
-            # The list is imported from routes/v1_api.py rather than typed out
-            # here, and that is a bug fix, not tidying: this set used to name
-            # seven of the thirteen v1 endpoints by hand. The other six
-            # (autosync, uptime, update-status, mediascan, upscale, history)
-            # were wrapped in login_required, which answers /api/ paths with a
-            # plain 401 -- so a caller with a perfectly valid API key was told
-            # its key was wrong, and the obvious next step (regenerate it)
-            # changed nothing. Deriving the set means a new v1 endpoint cannot
-            # be born broken the same way.
-            *_V1_ENDPOINT_SCOPES,
+            # NOTE: the external REST API (/api/v1/) is NOT listed here. It is
+            # added inside secure_endpoints() from v1_endpoint_scopes(), on
+            # every run -- see the comment there for why a set literal built
+            # once at startup was wrong.
+            #
+            # Server-side image proxy. Authenticated inside the view, which
+            # accepts EITHER a session or an API key: it is the only way a
+            # non-browser client (or a module serving its own listing) can
+            # render a poster without every caller inventing its own image
+            # endpoint and its own allowlist. See routes/image_proxy.py.
+            "api_image_proxy",
             # Calendar ICS subscription feed — authenticated by a per-user
             # token in the query string, not by session. A calendar client
             # (Google/Apple/Thunderbird/DAVx5) sends no cookies, so a login
@@ -1653,14 +1665,45 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 if is_admin_view(view):
                     admin_module_endpoints.add(endpoint)
 
+            # Re-read on every run rather than baked into _exempt once at
+            # startup. A module installed live registers its /api/v1/ routes
+            # AND its scopes after create_app() has already built that set, so
+            # a snapshot made the same module behave two different ways: after
+            # a restart its routes were exempt, after a hot install they were
+            # wrapped in login_required and answered 401 to a perfectly valid
+            # API key. That divergence is what modules were papering over with
+            # their own before_request hooks.
+            exempt = _exempt | set(v1_endpoint_scopes())
+
             for endpoint, view_func in list(app.view_functions.items()):
-                if endpoint in _secured or endpoint in _exempt:
-                    _secured.add(endpoint)
+                if endpoint in _secured:
                     continue
                 endpoint_blueprint = endpoint.rsplit(".", 1)[0] if "." in endpoint else None
-                if (endpoint in _admin_only
-                        or endpoint in admin_module_endpoints
-                        or (endpoint_blueprint and endpoint_blueprint in admin_blueprints)):
+                is_admin = (endpoint in _admin_only
+                            or endpoint in admin_module_endpoints
+                            or (endpoint_blueprint and endpoint_blueprint in admin_blueprints))
+                # Admin wins over the exemption, deliberately and in this
+                # order. The other way round -- the way this used to read --
+                # meant an entry in the v1 scope map ALSO switched off
+                # admin_required for that endpoint, so a route could be
+                # un-admined by naming it somewhere else entirely. An
+                # authentication exemption must never be able to grant an
+                # authorisation it was not asked about.
+                if is_admin and endpoint in exempt:
+                    logger.warning(
+                        "[Auth] '%s' is both admin-only and login-exempt; "
+                        "admin_required wins. An /api/v1/ route must not live "
+                        "in an admin blueprint -- it authenticates by API key, "
+                        "which carries no session and therefore no role.",
+                        endpoint)
+                if not is_admin and endpoint in exempt:
+                    # Not added to _secured: the exemption can go away (a
+                    # module and its scope entries are removed on uninstall),
+                    # and an endpoint remembered as "done" would then keep an
+                    # exemption nothing declares any more. Wrapping is what is
+                    # remembered here, and this endpoint was not wrapped.
+                    continue
+                if is_admin:
                     app.view_functions[endpoint] = admin_required(view_func)
                 elif endpoint in _kids_blocked:
                     # Open to an ordinary account, closed to a kids account.

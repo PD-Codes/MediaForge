@@ -83,8 +83,37 @@ def ceiling():
     return int(raw) if raw.isdigit() else None
 
 
+def has_session() -> bool:
+    """Whether this request carries a logged-in account at all.
+
+    Not every request does: the external REST API authenticates with a key,
+    the calendar feed with a query-string token, and a module can register a
+    route with either. ``ceiling()`` answers ``None`` for those -- correctly,
+    since there is no account whose preference could be read -- and callers
+    that only asked "is there a limit?" then read that as "no limit".
+    """
+    from flask import session
+    try:
+        return session.get("user_id") is not None
+    except Exception:
+        return False
+
+
 def allows_adult() -> bool:
-    """Whether the 18+ source may be fetched for this session at all."""
+    """Whether the 18+ source may be fetched for this request at all.
+
+    A request with no session is refused rather than waved through. The rule
+    used to be "no ceiling means no limit", and with no session there is no
+    ceiling -- so any route authenticating by something other than a cookie
+    (the v1 API, the ICS feed, a module's own endpoint) got the adult source
+    by default, without anyone having decided that.
+
+    Opting in to the adult source is a per-account decision, and an account is
+    exactly what these requests do not have. Refusing is the only answer that
+    does not invent one.
+    """
+    if not has_session():
+        return False
     limit = ceiling()
     return limit is None or limit >= 18
 

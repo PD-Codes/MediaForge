@@ -236,6 +236,10 @@ _probe_cache: dict = {}
 _probe_cache_lock = threading.Lock()
 _probe_slots = threading.Semaphore(4)
 _PROBE_TTL = 180.0
+# Upper bound on cached probes. Entries are small (a dict with three keys) and
+# expire after _PROBE_TTL anyway; the cap only exists so a very long session
+# cannot grow the dict without limit.
+_PROBE_CACHE_MAX = 400
 
 
 
@@ -787,9 +791,20 @@ def register_stream_routes(app):
             if not headers:
                 headers = {"User-Agent": os.environ.get("MEDIAFORGE_USER_AGENT", "Mozilla/5.0")}
 
-            # A two-byte range is enough to learn whether the hoster answers
-            # at all; a playlist simply comes back whole and is still tiny.
-            code, up_headers, body, _final = fetch(stream_url, headers, "bytes=0-1")
+            # Two things are wanted from this request, and they need
+            # different amounts of data: whether the hoster answers at all
+            # (one byte would do), and -- if the URL turns out to be an HLS
+            # master playlist -- which resolutions it lists.
+            #
+            # It used to ask for "bytes=0-1". Against a hoster that ignores
+            # Range that was harmless, because the whole playlist came back
+            # anyway; against one that honours it, the answer was 206 with two
+            # bytes, _height_from_playlist() could not even see "#EXTM3U", and
+            # the quality badge silently fell through to the slow deep probe
+            # every single time. The range is therefore large enough to hold a
+            # master playlist (they are a few hundred bytes; 8 KiB is generous)
+            # and still nothing compared to fetching a segment.
+            code, up_headers, body, _final = fetch(stream_url, headers, "bytes=0-8191")
             ok = code in (200, 206)
             result = {"ok": ok, "ms": int((time.time() - started) * 1000)}
             if ok:
@@ -803,8 +818,17 @@ def register_stream_routes(app):
             _probe_slots.release()
 
         with _probe_cache_lock:
-            if len(_probe_cache) > 400:
-                _probe_cache.clear()
+            # Evict the oldest entries instead of emptying the cache. Dropping
+            # all 400 on overflow meant the episode the user is looking at
+            # right now was thrown out together with the one that caused the
+            # overflow, so a long browse session re-probed everything on a
+            # regular cycle -- each miss a network round trip to the hoster,
+            # which is what the cache exists to avoid. The entries already
+            # carry their timestamp, so ordering by it is free.
+            if len(_probe_cache) >= _PROBE_CACHE_MAX:
+                for key in sorted(_probe_cache, key=lambda k: _probe_cache[k]["at"]
+                                  )[:len(_probe_cache) - _PROBE_CACHE_MAX + 1]:
+                    _probe_cache.pop(key, None)
             _probe_cache[cache_key] = {"at": time.time(), "result": result}
         return jsonify(result)
 

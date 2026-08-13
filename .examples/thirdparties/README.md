@@ -46,6 +46,10 @@ have. Nothing about writing a module changed; only where it is put.
 Four folder names are refused, because they are the core files' own: `registry`,
 `store`, `signing`, `trusted_keys`.
 
+> Throughout this document, a path written as `web/…` is shorthand for
+> `src/mediaforge/web/…` in the MediaForge source tree. Paths under
+> `~/.mediaforge/…` are always literal — that is where *your* module lives.
+
 ## The contract, in one sentence
 
 Every folder under `~/.mediaforge/thirdparties/` that contains an `__init__.py`
@@ -600,6 +604,10 @@ What that means for you as a module author:
   `register_thirdparty()` is covered too.
 - Anything that cannot be removed falls back to the old block list, so its
   routes 404 either way. The guard is the fallback now, not the mechanism.
+- **Your `/api/v1/` scope declarations go with the blueprint.** They have to:
+  a declared v1 endpoint is exempt from the session login check, so an entry
+  left behind would hand that exemption to whatever registers under the same
+  endpoint name next. See `register_v1_endpoint_scopes` above.
 
 ## What the Modulmanager says your module does
 
@@ -1089,6 +1097,82 @@ So mount your write routes under `/api/<your_module>/...` and always send
 `Content-Type: application/json`. A route named `api_*` but mounted somewhere
 else keeps full CSRF protection (and logs a warning at startup saying so) —
 it would otherwise be a route with neither of the two defenses.
+
+## Your own `/api/v1/` routes (`register_v1_endpoint_scopes`)
+
+The routes above are the app's *internal* API: they authenticate with the
+session cookie your browser already has. `/api/v1/` is a different thing —
+the external REST API, authenticated with a scoped **API key** (Settings →
+API) and no session at all. Home Assistant, a dashboard, a script: anything
+that can open a socket and cannot log in.
+
+A module can extend it. Two calls, both from `web/routes/v1_api.py`:
+
+```python
+from ...routes.v1_api import check_api_key, register_v1_endpoint_scopes
+
+MY_V1_SCOPES = {
+    # "<blueprint name>.<view function name>": "<scope>"
+    "my_module.api_v1_my_thing": "library:read",
+}
+
+def register(app):
+    bp = Blueprint("my_module", __name__)
+
+    @bp.route("/api/v1/my-thing")
+    def api_v1_my_thing():
+        """One-line summary — this becomes the OpenAPI description."""
+        auth_err = check_api_key("library:read")
+        if auth_err is not None:
+            return auth_err
+        return jsonify({"hello": "world"})
+
+    app.register_blueprint(bp)
+    register_v1_endpoint_scopes("my_module", MY_V1_SCOPES, blueprint="my_module")
+```
+
+What each half does:
+
+* **`check_api_key(scope)`** returns `None` when the caller may proceed, or a
+  ready-made JSON error response to return unchanged — 401 for a missing or
+  unknown key, 403 for a key that is real but lacks the scope. Use it rather
+  than parsing `X-Api-Key` yourself: it also handles the `?apikey=` form and
+  the legacy single key, and it keeps the 401-vs-403 distinction that tells a
+  user whether to regenerate their key or tick another box.
+* **`register_v1_endpoint_scopes(item_id, mapping, blueprint=...)`** tells the
+  core two things: which scope to advertise for each endpoint in
+  `/api/v1/openapi.json`, and that these endpoints must **not** be wrapped in
+  the session login check — an API key carries no cookie, so a login check
+  would answer a valid key with "not logged in".
+
+Rules the registration enforces, and why each one exists:
+
+| Rule | Reason |
+| --- | --- |
+| The scope must be one of MediaForge's own (`status:read`, `queue:read`, `queue:write`, `library:read`, `history:read`, `stats:read`, `autosync:read`, `uptime:read`, `update:read`) | An invented scope can never appear on a key, so the endpoint would answer 403 forever while the spec advertised it |
+| `*` (the wildcard) is refused | It belongs to the legacy key. On an endpoint it would mean "every scoped key ever issued" |
+| Endpoint names must be `"<your blueprint>.<view>"` | Bare names belong to core routes. This is what stops a module redeclaring `api_v1_status` — or quietly lowering the scope another module's endpoint needs |
+| An endpoint already declared by someone else is refused | First registration wins; a later module cannot take it over |
+| A bad entry is dropped with a log line, not raised | One wrong endpoint must not take your install (or the app) down. Check the log if a route answers 401 with a key you believe is valid |
+
+Reuse a scope that already fits rather than asking for a new one — a scope
+list nobody can hold in their head gets used as "tick everything". If your
+module genuinely needs a scope that does not exist, that is a core change.
+
+Registration is **owned by your module**: calling it again replaces your
+previous entries (so a live reload does not accumulate stale names), and
+uninstalling your module drops them automatically when your blueprint is
+deregistered. You do not need to clean up yourself.
+
+Two things that follow from "no session":
+
+* `age_gate.allows_adult()` is `False` for a key-authenticated request. There
+  is no account whose opt-in could be read, so the adult source is not
+  served. Do not work around this.
+* Poster URLs you return can point at `/api/img?url=…`. That proxy accepts an
+  API key with `library:read` as well as a session, so you do not need an
+  image endpoint of your own — and should not write one, because it would
+  need its own copy of the host allowlist and the SSRF check.
 
 ## Building a fully custom page (`_field_macros.html`)
 

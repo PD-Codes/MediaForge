@@ -1830,6 +1830,27 @@ def resolve_card(item_id):
     return _build_card(item) if item else None
 
 
+def viewer_is_admin() -> bool:
+    """Whether the account rendering this page may change instance settings.
+
+    Read from the session rather than the DB because this is called per
+    template render, and the role in the session is refreshed by auth.py on
+    every request anyway. In no-auth mode the pseudo-user is an admin, so this
+    is True and nothing is hidden -- which is the point of that mode.
+
+    Outside a request context there is no viewer to judge, and the caller is a
+    module or a background job asking what is registered. Those get the
+    unfiltered answer: this function guards a *page*, not the data.
+    """
+    try:
+        from flask import has_request_context, session
+        if not has_request_context():
+            return True
+        return str(session.get("user_role") or "") == "admin"
+    except Exception:
+        return False
+
+
 def resolve_settings_cards(host="integrations", tab="thirdparty"):
     """Return every *enabled* registered card targeting a given
     (settings_host, settings_tab) pair, ready for that tab/pill's template
@@ -1854,8 +1875,16 @@ def resolve_settings_cards(host="integrations", tab="thirdparty"):
     only way back, when Modulmanager already covers that. Re-enabling a
     module (from Modulmanager or, while it's still visible here, from its
     own toggle) makes it reappear on the next request.
+    Cards are admin-only. Every control on one writes an instance-wide
+    setting through GET/PUT /api/settings/thirdparty/<id>, which is an admin
+    endpoint -- so rendering the card for anyone else produced a page of
+    toggles that answer 403 the moment they are touched. Monitoring and
+    Notifications are the two pages a non-admin can open that render these,
+    which is exactly why the mismatch was not obvious.
     """
     from ..db import get_setting
+    if not viewer_is_admin():
+        return []
     items = sorted(
         (i for i in _ITEMS if i["settings_host"] == host and i["settings_tab"] == tab
          and get_setting(i["enabled_setting_key"], "0") == "1"),
@@ -1955,7 +1984,13 @@ def resolve_dynamic_tabs(host):
     icon_svg/description come from the item's overview_icon_svg/
     overview_description (see register_thirdparty); module_name is the folder
     that registered the representative item, for the pill's tooltip.
+
+    Admin-only for the same reason resolve_settings_cards() is: a tab whose
+    only content is cards that admin-only endpoint drives would otherwise
+    render for a non-admin as an empty panel with a working sidebar link.
     """
+    if not viewer_is_admin():
+        return []
     known = _KNOWN_TABS.get(host, ())
     tabs = {}
     for item in _ITEMS:

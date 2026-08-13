@@ -77,6 +77,68 @@ def test_upscale_add_library_is_admin_only(app):
     assert "api_upscale_add_library" in app.config["ADMIN_ONLY_ENDPOINTS"]
 
 
+def test_module_settings_api_is_admin_only(app):
+    """The generic module settings pair (thirdparties/registry.py).
+
+    Every module's card is read and written through these two routes, and they
+    sat at plain login_required: any logged-in account could read a module's
+    configuration, and PUT could switch a module on or off and write its extra
+    settings -- the same class of decision as installing one, which has been
+    admin-only all along. Secrets were masked on the way out, but the enabled
+    flag, every non-secret setting and "is a token configured" were not.
+
+    They do not start with "api_settings", so the functional sweep above never
+    looked at them. That is worth a named test rather than a wider pattern:
+    the sweep's pattern is what made the gap invisible, and widening it would
+    only move the blind spot.
+    """
+    admin_only = app.config["ADMIN_ONLY_ENDPOINTS"]
+    assert "api_thirdparty_settings_get" in admin_only
+    assert "api_thirdparty_settings_put" in admin_only
+
+
+def test_module_cards_are_not_rendered_for_a_non_admin(app):
+    """The other half of the same fix.
+
+    Monitoring and Notifications are pages a normal user may open, and both
+    render module settings cards. Admin-gating the API without gating the
+    cards would give that user a page of toggles that 403 on click.
+    """
+    from mediaforge.web.thirdparties import registry
+
+    with app.test_request_context("/monitoring"):
+        from flask import session
+        session["user_id"] = 1
+        session["user_role"] = "user"
+        assert registry.viewer_is_admin() is False
+        assert registry.resolve_settings_cards("monitoring", "anything") == []
+        assert registry.resolve_dynamic_tabs("monitoring") == []
+
+
+def test_module_cards_still_render_for_an_admin(app):
+    """Counter-test: the gate must not empty the admin's own settings pages."""
+    from mediaforge.web.thirdparties import registry
+
+    with app.test_request_context("/monitoring"):
+        from flask import session
+        session["user_id"] = 1
+        session["user_role"] = "admin"
+        assert registry.viewer_is_admin() is True
+        # Nothing is asserted about the contents -- a test instance may have no
+        # modules at all. What matters is that the role is not what emptied it.
+        registry.resolve_settings_cards("monitoring", "anything")
+        registry.resolve_dynamic_tabs("monitoring")
+
+
+def test_module_cards_are_unfiltered_outside_a_request(app):
+    """A module or a background job asking what is registered has no viewer to
+    judge, and must not be handed an empty list as if nothing were installed."""
+    from mediaforge.web.thirdparties import registry
+
+    with app.app_context():
+        assert registry.viewer_is_admin() is True
+
+
 def test_secrets_are_not_returned_in_clear_text(app, as_user):
     """A stored secret comes back masked, never as its value."""
     from mediaforge.web import db

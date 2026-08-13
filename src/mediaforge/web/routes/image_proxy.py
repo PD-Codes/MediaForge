@@ -488,9 +488,36 @@ def register_image_proxy_routes(app):
         Called from templates/base.html's `proxyImg()` JS helper, which is
         used across the frontend wherever a raw source-site image URL needs
         to be rewritten to this proxied form.
+
+        Authentication happens *here* rather than through app.py's blanket
+        login_required, because this endpoint has two legitimate kinds of
+        caller: a logged-in browser, and anything holding an API key. The
+        /api/v1/ endpoints hand out poster URLs pointing at this path, so a
+        key-authenticated client could fetch the listing but not the images in
+        it -- which is why modules kept adding image endpoints of their own,
+        each with its own copy of the host allowlist and the SSRF check. One
+        proxy with one allowlist is the safer arrangement.
         """
         from urllib.parse import urlparse
-        from flask import Response, send_file
+        from flask import Response, send_file, session
+
+        # Session first: the browser case is the common one and costs a dict
+        # lookup. In no-auth mode user_id is the pseudo-user 0, which is not
+        # None, so this passes exactly as the wrapped version used to.
+        if session.get("user_id") is None:
+            from .v1_api import check_api_key
+            # library:read, not a scope of its own: these are the posters of
+            # the titles that scope already returns. A separate scope would be
+            # one more box to tick for no additional decision.
+            auth_err = check_api_key("library:read")
+            if auth_err is not None:
+                return auth_err
+            # The v1 after-request hook counts "the external REST API was
+            # used" off this flag. A poster grid is dozens of image requests
+            # for one API call, so leaving it set would make the metric a
+            # measure of how many pictures a page has.
+            from flask import g as _g
+            _g._v1_authenticated = False
 
         raw_url = request.args.get("url", "").strip()
         if not raw_url:

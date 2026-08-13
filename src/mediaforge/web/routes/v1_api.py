@@ -163,6 +163,195 @@ _V1_ENDPOINT_SCOPES: dict[str, str] = {
     "api_v1_history":        "history:read",
 }
 
+# ---------------------------------------------------------------------------
+# Module-registered scopes
+# ---------------------------------------------------------------------------
+# Third-party modules (web/thirdparties/<name>/) can add their own /api/v1/
+# routes. They used to do that by reaching into _V1_ENDPOINT_SCOPES and
+# mutating it, which had three consequences worth naming, because each one is
+# a real failure and not a style complaint:
+#
+#   * nothing validated the scope, so a module could declare a scope name that
+#     api_keys.SCOPES does not know. has_scope() then never grants it and the
+#     endpoint answers 403 forever -- while the OpenAPI document cheerfully
+#     advertises a scope no key can ever carry;
+#   * nothing validated the endpoint name, so a module could claim an endpoint
+#     belonging to the core API (or to another module) and change the scope it
+#     requires -- including downgrading it;
+#   * the entry outlived the module. Uninstalling did not remove it, so the
+#     endpoint name stayed in app.py's login-exemption set: a *later* module
+#     (or a core route) registering under that same name would be born
+#     login-exempt without ever asking to be.
+#
+# So registration is a function, entries are owned by the module that made
+# them, and deregistering a blueprint takes its entries with it.
+_V1_MODULE_SCOPES: dict[str, dict[str, str]] = {}
+_V1_MODULE_BLUEPRINTS: dict[str, str] = {}
+_V1_SCOPES_LOCK = threading.RLock()
+
+
+def v1_endpoint_scopes() -> dict[str, str]:
+    """Every /api/v1/ endpoint and the scope it needs -- core plus modules.
+
+    A snapshot, not the live map: callers must not be able to mutate the
+    registry by holding on to what they were handed. Core entries win over a
+    module's, which is the point of validating registration in the first
+    place; the merge order only makes that true a second time.
+    """
+    with _V1_SCOPES_LOCK:
+        merged: dict[str, str] = {}
+        for owned in _V1_MODULE_SCOPES.values():
+            merged.update(owned)
+        merged.update(_V1_ENDPOINT_SCOPES)
+        return merged
+
+
+def register_v1_endpoint_scopes(item_id: str, mapping: dict, *,
+                                blueprint: str = "") -> dict[str, str]:
+    """Declare which scope each of a module's /api/v1/ endpoints requires.
+
+    ``item_id`` is the module's registry item id -- what it owns is dropped
+    again by :func:`unregister_v1_endpoint_scopes`. Calling this twice for the
+    same id replaces that id's entries rather than adding to them, so a module
+    that re-registers on a live reload does not accumulate stale names.
+
+    ``mapping`` maps Flask endpoint names to scope names. Both sides are
+    validated and anything that does not pass is dropped with a log line
+    rather than raising: a module getting one endpoint wrong must not take the
+    install (or the app) down, and a silently missing entry would be worse
+    than a loud one.
+
+    ``blueprint`` is the module's blueprint name. Endpoint names must be
+    ``"<blueprint>.<view>"``. That is the rule that keeps a module from
+    claiming ``api_v1_status``: bare endpoint names belong to routes
+    registered directly on the app, i.e. to the core. When omitted it is
+    derived from the entries, which then all have to share one prefix.
+
+    Returns the mapping that was actually accepted.
+    """
+    from .. import api_keys as _api_keys
+
+    item_id = str(item_id or "").strip()
+    if not item_id:
+        logger.warning("[v1 API] register_v1_endpoint_scopes() needs an item id")
+        return {}
+    if not isinstance(mapping, dict):
+        logger.warning("[v1 API] %s: scope mapping must be a dict, got %s",
+                       item_id, type(mapping).__name__)
+        return {}
+
+    blueprint = str(blueprint or "").strip()
+    if not blueprint:
+        prefixes = {e.rsplit(".", 1)[0] for e in mapping if isinstance(e, str) and "." in e}
+        if len(prefixes) == 1:
+            blueprint = prefixes.pop()
+        elif prefixes:
+            logger.warning("[v1 API] %s: endpoints span several blueprints (%s); "
+                           "pass blueprint= explicitly", item_id, sorted(prefixes))
+            return {}
+
+    accepted: dict[str, str] = {}
+    with _V1_SCOPES_LOCK:
+        # Owned by someone else -- excluding this id's own previous entries,
+        # which are being replaced.
+        taken = {
+            endpoint: owner
+            for owner, owned in _V1_MODULE_SCOPES.items() if owner != item_id
+            for endpoint in owned
+        }
+
+        for endpoint, scope in mapping.items():
+            if not isinstance(endpoint, str) or not isinstance(scope, str):
+                logger.warning("[v1 API] %s: ignoring non-string entry %r -> %r",
+                               item_id, endpoint, scope)
+                continue
+            endpoint = endpoint.strip()
+            scope = scope.strip()
+
+            if endpoint in _V1_ENDPOINT_SCOPES:
+                logger.warning("[v1 API] %s: %r is a core endpoint and cannot be "
+                               "redeclared", item_id, endpoint)
+                continue
+            if "." not in endpoint:
+                logger.warning("[v1 API] %s: %r has no blueprint prefix -- a module "
+                               "may only declare scopes for its own blueprint's "
+                               "endpoints", item_id, endpoint)
+                continue
+            if blueprint and not endpoint.startswith(blueprint + "."):
+                logger.warning("[v1 API] %s: %r does not belong to blueprint %r",
+                               item_id, endpoint, blueprint)
+                continue
+            if endpoint in taken:
+                logger.warning("[v1 API] %s: %r is already declared by %r",
+                               item_id, endpoint, taken[endpoint])
+                continue
+            if scope == _api_keys.WILDCARD or scope not in _api_keys.SCOPES:
+                # The wildcard belongs to the legacy key alone. A module
+                # handing it to an endpoint would make that endpoint reachable
+                # by every scoped key ever issued.
+                logger.warning("[v1 API] %s: %r asks for unknown scope %r "
+                               "(known: %s)", item_id, endpoint, scope,
+                               ", ".join(sorted(_api_keys.SCOPES)))
+                continue
+
+            accepted[endpoint] = scope
+
+        if accepted:
+            _V1_MODULE_SCOPES[item_id] = accepted
+            if blueprint:
+                _V1_MODULE_BLUEPRINTS[item_id] = blueprint
+        else:
+            _V1_MODULE_SCOPES.pop(item_id, None)
+            _V1_MODULE_BLUEPRINTS.pop(item_id, None)
+
+    if accepted:
+        logger.info("[v1 API] %s declared %d endpoint scope(s)", item_id, len(accepted))
+    return dict(accepted)
+
+
+def unregister_v1_endpoint_scopes(item_id: str) -> int:
+    """Drop everything ``item_id`` declared. Returns how many entries went."""
+    with _V1_SCOPES_LOCK:
+        _V1_MODULE_BLUEPRINTS.pop(str(item_id or "").strip(), None)
+        gone = _V1_MODULE_SCOPES.pop(str(item_id or "").strip(), {})
+    if gone:
+        logger.info("[v1 API] dropped %d endpoint scope(s) of %s", len(gone), item_id)
+    return len(gone)
+
+
+def unregister_v1_endpoint_scopes_for_blueprint(bp_name: str) -> int:
+    """Drop every entry belonging to a blueprint that is being deregistered.
+
+    Called from thirdparties/deregister_blueprint(). Keyed on the blueprint
+    rather than the item id because that is what a live uninstall knows: the
+    routes are removed by blueprint name, and an entry naming a route that no
+    longer exists is exactly the leak described above. Nested blueprints
+    register as ``parent.child``, so the prefix goes with its parent.
+    """
+    bp_name = str(bp_name or "").strip()
+    if not bp_name:
+        return 0
+    prefix = bp_name + "."
+    dropped = 0
+    with _V1_SCOPES_LOCK:
+        for item_id in list(_V1_MODULE_SCOPES):
+            owned = _V1_MODULE_SCOPES[item_id]
+            keep = {
+                endpoint: scope for endpoint, scope in owned.items()
+                if not (endpoint.startswith(prefix)
+                        or endpoint.rsplit(".", 1)[0].startswith(prefix))
+            }
+            dropped += len(owned) - len(keep)
+            if keep:
+                _V1_MODULE_SCOPES[item_id] = keep
+            else:
+                _V1_MODULE_SCOPES.pop(item_id, None)
+                _V1_MODULE_BLUEPRINTS.pop(item_id, None)
+    if dropped:
+        logger.info("[v1 API] dropped %d endpoint scope(s) with blueprint '%s'",
+                    dropped, bp_name)
+    return dropped
+
 
 def _v1_json(data, status=200):
     """Pretty-printed JSON response for all /api/v1/ endpoints."""
@@ -231,6 +420,19 @@ def _check_api_key(scope: str = ""):
     g._v1_authenticated = True
     g._v1_scopes = granted
     return None
+
+
+def check_api_key(scope: str = ""):
+    """Public alias of the key check, for modules adding their own v1 routes.
+
+    Same contract as the core endpoints use: returns ``None`` when the caller
+    may proceed, or a ready-made JSON error response (401/403) to return as
+    is. Exported so a module does not have to reimplement key parsing, the
+    legacy-key fallback or the 401-vs-403 distinction -- three things that are
+    easy to get subtly wrong and that a caller then has to debug from the
+    outside.
+    """
+    return _check_api_key(scope)
 
 
 def _v1_library_data(only_movies: bool | None = None):
@@ -317,13 +519,17 @@ def register_v1_api_routes(app):
         from .. import api_keys as _api_keys
 
         paths = {}
+        # Read once per request, not captured at registration: a module
+        # installed live adds its v1 routes to a running app, and a spec that
+        # described only what existed at startup would omit them.
+        declared_scopes = v1_endpoint_scopes()
         for rule in sorted(app.url_map.iter_rules(), key=lambda r: str(r)):
             path = str(rule)
             if not path.startswith("/api/v1/") or rule.endpoint == "api_v1_openapi":
                 continue
             view = app.view_functions.get(rule.endpoint)
             summary = ((view.__doc__ or "").strip().splitlines() or [""])[0]
-            scope = _V1_ENDPOINT_SCOPES.get(rule.endpoint, "")
+            scope = declared_scopes.get(rule.endpoint, "")
             # Flask's <int:queue_id> is not OpenAPI's {queue_id}.
             spec_path = re.sub(r"<(?:[^:<>]+:)?([^<>]+)>", r"{\1}", path)
             parameters = [

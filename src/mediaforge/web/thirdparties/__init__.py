@@ -430,6 +430,17 @@ def deregister_blueprint(app, bp_name) -> int:
     if cache is not None:
         cache.clear()
 
+    # /api/v1/ scope declarations this blueprint's routes owned. They have to
+    # go with the routes: app.py's auth pass exempts every declared v1
+    # endpoint from login_required, so an entry left behind would hand that
+    # exemption to whatever registers under the same endpoint name next.
+    try:
+        from ..routes.v1_api import unregister_v1_endpoint_scopes_for_blueprint
+        unregister_v1_endpoint_scopes_for_blueprint(bp_name)
+    except Exception:
+        logger.debug("[Thirdparties] Could not drop v1 scopes of '%s'", bp_name,
+                     exc_info=True)
+
     logger.info("[Thirdparties] Deregistered blueprint '%s' (%d rule(s))", bp_name, dropped)
     return dropped
 
