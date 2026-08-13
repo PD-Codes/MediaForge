@@ -2135,6 +2135,38 @@ def register(app):
   either its label or its embed URL's host resolves to something registered (see
   "Hosters (`register_hoster`)" below). An embed nobody can extract is dropped from the
   dropdown on purpose — offering it would only fail at download time.
+  **Movie-only sites** (single films, no series or season concept — the shape
+  FilmPalast and filmo.to have) register **only** `episode_pattern` +
+  `episode_cls` and leave `series_cls`/`season_cls` at `None`:
+
+  ```python
+  register_provider("my_movies", Provider(
+      name="MyMovies",
+      episode_pattern=MY_MOVIE_PATTERN,   # the film page itself
+      episode_cls=MyMovie,
+  ))
+  ```
+
+  MediaForge detects that shape itself (`providers.is_movie_only()`) and
+  presents every such film as one synthetic season with one episode:
+  `GET /api/series` answers from your `episode_cls` with `is_movie: true`,
+  `/api/seasons` returns season 1 / `is_single_movie: true`, `/api/episodes`
+  returns the film as episode 1, and the download notification uses the
+  "Film" wording. Until August 2026 those three routes only knew the
+  hardcoded built-in movie sites and answered **500** for a module's
+  movie-only provider (issue #29) — no module change is needed for the fix,
+  but a movie model has to expose the handful of attributes those routes read:
+
+  | Attribute | Required | Used for |
+  | --- | --- | --- |
+  | `title` *or* `title_de` | yes | Title in the search result and detail modal |
+  | `image_url` (or `poster_url`) | yes | Poster; a path starting with `/` is resolved against your own host |
+  | `description`, `genres`, `release_year` | no | Detail modal, empty when absent |
+  | `imdb` | no | IMDb id used as the TMDB lookup key (better localization than a title match) |
+  | `available_languages` | no | Language dropdown; without it the film counts as single-language German, like FilmPalast |
+  | `available_providers` | no | Hoster list shown before `GET /api/providers` runs |
+  | `provider_data` | yes | The actual hoster resolution — same contract as above |
+
 - **`register_search_source(item_id, site_id, search_fn, label=None,
   adult=False, enabled_key=None, media_types=None)`**
   (`mediaforge/search.py`) is the search half: it makes

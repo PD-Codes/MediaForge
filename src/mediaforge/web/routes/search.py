@@ -9,6 +9,7 @@ from ...config import MEDIAFORGE_CONFIG_DIR
 from ...config import check_redirect_available
 from ...config import probe_redirect
 from ...providers import resolve_provider
+from ...providers import movie_only_provider_for
 from ...providers import series_url_for
 from ...search import hanime_search
 from ...search import megakino_search
@@ -37,7 +38,6 @@ from ..library_aliases import folder_holds_title as _folder_holds
 from ..lang_folders import LANG_FOLDERS
 from ..episode_marker import EPISODE_MARKER_RE
 from ..queue_worker import _hanime_enabled
-from ..queue_worker import _is_filmpalast_url
 from ..queue_worker import _is_hanime_url
 from ..queue_worker import _is_megakino_url
 from ..queue_worker import _megakino_is_series
@@ -542,6 +542,116 @@ def _source_is_adult(site_id) -> bool:
         return True
     entry = get_search_source(site_id)
     return bool(entry and entry.get("adult"))
+
+
+def _movie_only_title(obj):
+    """The display title of a movie-only model, whichever name it uses.
+
+    FilmPalast calls it ``title_de``, Filmo calls it ``title``; a third-party
+    provider may pick either. Checked in that order so a site that offers both
+    keeps the localized one it already exposed to the rest of the app.
+    """
+    for attr in ("title_de", "title"):
+        value = getattr(obj, attr, None)
+        if value:
+            return _html_unescape(str(value))
+    return ""
+
+
+def _movie_only_languages(obj):
+    """Languages a movie-only model offers, as the episode list wants them.
+
+    ``available_languages`` when the model has it (Filmo and any third-party
+    provider that scrapes more than one audio track). Sites without the
+    property are single-language by construction -- FilmPalast is German-only
+    -- and reported as such, which is exactly what its hardcoded branch did
+    before this became generic.
+    """
+    langs = getattr(obj, "available_languages", None)
+    if langs:
+        return list(langs)
+    return ["German Dub"]
+
+
+def _movie_only_metadata(prov, url):
+    """Metadata for a movie-only provider's film page, TMDB-localized.
+
+    One implementation for every site that has films but no series: the
+    built-in ones (FilmPalast, Filmo) and every third-party source registered
+    via ``register_provider()`` with only ``episode_pattern``/``episode_cls``.
+    Before this existed, each site needed its own hardcoded branch in
+    api_series/api_seasons/api_episodes and a third-party one crashed those
+    routes with ``TypeError: 'NoneType' object is not callable`` on
+    ``prov.series_cls(url=url)`` -- see issue #29.
+
+    Returns the ``(model, payload)`` pair: the instantiated model so callers
+    that need more than the payload (the episode list needs the languages)
+    do not pay for a second page fetch, and the payload in exactly the shape
+    /api/series answers with.
+    """
+    obj = prov.episode_cls(url=url)
+
+    title = _movie_only_title(obj)
+    description = getattr(obj, "description", "") or ""
+    genres = getattr(obj, "genres", None) or []
+    poster = getattr(obj, "image_url", None) or getattr(obj, "poster_url", None)
+    # Relative poster paths (FilmPalast serves "/files/...") are only
+    # resolvable against the site the URL came from.
+    if poster and poster.startswith("/"):
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        poster = f"{parsed.scheme}://{parsed.netloc}{poster}"
+    imdb_id = getattr(obj, "imdb", None) or None
+
+    api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
+    if api_key:
+        try:
+            country = get_setting("cineinfo_country", "DE")
+            ui_lang = session.get("ui_language", "de")
+            tmdb_data = _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang)
+            if tmdb_data.get("found"):
+                # Only adopt the TMDB title on a confident match -- same rule
+                # as the series path, so a spin-off cannot rename the film.
+                if tmdb_data.get("title_confident"):
+                    title = tmdb_data.get("title") or title
+                description = tmdb_data.get("overview") or description
+                if tmdb_data.get("genres"):
+                    genres = tmdb_data.get("genres")
+        except Exception as _tmdb_exc:
+            logger.debug("[api_series] TMDB localization failed for %s: %s",
+                         prov.name, _tmdb_exc)
+
+    release_year = getattr(obj, "release_year", None)
+    payload = {
+        "title": title,
+        "poster_url": _poster_proxy(poster),
+        "description": description,
+        "genres": genres,
+        "release_year": str(release_year) if release_year else "",
+        "is_movie": True,
+        "imdb_id": imdb_id,
+        "available_providers": getattr(obj, "available_providers", None) or [],
+        "url": url,
+    }
+    return obj, payload
+
+
+def _movie_only_season(url):
+    """The single synthetic season a movie-only page is presented as.
+
+    A film has no seasons, but the whole UI (season picker, episode
+    accordion, Auto-Sync filter) is built around them, so every movie is
+    shown as season 1 with exactly one episode. ``is_single_movie`` is what
+    the frontend keys the movie-specific labels off.
+    """
+    return {
+        "url": url,
+        "season_number": 1,
+        "episode_count": 1,
+        "are_movies": True,
+        "is_single_movie": True,
+    }
 
 
 def register_search_routes(app):
@@ -1109,90 +1219,19 @@ def register_search_routes(app):
         if not url:
             return jsonify({"error": "url is required"}), 400
 
-        # FilmPalast: use episode object directly as metadata source (no series class)
-        if _is_filmpalast_url(url):
+        # Movie-only sources (FilmPalast, Filmo, and every third-party
+        # provider registered with only episode_pattern/episode_cls): the film
+        # page IS the metadata source, there is no series class to call. One
+        # generic branch instead of one hardcoded branch per site -- see
+        # _movie_only_metadata() and issue #29.
+        _movie_prov = movie_only_provider_for(url)
+        if _movie_prov is not None:
             try:
-                from ...models.filmpalast_to.episode import FilmPalastEpisode
-                ep = FilmPalastEpisode(url=url)
-                poster = ep.image_url
-                if poster and poster.startswith("/"):
-                    poster = f"https://filmpalast.to{poster}"
-                
-                title = ep.title_de or ""
-                description = ep.description or ""
-                genres = ep.genres or []
-                
-                from ..db import get_setting
-                api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
-                if api_key:
-                    try:
-                        country = get_setting("cineinfo_country", "DE")
-                        ui_lang = session.get("ui_language", "de")
-                        tmdb_data = _tmdb_lookup_cached(title, None, api_key, country, ui_lang)
-                        if tmdb_data.get("found"):
-                            if tmdb_data.get("title_confident"):
-                                title = tmdb_data.get("title") or title
-                            description = tmdb_data.get("overview") or description
-                            if tmdb_data.get("genres"):
-                                genres = tmdb_data.get("genres")
-                    except Exception as _tmdb_exc:
-                        logger.debug("[api_series] TMDB localization failed for FilmPalast: %s", _tmdb_exc)
-
-                return jsonify({
-                    "title": title,
-                    "poster_url": _poster_proxy(poster),
-                    "description": description,
-                    "genres": genres,
-                    "release_year": str(ep.release_year) if ep.release_year else "",
-                    "is_movie": True,
-                    "available_providers": ep.available_providers,
-                })
+                _obj, payload = _movie_only_metadata(_movie_prov, url)
+                return jsonify(payload)
             except Exception as e:
-                logger.error(f"FilmPalast series fetch failed: {e}", exc_info=True)
-                return jsonify({"error": str(e)}), 500
-
-        # Filmo: movie-only like FilmPalast (no series class), but has its own
-        # lazily-resolved TMDB IMDb id (models/filmo_to/movie.py's `imdb`
-        # property) -- reused as the lookup key for richer TMDB localization,
-        # same as MegaKino below.
-        if _is_filmo_url(url):
-            try:
-                from ...models.filmo_to.movie import FilmoMovie
-                mv = FilmoMovie(url=url)
-                title = mv.title or ""
-                description = mv.description or ""
-                genres = mv.genres or []
-                poster = mv.image_url
-                imdb_id = mv.imdb or None
-
-                from ..db import get_setting
-                api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
-                if api_key:
-                    try:
-                        country = get_setting("cineinfo_country", "DE")
-                        ui_lang = session.get("ui_language", "de")
-                        tmdb_data = _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang)
-                        if tmdb_data.get("found"):
-                            if tmdb_data.get("title_confident"):
-                                title = tmdb_data.get("title") or title
-                            description = tmdb_data.get("overview") or description
-                            if tmdb_data.get("genres"):
-                                genres = tmdb_data.get("genres")
-                    except Exception as _tmdb_exc:
-                        logger.debug("[api_series] TMDB localization failed for Filmo: %s", _tmdb_exc)
-
-                return jsonify({
-                    "title": title,
-                    "poster_url": _poster_proxy(poster),
-                    "description": description,
-                    "genres": genres,
-                    "release_year": str(mv.release_year) if mv.release_year else "",
-                    "is_movie": True,
-                    "imdb_id": imdb_id,
-                    "available_providers": mv.available_providers,
-                })
-            except Exception as e:
-                logger.error(f"Filmo series fetch failed: {e}", exc_info=True)
+                logger.error("Movie metadata fetch failed for %s: %s",
+                             _movie_prov.name, e, exc_info=True)
                 return jsonify({"error": str(e)}), 500
 
         # MegaKino (movie or series) — the /watch URL is shared; the JSON API's
@@ -1278,6 +1317,14 @@ def register_search_routes(app):
             # already is one comes back untouched and costs nothing.
             url = series_url_for(url)
             prov = resolve_provider(url)
+            if prov.series_cls is None:
+                # Movie-only providers never get here (handled above); this is
+                # a provider registered with neither series_cls nor
+                # episode_cls, i.e. an incomplete third-party registration.
+                logger.warning("[api_series] provider %s registered no series_cls", prov.name)
+                return jsonify({
+                    "error": f"Provider {prov.name} does not support series",
+                }), 400
             series = prov.series_cls(url=url)
             poster = getattr(series, "poster_url", None)
             # s.to returns relative poster paths - make them absolute
@@ -1344,13 +1391,12 @@ def register_search_routes(app):
         if not url:
             return jsonify({"error": "url is required"}), 400
 
-        # FilmPalast: return a single fake "season 1 / episode 1 = the movie itself"
-        if _is_filmpalast_url(url):
-            return jsonify({"seasons": [{"url": url, "season_number": 1, "episode_count": 1, "are_movies": True, "is_single_movie": True}]})
-
-        # Filmo: same movie-only shape as FilmPalast above.
-        if _is_filmo_url(url):
-            return jsonify({"seasons": [{"url": url, "season_number": 1, "episode_count": 1, "are_movies": True, "is_single_movie": True}]})
+        # Movie-only sources: a single fake "season 1 / episode 1 = the movie
+        # itself". No page fetch needed -- the answer only depends on the
+        # provider kind, not on the film. Covers FilmPalast, Filmo and every
+        # third-party movie-only provider (issue #29).
+        if movie_only_provider_for(url) is not None:
+            return jsonify({"seasons": [_movie_only_season(url)]})
 
         # MegaKino: movie -> single fake season; series -> the one season post
         if _is_megakino_url(url):
@@ -1358,7 +1404,10 @@ def register_search_routes(app):
             try:
                 _mk_data = _megakino_watch(url)
                 if not _megakino_is_series(_mk_data):
-                    return jsonify({"seasons": [{"url": url, "season_number": 1, "episode_count": 1, "are_movies": True, "is_single_movie": True}]})
+                    # Same synthetic shape as the movie-only providers above --
+                    # MegaKino only cannot use that branch because it has a
+                    # series class too and shares one URL pattern for both.
+                    return jsonify({"seasons": [_movie_only_season(url)]})
                 from ...models.megakino_to.series import MegakinoSeries
                 series = MegakinoSeries(url=url, _data=_mk_data)
                 seasons_data = []
@@ -1382,6 +1431,12 @@ def register_search_routes(app):
             # with whatever URL the card carried.
             url = series_url_for(url)
             prov = resolve_provider(url)
+            if prov.series_cls is None:
+                # See the same guard in api_series() above.
+                logger.warning("[api_seasons] provider %s registered no series_cls", prov.name)
+                return jsonify({
+                    "error": f"Provider {prov.name} does not support series",
+                }), 400
             series = prov.series_cls(url=url)
             seasons_data = []
             for season in series.seasons:
@@ -1409,46 +1464,30 @@ def register_search_routes(app):
         if not url:
             return jsonify({"error": "url is required"}), 400
 
-        # FilmPalast: return the movie itself as a single episode entry
-        if _is_filmpalast_url(url):
+        # Movie-only sources: the film itself as a single episode entry.
+        # "languages" comes from the model when it knows more than one
+        # (Filmo does, FilmPalast does not) -- see _movie_only_languages().
+        # Movie entries report "downloaded" as False regardless, same as the
+        # MegaKino movie block below, which does not call .is_downloaded
+        # either. Generic since issue #29: any third-party movie-only
+        # provider lands here instead of crashing on season_cls further down.
+        _movie_prov = movie_only_provider_for(url)
+        if _movie_prov is not None:
             try:
-                from ...models.filmpalast_to.episode import FilmPalastEpisode
-                ep = FilmPalastEpisode(url=url)
+                obj = _movie_prov.episode_cls(url=url)
+                title = _movie_only_title(obj)
                 return jsonify({"episodes": [{
                     "url": url,
                     "episode_number": 1,
                     "season_number": 1,
-                    "title_de": ep.title_de or "",
-                    "title_en": ep.title_de or "",
+                    "title_de": title,
+                    "title_en": title,
                     "downloaded": False,
-                    "languages": ["German Dub"],
+                    "languages": _movie_only_languages(obj),
                 }]})
             except Exception as e:
-                logger.error(f"FilmPalast episodes fetch failed: {e}", exc_info=True)
-                return jsonify({"error": str(e)}), 500
-
-        # Filmo: return the movie itself as a single episode entry, like
-        # FilmPalast above -- but Filmo IS multi-language (unlike FilmPalast's
-        # German-only catalogue), so "languages" reports every language the
-        # movie actually offers instead of a hardcoded single value.
-        if _is_filmo_url(url):
-            try:
-                from ...models.filmo_to.movie import FilmoMovie
-                mv = FilmoMovie(url=url)
-                return jsonify({"episodes": [{
-                    "url": url,
-                    "episode_number": 1,
-                    "season_number": 1,
-                    "title_de": mv.title or "",
-                    "title_en": mv.title or "",
-                    # Movie entries report "downloaded" as False regardless
-                    # here -- same as the FilmPalast/MegaKino movie blocks
-                    # above, which don't call .is_downloaded either.
-                    "downloaded": False,
-                    "languages": mv.available_languages,
-                }]})
-            except Exception as e:
-                logger.error(f"Filmo episodes fetch failed: {e}", exc_info=True)
+                logger.error("Movie episode fetch failed for %s: %s",
+                             _movie_prov.name, e, exc_info=True)
                 return jsonify({"error": str(e)}), 500
 
         # MegaKino: movie -> single episode; series -> all episodes of the season
@@ -1593,12 +1632,22 @@ def register_search_routes(app):
 
         try:
             prov = resolve_provider(url)
+            # A provider with no season class at all cannot answer this, and
+            # calling None raises a TypeError that would surface as a 500 with
+            # a message telling nobody anything. Movie-only providers are
+            # already handled above, so reaching this means a partially
+            # registered third-party provider -- say so instead.
+            if prov.season_cls is None:
+                logger.warning("[api_episodes] provider %s registered no season_cls", prov.name)
+                return jsonify({
+                    "error": f"Provider {prov.name} does not support seasons",
+                }), 400
             # Pass series to avoid broken series URL reconstruction in s.to
             # season model (its fallback splits on "-" which fails)
             series_url = re.sub(r"/staffel-\d+/?$", "", url)
             series_url = re.sub(r"/filme/?$", "", series_url)
             try:
-                series = prov.series_cls(url=series_url)
+                series = prov.series_cls(url=series_url) if prov.series_cls else None
             except Exception:
                 series = None
             season = prov.season_cls(url=url, series=series)

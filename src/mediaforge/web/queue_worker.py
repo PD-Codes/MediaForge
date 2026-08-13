@@ -504,6 +504,20 @@ def _is_filmo_url(url: str) -> bool:
     return "filmo.to/movies/" in (url or "")
 
 
+def _is_movie_url(url: str) -> bool:
+    """True when *url* belongs to a source that has films but no series.
+
+    Asks the provider registry (``series_cls`` unset, ``episode_cls`` set)
+    instead of matching hostnames, so a movie-only source added by a
+    third-party module is recognized as a movie the same way FilmPalast and
+    Filmo are -- without a new hostname check per site.
+
+    Used by `_queue_worker` for the movie-vs-episode notification wording.
+    """
+    from ..providers import movie_only_provider_for
+    return movie_only_provider_for(url or "") is not None
+
+
 def _filmo_enabled() -> bool:
     """Whether the (opt-out, on by default) filmo.to source is enabled."""
     from .source_policy import source_enabled
@@ -1459,8 +1473,7 @@ def _queue_worker():
                 # Direct Link jobs are always a single file, so they get the
                 # same "Film" notification wording as a FilmPalast movie.
                 _is_movie = (
-                    _is_filmpalast_url(item.get("url", ""))
-                    or _is_filmo_url(item.get("url", ""))
+                    _is_movie_url(item.get("url", ""))
                     or item.get("provider") == "Direct"
                 )
                 if status == "completed":
@@ -1520,8 +1533,7 @@ def _queue_worker():
                             # Direct Link jobs are always a single file, so they get
                             # the same "Film" notification wording as a FilmPalast movie.
                             _is_movie = (
-                                _is_filmpalast_url(item.get("url", ""))
-                                or _is_filmo_url(item.get("url", ""))
+                                _is_movie_url(item.get("url", ""))
                                 or item.get("provider") == "Direct"
                             )
                             notify_all(

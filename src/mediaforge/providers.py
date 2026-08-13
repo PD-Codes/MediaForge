@@ -334,6 +334,41 @@ def series_url_for(url: str) -> str:
     return url
 
 
+def is_movie_only(provider: Optional["Provider"]) -> bool:
+    """True when *provider* describes single films rather than series.
+
+    The test is structural, not a list of hostnames: a movie-only site
+    registers an ``episode_cls`` (the film page itself) and leaves
+    ``series_cls`` unset, because it has no series or season concept at all.
+    FilmPalast and Filmo are the built-in examples; a third-party module gets
+    exactly the same shape by calling :func:`register_provider` with only
+    ``episode_pattern``/``episode_cls``.
+
+    Everything that used to answer "is this a movie?" with a per-site helper
+    (``_is_filmpalast_url`` and friends) can ask this instead and then covers
+    every current AND future movie-only provider.
+    """
+    if provider is None:
+        return False
+    return provider.series_cls is None and provider.episode_cls is not None
+
+
+def movie_only_provider_for(url: str) -> Optional["Provider"]:
+    """The movie-only Provider owning *url*, or None.
+
+    None both for "no provider recognizes this URL" and for "recognized, but
+    it is a regular series provider", so callers can use it as a single
+    guard in front of a movie-only branch without a try/except of their own.
+    """
+    if not url:
+        return None
+    try:
+        provider = resolve_provider(url)
+    except Exception:
+        return None
+    return provider if is_movie_only(provider) else None
+
+
 def resolve_provider(url: str) -> Provider:
     """Return the Provider whose series/season/episode pattern matches *url*.
 
