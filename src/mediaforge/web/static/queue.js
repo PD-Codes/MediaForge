@@ -1277,8 +1277,12 @@ function closeCaptchaModal() {
   }
 })();
 
-// Seerr badge — fetch count on every page and keep it fresh
+// Seerr badge — fetch count on every page and keep it fresh.
+// Skipped entirely when Seerr isn't configured (window.__SEERR_CONFIGURED,
+// injected server-side in base.html): this used to poll /api/seerr/requests
+// on every page, for every user, every 60s, even with Seerr never set up.
 (function startSeerrBadgePoll() {
+  if (!window.__SEERR_CONFIGURED) return;
   async function updateSeerrBadge() {
     const badge = document.getElementById("seerrBadge");
     if (!badge) return;

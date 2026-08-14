@@ -931,6 +931,7 @@
     // i18n helper — returns the German or English string based on the session language
     window.__LANG = "{{ ui_language }}";
     window.__UPTIME_ENABLED = {{ 'true' if uptime_enabled else 'false' }};
+    window.__SEERR_CONFIGURED = {{ 'true' if seerr_configured else 'false' }};
     function t(de, en) { return window.__LANG === 'de' ? de : en; }
 
     // ---------------------------------------------------------------- dates

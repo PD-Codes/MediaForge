@@ -247,11 +247,13 @@ def search_sources(include_adult: bool = True) -> list:
                        exc_info=True)
         extra = []
 
+    seen_ids = {_s["id"] for _s in BUILTIN_SEARCH_SOURCES}
     for entry in extra:
         site_id = entry.get("site_id")
         adult = bool(entry.get("adult"))
         if not site_id or (adult and not include_adult):
             continue
+        seen_ids.add(site_id)
         out.append({
             "id": site_id,
             "label": entry.get("label") or site_id,
@@ -272,6 +274,37 @@ def search_sources(include_adult: bool = True) -> list:
             "media_types": list(source_media_types(
                 site_id, entry.get("media_types"))),
         })
+
+    # A module that only called providers.register_provider() (URL resolution)
+    # without also calling search.register_search_source() (keyword search)
+    # used to be entirely invisible here -- not defaulted-off, just absent, so
+    # it could never get a toggle/order row on the Sources tab or a chip on
+    # the home-v2 feed even though nothing stops it from being selected.
+    # Surface it the same way an unconfigured module source is: opt-out,
+    # enabled by default, generic styling.
+    try:
+        from ..providers import thirdparty_provider_ids, _EXTRA_PROVIDERS
+        for item_id in thirdparty_provider_ids():
+            if item_id in seen_ids:
+                continue
+            provider = _EXTRA_PROVIDERS.get(item_id)
+            if provider is None:
+                continue
+            out.append({
+                "id": item_id,
+                "label": provider.name or item_id,
+                "adult": False,
+                "opt_in": False,
+                "english_only": False,
+                "thirdparty": True,
+                "enabled_key": source_enabled_key(item_id),
+                "enabled": source_enabled(item_id, default="1"),
+                "css_class": "browse-provider-thirdparty",
+                "media_types": list(source_media_types(item_id)),
+            })
+    except Exception:
+        logger.warning("[Sources] Could not list third-party providers",
+                       exc_info=True)
 
     return out
 

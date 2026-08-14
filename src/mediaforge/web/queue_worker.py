@@ -512,17 +512,31 @@ def _is_filmo_url(url: str) -> bool:
 
 
 def _is_movie_url(url: str) -> bool:
-    """True when *url* belongs to a source that has films but no series.
+    """True when *url* is a movie download, for notification wording.
 
-    Asks the provider registry (``series_cls`` unset, ``episode_cls`` set)
-    instead of matching hostnames, so a movie-only source added by a
-    third-party module is recognized as a movie the same way FilmPalast and
-    Filmo are -- without a new hostname check per site.
+    Structurally movie-only sources (``series_cls`` unset, ``episode_cls``
+    set) are asked via the provider registry, so a movie-only source added
+    by a third-party module is recognized the same way FilmPalast and Filmo
+    are -- without a new hostname check per site.
+
+    MegaKino is a *mixed* provider (movies AND series through the same
+    /watch/ URL shape), so it never matches the structural check above and
+    needs its own per-URL disambiguation -- the same one routes/search.py
+    already uses to label the Download Modal ("is_movie"). Without this,
+    every MegaKino movie was worded as "Episode(n)" in notifications while
+    the modal correctly called it "Film".
 
     Used by `_queue_worker` for the movie-vs-episode notification wording.
     """
     from ..providers import movie_only_provider_for
-    return movie_only_provider_for(url or "") is not None
+    if movie_only_provider_for(url or "") is not None:
+        return True
+    if _is_megakino_url(url):
+        try:
+            return not _megakino_is_series(_megakino_watch(url))
+        except Exception:
+            return False
+    return False
 
 
 def _filmo_enabled() -> bool:

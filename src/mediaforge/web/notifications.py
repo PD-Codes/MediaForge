@@ -152,10 +152,14 @@ def _get_user_prefs(username: str | None) -> dict:
             return {}
     uid = get_user_id_by_username(username)
     if uid is None:
-        try:
-            return get_user_notif_prefs_all(0)
-        except Exception:
-            return {}
+        # A named user that doesn't resolve to a row is NOT the no-auth
+        # pseudo-user -- falling back to uid 0's prefs here used to leak
+        # the admin's own Telegram/Pushover/etc. config (and "enabled"
+        # defaults) to an unrelated/unresolvable person, so an unrelated
+        # user's opt-out was silently bypassed. Return no prefs instead;
+        # every notify_*() already treats a missing chat_id/user_key/phone
+        # as "nothing to send to", so this is a clean no-op.
+        return {}
     return get_user_notif_prefs_all(uid)
 
 
@@ -299,18 +303,20 @@ def notify_webpush(
         uid = 0  # no-auth mode: uid=0 is the synthetic admin pseudo-user
 
     if uid is None:
-        # Unknown username — broadcast to all, no pref check
+        # A named user that doesn't resolve to a row -- same identity gap as
+        # _get_user_prefs() above. Broadcasting to every subscription here
+        # bypassed everyone's per-user opt-out, so treat it as "nobody to
+        # notify" instead.
+        return
+    if event:
+        prefs = get_user_notif_prefs_all(uid)
+        _pref_event = "on_sync_hold" if event == "on_sync_resume" else event
+        if not _pref_enabled(prefs, "webpush_" + _pref_event):
+            return
+    subs = get_push_subscriptions(user_id=uid)
+    # If user has no personal subscriptions, broadcast to all
+    if not subs:
         subs = get_push_subscriptions()
-    else:
-        if event:
-            prefs = get_user_notif_prefs_all(uid)
-            _pref_event = "on_sync_hold" if event == "on_sync_resume" else event
-            if not _pref_enabled(prefs, "webpush_" + _pref_event):
-                return
-        subs = get_push_subscriptions(user_id=uid)
-        # If user has no personal subscriptions, broadcast to all
-        if not subs:
-            subs = get_push_subscriptions()
 
     if not subs:
         return

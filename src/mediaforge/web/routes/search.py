@@ -2099,17 +2099,25 @@ def register_search_routes(app):
             return jsonify({"available": False, "error": "episode_url fehlt"}), 400
 
         try:
-            from ...models.filmpalast_to.episode import FilmPalastEpisode
+            from ...providers import resolve_provider
             from ...extractors.provider.veev import _extract_veev_details
         except ImportError:
             try:
-                from mediaforge.models.filmpalast_to.episode import FilmPalastEpisode
+                from mediaforge.providers import resolve_provider
                 from mediaforge.extractors.provider.veev import _extract_veev_details
             except ImportError as ie:
                 return jsonify({"available": False, "error": f"Import-Fehler: {ie}"}), 500
 
         try:
-            ep = FilmPalastEpisode(episode_url, selected_provider="VeeV")
+            # VeeV is a hoster offered by several providers (FilmPalast,
+            # MegaKino, Filmo, ...), not just FilmPalast -- this used to
+            # hardcode FilmPalastEpisode, which rejects any URL that doesn't
+            # match FilmPalast's own pattern, so the check silently failed
+            # ("Episode konnte nicht aufgelöst werden") for every other
+            # provider's Veev links. resolve_provider() picks the right
+            # episode class the same way the actual downloader does.
+            prov = resolve_provider(episode_url)
+            ep = prov.episode_cls(url=episode_url, selected_provider="VeeV")
             embed_url = ep.provider_url
         except Exception as e:
             return jsonify({"available": False, "error": f"Episode konnte nicht aufgelöst werden: {e}"})

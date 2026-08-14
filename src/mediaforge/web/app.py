@@ -496,6 +496,15 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "cineinfo_calendar": _get_setting("cineinfo_calendar", "0") == "1",
                 "syncplay_enabled": _get_setting("syncplay_enabled", "0") == "1",
                 "uptime_enabled": _get_setting("uptime_enabled", "0") == "1",
+                # Whether Seerr is configured (URL + API key both set).
+                # Injected here -- not just on the Integrations page -- so
+                # base.html can tell queue.js's global Seerr-badge poller
+                # whether to run at all; that poller used to fire on every
+                # page load for everyone regardless of setup.
+                "seerr_configured": bool(
+                    _get_setting("seerr_url", "").strip()
+                    and _get_setting("seerr_api_key", "").strip()
+                ),
                 # Theme packs (web/themes.py): the instance default rendered
                 # server-side into base.html's <head> (first paint is already
                 # themed), plus a light id/name/version list the pre-paint
@@ -596,6 +605,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "cineinfo_calendar": _get_setting("cineinfo_calendar", "0") == "1",
                 "syncplay_enabled": _get_setting("syncplay_enabled", "0") == "1",
                 "uptime_enabled": _get_setting("uptime_enabled", "0") == "1",
+                # Whether Seerr is configured (URL + API key both set) -- see
+                # the matching key in _inject_auth() above.
+                "seerr_configured": bool(
+                    _get_setting("seerr_url", "").strip()
+                    and _get_setting("seerr_api_key", "").strip()
+                ),
                 # Theme packs (web/themes.py): the instance default rendered
                 # server-side into base.html's <head> (first paint is already
                 # themed), plus a light id/name/version list the pre-paint
