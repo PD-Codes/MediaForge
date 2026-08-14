@@ -1761,7 +1761,26 @@ async function _doEnrichCard(card, title) {
 
 function toggleSite() { /* no-op: both sites always shown */ }
 
+// Repopulating a <select> makes the browser fall back to its FIRST option,
+// which is a property of the site's language order, not of what the user
+// asked for. Sites whose list does not happen to start with the configured
+// default (filmo.to lists English first) therefore opened the modal on the
+// wrong language. Apply the instance default (Settings -> Auto-Sync ->
+// Default Language, `sync_language`) whenever the previous selection is not
+// among the new options -- a manual choice that survives the rebuild is kept.
 function rebuildLanguageSelect(foundLangs = null) {
+  const prev = languageSelect ? languageSelect.value : "";
+  rebuildLanguageSelectOptions(foundLangs);
+  if (!languageSelect || !languageSelect.options.length) return;
+  const has = (v) => Array.from(languageSelect.options).some((o) => o.value === v);
+  if (has(prev)) return;
+  if (defaultSyncLanguage && has(defaultSyncLanguage)) {
+    languageSelect.value = defaultSyncLanguage;
+    syncLangAvailPills();
+  }
+}
+
+function rebuildLanguageSelectOptions(foundLangs = null) {
   const url = currentSeriesUrl || "";
   // FilmPalast and MegaKino movies are both German-dub-only (see
   // seerrUpdateLangDropdown() in seerr.js, which treats these two sites the
