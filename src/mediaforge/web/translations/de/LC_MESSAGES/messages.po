@@ -3756,11 +3756,11 @@ msgstr "Wichtiger Hinweis"
 
 #: src/mediaforge/web/templates/index.html:295
 msgid "Confirming marks this notice as read and opens the Dev Infos page."
-msgstr ""
+msgstr "Mit dem Bestätigen wird dieser Hinweis als gelesen markiert und die Dev-Infos-Seite geöffnet."
 
 #: src/mediaforge/web/templates/index.html:298
 msgid "Understood — open Dev Infos"
-msgstr ""
+msgstr "Verstanden — Dev Infos öffnen"
 
 #: src/mediaforge/web/templates/index.html:317
 msgid "New home page"
@@ -3775,7 +3775,7 @@ msgid ""
 "Rows grouped by question instead of by source, with your watch progress "
 "and watchlist on top. Only you see the change — switch back at any time "
 "in Settings."
-msgstr ""
+msgstr "Reihen nach Frage gruppiert statt nach Quelle, mit deinem Wiedergabefortschritt und deiner Merkliste ganz oben. Die Änderung sieht nur du — zurückwechseln kannst du jederzeit in den Einstellungen."
 
 #: src/mediaforge/web/templates/index.html:325
 msgid "Try it now"
@@ -3788,11 +3788,11 @@ msgstr "Nicht mehr anzeigen"
 
 #: src/mediaforge/web/templates/index.html:342
 msgid "What do you want to download?"
-msgstr ""
+msgstr "Was willst du laden?"
 
 #: src/mediaforge/web/templates/index.html:343
 msgid "One title is enough — MediaForge asks every active source at once."
-msgstr ""
+msgstr "Ein Titel reicht — MediaForge fragt alle aktiven Quellen gleichzeitig."
 
 #: src/mediaforge/web/templates/index.html:353
 msgid "Home page sections"
@@ -3855,15 +3855,15 @@ msgstr "Im Auto-Sync"
 
 #: src/mediaforge/web/templates/index.html:436
 msgid "Switch off to hide titles you already have"
-msgstr ""
+msgstr "Abwählen, um bereits vorhandene Titel auszublenden"
 
 #: src/mediaforge/web/templates/index.html:437
 msgid "Switch off to hide titles an Auto-Sync job already covers"
-msgstr ""
+msgstr "Abwählen, um Titel auszublenden, für die schon ein Auto-Sync-Auftrag läuft"
 
 #: src/mediaforge/web/templates/index.html:438
 msgid "Also available from other sources — click to choose"
-msgstr ""
+msgstr "Auch bei anderen Quellen verfügbar – zum Auswählen klicken"
 
 #: src/mediaforge/web/templates/index.html:439
 #: src/mediaforge/web/templates/index.html:846
@@ -3873,7 +3873,7 @@ msgstr "Mit diesen Filtern gibt es nichts zu zeigen."
 #: src/mediaforge/web/templates/index.html:440
 #, python-brace-format
 msgid "{} is not responding right now."
-msgstr ""
+msgstr "{} antwortet gerade nicht."
 
 #: src/mediaforge/web/templates/index.html:441
 msgid "The feed could not be loaded."
@@ -3886,12 +3886,12 @@ msgstr "Film"
 #: src/mediaforge/web/templates/index.html:446
 #, python-brace-format
 msgid "{} min left"
-msgstr ""
+msgstr "noch {} Min."
 
 #: src/mediaforge/web/templates/index.html:447
 #, python-brace-format
 msgid "{} h left"
-msgstr ""
+msgstr "noch {} Std."
 
 #: src/mediaforge/web/templates/index.html:448
 msgid "Player loading…"
@@ -3994,7 +3994,7 @@ msgstr "Es wurde noch nichts heruntergeladen."
 
 #: src/mediaforge/web/templates/index.html:486
 msgid "Your library is still empty."
-msgstr ""
+msgstr "Deine Bibliothek ist noch leer."
 
 #: src/mediaforge/web/templates/index.html:487
 msgid "No download path could be read."
@@ -4002,7 +4002,7 @@ msgstr "Kein Download-Pfad konnte gelesen werden."
 
 #: src/mediaforge/web/templates/index.html:488
 msgid "Nothing needs your attention."
-msgstr ""
+msgstr "Nichts braucht deine Aufmerksamkeit."
 
 #: src/mediaforge/web/templates/index.html:489
 msgid "Download failed"
@@ -4011,12 +4011,12 @@ msgstr "Download fehlgeschlagen"
 #: src/mediaforge/web/templates/index.html:490
 #, python-brace-format
 msgid "{} downloads are running or waiting"
-msgstr ""
+msgstr "{} Downloads laufen oder warten"
 
 #: src/mediaforge/web/templates/index.html:491
 #, python-brace-format
 msgid "{} things need your attention: failed downloads, plus a paused queue"
-msgstr ""
+msgstr "{} Dinge brauchen deine Aufmerksamkeit: fehlgeschlagene Downloads, plus eine pausierte Warteschlange"
 
 #: src/mediaforge/web/templates/index.html:492
 #, python-brace-format
@@ -4026,7 +4026,7 @@ msgstr "Episode {} von {}"
 #: src/mediaforge/web/templates/index.html:493
 #, python-brace-format
 msgid "{} of {} used"
-msgstr ""
+msgstr "{} von {} belegt"
 
 #: src/mediaforge/web/templates/index.html:494
 msgid "just now"
@@ -4054,7 +4054,7 @@ msgstr "{} fehlen"
 
 #: src/mediaforge/web/templates/index.html:499
 msgid "Not interested — hide this series"
-msgstr ""
+msgstr "Kein Interesse — diese Serie ausblenden"
 
 #: src/mediaforge/web/templates/index.html:500
 msgid "Hidden. You can bring it back on the statistics page."
@@ -4092,7 +4092,7 @@ msgstr "Auf deiner Merkliste"
 
 #: src/mediaforge/web/templates/index.html:509
 msgid "Finish setting up MediaForge"
-msgstr ""
+msgstr "MediaForge fertig einrichten"
 
 #: src/mediaforge/web/templates/index.html:510
 msgid "Hide this"
@@ -4100,15 +4100,15 @@ msgstr "Ausblenden"
 
 #: src/mediaforge/web/templates/index.html:511
 msgid "Switch on the sources you want"
-msgstr ""
+msgstr "Gewünschte Quellen aktivieren"
 
 #: src/mediaforge/web/templates/index.html:512
 msgid "Add a TMDB key for posters and genres"
-msgstr ""
+msgstr "TMDB-Key für Poster und Genres hinterlegen"
 
 #: src/mediaforge/web/templates/index.html:513
 msgid "Scan a library folder"
-msgstr ""
+msgstr "Einen Bibliotheksordner scannen"
 
 # ── extensions.html (added 2026-07-12) ──────────
 #: src/mediaforge/web/templates/index.html:514
@@ -4122,7 +4122,7 @@ msgstr "Dein Jellyfin-/Plex-Profil verknüpfen"
 #: src/mediaforge/web/templates/index.html:516
 #, python-brace-format
 msgid "{} of {} done"
-msgstr ""
+msgstr "{} von {} erledigt"
 
 #: src/mediaforge/web/templates/index.html:517
 #: src/mediaforge/web/templates/profile.html:53
@@ -4174,11 +4174,11 @@ msgstr "In diesem Zeitraum ist nichts passiert."
 
 #: src/mediaforge/web/templates/index.html:530
 msgid "Link a Jellyfin/Plex profile on your profile page to see what you watched."
-msgstr ""
+msgstr "Verknüpfe auf deiner Profilseite ein Jellyfin-/Plex-Profil, um zu sehen, was du geschaut hast."
 
 #: src/mediaforge/web/templates/index.html:531
 msgid "Jellyfin reports the last play per title, so repeats are not counted."
-msgstr ""
+msgstr "Jellyfin meldet nur die letzte Wiedergabe pro Titel — Wiederholungen werden nicht gezählt."
 
 #: src/mediaforge/web/templates/index.html:532
 msgid "Open the statistics"
@@ -4202,7 +4202,7 @@ msgstr "{} wird hochskaliert"
 #: src/mediaforge/web/templates/index.html:536
 #, python-brace-format
 msgid "{} full"
-msgstr ""
+msgstr "{} voll"
 
 #: src/mediaforge/web/templates/index.html:538
 msgid "Last error"
@@ -4226,29 +4226,29 @@ msgstr "Der Modus konnte nicht gewechselt werden."
 
 #: src/mediaforge/web/templates/index.html:545
 msgid "You are not signed in any more — reload the page."
-msgstr ""
+msgstr "Du bist nicht mehr angemeldet — lade die Seite neu."
 
 #: src/mediaforge/web/templates/index.html:546
 #, python-brace-format
 msgid ""
 "This page is limited to age {} and below. Titles without a rating are "
 "still shown."
-msgstr ""
+msgstr "Diese Seite ist auf Alter {} und darunter begrenzt. Titel ohne Altersfreigabe werden weiterhin gezeigt."
 
 #: src/mediaforge/web/templates/index.html:547
 msgid "Kids mode is not switched on for this instance."
-msgstr ""
+msgstr "Der Kindermodus ist für diese Instanz nicht aktiviert."
 
 #: src/mediaforge/web/templates/index.html:550
 #: src/mediaforge/web/templates/index.html:784
 #: src/mediaforge/web/templates/index.html:792
 msgid "Could be for you"
-msgstr ""
+msgstr "Könnte dir gefallen"
 
 #: src/mediaforge/web/templates/index.html:551
 #: src/mediaforge/web/templates/index.html:793
 msgid "derived from your library — not in it yet"
-msgstr ""
+msgstr "aus deiner Bibliothek abgeleitet — noch nicht enthalten"
 
 #: src/mediaforge/web/templates/index.html:552
 #: src/mediaforge/web/templates/index.html:794
@@ -4272,12 +4272,12 @@ msgstr "Weil du {} in deiner Bibliothek hast"
 #: src/mediaforge/web/templates/index.html:556
 #, python-brace-format
 msgid "Because you have {} and {} in your library"
-msgstr ""
+msgstr "Weil du {} und {} in deiner Bibliothek hast"
 
 #: src/mediaforge/web/templates/index.html:557
 #, python-brace-format
 msgid "Because you have {} titles in {}"
-msgstr ""
+msgstr "Weil du {} Titel in {} hast"
 
 #: src/mediaforge/web/templates/index.html:558
 msgid "Download now"
@@ -4289,7 +4289,7 @@ msgstr "Nicht interessiert"
 
 #: src/mediaforge/web/templates/index.html:561
 msgid "Hidden. It can come back the next time this row is rebuilt."
-msgstr ""
+msgstr "Ausgeblendet. Beim nächsten Neuaufbau dieser Zeile kann der Titel wiederkommen."
 
 #: src/mediaforge/web/templates/index.html:562
 msgid "The recommendations could not be loaded."
@@ -4300,7 +4300,7 @@ msgid ""
 "Metadata for your library is still being filled in — suggestions appear "
 "on their own as soon as enough titles are known. Nothing to do; look "
 "again later or hit Shuffle."
-msgstr ""
+msgstr "Die Metadaten deiner Bibliothek werden noch ergänzt — Vorschläge erscheinen von selbst, sobald genug Titel bekannt sind. Du musst nichts tun; schau später wieder rein oder klick auf Zufällig."
 
 #: src/mediaforge/web/templates/index.html:564
 msgid "All recommendations"
@@ -4309,7 +4309,7 @@ msgstr "Alle Empfehlungen"
 #: src/mediaforge/web/templates/index.html:565
 #, python-brace-format
 msgid "Because you like {}"
-msgstr ""
+msgstr "Weil du {} magst"
 
 #: src/mediaforge/web/templates/index.html:566
 msgid "Recommendations need CineInfo"
@@ -4320,7 +4320,7 @@ msgid ""
 "“Could be for you” derives suggestions from your library and shows them "
 "with a backdrop, plot and genres. CineInfo supplies that metadata — "
 "without a configured source the section stays empty."
-msgstr ""
+msgstr "„Könnte dir gefallen“ leitet Vorschläge aus deiner Bibliothek ab und zeigt sie mit Hintergrundbild, Handlung und Genres. Diese Metadaten liefert CineInfo — ohne eingerichtete Quelle bleibt der Bereich leer."
 
 #: src/mediaforge/web/templates/index.html:568
 msgid "Library scanned"
@@ -4336,11 +4336,11 @@ msgstr "Keine CineInfo-Quelle konfiguriert"
 
 #: src/mediaforge/web/templates/index.html:571
 msgid "Set up CineInfo"
-msgstr ""
+msgstr "CineInfo einrichten"
 
 #: src/mediaforge/web/templates/index.html:572
 msgid "What is CineInfo?"
-msgstr ""
+msgstr "Was ist CineInfo?"
 
 #: src/mediaforge/web/templates/index.html:573
 msgid "Running now"
@@ -4348,7 +4348,7 @@ msgstr "Läuft gerade"
 
 #: src/mediaforge/web/templates/index.html:574
 msgid "Recent activity"
-msgstr ""
+msgstr "Letzte Aktivität"
 
 #: src/mediaforge/web/templates/index.html:577
 #, python-brace-format
@@ -4470,14 +4470,14 @@ msgstr "Groß"
 
 #: src/mediaforge/web/templates/index.html:605
 msgid "Reset the layout"
-msgstr ""
+msgstr "Layout zurücksetzen"
 
 #: src/mediaforge/web/templates/index.html:630
 #: src/mediaforge/web/templates/index.html:631
 #: src/mediaforge/web/templates/index.html:813
 #: src/mediaforge/web/templates/index.html:814
 msgid "Customise this page"
-msgstr ""
+msgstr "Diese Seite anpassen"
 
 #: src/mediaforge/web/templates/index.html:640
 #: src/mediaforge/web/templates/index.html:963
@@ -4495,7 +4495,7 @@ msgstr "Übersicht der Instanz"
 
 #: src/mediaforge/web/templates/index.html:735
 msgid "Nothing needs your attention. Head over to Discover."
-msgstr ""
+msgstr "Nichts braucht deine Aufmerksamkeit. Schau bei Entdecken vorbei."
 
 #: src/mediaforge/web/templates/index.html:781
 msgid "Previous recommendation"
@@ -4508,7 +4508,7 @@ msgstr "Nächste Empfehlung"
 #: src/mediaforge/web/templates/index.html:830
 #, python-brace-format
 msgid "Because you watched {}"
-msgstr ""
+msgstr "Weil du {} gesehen hast"
 
 #: src/mediaforge/web/templates/index.html:851
 msgid ""
@@ -4516,7 +4516,7 @@ msgid ""
 " (cached). The match figure is worked out locally from how many of your "
 "own titles point at a suggestion — everything you already own or marked "
 "as “not interested” is subtracted."
-msgstr ""
+msgstr "Woher das kommt: Hintergrundbild, Handlung und Genres liefert CineInfo (zwischengespeichert). Der Übereinstimmungswert wird lokal daraus berechnet, wie viele deiner eigenen Titel auf einen Vorschlag zeigen — alles, was du schon hast oder als „Kein Interesse“ markiert hast, wird abgezogen."
 
 #: src/mediaforge/web/templates/index.html:859
 #: src/mediaforge/web/templates/index.html:918
@@ -4553,7 +4553,7 @@ msgstr "Beliebte Filme"
 
 #: src/mediaforge/web/templates/index.html:940
 msgid "New"
-msgstr ""
+msgstr "Neu"
 
 #: src/mediaforge/web/templates/index.html:944
 msgid "Trending"
@@ -4574,11 +4574,11 @@ msgstr "Kindermodus verlassen"
 
 #: src/mediaforge/web/templates/index.html:982
 msgid "Enter the PIN to remove the age limit from this page."
-msgstr ""
+msgstr "Gib die PIN ein, um die Altersgrenze von dieser Seite zu entfernen."
 
 #: src/mediaforge/web/templates/index.html:989
 msgid "Unlock"
-msgstr ""
+msgstr "Entsperren"
 
 #: src/mediaforge/web/templates/integrations.html:13
 msgid "Connect external services"
@@ -9037,7 +9037,7 @@ msgstr "Hintergrund-Worker"
 msgid ""
 "Every worker reports its own status live. A worker that is processing "
 "something shows how long it has before the watchdog restarts it."
-msgstr ""
+msgstr "Jeder Worker meldet seinen Status live. Ein Worker, der gerade etwas verarbeitet, zeigt an, wie lange es noch dauert, bis der Watchdog ihn neu startet."
 
 #: src/mediaforge/web/templates/settings.html:2024
 msgid "Database schema & snapshots"
