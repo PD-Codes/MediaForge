@@ -415,6 +415,48 @@
       });
     }
 
+    // Dashboard tab on/off + which tab opens first -- both only exist for
+    // scope="user" (see _start_page_form.html) and both take effect on the
+    // next load, same as the Layout select above: dash_enabled decides what
+    // app.py even renders into the page, and the start tab is only read once
+    // by home_2_1.js's wireTabs() on load.
+    const dashEnabled = document.getElementById("spDashEnabled-" + scope);
+    const startTabRow = document.getElementById("spStartTabRow-" + scope);
+    const startTab = document.getElementById("spStartTab-" + scope);
+    function syncStartTabRow() {
+      if (startTabRow) startTabRow.style.display = (dashEnabled && !dashEnabled.checked) ? "none" : "";
+    }
+    if (dashEnabled) {
+      dashEnabled.addEventListener("change", function () {
+        syncStartTabRow();
+        fetch("/api/user/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ home_dash_enabled: dashEnabled.checked ? "1" : "0" }),
+        }).then(function (r) {
+          if (!r.ok) throw new Error("save failed");
+          toast(txt("layout_saved", "Saved — reload the home page"));
+        }).catch(function () {
+          toast(txt("save_failed", "Could not be saved"));
+        });
+      });
+    }
+    if (startTab) {
+      startTab.addEventListener("change", function () {
+        const value = ["", "disc"].indexOf(startTab.value) === -1 ? "" : startTab.value;
+        fetch("/api/user/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ home_tab: value }),
+        }).then(function (r) {
+          if (!r.ok) throw new Error("save failed");
+          toast(txt("layout_saved", "Saved — reload the home page"));
+        }).catch(function () {
+          toast(txt("save_failed", "Could not be saved"));
+        });
+      });
+    }
+
     const resetBtn = document.getElementById("spReset-" + scope);
     if (resetBtn) resetBtn.addEventListener("click", function () { reset(scope); });
   }
@@ -457,6 +499,19 @@
       if (layoutSel) {
         const stored = String((window._USER_PREFS || {}).new_home || "");
         layoutSel.value = ["0", "1"].indexOf(stored) === -1 ? "" : stored;
+      }
+      // Same source of truth as the layout select above -- window._USER_PREFS,
+      // not the feed catalogue, which knows nothing about either of these.
+      const dashEnabledEl = document.getElementById("spDashEnabled-" + scope);
+      if (dashEnabledEl) {
+        dashEnabledEl.checked = String((window._USER_PREFS || {}).home_dash_enabled || "") !== "0";
+        const row = document.getElementById("spStartTabRow-" + scope);
+        if (row) row.style.display = dashEnabledEl.checked ? "" : "none";
+      }
+      const startTabEl = document.getElementById("spStartTab-" + scope);
+      if (startTabEl) {
+        const stored = String((window._USER_PREFS || {}).home_tab || "");
+        startTabEl.value = stored === "disc" ? "disc" : "";
       }
       renderRows(scope);
       renderChecks(scope);

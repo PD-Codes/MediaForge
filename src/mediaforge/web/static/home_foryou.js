@@ -360,9 +360,12 @@
       const res = await fetch("/api/home-feed/foryou" + (refresh ? "?refresh=1" : ""));
       data = await res.json();
     } catch (err) {
-      // A failed recommendation row is not worth a banner: the rest of the
-      // Discover tab is unaffected, and the section simply stays away.
+      // A failed recommendation row is not worth a banner on first load: the
+      // rest of the Discover tab is unaffected, and the section simply stays
+      // away. Hitting Shuffle and having NOTHING happen looks broken though
+      // -- the click needs its own acknowledgement here.
       block.hidden = true;
+      if (refresh && typeof window.showToast === "function") window.showToast(T("fy_failed"));
       return;
     }
 
@@ -406,6 +409,12 @@
         mfEscape(T("fy_reroll")) + "</button></div>";
       gate.hidden = false;
       block.hidden = false;
+      // A Shuffle click that lands right back on this same "nothing yet"
+      // text looks identical to before it was clicked -- a fresh account
+      // (just added a TMDB key / just scanned the library) hits this on
+      // every retry until CineInfo has actually filled enough of the cache
+      // in, so the click needs its own feedback or it reads as broken.
+      if (refresh && typeof window.showToast === "function") window.showToast(T("fy_reroll_empty"));
       return;
     }
     block.hidden = false;

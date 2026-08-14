@@ -424,7 +424,14 @@
 
   function wireTabs() {
     const bar = document.getElementById("homeTabs");
-    if (!bar) return;
+    if (!bar) {
+      // Dashboard tab switched off server-side (index.html's dash_enabled) --
+      // no bar, no Dashboard pane, Discover is the only thing there is.
+      // Still set the attribute a module might read (see home_panels.js),
+      // even though that file already no-ops without #homeDashGrid.
+      document.body.dataset.homeTabOpen = "disc";
+      return;
+    }
     bar.addEventListener("click", function (ev) {
       const btn = ev.target.closest("[data-home-tab]");
       if (!btn) return;

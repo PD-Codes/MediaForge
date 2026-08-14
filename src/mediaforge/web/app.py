@@ -1154,6 +1154,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # layout itself, and never again once the user dismissed it or tried
         # the new page at least once (both write new_home_promo_done).
         _show_promo = not _new_home and str(_prefs.get("new_home_promo_done") or "") != "1"
+        # Per-account: whether the two-tab layout's Dashboard tab renders at
+        # all ("Customise this page" -> "Show Dashboard tab" on either tab).
+        # Off is "" is on, matching every other on/off pref in ui_prefs.py --
+        # a fresh account gets the Dashboard until it explicitly turns it off.
+        _dash_enabled = str(_prefs.get("home_dash_enabled") or "") != "0"
         return render_template(
             "index.html",
             lang_labels=LANG_LABELS,
@@ -1163,6 +1168,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             devinfo_importants=_devinfo_importants,
             new_home=_new_home,
             show_new_home_promo=_show_promo,
+            dash_enabled=_dash_enabled,
         )
 
 

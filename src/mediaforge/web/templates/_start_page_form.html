@@ -102,6 +102,33 @@
       </select>
     </div>
   </div>
+
+  {# Only meaningful on the new (two-tab) layout, but shown regardless of
+     which layout this account currently has -- switching to the new layout
+     above does not reload this modal, and the choice should already be
+     there once it does. Same reasoning as the Layout select above: per
+     account, nobody else on the instance is affected. #}
+  <div class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Home tabs') }}</h3>
+    <label class="settings-checkbox-row" for="spDashEnabled-user">
+      <input type="checkbox" class="chb-main" id="spDashEnabled-user" checked>
+      <span>{{ _('Show the Dashboard tab') }}</span>
+    </label>
+    <div class="settings-hint">{{ _('Switch off to skip the Dashboard entirely and always open on Discover — for anyone who only wants the browse page.') }}</div>
+    {# Only worth asking while both tabs exist -- with the Dashboard off the
+       answer is always Discover, so this whole block hides itself (see
+       syncStartTabRow() in static/start_page.js) instead of offering a
+       choice that would not do anything. #}
+    <div id="spStartTabRow-user">
+      <h3 class="settings-subtitle">{{ _('Start on') }}</h3>
+      <div class="settings-row">
+        <select class="mf-token-input" id="spStartTab-user" aria-label="{{ _('Start on') }}">
+          <option value="">{{ _('Dashboard') }}</option>
+          <option value="disc">{{ _('Discover') }}</option>
+        </select>
+      </div>
+    </div>
+  </div>
   {% endif %}
 
   <div class="sp-group">

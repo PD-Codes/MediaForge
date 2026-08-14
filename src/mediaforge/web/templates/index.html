@@ -344,6 +344,11 @@
 {% if new_home %}
 <div class="home-topstrip" id="homeTopStrip">
   <div class="home-topstrip-inner">
+    {# The tab pill only makes sense with two tabs to switch between -- with
+       the Dashboard switched off (Customise this page -> "Show Dashboard
+       tab") there is only Discover, so the pill is dropped instead of
+       showing a single, unclickable-feeling button. #}
+    {% if dash_enabled %}
     <div class="mf-segmented home-tabs" id="homeTabs" role="tablist"
          aria-label="{{ _('Home page sections') }}">
       <button type="button" class="mf-segmented-btn active" role="tab"
@@ -353,6 +358,7 @@
               id="homeTabBtnDisc" data-home-tab="disc" aria-selected="false"
               aria-controls="homePaneDisc">{{ _('Discover') }}</button>
     </div>
+    {% endif %}
     {# Phone-only: the search bar itself starts collapsed (see index.css's
        phone breakpoint) and this button expands it in place, right of the
        tab pill. Hidden by CSS above that breakpoint, where the full search
@@ -367,6 +373,7 @@
       </svg>
     </button>
     {{ home_searchbar() }}
+    {% if dash_enabled %}
     {# Dashboard-only: hidden via CSS while the Discover tab is open (see
        [data-home-tab-open="disc"] in index.css). Locked state (icon +
        title/aria-label) is toggled by static/home_panels.js against the
@@ -395,6 +402,7 @@
       <div class="dash-add-menu" id="dashAddMenu" role="menu"
            aria-label="{{ _('Add a widget') }}" hidden></div>
     </div>
+    {% endif %}
   </div>
 </div>
 {% endif %}
@@ -617,6 +625,7 @@
       'fy_skipped': _('Hidden. It can come back the next time this row is rebuilt.'),
       'fy_failed': _('The recommendations could not be loaded.'),
       'fy_empty': _('Metadata for your library is still being filled in — suggestions appear on their own as soon as enough titles are known. Nothing to do; look again later or hit Shuffle.'),
+      'fy_reroll_empty': _('Still nothing new — check back later.'),
       'fy_reason_all': _('All recommendations'),
       'fy_reason_genre': _('Because you like {}'),
       'fy_gate_title': _('Recommendations need CineInfo'),
@@ -738,7 +747,12 @@
      What is happening on THIS instance: the panel bar, anything that needs
      attention, and the rows that are about the user's own material. Nothing
      in here asks a source a question, so it renders without waiting on the
-     network. #}
+     network.
+
+     Skipped entirely (not just hidden) when the account switched the
+     Dashboard tab off -- "turning it off" should also mean MediaForge stops
+     building and fetching all of this every load, not just stop showing it. #}
+  {% if dash_enabled %}
   <div class="home-pane" id="homePaneDash" role="tabpanel" aria-labelledby="homeTabBtnDash">
     <div class="feed-alerts" id="feedAlerts"></div>
     {# What this instance still needs, above the cards: it is the one thing on
@@ -830,13 +844,17 @@
        duplicate DOM ids (two elements with the same "widget-<id>"/"dashCard-
        <id>" id) for every registered widget. #}
   </div>
+  {% endif %}
 
   {# ── Tab 2: Discover ─────────────────────────────────────────────────────
      Everything that comes from outside: the recommendation hero, then the
      source rows. This is also the only pane the source/type/status filters
      apply to, which is why the toolbar lives in here and not above the
-     tabs. #}
-  <div class="home-pane" id="homePaneDisc" role="tabpanel" aria-labelledby="homeTabBtnDisc" hidden>
+     tabs. Starts visible (not hidden) when there is no Dashboard tab to
+     default to instead -- home_2_1.js's showTab() still owns which pane is
+     open once JS runs, this is only the no-JS/first-paint state. #}
+  <div class="home-pane" id="homePaneDisc" role="tabpanel" aria-labelledby="homeTabBtnDisc"
+       {{ '' if not dash_enabled else 'hidden' }}>
     {# ── "Could be for you" ──────────────────────────────────────────────
        The only row on this page built from titles the user does NOT have.
        Candidates come from the TMDB recommendations already sitting in the

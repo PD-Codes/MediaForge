@@ -183,6 +183,12 @@ USER_UI_PREF_KEYS = {
     # the preferences endpoint reject the WHOLE request, so a tab switch would
     # otherwise have silently discarded every setting sent with it.
     "home_tab": lambda v: v in ("", "dash", "disc"),
+    # Whether the Dashboard tab renders at all on the two-tab home page. "" is
+    # on (the default a fresh account gets); "0" drops the tab and its pane
+    # entirely and always opens on Discover -- for the people who just want
+    # the browse page and never asked for an instance-overview panel. Set
+    # from "Customise this page", visible on both tabs.
+    "home_dash_enabled": lambda v: v in ("", "0", "1"),
     # Which media-server user this account is. "" = none, and the Continue
     # watching row keeps using MediaForge's own playback positions.
     # NOT validated against the server here (db.py must not do network I/O) --
