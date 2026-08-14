@@ -344,11 +344,12 @@
 {% if new_home %}
 <div class="home-topstrip" id="homeTopStrip">
   <div class="home-topstrip-inner">
-    {# The tab pill only makes sense with two tabs to switch between -- with
-       the Dashboard switched off (Customise this page -> "Show Dashboard
-       tab") there is only Discover, so the pill is dropped instead of
-       showing a single, unclickable-feeling button. #}
-    {% if dash_enabled %}
+    {# The tab pill only makes sense with two SEPARATE tabs to switch between.
+       With the Dashboard switched off (Customise this page -> "Home tabs")
+       there is only Discover; with "All in one page" both sections render
+       stacked with nothing to switch -- either way the pill is dropped
+       instead of showing a single, unclickable-feeling button. #}
+    {% if dash_enabled and not all_in_one %}
     <div class="mf-segmented home-tabs" id="homeTabs" role="tablist"
          aria-label="{{ _('Home page sections') }}">
       <button type="button" class="mf-segmented-btn active" role="tab"
@@ -850,11 +851,14 @@
      Everything that comes from outside: the recommendation hero, then the
      source rows. This is also the only pane the source/type/status filters
      apply to, which is why the toolbar lives in here and not above the
-     tabs. Starts visible (not hidden) when there is no Dashboard tab to
-     default to instead -- home_2_1.js's showTab() still owns which pane is
-     open once JS runs, this is only the no-JS/first-paint state. #}
+     tabs. Starts visible (not hidden) whenever there is no tab pill to open
+     it later -- no Dashboard tab at all, or "All in one page" stacking both
+     with nothing to switch. home_2_1.js's showTab() still owns which pane
+     is open when there IS a pill; this is only the no-JS/first-paint state,
+     and wireTabs() already bails out before touching either pane when the
+     bar itself does not exist (see its own comment). #}
   <div class="home-pane" id="homePaneDisc" role="tabpanel" aria-labelledby="homeTabBtnDisc"
-       {{ '' if not dash_enabled else 'hidden' }}>
+       {{ '' if (not dash_enabled or all_in_one) else 'hidden' }}>
     {# ── "Could be for you" ──────────────────────────────────────────────
        The only row on this page built from titles the user does NOT have.
        Candidates come from the TMDB recommendations already sitting in the

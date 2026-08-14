@@ -395,6 +395,12 @@
   const TABS = { dash: "homePaneDash", disc: "homePaneDisc" };
 
   function showTab(name, persist) {
+    // No bar means no tab UI to represent a switch -- either there is only
+    // one section (Dashboard off) or "All in one page" stacks both with
+    // nothing to hide. A stray call (a module's deep link, say) must not
+    // hide the Dashboard pane just because the pill it would have clicked
+    // does not exist.
+    if (!document.getElementById("homeTabs")) return;
     if (!TABS[name]) name = "dash";
     // Search results replace the feed (app.js sets body.is-searching and
     // hides #homeFeed). Picking a tab is a request to see that tab, so it
@@ -425,11 +431,19 @@
   function wireTabs() {
     const bar = document.getElementById("homeTabs");
     if (!bar) {
-      // Dashboard tab switched off server-side (index.html's dash_enabled) --
-      // no bar, no Dashboard pane, Discover is the only thing there is.
-      // Still set the attribute a module might read (see home_panels.js),
-      // even though that file already no-ops without #homeDashGrid.
-      document.body.dataset.homeTabOpen = "disc";
+      // No tab bar at all -- two different reasons, and only one of them
+      // means "Discover is the only thing there is":
+      //   - Dashboard switched off server-side (index.html's dash_enabled)
+      //     -- no #homePaneDash either, Discover really is alone.
+      //   - "All in one page" (all_in_one) -- #homePaneDash is still there,
+      //     just stacked above Discover instead of behind a tab. Leaving
+      //     the attribute unset here keeps the dash-lock/add-widget buttons
+      //     visible (see their `[data-home-tab-open="disc"]` CSS) and keeps
+      //     home_panels.js's poll-pause-while-Discover-is-open check off,
+      //     since the Dashboard is in fact on screen the whole time.
+      if (!document.getElementById("homePaneDash")) {
+        document.body.dataset.homeTabOpen = "disc";
+      }
       return;
     }
     bar.addEventListener("click", function (ev) {

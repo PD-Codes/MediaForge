@@ -110,15 +110,18 @@
      account, nobody else on the instance is affected. #}
   <div class="sp-group">
     <h3 class="settings-subtitle">{{ _('Home tabs') }}</h3>
-    <label class="settings-checkbox-row" for="spDashEnabled-user">
-      <input type="checkbox" class="chb-main" id="spDashEnabled-user" checked>
-      <span>{{ _('Show the Dashboard tab') }}</span>
-    </label>
-    <div class="settings-hint">{{ _('Switch off to skip the Dashboard entirely and always open on Discover — for anyone who only wants the browse page.') }}</div>
-    {# Only worth asking while both tabs exist -- with the Dashboard off the
-       answer is always Discover, so this whole block hides itself (see
-       syncStartTabRow() in static/start_page.js) instead of offering a
-       choice that would not do anything. #}
+    <div class="settings-hint">{{ _('Tabs switch between the two; "All in one page" stacks the Dashboard above Discover instead, with no switching.') }}</div>
+    <div class="settings-row">
+      <select class="mf-token-input" id="spDashMode-user">
+        <option value="">{{ _('Dashboard and Discover as tabs') }}</option>
+        <option value="0">{{ _('Discover only') }}</option>
+        <option value="all">{{ _('All in one page') }}</option>
+      </select>
+    </div>
+    {# Only worth asking while there are two SEPARATE tabs to pick a first one
+       from -- "Discover only" has no Dashboard tab, "All in one page" has no
+       tab switch either (both sections are simply stacked). This whole block
+       hides itself for both (see syncStartTabRow() in static/start_page.js). #}
     <div id="spStartTabRow-user">
       <h3 class="settings-subtitle">{{ _('Start on') }}</h3>
       <div class="settings-row">

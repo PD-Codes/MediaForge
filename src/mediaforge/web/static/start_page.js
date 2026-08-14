@@ -415,24 +415,29 @@
       });
     }
 
-    // Dashboard tab on/off + which tab opens first -- both only exist for
-    // scope="user" (see _start_page_form.html) and both take effect on the
-    // next load, same as the Layout select above: dash_enabled decides what
-    // app.py even renders into the page, and the start tab is only read once
-    // by home_2_1.js's wireTabs() on load.
-    const dashEnabled = document.getElementById("spDashEnabled-" + scope);
+    // Dashboard/Discover arrangement + which tab opens first (only relevant
+    // for the "tabs" arrangement) -- both only exist for scope="user" (see
+    // _start_page_form.html) and both take effect on the next load, same as
+    // the Layout select above: home_dash_enabled decides what app.py even
+    // renders into the page, and the start tab is only read once by
+    // home_2_1.js's wireTabs() on load.
+    const dashMode = document.getElementById("spDashMode-" + scope);
     const startTabRow = document.getElementById("spStartTabRow-" + scope);
     const startTab = document.getElementById("spStartTab-" + scope);
+    // "Start on" only means anything with two SEPARATE tabs to choose a
+    // first one from -- "Discover only" ("0") has no Dashboard tab, "All in
+    // one page" ("all") stacks both with no tab switch at all.
     function syncStartTabRow() {
-      if (startTabRow) startTabRow.style.display = (dashEnabled && !dashEnabled.checked) ? "none" : "";
+      if (startTabRow) startTabRow.style.display = (dashMode && dashMode.value !== "") ? "none" : "";
     }
-    if (dashEnabled) {
-      dashEnabled.addEventListener("change", function () {
+    if (dashMode) {
+      dashMode.addEventListener("change", function () {
+        const value = ["", "0", "all"].indexOf(dashMode.value) === -1 ? "" : dashMode.value;
         syncStartTabRow();
         fetch("/api/user/preferences", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ home_dash_enabled: dashEnabled.checked ? "1" : "0" }),
+          body: JSON.stringify({ home_dash_enabled: value }),
         }).then(function (r) {
           if (!r.ok) throw new Error("save failed");
           toast(txt("layout_saved", "Saved — reload the home page"));
@@ -502,11 +507,12 @@
       }
       // Same source of truth as the layout select above -- window._USER_PREFS,
       // not the feed catalogue, which knows nothing about either of these.
-      const dashEnabledEl = document.getElementById("spDashEnabled-" + scope);
-      if (dashEnabledEl) {
-        dashEnabledEl.checked = String((window._USER_PREFS || {}).home_dash_enabled || "") !== "0";
+      const dashModeEl = document.getElementById("spDashMode-" + scope);
+      if (dashModeEl) {
+        const stored = String((window._USER_PREFS || {}).home_dash_enabled || "");
+        dashModeEl.value = ["0", "all"].indexOf(stored) === -1 ? "" : stored;
         const row = document.getElementById("spStartTabRow-" + scope);
-        if (row) row.style.display = dashEnabledEl.checked ? "" : "none";
+        if (row) row.style.display = dashModeEl.value === "" ? "" : "none";
       }
       const startTabEl = document.getElementById("spStartTab-" + scope);
       if (startTabEl) {

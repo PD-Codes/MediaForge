@@ -1154,11 +1154,15 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # layout itself, and never again once the user dismissed it or tried
         # the new page at least once (both write new_home_promo_done).
         _show_promo = not _new_home and str(_prefs.get("new_home_promo_done") or "") != "1"
-        # Per-account: whether the two-tab layout's Dashboard tab renders at
-        # all ("Customise this page" -> "Show Dashboard tab" on either tab).
-        # Off is "" is on, matching every other on/off pref in ui_prefs.py --
-        # a fresh account gets the Dashboard until it explicitly turns it off.
-        _dash_enabled = str(_prefs.get("home_dash_enabled") or "") != "0"
+        # Per-account: how the two-tab layout's Dashboard and Discover
+        # sections are arranged ("Customise this page" -> "Home tabs" on
+        # either tab). See the home_dash_enabled comment in ui_prefs.py for
+        # the three values -- dash_enabled is "does Dashboard content render
+        # at all" (true for "", "1" and "all"), all_in_one is "no tab pill,
+        # both sections stacked on one page" (only "all").
+        _dash_mode = str(_prefs.get("home_dash_enabled") or "")
+        _dash_enabled = _dash_mode != "0"
+        _all_in_one = _dash_mode == "all"
         return render_template(
             "index.html",
             lang_labels=LANG_LABELS,
@@ -1169,6 +1173,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             new_home=_new_home,
             show_new_home_promo=_show_promo,
             dash_enabled=_dash_enabled,
+            all_in_one=_all_in_one,
         )
 
 
