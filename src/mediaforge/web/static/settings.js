@@ -254,6 +254,16 @@ async function loadSettings() {
     if (mediaStatsEl) mediaStatsEl.checked = data.media_stats_enabled === "1";
     const newHomeEl = document.getElementById("newHomeEnabled");
     if (newHomeEl) newHomeEl.checked = data.new_home_enabled === "1";
+    const dashModeDefaultEl = document.getElementById("dashModeDefault");
+    if (dashModeDefaultEl) {
+      const stored = String(data.home_dash_enabled_default || "");
+      dashModeDefaultEl.value = ["0", "all"].indexOf(stored) === -1 ? "" : stored;
+      syncStartTabDefaultRow();
+    }
+    const startTabDefaultEl = document.getElementById("startTabDefault");
+    if (startTabDefaultEl) {
+      startTabDefaultEl.value = String(data.home_tab_default || "") === "disc" ? "disc" : "";
+    }
     const rescanEl = document.getElementById("libraryRescanHours");
     if (rescanEl && data.library_rescan_hours != null) rescanEl.value = String(data.library_rescan_hours);
     const probeEl = document.getElementById("libraryProbeWorkers");
@@ -1407,6 +1417,51 @@ async function saveNewHomeEnabled() {
     showToast(el.checked
       ? t("Neue Startseite aktiviert — Startseite neu laden", "New home page enabled — reload the home page")
       : t("Klassische Startseite aktiviert — Startseite neu laden", "Classic home page enabled — reload the home page"));
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+// "Start on" only means anything with two SEPARATE tabs to pick a first one
+// from -- same reasoning as static/start_page.js's per-account copy.
+function syncStartTabDefaultRow() {
+  const mode = document.getElementById("dashModeDefault");
+  const row = document.getElementById("startTabDefaultRow");
+  if (row) row.style.display = (mode && mode.value !== "") ? "none" : "";
+}
+
+async function saveDashModeDefault() {
+  const el = document.getElementById("dashModeDefault");
+  if (!el) return;
+  const value = ["", "0", "all"].indexOf(el.value) === -1 ? "" : el.value;
+  syncStartTabDefaultRow();
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ home_dash_enabled_default: value }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(t("Gespeichert", "Saved"));
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+async function saveStartTabDefault() {
+  const el = document.getElementById("startTabDefault");
+  if (!el) return;
+  const value = ["", "disc"].indexOf(el.value) === -1 ? "" : el.value;
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ home_tab_default: value }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(t("Gespeichert", "Saved"));
   } catch (e) {
     showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
   }

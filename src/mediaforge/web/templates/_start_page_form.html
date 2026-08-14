@@ -83,6 +83,34 @@
     <div class="settings-hint">{{ _('Groups the discovery rows by question instead of by source: "New this week" and "Popular right now" mix every enabled source and each poster names where it came from. The classic layout keeps one block per source with its own rows. Reload the home page after changing this.') }}</div>
     <div class="settings-hint">{{ _('This is the default for accounts that have not picked a layout themselves — everyone can overrule it on their profile page.') }}</div>
   </div>
+
+  {# The instance-wide twin of the per-account "Home tabs" group further down
+     (scope="user") -- what a fresh account, or one that never opened
+     "Customise this page" itself, starts with. Same values, same select;
+     only the storage differs (PUT /api/settings, not the per-account
+     preferences endpoint), so it gets its own ids and its own handlers in
+     static/settings.js rather than reusing static/start_page.js's
+     per-scope bind()/load(), which is wired to window._USER_PREFS. #}
+  <div class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Home tabs') }}</h3>
+    <div class="settings-hint">{{ _('The default arrangement for accounts that have not chosen one themselves. Everyone can still overrule it on their profile page.') }}</div>
+    <div class="settings-row">
+      <select class="mf-token-input" id="dashModeDefault" onchange="saveDashModeDefault()">
+        <option value="">{{ _('Dashboard and Discover as tabs') }}</option>
+        <option value="0">{{ _('Discover only') }}</option>
+        <option value="all">{{ _('All in one page') }}</option>
+      </select>
+    </div>
+    <div id="startTabDefaultRow">
+      <h3 class="settings-subtitle">{{ _('Start on') }}</h3>
+      <div class="settings-row">
+        <select class="mf-token-input" id="startTabDefault" aria-label="{{ _('Start on') }}" onchange="saveStartTabDefault()">
+          <option value="">{{ _('Dashboard') }}</option>
+          <option value="disc">{{ _('Discover') }}</option>
+        </select>
+      </div>
+    </div>
+  </div>
   {% endif %}
 
   {# The same decision for THIS account. A select and not a checkbox, because

@@ -369,6 +369,8 @@ def register_settings_routes(app):
                 "debug_forced":              debug_forced,
                 "media_stats_enabled":       media_stats_enabled,
                 "new_home_enabled":          new_home_enabled,
+                "home_dash_enabled_default": get_setting("home_dash_enabled_default", ""),
+                "home_tab_default":          get_setting("home_tab_default", ""),
                 "library_rescan_hours":      get_setting("library_rescan_hours", "24"),
                 "library_probe_workers":     get_setting("library_probe_workers", "0"),
                 "default_path_media_kinds":  get_setting("default_path_media_kinds", DEFAULT_KINDS_CSV),
@@ -1312,6 +1314,23 @@ def register_settings_routes(app):
         # Kids mode. The PIN is digits only and 4-8 of them, so it cannot
         # become a passphrase nobody can type on a TV remote -- and "" clears
         # it, which also switches the whole mode off (see below).
+        # Instance default for the two-tab home page's Dashboard/Discover
+        # arrangement and which tab opens first -- the same "Home tabs" group
+        # "Customise this page" offers per account (see ui_prefs.py's
+        # home_dash_enabled/home_tab), just for what a fresh account (or one
+        # that never touched this) starts with. Read back in app.py's index()
+        # as the fallback once the account's own preference is empty.
+        if "home_dash_enabled_default" in data:
+            val = str(data["home_dash_enabled_default"] or "")
+            if val not in ("", "0", "all"):
+                val = ""
+            set_setting("home_dash_enabled_default", val)
+        if "home_tab_default" in data:
+            val = str(data["home_tab_default"] or "")
+            if val not in ("", "disc"):
+                val = ""
+            set_setting("home_tab_default", val)
+
         if "home_kids_pin" in data:
             pin = str(data["home_kids_pin"] or "").strip()
             if pin and not (pin.isdigit() and 4 <= len(pin) <= 8):

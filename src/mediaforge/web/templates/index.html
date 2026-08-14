@@ -305,7 +305,7 @@
    places: full-bleed in the sticky topstrip on the new layout, plain inside
    .container on the classic one. A macro instead of two copies of the same
    markup -- one thing to keep in step with app.js/home_2_1.js selectors. #}
-{% macro home_searchbar() %}
+{% macro home_searchbar(show_customize=False) %}
   <div class="search-bar home-searchbar">
     <div class="home-search-field">
       <span class="home-search-icon" aria-hidden="true">
@@ -331,6 +331,25 @@
       </svg><span>{{ _('Direct Link') }}</span>
     </button>
     <button id="searchBtn" onclick="doSearch()">{{ _('Search') }}</button>
+    {# "All in one page" hides the sticky topstrip entirely (see below), which
+       is where #topstripCustomize normally lives -- without a stand-in here
+       that mode would have no way back into this modal short of the classic
+       layout's own #homeCustomize row, which stays hidden for new_home. Same
+       icon/handler as the other two copies. #}
+    {% if show_customize %}
+    <button type="button" class="feed-customize home-search-customize" id="heroCustomize"
+            onclick="openStartPageModal()" title="{{ _('Customise this page') }}"
+            aria-label="{{ _('Customise this page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+        <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+        <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/>
+        <line x1="17" y1="16" x2="23" y2="16"/>
+      </svg>
+    </button>
+    {% endif %}
   </div>
 {% endmacro %}
 {# The sticky strip (tabs + search + the dashboard lock toggle) is now a
@@ -341,7 +360,12 @@
    max-width/padding as an INNER alignment column, so the tab pill and
    search field still line up with the rest of the page while the strip's
    own background/border/blur spans full width. #}
-{% if new_home %}
+{# "All in one page" stacks the old button-bar Dashboard above Discover --
+   the same layout the sticky topstrip's tab pill/lock/add-widget tools were
+   built to replace, so keeping the topstrip around here would show controls
+   for a tab switch that no longer exists. Falls through to the classic
+   hero+searchbar block below instead, exactly like the pre-overhaul page. #}
+{% if new_home and not all_in_one %}
 <div class="home-topstrip" id="homeTopStrip">
   <div class="home-topstrip-inner">
     {# The tab pill only makes sense with two SEPARATE tabs to switch between.
@@ -374,8 +398,10 @@
       </svg>
     </button>
     {{ home_searchbar() }}
-    {% if dash_enabled %}
-    {# Dashboard-only: hidden via CSS while the Discover tab is open (see
+    {% if dash_enabled and not all_in_one %}
+    {# Grid-only tools (lock the drag layout, add a card) -- meaningless
+       against "All in one page"'s button-bar Dashboard, which has neither.
+       Dashboard-only otherwise: hidden via CSS while the Discover tab is open (see
        [data-home-tab-open="disc"] in index.css). Locked state (icon +
        title/aria-label) is toggled by static/home_panels.js against the
        home_dash_locked preference. #}
@@ -404,6 +430,25 @@
            aria-label="{{ _('Add a widget') }}" hidden></div>
     </div>
     {% endif %}
+    {# Lives in the topstrip rather than only inside a pane so it is on
+       screen no matter which tab is open (or, in "All in one page" mode,
+       stays visible while scrolling past both) -- the Discover pane's own
+       toolbar (further down) keeps its copy too, so opening the modal from
+       there still works exactly as before. Same icon/handler as that one
+       and as the classic layout's #homeCustomize, all three open the same
+       modal (see static/start_page.js's openStartPageModal()). #}
+    <button type="button" class="feed-customize" id="topstripCustomize"
+            onclick="openStartPageModal()" title="{{ _('Customise this page') }}"
+            aria-label="{{ _('Customise this page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+        <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+        <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/>
+        <line x1="17" y1="16" x2="23" y2="16"/>
+      </svg>
+    </button>
   </div>
 </div>
 {% endif %}
@@ -443,15 +488,16 @@
      in the sticky topstrip instead: with Dashboard and Discover competing
      for the top of the page, a full-height hero pushed both of them below
      the fold and the page opened on nothing but its own title. #}
-  {% if not new_home %}
+  {% if not new_home or all_in_one %}
   <div class="site-hero home-hero">
     <h1 id="pageHeading">{{ _('What do you want to download?') }}</h1>
     <p class="hero-sub" id="pageSubtitle">{{ _('One title is enough — MediaForge asks every active source at once.') }}</p>
   </div>
   {# The Seerr modal reuses .search-bar, so the home-only pill styling hangs
      off the extra .home-searchbar class instead of touching .search-bar
-     itself. #}
-  {{ home_searchbar() }}
+     itself. "All in one page" has no topstrip to carry #topstripCustomize,
+     so its copy of the search bar gets the settings button inline instead. #}
+  {{ home_searchbar(show_customize=all_in_one) }}
   {% endif %}
   {# The panel-bar keys below (panel_*, hp_*) live in this template rather
      than in routes/home_panels.py because babel.cfg extracts Jinja templates
@@ -761,6 +807,19 @@
        cards it was furniture. Filled by static/home_2_1.js and absent
        entirely on a fully set-up instance. #}
     <div class="home-onboard" id="homeOnboard" hidden></div>
+    {% if all_in_one %}
+    {# "All in one page": the pre-v3-grid Dashboard design instead of the
+       card grid -- a button row plus ONE panel below (queue/activity/
+       library/storage/system), built entirely client-side by the revived
+       static/home_panel_bar.js against the same /api/home-panels(-/<id>)
+       endpoints the grid's /api/home-panels/all also reads. See that file's
+       own docstring for why it was retired and why it is back for exactly
+       this mode. Both start empty/hidden: which panels an account may even
+       see is a server answer (Storage/System are admin-only). #}
+    <div class="mf-segmented home-panel-bar" id="homePanelBar" role="group"
+         aria-label="{{ _('Instance overview') }}"></div>
+    <div class="home-panel-body" id="homePanelBody" hidden></div>
+    {% else %}
     {# The card grid. Empty until /api/home-panels/all answers -- which panels
        an account may even see is decided server-side (Storage and System are
        admin-only), so rendering the cards here would mean rendering cards
@@ -807,6 +866,7 @@
       </section>
       {% endfor %}
     </div>
+    {% endif %}
     {# Personal rows: what you were doing beats what a site published. Each
        one hides itself when its source has nothing to say (no playback
        position yet, no favourites, calendar switched off), so a fresh install
@@ -835,9 +895,16 @@
       <h2 class="browse-heading">{{ _('Fill the gaps') }}</h2>
       <div class="browse-grid" id="feedGapsGrid"></div>
     </div>
+    {# "Head over to Discover" makes sense as a nudge to switch tabs -- in
+       "All in one page" there is no other tab to head over to, Discover is
+       already the very next thing on the page, so the message would just be
+       a slightly wrong sentence sitting above it. mfHomeSyncDashEmpty()
+       (home_2_1.js) already no-ops without #homeDashEmpty. #}
+    {% if not all_in_one %}
     <div class="mf-empty" id="homeDashEmpty" style="display:none">
       {{ _('Nothing needs your attention. Head over to Discover.') }}
     </div>
+    {% endif %}
     {# Module dashboard widgets now render INSIDE #homeDashGrid above, as real
        .dash-card elements -- see the loop there and resolve_dashboard_widgets()
        in web/thirdparties/registry.py. A second copy used to render here too;
@@ -1066,8 +1133,26 @@
         <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
       </svg>
     </button>
-    <h3 class="dl-title">{{ _('Your home page') }}</h3>
-    <p class="dl-hint">{{ _('These settings are yours alone. Anything you do not change follows the instance default.') }}</p>
+    {# Same icon as the "Customise this page" button that opens this modal
+       (topstrip/Discover toolbar/classic layout) -- opening it lands on a
+       bigger version of the exact button just clicked, instead of a plain
+       heading. #}
+    <div class="sp-modal-head">
+      <span class="sp-modal-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+          <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+          <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/>
+          <line x1="17" y1="16" x2="23" y2="16"/>
+        </svg>
+      </span>
+      <div>
+        <h3 class="dl-title">{{ _('Your home page') }}</h3>
+        <p class="dl-hint">{{ _('These settings are yours alone. Anything you do not change follows the instance default.') }}</p>
+      </div>
+    </div>
     {{ startpage.start_page_form('user') }}
   </div>
 </div>
@@ -1102,6 +1187,14 @@
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% if new_home %}<script src="{{ url_for('static', filename='home_feed.js') }}"></script>
 <script src="{{ url_for('static', filename='home_panels.js') }}"></script>
+{# "All in one page" only -- self-gated on #homePanelBar/#homePanelBody, so
+   harmless to load whenever it finds neither (tabs/Discover-only modes). #}
+<script src="{{ url_for('static', filename='home_panel_bar.js') }}"></script>
+{# Settings -> Start Page's instance default for which tab opens first
+   (window._USER_PREFS.home_tab overrules it, same as everywhere else on this
+   page) -- home_2_1.js's wireTabs() reads this only when the account never
+   set a tab of its own. #}
+<script>window.__HOME_TAB_DEFAULT = {{ home_tab_default|tojson }};</script>
 <script src="{{ url_for('static', filename='home_2_1.js') }}"></script>
 <script src="{{ url_for('static', filename='home_foryou.js') }}"></script>{% endif %}
 {{ startpage.start_page_i18n() }}

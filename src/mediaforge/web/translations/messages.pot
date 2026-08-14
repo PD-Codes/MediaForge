@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-14 22:47+0200\n"
+"POT-Creation-Date: 2026-08-14 23:31+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,7 +22,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_settings_menu.html:54
 #: src/mediaforge/web/templates/base.html:733
 #: src/mediaforge/web/templates/encoding.html:2
-#: src/mediaforge/web/templates/index.html:539
+#: src/mediaforge/web/templates/index.html:585
 #: src/mediaforge/web/templates/settings.html:78
 #: src/mediaforge/web/templates/settings.html:2263
 #: src/mediaforge/web/templates/settings.html:2322
@@ -242,7 +242,7 @@ msgid ""
 msgstr ""
 
 #: src/mediaforge/web/templates/_encoding_body.html:347
-#: src/mediaforge/web/templates/index.html:606
+#: src/mediaforge/web/templates/index.html:652
 #: src/mediaforge/web/templates/settings.html:1124
 msgid "Mode"
 msgstr ""
@@ -546,7 +546,7 @@ msgid "Export"
 msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:28
-#: src/mediaforge/web/templates/index.html:515
+#: src/mediaforge/web/templates/index.html:561
 msgid "Clear history"
 msgstr ""
 
@@ -575,7 +575,7 @@ msgid "Done"
 msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:51
-#: src/mediaforge/web/templates/index.html:529
+#: src/mediaforge/web/templates/index.html:575
 msgid "Failed"
 msgstr ""
 
@@ -690,7 +690,7 @@ msgid "Title"
 msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:122
-#: src/mediaforge/web/templates/index.html:509
+#: src/mediaforge/web/templates/index.html:555
 msgid "Episode"
 msgstr ""
 
@@ -703,7 +703,7 @@ msgid "Duration"
 msgstr ""
 
 #: src/mediaforge/web/templates/_history_body.html:125
-#: src/mediaforge/web/templates/index.html:537
+#: src/mediaforge/web/templates/index.html:583
 #: src/mediaforge/web/templates/library_books.html:53
 #: src/mediaforge/web/templates/library_comics.html:64
 #: src/mediaforge/web/templates/library_video.html:58
@@ -717,7 +717,7 @@ msgstr ""
 #: src/mediaforge/web/templates/_history_body.html:127
 #: src/mediaforge/web/templates/advanced_search.html:220
 #: src/mediaforge/web/templates/autosync.html:211
-#: src/mediaforge/web/templates/index.html:496
+#: src/mediaforge/web/templates/index.html:542
 #: src/mediaforge/web/templates/integrations.html:417
 #: src/mediaforge/web/templates/seerr.html:80
 #: src/mediaforge/web/templates/settings.html:2294
@@ -746,8 +746,8 @@ msgstr ""
 #: src/mediaforge/web/templates/calendar.html:187
 #: src/mediaforge/web/templates/catalogue.html:179
 #: src/mediaforge/web/templates/catalogue.html:200
-#: src/mediaforge/web/templates/index.html:1063
-#: src/mediaforge/web/templates/index.html:1081
+#: src/mediaforge/web/templates/index.html:1130
+#: src/mediaforge/web/templates/index.html:1166
 #: src/mediaforge/web/templates/mf_detail_modal.html:35
 #: src/mediaforge/web/templates/mf_detail_modal.html:58
 #: src/mediaforge/web/templates/seerr.html:180
@@ -825,7 +825,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/_monitoring_nav.html:6
 #: src/mediaforge/web/templates/_settings_menu.html:24
-#: src/mediaforge/web/templates/index.html:641
+#: src/mediaforge/web/templates/index.html:687
 #: src/mediaforge/web/templates/integrations.html:22
 msgid "Overview"
 msgstr ""
@@ -850,7 +850,7 @@ msgid "Module"
 msgstr ""
 
 #: src/mediaforge/web/templates/_notifications_menu.html:15
-#: src/mediaforge/web/templates/index.html:525
+#: src/mediaforge/web/templates/index.html:571
 #: src/mediaforge/web/templates/notifications.html:1034
 msgid "Storage"
 msgstr ""
@@ -942,8 +942,8 @@ msgid "Design"
 msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:29
-#: src/mediaforge/web/templates/_start_page_form.html:178
-#: src/mediaforge/web/templates/index.html:485
+#: src/mediaforge/web/templates/_start_page_form.html:206
+#: src/mediaforge/web/templates/index.html:531
 #: src/mediaforge/web/templates/settings.html:126
 #: src/mediaforge/web/templates/settings.html:744
 #: src/mediaforge/web/templates/settings.html:749
@@ -952,7 +952,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/_settings_menu.html:30
 #: src/mediaforge/web/templates/base.html:729
-#: src/mediaforge/web/templates/index.html:586
+#: src/mediaforge/web/templates/index.html:632
 #: src/mediaforge/web/templates/settings.html:138
 #: src/mediaforge/web/templates/settings.html:835
 msgid "Downloads"
@@ -1010,35 +1010,35 @@ msgid "Audit Log"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:28
-#: src/mediaforge/web/templates/index.html:653
-#: src/mediaforge/web/templates/index.html:816
+#: src/mediaforge/web/templates/index.html:699
+#: src/mediaforge/web/templates/index.html:876
 msgid "Continue watching"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:29
-#: src/mediaforge/web/templates/index.html:655
-#: src/mediaforge/web/templates/index.html:824
+#: src/mediaforge/web/templates/index.html:701
+#: src/mediaforge/web/templates/index.html:884
 msgid "New in your library"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:30
-#: src/mediaforge/web/templates/index.html:654
-#: src/mediaforge/web/templates/index.html:820
+#: src/mediaforge/web/templates/index.html:700
+#: src/mediaforge/web/templates/index.html:880
 msgid "Your watchlist"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:31
-#: src/mediaforge/web/templates/index.html:828
+#: src/mediaforge/web/templates/index.html:888
 msgid "Airing next"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:32
-#: src/mediaforge/web/templates/index.html:940
+#: src/mediaforge/web/templates/index.html:1007
 msgid "New this week"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:33
-#: src/mediaforge/web/templates/index.html:944
+#: src/mediaforge/web/templates/index.html:1011
 msgid "Popular right now"
 msgstr ""
 
@@ -1046,9 +1046,9 @@ msgstr ""
 #: src/mediaforge/web/templates/advanced_search.html:81
 #: src/mediaforge/web/templates/calendar.html:89
 #: src/mediaforge/web/templates/favourites.html:40
-#: src/mediaforge/web/templates/index.html:488
-#: src/mediaforge/web/templates/index.html:535
-#: src/mediaforge/web/templates/index.html:948
+#: src/mediaforge/web/templates/index.html:534
+#: src/mediaforge/web/templates/index.html:581
+#: src/mediaforge/web/templates/index.html:1015
 #: src/mediaforge/web/templates/library_video.html:51
 #: src/mediaforge/web/templates/seerr.html:69
 #: src/mediaforge/web/templates/syncplay.html:124
@@ -1056,8 +1056,8 @@ msgid "Movies"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:35
-#: src/mediaforge/web/templates/index.html:642
-#: src/mediaforge/web/templates/index.html:835
+#: src/mediaforge/web/templates/index.html:688
+#: src/mediaforge/web/templates/index.html:895
 msgid "Fill the gaps"
 msgstr ""
 
@@ -1131,7 +1131,7 @@ msgid "Saved — reload the home page"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:55
-#: src/mediaforge/web/templates/_start_page_form.html:231
+#: src/mediaforge/web/templates/_start_page_form.html:259
 msgid "Reset to the instance default"
 msgstr ""
 
@@ -1144,7 +1144,7 @@ msgid "You changed this — the instance default no longer applies"
 msgstr ""
 
 #: src/mediaforge/web/templates/_start_page_form.html:78
-#: src/mediaforge/web/templates/_start_page_form.html:95
+#: src/mediaforge/web/templates/_start_page_form.html:123
 #: src/mediaforge/web/templates/autosync.html:77
 #: src/mediaforge/web/templates/calendar.html:94
 #: src/mediaforge/web/templates/library_books.html:58
@@ -1172,111 +1172,125 @@ msgid ""
 " — everyone can overrule it on their profile page."
 msgstr ""
 
+#: src/mediaforge/web/templates/_start_page_form.html:95
+#: src/mediaforge/web/templates/_start_page_form.html:140
+msgid "Home tabs"
+msgstr ""
+
 #: src/mediaforge/web/templates/_start_page_form.html:96
+msgid ""
+"The default arrangement for accounts that have not chosen one themselves."
+" Everyone can still overrule it on their profile page."
+msgstr ""
+
+#: src/mediaforge/web/templates/_start_page_form.html:99
+#: src/mediaforge/web/templates/_start_page_form.html:144
+msgid "Dashboard and Discover as tabs"
+msgstr ""
+
+#: src/mediaforge/web/templates/_start_page_form.html:100
+#: src/mediaforge/web/templates/_start_page_form.html:145
+msgid "Discover only"
+msgstr ""
+
+#: src/mediaforge/web/templates/_start_page_form.html:101
+#: src/mediaforge/web/templates/_start_page_form.html:146
+msgid "All in one page"
+msgstr ""
+
+#: src/mediaforge/web/templates/_start_page_form.html:105
+#: src/mediaforge/web/templates/_start_page_form.html:107
+#: src/mediaforge/web/templates/_start_page_form.html:154
+#: src/mediaforge/web/templates/_start_page_form.html:156
+msgid "Start on"
+msgstr ""
+
+#: src/mediaforge/web/templates/_start_page_form.html:108
+#: src/mediaforge/web/templates/_start_page_form.html:157
+#: src/mediaforge/web/templates/index.html:381
+#: src/mediaforge/web/templates/index.html:659
+msgid "Dashboard"
+msgstr ""
+
+#: src/mediaforge/web/templates/_start_page_form.html:109
+#: src/mediaforge/web/templates/_start_page_form.html:158
+#: src/mediaforge/web/templates/base.html:273
+#: src/mediaforge/web/templates/index.html:384
+#: src/mediaforge/web/templates/index.html:660
+msgid "Discover"
+msgstr ""
+
+#: src/mediaforge/web/templates/_start_page_form.html:124
 msgid ""
 "Which home page you see. Only you — nobody else on this instance is "
 "affected."
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:99
+#: src/mediaforge/web/templates/_start_page_form.html:127
 msgid "Follow the instance default"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:100
+#: src/mediaforge/web/templates/_start_page_form.html:128
 msgid "Classic home page"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:101
+#: src/mediaforge/web/templates/_start_page_form.html:129
 msgid "New home page (Beta)"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:112
-msgid "Home tabs"
-msgstr ""
-
-#: src/mediaforge/web/templates/_start_page_form.html:113
+#: src/mediaforge/web/templates/_start_page_form.html:141
 msgid ""
 "Tabs switch between the two; \"All in one page\" stacks the Dashboard "
 "above Discover instead, with no switching."
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:116
-msgid "Dashboard and Discover as tabs"
-msgstr ""
-
-#: src/mediaforge/web/templates/_start_page_form.html:117
-msgid "Discover only"
-msgstr ""
-
-#: src/mediaforge/web/templates/_start_page_form.html:118
-msgid "All in one page"
-msgstr ""
-
-#: src/mediaforge/web/templates/_start_page_form.html:126
-#: src/mediaforge/web/templates/_start_page_form.html:128
-msgid "Start on"
-msgstr ""
-
-#: src/mediaforge/web/templates/_start_page_form.html:129
-#: src/mediaforge/web/templates/index.html:357
-#: src/mediaforge/web/templates/index.html:613
-msgid "Dashboard"
-msgstr ""
-
-#: src/mediaforge/web/templates/_start_page_form.html:130
-#: src/mediaforge/web/templates/base.html:273
-#: src/mediaforge/web/templates/index.html:360
-#: src/mediaforge/web/templates/index.html:614
-msgid "Discover"
-msgstr ""
-
-#: src/mediaforge/web/templates/_start_page_form.html:138
+#: src/mediaforge/web/templates/_start_page_form.html:166
 msgid "Rows"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:141
+#: src/mediaforge/web/templates/_start_page_form.html:169
 msgid ""
 "Which rows your home page shows, and in which order. Switch one off and "
 "MediaForge stops collecting its data as well."
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:143
+#: src/mediaforge/web/templates/_start_page_form.html:171
 msgid ""
 "The order and visibility a new account starts with. Every user can "
 "overrule this for themselves."
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:153
+#: src/mediaforge/web/templates/_start_page_form.html:181
 msgid "Cards per row"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:154
+#: src/mediaforge/web/templates/_start_page_form.html:182
 msgid ""
 "How many cards a discovery row holds at most. Fewer cards means less to "
 "fetch and a shorter page."
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:173
+#: src/mediaforge/web/templates/_start_page_form.html:201
 msgid "Default filters"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:174
+#: src/mediaforge/web/templates/_start_page_form.html:202
 msgid ""
 "Which chips are off when someone opens the home page for the first time. "
 "This is a starting point, not a restriction — every user can switch them "
 "back on. To take a source away entirely, disable it under Sources."
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:180
-#: src/mediaforge/web/templates/index.html:486
+#: src/mediaforge/web/templates/_start_page_form.html:208
+#: src/mediaforge/web/templates/index.html:532
 msgid "Type"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:190
+#: src/mediaforge/web/templates/_start_page_form.html:218
 msgid "Kids mode"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:191
+#: src/mediaforge/web/templates/_start_page_form.html:219
 msgid ""
 "Adds a “Kids” button to the home page that limits it to an age rating. "
 "The limit is applied on the server while the rows are built, so it cannot"
@@ -1284,26 +1298,26 @@ msgid ""
 "entering it never does."
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:201
+#: src/mediaforge/web/templates/_start_page_form.html:229
 msgid "Offer kids mode on the home page"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:208
-#: src/mediaforge/web/templates/_start_page_form.html:211
+#: src/mediaforge/web/templates/_start_page_form.html:236
+#: src/mediaforge/web/templates/_start_page_form.html:239
 msgid "Age limit"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:219
-#: src/mediaforge/web/templates/_start_page_form.html:223
-#: src/mediaforge/web/templates/index.html:1091
+#: src/mediaforge/web/templates/_start_page_form.html:247
+#: src/mediaforge/web/templates/_start_page_form.html:251
+#: src/mediaforge/web/templates/index.html:1176
 msgid "PIN"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:223
+#: src/mediaforge/web/templates/_start_page_form.html:251
 msgid "4–8 digits"
 msgstr ""
 
-#: src/mediaforge/web/templates/_start_page_form.html:231
+#: src/mediaforge/web/templates/_start_page_form.html:259
 msgid "Reset to the factory default"
 msgstr ""
 
@@ -1413,8 +1427,8 @@ msgid "Apply"
 msgstr ""
 
 #: src/mediaforge/web/templates/_uptime_body.html:34
-#: src/mediaforge/web/templates/index.html:517
-#: src/mediaforge/web/templates/index.html:665
+#: src/mediaforge/web/templates/index.html:563
+#: src/mediaforge/web/templates/index.html:711
 #: src/mediaforge/web/templates/library_hub.html:40
 #: src/mediaforge/web/templates/settings.html:1506
 #: src/mediaforge/web/templates/settings.html:1626
@@ -1456,7 +1470,7 @@ msgstr ""
 #: src/mediaforge/web/templates/advanced_search.html:55
 #: src/mediaforge/web/templates/advanced_search.html:200
 #: src/mediaforge/web/templates/catalogue.html:221
-#: src/mediaforge/web/templates/index.html:624
+#: src/mediaforge/web/templates/index.html:670
 #: src/mediaforge/web/templates/settings.html:2198
 msgid "Details"
 msgstr ""
@@ -1496,8 +1510,8 @@ msgstr ""
 #: src/mediaforge/web/templates/advanced_search.html:80
 #: src/mediaforge/web/templates/calendar.html:88
 #: src/mediaforge/web/templates/favourites.html:39
-#: src/mediaforge/web/templates/index.html:487
-#: src/mediaforge/web/templates/index.html:534
+#: src/mediaforge/web/templates/index.html:533
+#: src/mediaforge/web/templates/index.html:580
 #: src/mediaforge/web/templates/library_video.html:50
 #: src/mediaforge/web/templates/seerr.html:66
 #: src/mediaforge/web/templates/syncplay.html:123
@@ -1687,7 +1701,7 @@ msgstr ""
 #: src/mediaforge/web/templates/advanced_search.html:263
 #: src/mediaforge/web/templates/autosync.html:59
 #: src/mediaforge/web/templates/index.html:333
-#: src/mediaforge/web/templates/index.html:369
+#: src/mediaforge/web/templates/index.html:393
 #: src/mediaforge/web/templates/seerr.html:186
 #: src/mediaforge/web/templates/seerr.html:191
 #: src/mediaforge/web/templates/settings.html:799
@@ -1784,7 +1798,7 @@ msgid "Next check"
 msgstr ""
 
 #: src/mediaforge/web/templates/autosync.html:72
-#: src/mediaforge/web/templates/index.html:536
+#: src/mediaforge/web/templates/index.html:582
 #: src/mediaforge/web/templates/shared_modals.html:258
 msgid "Episodes"
 msgstr ""
@@ -1851,7 +1865,7 @@ msgid "Group name"
 msgstr ""
 
 #: src/mediaforge/web/templates/autosync.html:147
-#: src/mediaforge/web/templates/index.html:516
+#: src/mediaforge/web/templates/index.html:562
 msgid "Remove"
 msgstr ""
 
@@ -1924,7 +1938,7 @@ msgstr ""
 #: src/mediaforge/web/templates/base.html:801
 #: src/mediaforge/web/templates/base.html:865
 #: src/mediaforge/web/templates/base.html:1805
-#: src/mediaforge/web/templates/index.html:1094
+#: src/mediaforge/web/templates/index.html:1179
 #: src/mediaforge/web/templates/seerr.html:197
 #: src/mediaforge/web/templates/settings.html:2186
 #: src/mediaforge/web/templates/shared_modals.html:330
@@ -1965,7 +1979,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/base.html:310
 #: src/mediaforge/web/templates/catalogue.html:12
-#: src/mediaforge/web/templates/index.html:424
+#: src/mediaforge/web/templates/index.html:469
 msgid "Beta"
 msgstr ""
 
@@ -1976,7 +1990,7 @@ msgid "Favorites"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:329
-#: src/mediaforge/web/templates/index.html:524
+#: src/mediaforge/web/templates/index.html:570
 #: src/mediaforge/web/templates/integrations.html:263
 #: src/mediaforge/web/templates/integrations.html:387
 #: src/mediaforge/web/templates/library_hub.html:3
@@ -2020,7 +2034,7 @@ msgid "Monitoring"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:484
-#: src/mediaforge/web/templates/index.html:526
+#: src/mediaforge/web/templates/index.html:572
 #: src/mediaforge/web/templates/settings.html:398
 #: src/mediaforge/web/templates/settings.html:2361
 msgid "System"
@@ -2088,12 +2102,12 @@ msgid "Open menu"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:725
-#: src/mediaforge/web/templates/index.html:498
+#: src/mediaforge/web/templates/index.html:544
 msgid "Everything"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:737
-#: src/mediaforge/web/templates/index.html:540
+#: src/mediaforge/web/templates/index.html:586
 #: src/mediaforge/web/templates/settings.html:2264
 #: src/mediaforge/web/templates/settings.html:2323
 msgid "Upscaling"
@@ -2298,7 +2312,7 @@ msgid "Mute (M)"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:1854
-#: src/mediaforge/web/templates/index.html:587
+#: src/mediaforge/web/templates/index.html:633
 msgid "Volume"
 msgstr ""
 
@@ -2308,7 +2322,7 @@ msgstr ""
 
 #: src/mediaforge/web/templates/base.html:1862
 #: src/mediaforge/web/templates/extensions.html:171
-#: src/mediaforge/web/templates/index.html:489
+#: src/mediaforge/web/templates/index.html:535
 msgid "off"
 msgstr ""
 
@@ -2333,7 +2347,7 @@ msgid "Continue watching?"
 msgstr ""
 
 #: src/mediaforge/web/templates/base.html:1905
-#: src/mediaforge/web/templates/index.html:656
+#: src/mediaforge/web/templates/index.html:702
 msgid "Resume"
 msgstr ""
 
@@ -2546,7 +2560,7 @@ msgid "Subscribe"
 msgstr ""
 
 #: src/mediaforge/web/templates/calendar.html:48
-#: src/mediaforge/web/templates/index.html:604
+#: src/mediaforge/web/templates/index.html:650
 msgid "Back"
 msgstr ""
 
@@ -2737,7 +2751,7 @@ msgid "The catalogue could not be loaded."
 msgstr ""
 
 #: src/mediaforge/web/templates/catalogue.html:214
-#: src/mediaforge/web/templates/index.html:507
+#: src/mediaforge/web/templates/index.html:553
 #: src/mediaforge/web/templates/offline.html:66
 msgid "Try again"
 msgstr ""
@@ -2808,7 +2822,7 @@ msgid "failed"
 msgstr ""
 
 #: src/mediaforge/web/templates/catalogue.html:233
-#: src/mediaforge/web/templates/index.html:510
+#: src/mediaforge/web/templates/index.html:556
 msgid "episodes"
 msgstr ""
 
@@ -3135,8 +3149,8 @@ msgstr ""
 
 #: src/mediaforge/web/templates/extensions.html:182
 #: src/mediaforge/web/templates/extensions.html:221
-#: src/mediaforge/web/templates/index.html:527
-#: src/mediaforge/web/templates/index.html:542
+#: src/mediaforge/web/templates/index.html:573
+#: src/mediaforge/web/templates/index.html:588
 msgid "Running"
 msgstr ""
 
@@ -3590,156 +3604,167 @@ msgstr ""
 msgid "Direct Link"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:354
+#: src/mediaforge/web/templates/index.html:341
+#: src/mediaforge/web/templates/index.html:342
+#: src/mediaforge/web/templates/index.html:441
+#: src/mediaforge/web/templates/index.html:442
+#: src/mediaforge/web/templates/index.html:736
+#: src/mediaforge/web/templates/index.html:737
+#: src/mediaforge/web/templates/index.html:986
+#: src/mediaforge/web/templates/index.html:987
+msgid "Customise this page"
+msgstr ""
+
+#: src/mediaforge/web/templates/index.html:378
 msgid "Home page sections"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:383
-#: src/mediaforge/web/templates/index.html:384
-#: src/mediaforge/web/templates/index.html:661
+#: src/mediaforge/web/templates/index.html:409
+#: src/mediaforge/web/templates/index.html:410
+#: src/mediaforge/web/templates/index.html:707
 msgid "Lock the dashboard layout"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:396
-#: src/mediaforge/web/templates/index.html:404
+#: src/mediaforge/web/templates/index.html:422
+#: src/mediaforge/web/templates/index.html:430
 msgid "Add a widget"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:423
+#: src/mediaforge/web/templates/index.html:468
 msgid "New home page"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:426
+#: src/mediaforge/web/templates/index.html:471
 msgid "Try the new home page"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:427
+#: src/mediaforge/web/templates/index.html:472
 msgid ""
 "Rows grouped by question instead of by source, with your watch progress "
 "and watchlist on top. Only you see the change — switch back at any time "
 "in Settings."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:431
+#: src/mediaforge/web/templates/index.html:476
 msgid "Try it now"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:434
-#: src/mediaforge/web/templates/index.html:438
+#: src/mediaforge/web/templates/index.html:479
+#: src/mediaforge/web/templates/index.html:483
 msgid "Don't show again"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:448
+#: src/mediaforge/web/templates/index.html:493
 msgid "What do you want to download?"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:449
+#: src/mediaforge/web/templates/index.html:494
 msgid "One title is enough — MediaForge asks every active source at once."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:490
+#: src/mediaforge/web/templates/index.html:536
 msgid "offline"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:491
+#: src/mediaforge/web/templates/index.html:537
 msgid "Switched off in Settings"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:492
-#: src/mediaforge/web/templates/index.html:1022
-#: src/mediaforge/web/templates/index.html:1033
+#: src/mediaforge/web/templates/index.html:538
+#: src/mediaforge/web/templates/index.html:1089
+#: src/mediaforge/web/templates/index.html:1100
 #: src/mediaforge/web/templates/settings.html:774
 #: src/mediaforge/web/templates/settings.html:779
 msgid "English-only source"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:493
+#: src/mediaforge/web/templates/index.html:539
 msgid "None"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:494
+#: src/mediaforge/web/templates/index.html:540
 msgid "sources"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:495
+#: src/mediaforge/web/templates/index.html:541
 msgid "types"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:497
+#: src/mediaforge/web/templates/index.html:543
 msgid "states"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:499
+#: src/mediaforge/web/templates/index.html:545
 msgid "Already downloaded"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:500
+#: src/mediaforge/web/templates/index.html:546
 msgid "On Auto-Sync"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:501
+#: src/mediaforge/web/templates/index.html:547
 msgid "Switch off to hide titles you already have"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:502
+#: src/mediaforge/web/templates/index.html:548
 msgid "Switch off to hide titles an Auto-Sync job already covers"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:503
+#: src/mediaforge/web/templates/index.html:549
 msgid "Also available from other sources — click to choose"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:504
-#: src/mediaforge/web/templates/index.html:952
+#: src/mediaforge/web/templates/index.html:550
+#: src/mediaforge/web/templates/index.html:1019
 msgid "Nothing to show with these filters."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:505
+#: src/mediaforge/web/templates/index.html:551
 #, python-brace-format
 msgid "{} is not responding right now."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:506
+#: src/mediaforge/web/templates/index.html:552
 msgid "The feed could not be loaded."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:508
+#: src/mediaforge/web/templates/index.html:554
 msgid "Movie"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:511
+#: src/mediaforge/web/templates/index.html:557
 #, python-brace-format
 msgid "{} min left"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:512
+#: src/mediaforge/web/templates/index.html:558
 #, python-brace-format
 msgid "{} h left"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:513
+#: src/mediaforge/web/templates/index.html:559
 msgid "Player loading…"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:514
-#: src/mediaforge/web/templates/index.html:573
+#: src/mediaforge/web/templates/index.html:560
+#: src/mediaforge/web/templates/index.html:619
 msgid "Recent searches"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:518
+#: src/mediaforge/web/templates/index.html:564
 msgid "This panel could not be loaded."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:519
+#: src/mediaforge/web/templates/index.html:565
 msgid "This panel is not available right now."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:520
+#: src/mediaforge/web/templates/index.html:566
 msgid "Nothing to show here."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:521
-#: src/mediaforge/web/templates/index.html:657
+#: src/mediaforge/web/templates/index.html:567
+#: src/mediaforge/web/templates/index.html:703
 #: src/mediaforge/web/templates/monitoring.html:40
 #: src/mediaforge/web/templates/monitoring.html:50
 #: src/mediaforge/web/templates/monitoring.html:61
@@ -3747,548 +3772,542 @@ msgstr ""
 msgid "Open"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:522
-#: src/mediaforge/web/templates/index.html:541
-#: src/mediaforge/web/templates/index.html:602
+#: src/mediaforge/web/templates/index.html:568
+#: src/mediaforge/web/templates/index.html:587
+#: src/mediaforge/web/templates/index.html:648
 #: src/mediaforge/web/templates/settings.html:2359
 msgid "Queue"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:523
+#: src/mediaforge/web/templates/index.html:569
 msgid "Activity"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:528
+#: src/mediaforge/web/templates/index.html:574
 msgid "Waiting"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:530
-#: src/mediaforge/web/templates/index.html:543
+#: src/mediaforge/web/templates/index.html:576
+#: src/mediaforge/web/templates/index.html:589
 msgid "Paused"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:531
+#: src/mediaforge/web/templates/index.html:577
 #: src/mediaforge/web/templates/settings.html:2163
 msgid "Yes"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:532
+#: src/mediaforge/web/templates/index.html:578
 #: src/mediaforge/web/templates/settings.html:2164
 msgid "No"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:533
+#: src/mediaforge/web/templates/index.html:579
 msgid "Titles"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:538
+#: src/mediaforge/web/templates/index.html:584
 #: src/mediaforge/web/templates/login.html:49
 #: src/mediaforge/web/templates/setup.html:50
 #: src/mediaforge/web/templates/setup_locked.html:48
 msgid "Version"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:544
+#: src/mediaforge/web/templates/index.html:590
 msgid "Fullest volume"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:545
+#: src/mediaforge/web/templates/index.html:591
 msgid "Open the queue"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:546
+#: src/mediaforge/web/templates/index.html:592
 msgid "Open the history"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:547
+#: src/mediaforge/web/templates/index.html:593
 msgid "Open the library"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:548
+#: src/mediaforge/web/templates/index.html:594
 msgid "Open the settings"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:549
+#: src/mediaforge/web/templates/index.html:595
 msgid "Nothing is downloading right now."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:550
+#: src/mediaforge/web/templates/index.html:596
 msgid "Nothing has been downloaded yet."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:551
+#: src/mediaforge/web/templates/index.html:597
 msgid "Your library is still empty."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:552
+#: src/mediaforge/web/templates/index.html:598
 msgid "No download path could be read."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:553
+#: src/mediaforge/web/templates/index.html:599
 msgid "Nothing needs your attention."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:554
+#: src/mediaforge/web/templates/index.html:600
 msgid "Download failed"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:555
+#: src/mediaforge/web/templates/index.html:601
 #, python-brace-format
 msgid "{} downloads are running or waiting"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:556
+#: src/mediaforge/web/templates/index.html:602
 #, python-brace-format
 msgid "{} things need your attention: failed downloads, plus a paused queue"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:557
+#: src/mediaforge/web/templates/index.html:603
 #, python-brace-format
 msgid "Episode {} of {}"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:558
+#: src/mediaforge/web/templates/index.html:604
 #, python-brace-format
 msgid "{} of {} used"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:559
+#: src/mediaforge/web/templates/index.html:605
 msgid "just now"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:560
+#: src/mediaforge/web/templates/index.html:606
 #, python-brace-format
 msgid "{} min ago"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:561
+#: src/mediaforge/web/templates/index.html:607
 #, python-brace-format
 msgid "{} h ago"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:562
+#: src/mediaforge/web/templates/index.html:608
 #, python-brace-format
 msgid "{} d ago"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:563
+#: src/mediaforge/web/templates/index.html:609
 #, python-brace-format
 msgid "{} missing"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:564
+#: src/mediaforge/web/templates/index.html:610
 msgid "Not interested — hide this series"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:565
+#: src/mediaforge/web/templates/index.html:611
 msgid "Hidden. You can bring it back on the statistics page."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:566
+#: src/mediaforge/web/templates/index.html:612
 msgid "Could not hide this series."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:567
+#: src/mediaforge/web/templates/index.html:613
 msgid "Density"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:568
+#: src/mediaforge/web/templates/index.html:614
 msgid "Comfortable"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:569
+#: src/mediaforge/web/templates/index.html:615
 msgid "Compact"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:570
+#: src/mediaforge/web/templates/index.html:616
 #: src/mediaforge/web/templates/library_books.html:67
 #: src/mediaforge/web/templates/library_comics.html:79
 msgid "List"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:571
+#: src/mediaforge/web/templates/index.html:617
 msgid "In your library"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:572
+#: src/mediaforge/web/templates/index.html:618
 msgid "On your watchlist"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:574
+#: src/mediaforge/web/templates/index.html:620
 msgid "Finish setting up MediaForge"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:575
+#: src/mediaforge/web/templates/index.html:621
 msgid "Hide this"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:576
+#: src/mediaforge/web/templates/index.html:622
 msgid "Switch on the sources you want"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:577
+#: src/mediaforge/web/templates/index.html:623
 msgid "Add a TMDB key for posters and genres"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:578
+#: src/mediaforge/web/templates/index.html:624
 msgid "Scan a library folder"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:579
+#: src/mediaforge/web/templates/index.html:625
 msgid "Discover the module store"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:580
+#: src/mediaforge/web/templates/index.html:626
 msgid "Link your Jellyfin/Plex profile"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:581
+#: src/mediaforge/web/templates/index.html:627
 #, python-brace-format
 msgid "{} of {} done"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:582
+#: src/mediaforge/web/templates/index.html:628
 #: src/mediaforge/web/templates/profile.html:53
 #: src/mediaforge/web/templates/settings.html:1475
 msgid "Kids"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:583
+#: src/mediaforge/web/templates/index.html:629
 msgid "Review"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:584
+#: src/mediaforge/web/templates/index.html:630
 msgid "Period"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:585
+#: src/mediaforge/web/templates/index.html:631
 msgid "Watched"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:588
+#: src/mediaforge/web/templates/index.html:634
 msgid "Downloads, all time"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:589
+#: src/mediaforge/web/templates/index.html:635
 msgid "Volume, all time"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:590
+#: src/mediaforge/web/templates/index.html:636
 msgid "most watched"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:591
+#: src/mediaforge/web/templates/index.html:637
 msgid "top genre"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:592
+#: src/mediaforge/web/templates/index.html:638
 #, python-brace-format
 msgid "{} downloads"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:593
+#: src/mediaforge/web/templates/index.html:639
 #, python-brace-format
 msgid "biggest download, {}"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:594
+#: src/mediaforge/web/templates/index.html:640
 msgid "Nothing happened in this period."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:595
+#: src/mediaforge/web/templates/index.html:641
 msgid "Link a Jellyfin/Plex profile on your profile page to see what you watched."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:596
+#: src/mediaforge/web/templates/index.html:642
 msgid "Jellyfin reports the last play per title, so repeats are not counted."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:597
+#: src/mediaforge/web/templates/index.html:643
 msgid "Open the statistics"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:598
+#: src/mediaforge/web/templates/index.html:644
 msgid "Downloading"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:599
+#: src/mediaforge/web/templates/index.html:645
 #, python-brace-format
 msgid "{} encoding"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:600
+#: src/mediaforge/web/templates/index.html:646
 #, python-brace-format
 msgid "{} upscaling"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:601
+#: src/mediaforge/web/templates/index.html:647
 #, python-brace-format
 msgid "{} full"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:603
+#: src/mediaforge/web/templates/index.html:649
 msgid "Last error"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:605
+#: src/mediaforge/web/templates/index.html:651
 msgid "Results for"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:607
+#: src/mediaforge/web/templates/index.html:653
 msgid "Standard"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:608
+#: src/mediaforge/web/templates/index.html:654
 msgid "Wrong PIN — this mode is protected."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:609
+#: src/mediaforge/web/templates/index.html:655
 msgid "The mode could not be switched."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:610
+#: src/mediaforge/web/templates/index.html:656
 msgid "You are not signed in any more — reload the page."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:611
+#: src/mediaforge/web/templates/index.html:657
 #, python-brace-format
 msgid ""
 "This page is limited to age {} and below. Titles without a rating are "
 "still shown."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:612
+#: src/mediaforge/web/templates/index.html:658
 msgid "Kids mode is not switched on for this instance."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:615
-#: src/mediaforge/web/templates/index.html:890
-#: src/mediaforge/web/templates/index.html:898
+#: src/mediaforge/web/templates/index.html:661
+#: src/mediaforge/web/templates/index.html:957
+#: src/mediaforge/web/templates/index.html:965
 msgid "Could be for you"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:616
-#: src/mediaforge/web/templates/index.html:899
+#: src/mediaforge/web/templates/index.html:662
+#: src/mediaforge/web/templates/index.html:966
 msgid "derived from your library — not in it yet"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:617
-#: src/mediaforge/web/templates/index.html:900
+#: src/mediaforge/web/templates/index.html:663
+#: src/mediaforge/web/templates/index.html:967
 msgid "Shuffle"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:618
+#: src/mediaforge/web/templates/index.html:664
 #, python-brace-format
 msgid "{} match"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:619
+#: src/mediaforge/web/templates/index.html:665
 msgid "Match"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:620
+#: src/mediaforge/web/templates/index.html:666
 #, python-brace-format
 msgid "Because you have {} in your library"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:621
+#: src/mediaforge/web/templates/index.html:667
 #, python-brace-format
 msgid "Because you have {} and {} in your library"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:622
+#: src/mediaforge/web/templates/index.html:668
 #, python-brace-format
 msgid "Because you have {} titles in {}"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:623
+#: src/mediaforge/web/templates/index.html:669
 msgid "Download now"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:625
+#: src/mediaforge/web/templates/index.html:671
 msgid "Not interested"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:626
+#: src/mediaforge/web/templates/index.html:672
 msgid "Hidden. It can come back the next time this row is rebuilt."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:627
+#: src/mediaforge/web/templates/index.html:673
 msgid "The recommendations could not be loaded."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:628
+#: src/mediaforge/web/templates/index.html:674
 msgid ""
 "Metadata for your library is still being filled in — suggestions appear "
 "on their own as soon as enough titles are known. Nothing to do; look "
 "again later or hit Shuffle."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:629
+#: src/mediaforge/web/templates/index.html:675
 msgid "Still nothing new — check back later."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:630
+#: src/mediaforge/web/templates/index.html:676
 msgid "All recommendations"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:631
+#: src/mediaforge/web/templates/index.html:677
 #, python-brace-format
 msgid "Because you like {}"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:632
+#: src/mediaforge/web/templates/index.html:678
 msgid "Recommendations need CineInfo"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:633
+#: src/mediaforge/web/templates/index.html:679
 msgid ""
 "“Could be for you” derives suggestions from your library and shows them "
 "with a backdrop, plot and genres. CineInfo supplies that metadata — "
 "without a configured source the section stays empty."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:634
+#: src/mediaforge/web/templates/index.html:680
 msgid "Library scanned"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:635
+#: src/mediaforge/web/templates/index.html:681
 msgid "No TMDB key stored"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:636
+#: src/mediaforge/web/templates/index.html:682
 msgid "No CineInfo source configured"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:637
+#: src/mediaforge/web/templates/index.html:683
 msgid "Set up CineInfo"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:638
+#: src/mediaforge/web/templates/index.html:684
 msgid "What is CineInfo?"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:639
+#: src/mediaforge/web/templates/index.html:685
 msgid "Running now"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:640
+#: src/mediaforge/web/templates/index.html:686
 msgid "Recent activity"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:643
+#: src/mediaforge/web/templates/index.html:689
 #, python-brace-format
 msgid "{} missing episodes"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:644
+#: src/mediaforge/web/templates/index.html:690
 msgid "Fetch"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:645
+#: src/mediaforge/web/templates/index.html:691
 msgid "Show all gaps"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:646
+#: src/mediaforge/web/templates/index.html:692
 msgid "Nothing is missing."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:647
+#: src/mediaforge/web/templates/index.html:693
 msgid "Today in the calendar"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:648
+#: src/mediaforge/web/templates/index.html:694
 msgid "Nothing airs today."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:649
+#: src/mediaforge/web/templates/index.html:695
 msgid "Open the calendar"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:650
+#: src/mediaforge/web/templates/index.html:696
 #, python-brace-format
 msgid "{} / {} online"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:651
+#: src/mediaforge/web/templates/index.html:697
 msgid "online"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:652
+#: src/mediaforge/web/templates/index.html:698
 msgid "No source is switched on."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:658
+#: src/mediaforge/web/templates/index.html:704
 #: src/mediaforge/web/templates/library_books.html:44
 #: src/mediaforge/web/templates/library_comics.html:44
 #: src/mediaforge/web/templates/library_video.html:49
 msgid "Show all"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:659
-#: src/mediaforge/web/templates/index.html:804
+#: src/mediaforge/web/templates/index.html:705
+#: src/mediaforge/web/templates/index.html:863
 msgid ""
 "Drag to move this card, or click once then click again to drop it, or "
 "focus it and use the arrow keys"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:660
-#: src/mediaforge/web/templates/index.html:805
+#: src/mediaforge/web/templates/index.html:706
+#: src/mediaforge/web/templates/index.html:864
 msgid "Drag to resize this card, or focus it and use the arrow keys"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:662
+#: src/mediaforge/web/templates/index.html:708
 msgid "Unlock the dashboard layout"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:663
-#: src/mediaforge/web/templates/index.html:806
+#: src/mediaforge/web/templates/index.html:709
+#: src/mediaforge/web/templates/index.html:865
 msgid "Remove this card"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:664
+#: src/mediaforge/web/templates/index.html:710
 msgid "Everything is already on your board."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:690
-#: src/mediaforge/web/templates/index.html:691
-#: src/mediaforge/web/templates/index.html:919
-#: src/mediaforge/web/templates/index.html:920
-msgid "Customise this page"
-msgstr ""
-
-#: src/mediaforge/web/templates/index.html:700
-#: src/mediaforge/web/templates/index.html:1069
+#: src/mediaforge/web/templates/index.html:746
+#: src/mediaforge/web/templates/index.html:1152
 msgid "Your home page"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:707
+#: src/mediaforge/web/templates/index.html:753
 #: src/mediaforge/web/templates/shared_modals.html:22
 msgid "Searching..."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:775
+#: src/mediaforge/web/templates/index.html:820
+#: src/mediaforge/web/templates/index.html:834
 msgid "Instance overview"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:839
+#: src/mediaforge/web/templates/index.html:905
 msgid "Nothing needs your attention. Head over to Discover."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:887
+#: src/mediaforge/web/templates/index.html:954
 msgid "Previous recommendation"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:889
+#: src/mediaforge/web/templates/index.html:956
 msgid "Next recommendation"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:936
+#: src/mediaforge/web/templates/index.html:1003
 #, python-brace-format
 msgid "Because you watched {}"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:957
+#: src/mediaforge/web/templates/index.html:1024
 msgid ""
 "Where this comes from: backdrop, plot and genres are supplied by CineInfo"
 " (cached). The match figure is worked out locally from how many of your "
@@ -4296,63 +4315,63 @@ msgid ""
 "as “not interested” is subtracted."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:965
-#: src/mediaforge/web/templates/index.html:1024
-#: src/mediaforge/web/templates/index.html:1035
+#: src/mediaforge/web/templates/index.html:1032
+#: src/mediaforge/web/templates/index.html:1091
+#: src/mediaforge/web/templates/index.html:1102
 msgid "New Anime"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:969
-#: src/mediaforge/web/templates/index.html:1028
-#: src/mediaforge/web/templates/index.html:1039
+#: src/mediaforge/web/templates/index.html:1036
+#: src/mediaforge/web/templates/index.html:1095
+#: src/mediaforge/web/templates/index.html:1106
 msgid "Popular Anime"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:976
-#: src/mediaforge/web/templates/index.html:1002
+#: src/mediaforge/web/templates/index.html:1043
+#: src/mediaforge/web/templates/index.html:1069
 msgid "New Series"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:980
-#: src/mediaforge/web/templates/index.html:1006
+#: src/mediaforge/web/templates/index.html:1047
+#: src/mediaforge/web/templates/index.html:1073
 msgid "Popular Series"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:987
-#: src/mediaforge/web/templates/index.html:994
-#: src/mediaforge/web/templates/index.html:1013
+#: src/mediaforge/web/templates/index.html:1054
+#: src/mediaforge/web/templates/index.html:1061
+#: src/mediaforge/web/templates/index.html:1080
 msgid "New Movies"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:998
-#: src/mediaforge/web/templates/index.html:1017
+#: src/mediaforge/web/templates/index.html:1065
+#: src/mediaforge/web/templates/index.html:1084
 msgid "Popular Movies"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:1046
+#: src/mediaforge/web/templates/index.html:1113
 msgid "New"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:1050
+#: src/mediaforge/web/templates/index.html:1117
 msgid "Trending"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:1070
+#: src/mediaforge/web/templates/index.html:1153
 #: src/mediaforge/web/templates/profile.html:247
 msgid ""
 "These settings are yours alone. Anything you do not change follows the "
 "instance default."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:1087
+#: src/mediaforge/web/templates/index.html:1172
 msgid "Leave kids mode"
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:1088
+#: src/mediaforge/web/templates/index.html:1173
 msgid "Enter the PIN to remove the age limit from this page."
 msgstr ""
 
-#: src/mediaforge/web/templates/index.html:1095
+#: src/mediaforge/web/templates/index.html:1180
 msgid "Unlock"
 msgstr ""
 

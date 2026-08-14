@@ -463,7 +463,9 @@
       showTab(next.dataset.homeTab, true);
       ev.preventDefault();
     });
-    showTab(prefs[TAB_PREF] || "dash", false);
+    // Own preference first, then the instance default from Settings -> Start
+    // Page (window.__HOME_TAB_DEFAULT, set by index.html), then "dash".
+    showTab(prefs[TAB_PREF] || window.__HOME_TAB_DEFAULT || "dash", false);
   }
 
   // Let other files (and the Discover-only "for you" block) ask for a tab

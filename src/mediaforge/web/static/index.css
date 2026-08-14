@@ -129,6 +129,28 @@
   outline-offset: 2px;
 }
 
+/* "All in one page"'s stand-in for #topstripCustomize (see index.html):
+   .feed-customize is normally a free-standing 44px circle, but it lands
+   inside the search pill here, where the sibling rule above already forces
+   every button to a 36px pill shape with 0 16px padding -- fine for
+   Search/Direct Link's text, but it would stretch a bare icon into an oval.
+   Square it back off at the same 36px height instead. */
+.search-bar.home-searchbar .home-search-customize {
+  width: 36px;
+  padding: 0;
+  border: 1px solid var(--input-border);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.search-bar.home-searchbar .home-search-customize:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.search-bar.home-searchbar .home-search-customize svg { width: 16px; height: 16px; }
+
 /* ── Source chips ── */
 .home-chips {
   display: flex;
@@ -1008,16 +1030,52 @@ a.browse-heading-src:hover { color: var(--accent); }
 /* The Start Page controls inside the home page's modal. On the settings
    page the same markup inherits that page's section styling. */
 .sp-modal {
-  max-width: 620px;
-  max-height: min(82vh, 900px);
+  max-width: 640px;
+  max-height: min(84vh, 900px);
   overflow-y: auto;
+  /* The modal's own border-radius clips square corners on hover/focus states
+     that reach the very edge (the header icon, the first/last group card) --
+     without this a focus ring or a card's own radius could show a stray
+     square pixel at the rounded edge. */
+  overflow: hidden auto;
 }
+
+/* Icon + title/hint, replacing the old bare heading -- the same icon as
+   the "Customise this page" button that opens this modal (see index.html),
+   so arriving here reads as "here is that button, larger" rather than a
+   heading with no relation to what was just clicked. */
+.sp-modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 0 0 20px;
+}
+
+.sp-modal-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sp-modal-icon svg { width: 20px; height: 20px; }
+
+.sp-modal .sp-modal-head .dl-title { margin: 0 0 3px; }
+.sp-modal .sp-modal-head .dl-hint { margin: 0; }
 
 .sp-modal .settings-section {
   background: none;
   border: none;
   padding: 0;
-  margin: 0 0 18px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .sp-modal .settings-section h2 {
@@ -1028,25 +1086,23 @@ a.browse-heading-src:hover { color: var(--accent); }
 /* The macro splits each scope into .sp-group blocks whose headings are
    .settings-subtitle -- but both of those classes live in settings_rows.css,
    and index.html deliberately does not load that file (see
-   advanced_search.html's note on why it is not global). Without the rules
-   below the modal fell back to the browser's default <h3>: oversized, flush
-   against the edge, and with the group spacing gone, because the 18px came
-   from .sp-modal .settings-section above and that no longer matches the
-   groups. Kept here rather than by pulling settings_rows.css into the home
-   page: this is home-page styling, and it belongs in the home page's own
-   stylesheet. */
+   advanced_search.html's note on why it is not global). Kept here rather
+   than by pulling settings_rows.css into the home page: this is home-page
+   styling, and it belongs in the home page's own stylesheet.
+
+   Each group is its own card (var(--bg-surface), the same "recessed panel"
+   tone the Dashboard cards sit on) rather than one flat list separated by
+   hairlines -- a modal juggling four unrelated decisions (layout, tabs,
+   rows, cards-per-row) reads as four decisions when they are visibly
+   separate things, not as one long form. .mf-order-row's own card
+   (var(--bg-elevated), one step lighter) already sits correctly on top of
+   this without any change there. */
 .sp-modal .sp-group {
-  margin: 0 0 18px;
-}
-
-.sp-modal .sp-group:last-child {
-  margin-bottom: 0;
-}
-
-/* The hairline separator settings_rows.css draws between groups. */
-.sp-modal .sp-group + .sp-group {
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 
 /* Same character as settings_rows.css's .settings-subtitle (uppercase, muted,
@@ -1058,7 +1114,7 @@ a.browse-heading-src:hover { color: var(--accent); }
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   padding: 0;
 }
 
@@ -1071,6 +1127,8 @@ a.browse-heading-src:hover { color: var(--accent); }
 
 .sp-modal .sp-reset {
   padding: 0;
+  border: none;
+  background: none;
 }
 
 @media (max-width: 640px) {
@@ -2619,6 +2677,18 @@ body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
 .dash-add-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
 .dash-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Topstrip's own "Customise this page" -- .feed-customize's base rule sizes
+   an icon-only pill for the Discover toolbar (44px wide, no fixed height);
+   matched here to the same 38x38 circle as its topstrip siblings
+   (.dash-lock-btn, .dash-add-btn) instead, same reasoning as
+   .home-customize-row's override above for the classic layout. */
+.home-topstrip-inner .feed-customize {
+  width: 38px;
+  height: 38px;
+  background: var(--bg-elevated);
+}
+.home-topstrip-inner .feed-customize svg { width: 16px; height: 16px; }
+
 .dash-add-menu {
   position: absolute;
   top: calc(100% + 8px);
@@ -3087,4 +3157,254 @@ body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .fy-bd { transition: none; }
   .fy-dot { transition: none; }
+}
+
+/* ===================================================================
+   Home panel bar (.hp-*) — revived, unchanged, for "All in one page"
+   -------------------------------------------------------------------
+   Pre-v3-grid Dashboard design: a row of buttons plus ONE panel below,
+   whose content depends on the button (see static/home_panel_bar.js's own
+   docstring for why this file coexists with the current dash-grid CSS
+   instead of replacing it -- #home-panel-bar/#home-panel-body only ever
+   render when #homeDashGrid does not, and vice versa).
+
+   The buttons are .mf-segmented-btn from mf_components.css on purpose --
+   this is the project's filter-button look, and a second, home-only button
+   style would be one more thing to keep in sync. Only the layout of the row
+   and the panel body live here.
+
+   Deliberately NOT .feed-chip: the chip row further down filters the poster
+   rows, and two visually identical rows that do completely different things
+   is a puzzle. The buttons read as buttons, the chips stay chips.
+   =================================================================== */
+
+.home-panel-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 18px auto 20px;
+  max-width: 900px;
+}
+
+.hp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  /* .mf-segmented-btn brings the colours and the active state; only the icon
+     sizing is specific to this row. */
+}
+
+.hp-btn svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.home-panel-body {
+  margin: 12px auto 20px;
+  max-width: 900px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.home-panel-body[hidden] { display: none; }
+
+/* --- the stat strip at the top of a panel --- */
+.hp-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.hp-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+
+.hp-stat-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hp-stat-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.hp-stat.is-ok .hp-stat-value { color: var(--success, #3ecf8e); }
+.hp-stat.is-warn .hp-stat-value { color: var(--warning, #ffb020); }
+.hp-stat.is-err .hp-stat-value { color: var(--error, #ff5f6d); }
+
+/* --- the list --- */
+.hp-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A row that triggers something (the queue hub) instead of going somewhere is
+   a real <button>, so it needs the anchor's look without the browser's. */
+.hp-item-btn {
+  width: 100%;
+  font-family: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.hp-item-btn:hover,
+.hp-item-btn:focus-visible { background: var(--bg-hover); }
+
+.hp-item-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.hp-more-btn {
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.hp-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+a.hp-item:hover,
+a.hp-item:focus-visible { background: var(--bg-hover); }
+
+a.hp-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.hp-item-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  /* One line: a long series name must not push the progress bar out of the
+     row and reflow the whole panel on every poll. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hp-item-sub {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.hp-item-bar {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.hp-item-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--transition);
+}
+
+.hp-item.is-err .hp-item-title { color: var(--error, #ff5f6d); }
+.hp-item.is-ok .hp-item-bar i { background: var(--success, #3ecf8e); }
+
+/* --- footer link, loading, error, empty --- */
+.hp-more {
+  display: inline-block;
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.hp-more:hover { text-decoration: underline; }
+
+.hp-loading,
+.hp-error,
+.hp-empty {
+  padding: 10px 2px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.hp-error { color: var(--error, #ff5f6d); }
+
+/* Phones: the bar scrolls sideways instead of wrapping into four rows of
+   buttons that push the search field off the screen. The panel itself is
+   full width and needs no other change -- it was built as a single column. */
+@media (max-width: 640px) {
+  .home-panel-bar {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    /* Bleed to the container edges so the row reads as scrollable rather than
+       as a row that happens to be cut off. */
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+
+  .home-panel-bar::-webkit-scrollbar { display: none; }
+
+  .hp-btn { flex: 0 0 auto; }
+
+  .home-panel-body { padding: 12px; }
+
+  .hp-item {
+    grid-template-columns: 1fr;
+  }
+
+  .hp-item-sub {
+    grid-column: 1;
+    grid-row: 2;
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hp-item,
+  .hp-item-bar i { transition: none; }
+}
+
+/* ── Panel-bar badges ────────────────────────────────────────────────── */
+.hp-badge-err { background: rgba(248, 113, 113, 0.9); color: #2a0708; }
+.hp-badge-warn { background: rgba(251, 191, 36, 0.9); color: #2a1c00; }
+.hp-badge-muted {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-weight: 500;
 }

@@ -1160,9 +1160,18 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # the three values -- dash_enabled is "does Dashboard content render
         # at all" (true for "", "1" and "all"), all_in_one is "no tab pill,
         # both sections stacked on one page" (only "all").
-        _dash_mode = str(_prefs.get("home_dash_enabled") or "")
+        # Same account-wins-over-instance relationship as the layout above:
+        # Settings -> Start Page's new "Home tabs" group sets what a fresh
+        # account (or one that never touched "Customise this page") starts
+        # with; picking a value there of one's own always overrules it.
+        _dash_default = str(get_setting("home_dash_enabled_default") or "")
+        _dash_mode = str(_prefs.get("home_dash_enabled") or _dash_default)
         _dash_enabled = _dash_mode != "0"
         _all_in_one = _dash_mode == "all"
+        # Which tab opens first -- only read client-side (home_2_1.js), which
+        # already falls back through window._USER_PREFS.home_tab first, so
+        # only the raw instance default needs to travel with the page.
+        _tab_default = str(get_setting("home_tab_default") or "")
         return render_template(
             "index.html",
             lang_labels=LANG_LABELS,
@@ -1174,6 +1183,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             show_new_home_promo=_show_promo,
             dash_enabled=_dash_enabled,
             all_in_one=_all_in_one,
+            home_tab_default=_tab_default,
         )
 
 
