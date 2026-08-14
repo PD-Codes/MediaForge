@@ -1106,55 +1106,400 @@ a.browse-heading-src:hover { color: var(--accent); }
 
 
 /* ===================================================================
-   Home panel bar (.hp-*) — the button row under the search field
+   Dashboard card grid (.dash-*, .hp-*)
    -------------------------------------------------------------------
-   A row of buttons plus ONE panel below it, whose content depends on the
-   button. See static/home_panels.js for why it is one panel and not a grid.
+   Two columns: the wide one for the things you read line by line (queue,
+   gaps, activity), the narrow one for the things you glance at (KPIs,
+   storage, sources, tonight's calendar, system, review). One column below
+   900px, in the order the two columns are written.
 
-   The buttons are .mf-segmented-btn from mf_components.css on purpose --
-   this is the project's filter-button look, and a second, home-only button
-   style would be one more thing to keep in sync. Only the layout of the row
-   and the panel body live here.
-
-   Deliberately NOT .feed-chip: the chip row further down filters the poster
-   rows, and two visually identical rows that do completely different things
-   is a puzzle. The buttons read as buttons, the chips stay chips.
+   This replaced a segmented button bar with one panel under it. The .hp-*
+   blocks below are the PANEL BODY and did not change with it -- one payload
+   shape, one renderer, whether a panel is built in or comes from a module
+   (see static/home_panels.js).
    =================================================================== */
 
-.home-panel-bar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin: 18px auto 0;
-  max-width: 900px;
+/* Free-position engine (v3): position:relative is the ONLY placement rule
+   the grid itself needs -- x/y/w/h are hand-rolled absolute px, set inline
+   by static/home_panels.js (applyPos()), same technique gridstack.js uses,
+   no library. Height is set explicitly by JS on every layout pass
+   (syncGridHeight()) because absolutely positioned children do not
+   otherwise contribute to a `position: relative` parent's height. This
+   replaced a CSS Grid `dense` auto-flow attempt: `dense` recomputes EVERY
+   card's placement on any single span change, which is what made shrinking
+   one widget visibly move unrelated ones -- real pixel positions plus a
+   collision resolver that only touches overlapping cards (resolveCollisions
+   in the JS) fixes that by construction. */
+.dash-grid {
+  position: relative;
+  margin-top: 18px;
 }
 
-.hp-btn {
+.dash-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+  /* The card is a fixed w x h box now (free resize, see home_panels.js) --
+     content that doesn't fit must scroll inside it, never spill past its
+     edges into whatever sits underneath. */
+  overflow: hidden;
+  /* Lets the @container rules below key off THIS card's own box, not the
+     viewport -- a card resized small reads as cramped and one resized large
+     reads as sparse otherwise, since every card shares the same CSS
+     regardless of the size the user actually gave it. */
+  container-type: size;
+  container-name: dash-card;
+  /* The live drag/resize itself suppresses this (.is-interacting) so the
+     dragged card tracks the pointer with no lag; every OTHER card that gets
+     pushed by resolveCollisions() settles into its new spot smoothly. */
+  transition: left .15s ease, top .15s ease, width .15s ease, height .15s ease;
+}
+.dash-card.is-interacting { transition: none; }
+/* Click-to-carry (see home_panels.js): a card picked up by a click on its
+   grip follows the pointer with no drag held down. Same no-transition
+   treatment as a live drag (it must track the cursor with no lag), plus a
+   lifted look -- bigger shadow, raised above its neighbours -- so it reads
+   as "floating" rather than merely repositioned. */
+.dash-card.is-carrying {
+  transition: none;
+  z-index: 5;
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, .35));
+}
+
+/* Header / scrollable body / optional footer, top to bottom -- see card()'s
+   own comment in home_panels.js. The footer is only ever in the DOM when a
+   card actually has a trailing link, so there is nothing to hide here. */
+.dash-card-body {
+  flex: 1 1 auto;
+  min-height: 0;   /* let this shrink below its content's natural height --
+                       without it a flex child never scrolls, it just grows
+                       the parent (the exact overflow bug being fixed). */
+  overflow-y: auto;
+}
+
+.dash-card-foot {
+  flex: 0 0 auto;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.dash-card-foot .hp-more { margin: 0; }
+
+/* Placeholder shown while a card waits on its first fetch (see the
+   Object.keys(PLACE) loop at the bottom of home_panels.js) -- fills the
+   card's own reserved space so the board does not visibly jump once real
+   content replaces it. Two counter-rotating dotted rings, accent-coloured;
+   --size keeps every measurement (border width, ring diameter) in one
+   proportion, so scaling the loader down is a single number, not four. */
+.dash-loading-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: 60px;
+}
+
+.dash-loader {
+  --size: 1px;
+  width: calc(40 * var(--size));
+  height: calc(40 * var(--size));
+  border: calc(3 * var(--size)) dotted var(--accent);
+  border-style: solid solid dotted dotted;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+  box-sizing: border-box;
+  animation: dash-loader-spin 2s linear infinite;
+}
+
+.dash-loader::after {
+  content: "";
+  box-sizing: border-box;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  margin: auto;
+  border: calc(3 * var(--size)) dotted var(--accent-hover);
+  border-style: solid solid dotted;
+  width: calc(20 * var(--size));
+  height: calc(20 * var(--size));
+  border-radius: 50%;
+  animation: dash-loader-spin-back 1s linear infinite;
+  transform-origin: center center;
+}
+
+@keyframes dash-loader-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dash-loader-spin-back {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+/* Corner resize handle: bottom-right, mouse/pointer only (hidden on phones
+   below, where the grid is order-only). A real <button> now (keyboard
+   focus + Arrow-key nudge, see home_panels.js), so the browser's default
+   button chrome is reset here. Diagonal stripes via a repeating gradient
+   rather than an icon font -- no new asset for three lines. */
+.dash-resize {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  cursor: nwse-resize;
+  border-radius: 3px;
+  opacity: 0.55;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--text-muted) 0 1.5px,
+    transparent 1.5px 4px
+  );
+  touch-action: none;
+}
+.dash-resize:hover,
+.dash-resize:focus-visible { opacity: 0.95; }
+
+.dash-card-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  /* Room for the .dash-grip AND .dash-close buttons, which both overlay the
+     header rather than sitting inside it (see home_panels.js's card()). */
+  padding-right: 54px;
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.dash-card-head svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  opacity: 0.8;
+  color: var(--accent);
+}
+
+.dash-card-note {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* --- status pill, shared by the sources and calendar cards --- */
+.dash-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  /* .mf-segmented-btn brings the colours and the active state; only the icon
-     sizing is specific to this row. */
-}
-
-.hp-btn svg {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
-  opacity: 0.85;
-}
-
-.home-panel-body {
-  margin: 12px auto 0;
-  max-width: 900px;
-  padding: 14px 16px;
+  padding: 2px 9px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
-.home-panel-body[hidden] { display: none; }
+.dash-pill.is-ok {
+  color: var(--success);
+  border-color: var(--success);
+  background: var(--success-bg);
+}
+
+.dash-pill.is-warn {
+  color: var(--warning);
+  border-color: var(--warning);
+  background: var(--warning-bg);
+}
+
+/* --- sources / today's calendar: name on the left, pill on the right --- */
+.dash-srcs {
+  display: grid;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.dash-src {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dash-src > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- gaps --- */
+.dash-gaps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dash-gap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-gap:last-child { border-bottom: 0; }
+
+.dash-gap-art {
+  width: 34px;
+  height: 50px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+
+.dash-gap-m {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.dash-gap-m b {
+  display: block;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-gap-m small {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.dash-btn {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.dash-btn:hover,
+.dash-btn:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dash-gap-hide {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dash-gap-hide:hover,
+.dash-gap-hide:focus-visible { color: var(--error); }
+
+/* --- the thin progress bar under a list row (continue watching) ---
+   Same visual as .hp-item-bar in the queue card; a second rule only because
+   this row is a flex line and that one sits in a grid cell. */
+.dash-gap-m .dash-rowbar {
+  display: block;
+  height: 3px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.dash-gap-m .dash-rowbar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* --- arrange mode: the drag handle and the per-card menu --- */
+.dash-tool {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dash-tool:hover,
+.dash-tool:focus-visible { color: var(--accent); background: var(--bg-hover); }
+
+/* Built once by card() and never replaced by a re-render (see its comment in
+   home_panels.js) -- laid out on top of the header via absolute positioning
+   instead of sitting inside the (replaceable) heading markup, which is what
+   makes that survive a data refresh. .dash-card-head reserves room for it
+   with padding-right so the title/note text never runs underneath it. */
+.dash-grip {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  cursor: grab;
+  background: var(--bg-card);
+}
+.dash-grip:active { cursor: grabbing; }
+
+/* Same permanent-element treatment, sitting just left of the grip. Removing
+   a card is not a drag gesture, so it gets no .dash-tool hover glow beyond
+   the shared one -- just a plain "x". */
+.dash-close {
+  position: absolute;
+  top: 14px;
+  right: 40px;
+  background: var(--bg-card);
+}
+
+.dash-card-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Locked board: grip and resize handle are taken away entirely rather than
+   left as dead controls (see home_panels.js's isLocked() gate on the
+   pointer/keyboard handlers). */
+.dash-grid.is-dash-locked .dash-grip,
+.dash-grid.is-dash-locked .dash-resize,
+.dash-grid.is-dash-locked .dash-close { display: none; }
 
 /* --- the stat strip at the top of a panel --- */
 .hp-stats {
@@ -1306,26 +1651,88 @@ a.hp-item:focus-visible {
 
 .hp-error { color: var(--error, #ff5f6d); }
 
-/* Phones: the bar scrolls sideways instead of wrapping into four rows of
-   buttons that push the search field off the screen. The panel itself is
-   full width and needs no other change -- it was built as a single column. */
-@media (max-width: 640px) {
-  .home-panel-bar {
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    scrollbar-width: none;
-    /* Bleed to the container edges so the row reads as scrollable rather than
-       as a row that happens to be cut off. */
-    margin-inline: -16px;
-    padding-inline: 16px;
+/* Minimal size-aware scaling, native CSS container queries -- no JS, no per-
+   card measuring. Cards all share the same markup regardless of the box the
+   user gave them (free resize, see home_panels.js), so without this a card
+   shrunk down to its minimum reads exactly as loose/spaced-out as a full-
+   width one, and one grown large reads exactly as small-print. Kept
+   intentionally light -- font sizes and paddings nudge by a step or two, no
+   content is added or removed at any size. Placed after every base rule it
+   touches (not next to .dash-card itself) so it wins the cascade without
+   needing !important -- same specificity, later wins. */
+@container dash-card (max-width: 260px) {
+  .dash-card-head { font-size: 0.85rem; gap: 6px; margin-bottom: 10px; }
+  .dash-card-head svg { width: 14px; height: 14px; }
+  .dash-card-note { font-size: 0.68rem; }
+  .hp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .hp-stat { padding: 6px 8px; }
+  .hp-stat-value { font-size: 0.92rem; }
+  .hp-stat-label { font-size: 0.66rem; }
+  .hp-item-title { font-size: 0.8rem; }
+  .hp-item-sub { font-size: 0.7rem; }
+  .dash-gap-art { width: 28px; height: 40px; }
+  .dash-btn { padding: 4px 9px; font-size: 0.76rem; }
+}
+
+@container dash-card (min-width: 560px) {
+  .dash-card-head { font-size: 1.05rem; }
+  .hp-stat-value { font-size: 1.2rem; }
+  .hp-item-title { font-size: 0.92rem; }
+}
+
+@container dash-card (max-height: 150px) {
+  .dash-card-head { margin-bottom: 8px; }
+  .hp-stats { gap: 6px; margin-bottom: 8px; }
+  .hp-item { padding: 5px 8px; }
+  .dash-gap { padding: 6px 0; }
+  .dash-card-foot { margin-top: 6px; padding-top: 6px; }
+}
+
+/* Phones: one track, natural height, order-only. Both grid-column and
+   grid-row are inline styles now (applyPlace() in home_panels.js) so a plain
+   override here loses to them on specificity -- !important is the one
+   legitimate use of it in this file, matching the built-in
+   `!important` on the [hidden] rules above for the same reason. `order`
+   stays inline and untouched, which is what carries the desktop arrangement
+   over as the mobile stacking order (see the docstring at the top of
+   home_panels.js). */
+@media (max-width: 900px) {
+  /* Phones fall back to normal flow, order-only: `order` is always kept
+     current by applyPos() (y*1000+x), even before the user has ever dragged
+     anything, so mobile stacking always matches the desktop reading order. */
+  .dash-grid {
+    position: static;
+    height: auto !important;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
 
-  .home-panel-bar::-webkit-scrollbar { display: none; }
+  .dash-card {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    left: auto !important;
+    top: auto !important;
+    /* `container-type: size` needs a definite height to size against; with
+       height back to auto here it would otherwise contain the card's own
+       content out of the layout and collapse it to nothing. The @container
+       rules above simply don't match without it -- nothing else to undo. */
+    container-type: normal;
+  }
 
-  .hp-btn { flex: 0 0 auto; }
+  /* Resize/move are a desktop/tablet-pointer affair (also gated live in JS
+     by window.innerWidth); the phone grid is order-only. */
+  .dash-resize,
+  .dash-grip { display: none; }
+}
 
-  .home-panel-body { padding: 12px; }
+@media (max-width: 640px) {
+  .dash-card { padding: 14px; }
+
+  /* 414px: the button plus the hide cross next to a 34px thumbnail leaves
+     the title about 150px, which is enough for a line of ellipsised text. */
+  .dash-btn { padding: 5px 10px; }
 
   .hp-item {
     grid-template-columns: 1fr;
@@ -1920,15 +2327,6 @@ a.hp-item:focus-visible {
   cursor: pointer;
 }
 
-/* ── Panel-bar badges ────────────────────────────────────────────────── */
-.hp-badge-err { background: rgba(248, 113, 113, 0.9); color: #2a0708; }
-.hp-badge-warn { background: rgba(251, 191, 36, 0.9); color: #2a1c00; }
-.hp-badge-muted {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
 /* ── Onboarding strip ────────────────────────────────────────────────── */
 .home-onboard {
   border: 1px solid var(--border);
@@ -2115,4 +2513,578 @@ a.hp-item:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Home 3.0 — two tabs (Dashboard / Discover) + "Could be for you"
+
+   The home page answers two unrelated questions. Stacking them meant the
+   second one only ever existed below the fold, so they are two panes now
+   and the search field moved into a sticky strip beside the tab switch --
+   with two competing sections up top, a full-height hero pushed both of
+   them off the screen and the page opened on nothing but its own title.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── the sticky strip: full-bleed background/border/blur ──────────────
+   A sibling of .container now (see index.html), not a child of it -- so it
+   is the strip itself that is full width and reaches the viewport's top
+   edge; .home-topstrip-inner below re-applies .container's own max-width
+   and side padding so the tabs/search still line up with the page's
+   content column. */
+.home-topstrip {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 12px 0;
+  background: color-mix(in srgb, var(--bg-base) 88%, transparent);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border-bottom: 1px solid var(--border);
+}
+
+.home-topstrip-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+/* Same breakpoint and drop as .container's own (base.css) -- the inner
+   column mirrors .container's numbers exactly so the page's content still
+   lines up under the strip at every width. */
+@media (max-width: 640px) {
+  .home-topstrip-inner { padding: 0 16px; }
+}
+
+.home-tabs { flex: 0 0 auto; border-radius: 999px; }
+/* Pill shape + gradient-active tab, matching the design reference's .tabs/.tab
+   -- kept scoped to .home-tabs rather than touching the shared .mf-segmented
+   base, which is also used by the queue hub, Seerr and the library toolbar. */
+.home-tabs .mf-segmented-btn { padding: 8px 22px; border-radius: 999px; }
+.home-tabs .mf-segmented-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  box-shadow: 0 6px 18px -8px var(--accent);
+}
+
+.home-topstrip .search-bar.home-searchbar {
+  flex: 1 1 320px;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Dashboard layout lock toggle, sibling of the search field. Visible only
+   while the Dashboard tab is open -- reuses the same body dataset
+   home_2_1.js already sets on every tab switch (see showTab()). */
+.dash-lock-btn {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.dash-lock-btn svg { width: 16px; height: 16px; }
+.dash-lock-btn:hover,
+.dash-lock-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+.dash-lock-btn.is-locked { color: var(--accent); background: var(--accent-soft); }
+body[data-home-tab-open="disc"] .dash-lock-btn { display: none; }
+
+/* "Add widget" — same button chrome as the lock toggle, plus its dropdown
+   menu. Dashboard-only, same visibility rule as the lock button. */
+.dash-add-wrap { position: relative; flex: 0 0 auto; }
+body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
+
+.dash-add-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.dash-add-btn svg { width: 16px; height: 16px; }
+.dash-add-btn:hover,
+.dash-add-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+.dash-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.dash-add-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.dash-add-menu[hidden] { display: none; }
+
+.dash-add-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.dash-add-item:hover,
+.dash-add-item:focus-visible { background: var(--bg-hover); }
+.dash-add-item svg { width: 16px; height: 16px; color: var(--accent); flex: 0 0 auto; }
+
+/* Phone-only collapsed-search button, sitting where the full search bar
+   would otherwise be. Hidden above the topstrip's own phone breakpoint (see
+   below), where the search bar is always expanded. Same 38px circle chrome
+   as the lock/add-widget buttons it sits beside. */
+.home-search-toggle {
+  display: none;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.home-search-toggle svg { width: 16px; height: 16px; }
+.home-search-toggle:hover,
+.home-search-toggle:focus-visible { color: var(--accent); border-color: var(--accent); }
+
+.dash-add-empty {
+  padding: 10px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.home-pane[hidden] { display: none; }
+
+/* The Dashboard's own empty state. A blank pane on a fresh install reads as
+   a bug; this points at the tab that does have something in it. */
+#homeDashEmpty { margin-top: 24px; }
+
+/* ═══ "Could be for you" ══════════════════════════════════════════════ */
+.fy { margin: 4px 0 8px; }
+.fy[hidden] { display: none; }
+
+/* ── the backdrop hero ───────────────────────────────────────────────── */
+/* Every one of these carries a `display` of its own, and a class with a
+   display value beats the [hidden] attribute -- the app-wide trap this
+   codebase has hit before. Without the explicit override the hero rendered
+   as a 420px empty box above its own "set up CineInfo" prompt. */
+.fy-hero[hidden],
+.fy-gate[hidden],
+#fySection[hidden],
+.fy-score[hidden] { display: none !important; }
+
+.fy-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-xl, 20px);
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  box-shadow: var(--shadow-lg);
+  margin-bottom: 26px;
+  background: var(--bg-card);
+}
+
+/* One layer per hero, cross-faded. Swapping a single background-image shows
+   the gap while the next one decodes, and on a slow line that gap is the
+   whole rotation. */
+.fy-bd {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center 18%;
+  opacity: 0;
+  transition: opacity 0.65s ease;
+}
+.fy-bd.is-on { opacity: 1; }
+
+/* Two gradients, not one: the horizontal keeps the text column readable on
+   a bright backdrop, the vertical stops the card from floating. */
+.fy-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--bg-base) 94%, transparent) 0%,
+      color-mix(in srgb, var(--bg-base) 72%, transparent) 44%,
+      transparent 100%),
+    linear-gradient(0deg,
+      color-mix(in srgb, var(--bg-base) 95%, transparent) 0%,
+      transparent 58%);
+}
+
+.fy-in {
+  position: relative;
+  padding: 44px 40px 34px;
+  max-width: 680px;
+}
+
+.fy-why {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.78rem;
+  padding: 5px 13px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border-focus);
+  color: var(--text-primary);
+}
+.fy-why:empty { display: none; }
+
+.fy-title {
+  margin: 0 0 10px;
+  font-size: 2.4rem;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.fy-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+.fy-sep { opacity: 0.4; }
+
+.fy-plot {
+  margin: 0 0 20px;
+  font-size: 0.93rem;
+  color: var(--text-secondary);
+  max-width: 58ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fy-btns { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+.fy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elevated) 70%, transparent);
+  color: var(--text-primary);
+  padding: 9px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  text-decoration: none;
+  transition: background var(--transition), border-color var(--transition);
+}
+.fy-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.fy-btn.is-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+.fy-btn.is-primary:hover { background: var(--accent-hover); }
+.fy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.fy-score {
+  position: absolute;
+  top: 22px;
+  right: 26px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-base) 65%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.fy-score b { color: var(--accent); font-size: 0.86rem; }
+
+/* Manual stepping alongside the dots -- same translucent-circle treatment as
+   .fy-score (blur + border + bg-elevated), vertically centred on each edge. */
+.fy-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elevated) 65%, transparent);
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background var(--transition), border-color var(--transition);
+}
+.fy-nav:hover { border-color: var(--accent); background: var(--accent-soft); }
+.fy-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fy-nav[hidden] { display: none; }
+.fy-nav-prev { left: 18px; }
+.fy-nav-next { right: 18px; }
+
+.fy-dots {
+  position: absolute;
+  right: 26px;
+  bottom: 26px;
+  display: flex;
+  gap: 7px;
+  z-index: 3;
+}
+.fy-dot {
+  width: 26px;
+  height: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 25%, transparent);
+  cursor: pointer;
+  transition: width var(--transition), background var(--transition);
+}
+.fy-dot.is-on { background: var(--accent); width: 40px; }
+.fy-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ── the rail ────────────────────────────────────────────────────────── */
+.fy-reroll {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.76rem;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.fy-reroll:hover { background: var(--accent-soft); border-color: var(--accent); }
+.fy-reroll[disabled] { opacity: 0.5; cursor: default; }
+
+#fySection .browse-heading { display: flex; align-items: baseline; gap: 10px; }
+
+/* These cards are titles nobody owns yet, so the "+" says what a click does:
+   it starts a search, it does not queue a download. */
+/* A browse card gets its height from its <img>. These cards can legitimately
+   have no poster (TMDB knows the title but not the artwork), and without a
+   reserved box such a card collapsed to its two lines of text and sat a
+   quarter the height of its neighbours. The ratio also stops the row from
+   reflowing as posters arrive. */
+.fy-card { position: relative; }
+.fy-card img,
+.fy-card .fy-card-art {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  display: block;
+}
+.fy-card .fy-card-art {
+  background: linear-gradient(150deg, var(--bg-hover), var(--bg-surface));
+}
+.fy-card-add {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+  border: 1px solid var(--border);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.fy-card:hover .fy-card-add,
+.fy-card:focus-visible .fy-card-add { opacity: 1; }
+
+/* Touch has no hover, so the affordance would never appear on a phone. */
+@media (hover: none) {
+  .fy-card-add { opacity: 1; }
+}
+
+/* ── the CineInfo setup prompt ───────────────────────────────────────── */
+.fy-gate {
+  margin-bottom: 26px;
+  border-radius: var(--radius-xl, 20px);
+  border: 1px dashed var(--border);
+  background: linear-gradient(160deg, var(--accent-soft), transparent);
+}
+.fy-gate[hidden] { display: none; }
+.fy-gate-in { padding: 42px 30px; text-align: center; }
+.fy-gate-title { margin: 0 0 8px; font-size: 1.35rem; font-weight: 700; }
+.fy-gate-text {
+  margin: 0 auto 20px;
+  max-width: 56ch;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+.fy-gate-req {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.fy-gate-chip {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 13px;
+  background: color-mix(in srgb, var(--bg-base) 40%, transparent);
+}
+.fy-gate-chip.is-ok { color: var(--success); border-color: var(--success-bg); }
+.fy-gate-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+/* ── reason chips ────────────────────────────────────────────────────────
+   Filters the "could be for you" rail down to one genre. Only chips backed
+   by real data are ever rendered (see static/home_foryou.js). */
+.fy-reasons { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 4px; }
+.fy-r {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  background: transparent;
+  cursor: pointer;
+}
+.fy-r:hover { color: var(--text-primary); border-color: var(--accent); }
+.fy-r.is-on {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.feed-origin {
+  margin: 26px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ── phones ──────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .home-topstrip { padding: 10px 0; }
+  .home-topstrip-inner { gap: 10px; }
+  /* Tab pill shares its row with the collapsed-search button now, instead of
+     claiming the whole row on its own. */
+  .home-tabs { flex: 1 1 auto; }
+  .home-tabs .mf-segmented-btn { flex: 1 1 0; padding: 7px 10px; }
+  .home-search-toggle { display: flex; }
+  /* Collapsed by default: hidden until .is-search-open is toggled by
+     home_2_1.js. Full-row layout when open is the same "flex: 1 1 100%"
+     the bar already used unconditionally before this button existed. */
+  .home-topstrip .search-bar.home-searchbar { display: none; }
+  .home-topstrip.is-search-open .search-bar.home-searchbar {
+    display: flex;
+    flex: 1 1 100%;
+  }
+  .home-topstrip.is-search-open .home-search-toggle { display: none; }
+
+  /* Scrolling down reclaims the strip's height for the cards below it: only
+     the tab pill stays. Height/opacity transition (not display:none) so the
+     strip shrinks instead of jumping -- same duration/easing as the rest of
+     the app's --transition. Scoped to phone width only; desktop keeps the
+     full strip always visible.
+     .dash-add-wrap is deliberately NOT in this max-height/overflow group: it
+     hosts .dash-add-menu as an absolutely-positioned child, and overflow:
+     hidden here would clip that dropdown any time it is open, not just while
+     scrolled. It only fades (see below) instead of collapsing its box. */
+  .home-topstrip .search-bar.home-searchbar,
+  .home-topstrip .home-search-toggle,
+  .home-topstrip .dash-lock-btn {
+    /* Generous cap, well above any of these elements' real content height
+       (the search bar can wrap to two lines at narrow widths) -- it only
+       needs to be big enough to have zero effect until scrolled-down sets
+       it to 0 below. */
+    max-height: 200px;
+    opacity: 1;
+    overflow: hidden;
+    transition: max-height var(--transition), opacity var(--transition);
+  }
+  .home-topstrip.is-scrolled-down .search-bar.home-searchbar,
+  .home-topstrip.is-scrolled-down .home-search-toggle,
+  .home-topstrip.is-scrolled-down .dash-lock-btn {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .home-topstrip .dash-add-wrap { transition: opacity var(--transition); }
+  .home-topstrip.is-scrolled-down .dash-add-wrap {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .fy-hero { min-height: 320px; border-radius: var(--radius-lg, 16px); }
+  .fy-in { padding: 24px 20px 22px; }
+  .fy-title { font-size: 1.5rem; }
+  .fy-plot { -webkit-line-clamp: 2; line-clamp: 2; font-size: 0.86rem; }
+  /* The match badge is absolutely positioned, so at phone width the reason
+     chip ran straight underneath it. Reserve the corner instead of letting
+     two pieces of text stack on top of each other. */
+  .fy-score { top: 14px; right: 14px; padding: 6px 11px; font-size: 0.7rem; }
+  .fy-why { max-width: calc(100% - 118px); }
+  .fy-dots { right: 16px; bottom: 14px; }
+  .fy-nav { width: 32px; height: 32px; font-size: 1.2rem; }
+  .fy-nav-prev { left: 8px; }
+  .fy-nav-next { right: 8px; }
+  .fy-btns .fy-btn { flex: 1 1 auto; justify-content: center; }
+  .fy-gate-in { padding: 30px 18px; }
+}
+
+/* The hero cross-fade and the dot width are decoration; somebody who asked
+   the OS to stop moving things gets the same content without either. */
+@media (prefers-reduced-motion: reduce) {
+  .fy-bd { transition: none; }
+  .fy-dot { transition: none; }
 }

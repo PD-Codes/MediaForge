@@ -209,7 +209,10 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  stroke: currentColor;
+  /* --nav-ic is set per entry further down (see "Nav icon colours"). Items
+     without a mapping -- notably module-provided icons -- fall back to
+     currentColor and keep inheriting the link colour as before. */
+  stroke: var(--nav-ic, currentColor);
 }
 
 .sidebar-link:hover {
@@ -227,6 +230,9 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
 
 .sidebar-link.active svg {
   color: var(--accent);
+  /* The active entry drops its individual colour and joins the accent
+     highlight, so the icon never fights the accent-tinted background. */
+  stroke: var(--accent);
   filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
@@ -332,6 +338,33 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   opacity: 1;
   transform: translateY(-50%) scale(1.4);
 }
+
+/* ---- Nav icon colours ----
+   Each entry gets its own --nav-ic, keyed off the data-page attribute the
+   markup already carries (plus the two toggle buttons, which have no page).
+   Only var(--nav-ic-*) indirection here, no literal colours, so theme packs
+   can override the palette in variables.css. Entries with no rule below --
+   module-injected items -- inherit currentColor and stay monochrome. */
+.sidebar-link[data-page="index"]         { --nav-ic: var(--nav-ic-home); }
+.sidebar-sub-link[data-page="advanced_search"] { --nav-ic: var(--nav-ic-search); }
+.sidebar-sub-link[data-page="catalogue"] { --nav-ic: var(--nav-ic-catalogue); }
+.sidebar-sub-link[data-page="favourites"] { --nav-ic: var(--nav-ic-favourites); }
+.sidebar-link[data-page="library"],
+.sidebar-sub-link[data-page^="library_"]  { --nav-ic: var(--nav-ic-library); }
+.sidebar-link[data-page="calendar"]      { --nav-ic: var(--nav-ic-calendar); }
+.sidebar-link[data-page="syncplay"]      { --nav-ic: var(--nav-ic-syncplay); }
+.sidebar-link[data-page="seerr"]         { --nav-ic: var(--nav-ic-seerr); }
+.sidebar-link[data-page="autosync"]      { --nav-ic: var(--nav-ic-autosync); }
+.sidebar-link[data-page="monitoring"]    { --nav-ic: var(--nav-ic-monitoring); }
+.sidebar-link[data-page="notifications"] { --nav-ic: var(--nav-ic-notifications); }
+.sidebar-link[data-page="extensions"]    { --nav-ic: var(--nav-ic-store); }
+.sidebar-sub-link[data-page="module_settings"] { --nav-ic: var(--nav-ic-modules); }
+.sidebar-link[data-page="integrations"]  { --nav-ic: var(--nav-ic-integrations); }
+.sidebar-link[data-page="profile"]       { --nav-ic: var(--nav-ic-profile); }
+.sidebar-link[data-page="settings"]      { --nav-ic: var(--nav-ic-settings); }
+/* The two collapsible group headers carry no data-page. */
+.sidebar-link.sidebar-group-btn          { --nav-ic: var(--nav-ic-modules); }
+.sidebar-link.sidebar-queue-btn          { --nav-ic: var(--nav-ic-queue); }
 
 /* Sidebar Footer — compact: profile row (avatar + name + logout) plus a
    4-column icon grid (Dev Infos, GitHub, Appearance, Language). */
@@ -1074,8 +1107,9 @@ html.sidebar-mini .sidebar-toggle-btn .arrow-right-icon { display: block; }
   width: 17px;
   height: 17px;
   flex-shrink: 0;
-  stroke: currentColor;
+  stroke: var(--nav-ic, currentColor);
 }
+.sidebar-sub-link.active svg { stroke: var(--accent, #6366f1); }
 .sidebar-sub-link .sidebar-module-pill { margin-left: auto; }
 .sidebar-sub-link .queue-badge { margin-left: auto; }
 

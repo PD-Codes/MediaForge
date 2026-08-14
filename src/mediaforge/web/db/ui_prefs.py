@@ -37,6 +37,68 @@ _MEDIAPLAYER_USER_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 _HOME_MODE_ID_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 _HOME_MODES_RE = re.compile(r"^[\w À-ɏ.,'&+()!?/:;|=-]{0,2000}$")
 _WRAPPED_PERIOD_RE = re.compile(r"^\d{4}-\d{2}$")
+# The user-arranged Dashboard grid, per card, comma separated. Three shapes
+# are accepted (format v3, static/home_panels.js's parseLayout()):
+#   v1 (oldest): "<card id>:<order>:<span>"           span = one of 3 tracks
+#   v2 (CSS-Grid era): "<card id>:<order>:<colspan>:<rowspan>"
+#                       colspan = 1-12, rowspan = 1-40 row units or "a" auto
+#   v3 (current, free-position engine): "<card id>:<x>:<y>:<w>:<h>"
+#                       x = 0-11 (column), y = 0-999 (row, unbounded upward
+#                       in practice), w = 2-12 (column span), h = 3-80 (row
+#                       span). All in the JS engine's grid units (COLS=12,
+#                       ROW_H=24px, GAP=18px) -- see home_panels.js.
+# v1/v2 rows are still accepted so an account that saved a layout before an
+# upgrade does not lose it on the next read (static/home_panels.js migrates
+# them once, client-side, and re-saves as v3); this file only ever WRITES v3
+# from here on. Card ids include module panel ids, hence the wider charset;
+# every number is bounded so the string cannot grow without limit.
+_DASH_CARD_RE_V1 = re.compile(r"^[A-Za-z0-9_.-]{1,32}:\d{1,5}:[123]$")
+_DASH_CARD_RE_V2 = re.compile(r"^[A-Za-z0-9_.-]{1,32}:\d{1,5}:(?:[1-9]|1[0-2]):(?:[1-9]|[1-3]\d|40|a)$")
+_DASH_CARD_RE_V3 = re.compile(
+    r"^[A-Za-z0-9_.-]{1,32}:(?:[0-9]|1[01]):[0-9]{1,3}:(?:[2-9]|1[0-2]):(?:[3-9]|[1-7][0-9]|80)$")
+# Kept for anything that imported the old name directly (module code, if any)
+# and as the "one entry" shape callers may want to validate on its own.
+_DASH_CARD_RE = re.compile(r"^(?:%s|%s|%s)$" % (
+    _DASH_CARD_RE_V1.pattern.strip("^$"), _DASH_CARD_RE_V2.pattern.strip("^$"),
+    _DASH_CARD_RE_V3.pattern.strip("^$")))
+
+
+def _valid_dash_layout(value: str) -> bool:
+    if value == "":
+        return True                      # "" = back to the built-in order
+    # A v3 entry ("id:x:y:w:h", up to 32+1+2+1+3+1+2+1+2 = 45 chars) is only
+    # marginally longer than the old v2 one (44 chars) -- 40 cards at the
+    # longest realistic v3 entry is 40*45 + 39 separators = 1839, still
+    # comfortably under 2000, so the cap does not need to move again.
+    if len(value) > 2000:
+        return False
+    parts = value.split(",")
+    if len(parts) > 40:                  # far more cards than the grid can hold
+        return False
+    return all(
+        _DASH_CARD_RE_V1.match(part) or _DASH_CARD_RE_V2.match(part) or _DASH_CARD_RE_V3.match(part)
+        for part in parts
+    )
+
+
+
+# Which base-id cards the account has closed (the "x" on a card) -- comma
+# separated ids, same charset as a v3 layout row's id part. Only ever holds
+# BASE ids (no ".", see home_panels.js): an extra instance ("queue.2") is
+# simply not re-created by forgetCard()/the next poll, so it needs no entry
+# here, only a base id's Add-menu re-render needs suppressing.
+_DASH_HIDDEN_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,32}$")
+
+
+def _valid_dash_hidden(value: str) -> bool:
+    if value == "":
+        return True                      # "" = nothing hidden
+    if len(value) > 2000:                # same cap reasoning as _valid_dash_layout
+        return False
+    parts = value.split(",")
+    if len(parts) > 40:                  # far more cards than the grid can hold
+        return False
+    return all(_DASH_HIDDEN_ID_RE.match(part) for part in parts)
 
 
 def _valid_theme_pack(value: str) -> bool:
@@ -65,6 +127,23 @@ USER_UI_PREF_KEYS = {
     # keeps following the instance default an admin set (Settings -> Start
     # Page). Empty string = "back to the default", which is why "" validates.
     "home_feed_layout": lambda v: bool(_HOME_FEED_FILTER_RE.match(v)),
+    # Dashboard card layout: which card sits where, how many of the 12 grid
+    # columns it spans, and how tall it is (row units, or auto). Per account
+    # rather than per browser for the same reason as the rest of this table --
+    # an arrangement you made once is one you expect to find again on the next
+    # device. Cards the user never moved are absent and keep their built-in
+    # place, so a new card in a later release needs no migration.
+    "home_dash_layout": _valid_dash_layout,
+    # Whether the account has locked the dashboard grid against further
+    # drag/resize (grip and resize handle hidden, pointer handlers become
+    # no-ops -- see home_panels.js). Per account, like the layout itself:
+    # "I arranged it, stop me from bumping it by accident" is a choice one
+    # makes for their own view, not the whole instance's.
+    "home_dash_locked": lambda v: v in ("", "1"),
+    # Base-id cards the account closed with the card's "x" button. Per account
+    # for the same reason as the layout itself: closing a card is an
+    # arrangement choice, and the next poll/load must not just recreate it.
+    "home_dash_hidden": _valid_dash_hidden,
     # eBook reader. Reading is a per-person habit -- text size, page colour and
     # whether you page or scroll -- and someone who set it up on the desktop
     # expects the same book to look the same on their phone. The ranges are
@@ -100,6 +179,10 @@ USER_UI_PREF_KEYS = {
     # How tightly the home rows are packed. A 4K screen fits twice the cards a
     # laptop does; "comfortable" is the old, only, hardcoded size.
     "home_density": lambda v: v in ("", "comfortable", "compact", "list"),
+    # Which of the two home tabs this account last had open. Unknown keys make
+    # the preferences endpoint reject the WHOLE request, so a tab switch would
+    # otherwise have silently discarded every setting sent with it.
+    "home_tab": lambda v: v in ("", "dash", "disc"),
     # Which media-server user this account is. "" = none, and the Continue
     # watching row keeps using MediaForge's own playback positions.
     # NOT validated against the server here (db.py must not do network I/O) --

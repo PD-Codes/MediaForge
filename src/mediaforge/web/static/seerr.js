@@ -895,6 +895,10 @@
   // knowledge belongs, and a module can declare it via register_search_source.
   var _sources = [];
 
+  // Sources of the running fan-out that have not answered yet. Rendered under
+  // the result list so a partial list does not read as the final one.
+  var _pending = 0;
+
   /** Resolve the source list once per page load (loadSearchSources caches). */
   function _loadSources() {
     if (typeof window.loadSearchSources !== "function") return Promise.resolve([]);
@@ -1009,14 +1013,21 @@
     // it. Cheap: this is a handful of arrays and one innerHTML per source.
     var lists = sources.map(function () { return []; });
     var answered = 0;
+    _pending = sources.length;
 
     sources.forEach(function (src, i) {
+      // Same 15 s ceiling the main search box uses: without it a site that
+      // never answers leaves "still searching" on screen forever, which is
+      // worse than no indicator at all.
+      var ctl = new AbortController();
+      var tmo = setTimeout(function () { ctl.abort(); }, 15000);
       fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ keyword: q, site: src.site }),
+        signal: ctl.signal,
       })
-        .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+        .then(function (r) { clearTimeout(tmo); return r.ok ? r.json() : { results: [] }; })
         .then(function (d) {
           return (d.results || []).filter(src.keep).map(function (r) {
             return { url: r.url, title: r.title, source: src.label };
@@ -1031,6 +1042,7 @@
           // requests are still running would be wrong for as long as the
           // next answer takes.
           if (!lists.some(function (l) { return l.length; }) && answered < sources.length) return;
+          _pending = sources.length - answered;
           var combined = [];
           var deepest = 0;
           for (var n = 0; n < lists.length; n++) {
@@ -1064,12 +1076,20 @@
   function renderSearchResults(results) {
     var container = $("seerrSearchResults");
     if (!container) return;
+    // Shared wording with the main search box (app.js) -- the two fan out over
+    // the same endpoint, so they should not say it differently.
+    var pendingHtml = "";
+    if (_pending > 0 && typeof window.mfSearchPendingText === "function") {
+      pendingHtml = '<div class="seerr-search-loading">' +
+        '<span class="seerr-spinner" aria-hidden="true"></span>' +
+        esc(window.mfSearchPendingText(_pending)) + "</div>";
+    }
     if (!results.length) {
-      container.innerHTML = '<div class="seerr-search-empty">' +
-        esc(t("Keine Ergebnisse.", "No results.")) + "</div>";
+      container.innerHTML = pendingHtml || ('<div class="seerr-search-empty">' +
+        esc(t("Keine Ergebnisse.", "No results.")) + "</div>");
       return;
     }
-    container.innerHTML = results.map(function (r, i) {
+    container.innerHTML = pendingHtml + results.map(function (r, i) {
       return '<button type="button" class="seerr-search-result" data-url="' + escAttr(safeUrl(r.url)) + '">' +
         '<span class="seerr-search-poster seerr-card-poster-placeholder" data-poster-slot="' + i + '"></span>' +
         '<span class="seerr-search-title">' + esc(r.title) + "</span>" +

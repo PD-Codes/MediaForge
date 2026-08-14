@@ -590,6 +590,14 @@ def register_thirdparty(*, item_id, label, endpoint=None, icon_svg=None,
       {% include %} -- e.g. a template from this integration's own
       Blueprint template_folder. Only shown while enabled_setting_key is
       "1". See :func:`resolve_dashboard_widgets`.
+      The widget is positioned on the same draggable/resizable Dashboard
+      board (home_panels.js) as MediaForge's own built-in cards and
+      register_home_panel() panels -- it gets a real .dash-card wrapper
+      with a header built from this item's label/icon_svg, and the grid
+      engine places/moves/resizes/hides it exactly like any other card.
+      Unlike register_home_panel(), it does NOT support multiple
+      instances: the template is included once, server-side, per page
+      load, and there is no live re-render path for its opaque markup.
     - provider_pill_script: optional static URL (e.g. built with
       url_for('your_blueprint.static', filename='pill.js')) to a small
       JS file that self-registers a provider-pill resolver via the global
@@ -2019,9 +2027,22 @@ def resolve_dynamic_tabs(host):
 
 def resolve_dashboard_widgets():
     """Return the currently-enabled home-page widgets, sorted by priority:
-    [{id, template}, ...]. index.html includes each entry's template
-    inside its own container. See dashboard_widget_template above.
+    [{id, template, label, icon_svg}, ...]. index.html includes each entry's
+    template inside its own container -- a proper .dash-card on the
+    Dashboard grid, built from label/icon_svg the same way home_panels.js
+    builds one for a built-in or register_home_panel() card. See
+    dashboard_widget_template above.
+
+    ponytail: no `multi` flag here (unlike register_home_panel()'s panels).
+    Each entry is rendered once, server-side, as one Jinja {% include %} per
+    page load -- there is no live "spawn another instance" story for opaque,
+    server-rendered markup the way there is for the JSON-based panels, which
+    re-render from a cached payload on demand. Upgrade path if that is ever
+    needed: give the template its own per-instance render endpoint instead
+    of an inline include.
     """
+    from flask_babel import gettext as _gt
+
     from ..db import get_setting
 
     out = []
@@ -2033,7 +2054,12 @@ def resolve_dashboard_widgets():
                 continue
         except Exception:
             continue
-        out.append({"id": item["id"], "template": item["dashboard_widget_template"]})
+        out.append({
+            "id": item["id"],
+            "template": item["dashboard_widget_template"],
+            "label": _gt(item["label"]),
+            "icon_svg": item["icon_svg"],
+        })
     return out
 
 

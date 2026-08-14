@@ -70,6 +70,28 @@
   --transition: 0.18s ease;
   --transition-slow: 0.3s ease;
 
+  /* Sidebar nav icon colours. One token per nav entry so the rail reads as
+     colourful instead of monochrome; shell.css only ever references these
+     via var(), so a theme pack can recolour the whole nav by redefining
+     them (or set them all to currentColor to go monochrome again). */
+  --nav-ic-home: #60a5fa;
+  --nav-ic-search: #38bdf8;
+  --nav-ic-catalogue: #7dd3fc;
+  --nav-ic-favourites: #fb7185;
+  --nav-ic-library: #34d399;
+  --nav-ic-calendar: #f472b6;
+  --nav-ic-queue: #fbbf24;
+  --nav-ic-syncplay: #22d3ee;
+  --nav-ic-seerr: #f97316;
+  --nav-ic-autosync: #4ade80;
+  --nav-ic-monitoring: #2dd4bf;
+  --nav-ic-notifications: #facc15;
+  --nav-ic-store: #c084fc;
+  --nav-ic-modules: #a78bfa;
+  --nav-ic-integrations: #818cf8;
+  --nav-ic-profile: #f0abfc;
+  --nav-ic-settings: #94a3b8;
+
   color-scheme: dark;
 }
 
@@ -118,6 +140,25 @@
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
   --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.25);
+
+  /* Same hues as dark, shifted darker so they keep contrast on a white sidebar. */
+  --nav-ic-home: #2563eb;
+  --nav-ic-search: #0284c7;
+  --nav-ic-catalogue: #0369a1;
+  --nav-ic-favourites: #e11d48;
+  --nav-ic-library: #059669;
+  --nav-ic-calendar: #db2777;
+  --nav-ic-queue: #d97706;
+  --nav-ic-syncplay: #0891b2;
+  --nav-ic-seerr: #ea580c;
+  --nav-ic-autosync: #16a34a;
+  --nav-ic-monitoring: #0d9488;
+  --nav-ic-notifications: #ca8a04;
+  --nav-ic-store: #9333ea;
+  --nav-ic-modules: #7c3aed;
+  --nav-ic-integrations: #4f46e5;
+  --nav-ic-profile: #c026d3;
+  --nav-ic-settings: #64748b;
 
   color-scheme: light;
 }

@@ -30,6 +30,17 @@
   // base.html). app.js's escapeHtml is not available on the settings page.
   const escapeHtml = window.mfEscape;
 
+  // Rows that are now ALSO a Dashboard card (static/home_panels.js's PLACE
+  // table: continue/watchlist/newlib/gaps/upcoming -- "library" here is that
+  // table's "newlib"). Their position is set by dragging the card itself, so
+  // this list drops their drag handle/up-down controls and keeps only the
+  // enable/disable checkbox, which is still the one true way to stop
+  // MediaForge collecting that row's data (see the group hint below). "new",
+  // "popular", "movies" and "because" have no Dashboard-card equivalent and
+  // keep full reorder controls.
+  const DASH_WIDGET_ROWS = ["continue", "library", "watchlist", "upcoming", "gaps"];
+  function isDashWidget(row) { return DASH_WIDGET_ROWS.indexOf(row) !== -1; }
+
   // scope -> {order, hidden, limit, sourcesOff, typesOff, rowMeta}
   const state = {};
   let catalogue = null;                    // the one /api/home-feed/sources answer
@@ -41,42 +52,61 @@
   }
 
   // ------------------------------------------------------------ rendering
-  function rowHtml(scope, row, index, total) {
+  function rowHtml(scope, row, index, total, reorderable) {
     const meta = state[scope].rowMeta[row] || {};
     const on = state[scope].hidden.indexOf(row) === -1;
     const hint = HINTS[meta.hint] || "";
     const hintHtml = meta.link
       ? '<a href="' + escapeHtml(meta.link) + '">' + escapeHtml(hint) + "</a>"
       : escapeHtml(hint);
-    return '<div class="mf-order-row' + (on ? "" : " is-off") + '" draggable="true" data-row="' +
-      escapeHtml(row) + '">' +
-      '<span class="mf-order-handle" title="' + escapeHtml(txt("drag", "Drag to reorder")) +
-      '" aria-hidden="true"><svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">' +
-      '<circle cx="7" cy="5" r="1.5"/><circle cx="13" cy="5" r="1.5"/><circle cx="7" cy="10" r="1.5"/>' +
-      '<circle cx="13" cy="10" r="1.5"/><circle cx="7" cy="15" r="1.5"/><circle cx="13" cy="15" r="1.5"/>' +
-      "</svg></span>" +
+    const handle = reorderable
+      ? '<span class="mf-order-handle" title="' + escapeHtml(txt("drag", "Drag to reorder")) +
+        '" aria-hidden="true"><svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">' +
+        '<circle cx="7" cy="5" r="1.5"/><circle cx="13" cy="5" r="1.5"/><circle cx="7" cy="10" r="1.5"/>' +
+        '<circle cx="13" cy="10" r="1.5"/><circle cx="7" cy="15" r="1.5"/><circle cx="13" cy="15" r="1.5"/>' +
+        "</svg></span>"
+      : "";
+    const actions = reorderable
+      ? '<span class="mf-order-actions">' +
+        '<button type="button" class="mf-order-btn" data-move="up" data-row="' + escapeHtml(row) + '"' +
+        (index === 0 ? " disabled" : "") + ' title="' + escapeHtml(txt("move_up", "Move up")) + '">' +
+        '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></button>' +
+        '<button type="button" class="mf-order-btn" data-move="down" data-row="' + escapeHtml(row) + '"' +
+        (index === total - 1 ? " disabled" : "") + ' title="' + escapeHtml(txt("move_down", "Move down")) + '">' +
+        '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>' +
+        "</span>"
+      : "";
+    return '<div class="mf-order-row' + (on ? "" : " is-off") + '"' +
+      (reorderable ? ' draggable="true"' : "") + ' data-row="' + escapeHtml(row) + '">' +
+      handle +
       '<input type="checkbox" class="chb-main" data-toggle="' + escapeHtml(row) + '"' +
       (on ? " checked" : "") + ' aria-label="' + escapeHtml(txt("show_row", "Show this row")) + '">' +
       '<span class="mf-order-label">' + escapeHtml(ROW_LABELS[row] || row) +
       (hint ? '<small class="mf-order-hint">' + hintHtml + "</small>" : "") + "</span>" +
-      '<span class="mf-order-actions">' +
-      '<button type="button" class="mf-order-btn" data-move="up" data-row="' + escapeHtml(row) + '"' +
-      (index === 0 ? " disabled" : "") + ' title="' + escapeHtml(txt("move_up", "Move up")) + '">' +
-      '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></button>' +
-      '<button type="button" class="mf-order-btn" data-move="down" data-row="' + escapeHtml(row) + '"' +
-      (index === total - 1 ? " disabled" : "") + ' title="' + escapeHtml(txt("move_down", "Move down")) + '">' +
-      '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>' +
-      "</span></div>";
+      actions + "</div>";
+  }
+
+  // Discover rows only (no Dashboard-card twin), preserving relative order --
+  // this is the subset that still reorders in this list.
+  function discoverOrder(scope) {
+    return state[scope].order.filter(function (row) { return !isDashWidget(row); });
   }
 
   function renderRows(scope) {
     const list = document.getElementById("spRows-" + scope);
     if (!list) return;
-    const order = state[scope].order;
-    list.innerHTML = order.map(function (row, i) {
-      return rowHtml(scope, row, i, order.length);
-    }).join("");
-    list.querySelectorAll(".mf-order-row").forEach(function (el) { attachDnd(scope, el); });
+    const disc = discoverOrder(scope);
+    const dash = state[scope].order.filter(isDashWidget);
+    let html = '<div class="sp-sublabel">' + escapeHtml(txt("group_discover", "Discover rows")) + "</div>";
+    html += disc.map(function (row, i) { return rowHtml(scope, row, i, disc.length, true); }).join("");
+    html += '<div class="sp-sublabel">' + escapeHtml(txt("group_dashboard", "Dashboard widgets")) + "</div>";
+    html += '<div class="mf-order-hint mf-order-group-hint">' +
+      escapeHtml(txt("group_dashboard_hint",
+        "Position and size are set on the Dashboard tab. Turning one off here also stops collecting its data.")) +
+      "</div>";
+    html += dash.map(function (row, i) { return rowHtml(scope, row, i, dash.length, false); }).join("");
+    list.innerHTML = html;
+    list.querySelectorAll('.mf-order-row[draggable="true"]').forEach(function (el) { attachDnd(scope, el); });
 
     const note = document.getElementById("spState-" + scope);
     if (note) {
@@ -155,12 +185,23 @@
     save(scope);
   }
 
+  // Up/down buttons only ever target Discover rows (Dashboard-widget rows
+  // don't render them -- see rowHtml's reorderable flag), so the swap target
+  // is the neighbour within the DISCOVER subsequence, not the physically
+  // adjacent id in the full order array -- that could be an unrelated
+  // Dashboard-widget row sitting between two Discover rows.
   function step(scope, row, delta) {
     const order = state[scope].order;
+    const group = discoverOrder(scope);
+    const gi = group.indexOf(row);
+    const ti = gi + delta;
+    if (gi === -1 || ti < 0 || ti >= group.length) return;
+    const neighbour = group[ti];
     const from = order.indexOf(row);
-    const to = from + delta;
-    if (from === -1 || to < 0 || to >= order.length) return;
-    order.splice(to, 0, order.splice(from, 1)[0]);
+    if (from === -1) return;
+    order.splice(from, 1);
+    const at = order.indexOf(neighbour);
+    order.splice(delta < 0 ? at : at + 1, 0, row);
     renderRows(scope);
     save(scope);
   }

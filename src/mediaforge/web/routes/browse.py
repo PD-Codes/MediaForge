@@ -31,6 +31,7 @@ from ..db import get_tmdb_cache
 from ..db import set_browse_cache
 from ..source_policy import source_enabled as _source_enabled
 from ..source_policy import is_english_only_source as _is_english_only_source
+from ..source_policy import search_sources
 from ..queue_worker import _hanime_enabled
 from ..queue_worker import _filmo_enabled
 from ..queue_worker import _nineanime_enabled
@@ -70,6 +71,12 @@ _BROWSE_TTL = 3600  # 1 hour
 # v3: hanime listings are filled up to a full grid after franchise grouping
 #     and the censored/uncensored filter.
 _CARD_SCHEMA = "v3"
+# "Could be for you" results, per username. Six hours: the row is built
+# from caches that barely move, and a home page must not recompute it on
+# every reload.
+_FORYOU_MEMO: "_OD" = _OD()
+_FORYOU_TTL = 6 * 3600
+
 _browse_refresh_locks: dict = {}
 _browse_refresh_mutex = threading.Lock()
 
@@ -832,7 +839,35 @@ def _feed_known_source_ids():
     ids = {sid for sid, _label, _color in _FEED_BUILTIN_META}
     for src in iter_home_feed_sources():
         ids.add(src["source_id"])
+    for src in _feed_module_search_sources():
+        ids.add(src["id"])
     return ids
+
+
+def _feed_module_search_sources():
+    """Module sources that exist but have no discovery fetchers.
+
+    A module registers a provider plus a search source (register_provider /
+    register_search_source) and is then fully usable from the search box --
+    but the home feed only ever knew about register_home_feed_source, so such
+    a source was missing from the "Sources" dropdown and from the Sources
+    dashboard card. It could not be switched off there either, because the
+    list it is switched off in is this one.
+
+    source_policy.search_sources() is the catalogue of "which sources exist
+    right now"; everything third-party in it that did not also register feed
+    fetchers is returned here. No fetchers means no cards -- the core cannot
+    invent a discovery list for a site it does not scrape -- so the source
+    shows up as a filter/toggle, and contributes rows as soon as the module
+    also calls register_home_feed_source().
+    """
+    have = {src["source_id"] for src in iter_home_feed_sources()}
+    out = []
+    for entry in search_sources():
+        if not entry.get("thirdparty") or entry["id"] in have:
+            continue
+        out.append(entry)
+    return out
 
 
 def _feed_builtin_entries():
@@ -1174,6 +1209,20 @@ def register_browse_routes(app):
             for row, fn in src["fetchers"].items():
                 entries.append((sid, row, src["media_type"],
                                 "tp_%s_%s" % (sid, row), fn))
+        # Module sources without feed fetchers: visible as a filter chip and a
+        # Sources-card row, just with nothing to contribute yet. Their types
+        # come from what the module declared to register_search_source(), so
+        # the type filter does not drop them.
+        extra_enabled = {}
+        for entry in _feed_module_search_sources():
+            sid = entry["id"]
+            meta.setdefault(sid, {"id": sid, "label": entry["label"],
+                                  "color": "", "builtin": False,
+                                  "types": set(entry.get("media_types") or ()),
+                                  "english_only": False})
+            # A module source may own its enabled key -- ask the catalogue,
+            # not the source_enabled_<id> convention.
+            extra_enabled[sid] = bool(entry.get("enabled"))
 
         for sid, _row, mtype, _key, _fn in entries:
             if sid in meta:
@@ -1189,7 +1238,8 @@ def register_browse_routes(app):
             if sid not in order:
                 order.append(sid)
 
-        enabled = {sid: _feed_source_enabled(sid) for sid in meta}
+        enabled = {sid: extra_enabled.get(sid, _feed_source_enabled(sid))
+                   for sid in meta}
 
         def _wanted(sid, mtype, row):
             if not enabled.get(sid):
@@ -1328,9 +1378,53 @@ def register_browse_routes(app):
                         "color": src["color"], "builtin": False,
                         "english_only": False,
                         "enabled": _feed_source_enabled(src["source_id"])})
+        for entry in _feed_module_search_sources():
+            out.append({"id": entry["id"], "label": entry["label"],
+                        "color": "", "builtin": False,
+                        "english_only": False,
+                        "enabled": bool(entry.get("enabled"))})
         config = feed_effective_config()
         return jsonify({"sources": out, "rows": config["rows"], "config": config,
                         "defaults": feed_global_defaults()})
+
+    @app.route("/api/home-feed/foryou")
+    def api_home_feed_foryou():
+        """Titles you do NOT have yet, derived from the ones you do.
+        GET /api/home-feed/foryou[?refresh=1].
+
+        Feeds the "Could be for you" row and its hero. The work is a tally
+        over cached TMDB payloads (see recommend.for_you), which is cheap but
+        not free, so the result is memoised for six hours per user -- long
+        enough that a home page reload never recomputes it, short enough that
+        a title imported this morning shows up this afternoon. ?refresh=1 is
+        the "roll again" button and skips the memo.
+        """
+        from ..request_context import get_current_user_info
+        from .. import recommend
+        try:
+            username, _is_admin = get_current_user_info()
+        except Exception:
+            username = None
+        username = username or ""
+
+        now = _time.time()
+        if request.args.get("refresh") not in ("1", "true", "yes"):
+            entry = _FORYOU_MEMO.get(username)
+            if entry and now - entry[0] < _FORYOU_TTL:
+                return jsonify(entry[1])
+
+        try:
+            payload = recommend.for_you(username)
+        except Exception:
+            logger.exception("[HomeFeed] for-you row failed")
+            payload = {"configured": False, "items": [], "hero": [],
+                       "generated_at": now}
+        _FORYOU_MEMO[username] = (now, payload)
+        # ponytail: one entry per account, dropped oldest-first. Ceiling is the
+        # user count, which for this app is a household.
+        while len(_FORYOU_MEMO) > 20:
+            _FORYOU_MEMO.popitem(last=False)
+        return jsonify(payload)
 
     @app.route("/api/home-feed/personal")
     def api_home_feed_personal():

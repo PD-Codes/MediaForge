@@ -437,9 +437,15 @@
         return;
       }
       delete section.dataset.feedHidden;
-      feed.appendChild(section);            // moves, does not clone
+      // Re-append inside the section's OWN tab pane, not into #homeFeed:
+      // the personal rows live under Dashboard and the discovery rows under
+      // Discover, and appending to the feed root would have pulled every row
+      // out of its pane and stacked them all under the last one.
+      (section.closest(".home-pane") || feed).appendChild(section);
     });
-    if (empty) feed.appendChild(empty);     // the empty state stays last
+    // The empty state belongs to the discovery rows, so it stays last inside
+    // whichever pane it was rendered into.
+    if (empty) (empty.closest(".home-pane") || feed).appendChild(empty);
     applyRowHints();
   }
 
@@ -464,7 +470,19 @@
     });
   }
 
+  // Rows that the Dashboard now shows as a CARD (see static/home_panels.js).
+  // Their entries stay in the Start Page settings -- the data still feeds the
+  // dashboard -- but the poster row would be the same list a second time,
+  // half a screen further down.
+  const DASH_CARD_ROWS = {
+    gaps: true, upcoming: true,
+    // Personal lists, now cards on the same grid (renderContinue /
+    // renderWatchlist / renderNewLibrary in static/home_panels.js).
+    "continue": true, watchlist: true, library: true,
+  };
+
   function rowVisible(row) {
+    if (DASH_CARD_ROWS[row]) return false;
     return layout.hidden.indexOf(row) === -1;
   }
 
@@ -605,6 +623,16 @@
     const broken = sources.filter(function (s) {
       return s.enabled && (s.error || downIds.indexOf(s.id) !== -1);
     });
+    // The Dashboard's Sources card says the same thing in a quieter place, so
+    // it is told here -- "down" means the same in both, including the sources
+    // that only failed on this page load (downIds).
+    if (typeof window.mfHomeDashFeed === "function") {
+      window.mfHomeDashFeed(sources.map(function (s) {
+        return Object.assign({}, s, {
+          error: s.error || (downIds.indexOf(s.id) !== -1 ? "down" : ""),
+        });
+      }), personal);
+    }
     if (!broken.length && !feedError) { wrap.innerHTML = ""; return; }
     const names = broken.map(function (s) { return s.label; }).join(", ");
     const text = feedError || HT("source_down").replace("{}", names);
@@ -843,6 +871,16 @@
           (ep ? " · " + mfEscape(ep) : "") + "</span></a>", "has-art");
       }).join("");
     }
+
+    // The Dashboard's gaps / sources / calendar cards are built from exactly
+    // this data, so they are handed it here rather than fetching it again.
+    if (typeof window.mfHomeDashFeed === "function") {
+      window.mfHomeDashFeed(sources, personal);
+    }
+
+    // Every personal row lives in the Dashboard pane, so this is the moment
+    // its "nothing here yet" state can be decided honestly.
+    if (typeof window.mfHomeSyncDashEmpty === "function") window.mfHomeSyncDashEmpty();
   }
 
   function remaining(item) {
@@ -1093,6 +1131,14 @@
       personal = {};
     }
   }
+
+  /** A series the user dismissed on the Dashboard's gaps card. Kept in step
+      here too, or the next renderPersonal() would put it back. */
+  window.mfFeedDropGap = function (folder) {
+    personal.gaps = (personal.gaps || []).filter(function (g) {
+      return (g.folder || g.title) !== folder;
+    });
+  };
 
   window.reloadHomeFeed = function () {
     loadedAt = 0;

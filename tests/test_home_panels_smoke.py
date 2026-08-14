@@ -192,20 +192,54 @@ def test_stored_panel_is_only_returned_when_still_visible(as_user, app):
     assert as_user("user").get("/api/home-panels").get_json()["active"] == "queue"
 
 
-def test_the_client_always_comes_up_closed():
-    """The bar must NOT restore the last open panel.
-
-    This has been implemented and reverted once: arriving at the home page
-    with a panel already expanded, pushing the posters down, for a choice made
-    days ago, was reported as a bug both times. The server still computes
-    `active` for older clients; the current one must ignore it.
+def test_the_client_never_persists_an_open_panel():
+    """There is no "open panel" any more -- every panel is a card on the
+    dashboard grid. The `home_panel` preference stays registered so an old
+    account's stored value does not error, but nothing may read or write it.
     """
     from pathlib import Path
     js = (Path(__file__).resolve().parents[1] / "src" / "mediaforge" / "web"
           / "static" / "home_panels.js").read_text(encoding="utf-8")
-    assert "forgetStoredActive();" in js
     assert "data.active" not in js, "home_panels.js restores the stored panel again"
-    assert "mfSaveUserPref" not in js, "home_panels.js persists the open panel again"
+    # mfSaveUserPref itself is fine now -- the grid stores the user's card
+    # arrangement through it -- but nothing may write `home_panel`.
+    assert '"home_panel"' not in js and "'home_panel'" not in js
+    assert "home_panel:" not in js
+
+
+def test_the_dashboard_polls_one_endpoint_for_the_moving_panels():
+    """Six cards must not mean six pollers -- the whole reason the old design
+    showed one panel at a time. One mfPoll, one request, and only the panels
+    whose data actually changes.
+    """
+    from pathlib import Path
+    js = (Path(__file__).resolve().parents[1] / "src" / "mediaforge" / "web"
+          / "static" / "home_panels.js").read_text(encoding="utf-8")
+    assert js.count("mfPoll(") == 1
+    assert "/api/home-panels/all" in js
+    assert '"queue", "activity", "system"' in js
+
+
+# ── the batch endpoint the dashboard loads from ──────────────────────────
+
+def test_all_panels_come_back_with_their_bodies(as_user):
+    data = as_user("admin").get("/api/home-panels/all").get_json()
+    by_id = {p["id"]: p for p in data["panels"]}
+    assert {"queue", "activity", "library", "storage", "system"} <= set(by_id)
+    assert isinstance(by_id["queue"]["items"], list)
+    assert by_id["queue"]["link"]["action"] == "queue"
+
+
+def test_all_panels_honour_the_admin_gate(as_user):
+    ids = {p["id"] for p in
+           as_user("user").get("/api/home-panels/all").get_json()["panels"]}
+    assert "queue" in ids
+    assert "storage" not in ids and "system" not in ids
+
+
+def test_only_narrows_the_batch_to_the_polled_panels(as_user):
+    data = as_user("admin").get("/api/home-panels/all?only=queue,activity").get_json()
+    assert [p["id"] for p in data["panels"]] == ["queue", "activity"]
 
 # ── the queue is a modal, not a page ─────────────────────────────────────
 
@@ -418,3 +452,85 @@ def test_an_unreadable_path_does_not_take_the_others_down(
 
     rows = R._disk_rows()
     assert [r[0] for r in rows] == ["Here"]
+
+
+# ── the dashboard grid layout preference (home_dash_layout) ─────────────
+#
+# static/home_panels.js owns the client half (parseLayout/serializeLayout);
+# this pins the server half, web/db/ui_prefs.py's _valid_dash_layout(), which
+# is what actually stands between a stored preference and the database. Both
+# shapes -- the pre-12-column "id:order:span[1-3]" rows an account may still
+# have saved, and the current "id:order:colspan:rowspan" -- must validate,
+# and junk must be dropped without failing the whole string.
+
+def test_dash_layout_accepts_legacy_v1_rows():
+    from mediaforge.web.db.ui_prefs import _valid_dash_layout
+    assert _valid_dash_layout("queue:10:2,storage:20:1")
+
+
+def test_dash_layout_accepts_current_v2_rows():
+    from mediaforge.web.db.ui_prefs import _valid_dash_layout
+    assert _valid_dash_layout("queue:10:8:a,storage:20:4:14")
+
+
+def test_dash_layout_accepts_a_mix_of_both_shapes():
+    from mediaforge.web.db.ui_prefs import _valid_dash_layout
+    assert _valid_dash_layout("queue:10:2,storage:20:4:14")
+
+
+def test_dash_layout_rejects_junk():
+    from mediaforge.web.db.ui_prefs import _valid_dash_layout
+    assert not _valid_dash_layout("queue:10:13:a")     # colspan out of 1-12
+    assert not _valid_dash_layout("queue:10:8:41")      # rowspan out of 1-40
+    assert not _valid_dash_layout("queue:10:4")         # v1 span out of 1-3
+    assert not _valid_dash_layout("nope")
+    assert not _valid_dash_layout("queue:10:8:a,")      # trailing empty part
+
+
+# ── v3: the free-position engine's own format, "<id>:<x>:<y>:<w>:<h>" ─────
+# x = column 0-11, y = row 0-999, w = column span 2-12, h = row span 3-80.
+
+def test_dash_layout_accepts_current_v3_rows():
+    from mediaforge.web.db.ui_prefs import _valid_dash_layout
+    assert _valid_dash_layout("queue:0:0:8:10,storage:8:0:4:8")
+
+
+def test_dash_layout_accepts_a_mix_of_all_three_shapes():
+    from mediaforge.web.db.ui_prefs import _valid_dash_layout
+    assert _valid_dash_layout("queue:10:2,storage:20:4:14,activity:0:14:8:10")
+
+
+def test_dash_layout_rejects_v3_junk():
+    from mediaforge.web.db.ui_prefs import _valid_dash_layout
+    assert not _valid_dash_layout("queue:12:0:8:10")    # x out of 0-11
+    assert not _valid_dash_layout("queue:0:0:1:10")     # w out of 2-12
+    assert not _valid_dash_layout("queue:0:0:8:2")      # h out of 3-80
+    assert not _valid_dash_layout("queue:0:0:8:81")     # h out of 3-80
+    assert not _valid_dash_layout("queue:0:0:13:10")    # w out of 2-12
+
+
+# ── the closed-card preference (home_dash_hidden) ────────────────────────
+#
+# Which base-id cards the account closed with a card's own "x", so the next
+# poll/load does not just recreate it -- see static/home_panels.js's
+# HIDDEN set and isHidden(). Only base ids (no ".") are ever stored; an
+# extra multi-instance ("queue.2") never needs an entry, so the charset only
+# has to match a v3 layout row's id part.
+
+def test_dash_hidden_accepts_empty_string_as_nothing_hidden():
+    from mediaforge.web.db.ui_prefs import _valid_dash_hidden
+    assert _valid_dash_hidden("")
+
+
+def test_dash_hidden_accepts_a_comma_list_of_ids():
+    from mediaforge.web.db.ui_prefs import _valid_dash_hidden
+    assert _valid_dash_hidden("gaps,queue,demo-module")
+    assert _valid_dash_hidden("gaps")
+
+
+def test_dash_hidden_rejects_junk():
+    from mediaforge.web.db.ui_prefs import _valid_dash_hidden
+    assert not _valid_dash_hidden("gaps,")               # trailing empty part
+    assert not _valid_dash_hidden("<script>")             # bad charset
+    assert not _valid_dash_hidden("a" * 2001)              # over the length cap
+    assert not _valid_dash_hidden(",".join(["a"] * 41))    # over the count cap

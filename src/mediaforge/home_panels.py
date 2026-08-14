@@ -51,7 +51,8 @@ _EXTRA_HOME_PANELS: dict = {}
 
 def register_home_panel(item_id, panel_id, label, view,
                         badge=None, admin_only=False, icon=None,
-                        badge_label=None, badge_suffix=None, badge_tone=None):
+                        badge_label=None, badge_suffix=None, badge_tone=None,
+                        multi=False):
     """Add a button (and its panel) to the home page's button bar.
 
     - ``item_id``: the id the module already passed to ``register_thirdparty()``.
@@ -89,6 +90,12 @@ def register_home_panel(item_id, panel_id, label, view,
     - ``icon``: optional inline SVG path data (the ``d`` attribute of a single
       path, stroked, 24x24 viewBox). Anything else is dropped -- this ends up
       inside an ``<svg>``, and a module is not a trusted source of markup.
+    - ``multi``: whether the Dashboard's "Add widget" menu may add more than
+      one card of this panel. Every instance shows the same ``view()`` output
+      -- there is no per-instance configuration -- so this only makes sense
+      for a panel whose data is itself a shuffle/sample or otherwise varies
+      each time it renders. Defaults to ``False`` (one card, offered only
+      while none is on the board).
 
     The ``view`` dict may carry, all optional:
 
@@ -131,6 +138,7 @@ def register_home_panel(item_id, panel_id, label, view,
                        else "info"),
         "admin_only": bool(admin_only),
         "icon": _safe_icon(icon),
+        "multi": bool(multi),
     }
     logger.info("[HomePanels] Registered third-party panel: %s (%s%s)",
                 panel_id, item_id, ", admin only" if admin_only else "")
@@ -171,6 +179,7 @@ def iter_home_panels() -> list:
             "badge_label": entry["badge_label"],
             "admin_only": entry["admin_only"],
             "icon": entry["icon"],
+            "multi": entry["multi"],
             "item_id": item_id,
         }
         for item_id, entry in filter_enabled(_EXTRA_HOME_PANELS).items()

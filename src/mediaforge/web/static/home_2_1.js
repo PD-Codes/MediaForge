@@ -380,9 +380,147 @@
     savePref({ home_onboarding_done: "1" });
   });
 
+  // =================================================================== tabs
+  // Dashboard / Discover. Two panes rather than one long scroll because the
+  // page answers two unrelated questions -- "what is my instance doing" and
+  // "what is out there" -- and stacking them meant the second one only ever
+  // existed below the fold.
+  //
+  // Dashboard is the landing tab: it renders from local state and is on
+  // screen before a single source has answered. The discovery rows load
+  // lazily anyway (home_feed.js observes them), so opening on Dashboard also
+  // means a fresh page load fires no scraping requests at all until the user
+  // asks for them.
+  const TAB_PREF = "home_tab";
+  const TABS = { dash: "homePaneDash", disc: "homePaneDisc" };
+
+  function showTab(name, persist) {
+    if (!TABS[name]) name = "dash";
+    // Search results replace the feed (app.js sets body.is-searching and
+    // hides #homeFeed). Picking a tab is a request to see that tab, so it
+    // leaves the search first rather than switching a pane nobody can see.
+    if (typeof window.exitSearch === "function") window.exitSearch();
+    // Scoped to the bar on purpose: <body> carries the current tab as an
+    // attribute too, and a document-wide [data-home-tab="…"] query matched
+    // BODY first (document order) -- so the outgoing tab button never lost
+    // its highlight and both tabs looked active at once.
+    const bar = document.getElementById("homeTabs");
+    Object.keys(TABS).forEach(function (key) {
+      const pane = document.getElementById(TABS[key]);
+      const btn = bar && bar.querySelector('[data-home-tab="' + key + '"]');
+      const on = key === name;
+      if (pane) pane.hidden = !on;
+      if (btn) {
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      }
+    });
+    // Which tab is open, for CSS that needs to know (and for anything that
+    // wants to read it back). Deliberately a DIFFERENT attribute name from
+    // the buttons' data-home-tab -- see above.
+    document.body.dataset.homeTabOpen = name;
+    if (persist) savePref({ [TAB_PREF]: name });
+  }
+
+  function wireTabs() {
+    const bar = document.getElementById("homeTabs");
+    if (!bar) return;
+    bar.addEventListener("click", function (ev) {
+      const btn = ev.target.closest("[data-home-tab]");
+      if (!btn) return;
+      showTab(btn.dataset.homeTab, true);
+    });
+    // Left/right between the two tabs, the pattern the segmented control
+    // already uses elsewhere in the app.
+    bar.addEventListener("keydown", function (ev) {
+      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+      const btns = Array.prototype.slice.call(bar.querySelectorAll("[data-home-tab]"));
+      const at = btns.indexOf(document.activeElement);
+      if (at === -1) return;
+      const next = btns[(at + (ev.key === "ArrowRight" ? 1 : btns.length - 1)) % btns.length];
+      next.focus();
+      showTab(next.dataset.homeTab, true);
+      ev.preventDefault();
+    });
+    showTab(prefs[TAB_PREF] || "dash", false);
+  }
+
+  // Let other files (and the Discover-only "for you" block) ask for a tab
+  // without importing this one -- home_foryou.js uses it for its deep link.
+  window.mfHomeShowTab = function (name) { showTab(name, true); };
+
+  /** The Dashboard is allowed to be empty on a fresh install: no playback
+      history, no watchlist, no gaps. Saying so beats an unexplained blank
+      pane, and it points at the tab that does have something in it. */
+  window.mfHomeSyncDashEmpty = function () {
+    const pane = document.getElementById("homePaneDash");
+    const empty = document.getElementById("homeDashEmpty");
+    if (!pane || !empty) return;
+    const anyRow = pane.querySelector(
+      '.feed-section:not([style*="display:none"]):not([style*="display: none"])');
+    const grid = document.getElementById("homeDashGrid");
+    const hasCards = grid && grid.querySelector(".dash-card");
+    empty.style.display = (anyRow || hasCards) ? "none" : "";
+  };
+
+  // ======================================================= mobile topstrip
+  // Phone-only: the search bar starts collapsed into #searchToggleBtn (see
+  // index.html/index.css), and the strip shrinks to just the tab pill while
+  // scrolling down so the cards below get the vertical space back. Both are
+  // gated by CSS at the SAME breakpoint the topstrip already uses for its
+  // own phone rules (768px, index.css) -- the classes below are harmless
+  // above it since that CSS block only exists inside the query, so there is
+  // no need to duplicate the breakpoint check in JS.
+  (function wireMobileTopstrip() {
+    const strip = document.getElementById("homeTopStrip");
+    const toggle = document.getElementById("searchToggleBtn");
+    if (!strip || !toggle) return;
+
+    function setSearchOpen(open) {
+      strip.classList.toggle("is-search-open", open);
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) {
+        const input = document.getElementById("searchInput");
+        if (input) input.focus();
+      }
+    }
+
+    toggle.addEventListener("click", function () {
+      setSearchOpen(!strip.classList.contains("is-search-open"));
+    });
+    // Tapping outside the open field collapses it again -- the only way back
+    // to the icon button once it has been expanded.
+    document.addEventListener("click", function (ev) {
+      if (!strip.classList.contains("is-search-open")) return;
+      if (ev.target === toggle || toggle.contains(ev.target)) return;
+      if (ev.target.closest(".home-searchbar")) return;
+      setSearchOpen(false);
+    });
+
+    // rAF-throttled scroll direction, same pattern as catalogue.js's own
+    // scroll handler: a raw scroll listener fires far more often than the
+    // page can usefully repaint for.
+    let lastY = window.scrollY;
+    let raf = null;
+    window.addEventListener("scroll", function () {
+      if (raf) return;
+      raf = requestAnimationFrame(function () {
+        raf = null;
+        const y = window.scrollY;
+        const goingDown = y > lastY && y > 40;
+        if (goingDown && !strip.classList.contains("is-scrolled-down")) {
+          setSearchOpen(false);
+        }
+        strip.classList.toggle("is-scrolled-down", goingDown);
+        lastY = y;
+      });
+    }, { passive: true });
+  })();
+
   // ==================================================================== go
   applyDensity();
   renderTools();
+  wireTabs();
   wireTabStops();
   loadOnboarding();
 })();

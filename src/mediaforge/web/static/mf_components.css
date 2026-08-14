@@ -894,6 +894,15 @@ body.mf-select-mode .mf-poster-select,
   gap: 8px;
 }
 
+/* Two labelled groups inside ONE list (Start Page settings splits rows into
+   "Discover rows" and "Dashboard widgets" -- see static/start_page.js). The
+   group label itself is .sp-sublabel (that page's own subheading style, both
+   in settings_rows.css and the home page's .sp-modal override); this only
+   adds a touch of breathing room around the group hint line since it sits
+   directly among the list's rows rather than under a group heading outside
+   the list. */
+.mf-order-group-hint { margin: -2px 0 2px; }
+
 .mf-order-row {
   display: flex;
   align-items: center;

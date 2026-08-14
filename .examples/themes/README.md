@@ -70,6 +70,17 @@ so a theme wins the cascade at equal specificity. Two layers are useful:
    `[data-theme="light"]`. This recolors the entire app (accent, surfaces,
    text, borders, inputs, shadows, radii, transition timing) in a few lines,
    and the user's dark/light toggle keeps working inside your theme.
+   The sidebar's per-entry icon colours are part of this layer: one
+   `--nav-ic-*` token per page (`--nav-ic-home`, `--nav-ic-search`,
+   `--nav-ic-catalogue`, `--nav-ic-favourites`, `--nav-ic-library`,
+   `--nav-ic-calendar`, `--nav-ic-queue`, `--nav-ic-syncplay`,
+   `--nav-ic-seerr`, `--nav-ic-autosync`, `--nav-ic-monitoring`,
+   `--nav-ic-notifications`, `--nav-ic-store`, `--nav-ic-modules`,
+   `--nav-ic-integrations`, `--nav-ic-profile`, `--nav-ic-settings`).
+   Setting all of them to `currentColor` restores the plain monochrome nav,
+   which is usually what a strongly tinted theme wants. Icons contributed by
+   installed modules keep `currentColor` on purpose — a theme cannot know
+   what they depict.
 2. **Component layer** — restyle concrete controls with the same selectors the
    core sheets use: `.chb-main` (every checkbox, including ones modules add),
    `input[type=…]` / `select` / `textarea` (forms.css), `.num-input-wrap`

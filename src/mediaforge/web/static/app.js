@@ -2440,6 +2440,24 @@ function initSearchSuggest() {
 
 initSearchSuggest();
 
+/**
+ * "Still searching" text for a fan-out search, or "" when nothing is left.
+ * The search asks every enabled source with its own request and paints each
+ * answer as it lands, so between the first and the last answer the page looks
+ * finished while it is not. Exported because the Seerr page fans out over the
+ * same /api/search endpoint and needs the same sentence (static/seerr.js).
+ * @param {number} pending sources that have not answered yet
+ */
+function mfSearchPendingText(pending) {
+  if (pending <= 0) return "";
+  if (pending === 1) {
+    return t("Suche läuft … noch 1 Quelle", "Still searching … 1 source to go");
+  }
+  return t("Suche läuft … noch " + pending + " Quellen",
+           "Still searching … " + pending + " sources to go");
+}
+window.mfSearchPendingText = mfSearchPendingText;
+
 async function doSearch() {
   const keyword = searchInput.value.trim().replace(/!+$/, "");
   if (!keyword) return;
@@ -2520,9 +2538,19 @@ async function doSearch() {
       return slot;
     });
 
+    // The spinner stays up until the LAST source has answered and counts down
+    // as they do -- otherwise the results of the fastest source look like the
+    // whole answer while four sites are still being scraped. searchSite()
+    // resolves on error and on its own 15 s timeout too, so the count always
+    // reaches zero and the finally below always hides it.
+    let _pending = _asked.length;
+    searchSpinner.textContent = mfSearchPendingText(_pending);
+
     let _anyResults = false;
     await Promise.all(_asked.map(function (src, i) {
       return searchSite(src.id).catch(() => []).then(function (results) {
+        _pending--;
+        searchSpinner.textContent = mfSearchPendingText(_pending);
         // The censorship filter is a property of the hanime source's own
         // metadata (r.censored), so it applies to whichever source reports
         // it, not to a hardcoded site id.
@@ -2545,7 +2573,9 @@ async function doSearch() {
         escapeHtml(t("Keine Ergebnisse gefunden.", "No results found.")) + "</div>";
     }
   } catch (e) {
-    showToast(t("Suche fehlgeschlagen: ", "Search failed: " + e.message));
+    // The message belonged to both languages, not just to the English one --
+    // the German toast used to end after the colon.
+    showToast(t("Suche fehlgeschlagen: ", "Search failed: ") + e.message);
   } finally {
     searchBtn.disabled = false;
     searchSpinner.style.display = "none";

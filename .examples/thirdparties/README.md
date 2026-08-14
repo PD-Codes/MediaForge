@@ -842,9 +842,9 @@ returns the same dict for clients that need it after page load.
 
 ## A button on the home page (`register_home_panel`)
 
-The home page has a row of buttons under the search field and **one** panel
-below it whose content depends on the button — Queue, Activity, Library, plus
-Storage and System for admins. `register_home_panel()` puts yours next to
+The home page has a row of buttons at the top of its **Dashboard** tab and
+**one** panel below it whose content depends on the button — Queue, Activity,
+Library, plus Storage and System for admins. `register_home_panel()` puts yours next to
 them. Use it when your module has a *state* a user would otherwise open
 another page to see; use a dashboard widget instead when you want your own
 markup on the classic home page.
@@ -879,6 +879,7 @@ def register(app):
         badge_tone="info",          # info | err | level | muted
         admin_only=False,
         icon="M3 6h18M3 12h18M3 18h12",  # optional 24x24 SVG path data
+        multi=False,                 # optional; lets "Add widget" add a 2nd/3rd card
     )
 ```
 
@@ -922,6 +923,12 @@ Five things that decide whether this behaves well:
 - **`admin_only=True` is a real gate**, checked in the list route *and* in the
   panel route: a normal account gets 403 rather than a hidden button with the
   data one fetch away.
+- **`multi=True` is for varying data, not extra space.** There is no
+  per-instance configuration — `view` takes no arguments — so a second card
+  of your panel shows exactly the same output as the first. Leave it `False`
+  (the default) unless your data is a shuffle/sample that is worth showing
+  twice on the same board; the Dashboard's "Add widget" menu only offers a
+  second copy when this is set.
 
 A `view` that raises does not take the page down — the bar keeps working and
 the panel reports itself unavailable. Cleanup runs through `item_id`, so
@@ -1215,9 +1222,21 @@ Blueprint's `template_folder`) rendered as a widget on the home page
 Ordered among other widgets by `priority`. Since Flask merges every
 Blueprint's `template_folder` into one global-by-filename lookup, prefix
 your filename with your `item_id` (e.g. `myext_widget.html`) to avoid a
-collision with another integration's widget template. Your widget's markup
-is entirely up to you — nothing else about it is generic, unlike the
+collision with another integration's widget template. Your widget's inner
+markup is entirely up to you — nothing else about it is generic, unlike the
 settings card.
+
+On the two-tab (new) home page, your widget is a first-class card on the
+same draggable/resizable Dashboard board as MediaForge's own built-in cards
+and `register_home_panel()` panels: the wrapper (grip, resize handle, close
+button, header) is built for you from this item's `label`/`icon_svg`, so
+your template only ever provides what goes in the card's body. On the
+classic home page it is still a plain block, unchanged. Unlike
+`register_home_panel()`'s `multi` flag, there is **no multi-instance
+option** here — your template is rendered once, server-side, as a single
+`{% include %}` per page load, and there is no live re-render path for that
+opaque markup the way a JSON-driven panel has, so "add a second one" is
+simply not offered for these widgets.
 
 ## Provider pills
 
@@ -2284,6 +2303,13 @@ def register(app):
   `extra_settings` toggle under that key gives the user a real off switch. A
   source switched off in Settings is left out of the feed's filter list
   entirely — it is no longer rendered as a greyed-out entry nobody can use.
+
+  Your rows live on the home page's **Discover** tab, together with the filter
+  dropdowns. The **Dashboard** tab holds the panel bar and the user's personal
+  rows; nothing there is source-driven. One row on Discover is not open to
+  modules either: **Could be for you** (`GET /api/home-feed/foryou`) is built
+  from cached TMDB recommendations for titles the library already contains, so
+  there is no fetcher to plug into.
 
   Two things about row length are worth knowing if you call the feed yourself.
   `GET /api/home-feed` and `GET /api/home-feed/row/<row>` accept **`&pool=1`**:

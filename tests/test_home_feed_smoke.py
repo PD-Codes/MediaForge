@@ -101,6 +101,29 @@ def test_module_registered_source_shows_up(as_user, stub_sources):
         unregister_home_feed_source("test-module")
 
 
+def test_module_search_source_shows_up_without_feed_fetchers(as_user, stub_sources):
+    """A module that only registered a provider + a search source has no
+    discovery lists the core could scrape -- but it must still be listed as a
+    source, or it can neither be filtered on nor switched off on the home
+    page."""
+    from mediaforge.search import register_search_source, unregister_search_source
+    register_search_source("test-module-2", "searchonly", lambda kw: [],
+                           label="SearchOnly", media_types=["movies"])
+    try:
+        data = as_user("user").get("/api/home-feed").get_json()
+        entry = next((s for s in data["sources"] if s["id"] == "searchonly"), None)
+        assert entry, [s["id"] for s in data["sources"]]
+        assert entry["label"] == "SearchOnly"
+        assert entry["builtin"] is False
+        # Declared types survive, so the type filter does not drop the source.
+        assert entry["types"] == ["movies"]
+        # ...and the settings list (Sources card / "off by default") knows it too.
+        listed = as_user("user").get("/api/home-feed/sources").get_json()["sources"]
+        assert any(s["id"] == "searchonly" for s in listed)
+    finally:
+        unregister_search_source("test-module-2")
+
+
 def test_registration_rejects_a_builtin_id():
     from mediaforge.home_feed import register_home_feed_source
     with pytest.raises(ValueError):

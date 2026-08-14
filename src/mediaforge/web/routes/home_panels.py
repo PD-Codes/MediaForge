@@ -45,6 +45,7 @@ from ...home_panels import PANEL_MAX_ITEMS
 from ...home_panels import iter_home_panels
 from ...logger import get_logger
 from flask import jsonify
+from flask import request
 import os
 import shutil
 import threading
@@ -769,6 +770,48 @@ def register_home_panel_routes(app):
                                        ("info", "err", "level", "muted") else "info"),
                         "icon": panel["icon"], "builtin": False})
         return jsonify({"panels": out, "active": _stored_panel(out)})
+
+    @app.route("/api/home-panels/all")
+    def api_home_panels_all():
+        """Every panel this account may see, bodies included, in one answer.
+
+        The dashboard shows all panels at once (a card each), so asking per
+        panel would be six requests on load and six more per poll -- the exact
+        "six widgets means six pollers" cost the one-panel-at-a-time design
+        avoided. ``?only=queue,activity`` narrows it to the panels whose data
+        actually moves, which is what the client polls with.
+
+        Same access rules as the two routes above: an admin-only panel is not
+        in the list for a normal account.
+        """
+        is_admin = _is_admin()
+        wanted = set(
+            p for p in str(request.args.get("only") or "").split(",") if p
+        )
+        out = []
+        for pid, label_key, view, _badge, admin_only, icon in _BUILTIN_PANELS:
+            if admin_only and not is_admin:
+                continue
+            if wanted and pid not in wanted:
+                continue
+            body = _render_panel(pid, "", label_key, view)
+            body["icon"] = icon
+            # Built-ins never offer a second instance -- none of them have
+            # per-instance data, only the mechanism needs to exist for them.
+            body["multi"] = False
+            out.append(body)
+        for panel in iter_home_panels():
+            if panel["admin_only"] and not is_admin:
+                continue
+            if wanted and panel["panel_id"] not in wanted:
+                continue
+            body = _render_panel(panel["panel_id"],
+                                 _clean_text(panel["label"], 40), "",
+                                 panel["view"])
+            body["icon"] = panel["icon"]
+            body["multi"] = bool(panel.get("multi"))
+            out.append(body)
+        return jsonify({"panels": out})
 
     @app.route("/api/home-panel/<panel_id>")
     def api_home_panel(panel_id):
