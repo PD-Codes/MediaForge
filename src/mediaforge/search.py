@@ -983,6 +983,36 @@ def get_search_source(site_id: str):
     return None
 
 
+def drop_unresolvable(results, site_id: str) -> list:
+    """Drop third-party search hits whose URL no registered provider owns.
+
+    :func:`register_search_source` documents that a hit's ``url`` must match
+    the ``Provider`` the module registered via ``register_provider``, but the
+    two halves are registered separately and can drift apart. Such a hit looks
+    like any other result card and only fails when it is clicked or synced,
+    where the answer is a bare "Unsupported URL" that reads like a MediaForge
+    bug -- so it is never offered, and the warning below names the module.
+
+    Built-in sources are deliberately not filtered: their search functions and
+    URL patterns ship together, so a mismatch there is a bug to fix rather
+    than a result to hide.
+    """
+    from .providers import resolve_provider
+
+    kept = []
+    for item in results or []:
+        url = (item or {}).get("url") or (item or {}).get("link") or ""
+        try:
+            resolve_provider(url)
+        except Exception:
+            logger.warning(
+                "[Search] source '%s' returned a URL no provider resolves, "
+                "dropped: %r", site_id, url)
+            continue
+        kept.append(item)
+    return kept
+
+
 if __name__ == "__main__":
     print("New series:", fetch_new_series())
     print("Popular series:", fetch_popular_series())

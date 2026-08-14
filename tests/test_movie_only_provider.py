@@ -34,6 +34,11 @@ class _FakeMovie:
         self.release_year = 2026
         self.available_languages = ["German Dub", "English Dub"]
         self.available_providers = ["VOE"]
+        # Built-in models spell this `imdb`; the payload and every TMDB helper
+        # call it `imdb_id`, and module models copy that spelling -- so the
+        # route has to accept both. This fake deliberately offers only the
+        # second one.
+        self.imdb_id = "tt0000001"
 
 
 @pytest.fixture()
@@ -87,6 +92,11 @@ def test_api_series_returns_movie_metadata(as_user, movie_provider):
     from urllib.parse import unquote
 
     assert "https://movies.invalid/poster.jpg" in unquote(data["poster_url"])
+
+
+def test_api_series_accepts_imdb_id_as_well_as_imdb(as_user, movie_provider):
+    resp = as_user("user").get("/api/series", query_string={"url": _MOVIE_URL})
+    assert resp.get_json()["imdb_id"] == "tt0000001"
 
 
 def test_api_seasons_returns_one_synthetic_season(as_user, movie_provider):

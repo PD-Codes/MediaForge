@@ -19,6 +19,7 @@ from ...search import aniwaves_search
 from ...search import query as aniworld_query
 from ...search import query_s_to
 from ...search import get_search_source
+from ...search import drop_unresolvable
 from ..source_policy import is_adult_source as _is_adult_source
 from ..source_policy import search_sources
 from ..db import clear_tmdb_cache
@@ -602,7 +603,11 @@ def _movie_only_metadata(prov, url):
 
         parsed = urlparse(url)
         poster = f"{parsed.scheme}://{parsed.netloc}{poster}"
-    imdb_id = getattr(obj, "imdb", None) or None
+    # Built-in models expose ``imdb``; the payload below (and the TMDB helpers)
+    # call the same thing ``imdb_id``, and third-party models copy that
+    # spelling often enough that only accepting ``imdb`` silently cost them
+    # the IMDb-based TMDB match. Accept both.
+    imdb_id = getattr(obj, "imdb", None) or getattr(obj, "imdb_id", None) or None
 
     api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
     if api_key:
@@ -758,7 +763,9 @@ def register_search_routes(app):
             # Third-party content source, see providers.register_provider /
             # search.register_search_source.
             try:
-                results = _extra_source["search_fn"](keyword) or []
+                # A hit no provider resolves is a dead card: clicking it can
+                # only answer "Unsupported URL". See search.drop_unresolvable.
+                results = drop_unresolvable(_extra_source["search_fn"](keyword), site)
             except Exception as exc:
                 logger.error("[Search] Third-party source '%s' failed: %s", site, exc, exc_info=True)
                 results = []

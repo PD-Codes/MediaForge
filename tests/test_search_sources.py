@@ -19,9 +19,22 @@ _STATIC = Path(__file__).resolve().parents[1] / "src" / "mediaforge" / "web" / "
 
 @pytest.fixture()
 def module_source():
-    """Register a fake module search source for the duration of one test."""
-    from mediaforge import search
+    """Register a fake module search source for the duration of one test.
 
+    The matching Provider is registered too, because that is the contract:
+    a search hit's URL has to be resolvable, and api_search() drops the ones
+    that are not (see test_unresolvable_hits_are_dropped).
+    """
+    from mediaforge import providers, search
+
+    providers.register_provider(
+        "test-item",
+        providers.Provider(
+            name="TestSite",
+            episode_pattern=re.compile(r"^https://test\.invalid/[a-z0-9]+$"),
+            episode_cls=object,
+        ),
+    )
     search.register_search_source(
         "test-item", "testsite", lambda kw: [{"title": "Hit " + kw, "url": "https://test.invalid/x"}],
         label="TestSite",
@@ -30,6 +43,7 @@ def module_source():
         yield "testsite"
     finally:
         search.unregister_search_source("test-item")
+        providers.unregister_provider("test-item")
 
 
 # ── The catalogue itself ────────────────────────────────────────────────────
@@ -193,6 +207,26 @@ def test_search_route_reaches_module_source(as_user, module_source):
     assert resp.status_code == 200
     titles = [r["title"] for r in resp.get_json()["results"]]
     assert titles == ["Hit abc"]
+
+
+def test_unresolvable_hits_are_dropped(as_user):
+    """A hit no provider owns is a dead card -- clicking it can only answer
+    "Unsupported URL" -- so api_search() must not hand it to the UI."""
+    from mediaforge import search
+
+    search.register_search_source(
+        "broken-item", "brokensite",
+        lambda kw: [{"title": "Dead", "url": "https://nothing.invalid/x"},
+                    {"title": "Alive", "url": "https://aniworld.to/anime/stream/naruto"}],
+        label="BrokenSite",
+    )
+    try:
+        resp = as_user("admin").post("/api/search",
+                                     json={"keyword": "abc", "site": "brokensite"})
+        assert resp.status_code == 200
+        assert [r["title"] for r in resp.get_json()["results"]] == ["Alive"]
+    finally:
+        search.unregister_search_source("broken-item")
 
 
 # ── No hardcoded lists left where they caused the bug ───────────────────────

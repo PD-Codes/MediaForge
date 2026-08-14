@@ -194,7 +194,11 @@ def find_site_candidates(title: str) -> list:
     # how the built-in hanime branch above is gated: an 18+ hit appearing in a
     # lookup nobody asked for is not a missing feature.
     try:
-        from ...search import thirdparty_search_sources, get_search_source
+        from ...search import (
+            drop_unresolvable,
+            get_search_source,
+            thirdparty_search_sources,
+        )
         for src in thirdparty_search_sources():
             site_id = src["site_id"]
             if src.get("adult") and not _hanime_enabled():
@@ -209,7 +213,9 @@ def find_site_candidates(title: str) -> list:
             if not entry:
                 continue
             try:
-                for item in (entry["search_fn"](title) or []):
+                # Same filter api_search() applies: a URL no provider resolves
+                # cannot ever be synced, so it must not become a candidate.
+                for item in drop_unresolvable(entry["search_fn"](title), site_id):
                     url = item.get("url") or item.get("link") or ""
                     if not url or url in seen:
                         continue
