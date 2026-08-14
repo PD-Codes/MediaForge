@@ -1,11 +1,11 @@
 """Site-agnostic episode-action implementations shared by every model family.
 
-AniworldEpisode and SerienstreamEpisode assign these directly
-(``download = episode_download`` etc. in their episode.py); FilmPalastEpisode,
-MegakinoEpisode and MegakinoMovie do the same for watch()/syncplay() but wrap
-download() so they can special-case the VeeV provider (which needs a
-dedicated curl_cffi/Playwright path instead of the yt-dlp+ffmpeg pipeline
-here). HanimeEpisode aliases watch()/syncplay() from here too, but has its
+AniworldEpisode, SerienstreamEpisode, FilmPalastEpisode, MegakinoEpisode and
+MegakinoMovie assign these directly (``download = episode_download`` etc. in
+their episode.py). Hosters that cannot go through the yt-dlp+ffmpeg pipeline
+here -- VeeV needs a dedicated curl_cffi/Playwright path -- are dispatched by
+resolved host inside download() itself, see _download_via_hoster().
+HanimeEpisode aliases watch()/syncplay() from here too, but has its
 own download() (single HLS stream, no per-language/provider selection).
 
 Also home to the ffmpeg/yt-dlp download pipeline, progress tracking
@@ -142,6 +142,36 @@ def _effective_provider(episode):
     if resolved:
         return canonical_provider_name(resolved)
     return getattr(episode, "selected_provider", None)
+
+
+def _download_via_hoster(episode, cancel_event=None) -> bool:
+    """Run a hoster's own downloader when the shared pipeline cannot fetch it.
+
+    Returns True when the file was downloaded here and download() must stop.
+
+    Currently only VeeV: its CDN validates the browser TLS fingerprint, so
+    yt-dlp/ffmpeg get rejected and a curl_cffi + Playwright path is needed.
+    Dispatch goes through _effective_provider(), i.e. the *resolved host*, not
+    the site's hoster label -- labels lie (mirrored entries, " HD"/" HQ"
+    suffixes), and doing it here means every model family and every third-party
+    module gets it for free instead of re-implementing the branch in its own
+    download().
+    """
+    provider = re.sub(r"\s+(HD|HQ)$", "", str(_effective_provider(episode) or ""),
+                      flags=re.IGNORECASE).strip().lower()
+    if provider != "veev":
+        return False
+
+    try:
+        from ...extractors.provider.veev import download_from_veev
+    except ImportError:
+        from mediaforge.extractors.provider.veev import download_from_veev
+
+    label = os.path.splitext(episode._file_name)[0] if episode._file_name else ""
+    os.makedirs(episode._folder_path, exist_ok=True)
+    download_from_veev(episode.provider_url, episode._episode_path,
+                       cancel_event=cancel_event, label=label)
+    return True
 
 
 def _read_encoding_settings():
@@ -1591,17 +1621,20 @@ def download(self, cancel_event=None):
     """Download required audio/video streams for an episode and mux them into
     the final .mkv, skipping any language/track already present on disk.
 
-    Used directly by AniworldEpisode and SerienstreamEpisode (assigned as
-    ``download = episode_download``). FilmPalastEpisode.download() and
-    MegakinoEpisode/MegakinoMovie.download() call this too for every
-    provider except VeeV, which is routed to extractors.provider.veev
-    instead because its CDN validates the browser TLS fingerprint.
+    Used directly by AniworldEpisode, SerienstreamEpisode, FilmPalastEpisode
+    and MegakinoEpisode/MegakinoMovie (all assigned as
+    ``download = episode_download``). VeeV is handled here as well, routed to
+    extractors.provider.veev because its CDN validates the browser TLS
+    fingerprint -- see _download_via_hoster().
     HanimeEpisode does NOT use this -- it has its own single-stream
     download() with no language/provider selection to reconcile.
     """
     if platform.system() == "Windows":
         manager = DependencyManager()
         manager.fetch_binary("ffmpeg")
+
+    if _download_via_hoster(self, cancel_event=cancel_event):
+        return True
 
     try:
         # Where the finished file goes. Normally the episode's own path, but the

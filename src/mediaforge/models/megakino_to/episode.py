@@ -220,21 +220,8 @@ class MegakinoEpisode:
             self.__is_downloaded = check_downloaded(self._episode_path)
         return self.__is_downloaded
 
-    def download(self, cancel_event=None, **kwargs):
-        """Download this episode; VeeV is routed to its dedicated extractor
-        (TLS-fingerprint gated), everything else goes through the shared
-        models/common/common.py download() pipeline."""
-        if self.selected_provider.upper() == "VEEV":
-            try:
-                from ...extractors.provider.veev import download_from_veev
-            except ImportError:
-                from mediaforge.extractors.provider.veev import download_from_veev
-            ep_label = os.path.splitext(self._file_name)[0] if self._file_name else ""
-            os.makedirs(self._folder_path, exist_ok=True)
-            download_from_veev(self.provider_url, self._episode_path,
-                               cancel_event=cancel_event, label=ep_label)
-        else:
-            episode_download(self, cancel_event=cancel_event, **kwargs)
-
+    # VeeV (and any other hoster needing its own downloader) is dispatched by
+    # resolved host inside common.download(); see _download_via_hoster().
+    download = episode_download
     watch = episode_watch
     syncplay = episode_syncplay

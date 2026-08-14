@@ -783,16 +783,23 @@ def _safe_extract(data: bytes, folder: str, target_root: Path,
 
     prefix = folder + "/"
     for member in members:
-        name = member.filename.replace("\\", "/")
+        name = member.filename
+        # A backslash is NOT a separator for zipfile's extractor, but it is one
+        # on Windows -- normalising it here (as this loop used to) would clear
+        # "mod\..\..\db.py" as if it were a nested path, while extractall()
+        # writes it as one literal file name straight into target_root. The
+        # zip spec says members use "/" only, so refuse the ambiguity instead.
+        if "\\" in name:
+            raise ValueError(f"archive member name contains a backslash: {name}")
         if name.startswith("/") or ".." in Path(name).parts:
-            raise ValueError(f"archive member escapes its folder: {member.filename}")
+            raise ValueError(f"archive member escapes its folder: {name}")
         # 0xA000 == S_IFLNK in the high 16 bits of external_attr (unix mode).
         if (member.external_attr >> 16) & 0xF000 == 0xA000:
-            raise ValueError(f"archive contains a symlink: {member.filename}")
+            raise ValueError(f"archive contains a symlink: {name}")
         if not name.startswith(prefix):
             raise ValueError(
-                f"archive member outside the '{folder}/' folder: {member.filename}")
-    if not any(m.filename.replace("\\", "/") == prefix + required_file for m in members):
+                f"archive member outside the '{folder}/' folder: {name}")
+    if not any(m.filename == prefix + required_file for m in members):
         raise ValueError(f"archive has no {folder}/{required_file} — not a {kind}")
 
     if staged.exists():
