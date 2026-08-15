@@ -550,7 +550,15 @@
       const also = (item.also || []).filter(function (a) { return sourceOn(a.source); });
       const pill = document.createElement("span");
       pill.className = "browse-src-pill";
-      pill.textContent = (src ? src.label : item.source) + (also.length ? " +" + also.length : "");
+      // Text lives in its own inner span, not directly on the pill: overflow:
+      // hidden on the pill itself (cards.css) would also clip
+      // openSourcePicker()'s dropdown, appended as the pill's OTHER child and
+      // meant to extend past it. Scoping the clip to just the label leaves
+      // the dropdown free.
+      const label = document.createElement("span");
+      label.className = "browse-src-pill-label";
+      label.textContent = (src ? src.label : item.source) + (also.length ? " +" + also.length : "");
+      pill.appendChild(label);
       if (also.length) {
         pill.classList.add("is-multi");
         pill.dataset.also = JSON.stringify(
@@ -568,13 +576,20 @@
           openSourcePicker(pill);
         });
       }
-      // Into the text column when there is one. On a poster the pill is
-      // absolutely positioned against .browse-card (which is the positioned
-      // ancestor either way), so this changes nothing there -- but in a list
-      // row it makes the pill a sibling of the title and genre, which is
-      // where it belongs and where it lines up without a magic indent.
+      // Into .browse-tmdb-meta, the same row the streaming-service pill
+      // (Netflix, Apple TV+ ...) lands in once TMDB answers -- so "where we
+      // found it" sits where "where you can watch it" would, instead of
+      // competing with the corner badges (Vorhanden/Sync) for a fixed spot
+      // that a title with a long source name could run into. When the
+      // streaming pill never shows up (no CineInfo match), this is the only
+      // thing in that row and simply takes its place. _ensureCardMeta is
+      // app.js's, shared so both pieces of code create/find the same
+      // container instead of each growing their own; its enrichment pass
+      // clears this row on every (re-)run but explicitly skips
+      // .browse-src-pill, or this would be gone the moment TMDB answered.
       const card = grid.children[i];
-      (card.querySelector(".browse-info") || card).appendChild(pill);
+      const meta = (typeof _ensureCardMeta === "function") ? _ensureCardMeta(card) : null;
+      (meta || card.querySelector(".browse-info") || card).appendChild(pill);
     }
   }
 

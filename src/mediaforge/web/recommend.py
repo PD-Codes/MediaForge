@@ -527,6 +527,23 @@ def for_you(username: str, limit: int = MAX_ROW, hero: int = 5, shuffle: bool = 
     # above) only catches a candidate whose displayed title happens to equal
     # one of owned's known strings; this catches it even when it does not.
     exclude_ids = {data.get("tmdb_id") for _title, data in entries if data.get("tmdb_id")}
+    # A third exclude, loose this time. The two above are exact: a candidate
+    # slips through whenever its TMDB title differs from the owned string by
+    # punctuation, an article, a bracketed suffix or a season marker AND the
+    # owned side has no cached tmdb_id -- which is precisely how titles the
+    # library already holds kept showing up in this row. Every other
+    # "do we have this?" path in the app (search, download dialog, calendar)
+    # goes through loose_title_key/alias_index, so this one does too instead
+    # of inventing a fourth notion of sameness.
+    exclude_loose: set[str] = set()
+    try:
+        from ..models.common.common import loose_title_key as _loose
+        from .library_aliases import alias_index as _alias_index
+        exclude_loose = {k for k in (_loose(t) for t in exclude) if k}
+        exclude_loose |= set(_alias_index().keys())
+    except Exception as exc:
+        logger.debug("[Recommend] Could not build loose exclude set: %s", exc)
+        _loose = None
 
     candidates: dict[int, dict] = {}
     # Titles whose cached payload carries no recommendations at all. A missing
@@ -547,6 +564,8 @@ def for_you(username: str, limit: int = MAX_ROW, hero: int = 5, shuffle: bool = 
             tmdb_id = rec.get("id")
             title = rec.get("title") or ""
             if not tmdb_id or not title or tmdb_id in exclude_ids or _norm(title) in exclude:
+                continue
+            if exclude_loose and _loose and _loose(title) in exclude_loose:
                 continue
             item = candidates.get(tmdb_id)
             if item is None:

@@ -12592,3 +12592,21 @@ msgstr "Raum für alle schließen"
 #~ "zu starten — für alle, die nur "
 #~ "die Stöberseite wollen."
 
+
+# Module Manager: the three-view switch (Installed / Store / Settings) and the
+# left rail's groups, added with the split-browser rework of the page.
+#: src/mediaforge/web/templates/extensions.html
+msgid "Module Manager views"
+msgstr "Modulmanager-Ansichten"
+
+#: src/mediaforge/web/templates/extensions.html
+msgid "Store"
+msgstr "Store"
+
+#: src/mediaforge/web/templates/_extensions_nav.html
+msgid "State"
+msgstr "Status"
+
+#: src/mediaforge/web/templates/_extensions_nav.html
+msgid "Health"
+msgstr "Zustand"

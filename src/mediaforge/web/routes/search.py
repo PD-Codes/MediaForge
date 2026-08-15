@@ -769,9 +769,9 @@ def register_search_routes(app):
             except Exception as exc:
                 logger.error("[Search] Third-party source '%s' failed: %s", site, exc, exc_info=True)
                 results = []
-        else:
+        elif site in ("aniworld", "sto"):
             results = _get_site_results(keyword, site)
-            
+
             # Fallback for apostrophes (AniWorld's search is broken for titles with apostrophes)
             if not results and ("'" in keyword or "’" in keyword):
                 # Try the opposite apostrophe first
@@ -801,6 +801,15 @@ def register_search_routes(app):
                 if clean_hyphen and clean_hyphen != keyword:
                     logger.debug("[CineInfo] Fallback Hyphen: Searching for %r", clean_hyphen)
                     results = _get_site_results(clean_hyphen, site)
+
+        else:
+            # Unknown source id. This used to fall through to
+            # _get_site_results(), whose else-branch queries AniWorld -- so a
+            # module that only registered a provider (no search source) was
+            # listed as a source and then served AniWorld's hits under its own
+            # name. An unsearchable source has no results, not someone else's.
+            logger.warning("[Search] Unknown source '%s' requested", site)
+            results = []
 
         # Provider results carry no rating of their own, so for a limited
         # session the ceiling is applied against whatever TMDB data is already

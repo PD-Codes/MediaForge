@@ -13,7 +13,7 @@
 {% endblock %}
 {% block content %}
 <div class="settings-container extensions-page">
-  <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+  <div class="page-header">
     <div>
       <h1 class="page-title">{{ _('Module Manager') }}</h1>
       <p class="page-subtitle">{{ _('Every discovered web/thirdparties/ folder, who made it, and a working on/off switch for what it registered') }}</p>
@@ -31,22 +31,35 @@
       </p>
       {% endif %}
     </div>
-    <!-- Two views, one page: the modules installed here, and the store to get more
-         from. They are separate destinations, not one long scroll — an admin came to
-         do one or the other. The store button carries the update count, so the reason
-         to go there is visible from the installed view without opening it. -->
-    <div class="ext-header-actions" style="display:flex;gap:8px;align-items:center;">
-      {% if store_enabled %}
-      <button class="btn btn-primary" id="extStoreToggleBtn" style="white-space:nowrap;"
-              title="{{ _('Browse the module store') }}">
-        <span id="extStoreToggleLabel">{{ _('Module Store') }}</span>
-        <span class="integ-subsection-badge badge-update" id="extStoreUpdateBadge" style="display:none;margin-left:6px;"></span>
-      </button>
-      {% endif %}
-      <button class="btn btn-secondary" id="extRescanBtn" style="white-space:nowrap;" title="{{ _('Scan web/thirdparties/ for new module folders and register them without restarting the app.') }}">
-        {{ _('Refresh') }}
-      </button>
-    </div>
+    <!-- The "Refresh" action lives in the rail (_extensions_nav.html), next to
+         the other page-level controls, instead of floating in the header. -->
+  </div>
+
+  <!-- Three views, one page. They used to be two behind a button ("Module
+       Manager" / "Module Store"), with the store's own configuration —
+       repositories, trust, folders, signing keys — stacked ABOVE the catalog,
+       so getting to the modules meant scrolling past settings nobody opened
+       the page to change. Split into a third view instead: the catalog starts
+       at the top of its own view, and the settings are one click away rather
+       than a screenful of scrolling.
+       The update count sits on the Store entry, so the reason to go there is
+       visible from the installed view without opening it. -->
+  <div class="ext-viewseg" id="extViewSeg" role="tablist"
+       aria-label="{{ _('Module Manager views') }}">
+    <button type="button" class="ext-viewseg-btn active" data-extview="installed"
+            role="tab" aria-selected="true">
+      {{ _('Installed') }}
+      <span class="ext-viewseg-n">{{ (extensions|length) + (theme_packs|length) }}</span>
+    </button>
+    {% if store_enabled %}
+    <button type="button" class="ext-viewseg-btn" data-extview="store" role="tab" aria-selected="false">
+      {{ _('Store') }}
+      <span class="integ-subsection-badge badge-update" id="extStoreUpdateBadge" style="display:none;"></span>
+    </button>
+    {% endif %}
+    <button type="button" class="ext-viewseg-btn" data-extview="settings" role="tab" aria-selected="false">
+      {{ _('Settings') }}
+    </button>
   </div>
 
   <!-- Restart banner. Everything the store does (install, update, uninstall)
@@ -160,36 +173,12 @@
       'background_worker': _('background worker')
   } %}
 
-  {# Tally + filter. Both read the cards' data-mm-state, so nothing here has
-     to be kept in sync with the loop below. #}
-  {% set _states = extensions|map(attribute="state")|list %}
-  {% if extensions %}
-  <div class="mm-bar">
-    <div class="mm-tally">
-      <b>{{ extensions|length }}</b> {{ _('modules') }}
-      <span class="mm-sep">·</span> <b>{{ _states|select("equalto", "ok")|list|length }}</b> {{ _('running') }}
-      <span class="mm-sep">·</span> <b>{{ _states|select("equalto", "off")|list|length }}</b> {{ _('off') }}
-      {% set _trouble = _states|select("equalto", "error")|list|length + _states|select("equalto", "skipped")|list|length %}
-      {% if _trouble %}
-      <span class="mm-sep">·</span>
-      <span class="mm-warn">{{ _states|select("equalto", "skipped")|list|length }} {{ _('skipped') }} ·
-        {{ _states|select("equalto", "error")|list|length }} {{ _('with errors') }}</span>
-      {% endif %}
-    </div>
-    <div class="mm-filters" id="mmFilters" role="group" aria-label="{{ _('Filter by state') }}">
-      <button type="button" class="mm-filter active" data-mm-filter="">{{ _('All') }}
-        <span class="n">{{ extensions|length }}</span></button>
-      <button type="button" class="mm-filter" data-mm-filter="ok">{{ _('Running') }}
-        <span class="n">{{ _states|select("equalto", "ok")|list|length }}</span></button>
-      <button type="button" class="mm-filter" data-mm-filter="off">{{ _('Off') }}
-        <span class="n">{{ _states|select("equalto", "off")|list|length }}</span></button>
-      {% if _trouble %}
-      <button type="button" class="mm-filter mm-filter-trouble" data-mm-filter="trouble">{{ _('Problems') }}
-        <span class="n">{{ _trouble }}</span></button>
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
+  {# The tally and the state filters moved into the left rail
+     (_extensions_nav.html): they answer the same question the Modules /
+     Theme Packs switch does, and having them in two places meant one of the
+     two was always scrolled away. Nothing else changed — the filter buttons
+     still carry data-mm-filter and are still driven by extension_cards.js
+     against each card's data-mm-state. #}
 
   {% for ext in extensions %}
   <!-- data-module-id carries the module's stable MODULE_ID (falls back to the
@@ -224,6 +213,12 @@
       <span class="mm-ident">
         <span class="mm-title-row">
           <span class="integ-subsection-title">{{ ext.module_name }}</span>
+      {# Kind pill. Modules and theme packs sit in the same manager and are
+         installed from the same catalog, but one is Python running in this
+         process and the other is CSS — worth one word on every entry, in both
+         views, so nobody installs a skin expecting a feature. The store list
+         renders the same pill from the index's "type" field. #}
+      <span class="ext-pill ext-pill-module">{{ _('Module') }}</span>
       <!-- MODULE_VERSION is no longer a badge -- it moved to the meta line
            below the name. The module store still finds this card by
            data-module-id and hangs its "Update: v…" badge in this header. -->
@@ -508,8 +503,8 @@
          onclick="toggleIntegCollapse('theme-{{ tp.folder }}')">
       <span class="integ-collapsible-chevron">▸</span>
       <span class="integ-subsection-title">{{ tp.name }}</span>
+      <span class="ext-pill ext-pill-theme">{{ _('Theme') }}</span>
       <span class="integ-subsection-badge badge-version">v{{ tp.version }}</span>
-      <span class="integ-subsection-badge badge-depends">{{ _('Theme') }}</span>
       {% if tp.signature.tier == 'official' %}
       <span class="integ-subsection-badge badge-official" title="{{ _('Signed by') }} {{ tp.signature.signer }}">{{ _('Official') }}</span>
       {% elif tp.signature.tier == 'verified' %}
@@ -579,15 +574,12 @@
   </div><!-- /#exttab-themes -->
   </div><!-- /#extInstalledView -->
 
-  <!-- ── View 2: the module store ─────────────────────────────────────────
-       Hidden until the header button opens it. The catalog is still fetched on
-       page load though (see module_store.js) — that is what puts the update count
-       on the button and the "Update: v…" badges on the installed cards, and an
-       admin should not have to go looking to find out something is out of date.
-       Modules are arbitrary Python running in this process, so nothing here
-       installs anything without an explicit click, and unverified entries need an
-       opt-in on top of that. -->
-  <div id="extStoreView" style="display:none;">
+  <!-- ── View 3: settings ─────────────────────────────────────────────────
+       Where the modules come from and what this install is willing to run.
+       This used to sit on top of the catalog, which meant every visit to the
+       store scrolled past a trust-key table to reach the modules. It is
+       configuration, opened deliberately — so it gets its own view. -->
+  <div id="extSettingsView" style="display:none;">
 
   <!-- Card 0: "anyone can build one". The store reads like a catalog somebody else
        fills, which hides the actual situation: web/thirdparties/ and web/themes/ are
@@ -647,14 +639,19 @@
     </div>
   </div>
 
-  <!-- Card 1: where the modules come from and what this install is willing to run.
-       Settings, not merchandise — kept apart from the catalog below, because reading a
-       list of available modules and deciding which repositories to trust are two
-       different jobs and mixing them into one scroll made the modules look like just
-       another settings row. -->
+  <!-- Cards 1-3: where the modules come from, what this install is willing to
+       run, and where they physically live — three different questions, so
+       three cards in a grid (.ext-settings-grid, extensions.css) instead of
+       one long scroll. Reading a list of available modules and deciding
+       which repositories to trust are two different jobs, and stacking every
+       row into a single card made the modules look like just another
+       settings row. -->
+  <div class="ext-settings-grid">
+
+  <!-- Card 1: Repositories. -->
   <div class="settings-section" id="extStoreSection">
     <div class="integ-subsection-header" style="padding:14px 20px !important;">
-      <span class="integ-subsection-title">{{ _('Module Store') }}</span>
+      <span class="integ-subsection-title">{{ _('Repositories') }}</span>
       {% if store_enabled %}
       <span class="integ-subsection-badge badge-version" id="extStoreName">{{ store_url }}</span>
       {% else %}
@@ -688,7 +685,7 @@
            special standing. Its modules come out "unverified" in practice, because a
            third-party repo doesn't hold the keys this build was compiled with. That's
            the correct outcome, not a restriction. -->
-      <div class="settings-row" id="extStoreExtraRow">
+      <div class="settings-row" id="extStoreExtraRow" style="border-bottom:none;">
         <div class="settings-row-left">
           <div class="settings-row-label">{{ _('Additional repositories') }}</div>
           <div class="settings-row-desc">
@@ -701,7 +698,15 @@
           <button class="btn btn-primary" id="extStoreExtraSaveBtn">{{ _('Save') }}</button>
         </div>
       </div>
+    </div>
+  </div>
 
+  <!-- Card 2: Trust. -->
+  <div class="settings-section">
+    <div class="integ-subsection-header" style="padding:14px 20px !important;">
+      <span class="integ-subsection-title">{{ _('Trust') }}</span>
+    </div>
+    <div style="padding:0 20px 16px;">
       <!-- One switch, two consequences, and they belong together: it permits unverified
            modules to be installed AND it makes the store list the ones nobody has reviewed
            yet (its index-all.json — see thirdparties/store.py's fetch_index()). Splitting
@@ -729,33 +734,7 @@
            ("add this key and my module shows up as Official"), and the badge would
            stop meaning anything at all. So this row exists to answer "why is that
            module official?" — not to change the answer. -->
-      <!-- Where modules live. Not a setting — a fact, and one an admin needs when
-           installing a module by hand or looking for one the store put there. -->
-      <div class="settings-row">
-        <div class="settings-row-left">
-          <div class="settings-row-label">{{ _('Module folder') }}</div>
-          <div class="settings-row-desc">
-            {{ _('Installed modules live here, outside MediaForge\'s program files — next to your database and cache, so they survive an update. A module installed by hand is simply a folder dropped in here; it is picked up on the next start.') }}
-          </div>
-        </div>
-        <div class="settings-row-right">
-          <code style="opacity:.8;">{{ modules_dir }}</code>
-        </div>
-      </div>
-      <!-- Same fact for theme packs (web/themes.py). -->
-      <div class="settings-row">
-        <div class="settings-row-left">
-          <div class="settings-row-label">{{ _('Theme folder') }}</div>
-          <div class="settings-row-desc">
-            {{ _('Installed theme packs live here. A theme installed by hand is a folder with a theme.json dropped in here — it shows up on the next page load, no restart needed.') }}
-          </div>
-        </div>
-        <div class="settings-row-right">
-          <code style="opacity:.8;">{{ themes_dir }}</code>
-        </div>
-      </div>
-
-      <div class="settings-row" id="extStoreKeysRow">
+      <div class="settings-row" id="extStoreKeysRow" style="border-bottom:none;">
         <div class="settings-row-left">
           <div class="settings-row-label">{{ _('Trusted signing keys') }}</div>
           <div class="settings-row-desc">
@@ -775,50 +754,116 @@
           {% endif %}
         </div>
       </div>
-
     </div>
   </div>
 
-  <!-- Card 2: the catalog itself, in its own card below the settings — this is what an
-       admin came here to look at.
-
-       Fetched client-side (module_store.js): a slow or unreachable repository must not
-       be able to delay the page whose actual job is showing the modules already
-       installed here. -->
-  <div class="settings-section" id="extStoreCatalogCard">
+  <!-- Card 3: Locations. Not settings — facts. Both live next to the database
+       so they survive an update; an admin needs them when installing a module
+       or theme by hand or looking for one the store put there. -->
+  <div class="settings-section">
     <div class="integ-subsection-header" style="padding:14px 20px !important;">
-      <span class="integ-subsection-title">{{ _('Available modules') }}</span>
-      <span class="integ-subsection-badge badge-version" id="extStoreCount" style="display:none;"></span>
-      <!-- Type filter (module_store.js): the same catalog carries modules and
-           theme packs (index "type" field); this narrows the list client-side. -->
-      <div class="mf-search ext-store-search">
-        <svg class="mf-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <input type="search" class="mf-search-input" id="extStoreSearch"
-               placeholder="{{ _('Search modules and themes…') }}"
-               aria-label="{{ _('Search modules and themes…') }}" autocomplete="off">
-        <button type="button" class="mf-search-clear" id="extStoreSearchClear"
-                aria-label="{{ _('Clear search') }}" hidden>&times;</button>
-      </div>
-      <div class="ext-type-filter" id="extTypeFilter" role="group" aria-label="{{ _('Filter by type') }}">
-        <button type="button" class="ext-type-filter-btn active" data-type="">{{ _('All') }}</button>
-        <button type="button" class="ext-type-filter-btn" data-type="module">{{ _('Modules') }}</button>
-        <button type="button" class="ext-type-filter-btn" data-type="theme">{{ _('Themes') }}</button>
-      </div>
-      <button class="btn btn-secondary" id="extStoreRefreshBtn" style="margin-left:auto;{% if not store_enabled %}display:none;{% endif %}">
-        {{ _('Refresh store') }}
-      </button>
+      <span class="integ-subsection-title">{{ _('Locations') }}</span>
     </div>
     <div style="padding:0 20px 16px;">
-      <div id="extStoreCatalog" {% if not store_enabled %}style="display:none;"{% endif %}>
-        <div class="settings-hint" id="extStoreStatus">{{ _('Loading store…') }}</div>
-        <div id="extStoreList"></div>
+      <div class="settings-row">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Module folder') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Installed modules live here, outside MediaForge\'s program files — next to your database and cache, so they survive an update. A module installed by hand is simply a folder dropped in here; it is picked up on the next start.') }}
+          </div>
+        </div>
+        <div class="settings-row-right">
+          <code style="opacity:.8;">{{ modules_dir }}</code>
+        </div>
+      </div>
+      <!-- Same fact for theme packs (web/themes.py). -->
+      <div class="settings-row" style="border-bottom:none;">
+        <div class="settings-row-left">
+          <div class="settings-row-label">{{ _('Theme folder') }}</div>
+          <div class="settings-row-desc">
+            {{ _('Installed theme packs live here. A theme installed by hand is a folder with a theme.json dropped in here — it shows up on the next page load, no restart needed.') }}
+          </div>
+        </div>
+        <div class="settings-row-right">
+          <code style="opacity:.8;">{{ themes_dir }}</code>
+        </div>
       </div>
     </div>
   </div>
 
+  </div><!-- /.ext-settings-grid -->
+
+  </div><!-- /#extSettingsView -->
+
+  <!-- ── View 2: the catalog ──────────────────────────────────────────────
+       Three columns, not a grid of cards: browsing a catalog is picking a
+       shortlist and then reading ONE entry properly, and a card grid can only
+       do the first half — everything an entry actually has to answer before
+       an admin runs somebody else's Python in their process (what it
+       registers, who signed it, which repository it came from, whether it
+       fits this MediaForge) does not fit on a tile, and a modal for it would
+       close the list you were comparing against.
+
+       Left: what kind of thing and from where. Middle: the shortlist, one row
+       each, with the three pills that matter — kind, installed, update.
+       Right: the selected entry in full, list still visible next to it.
+
+       The catalog is fetched client-side (module_store.js) on page load even
+       when this view is closed: that is what puts the update count on the
+       Store tab and the "Update: v…" badges on the installed cards. A slow or
+       unreachable repository must not be able to delay the page whose actual
+       job is showing the modules already installed here. -->
+  <div id="extStoreView" style="display:none;">
+    <div class="ext-store-split">
+
+      <!-- Left rail: facets, all computed from the catalog in the browser. -->
+      <aside class="ext-store-rail" id="extStoreRail">
+        <div class="ext-rail-group">
+          <span class="ext-rail-label">{{ _('Type') }}</span>
+          <div class="ext-rail-facets" id="extTypeFilter" role="group" aria-label="{{ _('Filter by type') }}">
+            <button type="button" class="ext-facet active" data-type="">{{ _('All') }}
+              <span class="ext-facet-n" data-count-type=""></span></button>
+            <button type="button" class="ext-facet" data-type="module">{{ _('Modules') }}
+              <span class="ext-facet-n" data-count-type="module"></span></button>
+            <button type="button" class="ext-facet" data-type="theme">{{ _('Themes') }}
+              <span class="ext-facet-n" data-count-type="theme"></span></button>
+          </div>
+        </div>
+        <!-- Status + trust + category facets are filled by module_store.js:
+             their values come from the catalog, so the server cannot know them. -->
+        <div id="extStoreFacets"></div>
+      </aside>
+
+      <!-- Middle: search + the list itself. -->
+      <div class="ext-store-main">
+        <div class="ext-store-toolbar">
+          <div class="mf-search ext-store-search">
+            <svg class="mf-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="search" class="mf-search-input" id="extStoreSearch"
+                   placeholder="{{ _('Search modules and themes…') }}"
+                   aria-label="{{ _('Search modules and themes…') }}" autocomplete="off">
+            <button type="button" class="mf-search-clear" id="extStoreSearchClear"
+                    aria-label="{{ _('Clear search') }}" hidden>&times;</button>
+          </div>
+          <span class="integ-subsection-badge badge-version" id="extStoreCount" style="display:none;"></span>
+          <button class="btn btn-secondary" id="extStoreRefreshBtn"
+                  style="{% if not store_enabled %}display:none;{% endif %}">
+            {{ _('Refresh store') }}
+          </button>
+        </div>
+        <div id="extStoreCatalog" {% if not store_enabled %}style="display:none;"{% endif %}>
+          <div class="settings-hint" id="extStoreStatus">{{ _('Loading store…') }}</div>
+          <div id="extStoreList"></div>
+        </div>
+      </div>
+
+      <!-- Right: the selected entry. Rendered by module_store.js; on phones it
+           is not a column but a sheet over the list (see extensions.css). -->
+      <aside class="ext-store-detail" id="extStoreDetail" aria-live="polite"></aside>
+    </div>
   </div><!-- /#extStoreView -->
 </div>
 <!-- Generic enable-toggle load/save helpers (see web/thirdparties/registry.py's

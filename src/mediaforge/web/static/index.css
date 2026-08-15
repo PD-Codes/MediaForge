@@ -2377,22 +2377,12 @@ a.hp-item:focus-visible {
 .home-density-list .home-pcard-hit > .home-pcard-title { flex: 1 1 auto; min-width: 0; }
 .home-density-list .home-pcard-hit > .home-pcard-sub { flex: 0 0 auto; }
 
-/* The source pill is anchored to the poster's bottom-left on a card. In a row
-   it sits in the text column under the title and genre -- it describes the
-   entry, so it belongs with the entry's text rather than out in the badge
-   strip. position:relative rather than static so the "+N" picker, which is
-   `bottom: 100%` of its pill, opens above the pill instead of above the whole
-   card. */
-.home-density-list .browse-src-pill {
-  position: relative;
-  /* The poster rule positions the pill with bottom/left; those are still set
-     here, and under position:relative they become OFFSETS -- the pill was
-     shifted 8px up and left and overlapped its neighbour. */
-  left: auto;
-  bottom: auto;
-  display: inline-block;
-  vertical-align: middle;
-}
+/* No .home-density-list override needed anymore: .browse-src-pill (cards.css)
+   is an in-flow, position:relative flex item now, appended into
+   .browse-tmdb-meta by home_feed.js -- the same container/row this density's
+   own rule above already turns into an inline-flex text-column row. It never
+   needed density-specific positioning to begin with; only the version that
+   was absolutely positioned over the poster did. */
 
 /* The streaming-service pills (Netflix, Apple TV+ ...) live in the same text
    column. Two reasons this needs a row of its own here:
@@ -2846,7 +2836,18 @@ a.hp-item:focus-visible {
 
 .home-topstrip .search-bar.home-searchbar {
   flex: 1 1 320px;
-  min-width: 0;
+  /* NOT 0. The bar shares .home-topstrip-inner's row with the Dashboard/
+     Discover tabs and the lock/add/customize buttons -- min-width: 0 let it
+     shrink indefinitely instead of ever wrapping to its own line, so at
+     window widths where the row ran out of room (well above the 768px
+     phone breakpoint, where this bar is hidden behind a toggle instead) it
+     kept its full 320px flex-basis worth of CONTENT but not the width for
+     it, and the field/Direkt Link/Suchen wrapped inside the pill itself --
+     a two-row pill next to the tabs instead of the bar dropping to a row of
+     its own, which .home-topstrip-inner's own flex-wrap already supports.
+     280px is comfortably under the 320px basis (some give before it wraps)
+     but still wide enough that the bar's own children never need to. */
+  min-width: 280px;
   margin: 0;
 }
 

@@ -1,14 +1,28 @@
-{# Modulmanager floating side menu — client-side tab switching (switchExtTab in
+{# Modulmanager left rail — client-side tab switching (switchExtTab in
    extension_cards.js), same markup and behaviour as the Settings / Integrations /
    Monitoring menus, and the mobile drawer in base.html picks it up for free
    because it is a direct child of a .has-floating-menu element.
 
    Modules and theme packs used to be one long scroll: two different lifecycles
    (a module is code and may need a restart, a theme is inert CSS and never
-   does), two different sets of questions. The module *store* stays the
-   header button's job — it is a third place, not a third tab, and it has its
-   own restart banner to keep an eye on. #}
-<div class="settings-tabs floating-side-menu" id="extensionsMenu">
+   does), two different sets of questions.
+
+   The state filters used to sit in a bar ABOVE the cards (.mm-bar). They moved
+   in here for one reason: "Modules or themes?" and "which of them is broken?"
+   are the same question asked twice, and answering them in two different places
+   meant the answer to the second was scrolled off screen by the time you had
+   used the first. extension_cards.js still drives them through #mmFilters /
+   data-mm-filter, so nothing about the filtering itself changed.
+
+   The counts below come from the same extensions|map('state') tally the page
+   header used to print as prose. #}
+{% set _states = extensions|map(attribute="state")|list %}
+{% set _n_ok = _states|select("equalto", "ok")|list|length %}
+{% set _n_off = _states|select("equalto", "off")|list|length %}
+{% set _n_trouble = _states|select("equalto", "error")|list|length
+                    + _states|select("equalto", "skipped")|list|length %}
+<div class="settings-tabs floating-side-menu ext-rail" id="extensionsMenu">
+  <span class="ext-rail-label">{{ _('Type') }}</span>
   <button type="button" class="settings-tab active" data-exttab="modules"
           onclick="switchExtTab('modules')">
     {{ _('Modules') }}
@@ -19,4 +33,52 @@
     {{ _('Theme Packs') }}
     <span class="sidebar-module-pill">{{ theme_packs | length }}</span>
   </button>
+
+  {# State filters — modules only. A theme pack is inert CSS: it has no
+     "running/off/failed", so offering the filter on that tab would be offering
+     three buttons that all do nothing. #}
+  {% if extensions %}
+  <div id="mmFilters" class="ext-rail-group" role="group" aria-label="{{ _('Filter by state') }}">
+    <span class="ext-rail-label">{{ _('State') }}</span>
+    <button type="button" class="settings-tab mm-filter active" data-mm-filter="">
+      {{ _('All') }}<span class="sidebar-module-pill">{{ extensions|length }}</span></button>
+    <button type="button" class="settings-tab mm-filter" data-mm-filter="ok">
+      {{ _('Running') }}<span class="sidebar-module-pill">{{ _n_ok }}</span></button>
+    <button type="button" class="settings-tab mm-filter" data-mm-filter="off">
+      {{ _('Off') }}<span class="sidebar-module-pill">{{ _n_off }}</span></button>
+    {% if _n_trouble %}
+    <button type="button" class="settings-tab mm-filter mm-filter-trouble" data-mm-filter="trouble">
+      {{ _('Problems') }}<span class="sidebar-module-pill">{{ _n_trouble }}</span></button>
+    {% endif %}
+  </div>
+
+  {# Health summary. Same numbers as the filters above, but as a statement
+     rather than as controls — "1 failing" has to be readable without first
+     noticing that a filter button has a count on it. #}
+  <div class="ext-rail-health">
+    <span class="ext-rail-label">{{ _('Health') }}</span>
+    <div class="ext-health-row"><span>{{ _('Running') }}</span>
+      <b class="ext-health-ok">{{ _n_ok }}</b></div>
+    <div class="ext-health-row"><span>{{ _('Off') }}</span><b>{{ _n_off }}</b></div>
+    <div class="ext-health-row"><span>{{ _('Problems') }}</span>
+      <b class="{% if _n_trouble %}ext-health-bad{% endif %}">{{ _n_trouble }}</b></div>
+    {# Filled by module_store.js once the catalog is in — the number is only
+       knowable after the store answered. #}
+    <div class="ext-health-row" id="extHealthUpdates" style="display:none;">
+      <span>{{ _('Updates') }}</span><b class="ext-health-upd" id="extHealthUpdatesN">0</b></div>
+  </div>
+  {% endif %}
+
+  {# Rescan. A page-level action, so it belongs with the page-level controls
+     rather than floating in the header next to the title -- and being a child
+     of the rail it rides along into the mobile drawer for free, which the
+     header button did not. Same id, so the handler in extensions.html is
+     unchanged. #}
+  <div class="ext-rail-group ext-rail-actions">
+    <span class="ext-rail-label">{{ _('Actions') }}</span>
+    <button type="button" class="btn btn-secondary" id="extRescanBtn"
+            title="{{ _('Scan web/thirdparties/ for new module folders and register them without restarting the app.') }}">
+      {{ _('Refresh') }}
+    </button>
+  </div>
 </div>

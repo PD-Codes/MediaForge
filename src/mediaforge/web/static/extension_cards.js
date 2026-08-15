@@ -48,7 +48,11 @@ if (typeof window.showToast !== "function") {
 // two features writing the same hash is how you get a page that opens on the
 // wrong thing after an install reload.
 function switchExtTab(name) {
-  document.querySelectorAll("#extensionsMenu .settings-tab").forEach(function (b) {
+  // [data-exttab] only: the rail also holds the state-filter buttons, which are
+  // .settings-tab too. Without the attribute in the selector, switching from
+  // Modules to Theme Packs silently cleared the active state filter's highlight
+  // while the filter itself stayed applied.
+  document.querySelectorAll("#extensionsMenu .settings-tab[data-exttab]").forEach(function (b) {
     b.classList.toggle("active", b.dataset.exttab === name);
   });
   document.querySelectorAll("#extInstalledView > .settings-tab-panel").forEach(function (p) {

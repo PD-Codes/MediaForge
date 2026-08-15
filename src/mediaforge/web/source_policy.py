@@ -282,10 +282,21 @@ def search_sources(include_adult: bool = True) -> list:
     # the home-v2 feed even though nothing stops it from being selected.
     # Surface it the same way an unconfigured module source is: opt-out,
     # enabled by default, generic styling.
+    #
+    # Only modules WITHOUT a search source land here. `seen_ids` holds site_ids
+    # while this loop walks item_ids, so a module that registered both halves
+    # under different ids used to be listed twice -- once correctly as its
+    # searchable source, once more as a dead id nothing could serve. Asked
+    # against the item_ids that own a search source instead.
     try:
         from ..providers import thirdparty_provider_ids, _EXTRA_PROVIDERS
+        try:
+            from ..search import thirdparty_search_source_ids
+            _searchable_items = thirdparty_search_source_ids()
+        except Exception:
+            _searchable_items = set()
         for item_id in thirdparty_provider_ids():
-            if item_id in seen_ids:
+            if item_id in seen_ids or item_id in _searchable_items:
                 continue
             provider = _EXTRA_PROVIDERS.get(item_id)
             if provider is None:
@@ -299,6 +310,9 @@ def search_sources(include_adult: bool = True) -> list:
                 "thirdparty": True,
                 "enabled_key": source_enabled_key(item_id),
                 "enabled": source_enabled(item_id, default="1"),
+                # It resolves URLs but has no search function: it must get a
+                # toggle/order row, but must never be queried for a keyword.
+                "searchable": False,
                 "css_class": "browse-provider-thirdparty",
                 "media_types": list(source_media_types(item_id)),
             })

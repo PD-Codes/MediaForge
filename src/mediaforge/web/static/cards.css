@@ -435,12 +435,15 @@
   display: block;
 }
 
-/* position:relative so .browse-src-pill can anchor to the TOP edge of this
-   block -- which is the bottom edge of the poster, the only stable landmark
-   on the card. See .browse-src-pill for what went wrong without it. */
 .browse-info {
   padding: 9px 10px 11px;
-  position: relative;
+  /* NOT position:relative. .browse-src-pill is a DOM child of this element
+     (so list density can lay it out inline with the title/genre, see
+     index.css), but in poster mode it needs to anchor to the CARD, not this
+     block -- see .browse-src-pill for the two breakpoint-chasing attempts
+     that came from anchoring it here instead. Leaving this un-positioned is
+     what lets that absolute pill skip past this element to .browse-card
+     (also position:relative), its actual offset parent. */
 }
 
 .browse-title {
@@ -819,21 +822,23 @@ body.player-open #playerOverlay * {
    several sources and the heading no longer says which one a poster is from.
    Lives here next to .browse-card so module widgets that render browse cards
    can use the same label. */
-/* Anchored 8px above the TOP of .browse-info, i.e. 8px inside the poster's
-   bottom edge. It used to be `bottom: 8px` -- but .browse-info had no
-   `position`, so that resolved against .browse-card and measured 8px up from
-   the bottom of the WHOLE card, text block included. The pill therefore sat
-   in a fixed band that the card's own text moved through: with a genre string
-   it covered the genre line, and while the genre was still empty (the normal
-   state until CineInfo answers, and the state the bug was reported in) the
-   card shrank by one line and the pill landed squarely on the TITLE.
-   `bottom: calc(100% + 8px)` on a positioned .browse-info is independent of
-   how tall the text block is, which is the whole point. */
+/* IN FLOW inside .browse-tmdb-meta now (appended there by home_feed.js's
+   addSourcePills, alongside app.js's own streaming-service pill), not
+   absolutely positioned over the poster. Every earlier version of this pill
+   fought the poster for a spot on it -- the hover drawer that slides up to
+   cover it, or the Vorhanden/Sync badges pinned to a fixed corner -- because
+   an absolutely positioned element has no idea what else is competing for
+   the same pixels. A flex child of the same row the streaming pill lands in
+   has no such fight: it just takes the space the streaming pill would have,
+   and gives it back when Crunchyroll/Fernsehserien/TMDB actually has one.
+   position:relative (not absolute) only so .browse-src-menu, its own
+   dropdown, has this as its offset parent instead of drifting to whatever
+   the next positioned ancestor up the tree happens to be. */
 .browse-src-pill {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 8px;
-  z-index: 2;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -844,6 +849,13 @@ body.player-open #playerOverlay * {
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: #fff;
   pointer-events: none;
+}
+
+.browse-src-pill-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A card that several sources have carries a "+N" pill; clicking it says
@@ -861,9 +873,16 @@ body.player-open #playerOverlay * {
 
 .browse-src-menu {
   position: absolute;
+  /* Opens UPWARD from the pill: .browse-tmdb-meta (where the pill now lives,
+     see .browse-src-pill) sits near the BOTTOM of the card, after the title
+     and genre -- there is little to no room below it inside .browse-card's
+     overflow: hidden box, but the whole poster is free space above it. */
   bottom: calc(100% + 6px);
   left: 0;
-  z-index: 6;
+  /* Above .browse-hover-overlay (z-index: 10): clicking the pill without the
+     mouse leaving the card first (hover still active, drawer still open)
+     must not open the menu underneath it. */
+  z-index: 12;
   min-width: 150px;
   padding: 5px;
   border-radius: var(--radius-md, 10px);

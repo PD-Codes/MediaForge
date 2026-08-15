@@ -43,6 +43,14 @@
   // view. Set on every catalog load, including the silent one on page load —
   // otherwise "3 updates waiting" would only be discoverable by going to look.
   function renderUpdateCount(n) {
+    // Also the health block in the installed view's rail: the count is only
+    // knowable after the store answered, so the server could not render it.
+    const healthRow = $("extHealthUpdates");
+    if (healthRow) {
+      healthRow.style.display = n ? "" : "none";
+      const healthN = $("extHealthUpdatesN");
+      if (healthN) healthN.textContent = String(n);
+    }
     const badge = $("extStoreUpdateBadge");
     if (!badge) return;
     if (!n) { badge.style.display = "none"; return; }
@@ -112,126 +120,184 @@
     unverified: { cls: "badge-skipped", de: "Unverifiziert", en: "Unverified" },
   };
 
-  function moduleRow(m) {
-    const trust = TRUST_META[m.trust] || TRUST_META.unverified;
-    const desc = (m.description && (m.description[window.__LANG] || m.description.en)) || "";
-    // Theme packs share the catalog (index "type" field). They get their own
-    // badge so an admin never installs a skin expecting a feature or vice
-    // versa; the filter buttons above the list narrow by exactly this field.
-    const typeBadge = m.type === "theme"
-      ? `<span class="integ-subsection-badge badge-depends">${esc(t("Theme", "Theme"))}</span>`
-      : "";
+  // Description in the UI language, falling back to English — the index carries
+  // {"de": ..., "en": ...}.
+  function descOf(m) {
+    return (m.description && (m.description[window.__LANG] || m.description.en)) || "";
+  }
 
-    // Exactly one of these four states applies, in this order of precedence:
-    // incompatible (can't run here at all) > blocked by trust (admin hasn't
-    // opted in) > update available > installed/installable.
-    let action = "";
+  // The three pills every entry answers with: what kind of thing is this, do I
+  // already have it, and is what I have current. They are one function because a
+  // list row, the detail pane and (for "update") the installed card all have to
+  // say the same thing the same way — three renderers drifting apart is how a
+  // module ends up looking installed in one place and available in another.
+  function pillType(m) {
+    return (m.type === "theme")
+      ? `<span class="ext-pill ext-pill-theme">${esc(t("Theme", "Theme"))}</span>`
+      : `<span class="ext-pill ext-pill-module">${esc(t("Modul", "Module"))}</span>`;
+  }
+
+  function pillStatus(m) {
+    const out = [];
+    if (m.installed) {
+      out.push(`<span class="ext-pill ext-pill-installed">${
+        esc(t("Installiert", "Installed"))}${m.installed_version ? " v" + esc(m.installed_version) : ""}</span>`);
+    }
+    if (m.update_available) {
+      out.push(`<span class="ext-pill ext-pill-update">${esc(t("Update", "Update"))} v${esc(m.version)}</span>`);
+    }
+    if (m.compat_reason) {
+      out.push(`<span class="ext-pill ext-pill-err" title="${esc(m.compat_reason)}">${
+        esc(t("Inkompatibel", "Incompatible"))}</span>`);
+    }
+    return out.join("");
+  }
+
+  // Worst state wins, and it is drawn as a stripe on the row's left edge — so the
+  // column can be scanned without reading a single pill.
+  function edgeClass(m) {
+    if (m.compat_reason || (m.missing_requirements && m.missing_requirements.length)) return "is-blocked";
+    if (m.update_available) return "has-update";
+    if (m.installed) return "is-installed";
+    return "";
+  }
+
+  // The action for an entry. Exactly one of these applies, in this order of
+  // precedence: incompatible (can't run here at all) > missing pip package >
+  // blocked by trust (admin hasn't opted in) > update available > installed >
+  // installable. `full` adds the explanatory second half that only fits in the
+  // detail pane.
+  function actionFor(m, full) {
     if (m.missing_requirements && m.missing_requirements.length) {
       // "Incompatible" was true and unhelpful. A missing pip package and an unsupported
-      // MediaForge version are both "won't install", but one of them is a button away and the
-      // other is a wait — and in Docker, "go and pip install it yourself" is an errand whose
-      // obvious answer (install into the container) is undone by the next image pull.
-      action =
-        `<button class="btn btn-primary store-deps-btn" data-id="${esc(m.id)}"
-                 title="${esc(t("Installiert " + m.missing_requirements.join(", ") + " nach ~/.mediaforge/thirdparty-deps",
-                                "Installs " + m.missing_requirements.join(", ") + " into ~/.mediaforge/thirdparty-deps"))}">
+      // MediaForge version are both "won't install", but one of them is a button away and
+      // the other is a wait — and in Docker, "go and pip install it yourself" is an errand
+      // whose obvious answer (install into the container) is undone by the next image pull.
+      const pkgs = m.missing_requirements.join(", ");
+      return `<button class="btn btn-primary store-deps-btn" data-id="${esc(m.id)}"
+                 title="${esc(t("Installiert " + pkgs + " nach ~/.mediaforge/thirdparty-deps",
+                                "Installs " + pkgs + " into ~/.mediaforge/thirdparty-deps"))}">
            ${esc(t("Abhängigkeiten installieren", "Install dependencies"))}
          </button>`;
-    } else if (m.compat_reason) {
-      action = `<span class="integ-subsection-badge badge-incompatible">${esc(t("Inkompatibel", "Incompatible"))}</span>`;
-    } else if (m.blocked_by_trust) {
-      action = `<span class="settings-row-desc">${esc(t("Unverifizierte Module sind deaktiviert", "Unverified modules are disabled"))}</span>`;
-    } else if (m.update_available) {
-      action = `<button class="btn btn-primary store-install-btn" data-id="${esc(m.id)}">${esc(t("Aktualisieren", "Update"))} → v${esc(m.version)}</button>`;
-    } else if (m.installed) {
-      // Installed, and up to date — but "reinstall" still has to exist. A module folder
-      // gets edited by hand, half-deleted, or corrupted by a failed unzip, and the fix
-      // is to fetch the same version again. Without this the only way back to a clean
-      // copy is uninstall, restart, install, restart.
-      action = `<span class="integ-subsection-badge badge-enabled">${esc(t("Installiert", "Installed"))}</span>
-                <button class="btn btn-secondary store-install-btn" data-id="${esc(m.id)}"
-                        title="${esc(t("Dieselbe Version erneut herunterladen und überschreiben", "Download this same version again and overwrite the installed copy"))}">
+    }
+    if (m.compat_reason) {
+      return `<span class="settings-row-desc">${esc(full ? m.compat_reason : t("Inkompatibel", "Incompatible"))}</span>`;
+    }
+    if (m.blocked_by_trust) {
+      return `<span class="settings-row-desc">${
+        esc(t("Unverifizierte Module sind deaktiviert", "Unverified modules are disabled"))}</span>`;
+    }
+    if (m.update_available) {
+      return `<button class="btn btn-primary store-install-btn" data-id="${esc(m.id)}">${
+        esc(t("Aktualisieren", "Update"))} → v${esc(m.version)}</button>`;
+    }
+    if (m.installed) {
+      // Installed and up to date — but "reinstall" still has to exist. A module folder
+      // gets edited by hand, half-deleted, or corrupted by a failed unzip, and the fix is
+      // to fetch the same version again.
+      return `<button class="btn btn-secondary store-install-btn" data-id="${esc(m.id)}"
+                        title="${esc(t("Dieselbe Version erneut herunterladen und überschreiben",
+                                       "Download this same version again and overwrite the installed copy"))}">
                   ${esc(t("Neu installieren", "Reinstall"))}
                 </button>`;
-    } else if (m.installable) {
-      action = `<button class="btn btn-primary store-install-btn" data-id="${esc(m.id)}">${esc(t("Installieren", "Install"))}</button>`;
-    } else {
-      action = `<span class="settings-row-desc">${esc(t("Nicht installierbar", "Not installable"))}</span>`;
     }
-
-    const meta = [];
-    if (m.author) meta.push(esc(m.author));
-    // Free-form grouping label from the index ("notifications", "integration",
-    // …) — display-only, next to the author.
-    if (m.category) meta.push(esc(m.category));
-    // Which repository this came from — only worth saying when there's more than
-    // one, but always worth saying then: "official" from a repo you added
-    // yourself would be a claim, not a fact, and the badge already reflects that.
-    if (m.store) meta.push(esc(m.store));
-    if (m.license) meta.push(esc(m.license));
-    if (m.min_app_version) meta.push("MediaForge ≥ " + esc(m.min_app_version));
-    if (m.installed && m.installed_version) meta.push(t("installiert: v", "installed: v") + esc(m.installed_version));
-    if (m.compat_reason) meta.push(`<span style="color:var(--error);">${esc(m.compat_reason)}</span>`);
-    if (m.trust === "unverified" && m.source_url) {
-      // safeUrl() drops anything that is not http(s) or same-origin, so a
-      // catalog entry cannot smuggle a javascript: URL into the link.
-      const srcUrl = safeUrl(m.source_url);
-      if (srcUrl) {
-        meta.push(`<a href="${esc(srcUrl)}" target="_blank" rel="noopener noreferrer">${esc(srcUrl)}</a>`);
-      }
+    if (m.installable) {
+      return `<button class="btn btn-primary store-install-btn" data-id="${esc(m.id)}">${
+        esc(t("Installieren", "Install"))}</button>`;
     }
+    return `<span class="settings-row-desc">${esc(t("Nicht installierbar", "Not installable"))}</span>`;
+  }
 
-    // Two different warnings, two badges. "Unverified" = nobody signed this. "Unreviewed" =
-    // nobody read it — it is a submission still sitting in the store's queue, visible only
-    // because this install asked to see the queue. Folding them into one word would throw
-    // away the more alarming half.
-    const unreviewed = m.unreviewed
-      ? `<span class="integ-subsection-badge badge-incompatible"
-               title="${esc(t("Von niemandem geprüft — liegt im Store noch in der Review-Warteschlange",
-                              "Reviewed by nobody — still sitting in the store's review queue"))}">${
-          esc(t("Ungeprüft", "Unreviewed"))}</span>`
-      : "";
-
-    // A card, not a settings row: the catalog is for *browsing* (several entries
-    // in view, one glance each), while a settings row is for operating one thing
-    // at a time. The action buttons keep their classes and data-ids -- the single
-    // delegated click handler further down matches on those, not on the layout.
-    //
-    // An available update is a badge at the FRONT of the badge row plus a
-    // coloured card edge, not a corner ribbon: a ribbon and a long module name
-    // fight over the same pixels, and the name always wins that argument.
-    const updateBadge = m.update_available
-      ? `<span class="mod-card-update">${esc(t("↑ v", "↑ v") + m.version)}</span>`
-      : "";
-    // Catalog entries carry no icon of their own, so the glyph says which *kind*
-    // of thing this is -- a palette for a skin, a puzzle piece for code.
-    const icon = m.type === "theme"
+  // A row, not a card. The catalog is read as a column — name, kind, and whether
+  // this install already has it — and a grid of tiles makes that a zig-zag. The
+  // action buttons keep their classes and data-ids: the single delegated click
+  // handler further down matches on those, never on the layout.
+  // Catalog entries carry no icon of their own, so the glyph says which KIND of
+  // thing this is — a half-filled disc for a skin, a chip for code.
+  function iconOf(m) {
+    return m.type === "theme"
       ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/>
            <path d="M12 3a9 9 0 0 0 0 18"/></svg>`
       : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2"/>
            <path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"/></svg>`;
+  }
 
+  function storeRow(m, selected) {
+    const icon = iconOf(m);
+    const trust = TRUST_META[m.trust] || TRUST_META.unverified;
+    const desc = descOf(m);
     return `
-      <article class="mod-card${m.update_available ? " has-update" : ""}${m.type === "theme" ? " is-theme" : ""}">
-        <div class="mod-card-top">
-          <span class="mod-card-icon" aria-hidden="true">${icon}</span>
-          <span class="mod-card-ident">
-            <span class="mod-card-name" title="${esc(m.name)}">${esc(m.name)}</span>
-            <span class="mod-card-by">${esc(m.author || t("unbekannt", "unknown"))} · v${esc(m.version)}</span>
+      <article class="ext-row ${edgeClass(m)}${selected ? " active" : ""}"
+               data-store-id="${esc(m.id)}" tabindex="0" role="button"
+               aria-pressed="${selected ? "true" : "false"}">
+        <span class="ext-row-icon ${m.type === "theme" ? "is-theme" : ""}" aria-hidden="true">${icon}</span>
+        <span class="ext-row-ident">
+          <span class="ext-row-name">${esc(m.name)}${pillType(m)}</span>
+          <span class="ext-row-pills">${pillStatus(m)}
+            <span class="integ-subsection-badge ${trust.cls}">${esc(t(trust.de, trust.en))}</span>
+            ${m.unreviewed ? `<span class="integ-subsection-badge badge-incompatible" title="${
+              esc(t("Von niemandem geprüft — liegt im Store noch in der Review-Warteschlange",
+                    "Reviewed by nobody — still sitting in the store's review queue"))}">${
+              esc(t("Ungeprüft", "Unreviewed"))}</span>` : ""}
           </span>
-        </div>
-        ${desc ? `<p class="mod-card-desc">${esc(desc)}</p>` : ""}
-        <div class="mod-card-badges">
-          ${updateBadge}
-          ${typeBadge}
-          <span class="integ-subsection-badge ${trust.cls}">${esc(t(trust.de, trust.en))}</span>
-          ${unreviewed}
-        </div>
-        <div class="mod-card-meta">${meta.join(" · ")}</div>
-        <div class="mod-card-foot">${action}</div>
+          ${desc ? `<span class="ext-row-desc">${esc(desc)}</span>` : ""}
+        </span>
+        <span class="ext-row-action">${actionFor(m, false)}</span>
       </article>`;
+  }
+
+  // The detail pane. Everything that does not fit on a row and that an admin has
+  // to know BEFORE running somebody else's Python in this process: who signed it,
+  // which repository it came from, what it needs, where the source is.
+  function storeDetail(m) {
+    if (!m) {
+      return `<div class="mf-empty ext-detail-empty"><p>${
+        esc(t("Wähle einen Eintrag aus der Liste.", "Pick an entry from the list."))}</p></div>`;
+    }
+    const trust = TRUST_META[m.trust] || TRUST_META.unverified;
+    const desc = descOf(m);
+    const rows = [];
+    const kv = (label, value) => rows.push(
+      `<div class="ext-kv"><span>${esc(label)}</span><span>${value}</span></div>`);
+    if (!m.author) kv(t("Neueste Version", "Latest version"), "v" + esc(m.version));
+    if (m.installed && m.installed_version) {
+      kv(t("Deine Version", "Your version"), "v" + esc(m.installed_version));
+    }
+    if (m.category) kv(t("Kategorie", "Category"), esc(m.category));
+    // Which repository this came from. Only interesting with more than one
+    // configured — but then it is the whole story: "official" from a repo somebody
+    // added themselves would be a claim, not a fact.
+    if (m.store) kv(t("Repository", "Repository"), esc(m.store));
+    if (m.license) kv(t("Lizenz", "License"), esc(m.license));
+    if (m.min_app_version) kv(t("Benötigt", "Requires"), "MediaForge ≥ " + esc(m.min_app_version));
+    if (m.requirements && m.requirements.length) {
+      kv(t("Python-Pakete", "Python packages"), esc(m.requirements.join(", ")));
+    }
+    // safeUrl() drops anything that is not http(s) or same-origin, so a catalog
+    // entry cannot smuggle a javascript: URL into this link.
+    const src = m.source_url ? safeUrl(m.source_url) : "";
+    return `
+      <div class="ext-detail-head">
+        <span class="ext-detail-icon ${m.type === "theme" ? "is-theme" : ""}"
+              aria-hidden="true">${iconOf(m)}</span>
+        <span class="ext-detail-ident">
+          <h3 class="ext-detail-name">${esc(m.name)}</h3>
+          ${m.author ? `<span class="ext-detail-by">${esc(m.author)} · v${esc(m.version)}</span>` : ""}
+        </span>
+        <button type="button" class="ext-detail-close" id="extStoreDetailClose"
+                aria-label="${esc(t("Schließen", "Close"))}">&times;</button>
+      </div>
+      <div class="ext-row-pills">${pillType(m)}${pillStatus(m)}
+        <span class="integ-subsection-badge ${trust.cls}">${esc(t(trust.de, trust.en))}</span>
+      </div>
+      ${desc ? `<p class="ext-detail-desc">${esc(desc)}</p>` : ""}
+      ${rows.join("")}
+      ${m.compat_reason ? `<div class="ext-detail-warn">${esc(m.compat_reason)}</div>` : ""}
+      <div class="ext-detail-actions">${actionFor(m, true)}</div>
+      ${src ? `<a class="ext-detail-src" href="${esc(src)}" target="_blank"
+                  rel="noopener noreferrer">${esc(t("Quelle ansehen", "View source"))} ↗</a>` : ""}`;
   }
 
   // "Loading store…" is a promise the client has to keep. A fetch with no timeout has no
@@ -247,6 +313,21 @@
   // never refetches.
   let _catalogModules = [];
   let _typeFilter = "";
+  // Facets beyond type: status ("", "installed", "available", "update") and trust
+  // ("", "official", "verified", "unverified"). Both narrow the same in-memory
+  // catalog, so no facet ever costs a request.
+  let _statusFilter = "";
+  let _trustFilter = "";
+  // Category is not a fixed set like status/trust — it comes from whatever the
+  // catalog's entries declare, plus a synthetic "unknown" bucket for entries
+  // that declare none (grouping them under a real, filterable option instead
+  // of silently dropping them from every facet count).
+  let _categoryFilter = "";
+  const CATEGORY_UNKNOWN = "__unknown__";
+  // The entry shown in the detail pane. An id, not the object: the catalog is
+  // replaced wholesale on every refresh, and holding a stale object would keep a
+  // pane open on a version that no longer exists.
+  let _selectedId = "";
   // Free-text filter over the catalog. Client-side on purpose: the whole
   // catalog is already in memory, so typing must not cost a request.
   let _query = "";
@@ -259,19 +340,107 @@
     });
   }
 
+  // Everything except the named facet, so a facet's own count is what picking it
+  // would yield rather than what is already on screen — a count that drops to 0 on
+  // the option you just clicked is how faceted filters get a reputation for lying.
+  function _matches(m, except) {
+    if (except !== "type" && _typeFilter && (m.type || "module") !== _typeFilter) return false;
+    if (except !== "trust" && _trustFilter && (m.trust || "unverified") !== _trustFilter) return false;
+    if (except !== "category" && _categoryFilter &&
+        (m.category || CATEGORY_UNKNOWN) !== _categoryFilter) return false;
+    if (except !== "status" && _statusFilter) {
+      if (_statusFilter === "installed" && !m.installed) return false;
+      if (_statusFilter === "available" && m.installed) return false;
+      if (_statusFilter === "update" && !m.update_available) return false;
+    }
+    return _matchesQuery(m);
+  }
+
+  function _count(except, key, val) {
+    return _catalogModules.filter(function (m) {
+      if (!_matches(m, except)) return false;
+      if (!val) return true;
+      if (key === "type") return (m.type || "module") === val;
+      if (key === "trust") return (m.trust || "unverified") === val;
+      if (key === "category") return (m.category || CATEGORY_UNKNOWN) === val;
+      if (val === "installed") return !!m.installed;
+      if (val === "available") return !m.installed;
+      if (val === "update") return !!m.update_available;
+      return true;
+    }).length;
+  }
+
+  function renderFacets() {
+    // Type counts live in the server-rendered rail (data-count-type) so the three
+    // buttons exist before the catalog answers and do not jump into place.
+    document.querySelectorAll("#extTypeFilter [data-count-type]").forEach(function (el) {
+      el.textContent = _count("type", "type", el.getAttribute("data-count-type"));
+    });
+    const box = $("extStoreFacets");
+    if (!box) return;
+    const group = (label, key, active, options) => `
+      <div class="ext-rail-group" data-facet="${key}" role="group" aria-label="${esc(label)}">
+        <span class="ext-rail-label">${esc(label)}</span>
+        ${options.map(([val, text]) => {
+          const n = _count(key, key, val);
+          // An option that would yield nothing is not a choice, it is a line of
+          // list to read past -- and on a phone, where the groups stack, three of
+          // them are a screenful. "All" and whatever is currently picked always
+          // stay, so the group can never render as an empty box you cannot leave.
+          if (!n && val && active !== val) return "";
+          return `
+          <button type="button" class="ext-facet${active === val ? " active" : ""}"
+                  data-facet-key="${key}" data-facet-val="${esc(val)}">${esc(text)}
+            <span class="ext-facet-n">${n}</span></button>`;
+        }).join("")}
+      </div>`;
+    box.innerHTML =
+      group(t("Status", "Status"), "status", _statusFilter, [
+        ["", t("Alle", "All")],
+        ["installed", t("Installiert", "Installed")],
+        ["available", t("Nicht installiert", "Not installed")],
+        ["update", t("Update verfügbar", "Update available")],
+      ]) +
+      group(t("Vertrauen", "Trust"), "trust", _trustFilter, [
+        ["", t("Alle", "All")],
+        ["official", t("Offiziell", "Official")],
+        ["verified", t("Verifiziert", "Verified")],
+        ["unverified", t("Unverifiziert", "Unverified")],
+      ]) +
+      group(t("Kategorie", "Category"), "category", _categoryFilter, [
+        ["", t("Alle", "All")],
+        // Sorted so the list order does not depend on catalog fetch order;
+        // "unknown" always last since it is the fallback bucket, not a real one.
+        ...Array.from(new Set(_catalogModules.map((m) => m.category).filter(Boolean))).sort()
+          .map((c) => [c, c]),
+        [CATEGORY_UNKNOWN, t("Unbekannt", "Unknown")],
+      ]);
+  }
+
+  function renderDetail() {
+    const pane = $("extStoreDetail");
+    if (!pane) return;
+    const m = _catalogModules.find((x) => x.id === _selectedId);
+    pane.innerHTML = storeDetail(m);
+    // Below the split's breakpoint the pane is a sheet over the list, so it must
+    // not be in the layout at all when nothing is selected (see extensions.css).
+    pane.classList.toggle("open", !!m);
+  }
+
   function renderCatalogList() {
     const list = $("extStoreList");
     if (!list) return;
-    const mods = _catalogModules.filter(function (m) {
-      if (_typeFilter && (m.type || "module") !== _typeFilter) return false;
-      return _matchesQuery(m);
-    });
-    // Say when a filter is the reason nothing is here -- an empty grid on its own
+    const mods = _catalogModules.filter((m) => _matches(m, null));
+    // If the selection was filtered away, fall to the first row rather than
+    // leaving a pane open on an entry that is no longer in the list.
+    if (!mods.some((m) => m.id === _selectedId)) _selectedId = mods.length ? mods[0].id : "";
+    // Say when a filter is the reason nothing is here -- an empty list on its own
     // reads as a broken store.
+    const filtering = _query || _typeFilter || _statusFilter || _trustFilter || _categoryFilter;
     list.innerHTML = mods.length
-      ? '<div class="mod-card-grid">' + mods.map(moduleRow).join("") + "</div>"
+      ? '<div class="ext-row-list">' + mods.map((m) => storeRow(m, m.id === _selectedId)).join("") + "</div>"
       : '<div class="mf-empty mod-card-empty">' +
-          "<p>" + esc(_query || _typeFilter
+          "<p>" + esc(filtering
             ? t("Nichts passt zu diesem Filter", "Nothing matches this filter")
             : t("Der Store ist leer", "The store is empty")) + "</p></div>";
     const count = $("extStoreCount");
@@ -279,6 +448,8 @@
       count.textContent = mods.length + " " + t("Einträge", "entries");
       count.style.display = "";
     }
+    renderFacets();
+    renderDetail();
   }
 
   function fetchWithTimeout(url, ms) {
@@ -345,14 +516,18 @@
       renderUpdateCount(updates.length);
       updates.forEach((m) => {
         const card = cardsById[m.id] || document.getElementById("integCard-ext-" + m.folder);
-        if (!card || card.querySelector(".badge-update")) return;
-        const header = card.querySelector(".integ-subsection-header");
-        if (!header) return;
+        if (!card || card.querySelector(".ext-pill-update")) return;
+        // Next to the name, in the same pill vocabulary the store rows use -- an
+        // "available update" is the same fact in both views and reading as two
+        // different things is how one of them gets ignored. Theme cards have no
+        // .mm-title-row, so the header is the fallback.
+        const host = card.querySelector(".mm-title-row") || card.querySelector(".integ-subsection-header");
+        if (!host) return;
         const badge = document.createElement("span");
-        badge.className = "integ-subsection-badge badge-update";
-        badge.textContent = t("Update: v", "Update: v") + m.version;
+        badge.className = "ext-pill ext-pill-update";
+        badge.textContent = t("Update", "Update") + " v" + m.version;
         badge.title = t("Neuere Version im Store verfügbar", "A newer version is available in the store");
-        header.appendChild(badge);
+        host.appendChild(badge);
       });
     } catch (e) {
       const aborted = e && e.name === "AbortError";
@@ -649,16 +824,64 @@
     });
   }
 
-  // Module/Theme type filter above the catalog — client-side, no refetch.
-  const typeFilter = $("extTypeFilter");
-  if (typeFilter) {
-    typeFilter.addEventListener("click", (ev) => {
-      const btn = ev.target.closest(".ext-type-filter-btn");
-      if (!btn) return;
-      _typeFilter = btn.dataset.type || "";
-      typeFilter.querySelectorAll(".ext-type-filter-btn").forEach((b) =>
-        b.classList.toggle("active", b === btn));
+  // Facets — client-side, no refetch. One delegated handler on the rail rather
+  // than one per group: the status/trust groups are re-rendered on every filter
+  // change (their counts move), so a listener bound to their buttons would be
+  // thrown away with them.
+  const storeRail = $("extStoreRail");
+  if (storeRail) {
+    storeRail.addEventListener("click", (ev) => {
+      const typeBtn = ev.target.closest("#extTypeFilter [data-type]");
+      if (typeBtn) {
+        _typeFilter = typeBtn.dataset.type || "";
+        storeRail.querySelectorAll("#extTypeFilter [data-type]").forEach((b) =>
+          b.classList.toggle("active", b === typeBtn));
+        renderCatalogList();
+        return;
+      }
+      const facet = ev.target.closest("[data-facet-key]");
+      if (!facet) return;
+      const val = facet.dataset.facetVal || "";
+      if (facet.dataset.facetKey === "status") _statusFilter = val;
+      if (facet.dataset.facetKey === "trust") _trustFilter = val;
+      if (facet.dataset.facetKey === "category") _categoryFilter = val;
       renderCatalogList();
+    });
+  }
+
+  // Picking a row fills the detail pane. Delegated on the list for the same
+  // reason: the rows are replaced on every render.
+  const storeList = $("extStoreList");
+  if (storeList) {
+    storeList.addEventListener("click", (ev) => {
+      // Not when the click was the row's own action button — installing is not
+      // "tell me more about this".
+      if (ev.target.closest("button")) return;
+      const row = ev.target.closest("[data-store-id]");
+      if (!row) return;
+      _selectedId = row.dataset.storeId;
+      renderCatalogList();
+    });
+    // Rows are role="button" and focusable, so they answer to the keyboard too.
+    storeList.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const row = ev.target.closest("[data-store-id]");
+      if (!row) return;
+      ev.preventDefault();
+      _selectedId = row.dataset.storeId;
+      renderCatalogList();
+    });
+  }
+
+  // The detail pane's close button only matters on phones, where the pane is a
+  // sheet over the list rather than a third column.
+  const detailPane = $("extStoreDetail");
+  if (detailPane) {
+    detailPane.addEventListener("click", (ev) => {
+      if (!ev.target.closest("#extStoreDetailClose")) return;
+      _selectedId = "";
+      detailPane.classList.remove("open");
+      detailPane.innerHTML = storeDetail(null);
     });
   }
 
@@ -718,64 +941,66 @@
   }
 
   // ---- view switching ------------------------------------------------------
-  // Installed modules and the store are two destinations, not one long scroll: an
-  // admin arrived to do one or the other. The header button swaps between them.
-  //
-  // The catalog is still fetched on page load even though the store starts hidden —
-  // it is what puts the update count on the button and the "Update: v…" badges on
-  // the installed cards. Loading it lazily would mean an admin only learns about
-  // updates by going to look for them, which is the wrong way round.
-  const installedView = $("extInstalledView");
-  const storeView = $("extStoreView");
-  const toggleBtn = $("extStoreToggleBtn");
-  const toggleLabel = $("extStoreToggleLabel");
+  // Three destinations, not one long scroll: the modules installed here, the
+  // catalog to get more from, and where they come from. An admin arrived to do
+  // one of the three; the segmented control in the header swaps between them and
+  // the choice survives a reload through the URL hash (an install reloads the
+  // page, and landing back on the installed view after installing from the store
+  // looks like the click did nothing).
+  const VIEWS = {
+    installed: $("extInstalledView"),
+    store: $("extStoreView"),
+    settings: $("extSettingsView"),
+  };
+  const seg = $("extViewSeg");
   const rescanBtn = $("extRescanBtn");
 
-  function setView(showStore) {
-    if (!installedView || !storeView) return;
-    installedView.style.display = showStore ? "none" : "";
-    storeView.style.display = showStore ? "" : "none";
-    // "Refresh" rescans web/thirdparties/ on disk. With the catalog on screen it
-    // would be a button that looks like it refreshes what you're looking at and
-    // doesn't — the store has its own.
-    if (rescanBtn) rescanBtn.style.display = showStore ? "none" : "";
-    if (toggleBtn) toggleBtn.className = showStore ? "btn btn-secondary" : "btn btn-primary";
-    if (toggleLabel) {
-      toggleLabel.textContent = showStore
-        ? t("← Installierte Module", "← Installed modules")
-        : t("Modulstore", "Module Store");
+  function setView(name) {
+    if (!VIEWS[name]) name = "installed";
+    Object.keys(VIEWS).forEach((key) => {
+      if (VIEWS[key]) VIEWS[key].style.display = key === name ? "" : "none";
+    });
+    if (seg) {
+      seg.querySelectorAll("[data-extview]").forEach((b) => {
+        const on = b.dataset.extview === name;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
     }
-    // Survives a reload — and the store spends its time telling you to restart.
+    // "Refresh" rescans web/thirdparties/ on disk. Anywhere but the installed
+    // view it would be a button that looks like it refreshes what you are looking
+    // at and does not — the store has its own.
+    if (rescanBtn) rescanBtn.style.display = name === "installed" ? "" : "none";
     try {
-      history.replaceState(null, "", showStore ? "#store" : window.location.pathname);
+      history.replaceState(null, "", name === "installed" ? window.location.pathname : "#" + name);
     } catch (e) { /* file:// and the like; the view still switched */ }
     window.scrollTo(0, 0);
   }
 
-  if (toggleBtn && storeView) {
-    toggleBtn.addEventListener("click", () => setView(storeView.style.display === "none"));
+  if (seg) {
+    seg.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-extview]");
+      if (btn) setView(btn.dataset.extview);
+    });
   }
 
-  // Restoring the "#store" view on a fresh page load (e.g. exactly the reload that
-  // follows an install — see the install-button handler above) calls setView(true),
-  // which calls t() to set the toggle button's label. Same problem as loadCatalog()
-  // below: this <script> tag runs BEFORE base.html's later inline script block defines
-  // the global t(). Calling setView(true) directly and unconditionally here used to
-  // throw "t is not defined" the instant a page loaded with #store in the URL — and
-  // because nothing caught it, the exception killed the rest of this IIFE's synchronous
-  // body, including the loadCatalog()/renderThemeHint() deferrals further down, which
-  // then never even got registered. That is the actual reason an install's reload
-  // (which always lands back on #store) showed no /api/store/catalog request at all
-  // and sat on "Lade Store…" forever: the script died on this line before it reached
-  // the code that would have fetched anything. Deferred to DOMContentLoaded, same as
-  // the other two t()-calling initializers below.
-  function restoreStoreViewFromHash() {
-    if (toggleBtn && storeView && window.location.hash === "#store") setView(true);
+  // Restoring the view from the hash on a fresh load (e.g. exactly the reload that
+  // follows an install) has to wait for DOMContentLoaded: this <script> tag runs
+  // BEFORE base.html's later inline block defines the global t(), and setView's
+  // callees used to reach for it. Calling it directly here once threw
+  // "t is not defined" the instant a page loaded with a hash, and because nothing
+  // caught it the exception killed the rest of this IIFE — including the
+  // loadCatalog()/renderThemeHint() deferrals below, which then never got
+  // registered at all. That was the actual reason an install's reload sat on
+  // "Lade Store…" forever with no request in flight.
+  function restoreViewFromHash() {
+    const want = (window.location.hash || "").replace("#", "");
+    if (VIEWS[want]) setView(want);
   }
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", restoreStoreViewFromHash);
+    document.addEventListener("DOMContentLoaded", restoreViewFromHash);
   } else {
-    restoreStoreViewFromHash();
+    restoreViewFromHash();
   }
 
   // Note this checks the catalog box's own display, not the store view's: the view

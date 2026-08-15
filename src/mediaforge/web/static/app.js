@@ -1751,10 +1751,20 @@ function _applyTmdbToCard(card, d) {
       cineinfoSettings.show_hover_fsk !== '1') return;
 
   const meta = _ensureCardMeta(card);
-  // Only clear the children — layout (flex/wrap/gap/margin) lives in the
+  // Clear the children — layout (flex/wrap/gap/margin) lives in the
   // .browse-tmdb-meta CSS rule now, not as an inline style set from JS, so
   // there's nothing stray left behind on an empty container to reset.
-  if (meta) meta.innerHTML = '';
+  // Except .browse-src-pill: home_feed.js puts its "found via MegaKino +1"
+  // badge in this same row (see addSourcePills) so it lines up with the
+  // streaming-service pill instead of fighting a fixed page corner for
+  // space — and re-enrichment (settings changed, a later fallback pill)
+  // running through here must not wipe it out from under that unrelated
+  // code path just because it happens to share a container.
+  if (meta) {
+    Array.from(meta.children).forEach((el) => {
+      if (!el.classList.contains('browse-src-pill')) el.remove();
+    });
+  }
   // Pills are rendered by the chain (which honours the configured CineInfo
   // provider order, TMDB included) — run it only AFTER the container is
   // cleared, or its pills would be wiped again by the line above.
@@ -2536,6 +2546,9 @@ async function doSearch() {
     // disabled sources to be left out of search ("hide_disabled_in_search").
     const _asked = _sortSourcesByUserOrder(await loadSearchSources(), _srcSettings.order)
       .filter(function (src) {
+        // searchable === false: provider-only module source (URL resolution,
+        // no search function). Listed on the Sources tab, never queried here.
+        if (src.searchable === false) return false;
         const on = _sourceIsOn(src, _en);
         return src.adult ? on : (on || !_hide);
       });
@@ -5405,6 +5418,9 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
     const _hide = _srcSettings.hide_disabled_in_search === "1";
     const _sources = _sortSourcesByUserOrder(await loadSearchSources(), _srcSettings.order)
       .filter(function (src) {
+        // searchable === false: provider-only module source (URL resolution,
+        // no search function). Listed on the Sources tab, never queried here.
+        if (src.searchable === false) return false;
         const on = _sourceIsOn(src, _en);
         return src.adult ? on : (on || !_hide);
       });
