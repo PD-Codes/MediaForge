@@ -41,6 +41,39 @@
   const DASH_WIDGET_ROWS = ["continue", "library", "watchlist", "upcoming", "gaps"];
   function isDashWidget(row) { return DASH_WIDGET_ROWS.indexOf(row) !== -1; }
 
+  // "All in one page" (home_dash_enabled="all") renders the classic
+  // button-bar Dashboard instead of the drag/resize card grid (see
+  // templates/index.html) -- there is no card to drag these rows onto, so
+  // "position and size are set on the Dashboard tab" is not true there. In
+  // that mode every row (including the ones that are ALSO a Dashboard card
+  // elsewhere) gets the full reorder controls back, same as before the drag
+  // grid existed. Two different elements carry the answer depending on
+  // scope: the per-account select only rendered for scope="user", the
+  // instance default only rendered for scope="global" (both in
+  // _start_page_form.html).
+  function dashModeEl(scope) {
+    return document.getElementById(scope === "user" ? "spDashMode-user" : "dashModeDefault");
+  }
+  function isAllInOne(scope) {
+    const el = dashModeEl(scope);
+    return !!el && el.value === "all";
+  }
+  // "Discover only" (home_dash_enabled="0") -- there is no Dashboard tab at
+  // all in this mode, so its five widget rows (continue/library/watchlist/
+  // upcoming/gaps) have nowhere to appear and no card to position. Listing
+  // them here anyway used to show a "Dashboard widgets" group full of
+  // toggles for a tab the account can never open.
+  function isDiscoverOnly(scope) {
+    const el = dashModeEl(scope);
+    return !!el && el.value === "0";
+  }
+  // The list step()/rowHtml's up/down buttons move within: the Discover-only
+  // subsequence normally, or every row once there is no Dashboard grid to
+  // split them from.
+  function reorderGroup(scope) {
+    return isAllInOne(scope) ? state[scope].order.slice() : discoverOrder(scope);
+  }
+
   // scope -> {order, hidden, limit, sourcesOff, typesOff, rowMeta}
   const state = {};
   let catalogue = null;                    // the one /api/home-feed/sources answer
@@ -49,6 +82,263 @@
 
   function toast(message) {
     if (typeof showToast === "function") showToast(message);
+  }
+
+  // ---------------------------------------- Dashboard section/card order
+  //
+  // Sections layout only (scope="user" always -- see spSectionOrderRow-user/
+  // spCardOrderRow-user's scope=='user' guard in _start_page_form.html: this
+  // is a per-account arrangement, same as the Dashboard's own drag reorder,
+  // there is no instance-default equivalent to arrange for a fresh account).
+  // Reads/writes the exact same prefs static/home_panels.js's own drag
+  // reorder uses (home_dash_section_order, home_dash_section_layout) so
+  // this list and dragging directly on the Dashboard are two views onto one
+  // state, not two competing ones. Card order is read from the LIVE
+  // #homeDashSections DOM rather than a separate catalogue -- it is already
+  // the one source of truth home_panels.js itself saves a drag from.
+  const SECTION_ORDER_IDS = ["mediaforge", "system", "stats", "modules"];
+  const SECTION_LABEL_KEY = {
+    mediaforge: "sec_mediaforge", system: "sec_system", stats: "sec_stats", modules: "sec_modules",
+  };
+  let sectionOrderGroup = null;             // [{key, label}], populated lazily
+  let cardOrderGroups = null;               // { <section id>: [{key, label}] }
+  let orderDragging = null;
+
+  function orderRowHtml(key, label, index, total) {
+    return '<div class="mf-order-row" draggable="true" data-row="' + escapeHtml(key) + '">' +
+      '<span class="mf-order-handle" title="' + escapeHtml(txt("drag", "Drag to reorder")) +
+      '" aria-hidden="true"><svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor">' +
+      '<circle cx="7" cy="5" r="1.5"/><circle cx="13" cy="5" r="1.5"/><circle cx="7" cy="10" r="1.5"/>' +
+      '<circle cx="13" cy="10" r="1.5"/><circle cx="7" cy="15" r="1.5"/><circle cx="13" cy="15" r="1.5"/>' +
+      "</svg></span>" +
+      '<span class="mf-order-label">' + escapeHtml(label) + "</span>" +
+      '<span class="mf-order-actions">' +
+      '<button type="button" class="mf-order-btn" data-order-move="up" data-order-key="' + escapeHtml(key) + '"' +
+      (index === 0 ? " disabled" : "") + ' title="' + escapeHtml(txt("move_up", "Move up")) + '">' +
+      '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></button>' +
+      '<button type="button" class="mf-order-btn" data-order-move="down" data-order-key="' + escapeHtml(key) + '"' +
+      (index === total - 1 ? " disabled" : "") + ' title="' + escapeHtml(txt("move_down", "Move down")) + '">' +
+      '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>' +
+      "</span></div>";
+  }
+
+  /** `group` is the live array backing the rows currently in the DOM --
+      dragging mutates it in place, same shape reorderGroup()'s rows use. */
+  function attachOrderDnd(el, group, onChange) {
+    el.addEventListener("dragstart", function (ev) {
+      orderDragging = { key: el.dataset.row, group: group };
+      el.classList.add("dragging");
+      try { ev.dataTransfer.effectAllowed = "move"; } catch (e) { /* older browsers */ }
+    });
+    el.addEventListener("dragend", function () {
+      orderDragging = null;
+      el.classList.remove("dragging");
+      document.querySelectorAll(".mf-order-row.drag-over").forEach(function (r) {
+        r.classList.remove("drag-over");
+      });
+    });
+    el.addEventListener("dragover", function (ev) {
+      ev.preventDefault();
+      if (orderDragging && orderDragging.group === group && orderDragging.key !== el.dataset.row) {
+        el.classList.add("drag-over");
+      }
+    });
+    el.addEventListener("dragleave", function () { el.classList.remove("drag-over"); });
+    el.addEventListener("drop", function (ev) {
+      ev.preventDefault();
+      el.classList.remove("drag-over");
+      if (!orderDragging || orderDragging.group !== group) return;
+      const from = group.findIndex(function (it) { return it.key === orderDragging.key; });
+      const to = group.findIndex(function (it) { return it.key === el.dataset.row; });
+      if (from === -1 || to === -1 || from === to) return;
+      const moved = group.splice(from, 1)[0];
+      group.splice(to, 0, moved);
+      onChange();
+    });
+  }
+
+  function moveOrderItem(group, key, delta, onChange) {
+    const i = group.findIndex(function (it) { return it.key === key; });
+    const j = i + delta;
+    if (i === -1 || j < 0 || j >= group.length) return;
+    const moved = group.splice(i, 1)[0];
+    group.splice(j, 0, moved);
+    onChange();
+  }
+
+  function currentSectionOrder() {
+    const stored = String((window._USER_PREFS || {}).home_dash_section_order || "").split(",").filter(Boolean);
+    const ids = stored.filter(function (id) { return SECTION_ORDER_IDS.indexOf(id) !== -1; });
+    SECTION_ORDER_IDS.forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+    const home = window.__HOME_I18N || {};
+    return ids.map(function (id) { return { key: id, label: home[SECTION_LABEL_KEY[id]] || id }; });
+  }
+
+  function renderSectionOrderList() {
+    const list = document.getElementById("spSectionOrder-user");
+    if (!list) return;
+    if (!sectionOrderGroup) sectionOrderGroup = currentSectionOrder();
+    list.innerHTML = sectionOrderGroup.map(function (it, i) {
+      return orderRowHtml(it.key, it.label, i, sectionOrderGroup.length);
+    }).join("");
+    list.querySelectorAll(".mf-order-row").forEach(function (el) {
+      attachOrderDnd(el, sectionOrderGroup, function () { renderSectionOrderList(); saveSectionOrder(); });
+    });
+    list.querySelectorAll("[data-order-move]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        moveOrderItem(sectionOrderGroup, btn.dataset.orderKey, btn.dataset.orderMove === "up" ? -1 : 1,
+          function () { renderSectionOrderList(); saveSectionOrder(); });
+      });
+    });
+  }
+
+  function saveSectionOrder() {
+    const value = sectionOrderGroup.map(function (it) { return it.key; }).join(",");
+    fetch("/api/user/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ home_dash_section_order: value }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("save failed");
+      if (window._USER_PREFS) window._USER_PREFS.home_dash_section_order = value;
+      toast(txt("layout_saved", "Saved — reload the home page"));
+    }).catch(function () {
+      toast(txt("save_failed", "Could not be saved"));
+    });
+  }
+
+  /** The live DOM, not a separate catalogue -- whatever home_panels.js has
+      actually rendered into each section IS the current card order. Reads
+      the card's own already-rendered title rather than caching one
+      separately, so a module's translated title is never out of step. */
+  function currentCardOrder() {
+    const out = {};
+    SECTION_ORDER_IDS.forEach(function (sec) {
+      const body = document.getElementById("dashSectionBody-" + sec);
+      out[sec] = body ? Array.prototype.map.call(
+        body.querySelectorAll(".dash-card-flow[data-card]"),
+        function (el) {
+          const span = el.querySelector(".dash-card-head span");
+          return { key: el.dataset.card, label: span ? span.textContent : el.dataset.card };
+        }) : [];
+    });
+    return out;
+  }
+
+  function renderCardOrderList() {
+    const list = document.getElementById("spCardOrder-user");
+    if (!list) return;
+    if (!cardOrderGroups) cardOrderGroups = currentCardOrder();
+    const home = window.__HOME_I18N || {};
+    let html = "";
+    SECTION_ORDER_IDS.forEach(function (sec) {
+      const group = cardOrderGroups[sec] || [];
+      if (!group.length) return;
+      html += '<div class="sp-sublabel">' + escapeHtml(home[SECTION_LABEL_KEY[sec]] || sec) + "</div>";
+      html += group.map(function (it, i) { return orderRowHtml(it.key, it.label, i, group.length); }).join("");
+    });
+    if (html) {
+      list.innerHTML = html;
+    } else if (document.getElementById("homeDashSections")) {
+      // Genuinely nothing on the board (every card hidden/removed).
+      list.innerHTML = '<div class="mf-order-hint">' +
+        escapeHtml(txt("dash_add_empty", "Everything is already on your board.")) + "</div>";
+    } else {
+      // This list is read straight off the live Dashboard DOM (see
+      // currentCardOrder() above) rather than a catalogue -- on any page
+      // other than the home page itself (Profile, Settings) that DOM does
+      // not exist at all, so it always came out empty here regardless of
+      // what is actually on the account's Dashboard. Say so instead of
+      // showing the same "everything already on your board" text that
+      // implies there is nothing to arrange.
+      list.innerHTML = '<div class="mf-order-hint">' +
+        escapeHtml(txt("dash_order_home_only",
+          "Open this from the home page itself (the \"Customise this page\" button) to reorder cards.")) +
+        "</div>";
+    }
+    list.querySelectorAll(".mf-order-row").forEach(function (el) {
+      const key = el.dataset.row;
+      const sec = SECTION_ORDER_IDS.filter(function (s) {
+        return (cardOrderGroups[s] || []).some(function (it) { return it.key === key; });
+      })[0];
+      if (!sec) return;
+      attachOrderDnd(el, cardOrderGroups[sec], function () { renderCardOrderList(); saveCardOrder(); });
+    });
+    list.querySelectorAll("[data-order-move]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const key = btn.dataset.orderKey;
+        const sec = SECTION_ORDER_IDS.filter(function (s) {
+          return (cardOrderGroups[s] || []).some(function (it) { return it.key === key; });
+        })[0];
+        if (!sec) return;
+        moveOrderItem(cardOrderGroups[sec], key, btn.dataset.orderMove === "up" ? -1 : 1,
+          function () { renderCardOrderList(); saveCardOrder(); });
+      });
+    });
+  }
+
+  function saveCardOrder() {
+    const pairs = [];
+    SECTION_ORDER_IDS.forEach(function (sec) {
+      (cardOrderGroups[sec] || []).forEach(function (it) { pairs.push(it.key + ":" + sec); });
+    });
+    const value = pairs.join(",");
+    fetch("/api/user/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ home_dash_section_layout: value }),
+    }).then(function (r) {
+      if (!r.ok) throw new Error("save failed");
+      if (window._USER_PREFS) window._USER_PREFS.home_dash_section_layout = value;
+      toast(txt("layout_saved", "Saved — reload the home page"));
+    }).catch(function () {
+      toast(txt("save_failed", "Could not be saved"));
+    });
+  }
+
+  // "Start on" only means anything with two SEPARATE tabs to choose a first
+  // one from -- "Discover only" ("0") has no Dashboard tab, "All in one
+  // page" ("all") stacks both with no tab switch at all. Top-level (not
+  // nested in bind()) for the same reason as syncOrderRows() below: both
+  // bind()'s dashMode change handler and load()'s initial populate call it,
+  // and a copy nested inside bind()'s closure is invisible from load() --
+  // that mismatch is what silently emptied the Rows/order lists before
+  // (ReferenceError inside load()'s forEach, aborting the rest of that
+  // scope's iteration before renderRows()/renderChecks() ever ran).
+  function syncStartTabRow(scope) {
+    const dashMode = document.getElementById("spDashMode-" + scope);
+    const startTabRow = document.getElementById("spStartTabRow-" + scope);
+    if (startTabRow) startTabRow.style.display = (dashMode && dashMode.value !== "") ? "none" : "";
+  }
+
+  // Dashboard sections vs. the free-position grid (Beta) -- meaningless in
+  // "Discover only" (no Dashboard tab at all) and in "All in one page"
+  // (that mode renders the older button-bar dashboard, which has neither
+  // Sections nor the free grid to choose between). Top-level for the same
+  // reason as syncStartTabRow() above.
+  function syncDashViewRow(scope) {
+    const dashMode = document.getElementById("spDashMode-" + scope);
+    const dashViewRow = document.getElementById("spDashViewRow-" + scope);
+    if (dashViewRow) {
+      dashViewRow.style.display = (dashMode && (dashMode.value === "0" || dashMode.value === "all")) ? "none" : "";
+    }
+  }
+
+  // Section/card order rows only mean anything in the Sections layout and
+  // for the "user" scope (scope="global" never renders them, see
+  // _start_page_form.html). Top-level (not nested in bind()) so both
+  // bind()'s change handlers and load()'s initial populate can call it.
+  function syncOrderRows(scope) {
+    const dashMode = document.getElementById("spDashMode-" + scope);
+    const dashView = document.getElementById("spDashView-" + scope);
+    const hide = !!(dashMode && (dashMode.value === "0" || dashMode.value === "all")) ||
+      !!(dashView && dashView.value === "grid");
+    const secRow = document.getElementById("spSectionOrderRow-" + scope);
+    const cardRow = document.getElementById("spCardOrderRow-" + scope);
+    if (secRow) secRow.style.display = hide ? "none" : "";
+    if (cardRow) cardRow.style.display = hide ? "none" : "";
   }
 
   // ------------------------------------------------------------ rendering
@@ -95,16 +385,29 @@
   function renderRows(scope) {
     const list = document.getElementById("spRows-" + scope);
     if (!list) return;
-    const disc = discoverOrder(scope);
-    const dash = state[scope].order.filter(isDashWidget);
-    let html = '<div class="sp-sublabel">' + escapeHtml(txt("group_discover", "Discover rows")) + "</div>";
-    html += disc.map(function (row, i) { return rowHtml(scope, row, i, disc.length, true); }).join("");
-    html += '<div class="sp-sublabel">' + escapeHtml(txt("group_dashboard", "Dashboard widgets")) + "</div>";
-    html += '<div class="mf-order-hint mf-order-group-hint">' +
-      escapeHtml(txt("group_dashboard_hint",
-        "Position and size are set on the Dashboard tab. Turning one off here also stops collecting its data.")) +
-      "</div>";
-    html += dash.map(function (row, i) { return rowHtml(scope, row, i, dash.length, false); }).join("");
+    let html;
+    if (isAllInOne(scope)) {
+      // No Dashboard grid to arrange these on in this layout -- every row
+      // is a plain, fully reorderable item again, one flat list.
+      const all = state[scope].order.slice();
+      html = all.map(function (row, i) { return rowHtml(scope, row, i, all.length, true); }).join("");
+    } else if (isDiscoverOnly(scope)) {
+      // No Dashboard tab exists to show the widget rows on -- drop the
+      // group entirely rather than listing toggles with no visible effect.
+      const disc = discoverOrder(scope);
+      html = disc.map(function (row, i) { return rowHtml(scope, row, i, disc.length, true); }).join("");
+    } else {
+      const disc = discoverOrder(scope);
+      const dash = state[scope].order.filter(isDashWidget);
+      html = '<div class="sp-sublabel">' + escapeHtml(txt("group_discover", "Discover rows")) + "</div>";
+      html += disc.map(function (row, i) { return rowHtml(scope, row, i, disc.length, true); }).join("");
+      html += '<div class="sp-sublabel">' + escapeHtml(txt("group_dashboard", "Dashboard widgets")) + "</div>";
+      html += '<div class="mf-order-hint mf-order-group-hint">' +
+        escapeHtml(txt("group_dashboard_hint",
+          "Position and size are set on the Dashboard tab. Turning one off here also stops collecting its data.")) +
+        "</div>";
+      html += dash.map(function (row, i) { return rowHtml(scope, row, i, dash.length, false); }).join("");
+    }
     list.innerHTML = html;
     list.querySelectorAll('.mf-order-row[draggable="true"]').forEach(function (el) { attachDnd(scope, el); });
 
@@ -185,14 +488,15 @@
     save(scope);
   }
 
-  // Up/down buttons only ever target Discover rows (Dashboard-widget rows
-  // don't render them -- see rowHtml's reorderable flag), so the swap target
-  // is the neighbour within the DISCOVER subsequence, not the physically
-  // adjacent id in the full order array -- that could be an unrelated
-  // Dashboard-widget row sitting between two Discover rows.
+  // Up/down buttons only render for reorderable rows (Discover rows always,
+  // every row once isAllInOne() -- see rowHtml's reorderable flag), so the
+  // swap target is the neighbour within that same reorderable group
+  // (reorderGroup), not the physically adjacent id in the full order array
+  // -- in the split view that could be an unrelated Dashboard-widget row
+  // sitting between two Discover rows.
   function step(scope, row, delta) {
     const order = state[scope].order;
-    const group = discoverOrder(scope);
+    const group = reorderGroup(scope);
     const gi = group.indexOf(row);
     const ti = gi + delta;
     if (gi === -1 || ti < 0 || ti >= group.length) return;
@@ -422,22 +726,41 @@
     // renders into the page, and the start tab is only read once by
     // home_2_1.js's wireTabs() on load.
     const dashMode = document.getElementById("spDashMode-" + scope);
-    const startTabRow = document.getElementById("spStartTabRow-" + scope);
     const startTab = document.getElementById("spStartTab-" + scope);
-    // "Start on" only means anything with two SEPARATE tabs to choose a
-    // first one from -- "Discover only" ("0") has no Dashboard tab, "All in
-    // one page" ("all") stacks both with no tab switch at all.
-    function syncStartTabRow() {
-      if (startTabRow) startTabRow.style.display = (dashMode && dashMode.value !== "") ? "none" : "";
-    }
     if (dashMode) {
       dashMode.addEventListener("change", function () {
         const value = ["", "0", "all"].indexOf(dashMode.value) === -1 ? "" : dashMode.value;
-        syncStartTabRow();
+        syncStartTabRow(scope);
+        syncDashViewRow(scope);
+        renderRows(scope);          // the Discover/Dashboard-widget split depends on this
         fetch("/api/user/preferences", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ home_dash_enabled: value }),
+        }).then(function (r) {
+          if (!r.ok) throw new Error("save failed");
+          toast(txt("layout_saved", "Saved — reload the home page"));
+        }).catch(function () {
+          toast(txt("save_failed", "Could not be saved"));
+        });
+      });
+    }
+    const dashView = document.getElementById("spDashView-" + scope);
+    // Section/card order only mean anything in the Sections layout -- the
+    // free grid (Beta) drags/resizes cards directly, nothing to list here.
+    // scope="global" never renders these rows at all (see
+    // _start_page_form.html's scope=='user' guard), so this is a no-op
+    // there. syncOrderRows() itself lives at top level (see above bind())
+    // so load() can call it too.
+    if (dashMode) dashMode.addEventListener("change", function () { syncOrderRows(scope); });
+    if (dashView) {
+      dashView.addEventListener("change", function () {
+        const value = dashView.value === "grid" ? "grid" : "";
+        syncOrderRows(scope);
+        fetch("/api/user/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ home_dash_view: value }),
         }).then(function (r) {
           if (!r.ok) throw new Error("save failed");
           toast(txt("layout_saved", "Saved — reload the home page"));
@@ -460,6 +783,64 @@
           toast(txt("save_failed", "Could not be saved"));
         });
       });
+    }
+
+    // "Could be for you" visibility -- scope="user" only (see
+    // _start_page_form.html), hero banner and rail as two independent
+    // checkboxes. Applied immediately through window.mfForyouSetHeroHidden/
+    // window.mfForyouSetHidden rather than "reload the home page": the row
+    // is pure client-side rendering, so there is nothing a reload would do
+    // that toggling it in place does not.
+    const foryouHeroHidden = document.getElementById("spForyouHeroHidden-" + scope);
+    if (foryouHeroHidden) {
+      foryouHeroHidden.addEventListener("change", function () {
+        const value = foryouHeroHidden.checked ? "0" : "1";
+        fetch("/api/user/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ foryou_hero_hidden: value }),
+        }).then(function (r) {
+          if (!r.ok) throw new Error("save failed");
+          if (window._USER_PREFS) window._USER_PREFS.foryou_hero_hidden = value;
+          if (typeof window.mfForyouSetHeroHidden === "function") {
+            window.mfForyouSetHeroHidden(value === "1");
+          }
+          toast(txt("saved", "Saved"));
+        }).catch(function () {
+          foryouHeroHidden.checked = !foryouHeroHidden.checked;
+          toast(txt("save_failed", "Could not be saved"));
+        });
+      });
+    }
+    const foryouHidden = document.getElementById("spForyouHidden-" + scope);
+    if (foryouHidden) {
+      foryouHidden.addEventListener("change", function () {
+        const value = foryouHidden.checked ? "0" : "1";
+        fetch("/api/user/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ foryou_hidden: value }),
+        }).then(function (r) {
+          if (!r.ok) throw new Error("save failed");
+          if (window._USER_PREFS) window._USER_PREFS.foryou_hidden = value;
+          if (typeof window.mfForyouSetHidden === "function") {
+            window.mfForyouSetHidden(value === "1");
+          }
+          toast(txt("saved", "Saved"));
+        }).catch(function () {
+          foryouHidden.checked = !foryouHidden.checked;
+          toast(txt("save_failed", "Could not be saved"));
+        });
+      });
+    }
+
+    // The instance-default twin of the dashMode select above -- unscoped id
+    // (#dashModeDefault, only rendered for scope="global"), saved through
+    // static/settings.js's own saveDashModeDefault(). This listener only
+    // adds the row-list re-render; it does not duplicate the save.
+    const dashModeDefaultEl = document.getElementById("dashModeDefault");
+    if (dashModeDefaultEl) {
+      dashModeDefaultEl.addEventListener("change", function () { renderRows(scope); });
     }
 
     const resetBtn = document.getElementById("spReset-" + scope);
@@ -511,13 +892,40 @@
       if (dashModeEl) {
         const stored = String((window._USER_PREFS || {}).home_dash_enabled || "");
         dashModeEl.value = ["0", "all"].indexOf(stored) === -1 ? "" : stored;
-        const row = document.getElementById("spStartTabRow-" + scope);
-        if (row) row.style.display = dashModeEl.value === "" ? "" : "none";
+        // Single source of truth for both rows' visibility rule -- see
+        // syncStartTabRow()/syncDashViewRow() above, also used by dashMode's
+        // own change handler. A second, drifted copy here used to hide the
+        // Dashboard-layout row only for "Discover only", not "All in one
+        // page" too.
+        syncStartTabRow(scope);
+        syncDashViewRow(scope);
       }
       const startTabEl = document.getElementById("spStartTab-" + scope);
       if (startTabEl) {
         const stored = String((window._USER_PREFS || {}).home_tab || "");
         startTabEl.value = stored === "disc" ? "disc" : "";
+      }
+      const dashViewEl = document.getElementById("spDashView-" + scope);
+      if (dashViewEl) {
+        dashViewEl.value = String((window._USER_PREFS || {}).home_dash_view || "") === "grid" ? "grid" : "";
+      }
+      syncOrderRows(scope);
+      if (scope === "user") {
+        // Re-read fresh every time the modal opens -- the account may have
+        // dragged a card/section directly on the Dashboard since the last
+        // time this form was populated.
+        sectionOrderGroup = null;
+        cardOrderGroups = null;
+        renderSectionOrderList();
+        renderCardOrderList();
+      }
+      const foryouHeroHiddenEl = document.getElementById("spForyouHeroHidden-" + scope);
+      if (foryouHeroHiddenEl) {
+        foryouHeroHiddenEl.checked = String((window._USER_PREFS || {}).foryou_hero_hidden || "") !== "1";
+      }
+      const foryouHiddenEl = document.getElementById("spForyouHidden-" + scope);
+      if (foryouHiddenEl) {
+        foryouHiddenEl.checked = String((window._USER_PREFS || {}).foryou_hidden || "") !== "1";
       }
       renderRows(scope);
       renderChecks(scope);

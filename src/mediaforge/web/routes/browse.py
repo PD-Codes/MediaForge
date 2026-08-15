@@ -32,6 +32,7 @@ from ..db import set_browse_cache
 from ..source_policy import source_enabled as _source_enabled
 from ..source_policy import is_english_only_source as _is_english_only_source
 from ..source_policy import search_sources
+from ..source_policy import all_source_ids
 from ..queue_worker import _hanime_enabled
 from ..queue_worker import _filmo_enabled
 from ..queue_worker import _nineanime_enabled
@@ -836,12 +837,10 @@ def feed_effective_config():
 def _feed_known_source_ids():
     """Built-in plus module-registered source ids -- used to validate the
     stored "off by default" list."""
-    ids = {sid for sid, _label, _color in _FEED_BUILTIN_META}
-    for src in iter_home_feed_sources():
-        ids.add(src["source_id"])
-    for src in _feed_module_search_sources():
-        ids.add(src["id"])
-    return ids
+    # all_source_ids() already merges the search, provider and home-feed
+    # registries, so this no longer has to walk them one by one -- and cannot
+    # miss a registry that is added later.
+    return {sid for sid, _label, _color in _FEED_BUILTIN_META} | all_source_ids()
 
 
 def _feed_module_search_sources():
@@ -1408,13 +1407,14 @@ def register_browse_routes(app):
         username = username or ""
 
         now = _time.time()
-        if request.args.get("refresh") not in ("1", "true", "yes"):
+        refresh = request.args.get("refresh") in ("1", "true", "yes")
+        if not refresh:
             entry = _FORYOU_MEMO.get(username)
             if entry and now - entry[0] < _FORYOU_TTL:
                 return jsonify(entry[1])
 
         try:
-            payload = recommend.for_you(username)
+            payload = recommend.for_you(username, shuffle=refresh)
         except Exception:
             logger.exception("[HomeFeed] for-you row failed")
             payload = {"configured": False, "items": [], "hero": [],

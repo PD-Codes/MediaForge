@@ -53,6 +53,7 @@
     'save_failed': _('Could not be saved'),
     'layout_saved': _('Saved — reload the home page'),
     'reset_done': _('Reset to the instance default'),
+    'dash_order_home_only': _('Open this from the home page itself (the "Customise this page" button) to reorder cards.'),
     'using_default': _('Following the instance default'),
     'using_own': _('You changed this — the instance default no longer applies')
   }|tojson }};
@@ -111,6 +112,24 @@
       </div>
     </div>
   </div>
+
+  {# Instance-wide twin of the per-account "Recommendations" group further
+     down (scope="user") -- what a fresh account, or one that never touched
+     these two checkboxes, starts with. See db/ui_prefs.py's
+     foryou_hero_hidden/foryou_hidden and static/home_foryou.js's
+     heroHidden()/railHidden() for how the two are resolved together. #}
+  <div class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Recommendations') }}</h3>
+    <div class="settings-hint">{{ _('The default for accounts that have not chosen for themselves. Everyone can still overrule it on their profile page.') }}</div>
+    <label class="settings-checkbox-row" for="foryouHeroHiddenDefault">
+      <input type="checkbox" class="chb-main" id="foryouHeroHiddenDefault" onchange="saveForyouHeroHiddenDefault()" />
+      <span>{{ _('Show the top recommendation banner on the Discover tab') }}</span>
+    </label>
+    <label class="settings-checkbox-row" for="foryouRailHiddenDefault">
+      <input type="checkbox" class="chb-main" id="foryouRailHiddenDefault" onchange="saveForyouRailHiddenDefault()" />
+      <span>{{ _('Show "Could be for you" on the Discover tab') }}</span>
+    </label>
+  </div>
   {% endif %}
 
   {# The same decision for THIS account. A select and not a checkbox, because
@@ -159,6 +178,57 @@
         </select>
       </div>
     </div>
+  </div>
+
+  {# Only meaningful with a Dashboard to show at all -- "Discover only"
+     hides this too (see syncDashViewRow() in static/start_page.js), same
+     reasoning as "Start on" above. #}
+  <div id="spDashViewRow-user" class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Dashboard layout') }}</h3>
+    <div class="settings-hint">{{ _('Sections group every card under MediaForge/System/Statistics/Modules, collapsible, drag a card to reorder it within its section. The free-position card grid is the previous layout.') }}</div>
+    <div class="settings-row">
+      <select class="mf-token-input" id="spDashView-user">
+        <option value="">{{ _('Sections') }}</option>
+        <option value="grid">{{ _('Card grid (Beta)') }}</option>
+      </select>
+    </div>
+  </div>
+
+  {# Sections layout only (the free grid drags/resizes cards directly, it
+     has no separate order to configure here) -- hidden by syncOrderRows()
+     in static/start_page.js under the same conditions as spDashViewRow-user
+     above, plus whenever "Card grid (Beta)" is picked. Reads/writes the
+     exact same prefs home_panels.js's own drag reorder does (see its
+     applySectionOrder()/saveCardLayout()), so this list and dragging on the
+     Dashboard itself are two views onto one state. #}
+  <div id="spSectionOrderRow-user" class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Section order') }}</h3>
+    <div class="settings-hint">{{ _('Which order the four Dashboard sections appear in. Reload the home page after changing this.') }}</div>
+    <div class="mf-order-list" id="spSectionOrder-user"></div>
+  </div>
+  <div id="spCardOrderRow-user" class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Card order') }}</h3>
+    <div class="settings-hint">{{ _('Which order the cards inside each section appear in. Cards stay in the section they belong to.') }}</div>
+    <div class="mf-order-list" id="spCardOrder-user"></div>
+  </div>
+
+  {# "Could be for you" -- the recommendation hero + rail on the Discover
+     tab. Personal, same as every other Discover choice: one household
+     member finding the guesses noisy must not turn them off for everyone
+     else. static/home_foryou.js reads this pref before every load and
+     static/start_page.js's spForyouHidden handler below applies a toggle
+     immediately, without asking for a reload -- the row has no state of its
+     own to lose by hiding and showing it again. #}
+  <div class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Recommendations') }}</h3>
+    <label class="settings-checkbox-row" for="spForyouHeroHidden-{{ scope }}">
+      <input type="checkbox" class="chb-main" id="spForyouHeroHidden-{{ scope }}">
+      <span>{{ _('Show the top recommendation banner on the Discover tab') }}</span>
+    </label>
+    <label class="settings-checkbox-row" for="spForyouHidden-{{ scope }}">
+      <input type="checkbox" class="chb-main" id="spForyouHidden-{{ scope }}">
+      <span>{{ _('Show "Could be for you" on the Discover tab') }}</span>
+    </label>
   </div>
   {% endif %}
 

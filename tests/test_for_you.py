@@ -37,6 +37,106 @@ def test_owned_titles_are_never_recommended(monkeypatch):
     assert out["items"][0]["poster_url"].endswith("w342/p.jpg")
 
 
+def test_alias_only_owned_titles_are_excluded(monkeypatch):
+    """A library title TMDB knows under an alias (see _cached_tmdb_entries)
+    must still count as owned, even though `_owned_titles()` only ever
+    learns the folder name ("Alpha"), not the alias ("Alias Name") that the
+    recommendation itself is titled with. Regression test for exclude being
+    computed before the alias merge -- that ordering let an owned title come
+    back as a "for you" suggestion forever."""
+    rows = [{"cache_key": "Alpha|||DE|||de",
+             "data_json": json.dumps({
+                 "titles": ["Alias Name"],
+                 "genres": [{"name": "Drama"}],
+                 "recommendations": [_rec(1, "Alias Name"), _rec(2, "Gamma")],
+             })}]
+
+    class _Conn:
+        def execute(self, *a):
+            return self
+
+        def fetchall(self):
+            return rows
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("mediaforge.web.db.get_db", lambda: _Conn())
+    monkeypatch.setattr(recommend, "_owned_titles", lambda: {"alpha"})
+    monkeypatch.setattr(recommend, "_seed_titles", lambda: {"alpha"})
+    monkeypatch.setattr(recommend, "_hero_items", lambda items, key: [])
+    monkeypatch.setattr("mediaforge.web.db.get_setting",
+                        lambda k, d="": "key" if k == "cineinfo_tmdb_api_key" else d)
+
+    items = recommend.for_you("pytest")["items"]
+    assert [i["title"] for i in items] == ["Gamma"], \
+        "the alias of an owned title must not come back as a suggestion"
+
+
+def test_owned_title_excluded_by_tmdb_id_even_with_unrelated_text(monkeypatch):
+    """Text matching (owned title / its known aliases) is not the only guard
+    -- an owned title's cached payload also carries its OWN tmdb_id
+    (recommend.for_you's `exclude_ids`), and a recommended candidate with
+    that same id must be dropped even when its displayed title shares no
+    text at all with the owned title or any alias TMDB happened to record.
+    Regression test: before exclude_ids existed, a recommendation could
+    only ever be caught by string equality, so any localisation/region
+    mismatch between "what the library folder is called" and "what this
+    recommendation is titled" let an owned show straight through."""
+    rows = [{"cache_key": "Alpha|||DE|||de",
+             "data_json": json.dumps({
+                 "tmdb_id": 1,
+                 "titles": ["Only Known Alias"],
+                 "genres": [{"name": "Drama"}],
+                 "recommendations": [_rec(1, "Completely Different Title"), _rec(2, "Gamma")],
+             })}]
+
+    class _Conn:
+        def execute(self, *a):
+            return self
+
+        def fetchall(self):
+            return rows
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("mediaforge.web.db.get_db", lambda: _Conn())
+    monkeypatch.setattr(recommend, "_owned_titles", lambda: {"alpha"})
+    monkeypatch.setattr(recommend, "_seed_titles", lambda: {"alpha"})
+    monkeypatch.setattr(recommend, "_hero_items", lambda items, key: [])
+    monkeypatch.setattr("mediaforge.web.db.get_setting",
+                        lambda k, d="": "key" if k == "cineinfo_tmdb_api_key" else d)
+
+    items = recommend.for_you("pytest")["items"]
+    assert [i["title"] for i in items] == ["Gamma"], \
+        "a recommendation sharing the owned title's own tmdb_id must be excluded by id"
+
+
+def test_shuffle_reorders_even_when_pool_is_smaller_than_the_row_limit(monkeypatch):
+    """Regression test: shuffle used to be gated on "more candidates than
+    the row limit" (MAX_ROW=20), so a household with a modest library --
+    the common case, well under 20 distinct "could be for you" candidates
+    -- clicked Shuffle and got the exact same list back every time. The
+    button must reorder any pool with more than one candidate, not only an
+    overflowing one."""
+    monkeypatch.setattr(recommend, "_owned_titles", lambda: {"alpha"})
+    monkeypatch.setattr(recommend, "_cached_tmdb_entries", lambda owned: [
+        _entry("alpha", [_rec(i, f"Title {i}") for i in range(1, 6)]),
+    ])
+    monkeypatch.setattr(recommend, "_hero_items", lambda items, key: [])
+    monkeypatch.setattr("mediaforge.web.db.get_setting",
+                        lambda k, d="": "key" if k == "cineinfo_tmdb_api_key" else d)
+    monkeypatch.setattr(recommend.random, "sample", lambda pool, k: list(reversed(pool))[:k])
+
+    # 5 candidates, well under MAX_ROW=20 -- exactly the case the old
+    # `len(pool) > limit` guard silently skipped.
+    unshuffled = [i["title"] for i in recommend.for_you("pytest", shuffle=False)["items"]]
+    shuffled = [i["title"] for i in recommend.for_you("pytest", shuffle=True)["items"]]
+    assert shuffled != unshuffled
+    assert shuffled == list(reversed(unshuffled))
+
+
 def test_two_seeds_beat_one_high_rating(monkeypatch):
     monkeypatch.setattr(recommend, "_owned_titles", lambda: {"alpha", "beta"})
     monkeypatch.setattr(recommend, "_cached_tmdb_entries", lambda owned: [
@@ -88,6 +188,47 @@ def test_cache_key_scan_matches_on_title(monkeypatch):
     got = recommend._cached_tmdb_entries(owned)
     assert [t for t, _ in got] == ["Alpha"]     # display casing, not the key
     assert "alpha jp" in owned      # aliases join the owned set
+
+
+def test_cache_row_matches_via_alias_not_just_cache_key(monkeypatch):
+    """Regression test for the "Reincarnated as a Sword" bug: two providers
+    stored the show under folder names that don't match EACH OTHER or the
+    tmdb_cache key (a Japanese-script title from one provider, a romaji
+    title from the library's own owned-titles set), while the cache row
+    itself is keyed by yet a third, English string. Before this fix,
+    _cached_tmdb_entries only matched when the CACHE KEY equalled an owned
+    title -- an owned title that only appears in the row's alias list never
+    triggered the match, so the English cache-key title (which is exactly
+    what a recommendation displays) kept coming back as a suggestion even
+    though the show was demonstrably already in the library."""
+    rows = [{"cache_key": "Reincarnated as a Sword|||DE|||de",
+             "data_json": json.dumps({
+                 "titles": ["Tensei Shitara Ken Deshita", "転生したら剣でした"],
+                 "genres": [{"name": "Drama"}],
+                 "recommendations": [_rec(1, "Reincarnated as a Sword"), _rec(2, "Gamma")],
+             })}]
+
+    class _Conn:
+        def execute(self, *a):
+            return self
+
+        def fetchall(self):
+            return rows
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("mediaforge.web.db.get_db", lambda: _Conn())
+    # The library owns the romaji folder, not the English cache-key title.
+    monkeypatch.setattr(recommend, "_owned_titles", lambda: {"tensei shitara ken deshita"})
+    monkeypatch.setattr(recommend, "_seed_titles", lambda: {"tensei shitara ken deshita"})
+    monkeypatch.setattr(recommend, "_hero_items", lambda items, key: [])
+    monkeypatch.setattr("mediaforge.web.db.get_setting",
+                        lambda k, d="": "key" if k == "cineinfo_tmdb_api_key" else d)
+
+    items = recommend.for_you("pytest")["items"]
+    assert [i["title"] for i in items] == ["Gamma"], \
+        "an owned title matched only via alias must still exclude the cache key's own title"
 
 
 def _capture_topup(monkeypatch):

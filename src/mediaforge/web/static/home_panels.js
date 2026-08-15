@@ -78,6 +78,15 @@
   const grid = document.getElementById("homeDashGrid");
   if (!grid) return;                      // classic home page — nothing to do
 
+  // Dashboard sections (new default): every card grouped into four fixed,
+  // collapsible sections instead of freely dragged/resized on the grid
+  // above. #homeDashGrid is rendered either way (see index.html) so every
+  // ResizeObserver/pointer/lock binding below stays valid untouched; only
+  // renderOneCard() and the three "find a thirdparty card" lookups need to
+  // know which layout is actually active.
+  const sectionsRoot = document.getElementById("homeDashSections");
+  const SECTIONS_MODE = !!sectionsRoot;
+
   const I18N = window.__HOME_I18N || {};
   function HT(key) { return I18N[key] || key; }
   const esc = window.mfEscape || function (s) { return String(s == null ? "" : s); };
@@ -286,7 +295,10 @@
   // Jinja markup with no re-fetch story, so "closed" always means
   // display:none, never DOM removal -- see the .dash-close handler and
   // addWidget() further down.
-  grid.querySelectorAll('.dash-card[data-widget-kind="thirdparty-template"]').forEach(function (el) {
+  // document-scoped, not grid-scoped: in the sections layout these cards
+  // are rendered inside #homeDashSections instead (see index.html), and
+  // this pass must catch them there too.
+  document.querySelectorAll('.dash-card[data-widget-kind="thirdparty-template"]').forEach(function (el) {
     if (HIDDEN.has(el.dataset.card)) {
       el.style.display = "none";
       el.dataset.dashHidden = "1";
@@ -470,6 +482,7 @@
   }
 
   function reflowAll() {
+    if (SECTIONS_MODE) { refreshSectionStates(); return; }
     recalcColWidth();
     Array.prototype.forEach.call(grid.children, function (el) {
       // A soft-hidden thirdparty-template card (see dash-close/addWidget
@@ -507,7 +520,194 @@
       handle the pointer had captured was destroyed and rebuilt as a new,
       un-captured element. Every card goes through this one function, built-
       in or module, so fixing it here fixes it for both. */
+  // -------------------------------------------------------- section layout
+  //
+  // Which of the four fixed sections a card belongs in. Base id only (an
+  // instance suffix like ".2" is stripped first) -- every instance of a
+  // multi:true card shares its base id's section. Anything not listed here
+  // (a module panel, a thirdparty dashboard widget) falls into "modules":
+  // that is the one section this app cannot enumerate in advance, so it is
+  // the correct default rather than a special case.
+  const SECTION_OF = {
+    queue: "mediaforge", "continue": "mediaforge", watchlist: "mediaforge",
+    newlib: "mediaforge", gaps: "mediaforge", activity: "mediaforge",
+    library: "mediaforge", sources: "mediaforge", upcoming: "mediaforge",
+    storage: "system", system: "system",
+    wrapped: "stats",
+  };
+  const SECTION_IDS = ["mediaforge", "system", "stats", "modules"];
+
+  // Cards that read better spanning the whole section instead of sharing the
+  // auto-fill row with a 280px neighbour -- queue, the library overview,
+  // storage, system and wrapped all lead with a stat strip that wants room.
+  // Sections mode only; the free grid keeps its own user-resized width.
+  const FULL_WIDTH_SECTION_CARDS = ["queue", "library", "storage", "system", "wrapped"];
+
+  // ------------------------------------------------------- client pagination
+  //
+  // Sections mode only (a flowed card now grows with an unbounded list
+  // instead of scrolling it -- see .dash-card-flow's dropped overflow:auto
+  // in index.css -- so a long list needs pages instead of a scrollbar). Page
+  // index is plain runtime state, not a preference -- nobody expects
+  // "page 2" to survive a reload, only the current session.
+  const PAGE_SIZE = 5;
+  const _pageState = {};
+
+  /** Slice `rows` (an array of already-rendered <li> strings) to one page and
+      return {rowsHtml, pagerHtml} to splice into a card's body. `maxTotal`
+      (optional) caps the list before paging, e.g. "5 per page, 10 total". A
+      list that already fits on one page (after the cap) gets no pager at
+      all -- nothing to page through. */
+  function pagedRows(cardId, rows, maxTotal) {
+    const list = (SECTIONS_MODE && maxTotal) ? rows.slice(0, maxTotal) : rows;
+    if (!SECTIONS_MODE || list.length <= PAGE_SIZE) {
+      return { rowsHtml: list.join(""), pagerHtml: "" };
+    }
+    const totalPages = Math.ceil(list.length / PAGE_SIZE);
+    const page = Math.max(0, Math.min(_pageState[cardId] || 0, totalPages - 1));
+    const rowsHtml = list.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE).join("");
+    const pagerHtml = '<div class="dash-pager" data-pager="' + esc(cardId) + '">' +
+      '<button type="button" class="dash-pager-btn" data-page-dir="-1"' +
+      (page === 0 ? " disabled" : "") + ' aria-label="' + esc(HT("dash_page_prev")) + '">‹</button>' +
+      '<span class="dash-pager-count">' + (page + 1) + ' / ' + totalPages + '</span>' +
+      '<button type="button" class="dash-pager-btn" data-page-dir="1"' +
+      (page === totalPages - 1 ? " disabled" : "") + ' aria-label="' + esc(HT("dash_page_next")) + '">›</button>' +
+      '</div>';
+    return { rowsHtml: rowsHtml, pagerHtml: pagerHtml };
+  }
+
+  /** Per-account order for cards inside the sections layout: the user
+      reordered a card within its section (cards cannot be dragged to a
+      different one, see the sectionsRoot drag handlers below). "" (nothing
+      dragged yet) means every card sits in its SECTION_OF default, in the
+      built-in order -- same "absent = built-in" convention as
+      home_dash_layout/home_dash_hidden. Stored as ordered
+      "<card id>:<section>" pairs; the LIST ORDER is also the render order
+      within each section, so one pref carries both facts. The "section" part
+      of each pair is a leftover of an earlier version that did allow moving
+      cards between sections -- still read for any pref value saved back
+      then, but saveCardLayout() below now always writes back the card's own
+      fixed SECTION_OF, never a moved one. Parsed once and cached -- see
+      saveCardLayout() for the only place it changes. */
+  let _cardLayout = null;
+  function cardLayout() {
+    if (_cardLayout) return _cardLayout;
+    _cardLayout = new Map();
+    String(PREFS.home_dash_section_layout || "").split(",").filter(Boolean).forEach(function (part, i) {
+      const bits = part.split(":");
+      if (bits.length !== 2 || SECTION_IDS.indexOf(bits[1]) === -1) return;
+      _cardLayout.set(bits[0], { section: bits[1], index: i });
+    });
+    return _cardLayout;
+  }
+
+  function sectionIdFor(id) {
+    const base = id.split(".")[0];
+    const override = cardLayout().get(base);
+    return (override && override.section) || SECTION_OF[base] || "modules";
+  }
+  function sectionBodyEl(sectionId) {
+    return document.getElementById("dashSectionBody-" + sectionId);
+  }
+
+  /** Where a card belongs inside its section body, respecting a saved order
+      -- called only when the card is first created (renderSectionSlot), a
+      poll re-render never moves an existing element. Cards never dragged
+      have no entry and simply append after everything that does, same as
+      today. */
+  function sectionInsertRef(body, id) {
+    const base = id.split(".")[0];
+    const mine = cardLayout().get(base);
+    if (!mine) return null;                // no saved position -> append
+    let best = null;
+    Array.prototype.forEach.call(body.querySelectorAll(".dash-card-flow[data-card]"), function (el) {
+      const other = cardLayout().get(el.dataset.card.split(".")[0]);
+      if (other && other.index > mine.index && (!best || other.index < cardLayout().get(best.dataset.card.split(".")[0]).index)) {
+        best = el;
+      }
+    });
+    return best;
+  }
+
+  /** Persist the current DOM order/section of every flowed card. Called
+      after any card drag settles -- see the sectionsRoot drag handlers
+      below. Walks the DOM rather than patching the cached map so a drop is
+      always saved as the ground truth it visibly produced. */
+  function saveCardLayout() {
+    const pairs = [];
+    SECTION_IDS.forEach(function (sec) {
+      const body = sectionBodyEl(sec);
+      if (!body) return;
+      Array.prototype.forEach.call(body.querySelectorAll(".dash-card-flow[data-card]"), function (el) {
+        pairs.push(el.dataset.card + ":" + sec);
+      });
+    });
+    _cardLayout = null;                    // re-derive from what we just saved
+    if (typeof window.mfSaveUserPref === "function") {
+      window.mfSaveUserPref({ home_dash_section_layout: pairs.join(",") });
+    }
+    PREFS.home_dash_section_layout = pairs.join(",");
+  }
+
+  /** A section with nothing in it (most commonly "Module" on an instance
+      with none installed) is hidden entirely rather than shown as an empty
+      shell -- same reasoning every other empty state in this app uses. Also
+      keeps the header's card count current. Cheap enough to just re-run in
+      full after any add/remove: there are exactly four sections. */
+  function refreshSectionStates() {
+    if (!sectionsRoot) return;
+    sectionsRoot.querySelectorAll(".dash-section[data-section]").forEach(function (secEl) {
+      const body = sectionBodyEl(secEl.dataset.section);
+      const count = body ? body.children.length : 0;
+      secEl.classList.toggle("is-empty", count === 0);
+      const countEl = document.getElementById("dashSectionCount-" + secEl.dataset.section);
+      if (countEl) countEl.textContent = count ? String(count) : "";
+    });
+  }
+
+  /** The sections-layout twin of renderOneCard() below: same id/head/body/
+      foot contract (renderers never know which layout is active), but the
+      card flows inside its section instead of being absolutely positioned,
+      and gets no grip/resize handle -- the whole card is the drag handle
+      instead (see the sectionsRoot drag listeners further down), there being
+      nothing to resize onto in a flow layout. */
+  function renderSectionSlot(id, head, body, foot) {
+    let el = document.getElementById("dashCard-" + id);
+    let content;
+    if (!el) {
+      el = document.createElement("section");
+      el.id = "dashCard-" + id;
+      el.className = "dash-card dash-card-flow" +
+        (FULL_WIDTH_SECTION_CARDS.indexOf(id.split(".")[0]) !== -1 ? " is-full-width" : "");
+      el.dataset.card = id;
+      el.draggable = !isLocked();
+
+      content = document.createElement("div");
+      content.className = "dash-card-content";
+      el.appendChild(content);
+
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "dash-tool dash-close";
+      close.title = HT("dash_remove");
+      close.setAttribute("aria-label", HT("dash_remove"));
+      close.textContent = "×";
+      el.appendChild(close);
+
+      const target = sectionBodyEl(sectionIdFor(id));
+      if (target) target.insertBefore(el, sectionInsertRef(target, id));
+    } else {
+      content = el.querySelector(".dash-card-content");
+    }
+    content.innerHTML = head +
+      '<div class="dash-card-body">' + body + '</div>' +
+      (foot ? '<div class="dash-card-foot">' + foot + '</div>' : '');
+    refreshSectionStates();
+    return el;
+  }
+
   function renderOneCard(id, head, body, foot) {
+    if (SECTIONS_MODE) return renderSectionSlot(id, head, body, foot);
     let el = document.getElementById("dashCard-" + id);
     let content;
     if (!el) {
@@ -583,7 +783,9 @@
   function card(id, head, body, foot) {
     const el = renderOneCard(id, head, body, foot);
     if (id.indexOf(".") === -1) {
-      grid.querySelectorAll('[data-card^="' + id + '."]').forEach(function (sib) {
+      // document-scoped: a sibling instance lives in whichever container
+      // renderOneCard() put it in, grid or a section.
+      document.querySelectorAll('[data-card^="' + id + '."]').forEach(function (sib) {
         renderOneCard(sib.dataset.card, head, body, foot);
       });
     }
@@ -610,7 +812,18 @@
       string: `foot` is the trailing "open the list" link, kept out of the
       scrollable body so it stays pinned to the card's bottom edge (see
       card()) instead of scrolling out of view with a long item list. */
-  function panelBody(data) {
+  // Sections-mode-only pagination per built-in panel id -- see the design
+  // note above pagedRows(). Absent id = not paginated, same as before (the
+  // grid keeps scrolling instead). "maxTotal: undefined" pages the full
+  // server-sent list; a number caps it first ("5 per page, N total").
+  const PANEL_PAGINATE = {
+    activity: { maxTotal: 10 },
+    library: { maxTotal: 10 },
+    storage: {},
+    wrapped: { maxTotal: 10 },
+  };
+
+  function panelBody(data, cardId) {
     if (data.error) {
       return { body: '<div class="hp-error">' + esc(HT("panel_unavailable")) + '</div>', foot: "" };
     }
@@ -623,7 +836,7 @@
       }).join("") + '</div>';
     }
     if ((data.items || []).length) {
-      html += '<ul class="hp-items">' + data.items.map(function (item) {
+      const rows = data.items.map(function (item) {
         // The whole row is the link when there is one, so the hit target is
         // the row and not just the title -- this list is used on touch too.
         const cls = 'hp-item' + (item.tone ? " is-" + esc(item.tone) : "");
@@ -642,7 +855,10 @@
           (item.percent === null || item.percent === undefined ? '' :
             '<span class="hp-item-bar"><i style="width:' + Number(item.percent) + '%"></i></span>') +
           close + '</li>';
-      }).join("") + '</ul>';
+      });
+      const pageOpts = cardId && PANEL_PAGINATE.hasOwnProperty(data.id) ? PANEL_PAGINATE[data.id] : null;
+      const paged = pageOpts ? pagedRows(cardId, rows, pageOpts.maxTotal) : { rowsHtml: rows.join(""), pagerHtml: "" };
+      html += '<ul class="hp-items">' + paged.rowsHtml + '</ul>' + paged.pagerHtml;
     }
     if (!(data.stats || []).length && !(data.items || []).length) {
       html += '<div class="mf-empty hp-empty">' +
@@ -665,7 +881,7 @@
     // Title/icon always key off the real registered type (data.id), even
     // when an extra instance is being materialised under a ".N" DOM id.
     const title = TITLES[data.id] ? HT(TITLES[data.id]) : text(data.label_key, data.label);
-    const rendered = panelBody(data);
+    const rendered = panelBody(data, id);
     card(id, head(title, "", data.icon), rendered.body, rendered.foot);
   }
 
@@ -706,11 +922,12 @@
         '<button type="button" class="dash-gap-hide" data-gap-ignore="' +
         esc(it.folder || it.title) + '" title="' + esc(HT("gap_ignore")) +
         '" aria-label="' + esc(HT("gap_ignore")) + '">×</button></li>';
-    }).join("");
+    });
+    const paged = pagedRows(id, rows);
     card(id,
          head(HT("dash_gaps"), HT("dash_gap_count").replace("{}", String(total)),
               OWN_ICONS.gaps),
-         '<ul class="dash-gaps">' + rows + '</ul>',
+         '<ul class="dash-gaps">' + paged.rowsHtml + '</ul>' + paged.pagerHtml,
          '<a class="hp-more" href="/stats">' + esc(HT("dash_gaps_all")) + ' ›</a>');
   }
 
@@ -758,14 +975,19 @@
     const list = (feedPersonal.upcoming || []).filter(function (ev) {
       return String(ev.air_date || "").slice(0, 10) === iso;
     });
-    const body = list.length
-      ? '<div class="dash-srcs">' + list.map(function (ev) {
-          const slot = ev.is_movie ? HT("movie")
-            : (ev.season ? "S" + ev.season + "E" + (ev.episode || "") : "");
-          return '<div class="dash-src"><span>' + esc(ev.title) + '</span>' +
-            (slot ? pill(slot, "") : "") + '</div>';
-        }).join("") + '</div>'
-      : '<div class="mf-empty hp-empty">' + esc(HT("dash_empty_today")) + '</div>';
+    let body;
+    if (list.length) {
+      const rows = list.map(function (ev) {
+        const slot = ev.is_movie ? HT("movie")
+          : (ev.season ? "S" + ev.season + "E" + (ev.episode || "") : "");
+        return '<div class="dash-src"><span>' + esc(ev.title) + '</span>' +
+          (slot ? pill(slot, "") : "") + '</div>';
+      });
+      const paged = pagedRows(id, rows, 10);
+      body = '<div class="dash-srcs">' + paged.rowsHtml + '</div>' + paged.pagerHtml;
+    } else {
+      body = '<div class="mf-empty hp-empty">' + esc(HT("dash_empty_today")) + '</div>';
+    }
     card(id, head(HT("dash_today"), "", OWN_ICONS.upcoming), body,
          '<a class="hp-more" href="/calendar">' + esc(HT("dash_open_calendar")) + ' ›</a>');
   }
@@ -825,10 +1047,15 @@
         : '<button type="button" class="dash-btn" data-play="' + n + '">' +
           esc(HT("dash_resume")) + '</button>';
       return listRow(it, left ? sub + " · " + left : sub, it.percent, button);
-    }).join("");
+    });
+    // n above indexes the FULL `list`, not the page -- pagedRows only
+    // slices which pre-built rows are shown, it never reorders `list`
+    // itself, so data-play="n" still resolves against feedPersonal on click
+    // regardless of which page produced the click.
+    const paged = pagedRows(id, rows);
     card(id,
          head(HT("continue_watching"), "", OWN_ICONS["continue"]),
-         '<ul class="dash-gaps">' + rows + '</ul>');
+         '<ul class="dash-gaps">' + paged.rowsHtml + '</ul>' + paged.pagerHtml);
   }
 
   /** Same wording the poster row used. */
@@ -846,15 +1073,19 @@
     if (isHidden(id)) return;
     const list = feedPersonal.watchlist || [];
     if (!list.length) { dropCard_(id); return; }
-    const rows = list.slice(0, 8).map(function (it) {
+    // Sections mode: pagedRows(id, rows) with no maxTotal pages the whole
+    // list 5 at a time instead of the old fixed 8-item cap. The free grid
+    // (SECTIONS_MODE false) still caps at 8 -- pagedRows() is a no-op there.
+    const rows = list.map(function (it) {
       return listRow(it, it.provider || "", null,
         '<button type="button" class="dash-btn" data-open-series="' +
         esc(it.url || "") + '">' + esc(HT("dash_open")) + '</button>');
-    }).join("");
+    });
+    const paged = pagedRows(id, SECTIONS_MODE ? rows : rows.slice(0, 8));
     card(id,
          head(HT("your_watchlist"), "", OWN_ICONS.watchlist,
               { href: "/favourites", label: HT("dash_open_list") }),
-         '<ul class="dash-gaps">' + rows + '</ul>');
+         '<ul class="dash-gaps">' + paged.rowsHtml + '</ul>' + paged.pagerHtml);
   }
 
   function renderNewLibrary(overrideId) {
@@ -862,16 +1093,34 @@
     if (isHidden(id)) return;
     const list = feedPersonal.library || [];
     if (!list.length) { dropCard_(id); return; }
-    const rows = list.slice(0, 8).map(function (it) {
+    const rows = (SECTIONS_MODE ? list : list.slice(0, 8)).map(function (it) {
       const sub = it.is_movie ? HT("movie")
         : (it.episodes || 0) + " " + HT("episodes_short");
       return listRow(it, sub, null,
         '<a class="dash-btn" href="/library">' + esc(HT("dash_open")) + '</a>');
-    }).join("");
+    });
+    const paged = pagedRows(id, rows, 10);
     card(id,
          head(HT("new_in_library"), "", OWN_ICONS.newlib,
               { href: "/library", label: HT("dash_open_list") }),
-         '<ul class="dash-gaps">' + rows + '</ul>');
+         '<ul class="dash-gaps">' + paged.rowsHtml + '</ul>' + paged.pagerHtml);
+  }
+
+  // Which renderer redraws a given card id after its pager page changes --
+  // panel cards (queue/activity/library/storage/system/wrapped) all go
+  // through the one PANEL_DATA_CACHE + renderPanel() path, feed cards each
+  // keep their own renderer. A base id only; an extra instance never gets
+  // its own pager state to page independently (same "one shared render"
+  // reasoning card() already documents for multi:true widgets).
+  const FEED_RERENDER = {
+    gaps: renderGaps, upcoming: renderUpcoming, "continue": renderContinue,
+    watchlist: renderWatchlist, newlib: renderNewLibrary,
+  };
+  function rerenderCard(id) {
+    const base = id.split(".")[0];
+    if (PANEL_DATA_CACHE[base]) { renderPanel(PANEL_DATA_CACHE[base], id); return; }
+    const fn = FEED_RERENDER[base];
+    if (fn) fn(id);
   }
 
   /** Called by home_feed.js whenever its own copy of either changes. */
@@ -923,12 +1172,22 @@
   }
 
   // ------------------------------------------------------------ interaction
-  // Delegated on the grid so it survives every re-render of every card.
-  [grid].forEach(function (col) {
+  // Delegated on the grid (and the sections root, when that layout is
+  // active) so it survives every re-render of every card.
+  [grid, sectionsRoot].filter(Boolean).forEach(function (col) {
     col.addEventListener("click", function (ev) {
       const el = ev.target.closest(
-        "[data-action],[data-gap-search],[data-gap-ignore],[data-play],[data-open-series],.dash-close");
+        "[data-action],[data-gap-search],[data-gap-ignore],[data-play],[data-open-series]," +
+        "[data-page-dir],.dash-close");
       if (!el) return;
+      if (el.hasAttribute("data-page-dir")) {
+        const pagerEl = el.closest("[data-pager]");
+        if (!pagerEl) return;
+        const cardId = pagerEl.dataset.pager;
+        _pageState[cardId] = Math.max(0, (_pageState[cardId] || 0) + parseInt(el.dataset.pageDir, 10));
+        rerenderCard(cardId);
+        return;
+      }
       if (el.classList.contains("dash-close")) {
         // Removing/adding is an arrangement choice, same as drag/resize --
         // a locked board leaves the "x" as a dead-looking control rather
@@ -1059,7 +1318,10 @@
   // with dragMove/dragResize -- only ever one gesture live at a time.
   let carry = null;
 
-  function isLocked() { return grid.classList.contains("is-dash-locked"); }
+  function isLocked() {
+    return grid.classList.contains("is-dash-locked") ||
+      (!!sectionsRoot && sectionsRoot.classList.contains("is-dash-locked"));
+  }
 
   /** Shared by every "a card just landed at x,y" path -- a real drag-end, a
       carry commit, and (indirectly, via the same shape) the Arrow-key nudge
@@ -1277,6 +1539,15 @@
 
   function applyLockUI() {
     grid.classList.toggle("is-dash-locked", locked);
+    if (sectionsRoot) {
+      sectionsRoot.classList.toggle("is-dash-locked", locked);
+      // Cards and section headers use the browser's native drag-and-drop
+      // (see renderSectionSlot() and the sectionsRoot drag handlers below),
+      // which has no pointer-handler gate to short-circuit the way the free
+      // grid's drag/resize do -- the draggable attribute itself is the gate.
+      sectionsRoot.querySelectorAll(".dash-card-flow").forEach(function (el) { el.draggable = !locked; });
+      sectionsRoot.querySelectorAll(".dash-section-head").forEach(function (el) { el.draggable = !locked; });
+    }
     const btn = document.getElementById("dashLockBtn");
     if (btn) {
       btn.classList.toggle("is-locked", locked);
@@ -1364,7 +1635,7 @@
     // hidden -- there is exactly one of these on the board, always. No
     // separate JS-side title/icon cache: the already-rendered (just
     // invisible) card itself carries both.
-    grid.querySelectorAll('.dash-card[data-widget-kind="thirdparty-template"][data-dash-hidden="1"]')
+    document.querySelectorAll('.dash-card[data-widget-kind="thirdparty-template"][data-dash-hidden="1"]')
       .forEach(function (cardEl) {
         const id = cardEl.dataset.card;
         const headEl = cardEl.querySelector(".dash-card-head");
@@ -1473,6 +1744,193 @@
   });
 
   applyLockUI();
+
+  // --------------------------------------------------- dashboard sections
+  //
+  // Order (drag the header) and collapsed/expanded (click the header) for
+  // the four fixed sections in this layout. Order is an account preference
+  // (home_dash_section_order) -- same reasoning as every other arrangement
+  // choice on this page. Collapsed state is a plain localStorage flag, the
+  // same convention templates/extensions.html's collapsible groups use
+  // elsewhere in this app: a view state for THIS screen, not a preference
+  // worth syncing to another device.
+  if (sectionsRoot) {
+    // SECTION_IDS is the top-level const (see FULL_WIDTH_SECTION_CARDS'
+    // neighbour above) -- shared with sectionIdFor()/cardLayout() rather
+    // than redeclared here.
+    const COLLAPSE_KEY_PREFIX = "mf-dash-section-collapsed-";
+
+    function applySectionOrder() {
+      const raw = String(PREFS.home_dash_section_order || "");
+      const order = raw.split(",").filter(function (id) { return SECTION_IDS.indexOf(id) !== -1; });
+      // Missing ids (a fresh account, or one saved before a section existed)
+      // keep the built-in order, appended after the ones named.
+      SECTION_IDS.forEach(function (id) { if (order.indexOf(id) === -1) order.push(id); });
+      order.forEach(function (id) {
+        const el = sectionsRoot.querySelector('.dash-section[data-section="' + id + '"]');
+        if (el) sectionsRoot.appendChild(el);
+      });
+    }
+
+    function saveSectionOrder() {
+      const order = Array.prototype.map.call(
+        sectionsRoot.querySelectorAll(".dash-section[data-section]"),
+        function (el) { return el.dataset.section; });
+      if (typeof window.mfSaveUserPref === "function") {
+        window.mfSaveUserPref({ home_dash_section_order: order.join(",") });
+      }
+    }
+
+    function applyCollapsed() {
+      sectionsRoot.querySelectorAll(".dash-section[data-section]").forEach(function (secEl) {
+        let collapsed = false;
+        try { collapsed = localStorage.getItem(COLLAPSE_KEY_PREFIX + secEl.dataset.section) === "1"; }
+        catch (e) { /* private mode */ }
+        secEl.classList.toggle("is-collapsed", collapsed);
+        const head = secEl.querySelector(".dash-section-head");
+        if (head) head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      });
+    }
+
+    applySectionOrder();
+    applyCollapsed();
+    refreshSectionStates();
+
+    sectionsRoot.addEventListener("click", function (ev) {
+      const head = ev.target.closest(".dash-section-head");
+      if (!head) return;
+      const secEl = head.closest(".dash-section");
+      if (!secEl) return;
+      const collapsed = secEl.classList.toggle("is-collapsed");
+      head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      try { localStorage.setItem(COLLAPSE_KEY_PREFIX + secEl.dataset.section, collapsed ? "1" : "0"); }
+      catch (e) { /* private mode */ }
+    });
+
+    // Drag-and-drop reorder: the same minimal pattern static/start_page.js
+    // uses for its row list -- four items, no library needed.
+    let draggingHead = null;
+    sectionsRoot.querySelectorAll(".dash-section-head").forEach(function (head) {
+      head.addEventListener("dragstart", function (ev) {
+        draggingHead = head;
+        head.classList.add("dragging");
+        try { ev.dataTransfer.effectAllowed = "move"; } catch (e) { /* older browsers */ }
+      });
+      head.addEventListener("dragend", function () {
+        draggingHead = null;
+        head.classList.remove("dragging");
+        sectionsRoot.querySelectorAll(".dash-section.drag-over")
+          .forEach(function (el) { el.classList.remove("drag-over"); });
+      });
+      head.addEventListener("dragover", function (ev) {
+        ev.preventDefault();
+        const secEl = head.closest(".dash-section");
+        if (draggingHead && draggingHead !== head && secEl) secEl.classList.add("drag-over");
+      });
+      head.addEventListener("dragleave", function () {
+        const secEl = head.closest(".dash-section");
+        if (secEl) secEl.classList.remove("drag-over");
+      });
+      head.addEventListener("drop", function (ev) {
+        ev.preventDefault();
+        const targetSec = head.closest(".dash-section");
+        if (targetSec) targetSec.classList.remove("drag-over");
+        if (!draggingHead || draggingHead === head) return;
+        const fromSec = draggingHead.closest(".dash-section");
+        if (!fromSec || !targetSec || fromSec === targetSec) return;
+        sectionsRoot.insertBefore(fromSec, targetSec);
+        saveSectionOrder();
+      });
+    });
+
+    // Card drag: reorder WITHIN a section only -- cards cannot be moved to
+    // a different section (that's a fixed grouping, not a layout choice).
+    // Delegated on sectionsRoot (one listener set, not one per card) so it
+    // keeps working for cards created later by a poll/Add-widget -- unlike
+    // the section headers above, which are fixed markup rendered once by
+    // Jinja. Namespaced by element type (.dash-card-flow vs
+    // .dash-section-head) so it never collides with the section-order drag.
+    let draggingCard = null;
+    let draggingCardHome = null;
+    let dragMarker = null;
+
+    // Where the card would land if dropped now. The section body is a CSS
+    // grid (auto-fill, several cards per row) rather than a single column,
+    // so this can't just compare cursor Y against each card's vertical
+    // midpoint -- that only ever produced "before" or "after" top-to-bottom
+    // and could never target a card to the left/right in the same row.
+    // Instead: find whichever card's *center point* is geometrically
+    // closest to the cursor (both X and Y), then decide before/after that
+    // one card by which half (left/right) the cursor is on -- works the
+    // same whether the move is vertical (between rows) or horizontal
+    // (within a row). A dedicated marker element (rather than moving the
+    // card itself while dragging) also means a heavy full-width card never
+    // has to relayout the grid on every pointer move.
+    function markerRefFor(body, x, y) {
+      const siblings = Array.prototype.filter.call(
+        body.querySelectorAll(".dash-card-flow[data-card]"),
+        function (el) { return el !== draggingCard; }
+      );
+      if (!siblings.length) return null;
+      let nearest = null;
+      let nearestIndex = -1;
+      let nearestDist = Infinity;
+      let insertAfter = false;
+      siblings.forEach(function (el, i) {
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dist = Math.hypot(x - cx, y - cy);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = el;
+          nearestIndex = i;
+          insertAfter = x > cx;
+        }
+      });
+      if (!nearest) return null;
+      return insertAfter ? (siblings[nearestIndex + 1] || null) : nearest;
+    }
+    function removeMarker() {
+      if (dragMarker && dragMarker.parentElement) dragMarker.parentElement.removeChild(dragMarker);
+    }
+
+    sectionsRoot.addEventListener("dragstart", function (ev) {
+      const cardEl = ev.target.closest(".dash-card-flow");
+      if (!cardEl) return;
+      draggingCard = cardEl;
+      draggingCardHome = cardEl.closest(".dash-section-body");
+      cardEl.classList.add("dragging");
+      if (!dragMarker) {
+        dragMarker = document.createElement("div");
+        dragMarker.className = "dash-card-drop-marker";
+      }
+      try { ev.dataTransfer.effectAllowed = "move"; } catch (e) { /* older browsers */ }
+    });
+    sectionsRoot.addEventListener("dragend", function () {
+      if (draggingCard) draggingCard.classList.remove("dragging");
+      removeMarker();
+      draggingCard = null;
+      draggingCardHome = null;
+    });
+    sectionsRoot.addEventListener("dragover", function (ev) {
+      if (!draggingCard) return;
+      const body = ev.target.closest(".dash-section-body");
+      if (!body || body !== draggingCardHome) { removeMarker(); return; }
+      ev.preventDefault();
+      body.insertBefore(dragMarker, markerRefFor(body, ev.clientX, ev.clientY));
+    });
+    sectionsRoot.addEventListener("drop", function (ev) {
+      if (!draggingCard || !dragMarker || !dragMarker.parentElement) return;
+      const body = ev.target.closest(".dash-section-body");
+      if (!body || body !== draggingCardHome) return;
+      ev.preventDefault();
+      body.insertBefore(draggingCard, dragMarker);
+      removeMarker();
+      saveCardLayout();
+      refreshSectionStates();
+    });
+  }
 
   // --------------------------------------------------------- loading state
   //

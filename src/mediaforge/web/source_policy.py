@@ -312,3 +312,55 @@ def search_sources(include_adult: bool = True) -> list:
 def search_source_ids(include_adult: bool = True) -> list:
     """Just the ids from :func:`search_sources`, in the same order."""
     return [s["id"] for s in search_sources(include_adult=include_adult)]
+
+
+def all_sources(include_adult: bool = True) -> list:
+    """Every source the app knows right now, from *all* registries at once.
+
+    :func:`search_sources` answers "what can the search ask" -- it covers the
+    search and provider registries, but not ``home_feed``'s. A source
+    registered only with ``register_home_feed_source()`` is therefore missing
+    from it, and a caller that wanted "does this id exist" had to know that
+    the core keeps sources in two separate registries and query both. From
+    outside the core that split is invisible, so callers queried one, got a
+    complete-looking answer, and silently ignored half the sources.
+
+    This is the one query: the search list plus every feed-only source, in
+    the same dict shape. Use :func:`all_source_ids` if only the ids matter.
+    """
+    out = list(search_sources(include_adult=include_adult))
+    seen = {s["id"] for s in out}
+    try:
+        from ..home_feed import iter_home_feed_sources
+        feed = iter_home_feed_sources()
+    except Exception:
+        # Same reasoning as in search_sources(): a broken registry must not
+        # take the answer down, the list above is still usable.
+        logger.warning("[Sources] Could not list home feed sources",
+                       exc_info=True)
+        feed = []
+    for src in feed:
+        sid = src.get("source_id")
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+        out.append({
+            "id": sid,
+            "label": src.get("label") or sid,
+            "adult": False,
+            "opt_in": False,
+            "english_only": False,
+            "thirdparty": True,
+            "enabled_key": source_enabled_key(sid),
+            "enabled": source_enabled(sid, default="1"),
+            "css_class": "browse-provider-thirdparty",
+            "media_types": list(source_media_types(
+                sid, (src.get("media_type"),) if src.get("media_type") else None)),
+        })
+    return out
+
+
+def all_source_ids(include_adult: bool = True) -> set:
+    """The id set of :func:`all_sources` -- "which sources exist right now",
+    in one call and without knowing which registry owns which."""
+    return {s["id"] for s in all_sources(include_adult=include_adult)}

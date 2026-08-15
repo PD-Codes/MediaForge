@@ -1168,6 +1168,23 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         _dash_mode = str(_prefs.get("home_dash_enabled") or _dash_default)
         _dash_enabled = _dash_mode != "0"
         _all_in_one = _dash_mode == "all"
+        # Which Dashboard widget layout renders inside home_dash_layout's
+        # free grid (Beta) or the new default: four fixed, collapsible
+        # sections with no drag/resize. Per-account only -- see
+        # db/ui_prefs.py's home_dash_view comment; there is no instance
+        # default for this one, unlike the tab arrangement above.
+        _dash_sections = str(_prefs.get("home_dash_view") or "") != "grid"
+        # "Could be for you" hero/rail instance defaults -- same account-
+        # overrules-instance relationship as home_dash_enabled above, but
+        # resolved client-side instead (static/home_foryou.js's
+        # heroHidden()/railHidden()): the per-account pref, when explicitly
+        # set to "0" or "1", always wins; an unset pref falls back to
+        # whichever of these two the account has never touched. Read here
+        # rather than baked into user_ui_prefs itself so the Settings form's
+        # own "is this overridden" logic (identical reasoning to the Rows
+        # list) keeps seeing the raw, unmerged per-account value.
+        _foryou_hero_default = str(get_setting("foryou_hero_hidden_default") or "") == "1"
+        _foryou_rail_default = str(get_setting("foryou_hidden_default") or "") == "1"
         # Which tab opens first -- only read client-side (home_2_1.js), which
         # already falls back through window._USER_PREFS.home_tab first, so
         # only the raw instance default needs to travel with the page.
@@ -1183,7 +1200,10 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             show_new_home_promo=_show_promo,
             dash_enabled=_dash_enabled,
             all_in_one=_all_in_one,
+            dash_sections=_dash_sections,
             home_tab_default=_tab_default,
+            foryou_hero_default=_foryou_hero_default,
+            foryou_rail_default=_foryou_rail_default,
         )
 
 
@@ -1711,7 +1731,21 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # their own before_request hooks.
             exempt = _exempt | set(v1_endpoint_scopes())
 
+            # The pre-decoration view of every endpoint, recorded before it is
+            # rebound below. Published as a contract (app.extensions
+            # ["mediaforge_raw_views"]) so a module that has to reach a core
+            # view without a session -- an API-key connector, an internal
+            # re-dispatch -- can look it up instead of digging the original
+            # function back out of login_required's closure. That trick broke
+            # silently the moment a second wrapper was added here.
+            # An app created without auth never runs this, so a caller must
+            # fall back to app.view_functions, which is raw there anyway:
+            #   raw = app.extensions.get("mediaforge_raw_views", {}).get(ep) \
+            #         or app.view_functions[ep]
+            raw_views = app.extensions.setdefault("mediaforge_raw_views", {})
+
             for endpoint, view_func in list(app.view_functions.items()):
+                raw_views.setdefault(endpoint, view_func)
                 if endpoint in _secured:
                     continue
                 endpoint_blueprint = endpoint.rsplit(".", 1)[0] if "." in endpoint else None

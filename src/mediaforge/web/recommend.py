@@ -31,6 +31,7 @@ the list it replaced.
 from __future__ import annotations
 
 import json
+import random
 
 from ..logger import get_logger
 
@@ -341,6 +342,19 @@ def _cached_tmdb_entries(owned: set[str]) -> list[tuple[str, dict]]:
 
     The title returned keeps the key's ORIGINAL casing, because callers show it
     to the user; the normalised form is only ever a matching/dedup key.
+
+    Matching is bidirectional: a row counts as owned if its OWN cache-key
+    title is in ``owned`` (the original check) OR if any of the row's
+    ALIASES is (new). The second half matters whenever two providers stored
+    the same show under folders that don't textually match each other or the
+    cache key at all -- a Japanese-script folder from one provider and a
+    romaji folder from another, say, with the cache itself keyed by yet a
+    third (often English) title TMDB returned for the lookup. Without it,
+    none of the three strings is ever equal under ``_norm()``, so the show's
+    aliases (which DO include all three, that being what "aliases" means)
+    never get merged into ``owned`` and the exact title a recommendation
+    displays keeps slipping through the exclude set even though the show is
+    demonstrably already in the library under two different providers.
     """
     out: list[tuple[str, dict]] = []
     seen: set[str] = set()
@@ -360,7 +374,7 @@ def _cached_tmdb_entries(owned: set[str]) -> list[tuple[str, dict]]:
     for row in rows:
         display = str(row["cache_key"]).split("|||")[0].strip()
         key = _norm(display)
-        if key not in owned or key in seen:
+        if key in seen:
             continue
         try:
             data = json.loads(row["data_json"])
@@ -370,11 +384,18 @@ def _cached_tmdb_entries(owned: set[str]) -> list[tuple[str, dict]]:
             data = data[0] if data else {}
         if not isinstance(data, dict):
             continue
+        aliases = data.get("titles") or []
+        alias_keys = {_norm(a) for a in aliases}
+        if key not in owned and owned.isdisjoint(alias_keys):
+            continue
         seen.add(key)
-        # Aliases count as owned too, so "Attack on Titan" does not get
-        # recommended to somebody who has "Shingeki no Kyojin".
-        for alias in data.get("titles") or []:
-            owned.add(_norm(alias))
+        # Every alias AND the cache key itself count as owned from here on,
+        # so a later candidate matching any of the three (the English TMDB
+        # title, the Japanese folder, the romaji folder) is excluded too --
+        # not just whichever single string happened to trigger the match
+        # above.
+        owned.add(key)
+        owned.update(alias_keys)
         out.append((display or key, data))
     return out
 
@@ -433,7 +454,7 @@ def _genre_names(data: dict) -> list[str]:
     return names
 
 
-def for_you(username: str, limit: int = MAX_ROW, hero: int = 5) -> dict:
+def for_you(username: str, limit: int = MAX_ROW, hero: int = 5, shuffle: bool = False) -> dict:
     """"Could be for you": TMDB recommendations minus everything you own.
 
     The signal is borrowed, not invented: every cached TMDB lookup for a
@@ -454,6 +475,12 @@ def for_you(username: str, limit: int = MAX_ROW, hero: int = 5) -> dict:
     ``username`` is accepted for symmetry with the other rows (and for the
     per-user memo the route keeps); the library is household-wide, so it does
     not change the result today.
+
+    ``shuffle`` is the Discover tab's "Shuffle" button (``?refresh=1`` on the
+    route). Candidates are otherwise always the same fixed top-N by score, so
+    without this a re-roll recomputed the exact same list every time -- the
+    button visibly did nothing. Sampling from a capped top-scoring pool
+    instead keeps "still relevant" while actually varying the result.
     """
     from .db import get_setting
     import time as _time
@@ -481,7 +508,25 @@ def for_you(username: str, limit: int = MAX_ROW, hero: int = 5) -> dict:
     # Unioned with the seed set too: a title already watched on a linked
     # profile is exactly as unwelcome as a recommendation as one already
     # sitting in the library, even when it never touched local storage.
-    exclude = _owned_titles() | seed
+    #
+    # Computed AFTER _cached_tmdb_entries() runs, not before: that call adds
+    # every owned title's ALIASES into the set it is given (see its own
+    # docstring), and `owned | seed` below only sees those aliases if it
+    # unions the sets once they are full. Building `exclude` first (the
+    # original order here) silently dropped every alias-only match -- a
+    # library title known to TMDB under a different name than the folder on
+    # disk kept getting suggested back as "for you" forever.
+    owned = _owned_titles()
+    entries = _cached_tmdb_entries(seed)
+    exclude = owned | seed
+    # A second, exact exclude alongside the text-based one above: every
+    # owned/seed title whose OWN cached TMDB lookup is in `entries` carries
+    # its own tmdb_id, and a recommended candidate with that same id is
+    # unambiguously the same title regardless of which language, region or
+    # alternate title TMDB used for either side. Text matching (exclude,
+    # above) only catches a candidate whose displayed title happens to equal
+    # one of owned's known strings; this catches it even when it does not.
+    exclude_ids = {data.get("tmdb_id") for _title, data in entries if data.get("tmdb_id")}
 
     candidates: dict[int, dict] = {}
     # Titles whose cached payload carries no recommendations at all. A missing
@@ -491,7 +536,7 @@ def for_you(username: str, limit: int = MAX_ROW, hero: int = 5) -> dict:
     # never-enriched ones go first.
     never_enriched: list[str] = []
     empty_result: list[str] = []
-    for seed_title, data in _cached_tmdb_entries(seed):
+    for seed_title, data in entries:
         recs = data.get("recommendations")
         if not recs:
             (empty_result if isinstance(recs, list) else never_enriched).append(seed_title)
@@ -501,7 +546,7 @@ def for_you(username: str, limit: int = MAX_ROW, hero: int = 5) -> dict:
                 continue
             tmdb_id = rec.get("id")
             title = rec.get("title") or ""
-            if not tmdb_id or not title or _norm(title) in exclude:
+            if not tmdb_id or not title or tmdb_id in exclude_ids or _norm(title) in exclude:
                 continue
             item = candidates.get(tmdb_id)
             if item is None:
@@ -547,7 +592,21 @@ def for_you(username: str, limit: int = MAX_ROW, hero: int = 5) -> dict:
         genres = item.pop("_genres")
         item["genre"] = max(genres, key=genres.get) if genres else ""
 
-    items = sorted(candidates.values(), key=lambda c: -c["score"])[:max(0, limit)]
+    pool = sorted(candidates.values(), key=lambda c: -c["score"])
+    if shuffle and len(pool) > 1:
+        # A capped pool (not every candidate ever found), so a re-roll still
+        # reads as "similar picks, different order" instead of suddenly
+        # surfacing a barely-relevant afterthought just because the button
+        # was clicked. Deliberately NOT gated on "more candidates than the
+        # row limit" -- most households have well under MAX_ROW candidates
+        # to begin with, and that guard used to make Shuffle silently do
+        # nothing for exactly that (the common) case: with pool_cap equal to
+        # the whole (small) pool, random.sample over it is still a genuine
+        # permutation, not a no-op.
+        pool_cap = pool[:max(limit * 3, limit + 5)]
+        items = random.sample(pool_cap, min(max(0, limit), len(pool_cap)))
+    else:
+        items = pool[:max(0, limit)]
     out["items"] = items
     # The hero is the head of the rail, same entries in the same order --
     # two rankings on one screen read as a bug.

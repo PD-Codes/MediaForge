@@ -185,14 +185,22 @@ def _attach_cached_posters(items):
 def register_queue_routes(app):
     """Register the download queue CRUD, pause/resume and per-item control endpoints."""
     @app.route("/api/download", methods=["POST"])
-    def api_download():
+    def api_download(payload=None):
         """Queue a new download for one or more episodes of a series.
 
         POST /api/download. Called from app.js's _submitDownloadGroups()
         and startDownloadAllLangs(), and from seerr.js, whenever the user
         submits a download from the search/series modal.
+
+        *payload* is for internal callers (a module re-dispatching a queue
+        request, an /api/v1/ route reusing this one): pass the body as a dict
+        and the request body is not read at all. Without it nothing changes --
+        Flask never passes it, so the HTTP path still reads request JSON.
+        Before this, an internal caller's only way to add a server-side value
+        was to mutate the parsed request body, which is shared state for the
+        rest of the request.
         """
-        data = request.get_json(silent=True) or {}
+        data = payload if payload is not None else (request.get_json(silent=True) or {})
         episodes = data.get("episodes", [])
         language = data.get("language", "German Dub")
         provider = data.get("provider", "VOE")

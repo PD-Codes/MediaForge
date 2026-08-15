@@ -264,6 +264,10 @@ async function loadSettings() {
     if (startTabDefaultEl) {
       startTabDefaultEl.value = String(data.home_tab_default || "") === "disc" ? "disc" : "";
     }
+    const foryouHeroDefaultEl = document.getElementById("foryouHeroHiddenDefault");
+    if (foryouHeroDefaultEl) foryouHeroDefaultEl.checked = data.foryou_hero_hidden_default !== "1";
+    const foryouRailDefaultEl = document.getElementById("foryouRailHiddenDefault");
+    if (foryouRailDefaultEl) foryouRailDefaultEl.checked = data.foryou_hidden_default !== "1";
     const rescanEl = document.getElementById("libraryRescanHours");
     if (rescanEl && data.library_rescan_hours != null) rescanEl.value = String(data.library_rescan_hours);
     const probeEl = document.getElementById("libraryProbeWorkers");
@@ -1458,6 +1462,42 @@ async function saveStartTabDefault() {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ home_tab_default: value }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(t("Gespeichert", "Saved"));
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+async function saveForyouHeroHiddenDefault() {
+  const el = document.getElementById("foryouHeroHiddenDefault");
+  if (!el) return;
+  const value = el.checked ? "0" : "1";
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ foryou_hero_hidden_default: value }),
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    showToast(t("Gespeichert", "Saved"));
+  } catch (e) {
+    showToast(t("Einstellung konnte nicht gespeichert werden: ", "Setting could not be saved: ") + e.message);
+  }
+}
+
+async function saveForyouRailHiddenDefault() {
+  const el = document.getElementById("foryouRailHiddenDefault");
+  if (!el) return;
+  const value = el.checked ? "0" : "1";
+  try {
+    const resp = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ foryou_hidden_default: value }),
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }

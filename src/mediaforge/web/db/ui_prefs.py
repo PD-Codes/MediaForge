@@ -101,6 +101,29 @@ def _valid_dash_hidden(value: str) -> bool:
     return all(_DASH_HIDDEN_ID_RE.match(part) for part in parts)
 
 
+# Per-card placement/order override for the Dashboard sections layout: which
+# of the 4 fixed sections a card was dragged into, and where among its
+# section-mates it landed. "<card id>:<section>" pairs, comma separated, list
+# ORDER doubles as the render order within each section (see
+# static/home_panels.js's cardLayout()/saveCardLayout()). Absent = every card
+# stays in its built-in section (SECTION_OF) in its built-in order, same
+# "nothing stored yet" convention as home_dash_layout/home_dash_hidden.
+_DASH_SECTION_IDS = ("mediaforge", "system", "stats", "modules")
+_DASH_SECTION_ITEM_RE = re.compile(
+    r"^[A-Za-z0-9_.-]{1,32}:(?:%s)$" % "|".join(_DASH_SECTION_IDS))
+
+
+def _valid_dash_section_layout(value: str) -> bool:
+    if value == "":
+        return True
+    if len(value) > 2000:                # same cap reasoning as _valid_dash_layout
+        return False
+    parts = value.split(",")
+    if len(parts) > 40:                  # far more cards than the board can hold
+        return False
+    return all(_DASH_SECTION_ITEM_RE.match(part) for part in parts)
+
+
 def _valid_theme_pack(value: str) -> bool:
     # '' = follow the instance default, 'default' = built-in look,
     # anything else must look like an installed theme folder name.
@@ -144,6 +167,10 @@ USER_UI_PREF_KEYS = {
     # for the same reason as the layout itself: closing a card is an
     # arrangement choice, and the next poll/load must not just recreate it.
     "home_dash_hidden": _valid_dash_hidden,
+    # Sections layout only: which section a card was dragged into and where
+    # it landed among its section-mates. See _valid_dash_section_layout's own
+    # comment above for the format.
+    "home_dash_section_layout": _valid_dash_section_layout,
     # eBook reader. Reading is a per-person habit -- text size, page colour and
     # whether you page or scroll -- and someone who set it up on the desktop
     # expects the same book to look the same on their phone. The ranges are
@@ -228,6 +255,40 @@ USER_UI_PREF_KEYS = {
     # PROTECTED (see below): this one is a restriction, not a preference, so
     # it must not be writable through the generic preferences endpoint.
     "home_max_fsk": lambda v: v in ("", "0", "6", "12", "16", "18"),
+    # "Could be for you" (the Discover-tab recommendation hero + rail),
+    # split into two independent switches: "foryou_hidden" (its original
+    # name, predating the split) hides the RAIL, "foryou_hero_hidden" hides
+    # the rotating hero banner above it. "1" hides, "" (default) shows. Per
+    # account, like every other Discover toggle -- a household member who
+    # finds the guesses noisy should not have to also turn them off for
+    # everyone else. Each also has an instance-default counterpart a fresh
+    # account starts from (get_setting("foryou_hidden_default")/
+    # ("foryou_hero_hidden_default"), same "account overrules instance"
+    # relationship home_dash_enabled has -- see app.py's index()).
+    "foryou_hidden": lambda v: v in ("", "0", "1"),
+    "foryou_hero_hidden": lambda v: v in ("", "0", "1"),
+    # TMDB ids the account dismissed with "Not interested" on that same row,
+    # comma separated. Persisted so a skip survives a reload instead of only
+    # lasting until the next visit -- the row used to forget it the moment
+    # the tab was closed, and static/home_foryou.js's own "for_you" score
+    # keeps re-nominating the same title as long as the library that produced
+    # it does not change. Capped generously (recommend.MAX_ROW is 20, so a
+    # few hundred covers years of use) so the value cannot grow without limit.
+    "foryou_skipped": lambda v: v == "" or (
+        len(v) <= 3000 and len(v.split(",")) <= 300
+        and all(part.isdigit() for part in v.split(","))),
+    # Dashboard layout: "" (default) groups every card into four fixed,
+    # collapsible sections (MediaForge/System/Statistik/Module) with no
+    # drag/resize; "grid" keeps the free-position card grid (Beta) that used
+    # to be the only option. Per account, same reasoning as every other
+    # Dashboard/Discover choice on this list.
+    "home_dash_view": lambda v: v in ("", "grid"),
+    # Section order for the view above, e.g. "system,mediaforge,stats,modules".
+    # Missing sections keep the built-in order appended after the ones named
+    # here (see static/home_panels.js's applySectionOrder()).
+    "home_dash_section_order": lambda v: v == "" or bool(
+        re.match(r"^(mediaforge|system|stats|modules)"
+                 r"(,(mediaforge|system|stats|modules)){0,3}$", v)),
 }
 
 # Keys that /api/user/preferences must refuse even though they live in the

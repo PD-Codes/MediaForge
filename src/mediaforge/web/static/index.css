@@ -937,7 +937,6 @@
 
 .home-suggest-item svg { width: 14px; height: 14px; color: var(--text-muted); flex: none; }
 .home-suggest-item > span { flex: unset !important; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.home-suggest-del { flex: 1 !important; }
 .home-suggest-del {
   font: inherit;
   font-size: 1rem;
@@ -1030,7 +1029,11 @@ a.browse-heading-src:hover { color: var(--accent); }
 /* The Start Page controls inside the home page's modal. On the settings
    page the same markup inherits that page's section styling. */
 .sp-modal {
-  max-width: 640px;
+  /* min() keeps the same comfortable phone-width behaviour .directlink-modal
+     already had (100% up to the viewport) while giving desktop noticeably
+     more room than the old fixed 640px -- four cards (layout, tabs, rows,
+     cards-per-row) stopped feeling cramped next to a page-wide gutter. */
+  max-width: min(760px, 94vw);
   max-height: min(84vh, 900px);
   overflow-y: auto;
   /* The modal's own border-radius clips square corners on hover/focus states
@@ -1038,7 +1041,19 @@ a.browse-heading-src:hover { color: var(--accent); }
      without this a focus ring or a card's own radius could show a stray
      square pixel at the rounded edge. */
   overflow: hidden auto;
+  /* A faint top-down tint instead of a flat panel -- echoes the accent used
+     on the header icon below without competing with the group cards, which
+     stay opaque so their own hover lift still reads against something. */
+  background-image: linear-gradient(180deg, var(--accent-soft) 0%, transparent 140px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
+.sp-modal::-webkit-scrollbar { width: 8px; }
+.sp-modal::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-sm);
+}
+.sp-modal::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 /* Icon + title/hint, replacing the old bare heading -- the same icon as
    the "Customise this page" button that opens this modal (see index.html),
@@ -1047,23 +1062,28 @@ a.browse-heading-src:hover { color: var(--accent); }
 .sp-modal-head {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  margin: 0 0 20px;
+  gap: 16px;
+  margin: 0 0 22px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
 }
 
 .sp-modal-icon {
   flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
-  background: var(--accent-soft);
+  border-radius: var(--radius-lg, var(--radius-md));
+  background: linear-gradient(145deg, var(--accent-soft), transparent);
+  border: 1px solid var(--accent-soft);
   color: var(--accent);
+  box-shadow: 0 4px 14px -6px var(--accent-soft);
 }
 
-.sp-modal-icon svg { width: 20px; height: 20px; }
+.sp-modal-icon svg { width: 22px; height: 22px; }
+.sp-modal .sp-modal-head .dl-title { font-size: 1.2rem; }
 
 .sp-modal .sp-modal-head .dl-title { margin: 0 0 3px; }
 .sp-modal .sp-modal-head .dl-hint { margin: 0; }
@@ -1075,7 +1095,7 @@ a.browse-heading-src:hover { color: var(--accent); }
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .sp-modal .settings-section h2 {
@@ -1098,24 +1118,67 @@ a.browse-heading-src:hover { color: var(--accent); }
    (var(--bg-elevated), one step lighter) already sits correctly on top of
    this without any change there. */
 .sp-modal .sp-group {
+  position: relative;
   margin: 0;
-  padding: 14px 16px;
+  padding: 16px 20px 16px 22px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
+
+/* A thin accent rail on the left edge instead of a heavier full border --
+   ties each card back to the header icon's accent without four cards
+   fighting for attention as four accent-tinted panels would. */
+.sp-modal .sp-group::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  transition: background var(--transition);
+}
+
+.sp-modal .sp-group:hover {
+  border-color: var(--accent-soft);
+  box-shadow: 0 2px 10px -4px rgb(0 0 0 / 25%);
+}
+.sp-modal .sp-group:hover::before { background: var(--accent); }
+.sp-modal .sp-group:focus-within::before { background: var(--accent); }
 
 /* Same character as settings_rows.css's .settings-subtitle (uppercase, muted,
    tracked) so the shared markup reads the same on both surfaces -- only the
    22px card inset is dropped, because the modal provides its own padding. */
 .sp-modal .sp-group .settings-subtitle {
   font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-weight: 700;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin: 0 0 8px;
   padding: 0;
+}
+
+/* Each card fades/settles in on its own beat rather than all four appearing
+   at once with the modal -- cheap (CSS-only, no JS orchestration) but reads
+   as considered rather than instant. Respects reduced-motion below. */
+.sp-modal .sp-group {
+  animation: mf-sp-group-in 0.22s ease both;
+}
+.sp-modal .sp-group:nth-child(2) { animation-delay: 0.03s; }
+.sp-modal .sp-group:nth-child(3) { animation-delay: 0.06s; }
+.sp-modal .sp-group:nth-child(4) { animation-delay: 0.09s; }
+.sp-modal .sp-group:nth-child(5) { animation-delay: 0.12s; }
+.sp-modal .sp-group:nth-child(n+6) { animation-delay: 0.15s; }
+@keyframes mf-sp-group-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-modal .sp-group { animation: none; }
 }
 
 .sp-modal .sp-sublabel {
@@ -1557,7 +1620,161 @@ a.browse-heading-src:hover { color: var(--accent); }
    pointer/keyboard handlers). */
 .dash-grid.is-dash-locked .dash-grip,
 .dash-grid.is-dash-locked .dash-resize,
-.dash-grid.is-dash-locked .dash-close { display: none; }
+.dash-grid.is-dash-locked .dash-close,
+.dash-sections.is-dash-locked .dash-close { display: none; }
+
+/* ── Dashboard sections (new default; the free-position grid above is now
+   the opt-in "Beta" layout) ──────────────────────────────────────────────
+   #homeDashGrid still exists in this mode (home_panels.js needs a live
+   element for its ResizeObserver/pointer handlers to bind to even when it
+   never receives a card) but stays empty, so it collapses to 0 height on
+   its own and needs no override here. */
+.dash-sections {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dash-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+/* No cards of its own (e.g. "Module" on an instance with nothing
+   installed) -- see home_panels.js's refreshSectionStates(). */
+.dash-section.is-empty { display: none; }
+
+.dash-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: left;
+  /* Draggable (reorder the sections) as well as clickable (collapse) --
+     grab, not pointer, says which one a hover promises. */
+  cursor: grab;
+}
+.dash-section-head:hover,
+.dash-section-head:focus-visible { color: var(--accent); }
+.dash-section-head.dragging { opacity: 0.5; }
+.dash-section.drag-over > .dash-section-head {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.dash-section-chevron {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  transition: transform var(--transition);
+}
+.dash-section.is-collapsed .dash-section-chevron { transform: rotate(-90deg); }
+
+.dash-section-count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.dash-section-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 0 18px 18px;
+}
+.dash-section.is-collapsed .dash-section-body { display: none; }
+
+/* A card inside a section flows with the grid above instead of being
+   absolutely positioned -- there is no resize handle in this layout, but
+   the whole card is still a native HTML5 drag source (see home_panels.js's
+   sectionsRoot drag handlers) to reorder within its section (cards cannot
+   move to another section). `position: relative` (not `static`) is
+   deliberate: .dash-close is still positioned absolute against ITS card,
+   same as in the free-grid layout. */
+.dash-card-flow {
+  position: relative;
+  width: auto;
+  height: auto;
+  cursor: grab;
+  /* .dash-card sets overflow:hidden + container-type:size for the
+     fixed-box free-grid card (a resize handle gives it a definite size to
+     contain against). A flowed card has no such box -- height:auto with
+     size containment still applied collapses it to 0, which is why a
+     section used to show only its header with the body invisible
+     underneath. Flowed cards grow with their content instead. */
+  overflow: visible;
+  container-type: normal;
+}
+.dash-card-flow .dash-card-body {
+  /* Same reasoning: flex:1/overflow-y:auto only makes sense inside a box
+     with a fixed height. Flowed, the body just grows the card. */
+  flex: none;
+  overflow: visible;
+}
+.dash-card-flow .dash-card-head { padding-right: 28px; }
+.dash-card-flow.dragging { opacity: 0.5; }
+.dash-sections.is-dash-locked .dash-card-flow { cursor: default; }
+/* A handful of cards (queue, library overview, storage, system, wrapped)
+   read better spanning the whole section than sharing the auto-fill row
+   with a 280px neighbour -- see FULL_WIDTH_SECTION_CARDS in home_panels.js. */
+.dash-card-flow.is-full-width { grid-column: 1 / -1; }
+
+/* Drop-position marker for the card drag above -- a thin accent bar
+   inserted into the live grid at the spot the card would land, so the
+   result is visible before you let go instead of only after (and instead
+   of the drop only working when the pointer lands exactly on another
+   card). Spans the full section width regardless of which grid column it
+   would otherwise occupy, same reasoning as .is-full-width. */
+.dash-card-drop-marker {
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  box-shadow: 0 0 8px 1px var(--accent-soft);
+}
+
+/* Client-side pager for a card body list, sections mode only (see
+   pagedRows() in home_panels.js) -- the free grid keeps its own
+   overflow-y:auto scroll instead. */
+.dash-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.dash-pager-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm, 6px);
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font: inherit;
+}
+.dash-pager-btn:disabled { opacity: 0.35; cursor: default; }
+.dash-pager-count {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  min-width: 3.5em;
+  text-align: center;
+}
+.dash-card-flow .dash-close { right: 16px; }
+
+@media (max-width: 640px) {
+  .dash-section-body { grid-template-columns: 1fr; padding: 0 14px 14px; }
+  .dash-section-head { padding: 12px 14px; }
+}
 
 /* --- the stat strip at the top of a panel --- */
 .hp-stats {
@@ -3075,20 +3292,17 @@ body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
-.feed-origin {
-  margin: 26px 0 0;
-  font-size: 0.78rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
-
 /* ── phones ──────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .home-topstrip { padding: 10px 0; }
   .home-topstrip-inner { gap: 10px; }
-  /* Tab pill shares its row with the collapsed-search button now, instead of
-     claiming the whole row on its own. */
-  .home-tabs { flex: 1 1 auto; }
+  /* Dashboard/Discover gets the whole first line to itself -- flex-basis
+     100% forces every sibling (search toggle, search bar, lock, add-widget)
+     onto a second line instead of squeezing in beside the pill, which is
+     the "one row for tabs, one row for buttons" split. Only the second
+     line collapses on scroll (is-scrolled-down below); the tab pill is
+     deliberately left out of that group so it is always reachable. */
+  .home-tabs { flex: 1 1 100%; }
   .home-tabs .mf-segmented-btn { flex: 1 1 0; padding: 7px 10px; }
   .home-search-toggle { display: flex; }
   /* Collapsed by default: hidden until .is-search-open is toggled by

@@ -371,6 +371,8 @@ def register_settings_routes(app):
                 "new_home_enabled":          new_home_enabled,
                 "home_dash_enabled_default": get_setting("home_dash_enabled_default", ""),
                 "home_tab_default":          get_setting("home_tab_default", ""),
+                "foryou_hidden_default":      get_setting("foryou_hidden_default", ""),
+                "foryou_hero_hidden_default": get_setting("foryou_hero_hidden_default", ""),
                 "library_rescan_hours":      get_setting("library_rescan_hours", "24"),
                 "library_probe_workers":     get_setting("library_probe_workers", "0"),
                 "default_path_media_kinds":  get_setting("default_path_media_kinds", DEFAULT_KINDS_CSV),
@@ -1330,6 +1332,21 @@ def register_settings_routes(app):
             if val not in ("", "disc"):
                 val = ""
             set_setting("home_tab_default", val)
+        # Instance default for "Could be for you"'s hero banner / rail --
+        # same account-overrules-instance relationship as the arrangement
+        # above, just for db/ui_prefs.py's foryou_hero_hidden/foryou_hidden.
+        # Read back in app.py's index() and resolved client-side (see
+        # static/home_foryou.js's heroHidden()/railHidden()).
+        if "foryou_hidden_default" in data:
+            val = str(data["foryou_hidden_default"] or "")
+            if val not in ("", "0", "1"):
+                val = ""
+            set_setting("foryou_hidden_default", val)
+        if "foryou_hero_hidden_default" in data:
+            val = str(data["foryou_hero_hidden_default"] or "")
+            if val not in ("", "0", "1"):
+                val = ""
+            set_setting("foryou_hero_hidden_default", val)
 
         if "home_kids_pin" in data:
             pin = str(data["home_kids_pin"] or "").strip()

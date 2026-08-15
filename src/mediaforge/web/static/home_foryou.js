@@ -55,10 +55,36 @@
   let at = 0;
   let timer = null;
 
-  // Skipped titles are a per-session thing on purpose: the row is rebuilt
-  // from the library every six hours anyway, and persisting a "never show me
-  // this" list would need a settings page to ever undo it.
+  // Skipped titles used to be a per-session thing: the comment here argued a
+  // settings page would be needed to ever undo it. That page exists now
+  // (Settings/Profile -> Start Page, see _start_page_form.html's "Show
+  // recommendations" checkbox), so a skip is persisted per account through
+  // the same "foryou_skipped" pref every other Discover choice uses --
+  // otherwise the exact title just skipped is the one "for_you"'s own score
+  // nominates again on the very next reload, which is what "not interested"
+  // silently ignoring the click looked like.
+  const SKIP_PREF = "foryou_skipped";
   const skipped = {};
+
+  function loadSkipped() {
+    const raw = String((window._USER_PREFS || {})[SKIP_PREF] || "");
+    raw.split(",").forEach(function (id) { if (id) skipped[id] = true; });
+  }
+
+  function saveSkipped() {
+    // Only tmdb ids are stored (see the server-side validator) -- every
+    // candidate that reaches this row already has one, see for_you()'s
+    // candidate loop, which requires tmdb_id before building an item.
+    const ids = Object.keys(skipped).filter(function (id) { return /^\d+$/.test(id); });
+    // Oldest-first cap: a value that keeps growing forever is not "capped",
+    // and the server rejects anything past 300 entries outright.
+    const value = ids.slice(-300).join(",");
+    if (typeof window.mfSaveUserPref === "function") {
+      const patch = {};
+      patch[SKIP_PREF] = value;
+      window.mfSaveUserPref(patch);
+    }
+  }
 
   // ------------------------------------------------------------------ hero
   /** One background layer per hero, cross-faded. Layers rather than swapping
@@ -192,11 +218,21 @@
   }
 
   function openDetails(item) {
-    // MFDetailModal is the app's shared detail sheet (templates/mf_detail_modal.html).
-    // Missing means shared_modals.html has not loaded -- fall through to the
-    // search rather than swallowing the click.
-    if (window.MFDetailModal && typeof window.MFDetailModal.openTmdb === "function") {
-      window.MFDetailModal.openTmdb(item.tmdb_id, item.media_type || "tv", item.title);
+    // MFDetailModal is the app's shared detail sheet (templates/mf_detail_modal.html),
+    // opened via its one entry point, open(opts) -- there never was an
+    // openTmdb() on it, so this call silently no-op'd the typeof check below
+    // and fell straight through to the same search "Jetzt laden" runs,
+    // which is why Details looked identical to Download. Missing
+    // MFDetailModal entirely (shared_modals.html not loaded on this page)
+    // still falls back to the search rather than swallowing the click.
+    if (window.MFDetailModal && typeof window.MFDetailModal.open === "function") {
+      window.MFDetailModal.open({
+        tmdbId: item.tmdb_id,
+        mediaType: item.media_type || "tv",
+        title: item.title,
+        image: item.backdrop_url || item.poster_url || "",
+        searchTitle: item.title,
+      });
       return;
     }
     searchFor(item.title);
@@ -204,6 +240,7 @@
 
   function skip_(item) {
     skipped[String(item.tmdb_id || item.title)] = true;
+    saveSkipped();
     heroes = heroes.filter(function (h) { return !skipped[String(h.tmdb_id || h.title)]; });
     if (typeof window.showToast === "function") window.showToast(T("fy_skipped"));
     if (!heroes.length) { stop(); hero.hidden = true; return; }
@@ -231,6 +268,26 @@
   hero.addEventListener("mouseenter", stop);
   hero.addEventListener("mouseleave", function () { if (heroes.length) start(); });
 
+  // Touch swipe: the prev/next arrows were the only way to step through the
+  // hero on a phone, because it has no native scroll container to drag (the
+  // slides are cross-faded absolute layers, not a horizontal strip -- see
+  // the file banner). A left swipe means "next", same direction a carousel
+  // dot-swipe reads everywhere else in the app.
+  let touchX = null;
+  hero.addEventListener("touchstart", function (ev) {
+    if (ev.touches.length !== 1) return;
+    touchX = ev.touches[0].clientX;
+    stop();
+  }, { passive: true });
+  hero.addEventListener("touchend", function (ev) {
+    if (touchX === null) return;
+    const dx = (ev.changedTouches[0] || {}).clientX - touchX;
+    touchX = null;
+    // 40px: enough to tell a swipe from a tap that jittered a few pixels.
+    if (Math.abs(dx) > 40) show(at + (dx < 0 ? 1 : -1));
+    if (heroes.length) start();
+  }, { passive: true });
+
   // Same wraparound show() already does for a dot click -- no second copy of
   // the modulo math, just a different starting index.
   if (prevBtn) prevBtn.addEventListener("click", function () { show(at - 1); start(); });
@@ -248,6 +305,7 @@
   let activeGenre = "";
 
   function renderReasons(items) {
+    if (railHidden()) { reasons.hidden = true; return; }
     const counts = {};
     (items || []).forEach(function (item) {
       if (item.genre) counts[item.genre] = (counts[item.genre] || 0) + 1;
@@ -281,6 +339,7 @@
 
   function renderRail(items) {
     lastItems = items || [];
+    if (railHidden()) { section.hidden = true; return; }
     const list = lastItems.filter(function (item) {
       if (activeGenre && item.genre !== activeGenre) return false;
       return !skipped[String(item.tmdb_id || item.title)];
@@ -354,7 +413,37 @@
   }
 
   // -------------------------------------------------------------------- go
+  /** Per-account "hide this row" (Settings/Profile -> Start Page), split
+      into the hero banner and the rail below it -- two independent
+      questions ("the big rotating spotlight" vs. "the whole shelf of
+      suggestions") now have two independent switches. `foryou_hidden` kept
+      its original key/meaning (it predates the split, and re-keying it would
+      silently reset every account's existing choice) and now governs the
+      rail specifically; `foryou_hero_hidden` is the new hero-only switch.
+      Checked before every load so a toggle flipped elsewhere (another tab,
+      another device) is honoured on the next visit without its own
+      endpoint. */
+  // An explicit per-account "0"/"1" always wins; an untouched pref (empty
+  // string/absent) falls back to the instance default index.html rendered
+  // onto #fyBlock's dataset (see app.py's foryou_hero_default/
+  // foryou_rail_default) -- same account-overrules-instance relationship
+  // home_dash_enabled has, just resolved here instead of server-side.
+  function heroHidden() {
+    const v = (window._USER_PREFS || {}).foryou_hero_hidden;
+    if (v === "0" || v === "1") return v === "1";
+    return block.dataset.heroDefault === "1";
+  }
+  function railHidden() {
+    const v = (window._USER_PREFS || {}).foryou_hidden;
+    if (v === "0" || v === "1") return v === "1";
+    return block.dataset.railDefault === "1";
+  }
+  function isHidden() {
+    return heroHidden() && railHidden();
+  }
+
   async function load(refresh) {
+    if (isHidden()) { block.hidden = true; stop(); return; }
     let data;
     try {
       const res = await fetch("/api/home-feed/foryou" + (refresh ? "?refresh=1" : ""));
@@ -391,35 +480,28 @@
       // Configured, and still nothing to show. That is common rather than
       // exotic: tmdb_cache rows written before the `recommendations` field
       // existed carry an empty list, so a fully set-up instance can answer
-      // "configured: true" with no candidates at all. Hiding the block left
-      // the user with a blank tab and no reason for it -- say so instead.
-      // Rendered into the gate node because it is the block's one prose slot;
-      // renderGate() overwrites it whenever the setup prompt applies.
+      // "configured: true" with no candidates at all.
+      //
+      // Used to explain this with a standing prose box ("Metadata for your
+      // library is still being filled in…") -- on an instance whose library
+      // simply never produces enough overlap for a candidate, that box never
+      // goes away, and a permanent apology reads worse than the section
+      // quietly not being there. Discover has plenty else on it; the whole
+      // section is dropped instead, same as it always was before this row
+      // existed. Shuffle for a manual retry still works from the toolbar
+      // once items exist -- there is nothing to retry from an empty page.
       hero.hidden = true;
       section.hidden = true;
       reasons.hidden = true;
+      gate.hidden = true;
+      block.hidden = true;
       stop();
-      // The message itself says "...hit Shuffle" -- #fyReroll is real, but it
-      // lives in #fySection's heading, which is hidden right above (nothing
-      // to show yet, no rail to put a heading over). Without a button HERE
-      // too, the text names a control the user cannot actually see.
-      gate.innerHTML = '<div class="fy-gate-in"><p class="fy-gate-text">' +
-        mfEscape(T("fy_empty")) + '</p>' +
-        '<button type="button" class="fy-btn is-primary fy-gate-reroll">' +
-        mfEscape(T("fy_reroll")) + "</button></div>";
-      gate.hidden = false;
-      block.hidden = false;
-      // A Shuffle click that lands right back on this same "nothing yet"
-      // text looks identical to before it was clicked -- a fresh account
-      // (just added a TMDB key / just scanned the library) hits this on
-      // every retry until CineInfo has actually filled enough of the cache
-      // in, so the click needs its own feedback or it reads as broken.
       if (refresh && typeof window.showToast === "function") window.showToast(T("fy_reroll_empty"));
       return;
     }
     block.hidden = false;
 
-    if (heroes.length) {
+    if (heroes.length && !heroHidden()) {
       hero.hidden = false;
       buildLayers();
       show(0);
@@ -440,17 +522,33 @@
       load(true).finally(function () { reroll.disabled = false; });
     });
   }
-  // The empty-state's own Shuffle button (see the gate.innerHTML branch in
-  // load() above) is rebuilt from scratch on every render, so it is wired
-  // through delegation on the stable #fyGate node rather than a direct
-  // listener that would need re-attaching every time.
-  gate.addEventListener("click", function (ev) {
-    const btn = ev.target.closest(".fy-gate-reroll");
-    if (!btn || btn.disabled) return;
-    btn.disabled = true;
-    load(true).finally(function () { btn.disabled = false; });
-  });
-
   window.mfReloadForYou = function () { return load(false); };
+  // Settings/Profile -> Start Page calls these directly (after already
+  // writing the new pref value into window._USER_PREFS -- see
+  // static/start_page.js) so switching a checkbox takes effect immediately,
+  // without asking the user to reload. Hiding is synchronous (no fetch
+  // flash); revealing re-runs load() since a piece that was never fetched
+  // while hidden (e.g. the hero on an account that hid it from the very
+  // first load) needs its data before there is anything to show.
+  window.mfForyouSetHeroHidden = function (hidden) {
+    if (hidden) {
+      hero.hidden = true;
+      stop();
+      if (railHidden()) { block.hidden = true; }
+      return;
+    }
+    load(false);
+  };
+  window.mfForyouSetHidden = function (hidden) {
+    if (hidden) {
+      section.hidden = true;
+      reasons.hidden = true;
+      if (heroHidden()) { block.hidden = true; }
+      return;
+    }
+    load(false);
+  };
+
+  loadSkipped();
   load(false);
 })();

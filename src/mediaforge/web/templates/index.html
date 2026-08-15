@@ -7,6 +7,10 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='english_only.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='devinfo_banner.css') }}">
 {% if devinfo_importants %}<link rel="stylesheet" href="{{ url_for('static', filename='devinfo_important.css') }}">{% endif %}
+{# The "Could be for you" hero's Details button opens this modal (see
+   home_foryou.js's openDetails()) -- only meaningful in the new_home
+   layout, where fyBlock/fyHero exist at all. #}
+{% if new_home %}<link rel="stylesheet" href="{{ url_for('static', filename='mf_detail_modal.css') }}">{% endif %}
 <style>
   /* #directLinkBtn and the search bar's mobile layout now live in
      index.css, next to the rest of the home styling. */
@@ -18,7 +22,7 @@
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-modal);
     width: 100%;
-    max-width: 500px;
+    max-width: 750px;
     padding: 28px 24px 22px;
     margin: 0 auto;
     animation: modal-in 0.2s ease;
@@ -301,6 +305,41 @@
   </div>
 </div>
 {% endif %}
+{# The search bar is shared by both home layouts but sits in two different
+   places: full-bleed in the sticky topstrip on the new layout, plain inside
+   .container on the classic one. A macro instead of two copies of the same
+   markup -- one thing to keep in step with app.js/home_2_1.js selectors. #}
+{# One module dashboard widget's card shell, shared by the free-position
+   grid (Beta, `with_handles=True` -- grip/resize/close, draggable) and the
+   Dashboard-sections default (`with_handles=False` -- close only, the card
+   flows inside its section instead of being dragged). Used exactly ONCE per
+   widget id: whichever layout is active renders this macro from its own
+   branch below, never both -- two copies would mean two elements sharing
+   the id "dashCard-<id>". #}
+{% macro dashboard_widget_card(widget, with_handles) %}
+<section class="dash-card{{ '' if with_handles else ' dash-card-flow' }}"
+         id="dashCard-{{ widget.id }}" data-card="{{ widget.id }}"
+         data-widget-kind="thirdparty-template">
+  <div class="dash-card-content">
+    <h3 class="dash-card-head">{% if widget.icon_svg %}{{ widget.icon_svg|safe }}{% endif %}<span>{{ widget.label }}</span></h3>
+    <div class="dash-card-body">
+      {# "ignore missing" -- a widget template that was removed/renamed after
+         being registered (e.g. mid-upgrade) silently disappears instead of
+         taking down the entire home page for every user. #}
+      {% include widget.template ignore missing %}
+    </div>
+  </div>
+  {# Same msgids window.__HOME_I18N carries under 'dash_move'/'dash_resize'/
+     'dash_remove' above -- these three tools are otherwise built once in
+     JS by renderOneCard() and never touched again, but a server-rendered
+     card needs them present from the first paint. #}
+  {% if with_handles %}
+  <button type="button" class="dash-tool dash-grip" title="{{ _('Drag to move this card, or click once then click again to drop it, or focus it and use the arrow keys') }}" aria-label="{{ _('Drag to move this card, or click once then click again to drop it, or focus it and use the arrow keys') }}">&#9776;</button>
+  <button type="button" class="dash-resize" title="{{ _('Drag to resize this card, or focus it and use the arrow keys') }}" aria-label="{{ _('Drag to resize this card, or focus it and use the arrow keys') }}"></button>
+  {% endif %}
+  <button type="button" class="dash-tool dash-close" title="{{ _('Remove this card') }}" aria-label="{{ _('Remove this card') }}">&times;</button>
+</section>
+{% endmacro %}
 {# The search bar is shared by both home layouts but sits in two different
    places: full-bleed in the sticky topstrip on the new layout, plain inside
    .container on the classic one. A macro instead of two copies of the same
@@ -660,7 +699,6 @@
       'tab_disc': _('Discover'),
       'fy_heading': _('Could be for you'),
       'fy_hint': _('derived from your library — not in it yet'),
-      'fy_reroll': _('Shuffle'),
       'fy_match': _('{} match'),
       'fy_match_label': _('Match'),
       'fy_because_one': _('Because you have {} in your library'),
@@ -669,9 +707,8 @@
       'fy_download': _('Download now'),
       'fy_details': _('Details'),
       'fy_skip': _('Not interested'),
-      'fy_skipped': _('Hidden. It can come back the next time this row is rebuilt.'),
+      'fy_skipped': _('Hidden. It will not come back on this account.'),
       'fy_failed': _('The recommendations could not be loaded.'),
-      'fy_empty': _('Metadata for your library is still being filled in — suggestions appear on their own as soon as enough titles are known. Nothing to do; look again later or hit Shuffle.'),
       'fy_reroll_empty': _('Still nothing new — check back later.'),
       'fy_reason_all': _('All recommendations'),
       'fy_reason_genre': _('Because you like {}'),
@@ -708,7 +745,13 @@
       'dash_unlock': _('Unlock the dashboard layout'),
       'dash_remove': _('Remove this card'),
       'dash_add_empty': _('Everything is already on your board.'),
-      'dash_loading': _('Loading…')
+      'dash_loading': _('Loading…'),
+      'dash_page_prev': _('Previous page'),
+      'dash_page_next': _('Next page'),
+      'sec_mediaforge': _('MediaForge'),
+      'sec_system': _('System'),
+      'sec_stats': _('Statistics'),
+      'sec_modules': _('Modules')
     }|tojson }};
   </script>
   {# The panel bar: buttons under the search field, one panel below them.
@@ -820,52 +863,60 @@
          aria-label="{{ _('Instance overview') }}"></div>
     <div class="home-panel-body" id="homePanelBody" hidden></div>
     {% else %}
-    {# The card grid. Empty until /api/home-panels/all answers -- which panels
-       an account may even see is decided server-side (Storage and System are
-       admin-only), so rendering the cards here would mean rendering cards
-       that 403.
-
-       ONE grid, not two column elements: with two columns the wide side ran
-       out of cards on a quiet instance (nothing downloading, no gaps) and
-       left a screen-high hole beside six stacked narrow ones. A three-track
-       grid where wide cards span two tracks and `dense` back-fills the rest
-       keeps the same 2:1 emphasis and cannot leave that hole. Card order is
-       CSS `order`, so the fill order does not matter. #}
+    {# #homeDashGrid is ALWAYS rendered here, even in the sections layout
+       below -- home_panels.js's ResizeObserver and pointer drag/resize/lock
+       handlers bind to this element unconditionally, and a card is only ever
+       placed into it while that layout is actually active (see
+       static/home_panels.js's SECTIONS_MODE). Left with no cards, it
+       collapses to 0 height on its own the moment /api/home-panels/all
+       answers, so it costs nothing to keep around. #}
     <div class="dash-grid" id="homeDashGrid" aria-label="{{ _('Instance overview') }}">
+      {% if not dash_sections %}
       {# Module dashboard widgets, rendered as LAST children of the grid so
          home_panels.js's ResizeObserver-driven reflow picks them up as
          ordinary [data-card] elements -- see resolve_dashboard_widgets() in
-         web/thirdparties/registry.py. Wrapped in the exact same .dash-card
-         markup renderOneCard() builds for its own cards (grip/resize/close
-         tools, .dash-card-content > .dash-card-head + .dash-card-body) so
-         the grid engine can drag/resize/hide them like any built-in card;
-         data-widget-kind="thirdparty-template" is what tells home_panels.js
-         this card's body is opaque server-rendered markup with no re-fetch
-         story, so its close/add path only ever toggles visibility (see the
-         "thirdparty-template" branches in home_panels.js) instead of
-         removing/recreating the element like a JSON-driven panel card. #}
+         web/thirdparties/registry.py. #}
       {% for widget in dashboard_widgets %}
-      <section class="dash-card" id="dashCard-{{ widget.id }}" data-card="{{ widget.id }}"
-               data-widget-kind="thirdparty-template">
-        <div class="dash-card-content">
-          <h3 class="dash-card-head">{% if widget.icon_svg %}{{ widget.icon_svg|safe }}{% endif %}<span>{{ widget.label }}</span></h3>
-          <div class="dash-card-body">
-            {# "ignore missing" -- a widget template that was removed/renamed after
-               being registered (e.g. mid-upgrade) silently disappears instead of
-               taking down the entire home page for every user. #}
-            {% include widget.template ignore missing %}
-          </div>
+      {{ dashboard_widget_card(widget, with_handles=True) }}
+      {% endfor %}
+      {% endif %}
+    </div>
+    {% if dash_sections %}
+    {# The new default: every card grouped into four fixed, collapsible
+       sections instead of freely dragged/resized. Order among the four is
+       account state (home_dash_section_order, dragged by the section
+       header -- see static/home_panels.js) and defaults to the order
+       rendered here; collapsed/expanded is a plain localStorage toggle,
+       same convention templates/extensions.html's collapsible groups use --
+       it is a view state, not a preference worth a device-syncing pref.
+       Which CARD lands in which section is a static id->section map in
+       static/home_panels.js (SECTION_OF); a module panel or dashboard
+       widget with no entry there falls into "Module" by default. #}
+    <div class="dash-sections" id="homeDashSections" aria-label="{{ _('Instance overview') }}">
+      {% for sec_id, sec_label in [
+        ('mediaforge', _('MediaForge')), ('system', _('System')),
+        ('stats', _('Statistics')), ('modules', _('Modules'))] %}
+      <section class="dash-section" data-section="{{ sec_id }}">
+        <button type="button" class="dash-section-head" data-dash-section-toggle="{{ sec_id }}"
+                draggable="true" aria-expanded="true">
+          <svg class="dash-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+          <span>{{ sec_label }}</span>
+          <span class="dash-section-count" id="dashSectionCount-{{ sec_id }}"></span>
+        </button>
+        <div class="dash-section-body" id="dashSectionBody-{{ sec_id }}">
+          {% if sec_id == 'modules' %}
+          {% for widget in dashboard_widgets %}
+          {{ dashboard_widget_card(widget, with_handles=False) }}
+          {% endfor %}
+          {% endif %}
         </div>
-        {# Same msgids window.__HOME_I18N carries under 'dash_move'/'dash_resize'/
-           'dash_remove' above -- these three tools are otherwise built once in
-           JS by renderOneCard() and never touched again, but a server-rendered
-           card needs them present from the first paint. #}
-        <button type="button" class="dash-tool dash-grip" title="{{ _('Drag to move this card, or click once then click again to drop it, or focus it and use the arrow keys') }}" aria-label="{{ _('Drag to move this card, or click once then click again to drop it, or focus it and use the arrow keys') }}">&#9776;</button>
-        <button type="button" class="dash-resize" title="{{ _('Drag to resize this card, or focus it and use the arrow keys') }}" aria-label="{{ _('Drag to resize this card, or focus it and use the arrow keys') }}"></button>
-        <button type="button" class="dash-tool dash-close" title="{{ _('Remove this card') }}" aria-label="{{ _('Remove this card') }}">&times;</button>
       </section>
       {% endfor %}
     </div>
+    {% endif %}
     {% endif %}
     {# Personal rows: what you were doing beats what a site published. Each
        one hides itself when its source has nothing to say (no playback
@@ -936,7 +987,9 @@
        Both children start hidden: which one applies is a server answer
        (/api/home-feed/foryou -> configured), and guessing here would flash
        a setup prompt at every user who already set CineInfo up. #}
-    <section class="fy" id="fyBlock" hidden>
+    <section class="fy" id="fyBlock" hidden
+             data-hero-default="{{ '1' if foryou_hero_default else '' }}"
+             data-rail-default="{{ '1' if foryou_rail_default else '' }}">
       <div class="fy-hero" id="fyHero" hidden>
         <div class="fy-veil"></div>
         <div class="fy-score" id="fyScore" hidden></div>
@@ -1018,10 +1071,6 @@
     <div class="mf-empty" id="feedEmpty" style="display:none">
       {{ _('Nothing to show with these filters.') }}
     </div>
-    {# Where the numbers on this pane come from. The match figure is derived
-       locally and is a band, not a probability -- saying so here is cheaper
-       than a tooltip on every card. #}
-    <p class="feed-origin">{{ _('Where this comes from: backdrop, plot and genres are supplied by CineInfo (cached). The match figure is worked out locally from how many of your own titles point at a suggestion — everything you already own or marked as “not interested” is subtracted.') }}</p>
   </div>
   </div>
   {% else %}
@@ -1183,9 +1232,13 @@
 </div>
 {% endif %}
 {% include "shared_modals.html" %}
+{# Same "Could be for you" Details button as above -- markup only needed
+   in the new_home layout. #}
+{% if new_home %}{% include "mf_detail_modal.html" %}{% endif %}
 {% endblock %} {% block scripts %}
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% if new_home %}<script src="{{ url_for('static', filename='home_feed.js') }}"></script>
+<script src="{{ url_for('static', filename='mf_detail_modal.js') }}"></script>
 <script src="{{ url_for('static', filename='home_panels.js') }}"></script>
 {# "All in one page" only -- self-gated on #homePanelBar/#homePanelBody, so
    harmless to load whenever it finds neither (tabs/Discover-only modes). #}

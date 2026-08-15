@@ -534,6 +534,7 @@ msgstr "✗ Shader fehlen"
 #: src/mediaforge/web/templates/base.html:468
 #: src/mediaforge/web/templates/base.html:566
 #: src/mediaforge/web/templates/extensions.html:807
+#: src/mediaforge/web/templates/index.html:886
 msgid "Modules"
 msgstr "Module"
 
@@ -875,6 +876,7 @@ msgstr "Übersicht"
 #: src/mediaforge/web/templates/_stats_body.html:9
 #: src/mediaforge/web/templates/monitoring.html:37
 #: src/mediaforge/web/templates/stats.html:2
+#: src/mediaforge/web/templates/index.html:886
 msgid "Statistics"
 msgstr "Statistiken"
 
@@ -1184,6 +1186,10 @@ msgid "Reset to the instance default"
 msgstr "Auf Instanz-Standard zurücksetzen"
 
 #: src/mediaforge/web/templates/_start_page_form.html:56
+msgid "Open this from the home page itself (the \"Customise this page\" button) to reorder cards."
+msgstr "Öffne dies auf der Startseite selbst (über den Knopf „Diese Seite anpassen“), um Karten neu anzuordnen."
+
+#: src/mediaforge/web/templates/_start_page_form.html:56
 msgid "Following the instance default"
 msgstr "Folgt dem Instanz-Standard"
 
@@ -1304,6 +1310,69 @@ msgid ""
 msgstr ""
 "Tabs wechseln zwischen den beiden; „Alles auf einer Seite“ stapelt "
 "stattdessen das Dashboard über Entdecken, ganz ohne Umschalten."
+
+#: src/mediaforge/web/templates/_start_page_form.html:168
+msgid "Dashboard layout"
+msgstr "Dashboard-Layout"
+
+#: src/mediaforge/web/templates/_start_page_form.html:169
+msgid ""
+"Sections group every card under MediaForge/System/Statistics/Modules, "
+"collapsible, drag a card to reorder it within its section. The "
+"free-position card grid is the previous layout."
+msgstr ""
+"Sektionen gruppieren jede Karte unter MediaForge/System/Statistik/Module, "
+"einklappbar, eine Karte lässt sich per Ziehen innerhalb ihrer Sektion neu "
+"anordnen. Das frei positionierbare Karten-Raster ist das bisherige Layout."
+
+#: src/mediaforge/web/templates/_start_page_form.html:172
+msgid "Sections"
+msgstr "Sektionen"
+
+#: src/mediaforge/web/templates/_start_page_form.html:173
+msgid "Card grid (Beta)"
+msgstr "Karten-Raster (Beta)"
+
+#: src/mediaforge/web/templates/_start_page_form.html:186
+msgid "Section order"
+msgstr "Sektionsreihenfolge"
+
+#: src/mediaforge/web/templates/_start_page_form.html:187
+msgid ""
+"Which order the four Dashboard sections appear in. Reload the home page "
+"after changing this."
+msgstr ""
+"In welcher Reihenfolge die vier Dashboard-Sektionen erscheinen. Lade die "
+"Startseite nach dieser Änderung neu."
+
+#: src/mediaforge/web/templates/_start_page_form.html:191
+msgid "Card order"
+msgstr "Kartenreihenfolge"
+
+#: src/mediaforge/web/templates/_start_page_form.html:192
+msgid ""
+"Which order the cards inside each section appear in. Cards stay in the "
+"section they belong to."
+msgstr ""
+"In welcher Reihenfolge die Karten innerhalb einer Sektion erscheinen. "
+"Karten bleiben in der Sektion, zu der sie gehören."
+
+#: src/mediaforge/web/templates/_start_page_form.html:122
+msgid ""
+"The default for accounts that have not chosen for themselves. Everyone "
+"can still overrule it on their profile page."
+msgstr ""
+"Der Standard für Konten, die noch nichts für sich selbst gewählt haben. "
+"Jeder kann das weiterhin auf seiner Profilseite überschreiben."
+
+#: src/mediaforge/web/templates/_start_page_form.html:125
+#: src/mediaforge/web/templates/_start_page_form.html:225
+msgid "Show the top recommendation banner on the Discover tab"
+msgstr "Das Vorschlagsbanner ganz oben im Entdecken-Tab anzeigen"
+
+#: src/mediaforge/web/templates/_start_page_form.html:175
+msgid "Show \"Could be for you\" on the Discover tab"
+msgstr "„Könnte dir gefallen“ im Entdecken-Tab anzeigen"
 
 #: src/mediaforge/web/templates/_start_page_form.html:166
 msgid "Rows"
@@ -1520,6 +1589,14 @@ msgstr "Übernehmen"
 #: src/mediaforge/web/templates/settings.html:2116
 msgid "Loading…"
 msgstr "Lädt…"
+
+#: src/mediaforge/web/templates/index.html:745
+msgid "Previous page"
+msgstr "Vorherige Seite"
+
+#: src/mediaforge/web/templates/index.html:746
+msgid "Next page"
+msgstr "Nächste Seite"
 
 #: src/mediaforge/web/templates/advanced_search.html:2
 #: src/mediaforge/web/templates/advanced_search.html:32
@@ -2132,10 +2209,15 @@ msgstr "Verwaltung"
 msgid "Monitoring"
 msgstr "Monitoring"
 
+#: src/mediaforge/web/templates/index.html:886
+msgid "MediaForge"
+msgstr "MediaForge"
+
 #: src/mediaforge/web/templates/base.html:484
 #: src/mediaforge/web/templates/index.html:572
 #: src/mediaforge/web/templates/settings.html:398
 #: src/mediaforge/web/templates/settings.html:2361
+#: src/mediaforge/web/templates/index.html:886
 msgid "System"
 msgstr "System"
 
@@ -4370,6 +4452,10 @@ msgstr "Jetzt laden"
 #: src/mediaforge/web/templates/index.html:671
 msgid "Not interested"
 msgstr "Nicht interessiert"
+
+#: src/mediaforge/web/templates/index.html:671
+msgid "Hidden. It will not come back on this account."
+msgstr "Ausgeblendet. Der Titel kommt auf diesem Konto nicht wieder."
 
 #: src/mediaforge/web/templates/index.html:672
 msgid "Hidden. It can come back the next time this row is rebuilt."
@@ -9891,6 +9977,7 @@ msgid "Show less"
 msgstr "Weniger anzeigen"
 
 #: src/mediaforge/web/templates/shared_modals.html:204
+#: src/mediaforge/web/templates/_start_page_form.html:172
 msgid "Recommendations"
 msgstr "Empfehlungen"
 

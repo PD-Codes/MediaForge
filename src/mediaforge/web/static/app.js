@@ -224,17 +224,32 @@ function _reEnrichPendingCards() {
 // This keeps the TMDB rate-limiter happy and stops the UI flooding the server.
 // ---------------------------------------------------------------------------
 
-const _tmdbPending = new Map(); // title → [card, ...]
+// Keyed by "<title>::<card url>" rather than bare title -- two DIFFERENT
+// catalogue entries (different provider, unrelated show) can share the
+// exact same title string, and a bare-title key meant the second card
+// silently inherited the first one's cached tmdb_id/genres/"already
+// downloaded" badge (see _applyTmdbToCard) the moment they landed in the
+// same 80 ms batch window, which is exactly what multi-provider search
+// does. A card with no url (rare -- see cardKey()) still falls back to the
+// bare title, same behaviour as before.
+const _tmdbPending = new Map(); // key → { title, cards: [...] }
 let _tmdbBatchTimer = null;
 
-// Answers we already have, by title. Two jobs:
-//  - a card rendered for a title another card already resolved is enriched
-//    without a request at all;
-//  - it is what mfPrewarmTmdb() fills, so a card that does not exist yet can
-//    still have its data ready by the time it does.
+function _tmdbCardKey(card, title) {
+  const url = card && card.dataset ? card.dataset.url : "";
+  return url ? title + "::" + url : title;
+}
+
+// Answers we already have, by the same composite key _tmdbPending uses. Two
+// jobs:
+//  - a card rendered for a title/url another card already resolved is
+//    enriched without a request at all;
+//  - it is what mfPrewarmTmdb() fills (title-only keys, no card involved --
+//    see its own comment), so a card that does not exist yet can still have
+//    its data ready by the time it does.
 // Unbounded on purpose within a page load: the payload is small, the page is
 // one session, and evicting would only re-fetch something we asked for once.
-const _tmdbMemo = new Map();    // title → payload
+const _tmdbMemo = new Map();    // key → payload
 // Titles a prewarm is already in flight for, so two rows sharing a title do
 // not both ask.
 const _tmdbPrewarmed = new Set();
@@ -310,9 +325,15 @@ async function _flushTmdbBatch() {
     return;
   }
   if (!cineinfoSettings.tmdb_api_key) return;
-  const batch = [..._tmdbPending.entries()];
+  const batch = [..._tmdbPending.entries()]; // [key, {title, cards}][]
   _tmdbPending.clear();
-  const titles = batch.map(([t]) => t);
+  // Request TITLES, deduped -- the lookup itself is title-based server-side
+  // regardless of how many composite keys share that title (two providers
+  // legitimately carrying the same real show should still cost one request
+  // and get the one correct answer, just cached under their own keys below
+  // rather than a shared one two UNRELATED titleAlike entries could collide
+  // on).
+  const titles = [...new Set(batch.map(([, entry]) => entry.title))];
   try {
     const resp = await fetch("/api/tmdb/batch", {
       method: "POST",
@@ -325,30 +346,32 @@ async function _flushTmdbBatch() {
     });
     if (!resp.ok) return;
     const results = await resp.json();
-    batch.forEach(([title, cards]) => {
-      const tmdb = results[title];
+    batch.forEach(([key, entry]) => {
+      const tmdb = results[entry.title];
       if (!tmdb) return;
-      // Remember it: the same title reappears constantly (a row refilled after
-      // a filter switch, the same series in "New" and in "Movies"), and asking
-      // again for something already answered is the flicker this memo removes.
-      _tmdbMemo.set(title, tmdb);
-      cards.forEach(card => _applyTmdbToCard(card, tmdb));
+      // Remember it: the same title/url pair reappears constantly (a row
+      // refilled after a filter switch, the same series in "New" and in
+      // "Movies"), and asking again for something already answered is the
+      // flicker this memo removes.
+      _tmdbMemo.set(key, tmdb);
+      entry.cards.forEach(card => _applyTmdbToCard(card, tmdb));
     });
   } catch (e) { /* best-effort */ }
 }
 
 function _queueTmdbEnrich(card, title) {
+  const key = _tmdbCardKey(card, title);
   // Already answered once this page load -- paint it now. This is what makes a
   // row refilled after a filter switch appear complete instead of empty for
   // one batch interval, and it is also the payoff for mfPrewarmTmdb().
-  const known = _tmdbMemo.get(title);
+  const known = _tmdbMemo.get(key) || _tmdbMemo.get(title);
   if (known) {
     if (cineinfoSettings) _applyTmdbToCard(card, known);
     else loadGeneralSettings().then(() => _applyTmdbToCard(card, known));
     return;
   }
-  if (!_tmdbPending.has(title)) _tmdbPending.set(title, []);
-  _tmdbPending.get(title).push(card);
+  if (!_tmdbPending.has(key)) _tmdbPending.set(key, { title: title, cards: [] });
+  _tmdbPending.get(key).cards.push(card);
   clearTimeout(_tmdbBatchTimer);
   _tmdbBatchTimer = setTimeout(_flushTmdbBatch, 80);
 }
@@ -2641,8 +2664,20 @@ function buildSourceSection(sec) {
       '<img src="" alt="" style="width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--bg-elevated);display:block">' +
       '<div class="browse-info"><div class="browse-title">' + esc(r.title) + '</div><div class="browse-genre">' + esc(r.genre || '') + '</div></div>';
     // Same franchise-vs-episode title split as renderBrowseCards (hanime).
-    addDownloadedBadgeMulti(card, [r.series_title, r.title]);
-    addSyncBadge(card, r.url);
+    // Skipped for an adult source: "already downloaded"/"already syncing"
+    // are questions about the LIBRARY, matched purely by title text -- an
+    // adult tube site's own search can and does return results tagged with
+    // the same title as something unrelated in the library (a clip literally
+    // named after a show, a clickbait tag, ...), and badging that result
+    // "Vorhanden" reads as "this IS your library item", which it is not.
+    // Built-in hanime already made the same call for the same reason (see
+    // its own opts.skipTmdb branch just below); this brings a module-
+    // registered adult source (register_search_source(..., adult=True)) up
+    // to the same standard instead of only covering the one built-in.
+    if (!sec.source.adult) {
+      addDownloadedBadgeMulti(card, [r.series_title, r.title]);
+      addSyncBadge(card, r.url);
+    }
     grid.appendChild(card);
     loadPoster(r.url, card.querySelector("img"));
     // hanime is adult content and isn't in TMDB's database, so — same as
