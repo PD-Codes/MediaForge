@@ -13,7 +13,7 @@ caused by the code being complicated, only by all of it living together.
 The split is by domain, and it is a pure move: every function is byte-for-byte
 what it was, in a file named after the table family it touches. The
 dependency graph between those files is a DAG (checked by
-``tests/test_db_package.py``), so the import order below is stable and there
+``tests/test_settings.py``), so the import order below is stable and there
 are no lazy imports working around a cycle.
 
 The public API did not change. Everything that was importable as
@@ -73,11 +73,12 @@ from .ui_prefs import (  # noqa: F401
     _DASH_CARD_RE_V1,
     _DASH_CARD_RE_V2,
     _DASH_CARD_RE_V3,
+    _DASH_COLUMN_ITEM_RE,
     _DASH_HIDDEN_ID_RE,
-    _DASH_SECTION_IDS,
     _DASH_SECTION_ITEM_RE,
     _THEME_FOLDER_RE,
     _WRAPPED_PERIOD_RE,
+    _valid_dash_card_layout,
     _valid_dash_hidden,
     _valid_dash_layout,
     _valid_dash_section_layout,

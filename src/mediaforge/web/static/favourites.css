@@ -98,6 +98,15 @@
   width: 100%;
 }
 
+/* .mobile-topbar (shell.css) is position: fixed at the top of the viewport
+   below 769px, so anything stuck to top: 0 slides underneath it and loses
+   its first line. Stick below the bar instead. Set here rather than once in
+   shell.css because shell.css loads first and would lose the tie to this
+   file's own `top: 0`. */
+@media (max-width: 768px) {
+  .fav-toolbar { top: var(--topbar-height, 56px); }
+}
+
 .fav-search-row {
   width: 100%;
 }

@@ -21,7 +21,12 @@
 {% set _n_off = _states|select("equalto", "off")|list|length %}
 {% set _n_trouble = _states|select("equalto", "error")|list|length
                     + _states|select("equalto", "skipped")|list|length %}
-<div class="settings-tabs floating-side-menu ext-rail" id="extensionsMenu">
+{# data-no-drawer: on a phone this rail stays in the flow and stacks ABOVE
+   the cards (see extensions.css), the same shape the Store tab's own rail
+   already has. Behind the drawer FAB it was the one thing on this page you
+   had to go looking for, and the two tabs of one page disagreed about where
+   their filters live. #}
+<div class="settings-tabs floating-side-menu ext-rail" id="extensionsMenu" data-no-drawer>
   <span class="ext-rail-label">{{ _('Type') }}</span>
   <button type="button" class="settings-tab active" data-exttab="modules"
           onclick="switchExtTab('modules')">

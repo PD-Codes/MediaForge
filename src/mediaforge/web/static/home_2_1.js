@@ -481,8 +481,8 @@
     if (!pane || !empty) return;
     const anyRow = pane.querySelector(
       '.feed-section:not([style*="display:none"]):not([style*="display: none"])');
-    const grid = document.getElementById("homeDashGrid");
-    const hasCards = grid && grid.querySelector(".dash-card");
+    const columns = document.getElementById("homeDashColumns");
+    const hasCards = columns && columns.querySelector(".dash-card");
     empty.style.display = (anyRow || hasCards) ? "none" : "";
   };
 
@@ -523,19 +523,43 @@
     // rAF-throttled scroll direction, same pattern as catalogue.js's own
     // scroll handler: a raw scroll listener fires far more often than the
     // page can usefully repaint for.
+    //
+    // Hysteresis, not raw direction: comparing against the previous frame
+    // meant a single pixel of upward movement -- the kind a finger lifting
+    // off the screen produces on its own -- slid the whole strip back out
+    // over the cards. Distance is measured from the point where the
+    // direction last CHANGED, so the strip only comes back once there has
+    // been a deliberate scroll up. Collapsing stays quick (a short push
+    // down is a request for room); expanding needs a real gesture.
+    const UP_TO_SHOW = 90;
+    const DOWN_TO_HIDE = 12;
+    const NEAR_TOP = 40;
     let lastY = window.scrollY;
+    let anchorY = lastY;                  // where the direction last flipped
+    let goingUp = true;
     let raf = null;
     window.addEventListener("scroll", function () {
       if (raf) return;
       raf = requestAnimationFrame(function () {
         raf = null;
         const y = window.scrollY;
-        const goingDown = y > lastY && y > 40;
-        if (goingDown && !strip.classList.contains("is-scrolled-down")) {
-          setSearchOpen(false);
-        }
-        strip.classList.toggle("is-scrolled-down", goingDown);
+        if (y === lastY) return;
+        const up = y < lastY;
+        if (up !== goingUp) { goingUp = up; anchorY = lastY; }
         lastY = y;
+
+        let hide = strip.classList.contains("is-scrolled-down");
+        if (y <= NEAR_TOP) {
+          // Back at the top there is nothing to reclaim room from, and the
+          // strip must be whole before the first card is.
+          hide = false;
+        } else if (goingUp) {
+          if (anchorY - y >= UP_TO_SHOW) hide = false;
+        } else if (y - anchorY >= DOWN_TO_HIDE) {
+          hide = true;
+        }
+        if (hide && !strip.classList.contains("is-scrolled-down")) setSearchOpen(false);
+        strip.classList.toggle("is-scrolled-down", hide);
       });
     }, { passive: true });
   })();

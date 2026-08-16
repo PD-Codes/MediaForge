@@ -1,10 +1,10 @@
 /* ===================================================================
-   MediaForge — Dashboard card grid
+   MediaForge — Dashboard sections
 
    The Dashboard tab answers "what is this instance doing right now": the
    queue, what is missing, what happened, how full the disks are, which
-   sources answer. Two columns of cards -- the wide one for the things you
-   read line by line, the narrow one for the things you glance at.
+   sources answer. Every card lives in one of four fixed, collapsible
+   sections (MediaForge / System / Statistics / Modules).
 
    It used to be a segmented button bar with ONE panel below it, because six
    widgets meant six pollers (read the docstring at the top of
@@ -38,54 +38,38 @@
    Three more cards are personal lists rather than instance state (continue
    watching, watchlist, new in the library). They come from the same
    window.mfHomeDashFeed() hand-over; the poster rows that used to show them
-   below the grid are switched off in home_feed.js (DASH_CARD_ROWS), the same
-   way gaps and today's calendar were.
+   below are switched off in home_feed.js (DASH_CARD_ROWS), the same way gaps
+   and today's calendar were.
 
-   THE ARRANGEMENT ENGINE (v3): hand-rolled absolute positioning, the same
-   idea gridstack.js uses, no library. A v2 (CSS Grid `dense` auto-flow)
-   attempt shipped before this one and was rejected: `dense` repacks EVERY
-   card's placement on any span change, so shrinking one widget visibly
-   moved every other widget SIDEWAYS/into a different order on the board.
-   Real pixel positions plus a collision resolver that only pushes the cards
-   actually touched by a move fixes the sideways-jump part by construction --
-   see resolveCollisions() below.
+   ARRANGEMENT: no engine. The Dashboard is 2 or 3 columns (index.html
+   renders them from home_dash_columns); a card picks a column and a
+   position inside it, and one drag gesture sets both. That is the whole
+   model -- there is nothing to resize, nothing to pack and nothing to
+   recompute on a viewport change, which is what the two predecessors did
+   and where their bugs lived:
 
-   Each card has {x, y, w, h} in grid units (COLS = 12 columns, ROW_H = 24px
-   row unit, GAP = 18px). A card's X, W and H only ever change from a direct
-   drag/resize/nudge on THAT card -- nothing here ever moves another card
-   sideways or resizes it. Y is the one exception: after every commit,
-   compactAll() lets every card float straight UP into any gap that opened in
-   its own column span (never down, never sideways -- see its own comment for
-   why that is a one-directional, order-preserving settle and not the kind of
-   reflow `dense` did). That is deliberate: an empty column-wide gap under a
-   widget you just shrank is exactly what should close, and it is the
-   difference between "nothing moves" (the previous, rejected design) and
-   "nothing jumps, but gaps do not survive either".
+     * a hand-rolled absolute-position grid (drag/resize/collision/
+       compaction on a `home_dash_layout` preference), and
+     * four named sections (`home_dash_section_layout`/`_order`), whose
+       names decided what a card was "about" -- not a layout question.
 
-   The preference key is unchanged, `home_dash_layout`, now storing v3 rows
-   "<card id>:<x>:<y>:<w>:<h>" (validated server-side in web/db/ui_prefs.py,
-   which also still reads the old v1/v2 rows to migrate them once). A card
-   with no stored v3 entry is placed once, the first time it is ever seen --
-   see placeNewCard() -- and immediately settled by the same compactAll() as
-   everything else, so a brand-new card never overlaps whatever else is on
-   the board no matter which order two cards' data happened to arrive in.
+   Neither preference is read any more; both are still accepted by
+   web/db/ui_prefs.py so a module writing one does not start getting 400s.
 
    Nothing from either side is ever inserted as markup: every string goes
    through mfEscape().
    =================================================================== */
 
 (function () {
-  const grid = document.getElementById("homeDashGrid");
-  if (!grid) return;                      // classic home page — nothing to do
-
-  // Dashboard sections (new default): every card grouped into four fixed,
-  // collapsible sections instead of freely dragged/resized on the grid
-  // above. #homeDashGrid is rendered either way (see index.html) so every
-  // ResizeObserver/pointer/lock binding below stays valid untouched; only
-  // renderOneCard() and the three "find a thirdparty card" lookups need to
-  // know which layout is actually active.
-  const sectionsRoot = document.getElementById("homeDashSections");
-  const SECTIONS_MODE = !!sectionsRoot;
+  // The Dashboard is 2 or 3 columns (index.html renders them from the
+  // account's home_dash_columns). A card picks a column and a position
+  // inside it -- that is the whole arrangement model. Two predecessors were
+  // removed: a free-position pixel grid (it fought every async refresh and
+  // every viewport change) and four named sections (the names decided what a
+  // card was "about", which is not a layout question).
+  const colsRoot = document.getElementById("homeDashColumns");
+  if (!colsRoot) return;                 // classic home page — nothing to do
+  const COL_COUNT = Math.max(1, parseInt(colsRoot.dataset.cols, 10) || 3);
 
   const I18N = window.__HOME_I18N || {};
   function HT(key) { return I18N[key] || key; }
@@ -112,42 +96,13 @@
     },
   };
 
-  // Where a card sits, and how much room it gets by default (before the user
-  // ever moves anything). `wide` cards -- the ones carrying a LIST (running
-  // downloads, missing episodes, the activity log), which need the width for
-  // a title plus a progress bar -- default to 8 of the grid's 12 columns and
-  // 10 rows; the rest are reference figures that read fine at 4x8.
-  //
-  // `order` is only used to seed the FIRST-EVER placement pass (see
-  // placeNewCard()) -- once a card has a stored x/y it never looks at this
-  // again. Kept as a plain ascending number, same as before.
-  // `multi: true` lets the Dashboard's "Add widget" menu offer a second (and
-  // third, ...) card of that type -- see isMulti() and addWidget() below.
-  // None of today's built-ins set it: every one of them shows instance-wide
-  // state (the queue, the library, the disks), not per-instance data, so a
-  // second copy would just be a duplicate. The key is read the same way the
-  // module side (payload's `multi` field) is, so a future built-in COULD
-  // opt in without any engine change.
-  const PLACE = {
-    queue:    { order: 10, wide: true },
-    // The three personal lists sit right under the queue: they are the ones
-    // the visitor is most likely to have come for.
-    continue: { order: 12, wide: true },
-    watchlist: { order: 14, wide: true },
-    newlib:   { order: 16, wide: true },
-    gaps:     { order: 20, wide: true },
-    activity: { order: 30, wide: true },
-    library:  { order: 40 },
-    storage:  { order: 50 },
-    sources:  { order: 60 },
-    upcoming: { order: 70 },
-    system:   { order: 80 },
-    wrapped:  { order: 90 },
-  };
-  // A module panel has no place of its own: it is placed after the built-ins
-  // (by order) the first time it is seen, and gets the full width because
-  // nothing here knows what it will put inside.
-  const MODULE_PLACE = { order: 100, wide: true };
+  // Built-in cards that get a loading skeleton before their data arrives
+  // (see loadingBody() at the bottom). Module panels are not listed: their
+  // ids are only known once /api/home-panels/all answers.
+  const SKELETON_IDS = [
+    "queue", "continue", "watchlist", "newlib", "gaps", "activity",
+    "library", "storage", "sources", "upcoming", "system", "wrapped",
+  ];
 
   // Card headings that read better than the panel's own button label did.
   // "Queue" was a button in a row of buttons; as a card heading next to a
@@ -159,7 +114,7 @@
   };
 
   // Heading icons for the cards this file builds itself. The panel cards get
-  // theirs from the payload; without these three the grid mixed cards with an
+  // theirs from the payload; without these three the sections mixed cards with an
   // icon and cards without, which reads as two different kinds of card.
   const OWN_ICONS = {
     // antenna / broadcast
@@ -198,106 +153,20 @@
       '<path d="' + esc(path) + '"/></svg>';
   }
 
-  // ------------------------------------------------------- user arrangement
-  //
-  // One preference, `home_dash_layout`, holding "<id>:<x>:<y>:<w>:<h>" per
-  // card (format v3). x/y/w/h are all in grid units -- see the pixel
-  // conversion helpers below. A card the user has never touched has no v3
-  // entry; placeNewCard() seeds one, once, the first time that card is
-  // rendered (reusing its old v1/v2 size if it had one), and saves
-  // immediately so the packer never runs twice for the same card.
-  const COLS = 12;
-  const ROW_H = 24;
-  const GAP = 18;
   const PREFS = window._USER_PREFS || {};
-
-  function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
-
-  /** Parses every generation this preference has ever been written in.
-      Returns the valid v3 rows (the live layout, mutated from here on) plus
-      a `legacy` map of best-effort sizes read from v1/v2 rows, used only to
-      seed a first-ever placement so an account does not lose its old
-      width/height the moment this engine ships. */
-  function parseLayout(raw) {
-    const v3 = {};
-    const legacy = {};
-    String(raw).split(",").forEach(function (part) {
-      if (!part) return;
-      const bits = part.split(":");
-      if (bits.length === 5) {
-        const id = bits[0];
-        const x = parseInt(bits[1], 10), y = parseInt(bits[2], 10);
-        const w = parseInt(bits[3], 10), h = parseInt(bits[4], 10);
-        if (!id || !isFinite(x) || !isFinite(y) || !isFinite(w) || !isFinite(h)) return;
-        if (x < 0 || x > COLS - 1 || y < 0 || y > 999) return;
-        if (w < 2 || w > COLS || h < 3 || h > 80) return;
-        v3[id] = { x: x, y: y, w: w, h: h };
-        return;
-      }
-      const order = parseInt(bits[1], 10);
-      if (!bits[0] || !isFinite(order)) return;
-      if (bits.length === 3) {
-        // v1: "id:order:span[1-3]" -- the oldest, 3-track format.
-        const span = parseInt(bits[2], 10);
-        if (span < 1 || span > 3) return;
-        legacy[bits[0]] = { order: order, w: span * 4, h: null };
-      } else if (bits.length === 4) {
-        // v2: "id:order:colspan[1-12]:rowspan[1-40|a]" -- last session's
-        // CSS-Grid format.
-        const colSpan = parseInt(bits[2], 10);
-        const rowRaw = bits[3];
-        const rowSpan = rowRaw === "a" ? null : parseInt(rowRaw, 10);
-        if (colSpan < 1 || colSpan > COLS) return;
-        if (rowRaw !== "a" && (!isFinite(rowSpan) || rowSpan < 1 || rowSpan > 40)) return;
-        legacy[bits[0]] = { order: order, w: colSpan, h: rowSpan };
-      }
-    });
-    return { v3: v3, legacy: legacy };
-  }
-
-  const parsed = parseLayout(PREFS.home_dash_layout || "");
-  const layout = parsed.v3;          // the live layout: id -> {x, y, w, h}
-  const legacyMeta = parsed.legacy;  // id -> {order, w, h|null} from v1/v2
-
-  function serializeLayout() {
-    return Object.keys(layout).map(function (id) {
-      const p = layout[id];
-      return id + ":" + p.x + ":" + p.y + ":" + p.w + ":" + p.h;
-    }).join(",");
-  }
-
-  let saveTimer = null;
-  function saveLayout() {
-    // Debounced: a live drag can call this indirectly many times a second
-    // once collisions cascade through several cards; the pref only needs to
-    // reach the server once the dust settles.
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      saveTimer = null;
-      if (typeof window.mfSaveUserPref === "function") {
-        window.mfSaveUserPref({ home_dash_layout: serializeLayout() });
-      }
-    }, 400);
-  }
 
   // Base ids the account closed with a card's own "x" (see card()'s close
   // button below). Only ever holds base ids -- an extra instance ("id.2") is
   // simply never auto-recreated by a poll/load in the first place, so
-  // removing one needs no suppression, only a DOM remove + forgetCard().
+  // removing one needs no suppression, only a DOM remove.
   const HIDDEN = new Set(String(PREFS.home_dash_hidden || "").split(",").filter(Boolean));
 
   // Third-party dashboard-widget cards (register_thirdparty's
   // dashboard_widget_template, see index.html) are already server-rendered
-  // into the grid before this script runs. Soft-hide any the account has
-  // closed BEFORE the first reflowAll() pass -- see reflowAll()'s own
-  // "dashHidden" skip below -- so a hidden one never claims grid space or a
-  // home_dash_layout entry on load. Their content is opaque, page-load-only
-  // Jinja markup with no re-fetch story, so "closed" always means
-  // display:none, never DOM removal -- see the .dash-close handler and
-  // addWidget() further down.
-  // document-scoped, not grid-scoped: in the sections layout these cards
-  // are rendered inside #homeDashSections instead (see index.html), and
-  // this pass must catch them there too.
+  // into their section before this script runs. Soft-hide any the account
+  // has closed. Their content is opaque, page-load-only Jinja markup with no
+  // re-fetch story, so "closed" always means display:none, never DOM removal
+  // -- see the .dash-close handler and addWidget() further down.
   document.querySelectorAll('.dash-card[data-widget-kind="thirdparty-template"]').forEach(function (el) {
     if (HIDDEN.has(el.dataset.card)) {
       el.style.display = "none";
@@ -307,7 +176,7 @@
 
   let hiddenSaveTimer = null;
   function saveHidden() {
-    // Same debounced-save shape as saveLayout(): closing several cards in a
+    // Debounced: closing several cards in a
     // row should not fire one request per click.
     if (hiddenSaveTimer) clearTimeout(hiddenSaveTimer);
     hiddenSaveTimer = setTimeout(function () {
@@ -330,218 +199,24 @@
     return true;
   }
 
-  /** Pulls every card up to the lowest free row in its own column span, no
-      exceptions -- this is what closes gaps ("keinen Platz lassen") and is
-      also, on its own, what places a brand-new card, so there is exactly one
-      packing algorithm instead of two that could disagree with each other
-      (the previous version kept a second, incrementally-updated column-
-      height tracker next to this one for new-card placement only, and the
-      two could desync across async loads -- e.g. "continue watching" and the
-      watchlist card landing on top of each other when their data arrived in
-      an order the tracker had not seen yet. Recomputing from `layout` itself,
-      every time, cannot desync).
-
-      Cards are processed in ascending Y (ties by X, then id, for a
-      deterministic order), so a card can only ever move UP here, never down:
-      by the time card K is placed, every card sorted before it has already
-      claimed its column space at a height no greater than K's own current Y
-      (nothing overlapped before this ran), so K's new Y is bounded by that
-      and can only shrink or stay put. That monotonic property is the whole
-      reason this reads as "widgets climb into gaps" and not "widgets jump
-      around" -- X, W and H are never touched here, only Y, and only upward. */
-  function compactAll() {
-    const heights = new Array(COLS).fill(0);
-    Object.keys(layout).sort(function (a, b) {
-      const pa = layout[a], pb = layout[b];
-      return pa.y - pb.y || pa.x - pb.x || (a < b ? -1 : 1);
-    }).forEach(function (id) {
-      const p = layout[id];
-      let y = 0;
-      for (let c = p.x; c < p.x + p.w; c++) y = Math.max(y, heights[c]);
-      p.y = y;
-      for (let c = p.x; c < p.x + p.w; c++) heights[c] = y + p.h;
-    });
-  }
-
-  /** Seeds a placeholder for a card the first time it is ever seen (no
-      stored v3 entry) and lets compactAll() find its real resting slot.
-      `order` (the built-in PLACE table, or a v1/v2 row's old order) is only
-      ever used as compactAll()'s SORT key here -- it decides which cards are
-      considered "above" which on a fresh account, it is never read as a
-      literal row number. */
-  function placeNewCard(id) {
-    if (layout[id]) return layout[id];
-    const meta = legacyMeta[id];
-    const base = PLACE[id] || MODULE_PLACE;
-    let w = meta ? meta.w : (base.wide ? 8 : 4);
-    let h = meta && meta.h != null ? meta.h : (base.wide ? 10 : 8);
-    w = clamp(w, 2, COLS);
-    h = clamp(h, 3, 80);
-    layout[id] = { x: 0, y: meta ? meta.order : base.order, w: w, h: h };
-    compactAll();
-    saveLayout();
-    return layout[id];
-  }
-
-  /** A card that no longer has anything to show (no gaps left, an empty
-      watchlist, ...) is removed from the DOM by its own renderer; this drops
-      its layout entry too and lets everything below float up to close the
-      hole -- without deleting the entry here, compactAll() would keep
-      reserving its footprint forever for a card that no longer exists. */
-  function forgetCard(id) {
-    if (!layout[id]) return;
-    delete layout[id];
-    compactAll();
-    saveLayout();
-  }
-
-  /** Where a card sits now -- the stored place, or a freshly seeded one. */
-  function place(id) {
-    return layout[id] || placeNewCard(id);
-  }
-
-  // --------------------------------------------------------- collisions
-  //
-  // Runs first, before compactAll(): after any single card's rect changes,
-  // only the cards that rect now actually OVERLAPS get pushed -- straight
-  // down, just clear of it -- never the whole board, and never sideways. A
-  // shrink can never trigger a push at all: shrinking a rect can only shrink
-  // the set of rects it overlaps, so resolveCollisions() after a shrink walks
-  // a `queue` that starts and ends at [movedId] with zero pushes -- a
-  // guaranteed no-op by construction, not by a special case. Any actual
-  // upward movement other cards make after a shrink is compactAll() closing
-  // the gap that left, not this function -- see the file header and
-  // compactAll()'s own comment.
-  function rectsOverlap(a, b) {
-    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-  }
-
-  function resolveCollisions(movedId) {
-    const queue = [movedId];
-    const seen = new Set();
-    while (queue.length) {
-      const id = queue.shift();
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const a = layout[id];
-      if (!a) continue;
-      Object.keys(layout).forEach(function (otherId) {
-        if (otherId === id || seen.has(otherId)) return;
-        const b = layout[otherId];
-        if (rectsOverlap(a, b)) {
-          b.y = a.y + a.h;      // push it straight down, just clear of a
-          queue.push(otherId);   // that may now overlap a third card -- cascade
-        }
-      });
-    }
-  }
-
-  // ------------------------------------------------------------- geometry
-  //
-  // Pixel conversion. colWidth is recomputed on every ResizeObserver tick
-  // (and lazily the first time a card is placed, before the observer's
-  // first callback has necessarily fired).
-  let colWidth = 0;
-  function recalcColWidth() {
-    const contentWidth = grid.clientWidth;
-    colWidth = Math.max(0, (contentWidth - (COLS - 1) * GAP) / COLS);
-  }
-
-  function pxX(x) { return x * (colWidth + GAP); }
-  function pxY(y) { return y * (ROW_H + GAP); }
-  function pxW(w) { return w * colWidth + (w - 1) * GAP; }
-  function pxH(h) { return h * ROW_H + (h - 1) * GAP; }
-
-  /** Applies one card's stored place to its element as absolute px
-      left/top/width/height, plus a cheap `order` that is always correct so
-      the mobile breakpoint (order-only flex stacking) never needs a drag to
-      have happened first. */
-  function applyPos(el, id) {
-    if (!colWidth) recalcColWidth();
-    const p = place(id);
-    el.style.order = String(p.y * 1000 + p.x);
-    el.style.left = pxX(p.x) + "px";
-    el.style.top = pxY(p.y) + "px";
-    el.style.width = pxW(p.w) + "px";
-    el.style.height = pxH(p.h) + "px";
-  }
-
-  /** Absolutely positioned children do not contribute to a `position:
-      relative` parent's height on their own -- the grid's own height is set
-      explicitly here to the tallest bottom edge among the cards actually on
-      the page right now. */
-  function syncGridHeight() {
-    let maxBottom = 0;
-    Array.prototype.forEach.call(grid.children, function (el) {
-      const id = el.dataset.card;
-      const p = id && layout[id];
-      if (!p) return;
-      maxBottom = Math.max(maxBottom, pxY(p.y) + pxH(p.h));
-    });
-    grid.style.height = maxBottom + "px";
-  }
-
-  function reflowAll() {
-    if (SECTIONS_MODE) { refreshSectionStates(); return; }
-    recalcColWidth();
-    Array.prototype.forEach.call(grid.children, function (el) {
-      // A soft-hidden thirdparty-template card (see dash-close/addWidget
-      // below) stays out of the layout entirely -- no place(), no
-      // placeNewCard(), no layout[id] entry -- while display:none, exactly
-      // as if it were not on the board.
-      if (el.dataset.card && el.dataset.dashHidden !== "1") applyPos(el, el.dataset.card);
-    });
-    syncGridHeight();
-  }
-
-  if (window.ResizeObserver) {
-    new ResizeObserver(reflowAll).observe(grid);
-  } else {
-    // No polyfill needed for this app's supported browsers; a resize
-    // listener is still a reasonable fallback for the rare miss.
-    window.addEventListener("resize", reflowAll);
-  }
-
-  /** Put a card in its place, creating it on first sight and replacing its
-      contents on every later one -- a poll must not make the grid jump.
-      `body` is the scrollable middle section; `foot` (optional) is the one
-      trailing link/button a few cards have ("Alle ansehen ›" etc.) -- kept as
-      its own flex child so it always pins to the card's bottom edge instead
-      of scrolling away with the list above it, and is simply absent from the
-      DOM (not just hidden) when a card has nothing to link to.
-
-      The grip and the resize handle are built ONCE, the first time a card is
-      seen, into their own element outside `.dash-card-content` -- everything
-      IN `.dash-card-content` (head text, stats, items, foot) is replaced
-      wholesale on every call, same as before, but the two handles never are.
-      A card whose data refreshes on its own schedule (a module's own poll, a
-      linked media server's "continue watching" list, ...) used to lose an
-      in-progress drag or resize the moment a refresh landed mid-gesture: the
-      handle the pointer had captured was destroyed and rebuilt as a new,
-      un-captured element. Every card goes through this one function, built-
-      in or module, so fixing it here fixes it for both. */
   // -------------------------------------------------------- section layout
   //
-  // Which of the four fixed sections a card belongs in. Base id only (an
-  // instance suffix like ".2" is stripped first) -- every instance of a
-  // multi:true card shares its base id's section. Anything not listed here
-  // (a module panel, a thirdparty dashboard widget) falls into "modules":
-  // that is the one section this app cannot enumerate in advance, so it is
-  // the correct default rather than a special case.
-  const SECTION_OF = {
-    queue: "mediaforge", "continue": "mediaforge", watchlist: "mediaforge",
-    newlib: "mediaforge", gaps: "mediaforge", activity: "mediaforge",
-    library: "mediaforge", sources: "mediaforge", upcoming: "mediaforge",
-    storage: "system", system: "system",
-    wrapped: "stats",
+  // Which column a card STARTS in, before the account has dragged anything.
+  // Base id only (an instance suffix like ".2" is stripped first), so every
+  // instance of a multi:true card shares its base id's column. Grouped by
+  // how a card is read, not by subsystem:
+  //   0  what is happening / what wants doing -- read line by line
+  //   1  your own material, and module widgets
+  //   2  reference figures -- glanced at, not read
+  // Anything not listed (a module panel, a thirdparty dashboard widget)
+  // starts in the middle column: that is the one group this app cannot
+  // enumerate in advance, so it is a correct default, not a special case.
+  const COLUMN_OF = {
+    queue: 0, gaps: 0, activity: 0,
+    "continue": 1, watchlist: 1, newlib: 1, upcoming: 1,
+    library: 2, storage: 2, system: 2, sources: 2, wrapped: 2,
   };
-  const SECTION_IDS = ["mediaforge", "system", "stats", "modules"];
-
-  // Cards that read better spanning the whole section instead of sharing the
-  // auto-fill row with a 280px neighbour -- queue, the library overview,
-  // storage, system and wrapped all lead with a stat strip that wants room.
-  // Sections mode only; the free grid keeps its own user-resized width.
-  const FULL_WIDTH_SECTION_CARDS = ["queue", "library", "storage", "system", "wrapped"];
+  const DEFAULT_COLUMN = 1;
 
   // ------------------------------------------------------- client pagination
   //
@@ -559,8 +234,8 @@
       list that already fits on one page (after the cap) gets no pager at
       all -- nothing to page through. */
   function pagedRows(cardId, rows, maxTotal) {
-    const list = (SECTIONS_MODE && maxTotal) ? rows.slice(0, maxTotal) : rows;
-    if (!SECTIONS_MODE || list.length <= PAGE_SIZE) {
+    const list = maxTotal ? rows.slice(0, maxTotal) : rows;
+    if (list.length <= PAGE_SIZE) {
       return { rowsHtml: list.join(""), pagerHtml: "" };
     }
     const totalPages = Math.ceil(list.length / PAGE_SIZE);
@@ -576,109 +251,106 @@
     return { rowsHtml: rowsHtml, pagerHtml: pagerHtml };
   }
 
-  /** Per-account order for cards inside the sections layout: the user
-      reordered a card within its section (cards cannot be dragged to a
-      different one, see the sectionsRoot drag handlers below). "" (nothing
-      dragged yet) means every card sits in its SECTION_OF default, in the
-      built-in order -- same "absent = built-in" convention as
-      home_dash_layout/home_dash_hidden. Stored as ordered
-      "<card id>:<section>" pairs; the LIST ORDER is also the render order
-      within each section, so one pref carries both facts. The "section" part
-      of each pair is a leftover of an earlier version that did allow moving
-      cards between sections -- still read for any pref value saved back
-      then, but saveCardLayout() below now always writes back the card's own
-      fixed SECTION_OF, never a moved one. Parsed once and cached -- see
-      saveCardLayout() for the only place it changes. */
+  /** The account's own arrangement: ordered "<card id>:<column>" pairs from
+      home_dash_card_layout. The LIST ORDER is the render order within a
+      column, so one preference carries both facts. "" (nothing dragged yet)
+      means every card sits in its COLUMN_OF default in the built-in order --
+      the same "absent = built-in" convention home_dash_hidden uses, which is
+      what lets a card added in a later release need no migration. Parsed
+      once and cached; saveCardLayout() is the only thing that invalidates
+      it. */
   let _cardLayout = null;
   function cardLayout() {
     if (_cardLayout) return _cardLayout;
     _cardLayout = new Map();
-    String(PREFS.home_dash_section_layout || "").split(",").filter(Boolean).forEach(function (part, i) {
+    String(PREFS.home_dash_card_layout || "").split(",").filter(Boolean).forEach(function (part, i) {
       const bits = part.split(":");
-      if (bits.length !== 2 || SECTION_IDS.indexOf(bits[1]) === -1) return;
-      _cardLayout.set(bits[0], { section: bits[1], index: i });
+      const col = parseInt(bits[1], 10);
+      if (bits.length !== 2 || !bits[0] || !isFinite(col) || col < 0) return;
+      _cardLayout.set(bits[0], { col: col, index: i });
     });
     return _cardLayout;
   }
 
-  function sectionIdFor(id) {
+  /** Which column a card is in right now. A stored column beyond the current
+      count folds into the LAST visible column rather than disappearing:
+      switching 3 -> 2 columns must not lose a card, and switching back must
+      find it where it was -- which is why the fold happens here, on read,
+      and is never written back. */
+  function colFor(id) {
     const base = id.split(".")[0];
-    const override = cardLayout().get(base);
-    return (override && override.section) || SECTION_OF[base] || "modules";
-  }
-  function sectionBodyEl(sectionId) {
-    return document.getElementById("dashSectionBody-" + sectionId);
+    const saved = cardLayout().get(base);
+    const want = saved ? saved.col : (COLUMN_OF.hasOwnProperty(base) ? COLUMN_OF[base] : DEFAULT_COLUMN);
+    return Math.min(Math.max(0, want), COL_COUNT - 1);
   }
 
-  /** Where a card belongs inside its section body, respecting a saved order
-      -- called only when the card is first created (renderSectionSlot), a
-      poll re-render never moves an existing element. Cards never dragged
-      have no entry and simply append after everything that does, same as
-      today. */
-  function sectionInsertRef(body, id) {
-    const base = id.split(".")[0];
-    const mine = cardLayout().get(base);
+  function colEl(index) {
+    return document.getElementById("dashCol-" + index);
+  }
+
+  /** Where a card belongs inside its column, respecting a saved order --
+      called only when the card is first created (renderOneCard); a poll
+      re-render never moves an existing element. A card with no saved
+      position appends after everything that has one. */
+  function colInsertRef(col, id) {
+    const mine = cardLayout().get(id.split(".")[0]);
     if (!mine) return null;                // no saved position -> append
     let best = null;
-    Array.prototype.forEach.call(body.querySelectorAll(".dash-card-flow[data-card]"), function (el) {
+    let bestIndex = Infinity;
+    Array.prototype.forEach.call(col.querySelectorAll(".dash-card-flow[data-card]"), function (el) {
       const other = cardLayout().get(el.dataset.card.split(".")[0]);
-      if (other && other.index > mine.index && (!best || other.index < cardLayout().get(best.dataset.card.split(".")[0]).index)) {
+      if (other && other.index > mine.index && other.index < bestIndex) {
         best = el;
+        bestIndex = other.index;
       }
     });
     return best;
   }
 
-  /** Persist the current DOM order/section of every flowed card. Called
-      after any card drag settles -- see the sectionsRoot drag handlers
-      below. Walks the DOM rather than patching the cached map so a drop is
-      always saved as the ground truth it visibly produced. */
+  /** Persist the current DOM column/order of every card. Called after a drag
+      settles. Walks the DOM rather than patching the cached map, so what is
+      saved is always the arrangement the user is visibly looking at.
+
+      ponytail: writes the FOLDED column (what is on screen) for every card,
+      so dragging anything while in 2-column mode flattens a card that was
+      parked in column 3. Acceptable: the fold is only visible because the
+      account chose 2 columns. Store the pre-fold column alongside if parking
+      a card "off screen" ever has to survive a drag. */
   function saveCardLayout() {
     const pairs = [];
-    SECTION_IDS.forEach(function (sec) {
-      const body = sectionBodyEl(sec);
-      if (!body) return;
-      Array.prototype.forEach.call(body.querySelectorAll(".dash-card-flow[data-card]"), function (el) {
-        pairs.push(el.dataset.card + ":" + sec);
+    for (let c = 0; c < COL_COUNT; c++) {
+      const col = colEl(c);
+      if (!col) continue;
+      Array.prototype.forEach.call(col.querySelectorAll(".dash-card-flow[data-card]"), function (el) {
+        pairs.push(el.dataset.card + ":" + c);
       });
-    });
+    }
+    const value = pairs.join(",");
     _cardLayout = null;                    // re-derive from what we just saved
     if (typeof window.mfSaveUserPref === "function") {
-      window.mfSaveUserPref({ home_dash_section_layout: pairs.join(",") });
+      window.mfSaveUserPref({ home_dash_card_layout: value });
     }
-    PREFS.home_dash_section_layout = pairs.join(",");
+    PREFS.home_dash_card_layout = value;
   }
 
-  /** A section with nothing in it (most commonly "Module" on an instance
-      with none installed) is hidden entirely rather than shown as an empty
-      shell -- same reasoning every other empty state in this app uses. Also
-      keeps the header's card count current. Cheap enough to just re-run in
-      full after any add/remove: there are exactly four sections. */
-  function refreshSectionStates() {
-    if (!sectionsRoot) return;
-    sectionsRoot.querySelectorAll(".dash-section[data-section]").forEach(function (secEl) {
-      const body = sectionBodyEl(secEl.dataset.section);
-      const count = body ? body.children.length : 0;
-      secEl.classList.toggle("is-empty", count === 0);
-      const countEl = document.getElementById("dashSectionCount-" + secEl.dataset.section);
-      if (countEl) countEl.textContent = count ? String(count) : "";
-    });
+  /** The Dashboard's "nothing needs your attention" line is owned by
+      home_2_1.js and has to be re-checked whenever a card appears or
+      disappears -- which is every render, every close and every drop. */
+  function syncDashEmpty() {
+    if (typeof window.mfHomeSyncDashEmpty === "function") window.mfHomeSyncDashEmpty();
   }
 
-  /** The sections-layout twin of renderOneCard() below: same id/head/body/
-      foot contract (renderers never know which layout is active), but the
-      card flows inside its section instead of being absolutely positioned,
-      and gets no grip/resize handle -- the whole card is the drag handle
-      instead (see the sectionsRoot drag listeners further down), there being
-      nothing to resize onto in a flow layout. */
-  function renderSectionSlot(id, head, body, foot) {
+  /** Create a card on first sight, replace its contents on every later one.
+      The whole card is the drag handle (see the colsRoot drag listeners
+      further down) -- there is nothing to resize onto in a flow layout, so
+      there is no grip and no resize corner, only the "x". */
+  function renderOneCard(id, head, body, foot) {
     let el = document.getElementById("dashCard-" + id);
     let content;
     if (!el) {
       el = document.createElement("section");
       el.id = "dashCard-" + id;
-      el.className = "dash-card dash-card-flow" +
-        (FULL_WIDTH_SECTION_CARDS.indexOf(id.split(".")[0]) !== -1 ? " is-full-width" : "");
+      el.className = "dash-card dash-card-flow";
       el.dataset.card = id;
       el.draggable = !isLocked();
 
@@ -694,71 +366,15 @@
       close.textContent = "×";
       el.appendChild(close);
 
-      const target = sectionBodyEl(sectionIdFor(id));
-      if (target) target.insertBefore(el, sectionInsertRef(target, id));
+      const target = colEl(colFor(id));
+      if (target) target.insertBefore(el, colInsertRef(target, id));
     } else {
       content = el.querySelector(".dash-card-content");
     }
     content.innerHTML = head +
       '<div class="dash-card-body">' + body + '</div>' +
       (foot ? '<div class="dash-card-foot">' + foot + '</div>' : '');
-    refreshSectionStates();
-    return el;
-  }
-
-  function renderOneCard(id, head, body, foot) {
-    if (SECTIONS_MODE) return renderSectionSlot(id, head, body, foot);
-    let el = document.getElementById("dashCard-" + id);
-    let content;
-    if (!el) {
-      el = document.createElement("section");
-      el.id = "dashCard-" + id;
-      el.className = "dash-card";
-      el.dataset.card = id;
-
-      content = document.createElement("div");
-      content.className = "dash-card-content";
-      el.appendChild(content);
-
-      const grip = document.createElement("button");
-      grip.type = "button";
-      grip.className = "dash-tool dash-grip";
-      grip.title = HT("dash_move");
-      grip.setAttribute("aria-label", HT("dash_move"));
-      grip.textContent = "☰";
-      el.appendChild(grip);
-
-      // Pointer-drag resize (wired below, delegated on the grid). Hidden
-      // below 901px via CSS -- the mobile grid is order-only. A real
-      // <button>, not a bare span, so it is keyboard-reachable.
-      const resize = document.createElement("button");
-      resize.type = "button";
-      resize.className = "dash-resize";
-      resize.title = HT("dash_resize");
-      resize.setAttribute("aria-label", HT("dash_resize"));
-      el.appendChild(resize);
-
-      // Close ("x"): same permanent-element treatment as the grip and the
-      // resize handle -- built once here, never touched by a re-render, so a
-      // click mid-poll cannot be swallowed by the element being replaced out
-      // from under the pointer.
-      const close = document.createElement("button");
-      close.type = "button";
-      close.className = "dash-tool dash-close";
-      close.title = HT("dash_remove");
-      close.setAttribute("aria-label", HT("dash_remove"));
-      close.textContent = "×";
-      el.appendChild(close);
-
-      grid.appendChild(el);
-    } else {
-      content = el.querySelector(".dash-card-content");
-    }
-    content.innerHTML = head +
-      '<div class="dash-card-body">' + body + '</div>' +
-      (foot ? '<div class="dash-card-foot">' + foot + '</div>' : '');
-    applyPos(el, id);
-    syncGridHeight();
+    syncDashEmpty();
     return el;
   }
 
@@ -784,7 +400,7 @@
     const el = renderOneCard(id, head, body, foot);
     if (id.indexOf(".") === -1) {
       // document-scoped: a sibling instance lives in whichever container
-      // renderOneCard() put it in, grid or a section.
+      // renderOneCard() put it in.
       document.querySelectorAll('[data-card^="' + id + '."]').forEach(function (sib) {
         renderOneCard(sib.dataset.card, head, body, foot);
       });
@@ -795,7 +411,7 @@
   /** A card heading: icon, title, and an optional quiet note or "open the
       list" link on the right. The move handle used to live inside this
       markup too; it is now built once by card() itself and laid out on top
-      via CSS (see .dash-grip in index.css) so it survives every re-render --
+      via CSS (see .dash-close in index.css) so it survives every re-render --
       see card()'s own comment. */
   function head(title, note, icon, link) {
     const right = link
@@ -814,7 +430,7 @@
       card()) instead of scrolling out of view with a long item list. */
   // Sections-mode-only pagination per built-in panel id -- see the design
   // note above pagedRows(). Absent id = not paginated, same as before (the
-  // grid keeps scrolling instead). "maxTotal: undefined" pages the full
+  // card keeps scrolling instead). "maxTotal: undefined" pages the full
   // server-sent list; a number caps it first ("5 per page, N total").
   const PANEL_PAGINATE = {
     activity: { maxTotal: 10 },
@@ -823,12 +439,117 @@
     wrapped: { maxTotal: 10 },
   };
 
+  // ------------------------------------------------------------- charts
+  //
+  // Two panels answer a question that is a SHARE, not a number: how full the
+  // fullest volume is, and how much of the queue is moving. Both are drawn
+  // from the payload those panels already send -- no new endpoint, no new
+  // field -- and the numbers stay underneath as the legend, because "87 %"
+  // is still the thing you read out loud.
+  //
+  // Inline SVG rather than static/mf_charts.js: that module draws axed,
+  // multi-series charts for the statistics page, which is a different job
+  // from one ring and one bar.
+
+  /** A stat out of a panel payload, by its i18n key. */
+  function statBy(data, key) {
+    return (data.stats || []).filter(function (s) { return s.label_key === key; })[0] || null;
+  }
+  function statNum(data, key) {
+    const s = statBy(data, key);
+    const n = s ? parseInt(String(s.value).replace(/[^0-9-]/g, ""), 10) : NaN;
+    return isFinite(n) ? n : 0;
+  }
+
+  const TONE_COLOR = {
+    err: "var(--error)", warn: "var(--warning)", ok: "var(--success)", "": "var(--accent)",
+  };
+
+  /** Progress ring. `pct` is clamped, `tone` picks the colour from the same
+      three-tone vocabulary the payload already uses for stats and items. */
+  function donut(pct, tone, caption) {
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    const r = 26, circ = 2 * Math.PI * r;
+    const color = TONE_COLOR[tone] || TONE_COLOR[""];
+    return '<div class="hp-donut"><svg viewBox="0 0 68 68" width="68" height="68" aria-hidden="true">' +
+      '<circle cx="34" cy="34" r="' + r + '" fill="none" stroke="var(--bg-hover)" stroke-width="7"/>' +
+      '<circle cx="34" cy="34" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="7" ' +
+      'stroke-linecap="round" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' +
+      (circ * (1 - p / 100)).toFixed(1) + '" transform="rotate(-90 34 34)"/>' +
+      '<text x="34" y="34" text-anchor="middle" dominant-baseline="central" fill="var(--text-primary)" ' +
+      'font-size="15" font-weight="700">' + esc(Math.round(p) + "%") + '</text></svg>' +
+      '<span class="hp-donut-cap">' + esc(caption) + '</span></div>';
+  }
+
+  /** Proportional bar plus a legend. `parts` is [{value, label, color}];
+      a part with value 0 keeps its legend entry (0 waiting is an answer)
+      but takes no width. */
+  function stackedBar(parts) {
+    const total = parts.reduce(function (sum, p) { return sum + p.value; }, 0);
+    const segs = total
+      ? parts.filter(function (p) { return p.value > 0; }).map(function (p) {
+          return '<i style="width:' + ((p.value / total) * 100).toFixed(2) + "%;background:" + p.color + '"></i>';
+        }).join("")
+      : "";
+    return '<div class="hp-stack">' + segs + "</div>" +
+      '<div class="hp-legend">' + parts.map(function (p) {
+        return '<span><i style="background:' + p.color + '"></i>' + esc(p.value) + " " + esc(p.label) + "</span>";
+      }).join("") + "</div>";
+  }
+
+  /** Which panels get a chart in place of their stat strip. A panel not
+      listed here (every module panel, for one) renders exactly as before --
+      this is an addition to two built-ins, not a new payload contract. */
+  const PANEL_CHART = {
+    storage: function (data) {
+      const s = statBy(data, "hp_fullest");
+      if (!s) return "";
+      // WHICH volume is the fullest is the half of this answer the caption
+      // used to leave out. Derived from the items the payload already
+      // carries (one per volume, each with its own percent), so the server
+      // needs no extra field for it.
+      const worst = (data.items || []).reduce(function (best, it) {
+        return (best && Number(best.percent) >= Number(it.percent)) ? best : it;
+      }, null);
+      const caption = text("hp_fullest", s.label) +
+        (worst && worst.title ? ": " + worst.title : "");
+      return '<div class="hp-chart">' +
+        donut(parseInt(s.value, 10), s.tone, caption) + "</div>";
+    },
+    queue: function (data) {
+      const running = statNum(data, "hp_running");
+      const waiting = statNum(data, "hp_waiting");
+      const failed = statNum(data, "hp_failed");
+      const paused = statBy(data, "hp_paused");
+      if (!running && !waiting && !failed) return "";
+      const bar = stackedBar([
+        { value: running, label: text("hp_running", ""), color: "var(--accent)" },
+        { value: waiting, label: text("hp_waiting", ""), color: "var(--text-muted)" },
+        { value: failed, label: text("hp_failed", ""), color: "var(--error)" },
+      ]);
+      // "Is the queue running?" is a state, not a share -- it stays a word,
+      // next to the bar rather than inside it.
+      const state = paused
+        ? '<span class="hp-state' + (paused.tone ? " is-" + esc(paused.tone) : "") + '">' +
+          esc(text(paused.label_key, paused.label)) + ": " +
+          esc(text(paused.value_key, paused.value)) + "</span>"
+        : "";
+      return '<div class="hp-chart is-wide">' + bar + state + "</div>";
+    },
+  };
+
   function panelBody(data, cardId) {
     if (data.error) {
       return { body: '<div class="hp-error">' + esc(HT("panel_unavailable")) + '</div>', foot: "" };
     }
     let html = "";
-    if ((data.stats || []).length) {
+    const chart = PANEL_CHART[data.id] ? PANEL_CHART[data.id](data) : "";
+    // A charted panel drops its stat strip: the chart's own legend already
+    // carries every figure that was in it, and showing both is the same
+    // number twice.
+    if (chart) {
+      html += chart;
+    } else if ((data.stats || []).length) {
       html += '<div class="hp-stats">' + data.stats.map(function (s) {
         return '<div class="hp-stat' + (s.tone ? " is-" + esc(s.tone) : "") + '">' +
           '<span class="hp-stat-value">' + esc(text(s.value_key, s.value)) + '</span>' +
@@ -888,7 +609,7 @@
   // ------------------------------------------------------------- feed cards
   //
   // Gaps, sources and today's calendar come from what home_feed.js already
-  // fetched. They are cards on the same grid but not panels: nothing on the
+  // fetched. They are cards like any other but not panels: nothing on the
   // server renders them, so they cannot go through /api/home-panels/all.
 
   function pill(label, tone) {
@@ -903,7 +624,7 @@
     if (!gaps.length) {
       // Nothing missing is worth saying once, not worth a card every visit.
       const old = document.getElementById("dashCard-" + id);
-      if (old) { old.remove(); forgetCard(id); reflowAll(); }
+      if (old) { old.remove(); syncDashEmpty(); }
       return;
     }
     const total = gaps.reduce(function (sum, g) {
@@ -951,6 +672,12 @@
       return;
     }
     const up = list.filter(function (s) { return !s.error; }).length;
+    // One dot per source, before the list: a single red dot among green ones
+    // is findable at a glance, six "online" pills are not.
+    const dots = '<div class="dash-src-dots">' + list.map(function (s) {
+      return '<span class="dash-src-dot' + (s.error ? " is-down" : "") + '" title="' +
+        esc(s.label || s.id) + '"></span>';
+    }).join("") + "</div>";
     const rows = list.map(function (s) {
       const down = !!s.error;
       return '<div class="dash-src"><span>' + esc(s.label || s.id) + '</span>' +
@@ -960,7 +687,7 @@
          head(HT("sources"),
               HT("dash_sources_online").replace("{}", String(up)).replace("{}", String(list.length)),
               OWN_ICONS.sources),
-         '<div class="dash-srcs">' + rows + '</div>');
+         dots + '<div class="dash-srcs">' + rows + '</div>');
   }
 
   function renderUpcoming(overrideId) {
@@ -995,7 +722,7 @@
   // ------------------------------------------------------ personal lists
   //
   // Continue watching / watchlist / new in the library. These used to be
-  // poster RAILS under the grid (home_feed.js renderPersonal), which meant
+  // poster RAILS below (home_feed.js renderPersonal), which meant
   // half a screen of artwork for three short lists. As cards they are the
   // same row shape the gaps card already uses: thumbnail, title, sub-line,
   // and one button on the right.
@@ -1019,7 +746,7 @@
 
   function dropCard_(id) {
     const old = document.getElementById("dashCard-" + id);
-    if (old) { old.remove(); forgetCard(id); reflowAll(); }
+    if (old) { old.remove(); syncDashEmpty(); }
   }
 
   function renderContinue(overrideId) {
@@ -1073,15 +800,13 @@
     if (isHidden(id)) return;
     const list = feedPersonal.watchlist || [];
     if (!list.length) { dropCard_(id); return; }
-    // Sections mode: pagedRows(id, rows) with no maxTotal pages the whole
-    // list 5 at a time instead of the old fixed 8-item cap. The free grid
-    // (SECTIONS_MODE false) still caps at 8 -- pagedRows() is a no-op there.
+    // No maxTotal: the whole list, paged 5 at a time.
     const rows = list.map(function (it) {
       return listRow(it, it.provider || "", null,
         '<button type="button" class="dash-btn" data-open-series="' +
         esc(it.url || "") + '">' + esc(HT("dash_open")) + '</button>');
     });
-    const paged = pagedRows(id, SECTIONS_MODE ? rows : rows.slice(0, 8));
+    const paged = pagedRows(id, rows);
     card(id,
          head(HT("your_watchlist"), "", OWN_ICONS.watchlist,
               { href: "/favourites", label: HT("dash_open_list") }),
@@ -1093,7 +818,7 @@
     if (isHidden(id)) return;
     const list = feedPersonal.library || [];
     if (!list.length) { dropCard_(id); return; }
-    const rows = (SECTIONS_MODE ? list : list.slice(0, 8)).map(function (it) {
+    const rows = list.map(function (it) {
       const sub = it.is_movie ? HT("movie")
         : (it.episodes || 0) + " " + HT("episodes_short");
       return listRow(it, sub, null,
@@ -1172,92 +897,88 @@
   }
 
   // ------------------------------------------------------------ interaction
-  // Delegated on the grid (and the sections root, when that layout is
-  // active) so it survives every re-render of every card.
-  [grid, sectionsRoot].filter(Boolean).forEach(function (col) {
-    col.addEventListener("click", function (ev) {
-      const el = ev.target.closest(
-        "[data-action],[data-gap-search],[data-gap-ignore],[data-play],[data-open-series]," +
-        "[data-page-dir],.dash-close");
-      if (!el) return;
-      if (el.hasAttribute("data-page-dir")) {
-        const pagerEl = el.closest("[data-pager]");
-        if (!pagerEl) return;
-        const cardId = pagerEl.dataset.pager;
-        _pageState[cardId] = Math.max(0, (_pageState[cardId] || 0) + parseInt(el.dataset.pageDir, 10));
-        rerenderCard(cardId);
-        return;
-      }
-      if (el.classList.contains("dash-close")) {
-        // Removing/adding is an arrangement choice, same as drag/resize --
-        // a locked board leaves the "x" as a dead-looking control rather
-        // than acting on a click, same treatment the grip/resize get.
-        if (isLocked()) return;
-        const cardEl = el.closest("[data-card]");
-        if (!cardEl) return;
-        ev.preventDefault();
-        const id = cardEl.dataset.card;
-        if (cardEl.dataset.widgetKind === "thirdparty-template") {
-          // Opaque, server-rendered, page-load-only Jinja markup -- there is
-          // nothing to reconstruct it from without a full page reload, so
-          // "closing" it only ever toggles visibility, never DOM-removes it
-          // (contrast with the JSON-driven panel/feed cards below, which are
-          // fully re-renderable from cached data). See addWidget()'s
-          // matching branch and the startup soft-hide pass above.
-          cardEl.style.display = "none";
-          cardEl.dataset.dashHidden = "1";
-          forgetCard(id);
-          HIDDEN.add(id);
-          saveHidden();
-          compactAll();
-          reflowAll();
-          return;
-        }
-        cardEl.remove();
-        forgetCard(id);
-        if (id.indexOf(".") === -1) {
-          // A base id must not just vanish once -- see isHidden()'s callers.
-          // An extra instance ("id.2") is never auto-recreated by a poll/
-          // load in the first place, so it needs no suppression.
-          HIDDEN.add(id);
-          saveHidden();
-        }
-        reflowAll();
-        return;
-      }
-      if (el.hasAttribute("data-play")) {
-        // Local playback: the same call the poster row made.
-        const it = (feedPersonal["continue"] || [])[parseInt(el.dataset.play, 10)];
-        if (!it) return;
-        if (typeof window.openPlayer === "function") {
-          window.openPlayer(it.path, it.title, it.position || 0);
-        } else if (typeof window.showToast === "function") {
-          window.showToast(HT("player_loading"));
-        }
-        return;
-      }
-      if (el.hasAttribute("data-open-series")) {
-        if (typeof window.openSeries === "function") {
-          window.openSeries(el.getAttribute("data-open-series"));
-        }
-        return;
-      }
-      if (el.hasAttribute("data-action")) {
-        const fn = ACTIONS[el.getAttribute("data-action")];
-        if (fn) { ev.preventDefault(); fn(); }
-        return;
-      }
+  // Delegated on the sections root, not on each card: a card's content is
+  // replaced wholesale on every refresh, a listener bound to it would not
+  // survive that.
+  colsRoot.addEventListener("click", function (ev) {
+    const el = ev.target.closest(
+      "[data-action],[data-gap-search],[data-gap-ignore],[data-play],[data-open-series]," +
+      "[data-page-dir],.dash-close");
+    if (!el) return;
+    if (el.hasAttribute("data-page-dir")) {
+      const pagerEl = el.closest("[data-pager]");
+      if (!pagerEl) return;
+      const cardId = pagerEl.dataset.pager;
+      _pageState[cardId] = Math.max(0, (_pageState[cardId] || 0) + parseInt(el.dataset.pageDir, 10));
+      rerenderCard(cardId);
+      return;
+    }
+    if (el.classList.contains("dash-close")) {
+      // Removing/adding is an arrangement choice, same as drag/resize --
+      // a locked board leaves the "x" as a dead-looking control rather
+      // than acting on a click, same treatment the grip/resize get.
+      if (isLocked()) return;
+      const cardEl = el.closest("[data-card]");
+      if (!cardEl) return;
       ev.preventDefault();
-      if (el.hasAttribute("data-gap-search")) {
-        // Hand the title to the ordinary search: it is the one place that
-        // knows which of the enabled sources actually has this series.
-        const input = document.getElementById("searchInput");
-        if (input) input.value = el.getAttribute("data-gap-search");
-        if (typeof window.doSearch === "function") window.doSearch();
+      const id = cardEl.dataset.card;
+      if (cardEl.dataset.widgetKind === "thirdparty-template") {
+        // Opaque, server-rendered, page-load-only Jinja markup -- there is
+        // nothing to reconstruct it from without a full page reload, so
+        // "closing" it only ever toggles visibility, never DOM-removes it
+        // (contrast with the JSON-driven panel/feed cards below, which are
+        // fully re-renderable from cached data). See addWidget()'s
+        // matching branch and the startup soft-hide pass above.
+        cardEl.style.display = "none";
+        cardEl.dataset.dashHidden = "1";
+        HIDDEN.add(id);
+        saveHidden();
+        syncDashEmpty();
         return;
       }
-      ignoreGap(el);
-    });
+      cardEl.remove();
+      if (id.indexOf(".") === -1) {
+        // A base id must not just vanish once -- see isHidden()'s callers.
+        // An extra instance ("id.2") is never auto-recreated by a poll/
+        // load in the first place, so it needs no suppression.
+        HIDDEN.add(id);
+        saveHidden();
+      }
+      syncDashEmpty();
+      return;
+    }
+    if (el.hasAttribute("data-play")) {
+      // Local playback: the same call the poster row made.
+      const it = (feedPersonal["continue"] || [])[parseInt(el.dataset.play, 10)];
+      if (!it) return;
+      if (typeof window.openPlayer === "function") {
+        window.openPlayer(it.path, it.title, it.position || 0);
+      } else if (typeof window.showToast === "function") {
+        window.showToast(HT("player_loading"));
+      }
+      return;
+    }
+    if (el.hasAttribute("data-open-series")) {
+      if (typeof window.openSeries === "function") {
+        window.openSeries(el.getAttribute("data-open-series"));
+      }
+      return;
+    }
+    if (el.hasAttribute("data-action")) {
+      const fn = ACTIONS[el.getAttribute("data-action")];
+      if (fn) { ev.preventDefault(); fn(); }
+      return;
+    }
+    ev.preventDefault();
+    if (el.hasAttribute("data-gap-search")) {
+      // Hand the title to the ordinary search: it is the one place that
+      // knows which of the enabled sources actually has this series.
+      const input = document.getElementById("searchInput");
+      if (input) input.value = el.getAttribute("data-gap-search");
+      if (typeof window.doSearch === "function") window.doSearch();
+      return;
+    }
+    ignoreGap(el);
   });
 
   /** "Not interested in this one." Writes the same media_ignored entry the
@@ -1290,244 +1011,11 @@
     });
   }
 
-  // --------------------------------------------------------- arrange mode
-  //
-  // Pointer Events, not HTML5 drag-and-drop: dnd never fires on touch at
-  // all (which is why the previous version needed a whole separate menu for
-  // touch users) and has no notion of "how far did the pointer move", which
-  // resize needs regardless. Pointer Events unify mouse/touch/pen, so one
-  // pair of handlers below covers move AND resize on every input type.
-  //
-  // Desktop/tablet only: gated on window.innerWidth at the moment of every
-  // pointerdown (rechecked live, not cached, since the window can resize) --
-  // the mobile grid is order-only flex, where dragging or resizing a card
-  // means nothing.
-  const DESKTOP_MIN = 900;
-  const MAX_Y = 400;
-  // Below this many pixels of total pointer movement, a grip pointerdown ->
-  // pointerup is treated as a CLICK, not a drag -- see endDrag()'s dragMove
-  // branch. Generous enough that a real drag is never mistaken for a click,
-  // small enough that an actual click never nudges the card first.
-  const CARRY_CLICK_THRESHOLD = 6;
-
-  let dragMove = null;
-  let dragResize = null;
-  // Click-to-carry state (see startCarry()/commitCarry() below): a card
-  // picked up by a plain click on its grip, following the pointer with
-  // nothing held down, until the next click drops it. Mutually exclusive
-  // with dragMove/dragResize -- only ever one gesture live at a time.
-  let carry = null;
-
+  // Locking (below) is the only remaining arrangement gate: it flips the
+  // draggable attribute on cards and section headers.
   function isLocked() {
-    return grid.classList.contains("is-dash-locked") ||
-      (!!sectionsRoot && sectionsRoot.classList.contains("is-dash-locked"));
+    return colsRoot.classList.contains("is-dash-locked");
   }
-
-  /** Shared by every "a card just landed at x,y" path -- a real drag-end, a
-      carry commit, and (indirectly, via the same shape) the Arrow-key nudge
-      below. One place resolves the drop-point collision, settles the board
-      and persists it, so drag and carry cannot drift out of step with each
-      other's commit behaviour. */
-  function commitMove(id, x, y, w, h) {
-    layout[id] = { x: x, y: y, w: w, h: h };
-    // Push whatever the drop point now overlaps out of the way first (the
-    // spot the user chose wins), then let every card -- including the one
-    // just dropped -- settle upward into any gap that leaves. See
-    // compactAll()'s own comment for why that settle can only move things
-    // up, never sideways or down.
-    resolveCollisions(id);
-    compactAll();
-    reflowAll();
-    saveLayout();
-  }
-
-  /** Pointermove handler while a card is being carried -- registered on
-      `document`, not `grid`, since the cursor can leave the grid's bounds
-      while carrying (see startCarry()). Keeps the same cursor-to-corner
-      offset recorded at pickup, same rounding-to-grid-unit conversion the
-      live drag preview above uses. */
-  function onCarryMove(ev) {
-    if (!carry) return;
-    const gridRect = grid.getBoundingClientRect();
-    const leftPx = ev.clientX - gridRect.left - carry.offsetX;
-    const topPx = ev.clientY - gridRect.top - carry.offsetY;
-    const nx = clamp(Math.round(leftPx / (colWidth + GAP)), 0, COLS - carry.w);
-    const ny = clamp(Math.round(topPx / (ROW_H + GAP)), 0, MAX_Y);
-    carry.liveX = nx;
-    carry.liveY = ny;
-    carry.el.style.left = pxX(nx) + "px";
-    carry.el.style.top = pxY(ny) + "px";
-  }
-
-  /** Escape cancels a carry without moving the card -- the only way to
-      abandon one without dropping it wherever the next click happens to
-      land. */
-  function onCarryKeydown(ev) {
-    if (ev.key !== "Escape" || !carry) return;
-    const c = carry;
-    carry = null;
-    document.removeEventListener("pointermove", onCarryMove);
-    document.removeEventListener("keydown", onCarryKeydown);
-    c.el.classList.remove("is-carrying");
-    c.el.style.left = pxX(c.origX) + "px";
-    c.el.style.top = pxY(c.origY) + "px";
-    // The click that follows (if any) was already scheduled to commit the
-    // carry -- commitCarry()'s own `if (!carry) return` guard makes that a
-    // silent no-op now, so there is nothing else to unregister here.
-  }
-
-  /** Commits the card at its current carried position -- called by the
-      next click anywhere in the document after startCarry(). */
-  function commitCarry() {
-    if (!carry) return;
-    const c = carry;
-    carry = null;
-    document.removeEventListener("pointermove", onCarryMove);
-    document.removeEventListener("keydown", onCarryKeydown);
-    c.el.classList.remove("is-carrying");
-    commitMove(c.id, c.liveX != null ? c.liveX : c.origX, c.liveY != null ? c.liveY : c.origY, c.w, c.h);
-  }
-
-  /** Enters carry mode for the card a grip click (not drag) just targeted.
-      `d` is the dragMove record endDrag() decided was really a click; `ev`
-      is that same pointerup event, used only for its clientX/Y to compute
-      the pickup offset. */
-  function startCarry(d, ev) {
-    const rect = d.el.getBoundingClientRect();
-    carry = {
-      id: d.id, el: d.el, w: d.w, h: d.h,
-      origX: d.x, origY: d.y,
-      // Cursor-to-corner offset at pickup, kept for the whole carry so the
-      // card does not jump to have the cursor at its corner.
-      offsetX: ev.clientX - rect.left,
-      offsetY: ev.clientY - rect.top,
-    };
-    d.el.classList.add("is-carrying");
-    document.addEventListener("pointermove", onCarryMove);
-    document.addEventListener("keydown", onCarryKeydown);
-    // Registered next tick, not synchronously: the click event that is
-    // still in flight from this very pointerup/click gesture would
-    // otherwise be caught immediately and drop the card right back where
-    // it was picked up.
-    setTimeout(function () {
-      document.addEventListener("click", commitCarry, { once: true });
-    }, 0);
-  }
-
-  grid.addEventListener("pointerdown", function (ev) {
-    if (window.innerWidth <= DESKTOP_MIN || isLocked()) return;
-    const grip = ev.target.closest(".dash-grip");
-    if (grip) {
-      const cardEl = grip.closest("[data-card]");
-      if (!cardEl) return;
-      const id = cardEl.dataset.card;
-      const p = place(id);
-      dragMove = {
-        id: id, el: cardEl, startClientX: ev.clientX, startClientY: ev.clientY,
-        w: p.w, h: p.h, x: p.x, y: p.y,
-      };
-      cardEl.classList.add("is-interacting");
-      try { grip.setPointerCapture(ev.pointerId); } catch (e) { /* fine without capture */ }
-      ev.preventDefault();
-      return;
-    }
-    const handle = ev.target.closest(".dash-resize");
-    if (handle) {
-      const cardEl = handle.closest("[data-card]");
-      if (!cardEl) return;
-      const id = cardEl.dataset.card;
-      const p = place(id);
-      dragResize = {
-        id: id, el: cardEl, startClientX: ev.clientX, startClientY: ev.clientY,
-        x: p.x, y: p.y, w: p.w, h: p.h,
-      };
-      cardEl.classList.add("is-interacting");
-      try { handle.setPointerCapture(ev.pointerId); } catch (e) { /* fine without capture */ }
-      ev.preventDefault();
-    }
-  });
-
-  grid.addEventListener("pointermove", function (ev) {
-    // No collision resolution during a live drag -- only on release, so the
-    // preview does not itself jump other cards around mid-gesture.
-    if (dragMove) {
-      const dx = ev.clientX - dragMove.startClientX;
-      const dy = ev.clientY - dragMove.startClientY;
-      const nx = clamp(Math.round((pxX(dragMove.x) + dx) / (colWidth + GAP)), 0, COLS - dragMove.w);
-      const ny = clamp(Math.round((pxY(dragMove.y) + dy) / (ROW_H + GAP)), 0, MAX_Y);
-      dragMove.liveX = nx;
-      dragMove.liveY = ny;
-      dragMove.el.style.left = pxX(nx) + "px";
-      dragMove.el.style.top = pxY(ny) + "px";
-    } else if (dragResize) {
-      // pxW(w) = w*(colWidth+GAP) - GAP, so w = (pxW(w) + GAP) / (colWidth+GAP)
-      // exactly -- same identity for pxH/ROW_H -- no fudge factor needed.
-      const dx = ev.clientX - dragResize.startClientX;
-      const dy = ev.clientY - dragResize.startClientY;
-      const nw = clamp(Math.round((pxW(dragResize.w) + dx + GAP) / (colWidth + GAP)), 2, COLS - dragResize.x);
-      const nh = clamp(Math.round((pxH(dragResize.h) + dy + GAP) / (ROW_H + GAP)), 3, 80);
-      dragResize.liveW = nw;
-      dragResize.liveH = nh;
-      dragResize.el.style.width = pxW(nw) + "px";
-      dragResize.el.style.height = pxH(nh) + "px";
-    }
-  });
-
-  function endDrag(ev) {
-    if (dragMove) {
-      const d = dragMove;
-      dragMove = null;
-      d.el.classList.remove("is-interacting");
-      try { ev.target.releasePointerCapture(ev.pointerId); } catch (e) { /* already released */ }
-      const dist = Math.hypot(ev.clientX - d.startClientX, ev.clientY - d.startClientY);
-      if (dist < CARRY_CLICK_THRESHOLD) {
-        // Effectively no drag happened -- treat this as the "pick up" half
-        // of click-to-carry instead of committing a (non-)move. See
-        // startCarry()'s own comment.
-        startCarry(d, ev);
-        return;
-      }
-      commitMove(d.id, d.liveX != null ? d.liveX : d.x, d.liveY != null ? d.liveY : d.y, d.w, d.h);
-    } else if (dragResize) {
-      const d = dragResize;
-      dragResize = null;
-      d.el.classList.remove("is-interacting");
-      try { ev.target.releasePointerCapture(ev.pointerId); } catch (e) { /* already released */ }
-      commitMove(d.id, d.x, d.y, d.liveW != null ? d.liveW : d.w, d.liveH != null ? d.liveH : d.h);
-    }
-  }
-  grid.addEventListener("pointerup", endDrag);
-  grid.addEventListener("pointercancel", endDrag);
-
-  /** Keyboard route for both handles -- Arrow keys, one keypress = one
-      committed nudge (no separate "drag mode" to toggle first). Replaces
-      the old per-card menu's "move up/down"/width/height entries. */
-  grid.addEventListener("keydown", function (ev) {
-    if (window.innerWidth <= DESKTOP_MIN || isLocked()) return;
-    const grip = ev.target.closest(".dash-grip");
-    const handle = ev.target.closest(".dash-resize");
-    if (!grip && !handle) return;
-    let dx = 0, dy = 0;
-    if (ev.key === "ArrowLeft") dx = -1;
-    else if (ev.key === "ArrowRight") dx = 1;
-    else if (ev.key === "ArrowUp") dy = -1;
-    else if (ev.key === "ArrowDown") dy = 1;
-    else return;
-    const cardEl = (grip || handle).closest("[data-card]");
-    if (!cardEl) return;
-    const id = cardEl.dataset.card;
-    const p = place(id);
-    ev.preventDefault();
-    if (grip) {
-      layout[id] = { x: clamp(p.x + dx, 0, COLS - p.w), y: clamp(p.y + dy, 0, MAX_Y), w: p.w, h: p.h };
-    } else {
-      layout[id] = { x: p.x, y: p.y, w: clamp(p.w + dx, 2, COLS - p.x), h: clamp(p.h + dy, 3, 80) };
-    }
-    resolveCollisions(id);
-    compactAll();
-    reflowAll();
-    saveLayout();
-  });
 
   // ----------------------------------------------------------- locking
   //
@@ -1538,15 +1026,13 @@
   let locked = PREFS[LOCK_PREF] === "1";
 
   function applyLockUI() {
-    grid.classList.toggle("is-dash-locked", locked);
-    if (sectionsRoot) {
-      sectionsRoot.classList.toggle("is-dash-locked", locked);
-      // Cards and section headers use the browser's native drag-and-drop
-      // (see renderSectionSlot() and the sectionsRoot drag handlers below),
-      // which has no pointer-handler gate to short-circuit the way the free
-      // grid's drag/resize do -- the draggable attribute itself is the gate.
-      sectionsRoot.querySelectorAll(".dash-card-flow").forEach(function (el) { el.draggable = !locked; });
-      sectionsRoot.querySelectorAll(".dash-section-head").forEach(function (el) { el.draggable = !locked; });
+    if (colsRoot) {
+      colsRoot.classList.toggle("is-dash-locked", locked);
+      // Cards use the browser's native drag-and-drop (see renderOneCard()
+      // and the colsRoot drag handlers below), which has nothing to
+      // short-circuit the way a pointer handler would -- the draggable
+      // attribute itself IS the gate.
+      colsRoot.querySelectorAll(".dash-card-flow").forEach(function (el) { el.draggable = !locked; });
     }
     const btn = document.getElementById("dashLockBtn");
     if (btn) {
@@ -1591,11 +1077,10 @@
     newlib: { title: function () { return HT("new_in_library"); }, icon: OWN_ICONS.newlib, render: renderNewLibrary },
   };
 
-  /** Whether the Add menu may offer more than one card of `typeId`. Checked
-      the same way for a built-in (PLACE table) and a module panel (its
-      cached payload's `multi` field) -- see PLACE's own comment. */
+  /** Whether the Add menu may offer more than one card of `typeId` -- a
+      module panel's own `multi` field. No built-in sets it: every one of
+      them shows instance-wide state, so a second copy would be a duplicate. */
   function isMulti(typeId) {
-    if (PLACE[typeId] && PLACE[typeId].multi) return true;
     const cached = PANEL_DATA_CACHE[typeId];
     return !!(cached && cached.multi);
   }
@@ -1654,14 +1139,12 @@
     const thirdEl = document.getElementById("dashCard-" + typeId);
     if (thirdEl && thirdEl.dataset.widgetKind === "thirdparty-template") {
       // Un-hide only -- content is server-rendered once at page load and
-      // never re-rendered from here. placeNewCard() (called from inside
-      // reflowAll() -> applyPos() -> place()) picks a fresh slot since this
-      // card has no stored layout entry, exactly like a brand-new card.
+      // never re-rendered from here.
       thirdEl.style.display = "";
       delete thirdEl.dataset.dashHidden;
       HIDDEN.delete(typeId);
       saveHidden();
-      reflowAll();
+      syncDashEmpty();
       return;
     }
     if (isMulti(typeId)) {
@@ -1694,7 +1177,7 @@
   }
 
   function openAddMenu() {
-    if (!addWrap || !addMenu || window.innerWidth <= DESKTOP_MIN || locked) return;
+    if (!addWrap || !addMenu || locked) return;
     const entries = addMenuEntries();
     addMenu.innerHTML = entries.length
       ? entries.map(function (e) {
@@ -1745,192 +1228,109 @@
 
   applyLockUI();
 
-  // --------------------------------------------------- dashboard sections
+  // ---------------------------------------------------- column arrangement
   //
-  // Order (drag the header) and collapsed/expanded (click the header) for
-  // the four fixed sections in this layout. Order is an account preference
-  // (home_dash_section_order) -- same reasoning as every other arrangement
-  // choice on this page. Collapsed state is a plain localStorage flag, the
-  // same convention templates/extensions.html's collapsible groups use
-  // elsewhere in this app: a view state for THIS screen, not a preference
-  // worth syncing to another device.
-  if (sectionsRoot) {
-    // SECTION_IDS is the top-level const (see FULL_WIDTH_SECTION_CARDS'
-    // neighbour above) -- shared with sectionIdFor()/cardLayout() rather
-    // than redeclared here.
-    const COLLAPSE_KEY_PREFIX = "mf-dash-section-collapsed-";
+  // One drag gesture does everything the layout can express: pick a card up
+  // anywhere on it, drop it at another position in its own column or in a
+  // different column. Native HTML5 drag-and-drop, delegated on colsRoot (one
+  // listener set, not one per card) so it keeps working for cards created
+  // later by a poll or by the Add-widget menu.
+  //
+  // A dedicated marker element shows where the card would land, rather than
+  // moving the card itself on every pointer move: a heavy card would
+  // otherwise relayout its whole column continuously while dragging.
 
-    function applySectionOrder() {
-      const raw = String(PREFS.home_dash_section_order || "");
-      const order = raw.split(",").filter(function (id) { return SECTION_IDS.indexOf(id) !== -1; });
-      // Missing ids (a fresh account, or one saved before a section existed)
-      // keep the built-in order, appended after the ones named.
-      SECTION_IDS.forEach(function (id) { if (order.indexOf(id) === -1) order.push(id); });
-      order.forEach(function (id) {
-        const el = sectionsRoot.querySelector('.dash-section[data-section="' + id + '"]');
-        if (el) sectionsRoot.appendChild(el);
-      });
+  /** Server-rendered module widget cards (index.html puts them in the middle
+      column) move to their saved column once, before anything else is
+      rendered -- otherwise a module widget the account dragged elsewhere
+      would jump on every page load. */
+  colsRoot.querySelectorAll('.dash-card[data-widget-kind="thirdparty-template"]').forEach(function (el) {
+    const target = colEl(colFor(el.dataset.card));
+    if (target && el.parentElement !== target) target.insertBefore(el, colInsertRef(target, el.dataset.card));
+  });
+
+  let draggingCard = null;
+  let dragMarker = null;
+
+  /** The card the marker goes BEFORE, or null to append. A column is a
+      single vertical stack, so the cursor's Y against each card's vertical
+      midpoint is the whole answer. */
+  function markerRefFor(col, y) {
+    const siblings = Array.prototype.filter.call(
+      col.querySelectorAll(".dash-card-flow[data-card]"),
+      function (el) { return el !== draggingCard; }
+    );
+    for (let i = 0; i < siblings.length; i++) {
+      const rect = siblings[i].getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) return siblings[i];
     }
-
-    function saveSectionOrder() {
-      const order = Array.prototype.map.call(
-        sectionsRoot.querySelectorAll(".dash-section[data-section]"),
-        function (el) { return el.dataset.section; });
-      if (typeof window.mfSaveUserPref === "function") {
-        window.mfSaveUserPref({ home_dash_section_order: order.join(",") });
-      }
-    }
-
-    function applyCollapsed() {
-      sectionsRoot.querySelectorAll(".dash-section[data-section]").forEach(function (secEl) {
-        let collapsed = false;
-        try { collapsed = localStorage.getItem(COLLAPSE_KEY_PREFIX + secEl.dataset.section) === "1"; }
-        catch (e) { /* private mode */ }
-        secEl.classList.toggle("is-collapsed", collapsed);
-        const head = secEl.querySelector(".dash-section-head");
-        if (head) head.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      });
-    }
-
-    applySectionOrder();
-    applyCollapsed();
-    refreshSectionStates();
-
-    sectionsRoot.addEventListener("click", function (ev) {
-      const head = ev.target.closest(".dash-section-head");
-      if (!head) return;
-      const secEl = head.closest(".dash-section");
-      if (!secEl) return;
-      const collapsed = secEl.classList.toggle("is-collapsed");
-      head.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      try { localStorage.setItem(COLLAPSE_KEY_PREFIX + secEl.dataset.section, collapsed ? "1" : "0"); }
-      catch (e) { /* private mode */ }
-    });
-
-    // Drag-and-drop reorder: the same minimal pattern static/start_page.js
-    // uses for its row list -- four items, no library needed.
-    let draggingHead = null;
-    sectionsRoot.querySelectorAll(".dash-section-head").forEach(function (head) {
-      head.addEventListener("dragstart", function (ev) {
-        draggingHead = head;
-        head.classList.add("dragging");
-        try { ev.dataTransfer.effectAllowed = "move"; } catch (e) { /* older browsers */ }
-      });
-      head.addEventListener("dragend", function () {
-        draggingHead = null;
-        head.classList.remove("dragging");
-        sectionsRoot.querySelectorAll(".dash-section.drag-over")
-          .forEach(function (el) { el.classList.remove("drag-over"); });
-      });
-      head.addEventListener("dragover", function (ev) {
-        ev.preventDefault();
-        const secEl = head.closest(".dash-section");
-        if (draggingHead && draggingHead !== head && secEl) secEl.classList.add("drag-over");
-      });
-      head.addEventListener("dragleave", function () {
-        const secEl = head.closest(".dash-section");
-        if (secEl) secEl.classList.remove("drag-over");
-      });
-      head.addEventListener("drop", function (ev) {
-        ev.preventDefault();
-        const targetSec = head.closest(".dash-section");
-        if (targetSec) targetSec.classList.remove("drag-over");
-        if (!draggingHead || draggingHead === head) return;
-        const fromSec = draggingHead.closest(".dash-section");
-        if (!fromSec || !targetSec || fromSec === targetSec) return;
-        sectionsRoot.insertBefore(fromSec, targetSec);
-        saveSectionOrder();
-      });
-    });
-
-    // Card drag: reorder WITHIN a section only -- cards cannot be moved to
-    // a different section (that's a fixed grouping, not a layout choice).
-    // Delegated on sectionsRoot (one listener set, not one per card) so it
-    // keeps working for cards created later by a poll/Add-widget -- unlike
-    // the section headers above, which are fixed markup rendered once by
-    // Jinja. Namespaced by element type (.dash-card-flow vs
-    // .dash-section-head) so it never collides with the section-order drag.
-    let draggingCard = null;
-    let draggingCardHome = null;
-    let dragMarker = null;
-
-    // Where the card would land if dropped now. The section body is a CSS
-    // grid (auto-fill, several cards per row) rather than a single column,
-    // so this can't just compare cursor Y against each card's vertical
-    // midpoint -- that only ever produced "before" or "after" top-to-bottom
-    // and could never target a card to the left/right in the same row.
-    // Instead: find whichever card's *center point* is geometrically
-    // closest to the cursor (both X and Y), then decide before/after that
-    // one card by which half (left/right) the cursor is on -- works the
-    // same whether the move is vertical (between rows) or horizontal
-    // (within a row). A dedicated marker element (rather than moving the
-    // card itself while dragging) also means a heavy full-width card never
-    // has to relayout the grid on every pointer move.
-    function markerRefFor(body, x, y) {
-      const siblings = Array.prototype.filter.call(
-        body.querySelectorAll(".dash-card-flow[data-card]"),
-        function (el) { return el !== draggingCard; }
-      );
-      if (!siblings.length) return null;
-      let nearest = null;
-      let nearestIndex = -1;
-      let nearestDist = Infinity;
-      let insertAfter = false;
-      siblings.forEach(function (el, i) {
-        const rect = el.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2;
-        const cy = rect.top + rect.height / 2;
-        const dist = Math.hypot(x - cx, y - cy);
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearest = el;
-          nearestIndex = i;
-          insertAfter = x > cx;
-        }
-      });
-      if (!nearest) return null;
-      return insertAfter ? (siblings[nearestIndex + 1] || null) : nearest;
-    }
-    function removeMarker() {
-      if (dragMarker && dragMarker.parentElement) dragMarker.parentElement.removeChild(dragMarker);
-    }
-
-    sectionsRoot.addEventListener("dragstart", function (ev) {
-      const cardEl = ev.target.closest(".dash-card-flow");
-      if (!cardEl) return;
-      draggingCard = cardEl;
-      draggingCardHome = cardEl.closest(".dash-section-body");
-      cardEl.classList.add("dragging");
-      if (!dragMarker) {
-        dragMarker = document.createElement("div");
-        dragMarker.className = "dash-card-drop-marker";
-      }
-      try { ev.dataTransfer.effectAllowed = "move"; } catch (e) { /* older browsers */ }
-    });
-    sectionsRoot.addEventListener("dragend", function () {
-      if (draggingCard) draggingCard.classList.remove("dragging");
-      removeMarker();
-      draggingCard = null;
-      draggingCardHome = null;
-    });
-    sectionsRoot.addEventListener("dragover", function (ev) {
-      if (!draggingCard) return;
-      const body = ev.target.closest(".dash-section-body");
-      if (!body || body !== draggingCardHome) { removeMarker(); return; }
-      ev.preventDefault();
-      body.insertBefore(dragMarker, markerRefFor(body, ev.clientX, ev.clientY));
-    });
-    sectionsRoot.addEventListener("drop", function (ev) {
-      if (!draggingCard || !dragMarker || !dragMarker.parentElement) return;
-      const body = ev.target.closest(".dash-section-body");
-      if (!body || body !== draggingCardHome) return;
-      ev.preventDefault();
-      body.insertBefore(draggingCard, dragMarker);
-      removeMarker();
-      saveCardLayout();
-      refreshSectionStates();
-    });
+    return null;
   }
+
+  function removeMarker() {
+    if (dragMarker && dragMarker.parentElement) dragMarker.parentElement.removeChild(dragMarker);
+    colsRoot.querySelectorAll(".dash-col.is-drop-target")
+      .forEach(function (el) { el.classList.remove("is-drop-target"); });
+  }
+
+  colsRoot.addEventListener("dragstart", function (ev) {
+    const cardEl = ev.target.closest(".dash-card-flow");
+    if (!cardEl || isLocked()) return;
+    draggingCard = cardEl;
+    cardEl.classList.add("dragging");
+    colsRoot.classList.add("is-dragging");
+    if (!dragMarker) {
+      dragMarker = document.createElement("div");
+      dragMarker.className = "dash-card-drop-marker";
+    }
+    try { ev.dataTransfer.effectAllowed = "move"; } catch (e) { /* older browsers */ }
+  });
+
+  colsRoot.addEventListener("dragend", function () {
+    if (draggingCard) draggingCard.classList.remove("dragging");
+    removeMarker();
+    colsRoot.classList.remove("is-dragging");
+    draggingCard = null;
+  });
+
+  colsRoot.addEventListener("dragover", function (ev) {
+    if (!draggingCard) return;
+    const col = ev.target.closest(".dash-col");
+    if (!col) { removeMarker(); return; }
+    ev.preventDefault();
+    colsRoot.querySelectorAll(".dash-col.is-drop-target")
+      .forEach(function (el) { if (el !== col) el.classList.remove("is-drop-target"); });
+    col.classList.add("is-drop-target");
+    col.insertBefore(dragMarker, markerRefFor(col, ev.clientY));
+  });
+
+  colsRoot.addEventListener("drop", function (ev) {
+    if (!draggingCard || !dragMarker || !dragMarker.parentElement) return;
+    ev.preventDefault();
+    dragMarker.parentElement.insertBefore(draggingCard, dragMarker);
+    removeMarker();
+    colsRoot.classList.remove("is-dragging");
+    draggingCard.classList.remove("dragging");
+    draggingCard = null;
+    saveCardLayout();
+    syncDashEmpty();
+  });
+
+  /** The Arrange form (static/start_page.js) writes the same preference from
+      its own list; this lets it apply a column change without a reload. */
+  window.mfDashApplyCardLayout = function (value) {
+    PREFS.home_dash_card_layout = String(value || "");
+    _cardLayout = null;
+    // Snapshot first, then place: moving a card mid-query would otherwise
+    // let a card that jumped forward be visited a second time.
+    const all = Array.prototype.slice.call(colsRoot.querySelectorAll(".dash-card-flow[data-card]"));
+    all.forEach(function (el) {
+      const target = colEl(colFor(el.dataset.card));
+      if (target) target.insertBefore(el, colInsertRef(target, el.dataset.card));
+    });
+    syncDashEmpty();
+  };
+
 
   // --------------------------------------------------------- loading state
   //
@@ -1949,7 +1349,7 @@
     return '<div class="dash-loading-body"><span class="dash-loader" role="status" aria-label="' +
       esc(HT("dash_loading")) + '"></span></div>';
   }
-  Object.keys(PLACE).forEach(function (id) {
+  SKELETON_IDS.forEach(function (id) {
     if (HIDDEN.has(id)) return;
     if (document.getElementById("dashCard-" + id)) return;   // server-rendered already, e.g. a thirdparty template card
     renderOneCard(id, "", loadingBody(), "");

@@ -101,25 +101,46 @@ def _valid_dash_hidden(value: str) -> bool:
     return all(_DASH_HIDDEN_ID_RE.match(part) for part in parts)
 
 
-# Per-card placement/order override for the Dashboard sections layout: which
-# of the 4 fixed sections a card was dragged into, and where among its
-# section-mates it landed. "<card id>:<section>" pairs, comma separated, list
-# ORDER doubles as the render order within each section (see
-# static/home_panels.js's cardLayout()/saveCardLayout()). Absent = every card
-# stays in its built-in section (SECTION_OF) in its built-in order, same
-# "nothing stored yet" convention as home_dash_layout/home_dash_hidden.
-_DASH_SECTION_IDS = ("mediaforge", "system", "stats", "modules")
-_DASH_SECTION_ITEM_RE = re.compile(
-    r"^[A-Za-z0-9_.-]{1,32}:(?:%s)$" % "|".join(_DASH_SECTION_IDS))
+# Per-card placement for the Dashboard's column layout: which column a card
+# was dragged into, and where among its column-mates it landed.
+# "<card id>:<column index>" pairs, comma separated; the list ORDER doubles
+# as the render order within each column (see static/home_panels.js's
+# cardLayout()/saveCardLayout()), so one preference carries both facts.
+# Absent = every card sits in its built-in column (COLUMN_OF) in its built-in
+# order, the same "nothing stored yet" convention as home_dash_hidden.
+#
+# The column index is capped at 2 here, not at the account's current column
+# count: a card parked in column 3 must survive a temporary switch to 2
+# columns (home_panels.js folds it into the last visible one) instead of
+# being rewritten to a column the user never chose.
+_DASH_COLUMN_ITEM_RE = re.compile(r"^[A-Za-z0-9_.-]{1,32}:[0-2]$")
 
 
-def _valid_dash_section_layout(value: str) -> bool:
+def _valid_dash_card_layout(value: str) -> bool:
     if value == "":
         return True
     if len(value) > 2000:                # same cap reasoning as _valid_dash_layout
         return False
     parts = value.split(",")
     if len(parts) > 40:                  # far more cards than the board can hold
+        return False
+    return all(_DASH_COLUMN_ITEM_RE.match(part) for part in parts)
+
+
+# The old sections layout's twin of the key above ("<card id>:<section>").
+# LEGACY: nothing reads it since the Dashboard became columns. Kept accepted
+# so a client or module still writing it does not start getting 400s.
+_DASH_SECTION_ITEM_RE = re.compile(
+    r"^[A-Za-z0-9_.-]{1,32}:(?:mediaforge|system|stats|modules)$")
+
+
+def _valid_dash_section_layout(value: str) -> bool:
+    if value == "":
+        return True
+    if len(value) > 2000:
+        return False
+    parts = value.split(",")
+    if len(parts) > 40:
         return False
     return all(_DASH_SECTION_ITEM_RE.match(part) for part in parts)
 
@@ -150,26 +171,27 @@ USER_UI_PREF_KEYS = {
     # keeps following the instance default an admin set (Settings -> Start
     # Page). Empty string = "back to the default", which is why "" validates.
     "home_feed_layout": lambda v: bool(_HOME_FEED_FILTER_RE.match(v)),
-    # Dashboard card layout: which card sits where, how many of the 12 grid
-    # columns it spans, and how tall it is (row units, or auto). Per account
-    # rather than per browser for the same reason as the rest of this table --
-    # an arrangement you made once is one you expect to find again on the next
-    # device. Cards the user never moved are absent and keep their built-in
-    # place, so a new card in a later release needs no migration.
+    # LEGACY, no longer read by anything: the free-position Dashboard card
+    # grid it described was removed (see static/home_panels.js's header).
+    # Still accepted so a third-party module that writes this key through
+    # /api/user/preferences does not start getting 400s; the value is stored
+    # and ignored. Drop the key once no module in the wild sets it.
     "home_dash_layout": _valid_dash_layout,
-    # Whether the account has locked the dashboard grid against further
-    # drag/resize (grip and resize handle hidden, pointer handlers become
-    # no-ops -- see home_panels.js). Per account, like the layout itself:
-    # "I arranged it, stop me from bumping it by accident" is a choice one
-    # makes for their own view, not the whole instance's.
+    # Whether the account has locked the Dashboard against rearranging (cards
+    # and section headers stop being draggable -- see home_panels.js). Per
+    # account, like the arrangement itself: "I arranged it, stop me from
+    # bumping it by accident" is a choice one makes for their own view, not
+    # the whole instance's.
     "home_dash_locked": lambda v: v in ("", "1"),
     # Base-id cards the account closed with the card's "x" button. Per account
     # for the same reason as the layout itself: closing a card is an
     # arrangement choice, and the next poll/load must not just recreate it.
     "home_dash_hidden": _valid_dash_hidden,
-    # Sections layout only: which section a card was dragged into and where
-    # it landed among its section-mates. See _valid_dash_section_layout's own
-    # comment above for the format.
+    # Which column a card was dragged into and where it landed among its
+    # column-mates. See _valid_dash_card_layout's own comment above.
+    "home_dash_card_layout": _valid_dash_card_layout,
+    # LEGACY, no longer read: the sections layout's equivalent of the key
+    # above. Still accepted, same reasoning as home_dash_layout below.
     "home_dash_section_layout": _valid_dash_section_layout,
     # eBook reader. Reading is a per-person habit -- text size, page colour and
     # whether you page or scroll -- and someone who set it up on the desktop
@@ -277,15 +299,11 @@ USER_UI_PREF_KEYS = {
     "foryou_skipped": lambda v: v == "" or (
         len(v) <= 3000 and len(v.split(",")) <= 300
         and all(part.isdigit() for part in v.split(","))),
-    # Dashboard layout: "" (default) groups every card into four fixed,
-    # collapsible sections (MediaForge/System/Statistik/Module) with no
-    # drag/resize; "grid" keeps the free-position card grid (Beta) that used
-    # to be the only option. Per account, same reasoning as every other
-    # Dashboard/Discover choice on this list.
-    "home_dash_view": lambda v: v in ("", "grid"),
-    # Section order for the view above, e.g. "system,mediaforge,stats,modules".
-    # Missing sections keep the built-in order appended after the ones named
-    # here (see static/home_panels.js's applySectionOrder()).
+    # How many columns the Dashboard is split into. "" follows the built-in
+    # default (3); a narrow viewport collapses to fewer in CSS regardless, so
+    # this is a preference about the wide layout only.
+    "home_dash_columns": lambda v: v in ("", "2", "3"),
+    # LEGACY, no longer read: the order of the four sections that replaced.
     "home_dash_section_order": lambda v: v == "" or bool(
         re.match(r"^(mediaforge|system|stats|modules)"
                  r"(,(mediaforge|system|stats|modules)){0,3}$", v)),

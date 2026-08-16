@@ -1240,24 +1240,14 @@ a.browse-heading-src:hover { color: var(--accent); }
    (see static/home_panels.js).
    =================================================================== */
 
-/* Free-position engine (v3): position:relative is the ONLY placement rule
-   the grid itself needs -- x/y/w/h are hand-rolled absolute px, set inline
-   by static/home_panels.js (applyPos()), same technique gridstack.js uses,
-   no library. Height is set explicitly by JS on every layout pass
-   (syncGridHeight()) because absolutely positioned children do not
-   otherwise contribute to a `position: relative` parent's height. This
-   replaced a CSS Grid `dense` auto-flow attempt: `dense` recomputes EVERY
-   card's placement on any single span change, which is what made shrinking
-   one widget visibly move unrelated ones -- real pixel positions plus a
-   collision resolver that only touches overlapping cards (resolveCollisions
-   in the JS) fixes that by construction. */
-.dash-grid {
-  position: relative;
-  margin-top: 18px;
-}
-
+/* One dashboard card. It flows inside its section's auto-fill grid (see
+   .dash-col) and grows with its content -- the free-position
+   engine that used to place these absolutely (x/y/w/h in inline px, drag,
+   resize, collision resolution) was removed; see the header of
+   static/home_panels.js. `position: relative` is for .dash-close, which is
+   positioned against its own card. */
 .dash-card {
-  position: absolute;
+  position: relative;
   display: flex;
   flex-direction: column;
   padding: 16px 18px;
@@ -1266,31 +1256,13 @@ a.browse-heading-src:hover { color: var(--accent); }
   background: var(--bg-card);
   box-shadow: var(--shadow-sm);
   min-width: 0;
-  /* The card is a fixed w x h box now (free resize, see home_panels.js) --
-     content that doesn't fit must scroll inside it, never spill past its
-     edges into whatever sits underneath. */
-  overflow: hidden;
   /* Lets the @container rules below key off THIS card's own box, not the
-     viewport -- a card resized small reads as cramped and one resized large
-     reads as sparse otherwise, since every card shares the same CSS
-     regardless of the size the user actually gave it. */
-  container-type: size;
+     viewport -- a card in a narrow auto-fill column reads as cramped and a
+     full-width one as sparse otherwise, since every card shares the same
+     CSS regardless of the column it landed in. inline-size, not size: a
+     flowed card has no definite height to contain against. */
+  container-type: inline-size;
   container-name: dash-card;
-  /* The live drag/resize itself suppresses this (.is-interacting) so the
-     dragged card tracks the pointer with no lag; every OTHER card that gets
-     pushed by resolveCollisions() settles into its new spot smoothly. */
-  transition: left .15s ease, top .15s ease, width .15s ease, height .15s ease;
-}
-.dash-card.is-interacting { transition: none; }
-/* Click-to-carry (see home_panels.js): a card picked up by a click on its
-   grip follows the pointer with no drag held down. Same no-transition
-   treatment as a live drag (it must track the cursor with no lag), plus a
-   lifted look -- bigger shadow, raised above its neighbours -- so it reads
-   as "floating" rather than merely repositioned. */
-.dash-card.is-carrying {
-  transition: none;
-  z-index: 5;
-  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, .35));
 }
 
 /* Header / scrollable body / optional footer, top to bottom -- see card()'s
@@ -1367,39 +1339,13 @@ a.browse-heading-src:hover { color: var(--accent); }
   to { transform: rotate(-360deg); }
 }
 
-/* Corner resize handle: bottom-right, mouse/pointer only (hidden on phones
-   below, where the grid is order-only). A real <button> now (keyboard
-   focus + Arrow-key nudge, see home_panels.js), so the browser's default
-   button chrome is reset here. Diagonal stripes via a repeating gradient
-   rather than an icon font -- no new asset for three lines. */
-.dash-resize {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  border: 0;
-  cursor: nwse-resize;
-  border-radius: 3px;
-  opacity: 0.55;
-  background: repeating-linear-gradient(
-    135deg,
-    var(--text-muted) 0 1.5px,
-    transparent 1.5px 4px
-  );
-  touch-action: none;
-}
-.dash-resize:hover,
-.dash-resize:focus-visible { opacity: 0.95; }
-
 .dash-card-head {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
   margin: 0 0 14px;
-  /* Room for the .dash-grip AND .dash-close buttons, which both overlay the
+  /* Room for the .dash-close button, which overlays the
      header rather than sitting inside it (see home_panels.js's card()). */
   padding-right: 54px;
   font-size: 0.95rem;
@@ -1583,27 +1529,15 @@ a.browse-heading-src:hover { color: var(--accent); }
 .dash-tool:hover,
 .dash-tool:focus-visible { color: var(--accent); background: var(--bg-hover); }
 
-/* Built once by card() and never replaced by a re-render (see its comment in
-   home_panels.js) -- laid out on top of the header via absolute positioning
-   instead of sitting inside the (replaceable) heading markup, which is what
-   makes that survive a data refresh. .dash-card-head reserves room for it
-   with padding-right so the title/note text never runs underneath it. */
-.dash-grip {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  cursor: grab;
-  background: var(--bg-card);
-}
-.dash-grip:active { cursor: grabbing; }
-
-/* Same permanent-element treatment, sitting just left of the grip. Removing
-   a card is not a drag gesture, so it gets no .dash-tool hover glow beyond
-   the shared one -- just a plain "x". */
+/* Built once by renderOneCard() and never replaced by a re-render (see its
+   comment in home_panels.js) -- laid out on top of the header via absolute
+   positioning instead of sitting inside the (replaceable) heading markup,
+   which is what makes it survive a data refresh. .dash-card-head reserves
+   room for it with padding-right so the title/note never runs underneath. */
 .dash-close {
   position: absolute;
   top: 14px;
-  right: 40px;
+  right: 16px;
   background: var(--bg-card);
 }
 
@@ -1615,136 +1549,63 @@ a.browse-heading-src:hover { color: var(--accent); }
   min-width: 0;
 }
 
-/* Locked board: grip and resize handle are taken away entirely rather than
-   left as dead controls (see home_panels.js's isLocked() gate on the
-   pointer/keyboard handlers). */
-.dash-grid.is-dash-locked .dash-grip,
-.dash-grid.is-dash-locked .dash-resize,
-.dash-grid.is-dash-locked .dash-close,
-.dash-sections.is-dash-locked .dash-close { display: none; }
+/* Locked dashboard: the "x" is taken away entirely rather than left as a
+   dead control (see home_panels.js's isLocked()). */
+.dash-columns.is-dash-locked .dash-close { display: none; }
 
-/* ── Dashboard sections (new default; the free-position grid above is now
-   the opt-in "Beta" layout) ──────────────────────────────────────────────
-   #homeDashGrid still exists in this mode (home_panels.js needs a live
-   element for its ResizeObserver/pointer handlers to bind to even when it
-   never receives a card) but stays empty, so it collapses to 0 height on
-   its own and needs no override here. */
-.dash-sections {
+/* ── Dashboard columns ─────────────────────────────────────────────────
+   2 or 3 columns, rendered server-side (index.html, from the account's
+   home_dash_columns). A card picks a column and a position in it; that is
+   the entire arrangement model. The columns themselves are plain vertical
+   stacks -- a card is exactly one column wide, so nothing needs a span, a
+   full-width exception or a packing pass. */
+.dash-columns {
   margin-top: 18px;
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+.dash-columns[data-cols="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dash-columns[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.dash-col {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
-.dash-section {
-  border: 1px solid var(--border);
+/* Only while a card is in the air: an EMPTY column has to be a visible drop
+   target, and outside a drag it must not draw a box around nothing. */
+.dash-columns.is-dragging .dash-col {
+  min-height: 90px;
+  outline: 1px dashed var(--border);
+  outline-offset: 6px;
   border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  overflow: hidden;
 }
-/* No cards of its own (e.g. "Module" on an instance with nothing
-   installed) -- see home_panels.js's refreshSectionStates(). */
-.dash-section.is-empty { display: none; }
-
-.dash-section-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 14px 18px;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 0.98rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  text-align: left;
-  /* Draggable (reorder the sections) as well as clickable (collapse) --
-     grab, not pointer, says which one a hover promises. */
-  cursor: grab;
-}
-.dash-section-head:hover,
-.dash-section-head:focus-visible { color: var(--accent); }
-.dash-section-head.dragging { opacity: 0.5; }
-.dash-section.drag-over > .dash-section-head {
-  outline: 2px dashed var(--accent);
-  outline-offset: -2px;
+.dash-columns.is-dragging .dash-col.is-drop-target {
+  outline-color: var(--accent);
+  background: var(--accent-soft);
 }
 
-.dash-section-chevron {
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  transition: transform var(--transition);
-}
-.dash-section.is-collapsed .dash-section-chevron { transform: rotate(-90deg); }
-
-.dash-section-count {
-  margin-left: auto;
-  font-size: 0.78rem;
-  font-weight: 400;
-  color: var(--text-secondary);
-}
-
-.dash-section-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  padding: 0 18px 18px;
-}
-.dash-section.is-collapsed .dash-section-body { display: none; }
-
-/* A card inside a section flows with the grid above instead of being
-   absolutely positioned -- there is no resize handle in this layout, but
-   the whole card is still a native HTML5 drag source (see home_panels.js's
-   sectionsRoot drag handlers) to reorder within its section (cards cannot
-   move to another section). `position: relative` (not `static`) is
-   deliberate: .dash-close is still positioned absolute against ITS card,
-   same as in the free-grid layout. */
-.dash-card-flow {
-  position: relative;
-  width: auto;
-  height: auto;
-  cursor: grab;
-  /* .dash-card sets overflow:hidden + container-type:size for the
-     fixed-box free-grid card (a resize handle gives it a definite size to
-     contain against). A flowed card has no such box -- height:auto with
-     size containment still applied collapses it to 0, which is why a
-     section used to show only its header with the body invisible
-     underneath. Flowed cards grow with their content instead. */
-  overflow: visible;
-  container-type: normal;
-}
-.dash-card-flow .dash-card-body {
-  /* Same reasoning: flex:1/overflow-y:auto only makes sense inside a box
-     with a fixed height. Flowed, the body just grows the card. */
-  flex: none;
-  overflow: visible;
-}
+/* Every card is a native HTML5 drag source (see the colsRoot handlers in
+   home_panels.js) -- drag it to another position or another column. */
+.dash-card-flow { cursor: grab; }
 .dash-card-flow .dash-card-head { padding-right: 28px; }
-.dash-card-flow.dragging { opacity: 0.5; }
-.dash-sections.is-dash-locked .dash-card-flow { cursor: default; }
-/* A handful of cards (queue, library overview, storage, system, wrapped)
-   read better spanning the whole section than sharing the auto-fill row
-   with a 280px neighbour -- see FULL_WIDTH_SECTION_CARDS in home_panels.js. */
-.dash-card-flow.is-full-width { grid-column: 1 / -1; }
+.dash-card-flow.dragging { opacity: 0.4; }
+.dash-columns.is-dash-locked .dash-card-flow { cursor: default; }
 
-/* Drop-position marker for the card drag above -- a thin accent bar
-   inserted into the live grid at the spot the card would land, so the
-   result is visible before you let go instead of only after (and instead
-   of the drop only working when the pointer lands exactly on another
-   card). Spans the full section width regardless of which grid column it
-   would otherwise occupy, same reasoning as .is-full-width. */
+/* Where the card would land if dropped now -- visible before letting go
+   instead of only after, and without moving the (possibly heavy) card
+   itself on every pointer move. */
 .dash-card-drop-marker {
-  grid-column: 1 / -1;
   height: 3px;
   border-radius: var(--radius-sm);
   background: var(--accent);
   box-shadow: 0 0 8px 1px var(--accent-soft);
 }
 
-/* Client-side pager for a card body list, sections mode only (see
-   pagedRows() in home_panels.js) -- the free grid keeps its own
-   overflow-y:auto scroll instead. */
+/* Client-side pager for a card body list (see pagedRows() in
+   home_panels.js) -- a long list is paged, not scrolled inside the card. */
 .dash-pager {
   display: flex;
   align-items: center;
@@ -1769,12 +1630,79 @@ a.browse-heading-src:hover { color: var(--accent); }
   min-width: 3.5em;
   text-align: center;
 }
-.dash-card-flow .dash-close { right: 16px; }
 
-@media (max-width: 640px) {
-  .dash-section-body { grid-template-columns: 1fr; padding: 0 14px 14px; }
-  .dash-section-head { padding: 12px 14px; }
+/* One column below 900px, two below 1200 -- and on the narrow end the
+   .dash-col wrappers dissolve entirely (display: contents), so the cards
+   land in the grid in DOM order: column 1 top to bottom, then column 2,
+   then column 3. That is deliberately the same order the eye takes across
+   the desktop layout, and it means there is no second, mobile-only
+   arrangement to keep in step with the first. */
+@media (max-width: 1200px) {
+  .dash-columns[data-cols="3"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+@media (max-width: 900px) {
+  .dash-columns,
+  .dash-columns[data-cols="2"],
+  .dash-columns[data-cols="3"] { grid-template-columns: 1fr; }
+  .dash-col { display: contents; }
+  /* No wrapper left to outline, and nothing to drop onto: dragging is a
+     pointer affair and the stack is one column anyway. */
+  .dash-columns.is-dragging .dash-col { outline: 0; min-height: 0; }
+}
+
+/* --- charts: a share, drawn instead of counted (see PANEL_CHART in
+   static/home_panels.js). Only two built-in panels use these; everything
+   else, module panels included, still renders the stat strip below. --- */
+.hp-chart {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+.hp-chart.is-wide { display: block; }
+
+.hp-donut { display: flex; align-items: center; gap: 10px; }
+.hp-donut-cap { font-size: 0.78rem; color: var(--text-secondary); }
+
+.hp-stack {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-hover);
+}
+.hp-stack > i { display: block; height: 100%; }
+
+.hp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.hp-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.hp-legend i { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 9px; }
+
+.hp-state {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.hp-state.is-warn { color: var(--warning); }
+.hp-state.is-ok { color: var(--success); }
+
+/* One dot per source, above the list (see renderSources()). */
+.dash-src-dots { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+.dash-src-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.dash-src-dot.is-down { background: var(--error); }
 
 /* --- the stat strip at the top of a panel --- */
 .hp-stats {
@@ -1927,10 +1855,10 @@ a.hp-item:focus-visible {
 .hp-error { color: var(--error, #ff5f6d); }
 
 /* Minimal size-aware scaling, native CSS container queries -- no JS, no per-
-   card measuring. Cards all share the same markup regardless of the box the
-   user gave them (free resize, see home_panels.js), so without this a card
-   shrunk down to its minimum reads exactly as loose/spaced-out as a full-
-   width one, and one grown large reads exactly as small-print. Kept
+   card measuring. Cards all share the same markup regardless of the column
+   width they landed in (auto-fill, or full width -- see
+   FULL_WIDTH_SECTION_CARDS in home_panels.js), so without this a narrow
+   card reads exactly as loose as a full-width one. Kept
    intentionally light -- font sizes and paddings nudge by a step or two, no
    content is added or removed at any size. Placed after every base rule it
    touches (not next to .dash-card itself) so it wins the cascade without
@@ -1955,53 +1883,7 @@ a.hp-item:focus-visible {
   .hp-item-title { font-size: 0.92rem; }
 }
 
-@container dash-card (max-height: 150px) {
-  .dash-card-head { margin-bottom: 8px; }
-  .hp-stats { gap: 6px; margin-bottom: 8px; }
-  .hp-item { padding: 5px 8px; }
-  .dash-gap { padding: 6px 0; }
-  .dash-card-foot { margin-top: 6px; padding-top: 6px; }
-}
-
-/* Phones: one track, natural height, order-only. Both grid-column and
-   grid-row are inline styles now (applyPlace() in home_panels.js) so a plain
-   override here loses to them on specificity -- !important is the one
-   legitimate use of it in this file, matching the built-in
-   `!important` on the [hidden] rules above for the same reason. `order`
-   stays inline and untouched, which is what carries the desktop arrangement
-   over as the mobile stacking order (see the docstring at the top of
-   home_panels.js). */
-@media (max-width: 900px) {
-  /* Phones fall back to normal flow, order-only: `order` is always kept
-     current by applyPos() (y*1000+x), even before the user has ever dragged
-     anything, so mobile stacking always matches the desktop reading order. */
-  .dash-grid {
-    position: static;
-    height: auto !important;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  .dash-card {
-    position: static !important;
-    width: auto !important;
-    height: auto !important;
-    left: auto !important;
-    top: auto !important;
-    /* `container-type: size` needs a definite height to size against; with
-       height back to auto here it would otherwise contain the card's own
-       content out of the layout and collapse it to nothing. The @container
-       rules above simply don't match without it -- nothing else to undo. */
-    container-type: normal;
-  }
-
-  /* Resize/move are a desktop/tablet-pointer affair (also gated live in JS
-     by window.innerWidth); the phone grid is order-only. */
-  .dash-resize,
-  .dash-grip { display: none; }
-}
-
+/* Phones: tighter padding. */
 @media (max-width: 640px) {
   .dash-card { padding: 14px; }
 
@@ -2871,6 +2753,13 @@ a.hp-item:focus-visible {
 .dash-lock-btn:hover,
 .dash-lock-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
 .dash-lock-btn.is-locked { color: var(--accent); background: var(--accent-soft); }
+/* Open padlock while the board can still be rearranged, shut once it is
+   locked -- the icon shows the STATE, matching aria-pressed, not the action
+   the click would perform. Both are in the markup (index.html); swapping
+   which one is displayed costs no repaint of anything else. */
+.dash-lock-btn .dash-lock-shut,
+.dash-lock-btn.is-locked .dash-lock-open { display: none; }
+.dash-lock-btn.is-locked .dash-lock-shut { display: block; }
 body[data-home-tab-open="disc"] .dash-lock-btn { display: none; }
 
 /* "Add widget" — same button chrome as the lock toggle, plus its dropdown
@@ -3295,7 +3184,15 @@ body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
 }
 /* ── phones ──────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .home-topstrip { padding: 10px 0; }
+  .home-topstrip {
+    padding: 10px 0;
+    /* .mobile-topbar (shell.css, same 768px breakpoint) is position: fixed
+       at the very top of the viewport, so a strip stuck to top: 0 slides
+       UNDER it -- and since the tab pill is the strip's first line, the tabs
+       were exactly the part that disappeared while scrolling, leaving only
+       the second line's buttons visible. Stick below the bar instead. */
+    top: var(--topbar-height, 56px);
+  }
   .home-topstrip-inner { gap: 10px; }
   /* Dashboard/Discover gets the whole first line to itself -- flex-basis
      100% forces every sibling (search toggle, search bar, lock, add-widget)
@@ -3317,7 +3214,9 @@ body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
   .home-topstrip.is-search-open .home-search-toggle { display: none; }
 
   /* Scrolling down reclaims the strip's height for the cards below it: only
-     the tab pill stays. Height/opacity transition (not display:none) so the
+     the tab pill stays -- the "Customise this page" button included, which
+     used to be the one control left hanging on its own line.
+     Height/opacity transition (not display:none) so the
      strip shrinks instead of jumping -- same duration/easing as the rest of
      the app's --transition. Scoped to phone width only; desktop keeps the
      full strip always visible.
@@ -3327,7 +3226,8 @@ body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
      scrolled. It only fades (see below) instead of collapsing its box. */
   .home-topstrip .search-bar.home-searchbar,
   .home-topstrip .home-search-toggle,
-  .home-topstrip .dash-lock-btn {
+  .home-topstrip .dash-lock-btn,
+  .home-topstrip-inner .feed-customize {
     /* Generous cap, well above any of these elements' real content height
        (the search bar can wrap to two lines at narrow widths) -- it only
        needs to be big enough to have zero effect until scrolled-down sets
@@ -3339,7 +3239,8 @@ body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
   }
   .home-topstrip.is-scrolled-down .search-bar.home-searchbar,
   .home-topstrip.is-scrolled-down .home-search-toggle,
-  .home-topstrip.is-scrolled-down .dash-lock-btn {
+  .home-topstrip.is-scrolled-down .dash-lock-btn,
+  .home-topstrip.is-scrolled-down .home-topstrip-inner .feed-customize {
     max-height: 0;
     opacity: 0;
     pointer-events: none;
@@ -3379,7 +3280,7 @@ body[data-home-tab-open="disc"] .dash-add-wrap { display: none; }
    -------------------------------------------------------------------
    Pre-v3-grid Dashboard design: a row of buttons plus ONE panel below,
    whose content depends on the button (see static/home_panel_bar.js's own
-   docstring for why this file coexists with the current dash-grid CSS
+   docstring for why this file coexists with the current dashboard CSS
    instead of replacing it -- #home-panel-bar/#home-panel-body only ever
    render when #homeDashGrid does not, and vice versa).
 

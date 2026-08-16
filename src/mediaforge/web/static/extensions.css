@@ -730,6 +730,42 @@
   }
 }
 
+/* The installed view's rail (data-no-drawer, see _extensions_nav.html): in
+   the flow and above the cards on a phone, the same shape the Store tab's
+   rail already has, instead of off-canvas behind the drawer button. The
+   generic .has-floating-menu rules in shell.css turn it into a fixed panel
+   below 861px, so every one of those has to be undone here -- scoped to
+   this page's id, which beats them on specificity without !important. */
+@media (max-width: 860px) {
+  #extInstalledView { display: block; }
+  #extInstalledView > #extensionsMenu {
+    position: static;
+    transform: none;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    z-index: auto;
+    overflow: visible;
+    margin: 0 0 16px !important;
+    border-radius: var(--radius-lg, 16px) !important;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+  }
+  /* Side by side while there is room for a whole group per column, same
+     breakpoint logic the store rail uses. */
+  #extInstalledView > #extensionsMenu > .ext-rail-group,
+  #extInstalledView > #extensionsMenu > .ext-rail-health { flex: 1 1 240px; }
+  #extInstalledView > #extensionsMenu > .settings-tab { flex: 1 1 140px; }
+}
+
+@media (max-width: 640px) {
+  #extInstalledView > #extensionsMenu { display: block; }
+  #extInstalledView > #extensionsMenu > .ext-rail-group,
+  #extInstalledView > #extensionsMenu > .ext-rail-health { margin-bottom: 12px; }
+}
+
 @media (max-width: 760px) {
   .extensions-page .ext-store-rail { display: block; }
 

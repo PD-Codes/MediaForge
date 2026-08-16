@@ -145,7 +145,7 @@ def _report_v1_call(endpoint, status):
 # Which scope each v1 endpoint requires. Kept as a map rather than read back
 # out of the route functions because the OpenAPI document has to state it, and
 # a specification that derives its facts from a second hand-maintained list is
-# a specification that drifts. tests/test_api_keys.py asserts that every
+# a specification that drifts. tests/test_auth.py asserts that every
 # registered /api/v1/ endpoint appears here.
 _V1_ENDPOINT_SCOPES: dict[str, str] = {
     "api_v1_status":         "status:read",

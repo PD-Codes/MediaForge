@@ -1168,12 +1168,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         _dash_mode = str(_prefs.get("home_dash_enabled") or _dash_default)
         _dash_enabled = _dash_mode != "0"
         _all_in_one = _dash_mode == "all"
-        # Which Dashboard widget layout renders inside home_dash_layout's
-        # free grid (Beta) or the new default: four fixed, collapsible
-        # sections with no drag/resize. Per-account only -- see
-        # db/ui_prefs.py's home_dash_view comment; there is no instance
-        # default for this one, unlike the tab arrangement above.
-        _dash_sections = str(_prefs.get("home_dash_view") or "") != "grid"
+        # How many columns the Dashboard renders. Per account only -- there
+        # is no instance default for this one, unlike the tab arrangement
+        # above. Needed server-side (not just in JS) because the columns are
+        # the Jinja-rendered drop targets home_panels.js places cards into.
+        _dash_columns = 2 if str(_prefs.get("home_dash_columns") or "") == "2" else 3
         # "Could be for you" hero/rail instance defaults -- same account-
         # overrules-instance relationship as home_dash_enabled above, but
         # resolved client-side instead (static/home_foryou.js's
@@ -1189,6 +1188,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # already falls back through window._USER_PREFS.home_tab first, so
         # only the raw instance default needs to travel with the page.
         _tab_default = str(get_setting("home_tab_default") or "")
+        # ...and which one it actually resolves to for THIS account, because
+        # the tab pill renders that tab FIRST: "Start on" picks the tab you
+        # land on, and a landing tab that sits on the right of the one you
+        # did not choose reads as the wrong one being selected.
+        _start_tab = str(_prefs.get("home_tab") or _tab_default)
+        _start_tab = "disc" if _start_tab == "disc" else "dash"
         return render_template(
             "index.html",
             lang_labels=LANG_LABELS,
@@ -1200,8 +1205,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             show_new_home_promo=_show_promo,
             dash_enabled=_dash_enabled,
             all_in_one=_all_in_one,
-            dash_sections=_dash_sections,
+            dash_columns=_dash_columns,
             home_tab_default=_tab_default,
+            start_tab=_start_tab,
             foryou_hero_default=_foryou_hero_default,
             foryou_rail_default=_foryou_rail_default,
         )
@@ -1543,7 +1549,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # the dict -- see where it is called.
         from .routes.v1_api import v1_endpoint_scopes
 
-        # Published so it can be asserted on (tests/test_admin_gating.py):
+        # Published so it can be asserted on (tests/test_auth.py):
         # authorisation lives in this hand-maintained set, not on the routes,
         # so a new endpoint is login-protected but NOT admin-protected unless
         # someone remembers to add it here.

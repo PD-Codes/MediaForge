@@ -265,7 +265,7 @@
     if (m.installed && m.installed_version) {
       kv(t("Deine Version", "Your version"), "v" + esc(m.installed_version));
     }
-    if (m.category) kv(t("Kategorie", "Category"), esc(m.category));
+    if (m.category) kv(t("Kategorie", "Category"), esc(prettyCategory(m.category)));
     // Which repository this came from. Only interesting with more than one
     // configured — but then it is the whole story: "official" from a repo somebody
     // added themselves would be a claim, not a fact.
@@ -324,6 +324,17 @@
   // of silently dropping them from every facet count).
   let _categoryFilter = "";
   const CATEGORY_UNKNOWN = "__unknown__";
+
+  /** A catalog category as a label: "media_tools" -> "Media tools". The raw
+      value stays the filter key and is never rewritten -- this is display
+      only, so a catalog that changes its casing tomorrow does not orphan a
+      stored filter. Only the first letter is capitalised: title-casing every
+      word turns "vpn und proxy" into "Vpn Und Proxy". */
+  function prettyCategory(raw) {
+    const label = String(raw || "").replace(/[_-]+/g, " ").trim();
+    if (!label) return t("Keine Angabe", "No category");
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
   // The entry shown in the detail pane. An id, not the object: the catalog is
   // replaced wholesale on every refresh, and holding a stale object would keep a
   // pane open on a version that no longer exists.
@@ -409,11 +420,15 @@
       ]) +
       group(t("Kategorie", "Category"), "category", _categoryFilter, [
         ["", t("Alle", "All")],
-        // Sorted so the list order does not depend on catalog fetch order;
-        // "unknown" always last since it is the fallback bucket, not a real one.
-        ...Array.from(new Set(_catalogModules.map((m) => m.category).filter(Boolean))).sort()
-          .map((c) => [c, c]),
-        [CATEGORY_UNKNOWN, t("Unbekannt", "Unknown")],
+        // "No category" sits directly under "All": it is the bucket every
+        // entry that declares nothing falls into, which makes it the most
+        // populated one on most catalogs, not a footnote. The rest is sorted
+        // by its DISPLAYED label (see prettyCategory) so the order matches
+        // what is on screen and does not depend on catalog fetch order.
+        [CATEGORY_UNKNOWN, t("Keine Angabe", "No category")],
+        ...Array.from(new Set(_catalogModules.map((m) => m.category).filter(Boolean)))
+          .map((c) => [c, prettyCategory(c)])
+          .sort((a, b) => a[1].localeCompare(b[1])),
       ]);
   }
 
@@ -431,9 +446,11 @@
     const list = $("extStoreList");
     if (!list) return;
     const mods = _catalogModules.filter((m) => _matches(m, null));
-    // If the selection was filtered away, fall to the first row rather than
-    // leaving a pane open on an entry that is no longer in the list.
-    if (!mods.some((m) => m.id === _selectedId)) _selectedId = mods.length ? mods[0].id : "";
+    // A selection that got filtered away is cleared, NOT replaced by the
+    // first row: opening the store (or typing in the search box) used to
+    // pick an entry nobody asked for, which on a phone slid the detail sheet
+    // over the list before the list had even been read.
+    if (!mods.some((m) => m.id === _selectedId)) _selectedId = "";
     // Say when a filter is the reason nothing is here -- an empty list on its own
     // reads as a broken store.
     const filtering = _query || _typeFilter || _statusFilter || _trustFilter || _categoryFilter;

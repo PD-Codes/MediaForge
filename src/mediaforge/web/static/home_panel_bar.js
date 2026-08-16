@@ -8,13 +8,13 @@
    (see that file's own docstring); this file was retired at the same time
    and is revived here, unchanged, for "All in one page" mode's Dashboard
    section (Customise this page -> "Home tabs" -> "All in one page") -- the
-   button-bar shape is what that mode asks for, not the card grid, and
+   button-bar shape is what that mode asks for, not the columns, and
    #homePanelBar/#homePanelBody never overlap with home_panels.js's
-   #homeDashGrid, so both files coexist without either knowing about the
+   #homeDashColumns, so both files coexist without either knowing about the
    other. Both still read the SAME backend (/api/home-panels,
-   /api/home-panel/<id>) that home_panels.js's grid gets its data from too
-   (via /api/home-panels/all) -- routes/home_panels.py never dropped either
-   endpoint when the grid shipped.
+   /api/home-panel/<id>) that home_panels.js gets its data from too (via
+   /api/home-panels/all) -- routes/home_panels.py never dropped either
+   endpoint.
 
    One panel at a time is the design, not a limitation:
      * the poster rows below keep their place and their scroll position,

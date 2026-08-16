@@ -309,15 +309,12 @@
    places: full-bleed in the sticky topstrip on the new layout, plain inside
    .container on the classic one. A macro instead of two copies of the same
    markup -- one thing to keep in step with app.js/home_2_1.js selectors. #}
-{# One module dashboard widget's card shell, shared by the free-position
-   grid (Beta, `with_handles=True` -- grip/resize/close, draggable) and the
-   Dashboard-sections default (`with_handles=False` -- close only, the card
-   flows inside its section instead of being dragged). Used exactly ONCE per
-   widget id: whichever layout is active renders this macro from its own
-   branch below, never both -- two copies would mean two elements sharing
+{# One module dashboard widget's card shell. The card flows inside its
+   Dashboard section (drag it to reorder, close it with the "x"). Rendered
+   exactly ONCE per widget id -- two copies would mean two elements sharing
    the id "dashCard-<id>". #}
-{% macro dashboard_widget_card(widget, with_handles) %}
-<section class="dash-card{{ '' if with_handles else ' dash-card-flow' }}"
+{% macro dashboard_widget_card(widget) %}
+<section class="dash-card dash-card-flow"
          id="dashCard-{{ widget.id }}" data-card="{{ widget.id }}"
          data-widget-kind="thirdparty-template">
   <div class="dash-card-content">
@@ -329,14 +326,10 @@
       {% include widget.template ignore missing %}
     </div>
   </div>
-  {# Same msgids window.__HOME_I18N carries under 'dash_move'/'dash_resize'/
-     'dash_remove' above -- these three tools are otherwise built once in
-     JS by renderOneCard() and never touched again, but a server-rendered
-     card needs them present from the first paint. #}
-  {% if with_handles %}
-  <button type="button" class="dash-tool dash-grip" title="{{ _('Drag to move this card, or click once then click again to drop it, or focus it and use the arrow keys') }}" aria-label="{{ _('Drag to move this card, or click once then click again to drop it, or focus it and use the arrow keys') }}">&#9776;</button>
-  <button type="button" class="dash-resize" title="{{ _('Drag to resize this card, or focus it and use the arrow keys') }}" aria-label="{{ _('Drag to resize this card, or focus it and use the arrow keys') }}"></button>
-  {% endif %}
+  {# Same msgid window.__HOME_I18N carries under 'dash_remove' -- the close
+     button is otherwise built once in JS by renderOneCard() and never
+     touched again, but a server-rendered card needs it present from the
+     first paint. #}
   <button type="button" class="dash-tool dash-close" title="{{ _('Remove this card') }}" aria-label="{{ _('Remove this card') }}">&times;</button>
 </section>
 {% endmacro %}
@@ -413,14 +406,27 @@
        stacked with nothing to switch -- either way the pill is dropped
        instead of showing a single, unclickable-feeling button. #}
     {% if dash_enabled and not all_in_one %}
+    {# The tab picked under "Start on" is rendered FIRST -- it is the one the
+       page opens on, and a landing tab sitting to the RIGHT of the other
+       reads as "the wrong one is selected". static/home_2_1.js still owns
+       which tab is actually open (showTab); this only decides the order the
+       two buttons appear in, so its Arrow-key handling follows along by
+       walking the DOM. #}
     <div class="mf-segmented home-tabs" id="homeTabs" role="tablist"
          aria-label="{{ _('Home page sections') }}">
-      <button type="button" class="mf-segmented-btn active" role="tab"
-              id="homeTabBtnDash" data-home-tab="dash" aria-selected="true"
+      {% for tab in (['disc', 'dash'] if start_tab == 'disc' else ['dash', 'disc']) %}
+      {% if tab == 'dash' %}
+      <button type="button" class="mf-segmented-btn{{ ' active' if start_tab != 'disc' }}" role="tab"
+              id="homeTabBtnDash" data-home-tab="dash"
+              aria-selected="{{ 'false' if start_tab == 'disc' else 'true' }}"
               aria-controls="homePaneDash">{{ _('Dashboard') }}</button>
-      <button type="button" class="mf-segmented-btn" role="tab"
-              id="homeTabBtnDisc" data-home-tab="disc" aria-selected="false"
+      {% else %}
+      <button type="button" class="mf-segmented-btn{{ ' active' if start_tab == 'disc' }}" role="tab"
+              id="homeTabBtnDisc" data-home-tab="disc"
+              aria-selected="{{ 'true' if start_tab == 'disc' else 'false' }}"
               aria-controls="homePaneDisc">{{ _('Discover') }}</button>
+      {% endif %}
+      {% endfor %}
     </div>
     {% endif %}
     {# Phone-only: the search bar itself starts collapsed (see index.css's
@@ -438,17 +444,27 @@
     </button>
     {{ home_searchbar() }}
     {% if dash_enabled and not all_in_one %}
-    {# Grid-only tools (lock the drag layout, add a card) -- meaningless
+    {# Dashboard tools (lock the arrangement, add a card) -- meaningless
        against "All in one page"'s button-bar Dashboard, which has neither.
        Dashboard-only otherwise: hidden via CSS while the Discover tab is open (see
        [data-home-tab-open="disc"] in index.css). Locked state (icon +
        title/aria-label) is toggled by static/home_panels.js against the
        home_dash_locked preference. #}
+    {# Both padlocks ship; index.css shows the one that matches .is-locked,
+       which static/home_panels.js toggles. Drawing the state the button
+       WOULD switch to is the other convention and is the more confusing one
+       here -- this button says what the board is, not what the click does,
+       same as its aria-pressed. #}
     <button type="button" class="dash-lock-btn" id="dashLockBtn"
             title="{{ _('Lock the dashboard layout') }}"
             aria-label="{{ _('Lock the dashboard layout') }}" aria-pressed="false">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg class="dash-lock-open" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="5" y="11" width="14" height="10" rx="2"/>
+        <path d="M8 11V7a4 4 0 0 1 8 0"/>
+      </svg>
+      <svg class="dash-lock-shut" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <rect x="5" y="11" width="14" height="10" rx="2"/>
         <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
       </svg>
@@ -739,19 +755,13 @@
       'dash_resume': _('Resume'),
       'dash_open': _('Open'),
       'dash_open_list': _('Show all'),
-      'dash_move': _('Drag to move this card, or click once then click again to drop it, or focus it and use the arrow keys'),
-      'dash_resize': _('Drag to resize this card, or focus it and use the arrow keys'),
       'dash_lock': _('Lock the dashboard layout'),
       'dash_unlock': _('Unlock the dashboard layout'),
       'dash_remove': _('Remove this card'),
       'dash_add_empty': _('Everything is already on your board.'),
       'dash_loading': _('Loading…'),
       'dash_page_prev': _('Previous page'),
-      'dash_page_next': _('Next page'),
-      'sec_mediaforge': _('MediaForge'),
-      'sec_system': _('System'),
-      'sec_stats': _('Statistics'),
-      'sec_modules': _('Modules')
+      'dash_page_next': _('Next page')
     }|tojson }};
   </script>
   {# The panel bar: buttons under the search field, one panel below them.
@@ -809,15 +819,14 @@
      (.browse-provider-block, reused for its margin only — no provider dot
      styling implied). Nothing renders here if no extension registered one.
 
-     Classic layout only -- the classic layout has no card grid at all, so
-     this plain block-per-widget rendering is all it ever needs. On the
-     two-tab layout the same registry entries instead render INSIDE
-     #homeDashGrid, wrapped in the grid engine's own .dash-card markup, so
-     they are real draggable/resizable/hideable cards (see the loop inside
-     #homeDashGrid below, and home_panels.js's "thirdparty-template"
-     handling). Rendered here, outside both panes, a module widget used to
-     show up on Discover as well, above everything the tab is actually
-     about -- fixed by moving that loop, not this one. #}
+     Classic layout only -- it has no Dashboard sections at all, so this
+     plain block-per-widget rendering is all it ever needs. On the two-tab
+     layout the same registry entries instead render inside the "Modules"
+     section, wrapped in .dash-card markup, so they are real draggable/
+     hideable cards (see the loop in that section below, and
+     home_panels.js's "thirdparty-template" handling). Rendered here,
+     outside both panes, a module widget used to show up on Discover as
+     well -- fixed by moving that loop, not this one. #}
   {% if not new_home %}
   {% for widget in dashboard_widgets %}
   <div class="browse-provider-block dashboard-widget" id="widget-{{ widget.id }}">
@@ -863,60 +872,37 @@
          aria-label="{{ _('Instance overview') }}"></div>
     <div class="home-panel-body" id="homePanelBody" hidden></div>
     {% else %}
-    {# #homeDashGrid is ALWAYS rendered here, even in the sections layout
-       below -- home_panels.js's ResizeObserver and pointer drag/resize/lock
-       handlers bind to this element unconditionally, and a card is only ever
-       placed into it while that layout is actually active (see
-       static/home_panels.js's SECTIONS_MODE). Left with no cards, it
-       collapses to 0 height on its own the moment /api/home-panels/all
-       answers, so it costs nothing to keep around. #}
-    <div class="dash-grid" id="homeDashGrid" aria-label="{{ _('Instance overview') }}">
-      {% if not dash_sections %}
-      {# Module dashboard widgets, rendered as LAST children of the grid so
-         home_panels.js's ResizeObserver-driven reflow picks them up as
-         ordinary [data-card] elements -- see resolve_dashboard_widgets() in
-         web/thirdparties/registry.py. #}
-      {% for widget in dashboard_widgets %}
-      {{ dashboard_widget_card(widget, with_handles=True) }}
-      {% endfor %}
-      {% endif %}
-    </div>
-    {% if dash_sections %}
-    {# The new default: every card grouped into four fixed, collapsible
-       sections instead of freely dragged/resized. Order among the four is
-       account state (home_dash_section_order, dragged by the section
-       header -- see static/home_panels.js) and defaults to the order
-       rendered here; collapsed/expanded is a plain localStorage toggle,
-       same convention templates/extensions.html's collapsible groups use --
-       it is a view state, not a preference worth a device-syncing pref.
-       Which CARD lands in which section is a static id->section map in
-       static/home_panels.js (SECTION_OF); a module panel or dashboard
-       widget with no entry there falls into "Module" by default. #}
-    <div class="dash-sections" id="homeDashSections" aria-label="{{ _('Instance overview') }}">
-      {% for sec_id, sec_label in [
-        ('mediaforge', _('MediaForge')), ('system', _('System')),
-        ('stats', _('Statistics')), ('modules', _('Modules'))] %}
-      <section class="dash-section" data-section="{{ sec_id }}">
-        <button type="button" class="dash-section-head" data-dash-section-toggle="{{ sec_id }}"
-                draggable="true" aria-expanded="true">
-          <svg class="dash-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-          <span>{{ sec_label }}</span>
-          <span class="dash-section-count" id="dashSectionCount-{{ sec_id }}"></span>
-        </button>
-        <div class="dash-section-body" id="dashSectionBody-{{ sec_id }}">
-          {% if sec_id == 'modules' %}
-          {% for widget in dashboard_widgets %}
-          {{ dashboard_widget_card(widget, with_handles=False) }}
-          {% endfor %}
-          {% endif %}
-        </div>
-      </section>
+    {# The Dashboard is 2 or 3 columns (dash_columns, per account). A card
+       picks a COLUMN and a position inside it, and that is the whole
+       arrangement model -- there are no named groups any more, so nothing
+       here decides what a card "is about", only where it sits.
+
+       Which card starts in which column is a static id->column map in
+       static/home_panels.js (COLUMN_OF); a module panel or dashboard widget
+       with no entry there starts in the middle column. A saved
+       home_dash_card_layout overrules both, for position as well as column.
+
+       The columns are rendered server-side, empty, because they are the
+       drop targets home_panels.js places cards into -- and because an
+       account with three columns must not see them appear one paint late.
+       On a phone the .dash-col wrappers dissolve (display: contents, see
+       index.css) so the cards stack in DOM order: column 1 top to bottom,
+       then column 2, then column 3. One arrangement, two viewports. #}
+    <div class="dash-columns" id="homeDashColumns" data-cols="{{ dash_columns }}"
+         aria-label="{{ _('Instance overview') }}">
+      {% for col in range(dash_columns) %}
+      <div class="dash-col" data-col="{{ col }}" id="dashCol-{{ col }}">
+        {# Module dashboard widgets start in the middle column, the same
+           default COLUMN_OF gives a module PANEL. Server-rendered here (not
+           built by JS) because their markup is the module's own Jinja. #}
+        {% if col == 1 %}
+        {% for widget in dashboard_widgets %}
+        {{ dashboard_widget_card(widget) }}
+        {% endfor %}
+        {% endif %}
+      </div>
       {% endfor %}
     </div>
-    {% endif %}
     {% endif %}
     {# Personal rows: what you were doing beats what a site published. Each
        one hides itself when its source has nothing to say (no playback
@@ -956,12 +942,11 @@
       {{ _('Nothing needs your attention. Head over to Discover.') }}
     </div>
     {% endif %}
-    {# Module dashboard widgets now render INSIDE #homeDashGrid above, as real
-       .dash-card elements -- see the loop there and resolve_dashboard_widgets()
-       in web/thirdparties/registry.py. A second copy used to render here too;
-       removed, it was leftover from before that move and would have produced
-       duplicate DOM ids (two elements with the same "widget-<id>"/"dashCard-
-       <id>" id) for every registered widget. #}
+    {# Module dashboard widgets render inside the "Modules" section above, as
+       real .dash-card elements -- see the loop there and
+       resolve_dashboard_widgets() in web/thirdparties/registry.py. A second
+       copy used to render here too; removed, it would have produced
+       duplicate DOM ids for every registered widget. #}
   </div>
   {% endif %}
 

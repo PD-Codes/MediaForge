@@ -21,6 +21,13 @@
    depends on which modules are installed.
    =================================================================== #}
 
+{# NB: never put a Jinja comment INSIDE the dict expression below -- one
+   inside a {{ ... }} expression is a syntax error that takes the whole page
+   down (and Jinja comments do not nest, so this one cannot show you the
+   token either). "column_n" carries the column number as %(n)s filled with
+   a literal brace pair here, because Flask-Babel's newstyle gettext turns a
+   bare "%s" into that same brace pair in the rendered catalogue string, and
+   it is what static/start_page.js replaces at runtime. #}
 {% macro start_page_i18n() %}
 <script>
   window.__STARTPAGE_I18N = {{ {
@@ -42,9 +49,6 @@
       'calendar':   _('from the calendar'),
       'sources':    _('from your sources')
     },
-    'group_discover': _('Discover rows'),
-    'group_dashboard': _('Dashboard widgets'),
-    'group_dashboard_hint': _('Position and size are set on the Dashboard tab. Turning one off here also stops collecting its data.'),
     'move_up': _('Move up'),
     'move_down': _('Move down'),
     'drag': _('Drag to reorder'),
@@ -54,6 +58,10 @@
     'layout_saved': _('Saved — reload the home page'),
     'reset_done': _('Reset to the instance default'),
     'dash_order_home_only': _('Open this from the home page itself (the "Customise this page" button) to reorder cards.'),
+    'column_n': _('Column %(n)s', n='{}'),
+    'column': _('Column'),
+    'column_empty': _('Empty'),
+    'dash_add_empty': _('Everything is already on your board.'),
     'using_default': _('Following the instance default'),
     'using_own': _('You changed this — the instance default no longer applies')
   }|tojson }};
@@ -180,35 +188,23 @@
     </div>
   </div>
 
-  {# Only meaningful with a Dashboard to show at all -- "Discover only"
-     hides this too (see syncDashViewRow() in static/start_page.js), same
-     reasoning as "Start on" above. #}
-  <div id="spDashViewRow-user" class="sp-group">
-    <h3 class="settings-subtitle">{{ _('Dashboard layout') }}</h3>
-    <div class="settings-hint">{{ _('Sections group every card under MediaForge/System/Statistics/Modules, collapsible, drag a card to reorder it within its section. The free-position card grid is the previous layout.') }}</div>
+  {# Hidden by syncOrderRows() in static/start_page.js whenever there is no
+     Dashboard to arrange ("Discover only" / "All in one page"). Both rows
+     are scope="user" only: this is a per-account arrangement, there is no
+     instance default to arrange for a fresh account. #}
+  <div id="spDashColumnsRow-user" class="sp-group">
+    <h3 class="settings-subtitle">{{ _('Dashboard columns') }}</h3>
+    <div class="settings-hint">{{ _('How many columns the Dashboard is split into on a wide screen. A narrow window falls back to fewer on its own; on a phone the cards stack in one column, first column first. Reload the home page after changing this.') }}</div>
     <div class="settings-row">
-      <select class="mf-token-input" id="spDashView-user">
-        <option value="">{{ _('Sections') }}</option>
-        <option value="grid">{{ _('Card grid (Beta)') }}</option>
+      <select class="mf-token-input" id="spDashColumns-user">
+        <option value="3">{{ _('3 columns') }}</option>
+        <option value="2">{{ _('2 columns') }}</option>
       </select>
     </div>
   </div>
-
-  {# Sections layout only (the free grid drags/resizes cards directly, it
-     has no separate order to configure here) -- hidden by syncOrderRows()
-     in static/start_page.js under the same conditions as spDashViewRow-user
-     above, plus whenever "Card grid (Beta)" is picked. Reads/writes the
-     exact same prefs home_panels.js's own drag reorder does (see its
-     applySectionOrder()/saveCardLayout()), so this list and dragging on the
-     Dashboard itself are two views onto one state. #}
-  <div id="spSectionOrderRow-user" class="sp-group">
-    <h3 class="settings-subtitle">{{ _('Section order') }}</h3>
-    <div class="settings-hint">{{ _('Which order the four Dashboard sections appear in. Reload the home page after changing this.') }}</div>
-    <div class="mf-order-list" id="spSectionOrder-user"></div>
-  </div>
   <div id="spCardOrderRow-user" class="sp-group">
     <h3 class="settings-subtitle">{{ _('Card order') }}</h3>
-    <div class="settings-hint">{{ _('Which order the cards inside each section appear in. Cards stay in the section they belong to.') }}</div>
+    <div class="settings-hint">{{ _('Which column each card sits in, and in which order. Dragging a card on the Dashboard itself writes the same setting.') }}</div>
     <div class="mf-order-list" id="spCardOrder-user"></div>
   </div>
 

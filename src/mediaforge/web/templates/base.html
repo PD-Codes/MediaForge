@@ -1522,7 +1522,11 @@
     // Monitoring) is off-canvas; a fixed side button slides it in. Injected
     // only when such a menu exists on the page.
     (function () {
-      var menu = document.querySelector('.has-floating-menu > .floating-side-menu');
+      // data-no-drawer opts a page out: its menu stays in the flow and
+      // stacks above the content on a phone (see the Module Manager's rail,
+      // _extensions_nav.html) rather than sliding in from the side. Building
+      // the FAB anyway would leave a button that opens nothing.
+      var menu = document.querySelector('.has-floating-menu > .floating-side-menu:not([data-no-drawer])');
       if (!menu) return;
       var fab = document.createElement('button');
       fab.type = 'button';

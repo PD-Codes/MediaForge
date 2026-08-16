@@ -1,33 +1,48 @@
-"""Tests for the comic caches: repacking and covers.
+"""Comics end to end: filename identity, the scanner's grouping, the
+caches, the settings block and ComicVine enrichment.
 
-Two things are being defended here, and only one of them is a feature.
-
-The feature is the caching identity: a cache entry belongs to one exact file
-at one exact moment, and when the file changes or disappears the entry has to
-stop being used and stop taking up room. Getting that wrong means serving one
-comic's pages under another comic's name.
-
-The other thing is path traversal. Repacking a CBR means letting an external
-program write files from a hostile archive to disk (CVE-2018-20250 is exactly
-this, for ACE), so the tests below build the escapes by hand -- a member that
-climbs out with "..", an absolute path, a symlink pointing outside -- and
-assert that none of them survives into the CBZ.
-
-Nothing here requires unrar, bsdtar or unace to be installed. The
-"no extractor" path is a supported state and has its own test.
+Merged from: test_comics.py, test_comic_identity.py, test_comic_scanner.py, test_comic_settings.py, test_comicvine.py.
 """
+
 import logging
 import os
 import sys
 import zipfile
 from pathlib import Path
-
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from mediaforge.web.comics import archive, convert, covers  # noqa: E402
 from mediaforge.web.media_types import COMIC_PAGE_EXTS  # noqa: E402
+from mediaforge.web.comics.identity import issue_sort_key
+from mediaforge.web.comics.identity import normalize
+from mediaforge.web.comics.identity import parse
+from mediaforge.web.comics.scanner import scan_comics
+from mediaforge.web import comicvine_service as cv  # noqa: E402
+
+
+# ==========================================================================
+# test_comics.py
+#
+# Tests for the comic caches: repacking and covers.
+# 
+# Two things are being defended here, and only one of them is a feature.
+# 
+# The feature is the caching identity: a cache entry belongs to one exact file
+# at one exact moment, and when the file changes or disappears the entry has to
+# stop being used and stop taking up room. Getting that wrong means serving one
+# comic's pages under another comic's name.
+# 
+# The other thing is path traversal. Repacking a CBR means letting an external
+# program write files from a hostile archive to disk (CVE-2018-20250 is exactly
+# this, for ACE), so the tests below build the escapes by hand -- a member that
+# climbs out with "..", an absolute path, a symlink pointing outside -- and
+# assert that none of them survives into the CBZ.
+# 
+# Nothing here requires unrar, bsdtar or unace to be installed. The
+# "no extractor" path is a supported state and has its own test.
+# ==========================================================================
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 
 
 # A one-pixel PNG. Never decoded by anything under test -- the modules move
@@ -979,3 +994,698 @@ def test_asking_for_a_conversion_outright_ignores_a_remembered_failure(
     assert convert.conversion_status(comic, start=False)["ok"] is False
     # Asking for it starts a fresh attempt instead.
     assert convert.conversion_status(comic, start=True).get("pending") is True
+
+
+# ==========================================================================
+# test_comic_identity.py
+#
+# Comic filename parsing, against the shapes real libraries actually use.
+# 
+# Every case below was taken from a real 5,230-file library, not invented. That
+# matters: the first version of this parser looked correct against made-up names
+# like "Batman 001 (2011)" and fell apart on the German scans the user actually
+# had, which put the number after an underscore, after a dash, or in front of
+# everything.
+# ==========================================================================
+@pytest.mark.parametrize("stem,series,number,title", [
+    # --- the scene-standard English shapes ---
+    ("Batman 001 (2011)",                    "Batman", "001", ""),
+    ("Batman #1 (2011)",                     "Batman", "1",   ""),
+    ("Batman v2 001 (of 12)",                "Batman", "001", ""),
+    ("Batman - 001 - The Beginning",         "Batman", "001", "The Beginning"),
+    ("Batman 001 (2011) (Digital) (Zone-Empire)", "Batman", "001", ""),
+
+    # --- series, number, title (the most common German album layout) ---
+    ("Asterix 001 - Asterix der Gallier",    "Asterix", "001", "Asterix der Gallier"),
+    ("Bessy 001 - Das Geheimnis der sieben Feuer (1965)",
+     "Bessy", "001", "Das Geheimnis der sieben Feuer"),
+
+    # --- underscore instead of a space: 3,000 files in one library ---
+    ("Bessy_326",                            "Bessy", "326", ""),
+
+    # --- number trailing after a dash, no title at all ---
+    ("Gespenster Geschichten - 0001",        "Gespenster Geschichten", "0001", ""),
+    ("Gespenster Geschichten - 1655 (Tigerpress 06-2008)",
+     "Gespenster Geschichten", "1655", ""),
+
+    # --- number leading, series only in the folder ---
+    ("001 - Der Kolumbusfalter und andere Abenteuer (1. Auflage)",
+     "", "001", "Der Kolumbusfalter und andere Abenteuer"),
+
+    # --- number leading AND the title carries its own dash ---
+    ("261 - Jubilaeumsausgabe - Donald Duck - King of Comics",
+     "", "261", "Jubilaeumsausgabe - Donald Duck - King of Comics"),
+
+    # --- bare "series number" ---
+    ("Lasso 001",                            "Lasso", "001", ""),
+    ("Silberpfeil 539",                      "Silberpfeil", "539", ""),
+
+    # --- the whole stem is the number: the series lives in the folder ---
+    ("001",                                  "", "001", ""),
+    ("#003",                                 "", "003", ""),
+
+    # --- specials keep their word, decimals keep their point ---
+    ("Batman Annual 01 (2012)",              "Batman", "Annual 01", ""),
+    ("Spawn 1.5",                            "Spawn", "1.5", ""),
+
+    # --- a year-like name is a name, not an issue number ---
+    ("1984",                                 "1984", "", ""),
+    ("einfach nur text",                     "einfach nur text", "", ""),
+])
+def test_parse_real_world_names(stem, series, number, title):
+    got = parse(stem)
+    assert got["series"] == series
+    assert got["number"] == number
+    assert got["title"] == title
+
+
+def test_percent_encoded_umlauts_are_decoded():
+    """Filenames that came through a downloader keep their %XX escapes."""
+    got = parse("Buffalo Bill 379 - In der H%f6lle der Sioux")
+    assert got["series"] == "Buffalo Bill"
+    assert got["title"] == "In der Hölle der Sioux"
+
+
+def test_volume_and_year_are_separated():
+    got = parse("Saga v01 004 (2013)")
+    assert (got["series"], got["number"], got["volume"], got["year"]) == ("Saga", "004", "01", 2013)
+
+
+def test_issue_order_is_numeric_and_specials_sort_last():
+    order = sorted(["10", "2", "1", "1.5", "0", "Annual 2", "Special"], key=issue_sort_key)
+    assert order == ["0", "1", "1.5", "2", "10", "Special", "Annual 2"]
+
+
+def test_zero_padding_does_not_split_a_run():
+    """"001" and "1" are the same issue, so they must not sort apart."""
+    assert issue_sort_key("001") == issue_sort_key("1")
+
+
+def test_normalize_folds_accents_and_punctuation():
+    assert normalize("Pokémon Adventures") == normalize("Pokemon  Adventures")
+    assert normalize("Tom & Jerry") == normalize("Tom and Jerry")
+
+
+# ==========================================================================
+# test_comic_scanner.py
+#
+# The comic scanner's grouping rules, on a real-world folder layout.
+# ==========================================================================
+def _scanner_cbz(path, pages=1):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as zf:
+        for i in range(pages):
+            zf.writestr(f"page{i + 1}.jpg", b"\xff\xd8\xff\xe0not-really-a-jpeg")
+    return path
+
+
+def test_folder_is_the_series_even_when_filenames_disagree(tmp_path):
+    """One folder per run is a statement; 500 filenames are 500 chances to drift.
+
+    These four spellings all occur in one real library. Grouping on the
+    filename produced four shelves; the folder is the answer the user gave.
+    """
+    folder = tmp_path / "Die tollsten Geschichten von Donald Duck"
+    _scanner_cbz(folder / "Die tollsten Geschichten von Donald Duck 388.cbz")
+    _scanner_cbz(folder / "Die tollsten Geschichten mit Donald Duck 457.cbz")
+    _scanner_cbz(folder / "Die tollsten Geschichten von Donald Duck - Sonderheft 001 (Ehapa 1965).cbz")
+    _scanner_cbz(folder / "Die tollsten Geschichten von Donald Duck 389.cbz")
+
+    result = scan_comics(tmp_path)
+    assert len(result) == 1
+    series = result[0]
+    assert series["series"] == "Die tollsten Geschichten von Donald Duck"
+    assert series["issue_count"] == 4
+    assert [i["number"] for i in series["issues"]] == ["001", "388", "389", "457"]
+
+
+def test_separate_folders_stay_separate_series(tmp_path):
+    _scanner_cbz(tmp_path / "Asterix" / "Asterix 001 - Asterix der Gallier.cbz")
+    _scanner_cbz(tmp_path / "Bessy" / "Bessy_326.cbz")
+    result = scan_comics(tmp_path)
+    assert sorted(s["series"] for s in result) == ["Asterix", "Bessy"]
+    assert [i["number"] for s in result if s["series"] == "Bessy" for i in s["issues"]] == ["326"]
+
+
+def test_loose_files_in_the_root_group_by_filename(tmp_path):
+    """With no folder to go on, the filename is all there is."""
+    _scanner_cbz(tmp_path / "Lasso 001.cbz")
+    _scanner_cbz(tmp_path / "Lasso 002.cbz")
+    _scanner_cbz(tmp_path / "Silberpfeil 001.cbz")
+    result = scan_comics(tmp_path)
+    by_name = {s["series"]: s for s in result}
+    assert sorted(by_name) == ["Lasso", "Silberpfeil"]
+    assert by_name["Lasso"]["issue_count"] == 2
+
+
+def test_a_title_that_only_repeats_the_series_is_dropped(tmp_path):
+    _scanner_cbz(tmp_path / "Bessy" / "Bessy 001 - Bessy.cbz")
+    issue = scan_comics(tmp_path)[0]["issues"][0]
+    assert not issue.get("title")
+
+
+def test_issue_keys_are_stable_and_unique(tmp_path):
+    """Reading progress hangs off these, so two files must never share one."""
+    _scanner_cbz(tmp_path / "Bessy" / "Bessy 001 - A.cbz")
+    _scanner_cbz(tmp_path / "Bessy" / "Bessy 001 - B.cbz")
+    issues = scan_comics(tmp_path)[0]["issues"]
+    assert len({i["key"] for i in issues}) == 2
+
+
+def test_unreadable_containers_are_listed_not_hidden(tmp_path):
+    """A CBR that needs an unpacker still belongs on the shelf, flagged."""
+    folder = tmp_path / "Bessy"
+    folder.mkdir(parents=True)
+    (folder / "Bessy 001.cbr").write_bytes(b"Rar!\x1a\x07\x00" + b"\x00" * 128)
+    series = scan_comics(tmp_path)[0]
+    assert series["issue_count"] == 1
+    assert series["needs_conversion_count"] == 1
+    assert series["issues"][0]["readable"] is False
+
+
+def test_a_cbr_that_is_really_a_zip_is_read_without_any_rar_tool(tmp_path):
+    """The single most common real-world mislabelling."""
+    _scanner_cbz(tmp_path / "Asterix" / "Asterix 001.cbr")
+    issue = scan_comics(tmp_path)[0]["issues"][0]
+    assert issue["readable"] is True
+    assert not issue.get("needs_conversion")
+    assert issue["format_label"] == "CBZ"
+
+
+def test_empty_fields_are_omitted_from_issue_rows(tmp_path):
+    """Issue rows carry only what they actually say.
+
+    This whole dict is cached as JSON and shipped on every shelf load. On a
+    5,230-issue library the omitted keys were 1.1 MB of "characters": [] and
+    "needs_conversion": false. Consumers read these with `issue.get(...)`, so
+    absent and empty mean the same thing to them -- but a future field that
+    quietly defaults to something other than falsy would break that, which is
+    what this test is here to catch.
+    """
+    _scanner_cbz(tmp_path / "Asterix" / "Asterix 001.cbz")
+    issue = scan_comics(tmp_path)[0]["issues"][0]
+
+    for gone in ("series", "summary", "publisher", "writers", "characters",
+                 "language", "volume", "year", "title", "rtl", "page_count",
+                 "direct", "needs_conversion"):
+        assert gone not in issue, f"{gone} should have been dropped"
+
+    # ... while the fields something depends on stay, falsy or not.
+    for kept in ("path", "file", "key", "number", "size", "readable"):
+        assert kept in issue, f"{kept} must not be dropped"
+
+
+# ==========================================================================
+# test_comic_settings.py
+#
+# The Comics block on the Library settings tab.
+# 
+# Three switches and two cache buttons, and the interesting one is the third
+# switch: comic_replace_original replaces the user's CBR/CBA with the converted
+# CBZ, which is the only setting in this block that destroys something. So the
+# defaults are asserted here rather than assumed -- a default that flips from 0
+# to 1 by accident is a data-loss bug, not a cosmetic one -- and so is the fact
+# that the value is normalised on the SERVER: the confirmation dialog in
+# settings.js is a courtesy, the validation is not.
+# 
+# The cache endpoints live in routes/comics.py and delete files, so they are
+# admin-only. test_admin_gating.py only sweeps endpoints named api_settings*,
+# which these are not, hence the explicit check below.
+# ==========================================================================
+COMIC_DEFAULTS = {
+    "comic_auto_prepare_all": "0",  # costs a second copy of every CBR/CBA
+    "comic_replace_original": "0",  # deletes the original file
+}
+
+
+@pytest.fixture()
+def clean_comic_settings(app):
+    """Remove the three keys before and after, so a test reads the default."""
+    from mediaforge.web import db
+
+    def _clear():
+        # The row has to go, not merely be emptied: get_setting() returns a
+        # stored "" as "", and only a missing row falls through to the default.
+        with app.app_context():
+            for key in COMIC_DEFAULTS:
+                db.delete_setting(key)
+
+    _clear()
+    yield
+    _clear()
+
+
+def test_the_defaults_are_what_the_api_serves(as_user, clean_comic_settings):
+    resp = as_user("admin").get("/api/settings")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    for key, expected in COMIC_DEFAULTS.items():
+        assert data[key] == expected, f"{key} default changed"
+
+
+def test_saving_and_reading_back(as_user, clean_comic_settings):
+    client = as_user("admin")
+    resp = client.put("/api/settings", json={
+        "comic_auto_prepare_all": "1",
+        "comic_replace_original": "1",
+    })
+    assert resp.status_code == 200
+    data = client.get("/api/settings").get_json()
+    assert data["comic_auto_prepare_all"] == "1"
+    assert data["comic_replace_original"] == "1"
+
+
+def test_a_value_that_is_not_a_boolean_is_stored_as_off(as_user, clean_comic_settings):
+    """Validation is server-side. Anything that is not plainly true must end
+    up as "0" -- for the destructive switch especially, "not understood" has
+    to mean "off"."""
+    client = as_user("admin")
+    client.put("/api/settings", json={"comic_replace_original": "maybe"})
+    assert client.get("/api/settings").get_json()["comic_replace_original"] == "0"
+    client.put("/api/settings", json={"comic_replace_original": True})
+    assert client.get("/api/settings").get_json()["comic_replace_original"] == "1"
+
+
+def test_untouched_keys_are_left_alone(as_user, clean_comic_settings):
+    """A PUT that carries one key must not reset the other two."""
+    client = as_user("admin")
+    client.put("/api/settings", json={"comic_auto_prepare_all": "1"})
+    client.put("/api/settings", json={"comic_auto_prepare_all": "1"})
+    data = client.get("/api/settings").get_json()
+    assert data["comic_auto_prepare_all"] == "1"
+
+
+# ---------------------------------------------------------------------------
+# The cache endpoints
+# ---------------------------------------------------------------------------
+
+def test_the_cache_endpoints_are_admin_only(app):
+    for endpoint in ("api_comic_cache", "api_comic_cache_clear"):
+        assert endpoint in app.config["ADMIN_ONLY_ENDPOINTS"], endpoint
+
+
+def test_a_normal_account_cannot_read_or_clear_the_caches(as_user):
+    client = as_user("user")
+    assert client.get("/api/library/comic/cache").status_code in (401, 403)
+    resp = client.post("/api/library/comic/cache/clear", json={"cache": "covers"})
+    assert resp.status_code in (401, 403)
+
+
+def test_an_admin_sees_the_sizes_and_the_extractors(as_user):
+    data = as_user("admin").get("/api/library/comic/cache").get_json()
+    assert data["ok"] is True
+    for half in ("covers", "converted"):
+        assert set(data[half]) == {"files", "bytes"}
+        assert data[half]["files"] >= 0
+    # Whatever this machine has (usually nothing) -- the keys must be there.
+    assert set(data["extractors"]) == {"rar", "ace"}
+
+
+def test_clearing_needs_a_known_cache_name(as_user):
+    """The name is a whitelist of two, never a path: nothing the client sends
+    may decide what gets deleted."""
+    client = as_user("admin")
+    assert client.post("/api/library/comic/cache/clear", json={}).status_code == 400
+    resp = client.post("/api/library/comic/cache/clear", json={"cache": "../../etc"})
+    assert resp.status_code == 400
+
+
+def test_clearing_answers_with_the_new_size(as_user):
+    client = as_user("admin")
+    for which in ("covers", "converted"):
+        data = client.post("/api/library/comic/cache/clear", json={"cache": which}).get_json()
+        assert data["ok"] is True
+        assert data["cache"] == which
+        assert data["stats"]["files"] == 0
+
+
+# ==========================================================================
+# test_comicvine.py
+#
+# ComicVine enrichment: the four ways it is allowed to hurt someone.
+# 
+# The lookup itself is a nice-to-have -- a publisher name on a comic card. The
+# things guarded here are not:
+# 
+# 1. **No key must mean silence.** Not an exception, not an ERROR log (which
+#    telemetry/hooks.py would turn into a crash report), not a request.
+# 2. **The throttle must hold.** ComicVine allows 200 requests per resource and
+#    hour and locks the key out on violation. An unthrottled scan of a
+#    3000-issue library bans the user's key, so the cap is asserted here rather
+#    than trusted.
+# 3. **A miss must be cached.** Most files in a real comic library are not on
+#    ComicVine. If a miss were re-asked every scan, the budget from (2) would be
+#    spent entirely on questions that already have an answer.
+# 4. **The key must never reach a log.** It travels as a query parameter, and
+#    HTTP exception messages routinely quote the full request URL.
+# 
+# Nothing here touches the network: the session is replaced wholesale.
+# ==========================================================================
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+
+
+API_KEY = "cv-secret-key-do-not-log-1234567890"
+
+
+class _FakeResponse:
+    def __init__(self, payload, status_code=200):
+        self._payload = payload
+        self.status_code = status_code
+
+    def json(self):
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
+
+
+class _FakeSession:
+    """Stands in for config.GLOBAL_SESSION. Records every call it gets."""
+
+    def __init__(self, payload=None, status_code=200, raises=None):
+        self.payload = payload if payload is not None else _ok([])
+        self.status_code = status_code
+        self.raises = raises
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None, headers=None):
+        self.calls.append({"url": url, "params": dict(params or {})})
+        if self.raises is not None:
+            raise self.raises
+        return _FakeResponse(self.payload, self.status_code)
+
+
+def _ok(results, total=None):
+    return {"error": "OK", "status_code": 1, "results": results,
+            "number_of_total_results": total if total is not None else len(results)}
+
+
+VOLUME = {
+    "id": 4050,
+    "name": "Saga",
+    "start_year": "2012",
+    "publisher": {"name": "Image"},
+    "image": {"super_url": "https://comicvine.gamespot.com/a/uploads/saga.jpg"},
+    "deck": "A soldier and a soldier.",
+}
+
+ISSUE = {
+    "id": 9001,
+    "name": "Chapter One",
+    "issue_number": "1",
+    "cover_date": "2012-03-14",
+    "image": {"super_url": "https://comicvine.gamespot.com/a/uploads/saga-1.jpg"},
+    "deck": "The one where it starts.",
+    "character_credits": [{"name": "Alana"}, {"name": "Marko"}, {"name": None}],
+}
+
+
+@pytest.fixture
+def cvmod(app, monkeypatch):
+    """A clean ComicVine module: key set, integration on, caches empty.
+
+    Returns a helper that installs a fake session and hands it back.
+    """
+    from mediaforge.web import db
+
+    with app.app_context():
+        db.set_setting(cv.SETTING_API_KEY, API_KEY)
+        db.set_setting(cv.SETTING_ENABLED, "1")
+        db.set_setting(cv.SETTING_COOLDOWN, "")
+        db.set_setting(cv.SETTING_RATE_WINDOW, "")
+    cv.invalidate_cache()
+    cv._rate.reset()
+
+    def install(**kwargs):
+        session = _FakeSession(**kwargs)
+        monkeypatch.setattr(cv, "_session", lambda: session)
+        return session
+
+    yield install
+
+    cv.invalidate_cache()
+    cv._rate.reset()
+    with app.app_context():
+        db.set_setting(cv.SETTING_API_KEY, "")
+        db.set_setting(cv.SETTING_ENABLED, "0")
+        db.set_setting(cv.SETTING_COOLDOWN, "")
+        db.set_setting(cv.SETTING_RATE_WINDOW, "")
+
+
+# ---------------------------------------------------------------------------
+# 1. No key / disabled
+# ---------------------------------------------------------------------------
+
+def test_without_a_key_nothing_happens(app, cvmod, caplog):
+    from mediaforge.web import db
+    session = cvmod()
+    with app.app_context():
+        db.set_setting(cv.SETTING_API_KEY, "")
+    with caplog.at_level(logging.DEBUG):
+        assert cv.enrich("Saga", "1") == {}
+        assert cv.search_volume("Saga") is None
+        assert cv.search_issue(4050, "1") is None
+    assert session.calls == []
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+def test_disabled_integration_makes_no_request(app, cvmod):
+    from mediaforge.web import db
+    session = cvmod(payload=_ok([VOLUME]))
+    with app.app_context():
+        db.set_setting(cv.SETTING_ENABLED, "0")
+    assert cv.enrich("Saga", "1") == {}
+    assert session.calls == []
+
+
+def test_offline_returns_empty_without_raising(cvmod):
+    cvmod(raises=OSError("Max retries exceeded"))
+    assert cv.enrich("Saga", "1") == {}
+
+
+def test_test_connection_without_a_key_is_a_plain_error(app, cvmod):
+    from mediaforge.web import db
+    session = cvmod()
+    with app.app_context():
+        db.set_setting(cv.SETTING_API_KEY, "")
+    assert cv.test_connection() == {"ok": False, "error": "no_api_key"}
+    assert session.calls == []
+
+
+# ---------------------------------------------------------------------------
+# 2. Throttle
+# ---------------------------------------------------------------------------
+
+def test_throttle_caps_requests_per_resource(cvmod, monkeypatch):
+    session = cvmod(payload=_ok([]))
+    monkeypatch.setattr(cv, "_rate", cv._RateLimiter(limit=2))
+
+    for i in range(5):
+        cv.search_volume(f"Series {i}")
+
+    assert len(session.calls) == 2, "the throttle let more than the cap through"
+
+
+def test_throttle_counts_resources_separately(cvmod, monkeypatch):
+    session = cvmod(payload=_ok([VOLUME]))
+    monkeypatch.setattr(cv, "_rate", cv._RateLimiter(limit=1))
+
+    assert cv.search_volume("Saga") is not None      # spends the volumes budget
+    assert cv.search_issue(4050, "1") is not None    # issues has its own
+    assert len(session.calls) == 2
+    assert cv.search_volume("Other") is None         # volumes budget is gone
+    assert len(session.calls) == 2
+
+
+def test_throttle_survives_a_restart(app, cvmod, monkeypatch):
+    """A fresh process must not hand out a fresh hourly budget."""
+    cvmod(payload=_ok([]))
+    monkeypatch.setattr(cv, "_rate", cv._RateLimiter(limit=3))
+    cv.search_volume("Saga")
+    cv.search_volume("Bone")
+
+    restarted = cv._RateLimiter(limit=3)   # same state a new process would load
+    assert restarted.remaining("volumes") == 1
+
+
+def test_a_reported_rate_limit_stops_everything(app, cvmod):
+    """ComicVine answering 107 means the local count and the server's
+    disagree -- the server wins, and nothing is sent for a full window."""
+    session = cvmod(payload={"error": "rate limit exceeded", "status_code": 107,
+                             "results": []})
+    assert cv.search_volume("Saga") is None
+    assert len(session.calls) == 1
+    assert cv._cooldown_left() > 0
+
+    assert cv.search_volume("Bone") is None
+    assert len(session.calls) == 1, "kept sending after ComicVine said stop"
+
+
+def test_http_429_also_starts_the_cooldown(cvmod):
+    session = cvmod(payload={}, status_code=429)
+    assert cv.search_volume("Saga") is None
+    assert cv._cooldown_left() > 0
+    assert len(session.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# 3. Caching (a miss is cached too)
+# ---------------------------------------------------------------------------
+
+def test_a_miss_is_cached(cvmod):
+    session = cvmod(payload=_ok([]))
+    assert cv.search_volume("Totally Unknown Indie Zine") is None
+    assert cv.search_volume("Totally Unknown Indie Zine") is None
+    assert len(session.calls) == 1, "an unknown series was looked up twice"
+
+
+def test_a_hit_is_cached(cvmod):
+    session = cvmod(payload=_ok([VOLUME]))
+    first = cv.search_volume("Saga")
+    second = cv.search_volume("Saga")
+    assert first == second
+    assert len(session.calls) == 1
+
+
+def test_a_throttled_lookup_is_not_cached_as_a_miss(cvmod, monkeypatch):
+    """A temporary "no budget" must not freeze into a 24 h miss."""
+    session = cvmod(payload=_ok([VOLUME]))
+    monkeypatch.setattr(cv, "_rate", cv._RateLimiter(limit=0))
+    assert cv.search_volume("Saga") is None
+    assert session.calls == []
+
+    monkeypatch.setattr(cv, "_rate", cv._RateLimiter(limit=5))
+    assert cv.search_volume("Saga") is not None
+    assert len(session.calls) == 1
+
+
+def test_an_outage_is_not_cached_as_a_miss(cvmod, monkeypatch):
+    session = cvmod(raises=OSError("connection reset"))
+    assert cv.search_volume("Saga") is None
+
+    ok_session = _FakeSession(payload=_ok([VOLUME]))
+    monkeypatch.setattr(cv, "_session", lambda: ok_session)
+    assert cv.search_volume("Saga") is not None
+
+
+# ---------------------------------------------------------------------------
+# 4. The key never reaches a log
+# ---------------------------------------------------------------------------
+
+def test_the_api_key_is_never_logged(cvmod, caplog):
+    """The most likely leak: an HTTP error message quoting the request URL."""
+    leaky = OSError(
+        "HTTPSConnectionPool: /api/volumes/?api_key=" + API_KEY + "&format=json"
+    )
+    cvmod(raises=leaky)
+    with caplog.at_level(logging.DEBUG):
+        assert cv.enrich("Saga", "1") == {}
+        assert cv.search_volume("Saga") is None
+        assert cv.test_connection()["ok"] is False
+    assert API_KEY not in caplog.text
+    assert "api_key=" not in caplog.text or "api_key=***" in caplog.text
+
+
+def test_nothing_logs_at_error_level(cvmod, caplog):
+    """An ERROR record on the shared logger becomes a telemetry crash report."""
+    cvmod(raises=OSError("boom"))
+    with caplog.at_level(logging.DEBUG):
+        cv.enrich("Saga", "1")
+        cv.search_volume("Saga")
+        cv.search_issue(4050, "1")
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+def test_redact_removes_the_key_from_any_text():
+    text = "GET https://comicvine.gamespot.com/api/issues/?api_key=" + API_KEY
+    assert API_KEY not in cv._redact(text, API_KEY)
+    # Also without knowing the key -- the query parameter is stripped by shape.
+    assert "abc123" not in cv._redact("?api_key=abc123&format=json")
+
+
+# ---------------------------------------------------------------------------
+# What enrich() actually returns
+# ---------------------------------------------------------------------------
+
+def test_enrich_returns_only_supplementary_fields(cvmod, monkeypatch):
+    class _TwoStep(_FakeSession):
+        """Answers /volumes/ and /issues/ from their own fixtures."""
+
+        def get(self, url, params=None, timeout=None, headers=None):
+            self.payload = _ok([ISSUE]) if "/issues/" in url else _ok([VOLUME])
+            return super().get(url, params=params, timeout=timeout, headers=headers)
+
+    session = _TwoStep()
+    monkeypatch.setattr(cv, "_session", lambda: session)
+    out = cv.enrich("Saga", "1", "2012")
+
+    assert out["publisher"] == "Image"
+    assert out["story_title"] == "Chapter One"
+    assert out["summary"] == "The one where it starts."
+    assert out["year"] == "2012"
+    assert out["characters"] == ["Alana", "Marko"]
+    assert out["cover_url"].startswith("https://comicvine.gamespot.com/")
+    assert set(out) <= {"publisher", "summary", "cover_url", "year",
+                        "story_title", "characters"}
+
+
+def test_a_foreign_cover_host_is_dropped(cvmod):
+    hostile = dict(VOLUME, image={"super_url": "https://evil.example/pixel.gif"})
+    cvmod(payload=_ok([hostile]))
+    assert cv.search_volume("Saga")["cover_url"] == ""
+
+
+def test_garbage_fields_do_not_crash_the_parser(cvmod):
+    junk = {"id": 1, "name": "Saga", "start_year": None, "publisher": "Image",
+            "image": ["nope"], "deck": 42, "description": None}
+    cvmod(payload=_ok([junk]))
+    out = cv.search_volume("Saga")
+    assert out["publisher"] == "" and out["cover_url"] == "" and out["year"] == ""
+
+
+def test_a_completely_different_series_is_a_miss(cvmod):
+    cvmod(payload=_ok([dict(VOLUME, name="Something Else Entirely")]))
+    assert cv.search_volume("Saga") is None
+
+
+# ---------------------------------------------------------------------------
+# The settings endpoint
+# ---------------------------------------------------------------------------
+
+def test_the_endpoint_never_returns_the_key(app, as_user):
+    from mediaforge.web import db
+    with app.app_context():
+        db.set_setting(cv.SETTING_API_KEY, "plaintext-comicvine-key-xyz")
+    resp = as_user("admin").get("/api/settings/comicvine")
+    assert resp.status_code == 200
+    assert "plaintext-comicvine-key-xyz" not in resp.get_data(as_text=True)
+    assert resp.get_json()["has_api_key"] is True
+    with app.app_context():
+        db.set_setting(cv.SETTING_API_KEY, "")
+
+
+def test_saving_without_a_key_keeps_the_stored_one(app, as_user):
+    from mediaforge.web import db
+    client = as_user("admin")
+    with app.app_context():
+        db.set_setting(cv.SETTING_API_KEY, "keep-me")
+    client.put("/api/settings/comicvine", json={"enabled": "1"})
+    with app.app_context():
+        assert db.get_setting(cv.SETTING_API_KEY, "") == "keep-me"
+        assert db.get_setting(cv.SETTING_ENABLED, "") == "1"
+        db.set_setting(cv.SETTING_API_KEY, "")
+        db.set_setting(cv.SETTING_ENABLED, "0")
+
+
+def test_the_key_is_stored_encrypted(app):
+    """It is in db.SENSITIVE_KEYS, so the raw row must not be readable."""
+    from mediaforge.web import db
+    with app.app_context():
+        assert db.is_sensitive_key(cv.SETTING_API_KEY)
+        db.set_setting(cv.SETTING_API_KEY, "encrypt-me-please")
+        conn = db.get_db()
+        row = conn.execute("SELECT value FROM app_settings WHERE key = ?",
+                           (cv.SETTING_API_KEY,)).fetchone()
+        assert "encrypt-me-please" not in str(row["value"])
+        assert db.get_setting(cv.SETTING_API_KEY, "") == "encrypt-me-please"
+        db.set_setting(cv.SETTING_API_KEY, "")

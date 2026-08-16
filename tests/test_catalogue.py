@@ -1,19 +1,29 @@
-"""The Catalogue page: full A-Z lists, bulk selection, and what it refuses.
+"""The Catalogue page and the browse cards it builds: full A-Z lists,
+bulk selection, what it refuses, and the episode -> series link.
 
-The parsers run against HTML captured from the live pages, so a redesign shows
-up as a failing test rather than as an empty list in the UI. The bulk endpoint
-is tested mostly for what it will NOT do -- it is an endpoint that turns a JSON
-list into hundreds of scrapes, so every guard on it matters more than the happy
-path.
+Merged from: test_catalogue.py, test_series_url_normalization.py.
 """
 
 import time
-
 import pytest
+import types
+from pathlib import Path as _Path
 
 from mediaforge import catalogue
+from mediaforge import providers
 
 
+# ==========================================================================
+# test_catalogue.py
+#
+# The Catalogue page: full A-Z lists, bulk selection, and what it refuses.
+# 
+# The parsers run against HTML captured from the live pages, so a redesign shows
+# up as a failing test rather than as an empty list in the UI. The bulk endpoint
+# is tested mostly for what it will NOT do -- it is an endpoint that turns a JSON
+# list into hundreds of scrapes, so every guard on it matters more than the happy
+# path.
+# ==========================================================================
 # The bulk worker really does reach the download queue now (it used to filter
 # every episode away -- see _already_on_disk), so these tests really do create
 # queue items. The queue worker started by create_app() would then try to
@@ -784,7 +794,6 @@ def test_an_idle_wait_can_be_interrupted():
 # mediaforge/web/ but its imports were written with the depth a module in
 # mediaforge/web/routes/ needs, so `..db` resolved to the non-existent
 # `mediaforge.db`. The whole feature had never worked. These run the thread.
-import types
 
 
 class _FakeEpisode:
@@ -977,7 +986,6 @@ def test_the_state_endpoint_uses_the_queues_own_status_words():
 # The details modal is now the download modal's markup driven by modals.css,
 # and the seasons load one at a time. Neither is visible in a rendered page --
 # both are decisions in the js/css -- so these read the files.
-from pathlib import Path as _Path
 
 _STATIC = _Path(__file__).resolve().parents[1] / "src/mediaforge/web/static"
 
@@ -1233,3 +1241,141 @@ def test_the_dialog_is_anchored_to_the_top_so_it_cannot_jump():
     assert "align-items: flex-start;" in overlay
     card = css.split(".cat-modal-card {")[1].split("}")[0]
     assert "margin: auto;" not in card
+
+
+# ==========================================================================
+# test_series_url_normalization.py
+#
+# A browse card that links to an EPISODE must still open its series.
+# 
+# 9anime's "Recently Updated" row is the case that forced this: the site's own
+# markup offers nothing but the newest episode's URL (both the poster link and
+# the title link point there), so clicking such a card used to hand
+# ``/api/series`` an episode URL and blow up with
+# ``ValueError: Invalid 9anime series URL`` -- an HTTP 500 for a perfectly valid
+# card.
+# 
+# Everything here is offline: the episode classes are stubbed, so these tests
+# pin the routing decision (when is a fetch attempted at all, and what happens
+# when it fails) rather than either site's current HTML.
+# ==========================================================================
+class _UrlFakeSeries:
+    def __init__(self, url):
+        self.url = url
+
+
+class _UrlFakeEpisode:
+    """Stands in for a real episode model: resolving .series costs a fetch."""
+
+    resolved = "https://9anime.or.at/anime/kamui-hes-behind-you/"
+    calls = 0
+
+    def __init__(self, url=None):
+        type(self).calls += 1
+        self.url = url
+
+    @property
+    def series(self):
+        return _UrlFakeSeries(self.resolved)
+
+
+class _ExplodingEpisode(_UrlFakeEpisode):
+    @property
+    def series(self):
+        raise RuntimeError("upstream had a bad day")
+
+
+@pytest.fixture
+def nineanime(monkeypatch):
+    """The 9anime provider with its episode class swapped for a stub."""
+    prov = next(p for p in providers.PROVIDERS if p.name == "NineAnime")
+    _UrlFakeEpisode.calls = 0
+    patched = providers.Provider(
+        name=prov.name,
+        series_pattern=prov.series_pattern,
+        season_pattern=prov.season_pattern,
+        episode_pattern=prov.episode_pattern,
+        series_cls=prov.series_cls,
+        season_cls=prov.season_cls,
+        episode_cls=_UrlFakeEpisode,
+    )
+    monkeypatch.setattr(
+        providers, "PROVIDERS",
+        [patched if p.name == "NineAnime" else p for p in providers.PROVIDERS],
+    )
+    return patched
+
+
+EPISODE_URL = ("https://9anime.or.at/hell-mode-the-hardcore-gamer-dominates-in-"
+               "another-world-with-garbage-balancing-season-2-episode-6-english-subed/")
+
+
+def test_an_episode_url_becomes_its_series_url(nineanime):
+    assert providers.series_url_for(EPISODE_URL) == _UrlFakeEpisode.resolved
+    assert _UrlFakeEpisode.calls == 1
+
+
+def test_a_series_url_is_returned_untouched_and_costs_no_fetch(nineanime):
+    """The common case by far -- every other source's cards already link to the
+    series page, and paying a request to confirm that would be absurd."""
+    url = "https://9anime.or.at/anime/kamui-hes-behind-you/"
+    assert providers.series_url_for(url) == url
+    assert _UrlFakeEpisode.calls == 0
+
+
+def test_a_failure_leaves_the_url_alone(monkeypatch, nineanime):
+    """Best-effort: the caller must end up exactly where it was before, not
+    with a second, different error."""
+    patched = providers.Provider(
+        name=nineanime.name,
+        series_pattern=nineanime.series_pattern,
+        season_pattern=nineanime.season_pattern,
+        episode_pattern=nineanime.episode_pattern,
+        series_cls=nineanime.series_cls,
+        season_cls=nineanime.season_cls,
+        episode_cls=_ExplodingEpisode,
+    )
+    monkeypatch.setattr(
+        providers, "PROVIDERS",
+        [patched if p.name == "NineAnime" else p for p in providers.PROVIDERS],
+    )
+    assert providers.series_url_for(EPISODE_URL) == EPISODE_URL
+
+
+@pytest.mark.parametrize("url", [
+    # Movie-only sites have no series concept to resolve to.
+    "https://filmpalast.to/stream/some-movie",
+    "https://filmo.to/movies/some-movie",
+    # Already a series page.
+    "https://aniworld.to/anime/stream/naruto",
+    # Not ours at all.
+    "https://example.invalid/whatever",
+    "",
+])
+def test_untouched(url):
+    assert providers.series_url_for(url) == url
+
+
+def test_aniwaves_episode_resolves_without_a_fetch():
+    """aniwaves.ru encodes the series id in the episode URL itself, so this one
+    is pure string work -- worth pinning, because it is the reason the helper
+    does not simply assume every provider needs a network round-trip."""
+    assert providers.series_url_for("https://aniwaves.ru/watch/1234/ep-5") == \
+        "https://aniwaves.ru/watch/1234"
+
+
+def test_nineanime_breadcrumb_regex_matches_the_live_markup():
+    """Guards the one regex the 9anime resolution depends on, against the
+    markup the site actually serves (captured from a live episode page)."""
+    import re
+    from mediaforge.models.nineanime_to import episode as ep_mod  # noqa: F401
+
+    markup = (
+        '<ol class="breadcrumb">'
+        '<li class="breadcrumb-item"><a href="https://9anime.or.at/" title="Home">Home</a></li>'
+        '<li class="breadcrumb-item"><a href="https://9anime.or.at/anime/kamui-hes-behind-you/">'
+        'KAMUI: He&#8217;s Behind You</a></li>'
+        '<li class="breadcrumb-item dynamic-name active">Watching ...</li></ol>'
+    )
+    m = re.search(r'breadcrumb-item"><a href="(https://9anime\.or\.at/anime/[^"]+)"', markup)
+    assert m and m.group(1) == "https://9anime.or.at/anime/kamui-hes-behind-you/"

@@ -5,7 +5,7 @@ All of it is admin-only. The endpoints are listed in app.py's ``_admin_only``
 set like every other privileged route -- authorisation in this app lives in
 that one hand-maintained set rather than on the individual routes, and adding
 a route here without adding it there would leave it open to any logged-in
-account (see tests/test_admin_gating.py, which asserts exactly that).
+account (see tests/test_auth.py, which asserts exactly that).
 
 Extracted as a plain route-registration function (no Flask blueprint: endpoint
 names stay bare so url_for() keeps working), matching every other routes

@@ -546,7 +546,7 @@ _FEED_PERSONAL_ROWS = ("continue", "library", "watchlist", "upcoming", "gaps",
 # (renderPersonal() calls showSection(row, list.length > 0), which sets
 # display:none), so a new user never sees a blank "Continue watching" in the
 # first place -- while everyone WITH a history would lose the one row they
-# actually came for from the top of the page. tests/test_home_feed_smoke.py
+# actually came for from the top of the page. tests/test_home.py
 # (test_default_row_order_puts_the_borrowed_rows_last) pins both ends of this
 # order on purpose.
 #
@@ -767,6 +767,25 @@ def _feed_user_prefs():
         return {}
 
 
+# Rows the column Dashboard renders as a card instead of as a poster row --
+# the client half of this list is DASH_CARD_ROWS in static/home_feed.js.
+_FEED_DASH_CARD_ROWS = ("continue", "library", "watchlist", "upcoming", "gaps")
+
+
+def _feed_dash_cards_active(prefs) -> bool:
+    """True when this account is on the column Dashboard, i.e. the new home
+    page with a Dashboard tab that is not "All in one page" (which renders
+    the older button-bar dashboard and keeps the poster rows)."""
+    mode = str(prefs.get("home_dash_enabled") or get_setting("home_dash_enabled_default", ""))
+    if mode in ("0", "all"):
+        return False
+    if str(prefs.get("new_home") or "") == "1":
+        return True
+    if str(prefs.get("new_home") or "") == "0":
+        return False
+    return get_setting("new_home_enabled", "0") == "1"
+
+
 def _feed_parse_layout(raw):
     """"o:<order>;h:<hidden>;n:<limit>" -> dict of the parts that were set.
 
@@ -791,10 +810,21 @@ def feed_effective_config():
     with the user's own overrides applied on top. `overridden` names the parts
     the user changed, so the Start Page settings can say so."""
     cfg = feed_global_defaults()
-    layout = _feed_parse_layout(_feed_user_prefs().get("home_feed_layout"))
+    prefs = _feed_user_prefs()
+    layout = _feed_parse_layout(prefs.get("home_feed_layout"))
     overridden = sorted(layout)
     cfg.update(layout)
     cfg["overridden"] = overridden
+    # On the column Dashboard these five rows are CARDS, and a card is shown
+    # or hidden on the Dashboard itself (its "x" writes home_dash_hidden).
+    # The Start Page settings therefore no longer list them -- so a value
+    # left in `hidden` by an older version, or by switching layouts, would be
+    # a switch nothing can reach any more, and the card would stay
+    # permanently empty because the rows below never collect its data.
+    # Ignored rather than rewritten: switching back to "All in one page"
+    # must find the account's old choices intact.
+    if _feed_dash_cards_active(prefs):
+        cfg["hidden"] = [row for row in cfg["hidden"] if row not in _FEED_DASH_CARD_ROWS]
     cfg["rows"] = [
         {
             "id": row,
@@ -811,7 +841,7 @@ def feed_effective_config():
     # is not actually being filtered by.
     ceiling = _feed_max_fsk()
     cfg["max_fsk"] = "" if ceiling is None else str(ceiling)
-    cfg["mode"] = (_feed_user_prefs().get("home_mode") or "")
+    cfg["mode"] = (prefs.get("home_mode") or "")
     # Kids mode is off until an admin turns it on AND sets a PIN. Both, not
     # either: a kids mode you can leave by clicking "Standard" is a display
     # setting wearing a lock icon, and offering the button before the lock
@@ -979,7 +1009,7 @@ def register_browse_routes(app):
     # Upstream failures answer 502, not 500: none of these routes is broken
     # when they fire -- the third-party site is unreachable or answered with
     # something unusable. 500 would claim MediaForge itself failed, which also
-    # made the route smoke test (tests/test_routes_smoke.py) go red whenever a
+    # made the route smoke test (tests/test_contracts.py) go red whenever a
     # source site had a bad day. The frontend only looks at the payload
     # ("results" present or not), so the status change is invisible to it.
     @app.route("/api/random")

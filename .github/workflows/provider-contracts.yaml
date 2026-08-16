@@ -48,7 +48,7 @@ jobs:
           MEDIAFORGE_CONTRACT_LIVE: "1"
         run: |
           set -o pipefail
-          python -m pytest tests/test_provider_contracts.py -q \
+          python -m pytest tests/test_providers.py -q \
             -k live 2>&1 | tee contract-report.txt
 
       - name: Upload the report
