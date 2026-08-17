@@ -200,6 +200,21 @@ def build_system_info_event():
     except Exception:
         pass
 
+    # Which theme pack this instance has applied -- the store's module id, or
+    # "default" for the built-in look. An install-level preference like
+    # ui_language above, and it answers the one question downloads cannot: a
+    # theme downloaded once and kept beats one downloaded fifty times and
+    # switched away from the same evening, and the built-in theme is never
+    # downloaded at all. The store counts NULL as "not reported" rather than
+    # folding it into the default, so the key is simply absent when this fails
+    # -- never an empty string, which would be neither fact.
+    try:
+        from ..web import themes as _themes
+        payload["active_theme"] = (_themes.active_theme() or {}).get(
+            "id") or _themes.BUILTIN_THEME_ID
+    except Exception:
+        pass
+
     return _event("system_info", payload)
 
 

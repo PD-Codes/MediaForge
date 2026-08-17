@@ -344,6 +344,12 @@ def _normalize(entry: dict, base_url: str) -> dict:
         "homepage": str(entry.get("homepage") or ""),
         "license": str(entry.get("license") or ""),
         "source_url": str(entry.get("source_url") or ""),
+        # The linked source repository, as an absolute URL the UI can open. Taken as the
+        # store gives it and never derived from the entry's "owner/repo" string: a store
+        # that links something which is not GitHub would otherwise get a github.com link
+        # to a page that does not exist. Absent means absent, and the button is hidden.
+        # Display-only, like homepage and source_url — nothing here decides anything.
+        "repo_url": str(entry.get("repo_url") or ""),
         "download_url": download_url,
         "sha256": str(entry.get("sha256") or "").lower(),
         "size": entry.get("size"),

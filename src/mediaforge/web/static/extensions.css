@@ -623,6 +623,17 @@
 
 .extensions-page .ext-detail-actions .btn { width: 100%; }
 
+/* The repository link sits in the action stack, so it has to look like the buttons
+   above it rather than like a link that wandered in. */
+.extensions-page .ext-detail-repo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  text-decoration: none;
+}
+
 .extensions-page .ext-detail-src {
   display: inline-block;
   margin-top: 12px;
