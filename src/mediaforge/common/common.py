@@ -7,8 +7,9 @@ module.
 """
 
 import re
+import shutil
 import subprocess
-import sys
+import zipfile
 from pathlib import Path
 
 try:
@@ -74,38 +75,76 @@ def fetch_github_asset_urls(repo, asset_patterns, release="latest"):
     return matched_urls
 
 
-def unzip(file_path, target_dir):
-    """Extract a .zip or .7z archive into *target_dir*.
+def _safe_zip_members(archive: zipfile.ZipFile, target_dir: Path):
+    """Yield members of *archive* that stay inside *target_dir*.
 
-    Uses the system ``unzip``/``7z`` binaries on macOS/Linux. Windows
-    extraction is not yet implemented (see TODOs below).
+    Zip Slip guard. Every archive handled here comes off the network (GitHub
+    releases, 7-zip.org), and a member named ``../../autoexec.bat`` or
+    ``C:\\Windows\\System32\\x.dll`` would otherwise be written wherever it
+    asks -- ``zipfile.extractall`` sanitises names, but the per-member
+    extraction this function feeds does not, and neither does the system
+    ``unzip``/``7z`` path below. Symlink members are dropped for the same
+    reason: a link to ``/etc`` turns a later write into an escape.
+    """
+    resolved_root = target_dir.resolve()
+    for info in archive.infolist():
+        name = info.filename
+        if not name or name.endswith("/"):
+            continue
+        # 0xA000 == S_IFLNK in the high 16 bits of external_attr (Unix zips).
+        if (info.external_attr >> 16) & 0xF000 == 0xA000:
+            raise ValueError(f"Refusing symlink member in archive: {name}")
+        if name.startswith(("/", "\\")) or ".." in Path(name.replace("\\", "/")).parts:
+            raise ValueError(f"Refusing unsafe path in archive: {name}")
+        destination = (resolved_root / name).resolve()
+        if destination != resolved_root and resolved_root not in destination.parents:
+            raise ValueError(f"Refusing path traversal in archive: {name}")
+        yield info, destination
 
-    Used by: mediaforge.anime4k.anime4k.extract_anime4k().
+
+def extract_archive(file_path, target_dir):
+    """Extract a .zip or .7z archive into *target_dir*, on every platform.
+
+    ZIPs go through the stdlib ``zipfile`` everywhere -- no external binary,
+    identical behaviour on Windows, Linux and macOS. 7z still needs the
+    system ``7z``/``7za`` because Python ships no decoder for it.
+
+    Replaces the former Windows branches of :func:`unzip`, which were
+    ``# TODO: implement`` + ``pass``: extraction silently did nothing and
+    returned successfully, so the caller went on to use files that were never
+    written (this is what left Anime4K shader extraction a no-op on Windows).
     """
     file_path = Path(file_path)
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+    suffix = file_path.suffix.lower()
 
-    if file_path.suffix.lower() == ".zip":
-        if sys.platform.startswith("win"):
-            # TODO: implement
-            pass
-        else:
-            # Use system unzip on macOS/Linux
-            print(f"Extracting ZIP: {file_path} -> {target_dir}")
-            subprocess.run(
-                ["unzip", "-o", str(file_path), "-d", str(target_dir)], check=True
+    if suffix == ".zip":
+        with zipfile.ZipFile(file_path) as archive:
+            for info, destination in _safe_zip_members(archive, target_dir):
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(info) as src, open(destination, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+        return target_dir
+
+    if suffix == ".7z":
+        seven_zip = shutil.which("7z") or shutil.which("7za") or shutil.which("7zr")
+        if not seven_zip:
+            raise RuntimeError(
+                f"Cannot extract {file_path.name}: no 7z binary found on PATH."
             )
-    elif file_path.suffix.lower() == ".7z":
-        # use 7z
-        if sys.platform.startswith("win"):
-            # TODO: implement
-            pass
-        else:
-            # Use system 7z on macOS/Linux
-            print(f"Extracting 7z: {file_path} -> {target_dir}")
-            subprocess.run(
-                ["7z", "x", str(file_path), f"-o{str(target_dir)}"], check=True
-            )
-    else:
-        raise ValueError(f"Unsupported archive format: {file_path}")
+        subprocess.run(
+            [seven_zip, "x", "-y", str(file_path), f"-o{target_dir}"],
+            check=True, timeout=600,
+        )
+        return target_dir
+
+    raise ValueError(f"Unsupported archive format: {file_path}")
+
+
+def unzip(file_path, target_dir):
+    """Backwards-compatible alias for :func:`extract_archive`.
+
+    Used by: mediaforge.anime4k.anime4k.extract_anime4k().
+    """
+    return extract_archive(file_path, target_dir)

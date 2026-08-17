@@ -17,7 +17,6 @@ per-(Audio, Subtitles) hoster links.
 import getpass
 import hashlib
 import os
-import platform
 import re
 import shlex
 import shutil
@@ -30,7 +29,7 @@ from typing import Tuple
 
 import ffmpeg
 
-from ...autodeps import DependencyManager
+from ...autodeps import ensure_ffmpeg
 
 try:
     from ...autodeps import get_player_path, get_syncplay_path
@@ -1629,9 +1628,12 @@ def download(self, cancel_event=None):
     HanimeEpisode does NOT use this -- it has its own single-stream
     download() with no language/provider selection to reconcile.
     """
-    if platform.system() == "Windows":
-        manager = DependencyManager()
-        manager.fetch_binary("ffmpeg")
+    # Fail fast and in a language the queue can explain: everything below
+    # either muxes with ffmpeg or probes with ffprobe. ensure_ffmpeg() is
+    # cached process-wide, so this costs a dict lookup after the first episode
+    # instead of the DependencyManager construction + winget attempt it used
+    # to run for every single one.
+    ensure_ffmpeg()
 
     if _download_via_hoster(self, cancel_event=cancel_event):
         return True
