@@ -978,15 +978,20 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
         if total_new_queued > 0 and queue_downloads:
             from .notifications import notify_all
             _lang = _job_notif_lang(job)
+            # Name the series in the body too, same as the queue worker's
+            # download notifications -- a channel that shows only the body
+            # (or a phone that truncates the heading) otherwise says
+            # "3 new episodes" without ever saying of what.
+            _name = job.get("title") or _tr(_lang, "Unbekannt", "Unknown")
             notify_all(
                 title=job["title"],
                 body=_tr(_lang,
-                    f"⬇️ {total_new_queued} neue Folge wird heruntergeladen"
+                    f"⬇️ {_name}, {total_new_queued} neue Folge wird heruntergeladen"
                     if total_new_queued == 1 else
-                    f"⬇️ {total_new_queued} neue Folgen werden heruntergeladen",
-                    f"⬇️ {total_new_queued} new episode is being downloaded"
+                    f"⬇️ {_name}, {total_new_queued} neue Folgen werden heruntergeladen",
+                    f"⬇️ {_name}, {total_new_queued} new episode is being downloaded"
                     if total_new_queued == 1 else
-                    f"⬇️ {total_new_queued} new episodes are being downloaded"),
+                    f"⬇️ {_name}, {total_new_queued} new episodes are being downloaded"),
                 event="on_autosync",
                 username=job.get("added_by"),
                 episode_count=total_new_queued,

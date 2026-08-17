@@ -2535,7 +2535,7 @@ AutoSync finds new episodes, etc. — that's what this hook is for:
 from mediaforge.web.thirdparties.registry import register_notification_channel
 
 def _send(title, body, event, username=None, status=None, episode_count=0,
-          errors=None, is_movie=False):
+          errors=None, is_movie=False, episode_range="", **kwargs):
     if get_setting("my_channel_enabled", "0") != "1":
         return
     # send asynchronously (own thread), same as every built-in notify_* —
@@ -2558,6 +2558,32 @@ registering here does not imply "always on". Removed automatically on
 disable/uninstall, same `item_id`-keyed cleanup as the other hooks in this
 document.
 
+The payload:
+
+| argument | meaning |
+| --- | --- |
+| `title` | the series/movie title — the notification heading |
+| `body` | the ready-made, already-translated message (DE/EN by the user's UI language) |
+| `event` | `on_completed`, `on_errors`, `on_partial`, `on_cancelled`, `on_autosync`, `on_sync_hold`, `on_sync_resume`, `on_sync_error`, `on_disk_space_low` |
+| `username` | who the notification is about, or `None` |
+| `status` | `completed` / `partial` / `failed` / `cancelled`, or `None` for non-download events |
+| `episode_count` | how many episodes the job covered (`1` for a movie) |
+| `errors` | list of `{"url": ..., "error": ...}`, or `None` |
+| `is_movie` | `True` for a single-file movie job — never word those as episodes |
+| `episode_range` | `"S02E02-S02E07"` / `"S02E03"` / `"E05"`, `""` for movies and unparseable URLs |
+
+Build your own wording with `mediaforge.web.notifications`'s helpers
+(`tr`, `media_count_text`, `error_count_text`, `episode_marker`,
+`episode_range_text`, `download_body_text`) rather than hand-rolling
+singular/plural and DE/EN yourself — that's the same code the built-in
+channels use.
+
+**Forward compatibility:** MediaForge calls your channel/hook with only the
+keyword arguments your signature actually declares, so a channel written
+against an older version keeps working when the payload grows (`episode_range`
+was the first such addition). Adding `**kwargs` opts you into every future
+field for free.
+
 ## Lifecycle event hooks (`register_event_hook`)
 
 For a reaction that isn't itself a notification — auto-tagging, kicking off
@@ -2568,7 +2594,8 @@ directly instead of pretending to be a notification channel:
 from mediaforge.web.thirdparties.registry import register_event_hook
 
 def _on_completed(title, body, event, username=None, status=None,
-                   episode_count=0, errors=None, is_movie=False):
+                   episode_count=0, errors=None, is_movie=False,
+                   episode_range="", **kwargs):
     ...  # e.g. POST to an external webhook -- this is what covers the
          # open "Generic Outgoing Webhook" roadmap item for your own module,
          # without waiting for a built-in one

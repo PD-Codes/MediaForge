@@ -539,6 +539,54 @@ def _is_movie_url(url: str) -> bool:
     return False
 
 
+def _job_is_movie(item) -> bool:
+    """Whether a claimed queue item is a movie job, for notification wording.
+
+    The queue row's URL column is ``series_url`` -- there is no ``url`` key on
+    a queue item (see db/queue.py's schema). Reading ``item["url"]`` therefore
+    always yielded "" and `_is_movie_url("")` always False, which is why every
+    movie notification still said "1 Episode" although `_is_movie_url` itself
+    was correct. One helper now, so the three notification call sites in
+    `_queue_worker` can't drift apart again.
+
+    Direct Link jobs are always a single file, so they get the same "Film"
+    wording as a FilmPalast movie.
+
+    Never raises: this runs on the job-completion path, right before the
+    Jellyfin/Plex refresh, and wording must not be able to abort it. For
+    MegaKino the answer costs one HTTP request (mixed movie/series provider),
+    hence the once-per-job call site rather than per notification channel.
+    """
+    try:
+        return (
+            _is_movie_url(item.get("series_url") or "")
+            or item.get("provider") == "Direct"
+        )
+    except Exception:
+        logger.debug("[Notif] movie detection failed for queue item %s",
+                     item.get("id"), exc_info=True)
+        return False
+
+
+def _episode_range_for(ep_urls) -> str:
+    """"S02E02-S02E07" for a list of episode URLs, "" when none carry a
+    season/episode (movies, Direct Link) -- see notifications.episode_range_text.
+
+    Parsing happens here rather than in notifications.py because the URL
+    shapes are the queue worker's business (`_parse_season_episode_from_url`),
+    while the *formatting* is shared with every channel and with modules.
+
+    Never raises -- a missing detail is worth far less than a completed job.
+    """
+    try:
+        from .notifications import episode_range_text
+        return episode_range_text(
+            _parse_season_episode_from_url(u) for u in (ep_urls or ()))
+    except Exception:
+        logger.debug("[Notif] episode range detection failed", exc_info=True)
+        return ""
+
+
 def _filmo_enabled() -> bool:
     """Whether the (opt-out, on by default) filmo.to source is enabled."""
     from .source_policy import source_enabled
@@ -1491,41 +1539,24 @@ def _queue_worker():
 
                 # Send notifications (all services)
                 from .notifications import (
-                    notify_all, notif_lang, tr, media_count_text, error_count_text)
-                # Direct Link jobs are always a single file, so they get the
-                # same "Film" notification wording as a FilmPalast movie.
-                _is_movie = (
-                    _is_movie_url(item.get("url", ""))
-                    or item.get("provider") == "Direct"
-                )
+                    notify_all, notif_lang, tr, download_body_text)
+                _is_movie = _job_is_movie(item)
                 _lang  = notif_lang(item.get("username"))
-                _what  = media_count_text(_lang, len(episodes), _is_movie)
-                _errs  = error_count_text(_lang, len(errors))
-                if status == "completed":
-                    _body = (tr(_lang, "✅ Film heruntergeladen", "✅ Movie downloaded")
-                             if _is_movie else
-                             tr(_lang, f"✅ {_what} heruntergeladen",
-                                f"✅ {_what} downloaded"))
-                    _event = "on_completed"
-                elif status == "partial":
-                    # `successful > 0` is what makes a job partial, so a movie
-                    # job here HAS its file -- only older failures are still
-                    # open. Saying "movie download failed" was simply wrong.
-                    _body = (tr(_lang,
-                                f"⚠️ Film heruntergeladen, {_errs} offen",
-                                f"⚠️ Movie downloaded, {_errs} still open")
-                             if _is_movie else
-                             tr(_lang,
-                                f"⚠️ {successful} von {_what} heruntergeladen, {_errs} offen",
-                                f"⚠️ {successful} of {_what} downloaded, {_errs} still open"))
-                    _event = "on_partial"
-                else:
-                    _body = (tr(_lang, f"❌ Film-Download fehlgeschlagen ({_errs})",
-                                f"❌ Movie download failed ({_errs})")
-                             if _is_movie else
-                             tr(_lang, f"❌ Download fehlgeschlagen ({_errs})",
-                                f"❌ Download failed ({_errs})"))
-                    _event = "on_errors"
+                # Which episodes the user actually got. A failed job has no
+                # successful URLs, so it names what was attempted instead --
+                # otherwise the marker would silently disappear exactly when
+                # the user most needs to know which episode broke.
+                _failed_urls = {e.get("url") for e in errors if isinstance(e, dict)}
+                _done_urls = [u for u in episodes if u not in _failed_urls]
+                _range = _episode_range_for(
+                    _done_urls if (status != "failed" and _done_urls) else episodes)
+                _event = {"completed": "on_completed",
+                          "partial": "on_partial"}.get(status, "on_errors")
+                _body = download_body_text(
+                    _lang, item.get("title"), status,
+                    count=len(episodes), successful=successful,
+                    errors=len(errors), is_movie=_is_movie, episode_range=_range,
+                )
                 notify_all(
                     title=item.get("title") or tr(_lang, "Unbekannt", "Unknown"),
                     body=_body,
@@ -1535,6 +1566,7 @@ def _queue_worker():
                     episode_count=len(episodes),
                     errors=errors,
                     is_movie=_is_movie,
+                    episode_range=_range,
                 )
                 # Trigger Jellyfin/Plex library refresh on completed or partial downloads
                 if status in ("completed", "partial"):
@@ -1544,16 +1576,21 @@ def _queue_worker():
                     _schedule_mediascan_delayed(delay=120.0)
             else:
                 _final_status_set = True
-                from .notifications import notify_all, notif_lang, tr
+                from .notifications import (
+                    notify_all, notif_lang, tr, download_body_text)
                 _lang = notif_lang(item.get("username"))
+                _is_movie = _job_is_movie(item)
                 notify_all(
                     title=item.get("title") or tr(_lang, "Unbekannt", "Unknown"),
-                    body=tr(_lang, "⏹️ Download abgebrochen", "⏹️ Download cancelled"),
+                    body=download_body_text(
+                        _lang, item.get("title"), "cancelled",
+                        count=len(episodes), is_movie=_is_movie),
                     event="on_cancelled",
                     username=item.get("username"),
                     status="cancelled",
                     episode_count=len(episodes),
                     errors=[],
+                    is_movie=_is_movie,
                 )
 
         except Exception as e:
@@ -1572,19 +1609,15 @@ def _queue_worker():
 
                         try:
                             from .notifications import notify_all, notif_lang, tr
-                            # Direct Link jobs are always a single file, so they get
-                            # the same "Film" notification wording as a FilmPalast movie.
-                            _is_movie = (
-                                _is_movie_url(item.get("url", ""))
-                                or item.get("provider") == "Direct"
-                            )
+                            _is_movie = _job_is_movie(item)
                             _lang = notif_lang(item.get("username"))
+                            _name = item.get("title") or tr(_lang, "Unbekannt", "Unknown")
                             notify_all(
                                 title=item.get("title") or tr(_lang, "Unbekannt", "Unknown"),
                                 body=tr(
                                     _lang,
-                                    f"❌ Download durch internen Fehler abgebrochen: {e}",
-                                    f"❌ Download aborted by an internal error: {e}",
+                                    f"❌ {_name}, Download durch internen Fehler abgebrochen: {e}",
+                                    f"❌ {_name}, download aborted by an internal error: {e}",
                                 ),
                                 event="on_errors",
                                 username=item.get("username"),

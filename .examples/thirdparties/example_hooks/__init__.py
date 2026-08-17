@@ -37,23 +37,32 @@ MODULE_ENABLED_DEFAULT = False
 
 
 def _demo_channel(title, body, event, username=None, status=None,
-                   episode_count=0, errors=None, is_movie=False):
+                   episode_count=0, errors=None, is_movie=False,
+                   episode_range="", **kwargs):
     """A "notification channel": called by notify_all() with the exact same
     arguments every built-in channel (WebPush/Telegram/Pushover/ntfy/
     WhatsApp/Discord) gets. A real channel would send *body* somewhere
     (a webhook, a chat API, ...) -- this one just logs, so the example is
     safe to enable and never makes a network call.
 
+    `episode_range` is "S02E02-S02E07" / "S02E03" / "E05", and "" for movies
+    (which have no season/episode concept -- see `is_movie`). The trailing
+    **kwargs is optional but recommended: MediaForge only passes arguments a
+    signature declares, so a channel without it keeps working when the
+    payload grows, and a channel with it gets new fields for free.
+
     Always start with your own enabled check, same as every built-in
     notify_* function -- registering the hook does not imply "always on".
     """
     if not _enabled():
         return
-    logger.info("[ExampleHooks] channel: event=%s title=%r status=%s", event, title, status)
+    logger.info("[ExampleHooks] channel: event=%s title=%r status=%s range=%s",
+                event, title, status, episode_range)
 
 
 def _demo_event_hook(title, body, event, username=None, status=None,
-                      episode_count=0, errors=None, is_movie=False):
+                      episode_count=0, errors=None, is_movie=False,
+                      episode_range="", **kwargs):
     """A "lifecycle event hook": same call signature as a notification
     channel, but for a reaction that isn't itself a message -- auto-tagging,
     kicking off an external automation, updating this module's own state.

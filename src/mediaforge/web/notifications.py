@@ -127,6 +127,94 @@ def error_count_text(lang: str | None, count: int) -> str:
     return f"{count} error" if count == 1 else f"{count} errors"
 
 
+def episode_marker(season: int | None, episode: int | None) -> str:
+    """"S02E03" for a season/episode pair, "E03" when the source has no season
+    concept (MegaKino, hanime, 9anime, aniwaves -- all one-season sites), and
+    "" when there is no episode number at all (movies, Direct Link).
+
+    Language-independent on purpose: SxxExx is the same marker in every UI
+    language and matches the file names MediaForge writes to disk.
+    """
+    if episode is None:
+        return ""
+    if season is None:
+        return "E%02d" % episode
+    return "S%02dE%02d" % (season, episode)
+
+
+def episode_range_text(pairs) -> str:
+    """Condense (season, episode) pairs into one marker range.
+
+    One episode -> "S02E03", several -> "S02E02-S02E07" (first and last after
+    sorting; deliberately NOT every single episode, which would blow up a
+    24-episode job's notification body). Returns "" when nothing in *pairs*
+    carries an episode number -- movie jobs, where the caller must not print a
+    detail at all.
+    """
+    markers = []
+    for season, episode in (pairs or ()):
+        marker = episode_marker(season, episode)
+        if marker:
+            # -1 keeps season-less sources (E03) sorted among themselves rather
+            # than raising on None vs. int comparison.
+            markers.append(((season if season is not None else -1, episode), marker))
+    if not markers:
+        return ""
+    markers.sort(key=lambda entry: entry[0])
+    first, last = markers[0][1], markers[-1][1]
+    return first if first == last else f"{first}-{last}"
+
+
+def download_body_text(
+    lang: str | None,
+    title: str | None,
+    status: str,
+    count: int = 0,
+    successful: int = 0,
+    errors: int = 0,
+    is_movie: bool = False,
+    episode_range: str = "",
+) -> str:
+    """The notification body for one finished queue job -- the one place that
+    decides how a completed/partial/failed/cancelled download is worded.
+
+    Shape: title first (so a channel that shows only the body, or a phone that
+    truncates the heading, still says *what* finished), then what was
+    downloaded, then -- for series only -- which episodes:
+
+        "✅ The Witcher, 6 Episoden heruntergeladen (S02E02-S02E07)"
+        "✅ The Witcher, Film heruntergeladen"
+
+    A movie is a single file with no season/episode concept, so it never gets
+    the marker suffix (see `media_count_text`).
+    """
+    what = media_count_text(lang, count, is_movie)
+    errs = error_count_text(lang, errors)
+    name = title or tr(lang, "Unbekannt", "Unknown")
+    detail = f" ({episode_range})" if episode_range and not is_movie else ""
+    if status == "completed":
+        return tr(lang, f"✅ {name}, {what} heruntergeladen{detail}",
+                        f"✅ {name}, {what} downloaded{detail}")
+    if status == "partial":
+        # `successful > 0` is what makes a job partial, so a movie job here HAS
+        # its file -- only older failures are still open. Counting "x of Film"
+        # would be nonsense, so the movie wording drops the count.
+        if is_movie:
+            return tr(lang, f"⚠️ {name}, {what} heruntergeladen, {errs} offen",
+                            f"⚠️ {name}, {what} downloaded, {errs} still open")
+        return tr(lang,
+                  f"⚠️ {name}, {successful} von {what} heruntergeladen, {errs} offen{detail}",
+                  f"⚠️ {name}, {successful} of {what} downloaded, {errs} still open{detail}")
+    if status == "cancelled":
+        return tr(lang, f"⏹️ {name}, Download abgebrochen",
+                        f"⏹️ {name}, download cancelled")
+    if is_movie:
+        return tr(lang, f"❌ {name}, Film-Download fehlgeschlagen, {errs}",
+                        f"❌ {name}, movie download failed, {errs}")
+    return tr(lang, f"❌ {name}, Download fehlgeschlagen{detail}, {errs}",
+                    f"❌ {name}, download failed{detail}, {errs}")
+
+
 def _pref_enabled(prefs: dict, key: str, default: bool = True) -> bool:
     val = prefs.get(key)
     if val is None:
@@ -355,7 +443,8 @@ def notify_webpush(
 # ---------------------------------------------------------------------------
 
 def notify_discord(title: str, status: str, episode_count: int, errors: list,
-                   is_movie: bool = False, lang: str | None = None) -> None:
+                   is_movie: bool = False, lang: str | None = None,
+                   episode_range: str = "") -> None:
     if _get_setting("notif_discord_enabled", "1") == "0":
         return
     webhook_url = (
@@ -404,6 +493,11 @@ def notify_discord(title: str, status: str, episode_count: int, errors: list,
         count_field,
         {"name": "Status", "value": status_text, "inline": True},
     ]
+    # Which episodes, not just how many. Movies have no marker (see
+    # episode_range_text), so the field simply doesn't appear for them.
+    if episode_range and not is_movie:
+        fields.append({"name": tr(lang, "Folgen", "Episodes"),
+                       "value": episode_range, "inline": True})
     if errors:
         lines = []
         for e in errors[:5]:
@@ -831,6 +925,7 @@ def notify_all(
     episode_count: int = 0,
     errors: list | None = None,
     is_movie: bool = False,
+    episode_range: str = "",
 ) -> None:
     """Fan out one notification to every configured channel (WebPush,
     Telegram, Pushover, NTFY, WhatsApp, Discord), then to every third-party
@@ -887,16 +982,19 @@ def notify_all(
                     errors=errors or [],
                     is_movie=is_movie,
                     lang=_lang,
+                    episode_range=episode_range,
                 )
         except Exception as exc:
             logger.error("[Notif] Discord notification failed: %s", exc, exc_info=True)
 
         # Third-party notification channels (see registry.register_notification_channel).
         try:
-            from .thirdparties.registry import notification_channels
+            from .thirdparties.registry import (
+                call_with_supported_kwargs, notification_channels)
             for _channel_id, _send_fn in notification_channels().items():
                 try:
-                    _send_fn(
+                    call_with_supported_kwargs(
+                        _send_fn,
                         title=title,
                         body=body,
                         event=event,
@@ -905,6 +1003,7 @@ def notify_all(
                         episode_count=episode_count,
                         errors=errors,
                         is_movie=is_movie,
+                        episode_range=episode_range,
                     )
                 except Exception as exc:
                     logger.error("[Notif] Module channel '%s' failed: %s", _channel_id, exc, exc_info=True)
@@ -924,6 +1023,7 @@ def notify_all(
                 episode_count=episode_count,
                 errors=errors,
                 is_movie=is_movie,
+                episode_range=episode_range,
             )
         except Exception as exc:
             logger.error("[Notif] Failed to fire module event hooks: %s", exc, exc_info=True)

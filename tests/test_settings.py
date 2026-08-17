@@ -540,11 +540,106 @@ def test_discord_movie_embed_has_no_episode_count(monkeypatch):
     assert "Movie" in values
 
 
+def test_episode_range_condenses_to_first_and_last():
+    assert n.episode_range_text([(2, 3)]) == "S02E03"
+    assert n.episode_range_text([(2, 7), (2, 2), (2, 4)]) == "S02E02-S02E07"
+    # One-season sources (MegaKino/hanime/9anime/aniwaves) have no season.
+    assert n.episode_range_text([(None, 5)]) == "E05"
+    # Movies / Direct Link: no episode number anywhere -> no marker at all.
+    assert n.episode_range_text([(None, None), (None, None)]) == ""
+    assert n.episode_range_text([]) == ""
+
+
+def test_download_body_names_the_title_and_the_episodes():
+    body = n.download_body_text("de", "The Witcher", "completed", count=6,
+                                successful=6, is_movie=False,
+                                episode_range="S02E02-S02E07")
+    assert "The Witcher" in body
+    assert "6 Episoden" in body
+    assert "(S02E02-S02E07)" in body
+
+
+def test_download_body_for_a_movie_has_no_episode_wording():
+    for lang in ("de", "en"):
+        # A range is passed on purpose: a movie must drop it, not print it.
+        body = n.download_body_text(lang, "Some Movie", "completed", count=1,
+                                    successful=1, is_movie=True,
+                                    episode_range="S01E01")
+        assert "Some Movie" in body
+        assert "pisode" not in body and "Folge" not in body
+        assert "S01E01" not in body
+
+
+def test_queue_item_movie_detection_reads_series_url(monkeypatch):
+    """Regression: the queue row's column is `series_url`, not `url`, so the
+    old item.get("url") always resolved to "" and every movie notification
+    said "1 Episode"."""
+    from mediaforge.web import queue_worker as qw
+
+    monkeypatch.setattr(qw, "_is_movie_url",
+                        lambda url: url == "https://filmpalast.to/stream/x")
+    assert qw._job_is_movie({"series_url": "https://filmpalast.to/stream/x"}) is True
+    assert qw._job_is_movie({"series_url": "https://aniworld.to/anime/stream/x"}) is False
+    assert qw._job_is_movie({"series_url": "", "provider": "Direct"}) is True
+
+
+def test_episode_range_for_urls():
+    from mediaforge.web import queue_worker as qw
+
+    urls = ["https://aniworld.to/anime/stream/x/staffel-2/episode-7",
+            "https://aniworld.to/anime/stream/x/staffel-2/episode-2"]
+    assert qw._episode_range_for(urls) == "S02E02-S02E07"
+    assert qw._episode_range_for(["https://filmpalast.to/stream/some-movie"]) == ""
+
+
+def test_module_channels_survive_a_new_fanout_kwarg():
+    """Modules are documented with a fixed argument list, so notify_all must
+    not hand them a kwarg their signature has no room for."""
+    from mediaforge.web.thirdparties.registry import call_with_supported_kwargs
+
+    seen = {}
+
+    def old_style_channel(title, body, event, username=None, status=None,
+                          episode_count=0, errors=None, is_movie=False):
+        seen["title"] = title
+        return "ok"
+
+    def new_style_channel(title, **kwargs):
+        seen["kwargs"] = kwargs
+        return "ok"
+
+    assert call_with_supported_kwargs(
+        old_style_channel, title="T", body="B", event="on_completed",
+        episode_range="S01E01") == "ok"
+    assert seen["title"] == "T"
+    call_with_supported_kwargs(new_style_channel, title="T", episode_range="S01E01")
+    assert seen["kwargs"]["episode_range"] == "S01E01"
+
+
+def test_discord_series_embed_lists_the_episode_range(monkeypatch):
+    sent = {}
+
+    monkeypatch.setattr(n, "_get_setting", lambda key, default="": {
+        "notif_discord_webhook_url": "https://example.invalid/hook",
+    }.get(key, default or "1"))
+    monkeypatch.setattr(n, "_post_json", lambda url, payload, headers=None: sent.update(payload) or 204)
+    monkeypatch.setattr(n.threading, "Thread",
+                        lambda target=None, daemon=None: type("T", (), {"start": lambda s: target()})())
+
+    n.notify_discord("Some Series", "completed", episode_count=6, errors=[],
+                     is_movie=False, lang="en", episode_range="S02E02-S02E07")
+    values = [f["value"] for f in sent["embeds"][0]["fields"]]
+    assert "S02E02-S02E07" in values
+
+
 if __name__ == "__main__":  # pragma: no cover - manual self-check
     test_tr_picks_german_only_for_de()
     test_a_movie_is_never_called_an_episode()
     test_single_episode_is_singular()
     test_error_count_is_singular_for_one()
+    test_episode_range_condenses_to_first_and_last()
+    test_download_body_names_the_title_and_the_episodes()
+    test_download_body_for_a_movie_has_no_episode_wording()
     print("ok")
 
 

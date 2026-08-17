@@ -58,6 +58,7 @@ Extensions overview page (:func:`resolve_extensions_overview`,
 ``routes/extensions.py``) can show broken/skipped integrations too.
 """
 
+import inspect
 import logging
 from importlib import import_module
 import threading
@@ -834,13 +835,35 @@ def unregister_event_hooks(item_id) -> None:
         logger.info("[Registry] Unregistered event hooks for: %s", item_id)
 
 
+def call_with_supported_kwargs(fn, **kwargs):
+    """Call *fn* with only the keyword arguments its signature accepts.
+
+    Notification channels and event hooks are documented with a fixed
+    argument list (see .examples/thirdparties/README.md), so a module written
+    against an older MediaForge has no ``**kwargs`` to swallow a newly added
+    one -- ``episode_range`` was the first such addition. Without this filter
+    every extension of the payload would break existing modules with a
+    TypeError. A callable that *does* declare ``**kwargs`` still gets
+    everything, so modules can opt into future fields for free.
+    """
+    try:
+        params = inspect.signature(fn).parameters
+        if not any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            kwargs = {k: v for k, v in kwargs.items() if k in params}
+    except (TypeError, ValueError):
+        # Builtins / C callables have no introspectable signature -- pass the
+        # full set rather than silently dropping arguments.
+        pass
+    return fn(**kwargs)
+
+
 def fire_event_hooks(event, **payload) -> None:
     """Run every hook registered for *event*, in registration order, isolated
     from one another and from the caller (never raises). Used by
     web/notifications.py's notify_all()."""
     for item_id, callback in list(_EVENT_HOOKS.get(event, {}).items()):
         try:
-            callback(**payload)
+            call_with_supported_kwargs(callback, **payload)
         except Exception:
             logger.exception("[Registry] Event hook '%s' for event '%s' raised", item_id, event)
 
