@@ -56,6 +56,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
+      # Turns "are there new security fixes for the base image?" into a value the
+      # build cache can key on. `apt-get -s upgrade` is a dry run, so this only
+      # reads package lists. Stable hash -> the apt layer stays cached; a fixed
+      # package landing in debian-security changes it and forces the rebuild.
+      - name: Probe base image for pending security upgrades
+        id: apt
+        run: |
+          echo "hash=$(docker run --rm python:3.13-slim sh -c \
+            'apt-get update -qq >/dev/null 2>&1 && apt-get -s upgrade 2>/dev/null | grep ^Inst | sort | sha256sum' \
+            | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
       - name: Build image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -63,6 +74,8 @@ jobs:
           push: false
           load: true                  # keep it in the local daemon for Trivy
           tags: mediaforge:ci
+          build-args: |
+            APT_REFRESH=${{ steps.apt.outputs.hash }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

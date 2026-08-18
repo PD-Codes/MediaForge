@@ -13,6 +13,14 @@ WORKDIR /app
 # and ffmpeg, not requested here) failed the Trivy gate while a fixed version
 # had been in debian-security for a while. Upgrading first means the image
 # tracks debian-security instead of the base image's cadence.
+#
+# APT_REFRESH is the cache buster for that upgrade. Without it the layer is
+# served from the build cache as long as this RUN line is unchanged, so the
+# upgrade never re-runs and fixed packages keep showing up in Trivy scans. CI
+# fills it with a hash of the base image's pending upgrades: constant while
+# debian-security is quiet (cache hit), different the moment a fix lands
+# (rebuild). Defaults to 0 for local builds.
+ARG APT_REFRESH=0
 RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ffmpeg \
     mpv \
