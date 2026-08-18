@@ -544,17 +544,16 @@ async function loadCustomPaths() {
     // Remove old custom options (keep "Default")
     while (customPathSelect.options.length > 1) customPathSelect.remove(1);
     if (paths.length) {
-      const siteKey = data.current_site || "";
-      let defaultForSite = "";
+      // Which path this site defaults to is resolved by the server
+      // (db/paths.py's default_custom_path_for_url) -- the same answer every
+      // other client gets, instead of a second copy of the CSV match here.
       paths.forEach(function (p) {
         const opt = document.createElement("option");
         opt.value = p.id;
         opt.textContent = p.name;
         customPathSelect.appendChild(opt);
-        const sites = (p.default_sites || "").split(",").map((site) => site.trim()).filter(Boolean);
-        if (!defaultForSite && sites.includes(siteKey)) defaultForSite = String(p.id);
       });
-      customPathSelect.value = defaultForSite;
+      customPathSelect.value = String(data.default_path_id || "");
       _customPathFieldDisplay("");
     } else {
       _customPathFieldDisplay("none");

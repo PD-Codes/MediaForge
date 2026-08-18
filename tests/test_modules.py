@@ -110,6 +110,60 @@ def test_raw_views_cover_every_endpoint(app):
     assert set(app.view_functions) <= set(raw)
 
 
+def test_secure_endpoints_forgets_torn_down_endpoints(app):
+    """Re-registering a module must not inherit the old registration's state.
+
+    The auth pass remembers endpoints by NAME (already secured, CSRF-exempt,
+    raw view). Deregistering a blueprint drops its views but not those names,
+    so a module switched off and on again -- same blueprint, same endpoint
+    names -- used to come back "already secured", i.e. with no login check,
+    and the CSRF pass raised KeyError on the name in between.
+    """
+    from flask import Blueprint, jsonify
+    from mediaforge.web.thirdparties import (_allow_late_setup,
+                                             deregister_blueprint, get_raw_view)
+
+    secure = app.extensions["mediaforge_secure_endpoints"]
+    ep = "test_teardown_bp.api_test_teardown"
+
+    def register(view):
+        # The same seam a live install uses -- the app has served requests.
+        with _allow_late_setup(app):
+            bp = Blueprint("test_teardown_bp", __name__)
+            bp.add_url_rule("/api/test-teardown", "api_test_teardown", view)
+            app.register_blueprint(bp)
+        secure()
+
+    def first_view():
+        return jsonify({"round": 1})
+
+    def second_view():
+        return jsonify({"round": 2})
+
+    register(first_view)
+    deregister_blueprint(app, "test_teardown_bp")
+    assert ep not in app.view_functions
+
+    try:
+        register(second_view)  # used to raise KeyError in the CSRF pass
+        # The re-registered view is the one that is live, and it is wrapped --
+        # not waved through as "already secured".
+        assert get_raw_view(app, ep) is second_view
+        assert app.view_functions[ep] is not second_view
+    finally:
+        deregister_blueprint(app, "test_teardown_bp")
+        secure()
+
+
+def test_get_raw_view_helper(app):
+    """The published contract, reachable without digging in app.extensions."""
+    from mediaforge.web.thirdparties import get_raw_view
+
+    assert get_raw_view(app, "api_download") is \
+        app.extensions["mediaforge_raw_views"]["api_download"]
+    assert get_raw_view(app, "does_not_exist") is None
+
+
 # ── 2. one query over all source registries ──────────────────────────────
 def test_all_source_ids_includes_feed_only_sources(app):
     from mediaforge.home_feed import (register_home_feed_source,
@@ -126,6 +180,37 @@ def test_all_source_ids_includes_feed_only_sources(app):
             assert set(search_source_ids()) <= all_source_ids()
     finally:
         unregister_home_feed_source("test-seam-module")
+
+
+def test_v1_scope_registration_reports_rejections(app):
+    """A dropped entry is returned, not only logged -- otherwise the module
+    author's first hint is a 401 for a valid API key."""
+    from mediaforge.web.routes.v1_api import (register_v1_endpoint_scopes,
+                                              unregister_v1_endpoint_scopes)
+
+    reg = register_v1_endpoint_scopes(
+        "test-scope-module",
+        {"mine.ok": "status:read", "mine.bad": 5, "mine.unknown": "not_a_scope"},
+        blueprint="mine")
+    try:
+        assert dict(reg) == {"mine.ok": "status:read"}
+        assert {e[0] for e in reg.rejected} == {"mine.bad", "mine.unknown"}
+        assert reg.error_text()
+    finally:
+        unregister_v1_endpoint_scopes("test-scope-module")
+
+
+def test_default_custom_path_for_url(app, monkeypatch):
+    """The default_sites match lives on the server, so every client agrees."""
+    from mediaforge.web.db import paths as paths_db
+
+    monkeypatch.setattr(paths_db, "get_custom_paths", lambda: [
+        {"id": 1, "name": "A", "path": "/a", "default_sites": "sto"},
+        {"id": 2, "name": "B", "path": "/b", "default_sites": "aniworld, sto"},
+    ])
+    assert paths_db.default_custom_path_for_url("https://aniworld.to/anime/x") == 2
+    assert paths_db.default_custom_path_for_url("https://example.invalid/x") is None
+    assert paths_db.default_custom_path_for_url("") is None
 
 
 # ── 3. internal callers pass a payload instead of faking a body ──────────

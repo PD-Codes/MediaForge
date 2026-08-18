@@ -1068,6 +1068,56 @@ Each key is written on its own (`set_setting` is a single-key upsert), so saving
 one value can never clear another — there is no bulk "write all my settings"
 call and you don't need one.
 
+## Where a download should land (`default_custom_path_for_url`)
+
+Custom paths can be declared the default for a site (Settings → Paths). The
+match lives on the server, so don't re-implement the `default_sites` CSV split
+in your own client:
+
+```python
+from ...web.db import default_custom_path_for_url
+
+path_id = default_custom_path_for_url(series_url)   # None = global download path
+```
+
+`GET /api/custom-paths?url=<series url>` returns the same answer as
+**`default_path_id`** for a frontend.
+
+## Calling a core view without a session (`get_raw_view`)
+
+Every core view is wrapped in `login_required` / `admin_required` at the end of
+`create_app()`. If your module has to call one *server-side* — an API-key
+connector, an internal re-dispatch — that wrapper is in the way, and there is
+no session to satisfy it. Don't unwrap it yourself (`__closure__` digging, a
+`before_request` hook, comparing `__code__`): all of those break the moment a
+second wrapper is added. Ask for the undecorated function:
+
+```python
+from ...web.thirdparties import get_raw_view
+
+view = get_raw_view(app, "api_download")   # None if the endpoint is unknown
+body, status = view(payload={"series_url": url})
+```
+
+It reads the snapshot the auth pass publishes as
+`app.extensions["mediaforge_raw_views"]` and falls back to
+`app.view_functions` for an app built without auth, where views are raw
+anyway. **You are calling a view with its login check removed** — do your own
+authorisation first (`check_api_key(...)`, an admin check, whatever fits).
+
+## Which sources exist (`all_source_ids` / `all_feed_source_ids`)
+
+A source can arrive through `register_search_source` or through
+`register_home_feed_source`, and a card's `source` resolves the same way
+either way. So never ask one registry and assume it is the whole list:
+
+* `mediaforge.web.source_policy.all_source_ids()` — every source id the app
+  knows, merged over all registries.
+* `GET /api/home-feed` and `GET /api/home-feed/sources` carry the same list as
+  **`all_source_ids`** in the payload. `sources` is what *this response*
+  contained (row-restricted, adult chip off, disabled sources missing);
+  `all_source_ids` is the directory, and is what you check an id against.
+
 ## Admin-only routes
 
 `auth_required="admin"` is blueprint-wide. When only *some* routes are admin's
@@ -1160,7 +1210,18 @@ Rules the registration enforces, and why each one exists:
 | `*` (the wildcard) is refused | It belongs to the legacy key. On an endpoint it would mean "every scoped key ever issued" |
 | Endpoint names must be `"<your blueprint>.<view>"` | Bare names belong to core routes. This is what stops a module redeclaring `api_v1_status` — or quietly lowering the scope another module's endpoint needs |
 | An endpoint already declared by someone else is refused | First registration wins; a later module cannot take it over |
-| A bad entry is dropped with a log line, not raised | One wrong endpoint must not take your install (or the app) down. Check the log if a route answers 401 with a key you believe is valid |
+| A bad entry is dropped with a log line, not raised | One wrong endpoint must not take your install (or the app) down |
+
+The return value tells you what happened. It is a `dict` of the entries that
+were **accepted**, plus a `.rejected` list of `(endpoint, scope, reason)` for
+the ones that were not — check it instead of waiting for the symptom, which is
+a 401 for a key you know is valid:
+
+```python
+reg = register_v1_endpoint_scopes("my_module", MY_V1_SCOPES, blueprint="my_module")
+if reg.rejected:
+    logger.error("[MyModule] v1 scopes rejected: %s", reg.error_text())
+```
 
 Reuse a scope that already fits rather than asking for a new one — a scope
 list nobody can hold in their head gets used as "tick everything". If your

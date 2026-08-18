@@ -14,6 +14,7 @@ from ..db import add_custom_path
 from ..db import add_language_group
 from ..db import clear_tmdb_cache
 from ..db import count_language_group_users
+from ..db import default_custom_path_for_url
 from ..db import get_custom_paths
 from ..db import get_language_groups
 from ..db import get_setting
@@ -1296,7 +1297,7 @@ def register_settings_routes(app):
                                    "home_cards_per_row", "home_default_sources_off",
                                    "home_default_types_off")):
             from .browse import (_feed_clean_order, _feed_clean_list, _feed_clean_limit,
-                                 _feed_known_source_ids, _FEED_ROW_SOURCES)
+                                 all_feed_source_ids, _FEED_ROW_SOURCES)
             if "home_rows_order" in data:
                 set_setting("home_rows_order", ",".join(_feed_clean_order(data["home_rows_order"])))
             if "home_rows_hidden" in data:
@@ -1307,7 +1308,7 @@ def register_settings_routes(app):
             if "home_default_sources_off" in data:
                 set_setting("home_default_sources_off",
                             ",".join(_feed_clean_list(data["home_default_sources_off"],
-                                                      _feed_known_source_ids())))
+                                                      all_feed_source_ids())))
             if "home_default_types_off" in data:
                 set_setting("home_default_types_off",
                             ",".join(_feed_clean_list(data["home_default_types_off"],
@@ -1585,6 +1586,12 @@ def register_settings_routes(app):
                     for key, label in _mirrors.SITE_LABELS.items()
                 ],
                 "current_site": _mirrors.site_for_url(request.args.get("url", "")),
+                # Which of those paths is the default for that site, resolved
+                # server-side (db/paths.py). Carried here so a non-browser
+                # client does not have to re-implement the default_sites CSV
+                # match that static/app.js used to own alone.
+                "default_path_id": default_custom_path_for_url(
+                    request.args.get("url", "")) or "",
                 # Only the kinds something actually indexes today. The registry
                 # also lists planned ones (manga, comics, music) so the sidebar
                 # can advertise them, but offering a folder to a library that

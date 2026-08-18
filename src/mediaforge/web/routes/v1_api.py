@@ -206,8 +206,34 @@ def v1_endpoint_scopes() -> dict[str, str]:
         return merged
 
 
+class ScopeRegistration(dict):
+    """What :func:`register_v1_endpoint_scopes` accepted, plus what it did not.
+
+    A plain ``dict`` of the accepted ``endpoint -> scope`` entries, so every
+    existing caller keeps working unchanged, with the dropped entries and
+    their reasons on ``.rejected`` (a list of ``(endpoint, scope, reason)``).
+
+    The rejections used to exist only as log lines. For the module author that
+    made a typo -- a non-string scope, a wrong blueprint prefix -- the first
+    visible symptom was a 401 for a perfectly valid API key, which is about as
+    far from the cause as a symptom gets. A caller can now check the result:
+
+        reg = register_v1_endpoint_scopes(MODULE_ID, {...}, blueprint="mine")
+        if reg.rejected:
+            raise RuntimeError(reg.error_text())
+    """
+
+    def __init__(self, accepted=None, rejected=None):
+        super().__init__(accepted or {})
+        self.rejected = list(rejected or [])
+
+    def error_text(self) -> str:
+        """One line per rejected entry, ready to log or raise."""
+        return "; ".join("%r -> %r: %s" % entry for entry in self.rejected)
+
+
 def register_v1_endpoint_scopes(item_id: str, mapping: dict, *,
-                                blueprint: str = "") -> dict[str, str]:
+                                blueprint: str = "") -> "ScopeRegistration":
     """Declare which scope each of a module's /api/v1/ endpoints requires.
 
     ``item_id`` is the module's registry item id -- what it owns is dropped
@@ -219,7 +245,9 @@ def register_v1_endpoint_scopes(item_id: str, mapping: dict, *,
     validated and anything that does not pass is dropped with a log line
     rather than raising: a module getting one endpoint wrong must not take the
     install (or the app) down, and a silently missing entry would be worse
-    than a loud one.
+    than a loud one. What was dropped is also *returned* -- see
+    :class:`ScopeRegistration` -- so a module can fail loudly on its own terms
+    instead of discovering the drop as a 401 later.
 
     ``blueprint`` is the module's blueprint name. Endpoint names must be
     ``"<blueprint>.<view>"``. That is the rule that keeps a module from
@@ -227,18 +255,26 @@ def register_v1_endpoint_scopes(item_id: str, mapping: dict, *,
     registered directly on the app, i.e. to the core. When omitted it is
     derived from the entries, which then all have to share one prefix.
 
-    Returns the mapping that was actually accepted.
+    Returns the mapping that was actually accepted (plus ``.rejected``).
     """
     from .. import api_keys as _api_keys
 
+    rejected: list = []
+
+    def drop(endpoint, scope, reason, *args):
+        reason = reason % args if args else reason
+        logger.warning("[v1 API] %s: %r -> %r rejected: %s",
+                       item_id or "<no id>", endpoint, scope, reason)
+        rejected.append((endpoint, scope, reason))
+
     item_id = str(item_id or "").strip()
     if not item_id:
-        logger.warning("[v1 API] register_v1_endpoint_scopes() needs an item id")
-        return {}
+        drop(None, None, "register_v1_endpoint_scopes() needs an item id")
+        return ScopeRegistration({}, rejected)
     if not isinstance(mapping, dict):
-        logger.warning("[v1 API] %s: scope mapping must be a dict, got %s",
-                       item_id, type(mapping).__name__)
-        return {}
+        drop(None, None, "scope mapping must be a dict, got %s",
+             type(mapping).__name__)
+        return ScopeRegistration({}, rejected)
 
     blueprint = str(blueprint or "").strip()
     if not blueprint:
@@ -246,9 +282,9 @@ def register_v1_endpoint_scopes(item_id: str, mapping: dict, *,
         if len(prefixes) == 1:
             blueprint = prefixes.pop()
         elif prefixes:
-            logger.warning("[v1 API] %s: endpoints span several blueprints (%s); "
-                           "pass blueprint= explicitly", item_id, sorted(prefixes))
-            return {}
+            drop(None, None, "endpoints span several blueprints (%s); "
+                 "pass blueprint= explicitly", sorted(prefixes))
+            return ScopeRegistration({}, rejected)
 
     accepted: dict[str, str] = {}
     with _V1_SCOPES_LOCK:
@@ -262,36 +298,31 @@ def register_v1_endpoint_scopes(item_id: str, mapping: dict, *,
 
         for endpoint, scope in mapping.items():
             if not isinstance(endpoint, str) or not isinstance(scope, str):
-                logger.warning("[v1 API] %s: ignoring non-string entry %r -> %r",
-                               item_id, endpoint, scope)
+                drop(endpoint, scope, "endpoint and scope must both be strings, "
+                     "got %s -> %s", type(endpoint).__name__, type(scope).__name__)
                 continue
             endpoint = endpoint.strip()
             scope = scope.strip()
 
             if endpoint in _V1_ENDPOINT_SCOPES:
-                logger.warning("[v1 API] %s: %r is a core endpoint and cannot be "
-                               "redeclared", item_id, endpoint)
+                drop(endpoint, scope, "is a core endpoint and cannot be redeclared")
                 continue
             if "." not in endpoint:
-                logger.warning("[v1 API] %s: %r has no blueprint prefix -- a module "
-                               "may only declare scopes for its own blueprint's "
-                               "endpoints", item_id, endpoint)
+                drop(endpoint, scope, "has no blueprint prefix -- a module may "
+                     "only declare scopes for its own blueprint's endpoints")
                 continue
             if blueprint and not endpoint.startswith(blueprint + "."):
-                logger.warning("[v1 API] %s: %r does not belong to blueprint %r",
-                               item_id, endpoint, blueprint)
+                drop(endpoint, scope, "does not belong to blueprint %r", blueprint)
                 continue
             if endpoint in taken:
-                logger.warning("[v1 API] %s: %r is already declared by %r",
-                               item_id, endpoint, taken[endpoint])
+                drop(endpoint, scope, "is already declared by %r", taken[endpoint])
                 continue
             if scope == _api_keys.WILDCARD or scope not in _api_keys.SCOPES:
                 # The wildcard belongs to the legacy key alone. A module
                 # handing it to an endpoint would make that endpoint reachable
                 # by every scoped key ever issued.
-                logger.warning("[v1 API] %s: %r asks for unknown scope %r "
-                               "(known: %s)", item_id, endpoint, scope,
-                               ", ".join(sorted(_api_keys.SCOPES)))
+                drop(endpoint, scope, "unknown scope (known: %s)",
+                     ", ".join(sorted(_api_keys.SCOPES)))
                 continue
 
             accepted[endpoint] = scope
@@ -306,7 +337,7 @@ def register_v1_endpoint_scopes(item_id: str, mapping: dict, *,
 
     if accepted:
         logger.info("[v1 API] %s declared %d endpoint scope(s)", item_id, len(accepted))
-    return dict(accepted)
+    return ScopeRegistration(accepted, rejected)
 
 
 def unregister_v1_endpoint_scopes(item_id: str) -> int:

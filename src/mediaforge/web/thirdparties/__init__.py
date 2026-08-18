@@ -413,7 +413,21 @@ def deregister_blueprint(app, bp_name) -> int:
         new_map.add(rule.empty())
     app.url_map = new_map
 
+    gone = [e for e in app.view_functions if owned(e)]
     app.view_functions = {e: f for e, f in app.view_functions.items() if not owned(e)}
+
+    # Tell app.py's auth pass that these endpoint names are dead. It remembers
+    # them by name (already secured / CSRF-exempt / raw view), and a module
+    # that comes back -- refresh, re-install, upgrade -- registers the very
+    # same names: without this the new views inherit the old registration's
+    # state, and "already secured" means the new view is served with no login
+    # check. In no-auth mode the hook simply isn't there.
+    try:
+        forget = (getattr(app, "extensions", None) or {}).get("mediaforge_forget_endpoints")
+        if forget:
+            forget(gone)
+    except Exception:
+        logger.exception("[Thirdparties] Could not forget endpoints of '%s'", bp_name)
 
     for holder in (app.before_request_funcs, app.after_request_funcs,
                    app.teardown_request_funcs, app.url_value_preprocessors,
@@ -1073,6 +1087,26 @@ def _secure_new_endpoints(app) -> None:
             fn()
     except Exception:
         logger.exception("[Thirdparties] Could not secure newly registered endpoints")
+
+
+def get_raw_view(app, endpoint):
+    """The undecorated view function behind *endpoint*.
+
+    app.py's auth pass rebinds every view to login_required(view) /
+    admin_required(view) and records the pre-decoration function in
+    ``app.extensions["mediaforge_raw_views"]``. A module that has to call a
+    core view without a session -- an API-key connector, an internal
+    re-dispatch -- needs that raw function, and every module so far
+    re-implemented the lookup itself (a before_request hook, a __code__
+    comparison, digging through login_required's closure). All of those break
+    the moment another wrapper is added; this one does not.
+
+    An app created without auth never runs that pass, so app.view_functions is
+    already raw there -- which is exactly what the fallback returns. Returns
+    None for an unknown endpoint.
+    """
+    raw = (getattr(app, "extensions", None) or {}).get("mediaforge_raw_views") or {}
+    return raw.get(endpoint) or app.view_functions.get(endpoint)
 
 
 def discover_and_register(app) -> None:

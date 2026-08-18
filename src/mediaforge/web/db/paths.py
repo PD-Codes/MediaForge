@@ -65,6 +65,29 @@ def get_custom_paths():
         conn.close()
 
 
+def default_custom_path_for_url(url):
+    """The id of the custom path configured as default for the site behind
+    *url*, or None.
+
+    The ``default_sites`` CSV is matched here rather than in the browser.
+    static/app.js and static/settings.js each had their own copy of the split-
+    trim-compare, which meant every non-browser client (a module connector,
+    Auto-Sync, Seerr) had to grow a third one to reach the same answer. First
+    match in id order wins, which is the order get_custom_paths() returns and
+    the order the frontend already resolved in.
+    """
+    from ...mirrors import site_for_url
+
+    site = site_for_url(url or "")
+    if not site:
+        return None
+    for row in get_custom_paths():
+        sites = [s.strip() for s in (row.get("default_sites") or "").split(",")]
+        if site in sites:
+            return row["id"]
+    return None
+
+
 def add_custom_path(name, path, default_sites="", media_kinds=None):
     conn = get_db()
     try:

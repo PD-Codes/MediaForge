@@ -151,6 +151,7 @@ from .queue import (  # noqa: F401
 from .paths import (  # noqa: F401
     _CREATE_CUSTOM_PATHS_TABLE,
     add_custom_path,
+    default_custom_path_for_url,
     get_custom_path_by_id,
     get_custom_paths,
     init_custom_paths_db,

@@ -1721,6 +1721,16 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             admin_required, and apply the CSRF exemption to it. Idempotent:
             re-running it only touches endpoints added since the last run, so a
             view is never double-wrapped."""
+            # Safety net for a view that disappeared without anyone saying so
+            # (see forget_endpoints() below for the real cleanup). Only the
+            # names that are gone *right now* can be pruned here -- a module
+            # that was torn down and registered again before this runs looks
+            # untouched from here, which is exactly why the teardown path has
+            # to report it.
+            live = set(app.view_functions)
+            _secured.intersection_update(live)
+            _csrf_exempt_endpoints.intersection_update(live)
+
             admin_module_endpoints = set(admin_required_endpoints())
             admin_blueprints = admin_required_blueprints()
             for endpoint, view in list(app.view_functions.items()):
@@ -1799,6 +1809,34 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # there is nothing to secure.
         app.extensions["mediaforge_secure_endpoints"] = secure_endpoints
 
+        def forget_endpoints(endpoints):
+            """Drop everything this pass remembers about *endpoints*.
+
+            Called by web/thirdparties/ while it tears a blueprint down, i.e.
+            while the views are actually gone. Everything here is keyed by
+            endpoint NAME, and a module switched off and on again -- a
+            Modulmanager refresh, a re-install, an upgrade -- comes back with
+            the same names, so a leftover entry is applied to the *new* view:
+
+              _secured: the new view counts as already wrapped and is served
+                with no login check at all. The serious half of this.
+              _csrf_exempt_endpoints: KeyError while re-exempting, which
+                aborts the registration.
+              mediaforge_raw_views: get_raw_view() keeps handing out the dead
+                function of a module that is gone.
+
+            Doing this when the next pass runs is too late: by then the module
+            has usually re-registered, so the names look live again and
+            nothing is pruned.
+            """
+            raw_views = app.extensions.get("mediaforge_raw_views") or {}
+            for endpoint in endpoints:
+                _secured.discard(endpoint)
+                _csrf_exempt_endpoints.discard(endpoint)
+                raw_views.pop(endpoint, None)
+
+        app.extensions["mediaforge_forget_endpoints"] = forget_endpoints
+
         # Exempt JSON API routes from CSRF. What replaces the CSRF token for
         # these is _enforce_json_content_type() below: a route that only ever
         # accepts Content-Type: application/json cannot be driven by a
@@ -1857,8 +1895,16 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                             "X-CSRFToken header.",
                             endpoint, ", ".join(rules) or "no rule")
 
-            for endpoint in _csrf_exempt_endpoints:
-                csrf.exempt(app.view_functions[endpoint])
+            for endpoint in list(_csrf_exempt_endpoints):
+                view = app.view_functions.get(endpoint)
+                if view is None:
+                    # Its blueprint was torn down after the prune above (a
+                    # module uninstalled from another thread). Belt and braces:
+                    # a KeyError here aborts the registration of every module
+                    # that comes after it.
+                    _csrf_exempt_endpoints.discard(endpoint)
+                    continue
+                csrf.exempt(view)
 
             # Read back by _enforce_json_content_type() -- the guard has to know
             # which endpoints lost their CSRF token check, since it is the only

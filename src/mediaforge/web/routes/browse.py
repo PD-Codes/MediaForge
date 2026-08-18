@@ -748,7 +748,7 @@ def feed_global_defaults():
         "hidden": _feed_clean_list(get_setting("home_rows_hidden", ""), _FEED_ROW_SOURCES),
         "limit": _feed_clean_limit(get_setting("home_cards_per_row", "")),
         "sources_off": _feed_clean_list(get_setting("home_default_sources_off", ""),
-                                        _feed_known_source_ids()),
+                                        all_feed_source_ids()),
         "types_off": _feed_clean_list(get_setting("home_default_types_off", "adult"),
                                       ("series", "movies", "adult")),
     }
@@ -864,9 +864,19 @@ def feed_effective_config():
     return cfg
 
 
-def _feed_known_source_ids():
-    """Built-in plus module-registered source ids -- used to validate the
-    stored "off by default" list."""
+def all_feed_source_ids():
+    """Every source id the feed can name -- built-ins plus everything modules
+    registered, through whichever registry they used.
+
+    The one directory a consumer should ask. Which registry a source came from
+    (register_search_source vs. register_home_feed_source) is an internal
+    split: a card's `source` resolves the same way either way, so a client
+    that has to know "is this id a source at all" must not have to guess which
+    of the two lists to look in. Published on the /api/home-feed payload as
+    `all_source_ids` for exactly that reason.
+
+    Also used to validate the stored "off by default" list.
+    """
     # all_source_ids() already merges the search, provider and home-feed
     # registries, so this no longer has to walk them one by one -- and cannot
     # miss a registry that is added later.
@@ -1370,6 +1380,13 @@ def register_browse_routes(app):
                 }
                 for sid in order
             ],
+            # Every source id that exists right now, including the ones this
+            # request did not fetch (row-restricted, disabled, adult chip off).
+            # "sources" above answers "what did this response contain"; a
+            # client resolving a card's `source`, or checking whether an id is
+            # known at all, needs the directory instead -- and used to have to
+            # know which registry to ask for it.
+            "all_source_ids": sorted(all_feed_source_ids()),
             "errors": [
                 {"source": sid, "label": labels.get(sid, sid), "rows": sorted(set(rws))}
                 for sid, rws in failures.items()
@@ -1414,6 +1431,7 @@ def register_browse_routes(app):
                         "enabled": bool(entry.get("enabled"))})
         config = feed_effective_config()
         return jsonify({"sources": out, "rows": config["rows"], "config": config,
+                        "all_source_ids": sorted(all_feed_source_ids()),
                         "defaults": feed_global_defaults()})
 
     @app.route("/api/home-feed/foryou")
