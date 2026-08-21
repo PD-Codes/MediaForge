@@ -1801,6 +1801,14 @@ function toggleSite() { /* no-op: both sites always shown */ }
 // Default Language, `sync_language`) whenever the previous selection is not
 // among the new options -- a manual choice that survives the rebuild is kept.
 function rebuildLanguageSelect(foundLangs = null) {
+  _rebuildLanguageSelect(foundLangs);
+  // The multi-language checkbox list is mirrored from the options this just
+  // wrote, so it has to follow every rebuild -- including the several early
+  // returns inside, which is why this is a wrapper and not a trailing call.
+  syncLangMultiFromSelect();
+}
+
+function _rebuildLanguageSelect(foundLangs = null) {
   const prev = languageSelect ? languageSelect.value : "";
   rebuildLanguageSelectOptions(foundLangs);
   if (!languageSelect || !languageSelect.options.length) return;
@@ -1936,6 +1944,181 @@ function languageChainFor(value) {
   if (!String(value || "").startsWith("group:")) return value ? [value] : [];
   const group = (languageGroups || []).find((g) => "group:" + g.id === value);
   return group ? (group.languages || []).slice() : [];
+}
+
+// ── Multi-language download ──────────────────────────────────────────────────
+// One file, several audio tracks. The <select> above stays the single source
+// of truth for WHICH languages this title offers -- everything below only
+// mirrors its options into a checkbox list, so the per-site special cases in
+// rebuildLanguageSelectOptions() (filmpalast, hanime, module-provided labels)
+// keep working untouched.
+//
+// Order matters and the DOM does not carry it: the FIRST language the user
+// ticks is the primary one, and the primary decides the target folder and the
+// file name (the others only add a track to its file, see the queue route).
+// mf_multiselect reports checked boxes in document order, so the click order is
+// tracked here instead.
+let langMultiActive = false;
+let langMultiOrder = [];
+
+const langMultiToggle = document.getElementById("langMultiToggle");
+const langMultiRoot = document.getElementById("langMultiSelect");
+const langMultiHint = document.getElementById("langMultiHint");
+
+// A language group ("take the first of these that exists") and a multi
+// selection ("take all of these") are different questions, and "All Languages"
+// is already its own fan-out. None of them can be a track in someone else's
+// file, so they are left out of the checkbox list.
+function langMultiEligibleOptions() {
+  if (!languageSelect) return [];
+  return Array.from(languageSelect.options).filter(
+    (o) => o.value && !o.value.startsWith("group:") && o.value !== "All Languages",
+  );
+}
+
+/** Rebuild the checkbox list from the current <select> options. */
+function syncLangMultiFromSelect() {
+  if (!langMultiRoot || !langMultiToggle) return;
+  const opts = langMultiEligibleOptions();
+  // Nothing to combine: a single-language title (filmpalast, hanime) must not
+  // offer a mode that cannot do anything. Not tied to dl_audio_track_merge --
+  // choosing several languages is itself the instruction to merge them, and
+  // the queue worker forces it for exactly those items.
+  const usable = opts.length > 1;
+  langMultiToggle.hidden = !usable;
+  if (!usable && langMultiActive) setLangMultiActive(false);
+
+  const dropdown = langMultiRoot.querySelector(".mf-multiselect-dropdown");
+  if (!dropdown) return;
+  const stillThere = new Set(opts.map((o) => o.value));
+  langMultiOrder = langMultiOrder.filter((v) => stillThere.has(v));
+
+  dropdown.innerHTML = "";
+  opts.forEach((o) => {
+    const label = document.createElement("label");
+    label.className = "mf-multiselect-item";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "chb-main";
+    box.value = o.value;
+    box.checked = langMultiOrder.includes(o.value);
+    const span = document.createElement("span");
+    span.textContent = o.textContent;
+    // Flagged in the list, not only in the hint below: by the time the hint
+    // explains it the box is already ticked.
+    if (isBurnedSubLang(o.value)) {
+      const mark = document.createElement("em");
+      mark.className = "mf-multiselect-note";
+      mark.textContent = t(" (Videospur)", " (video track)");
+      span.appendChild(mark);
+      label.title = t(
+        "Untertitel sind ins Bild gebrannt: ergibt eine zusätzliche Videospur, keine Tonspur.",
+        "Subtitles are burned into the picture: this adds a second video stream, not an audio track.",
+      );
+    }
+    label.appendChild(box);
+    label.appendChild(span);
+    dropdown.appendChild(label);
+  });
+  if (window.mfMultiSelect) window.mfMultiSelect.refresh(langMultiRoot);
+  renderLangMultiHint();
+}
+
+/** Whether this language's subtitles are burned into the picture.
+ *
+ * Those cannot ride along as an audio track -- what makes them that language
+ * is the image -- so the download fetches a second VIDEO stream instead. The
+ * list comes from the server (languages.burned_subtitle_labels via
+ * shared_modals.html); an unknown label, e.g. one a module invented, counts as
+ * not burned in, which only means no warning rather than a wrong one.
+ */
+function isBurnedSubLang(lang) {
+  return (window.MF_BURNED_SUB_LANGS || []).includes(lang);
+}
+
+/** "Primary: X — Y as an extra track", plus the video-stream caveat. */
+function renderLangMultiHint() {
+  if (!langMultiHint) return;
+  if (!langMultiActive || !langMultiOrder.length) {
+    langMultiHint.hidden = true;
+    langMultiHint.textContent = "";
+    return;
+  }
+  const primary = langMultiOrder[0];
+  const extras = langMultiOrder.slice(1);
+  let msg = t("Hauptsprache: ", "Primary language: ") + primary;
+  if (extras.length) {
+    msg += t(" — zusätzlich: ", " — plus: ") + extras.join(", ");
+  }
+
+  // Sub languages among the EXTRAS are the ones worth warning about: as the
+  // primary, a burned-in language is simply the file, which is what the user
+  // asked for. Named individually, because a mixed selection makes "some of
+  // these behave differently" useless on its own.
+  const burned = extras.filter(isBurnedSubLang);
+  if (burned.length) {
+    msg += t(
+      " · Achtung: bei " + burned.join(", ") + " sind die Untertitel ins Bild "
+        + "gebrannt — das ergibt eine zusätzliche Videospur statt einer Tonspur "
+        + "und vergrößert die Datei entsprechend.",
+      " · Note: " + burned.join(", ") + " has its subtitles burned into the "
+        + "picture — that adds a second video stream rather than an audio "
+        + "track, and grows the file accordingly.",
+    );
+  }
+  langMultiHint.textContent = msg;
+  langMultiHint.hidden = false;
+}
+
+function setLangMultiActive(on) {
+  langMultiActive = !!on;
+  if (langMultiToggle) langMultiToggle.setAttribute("aria-pressed", String(langMultiActive));
+  if (languageSelect) languageSelect.hidden = langMultiActive;
+  if (langMultiRoot) langMultiRoot.hidden = !langMultiActive;
+  if (langMultiActive) {
+    // Carry the single selection over so switching modes never silently drops
+    // what the user had already picked -- and it becomes the primary, which is
+    // the answer they would have got in single mode anyway.
+    const cur = languageSelect ? languageSelect.value : "";
+    if (cur && !cur.startsWith("group:") && cur !== "All Languages" && !langMultiOrder.length) {
+      langMultiOrder = [cur];
+    }
+    syncLangMultiFromSelect();
+  } else if (langMultiOrder.length && languageSelect) {
+    // Back to one language: keep the primary, so the provider dropdown and the
+    // availability pills below carry on describing what is actually selected.
+    languageSelect.value = langMultiOrder[0];
+    languageSelect.dispatchEvent(new Event("change"));
+  }
+  renderLangMultiHint();
+}
+
+/** Ordered languages for a download: the ticked ones, or the single select. */
+function selectedLanguages() {
+  if (langMultiActive && langMultiOrder.length) return langMultiOrder.slice();
+  return languageSelect && languageSelect.value ? [languageSelect.value] : [];
+}
+
+if (langMultiToggle) {
+  langMultiToggle.addEventListener("click", () => setLangMultiActive(!langMultiActive));
+}
+
+if (langMultiRoot) {
+  langMultiRoot.addEventListener("mf-multiselect-change", (e) => {
+    const picked = (e.detail && e.detail.values) || [];
+    // Append newly ticked in click order, drop unticked, keep the rest as-is —
+    // this is the only place the primary is decided.
+    langMultiOrder = langMultiOrder.filter((v) => picked.includes(v));
+    picked.forEach((v) => {
+      if (!langMultiOrder.includes(v)) langMultiOrder.push(v);
+    });
+    // The hoster list is per language: follow the primary.
+    if (langMultiOrder.length && languageSelect) {
+      languageSelect.value = langMultiOrder[0];
+      languageSelect.dispatchEvent(new Event("change"));
+    }
+    renderLangMultiHint();
+  });
 }
 
 // Display name for a dropdown value — a group's name instead of "group:<id>".
@@ -3648,7 +3831,16 @@ async function startDownload(all) {
     return;
   }
 
-  const language = languageSelect.value;
+  // In multi mode the FIRST ticked language is the primary; the rest ride
+  // along as extra audio tracks in the same file. Everything below (mismatch
+  // check, provider) deliberately keeps looking at the primary only: an extra
+  // language the site does not offer costs one track, not the download.
+  const languages = selectedLanguages();
+  const language = languages[0] || "";
+  if (!language) {
+    showToast(t("Keine Sprache ausgewählt.", "No language selected."));
+    return;
+  }
   const provider = providerSelect.value;
   if (!provider) {
     showToast(t("Keine Quelle verfügbar", "No Source available"));
@@ -3675,14 +3867,15 @@ async function startDownload(all) {
   });
 
   if (mismatched.length) {
-    openLangMismatchModal(matched, mismatched, language, provider);
+    openLangMismatchModal(matched, mismatched, language, provider, languages);
     return;
   }
 
-  await _submitDownloadGroups([{ episodes, language, provider }]);
+  await _submitDownloadGroups([{ episodes, language, provider, languages }]);
 }
 
 // Queue one or more {episodes, language, provider} groups in sequence.
+// `languages` is optional and only set by the multi-language mode.
 async function _submitDownloadGroups(groups) {
   groups = (groups || []).filter((g) => g.episodes && g.episodes.length);
   if (!groups.length) {
@@ -3723,6 +3916,9 @@ async function _submitDownloadGroups(groups) {
         series_url: currentSeriesUrl,
         upscale,
       };
+      if (Array.isArray(g.languages) && g.languages.length > 1) {
+        dlBody.languages = g.languages;
+      }
       if (customPathSelect && customPathSelect.value) {
         dlBody.custom_path_id = parseInt(customPathSelect.value);
       }
@@ -3758,16 +3954,16 @@ async function _submitDownloadGroups(groups) {
 
 // ── Language mismatch modal (manual download) ────────────────────────────────
 
-function openLangMismatchModal(matched, mismatched, language, provider) {
+function openLangMismatchModal(matched, mismatched, language, provider, languages) {
   const overlayEl = document.getElementById("langMismatchOverlay");
   const listEl = document.getElementById("langMismatchList");
   if (!overlayEl || !listEl) {
     // Fallback: just queue the episodes that do offer the chosen language.
-    _submitDownloadGroups([{ episodes: matched, language, provider }]);
+    _submitDownloadGroups([{ episodes: matched, language, provider, languages }]);
     return;
   }
 
-  window._langMismatchCtx = { matched, mismatched, language, provider };
+  window._langMismatchCtx = { matched, mismatched, language, provider, languages };
 
   const titleEl = document.getElementById("langMismatchTitle");
   if (titleEl) titleEl.textContent = t("Sprache nicht verfügbar", "Language not available");
@@ -3820,7 +4016,16 @@ async function confirmLangMismatch() {
   const ctx = window._langMismatchCtx || {};
   const groups = [];
   if (ctx.matched && ctx.matched.length) {
-    groups.push({ episodes: ctx.matched, language: ctx.language, provider: ctx.provider });
+    // Only the episodes that DO offer the primary language keep the extra
+    // track selection. The ones rerouted to a different language below become
+    // ordinary single-language jobs: their new language is a replacement for
+    // the primary, not a track to add to a file that was never created.
+    groups.push({
+      episodes: ctx.matched,
+      language: ctx.language,
+      provider: ctx.provider,
+      languages: ctx.languages,
+    });
   }
 
   // Group the mismatched episodes by the alternative language the user picked.
@@ -3848,6 +4053,11 @@ function closeModal() {
   overlay.style.display = "none";
   document.body.style.overflow = "";
   _currentSyncJob = null;
+  // Drop the multi-language selection with the modal: the next title has its
+  // own set of languages, and carrying three ticks over into it would queue
+  // tracks nobody asked for.
+  langMultiOrder = [];
+  setLangMultiActive(false);
   if (_seerrModalContext) {
     _seerrModalContext = null;
     _updateSeerrModalActions();

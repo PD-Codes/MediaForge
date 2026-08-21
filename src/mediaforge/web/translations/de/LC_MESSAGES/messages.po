@@ -12610,3 +12610,23 @@ msgstr "Status"
 #: src/mediaforge/web/templates/_extensions_nav.html
 msgid "Health"
 msgstr "Zustand"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Multiple"
+msgstr "Mehrere"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Download several languages as audio tracks in one file"
+msgstr "Mehrere Sprachen als Tonspuren in eine Datei laden"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "No language selected"
+msgstr "Keine Sprache ausgewählt"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Extra audio tracks"
+msgstr "Zusätzliche Tonspuren"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Extra languages"
+msgstr "Zusätzliche Sprachen"

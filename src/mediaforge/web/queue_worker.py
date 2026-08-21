@@ -920,8 +920,22 @@ def _queue_worker():
                     return str(base)
                 return None
 
+            # Secondary row of a multi-language download: this job only adds an
+            # audio track to the file the PRIMARY language already produced, so
+            # the language-separation FOLDER must resolve against that primary
+            # language -- otherwise the extra track is written as a second file
+            # in its own language folder, which is what the merge exists to
+            # avoid. The file NAME is not covered here: {language} in the naming
+            # template is filled from the episode's own selected_language, and
+            # unifying that would break the provider lookup, which is keyed by
+            # exactly that string. dupecheck.find_existing_variant() closes that
+            # gap by matching the primary's file inside the folder this resolves
+            # to -- which is also why the route rejects a multi-language
+            # download while dl_audio_track_merge is off.
+            _path_language = item.get("path_language") or item["language"]
+
             if not lang_chain:
-                selected_path = _path_for_language(item["language"])
+                selected_path = _path_for_language(_path_language)
 
             # {episode_url: [old files]} for language upgrades planned by
             # auto-sync — deleted per episode once the new file is on disk.
@@ -1057,6 +1071,14 @@ def _queue_worker():
                             if selected_path:
                                 ep_kwargs["selected_path"] = selected_path
                             episode = prov.episode_cls(**ep_kwargs)
+                            # A secondary row of a multi-language download: its
+                            # only job is to add a track to the file the primary
+                            # produced, so the merge is not optional here and
+                            # does not wait for dl_audio_track_merge. Set after
+                            # construction rather than as a kwarg so no episode
+                            # model has to know about it.
+                            if item.get("path_language"):
+                                episode._force_track_merge = True
                             # Deduplicate mirrored labels: if this hoster
                             # resolves to an embed a *different* hoster already
                             # tried, skip straight to the next genuinely

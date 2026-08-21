@@ -185,6 +185,21 @@
         <option>English Dub (German Sub)</option>
       </select>
     </div>
+    {# Extra audio tracks: further languages muxed into the file the language
+       above produces. Filled and shown/hidden by openEditModal() in
+       autosync.js -- hidden outright when the primary is a group or
+       "All Languages", both of which already mean one file per language. #}
+    <div class="settings-row" id="editExtraLanguagesRow" style="margin-bottom: 12px" hidden>
+      <label class="settings-field-label" style="min-width: 80px">{{ _('Extra languages') }}</label>
+      <div class="mf-multiselect" id="editExtraLanguages" data-mf-multiselect
+           data-none-label="{{ _('None') }}" data-many-label="{{ _('languages') }}">
+        <button type="button" class="mf-multiselect-trigger" aria-expanded="false" aria-haspopup="true">
+          <span class="mf-multiselect-label">{{ _('None') }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="mf-multiselect-dropdown"></div>
+      </div>
+    </div>
     <div class="settings-row" style="margin-bottom: 12px">
       <label class="settings-field-label" style="min-width: 80px">{{ _('Provider') }}</label>
       <select id="editProvider" class="sync-select">

@@ -630,6 +630,14 @@ label {
   pointer-events: none;
 }
 
+/* A short qualifier after an entry's name ("(video track)"), for when picking
+   it does something materially different from picking its neighbours. */
+.mf-multiselect-note {
+  font-style: normal;
+  font-size: 0.78em;
+  color: var(--text-muted);
+}
+
 .mf-multiselect-empty {
   padding: 10px 12px;
   font-size: 0.82rem;

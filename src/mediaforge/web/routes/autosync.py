@@ -21,7 +21,6 @@ from ..db import remove_autosync_job
 from ..db import update_autosync_job
 from ..language_groups import is_group_ref
 from ..language_groups import lang_separation_enabled
-from ..language_groups import language_display
 from ..language_groups import resolve_chain
 from ..queue_worker import _aniwaves_enabled
 from ..queue_worker import _hanime_enabled
@@ -251,6 +250,54 @@ def _language_group_error(language):
     return None
 
 
+def _normalize_extra_languages(value, primary):
+    """``(json_or_None, error_or_None)`` for a job's extra-language list.
+
+    The extras are the languages whose audio tracks are muxed into the file the
+    primary language produces. Stored as a JSON list, ``None`` when there are
+    none, so a job that never uses the feature is indistinguishable from one
+    written before the column existed.
+
+    The primary itself is dropped rather than rejected: it is already being
+    downloaded, and a UI that shows it ticked (it is, that is what makes it the
+    primary) would otherwise have to strip it before every save.
+    """
+    if value in (None, "", []):
+        return None, None
+    if not isinstance(value, list):
+        return None, "extra_languages muss eine Liste sein."
+
+    seen, ordered = set(), []
+    for item in value:
+        item = str(item or "").strip()
+        if not item or item == primary or item in seen:
+            continue
+        # Same reasoning as the manual download (routes/queue.py): a fallback
+        # group means "the first of these that exists" and "All Languages"
+        # means one file per language. Neither can be a track in someone
+        # else's file.
+        if is_group_ref(item) or item == "All Languages":
+            return None, (
+                "Sprachgruppen und 'Alle Sprachen' können nicht als "
+                "zusätzliche Tonspur gewählt werden."
+            )
+        seen.add(item)
+        ordered.append(item)
+
+    if not ordered:
+        return None, None
+    if is_group_ref(primary) or primary == "All Languages":
+        return None, (
+            "Zusätzliche Tonspuren brauchen eine einzelne Hauptsprache — "
+            "'Alle Sprachen' und Sprachgruppen legen bereits eine Datei je "
+            "Sprache an."
+        )
+    # Deliberately NOT gated on dl_audio_track_merge -- see the same note in
+    # routes/queue.py: that setting decides whether two independently queued
+    # jobs should be merged on a guess, while this list says so outright.
+    return json.dumps(ordered), None
+
+
 def register_autosync_routes(app):
     """Register all AutoSync job management routes (CRUD, triggering, batch
     operations, import/export) on the given Flask app."""
@@ -294,6 +341,12 @@ def register_autosync_routes(app):
         if _lang_err:
             return jsonify({"error": _lang_err}), 400
 
+        extra_languages, _extra_err = _normalize_extra_languages(
+            data.get("extra_languages"), language
+        )
+        if _extra_err:
+            return jsonify({"error": _extra_err}), 400
+
         existing = find_autosync_by_url(series_url)
         if existing:
             return jsonify(
@@ -320,6 +373,7 @@ def register_autosync_routes(app):
             episode_filter=episode_filter,
             movie_custom_path_id=movie_custom_path_id,
             cover_url=cover_url,
+            extra_languages=extra_languages,
         )
         fresh_job = get_autosync_job(job_id)
         if fresh_job:
@@ -362,8 +416,21 @@ def register_autosync_routes(app):
         data = request.get_json(silent=True) or {}
         allowed = {"language", "provider", "enabled", "custom_path_id",
                    "path_unavailable_action", "episode_filter", "movie_custom_path_id",
-                   "group_name"}
+                   "group_name", "extra_languages"}
         filtered = {k: v for k, v in data.items() if k in allowed}
+        if "extra_languages" in filtered:
+            # Validate against the language this update leaves the job with,
+            # not against the one it had: changing both in one request must not
+            # be able to leave the primary sitting in its own extras list.
+            _primary = filtered.get("language", job.get("language"))
+            _lang_err = _language_group_error(_primary)
+            if _lang_err:
+                return jsonify({"error": _lang_err}), 400
+            filtered["extra_languages"], _extra_err = _normalize_extra_languages(
+                filtered["extra_languages"], _primary
+            )
+            if _extra_err:
+                return jsonify({"error": _extra_err}), 400
         if "group_name" in filtered:
             gn = filtered["group_name"]
             gn = (str(gn).strip() if gn is not None else "")
@@ -520,7 +587,8 @@ def register_autosync_routes(app):
         username, is_admin = _get_current_user_info()
         jobs = get_autosync_jobs(username=None if is_admin else username)
         # Strip runtime-only fields that make no sense on import
-        export_fields = {"title", "series_url", "language", "provider", "enabled", "episode_filter"}
+        export_fields = {"title", "series_url", "language", "provider", "enabled",
+                         "episode_filter", "extra_languages"}
         clean = [{k: j[k] for k in export_fields if k in j} for j in jobs]
         payload = json.dumps({"version": 1, "jobs": clean}, ensure_ascii=False, indent=2)
         from flask import Response
@@ -574,6 +642,20 @@ def register_autosync_routes(app):
                 # would create a job that errors on every run.
                 errors.append(f"{title}: {_lang_err} — übersprungen")
                 continue
+            # The export carries extra_languages as the stored JSON string;
+            # re-validate it here rather than trusting it, because the merge
+            # setting and the available languages belong to THIS instance.
+            # A rejected extras list drops the extras, not the whole job --
+            # a single-language sync is still what the user wanted most of.
+            _extra_raw = entry.get("extra_languages")
+            if isinstance(_extra_raw, str):
+                try:
+                    _extra_raw = json.loads(_extra_raw)
+                except (TypeError, ValueError):
+                    _extra_raw = None
+            extra_languages, _extra_err = _normalize_extra_languages(_extra_raw, language)
+            if _extra_err:
+                errors.append(f"{title}: {_extra_err} — ohne Zusatzsprachen importiert")
             try:
                 job_id = add_autosync_job(
                     title=title,
@@ -582,6 +664,7 @@ def register_autosync_routes(app):
                     provider=provider,
                     added_by=username,
                     episode_filter=episode_filter,
+                    extra_languages=extra_languages,
                 )
                 if not enabled:
                     update_autosync_job(job_id, enabled=0)

@@ -1646,7 +1646,14 @@ def download(self, cancel_event=None):
         # that file instead of writing a second, near-identical one.
         target_path = self._episode_path
         merged_into_existing = False
-        if not target_path.exists() and audio_merge_enabled():
+        # `_force_track_merge` is set by the queue worker on the secondary items
+        # of a multi-language download (download_queue.path_language). Those
+        # exist for no other reason than to add a track to the primary's file,
+        # so they must not also depend on `dl_audio_track_merge`: that setting
+        # governs the *automatic* merge between two independently queued jobs,
+        # which is a guess about what the user meant. Here the user said it.
+        _wants_merge = getattr(self, "_force_track_merge", False) or audio_merge_enabled()
+        if not target_path.exists() and _wants_merge:
             variant = find_existing_variant(self._episode_path)
             if variant is not None:
                 target_path = variant

@@ -216,7 +216,19 @@
        is hidden by loadCustomPaths() when the instance has no custom paths. #}
     <div class="controls mf-ctrls">
       <div class="mf-fld">
-        <label class="mf-fld-label" for="languageSelect">{{ _('Language') }}</label>
+        {# The multi-language toggle sits ON the label row so the field keeps
+           the same height in both modes. The <select> stays the single source
+           of truth for which languages exist -- rebuildLanguageSelectOptions()
+           fills it per title, and the checkbox list below is only mirrored
+           from its options (see syncLangMultiFromSelect() in app.js). #}
+        <div class="mf-fld-labelrow">
+          <label class="mf-fld-label" for="languageSelect">{{ _('Language') }}</label>
+          <button type="button" id="langMultiToggle" class="mf-fld-toggle" hidden
+                  aria-pressed="false"
+                  title="{{ _('Download several languages as audio tracks in one file') }}">
+            {{ _('Multiple') }}
+          </button>
+        </div>
       <select id="languageSelect">
         {% if lang_labels is defined %}
         {% for key, label in lang_labels.items() %}
@@ -224,6 +236,16 @@
         {% endfor %}
         {% endif %}
       </select>
+      <div class="mf-multiselect" id="langMultiSelect" data-mf-multiselect hidden
+           data-none-label="{{ _('No language selected') }}"
+           data-many-label="{{ _('languages') }}">
+        <button type="button" class="mf-multiselect-trigger" aria-expanded="false" aria-haspopup="true">
+          <span class="mf-multiselect-label">{{ _('No language selected') }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="mf-multiselect-dropdown"></div>
+      </div>
+      <small class="mf-fld-hint" id="langMultiHint" hidden></small>
       </div>
       <div class="mf-fld">
         <label class="mf-fld-label" for="providerSelect">{{ _('Hoster') }}</label>
@@ -245,6 +267,10 @@
     <script>
       window.ANIWORLD_LANGS = {% if lang_labels is defined %}{{ lang_labels | tojson }}{% else %}{}{% endif %};
       window.STO_LANGS = {% if sto_lang_labels is defined %}{{ sto_lang_labels | tojson }}{% else %}{}{% endif %};
+      {# Languages whose subtitles are burned into the picture -- see
+         languages.burned_subtitle_labels(). Picking one as an extra adds a
+         second video stream, not an audio track. #}
+      window.MF_BURNED_SUB_LANGS = {% if burned_sub_labels is defined %}{{ burned_sub_labels | tojson }}{% else %}[]{% endif %};
     </script>
     {# Where the files that already exist are sitting. Placed here rather than
        further down on purpose: it is the counterpart to the "Target folder"

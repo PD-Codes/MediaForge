@@ -11253,3 +11253,23 @@ msgstr ""
 #~ msgid "Unlock"
 #~ msgstr ""
 
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Multiple"
+msgstr "Multiplo"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "Download several languages as audio tracks in one file"
+msgstr "Scarica più lingue come tracce audio in un unico file"
+
+#: src/mediaforge/web/templates/shared_modals.html
+msgid "No language selected"
+msgstr "Nessuna lingua selezionata"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Extra audio tracks"
+msgstr "Tracce audio aggiuntive"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Extra languages"
+msgstr "Lingue aggiuntive"

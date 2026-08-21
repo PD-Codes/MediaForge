@@ -1,5 +1,6 @@
 """Auto-sync worker — periodic new/missing-episode detection and queueing."""
 
+import json
 import re
 import threading
 import time
@@ -7,15 +8,19 @@ import time
 from ..config import INVERSE_LANG_LABELS, LANG_KEY_MAP
 from ..logger import get_logger
 from ..providers import resolve_provider
+from ..languages import language_present_in
 from .db import (
     add_to_queue,
     get_autosync_jobs,
+    get_cached_tracks,
     get_custom_path_by_id,
     get_custom_paths,
     get_setting,
     get_setting_int,
     is_series_queued_or_running,
+    prune_audio_track_cache,
     prune_download_history,
+    set_cached_tracks,
     update_autosync_job,
 )
 from .language_groups import (
@@ -486,6 +491,26 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
         else:
             target_languages.append(job["language"])
 
+        # Additional languages whose audio tracks go into the file `language`
+        # produces (see the extras pass further down). Stored as a JSON list;
+        # anything unreadable is treated as "none" rather than failing the
+        # whole sync run over a column that is optional by design.
+        _extra_langs = []
+        try:
+            _raw_extra = job.get("extra_languages")
+            if _raw_extra:
+                _extra_langs = [
+                    x for x in json.loads(_raw_extra)
+                    if isinstance(x, str) and x and x != job.get("language")
+                ]
+        except (TypeError, ValueError):
+            logger.warning(
+                "Auto-sync job '%s': extra_languages is not a JSON list — ignored.",
+                job.get("title", "?"),
+            )
+        if _extra_langs and os.environ.get("MEDIAFORGE_DISABLE_ENGLISH_SUB", "0") == "1":
+            _extra_langs = [x for x in _extra_langs if x != "English Sub"]
+
         # Phase 1: Count all episodes available online (language-independent).
         # This is done before any disk scan so we can decide early whether
         # new episodes have appeared since the last check.
@@ -801,7 +826,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             for chosen_lang in lang_chain:  # keep the chain's order in the queue
                 if chosen_lang in chain_buckets:
                     series_urls, movie_urls, replace_map = chain_buckets[chosen_lang]
-                    queue_plan.append((chosen_lang, series_urls, movie_urls, replace_map))
+                    queue_plan.append((chosen_lang, series_urls, movie_urls, replace_map, None))
 
         for target_lang in target_languages:
             # Build set of downloaded (season, episode) on disk using cached scans
@@ -868,11 +893,71 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                 else:
                     missing_series.append(url)
 
-            queue_plan.append((target_lang, missing_series, missing_movies, {}))
+            queue_plan.append((target_lang, missing_series, missing_movies, {}, None))
+
+        # ── Extra languages: one more audio track in the primary's file ──────
+        # Same idea as the manual multi-language download (routes/queue.py):
+        # `language` is the primary and produces the file, each extra language
+        # is queued as its own item carrying path_language so it resolves to
+        # the primary's folder and dupecheck muxes into the file already there.
+        #
+        # "Already present" cannot be answered from folders here -- that is the
+        # whole point of the merge, the English track lives INSIDE the German
+        # file and english-dub/ stays empty. So the primary's file is read for
+        # the tracks it actually holds, cached per (path, mtime, size) in
+        # db/audio_tracks.py: a caught-up series costs one index lookup per
+        # episode, and a file that gained a track changes its mtime, so the
+        # next cycle notices without anyone invalidating anything.
+        #
+        # Left out for fallback groups and "All Languages": a group means "the
+        # first of these that exists" and "All Languages" means one file per
+        # language, and neither can also mean "all of them in one file".
+        if _extra_langs and not lang_chain and job.get("language") != "All Languages":
+            primary_present = _scan_languages([job["language"]])
+
+            def _file_has(paths, lang):
+                """Whether any file for this episode already carries `lang`."""
+                for p in paths:
+                    tracks = get_cached_tracks(p)
+                    if tracks is None:
+                        # models.common.check_downloaded() is the same probe the
+                        # download runs, so both sides read the file identically.
+                        try:
+                            from ..models.common.common import check_downloaded
+                            probed = check_downloaded(p)
+                        except Exception as exc:
+                            logger.debug("Auto-sync: could not probe %s: %s", p, exc)
+                            continue
+                        if not probed.get("exists"):
+                            continue
+                        tracks = {
+                            "audio_langs": probed["audio_langs"],
+                            "video_langs": probed["video_langs"],
+                        }
+                        set_cached_tracks(p, tracks["audio_langs"], tracks["video_langs"])
+                    if language_present_in(
+                        tracks["audio_langs"], tracks["video_langs"], lang
+                    ):
+                        return True
+                return False
+
+            for extra_lang in _extra_langs:
+                extra_series, extra_movies = [], []
+                for (s_num, e_num, url, ep_obj, is_movie, candidates) in online_episodes:
+                    paths = _present_paths(primary_present, candidates)
+                    # No file yet: the primary's own item will create it and is
+                    # queued ahead of this one, so the track still lands right.
+                    if paths and _file_has(paths, extra_lang):
+                        continue
+                    (extra_movies if is_movie else extra_series).append(url)
+                if extra_series or extra_movies:
+                    queue_plan.append(
+                        (extra_lang, extra_series, extra_movies, {}, job["language"])
+                    )
 
         _src = ("sync:all_langs"
                 if job.get("language") == "All Languages" else "sync")
-        for (target_lang, missing_series, missing_movies, replace_map) in queue_plan:
+        for (target_lang, missing_series, missing_movies, replace_map, _path_lang) in queue_plan:
             # Queue series episodes and movie episodes as separate entries so they
             # can land in different download paths.
             for (_group, _path_id, _kind) in (
@@ -923,6 +1008,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                             replace_paths={
                                 u: replace_map[u] for u in _group if u in replace_map
                             },
+                            path_language=_path_lang,
                         )
                 if queue_downloads:
                     logger.info(
@@ -1244,6 +1330,15 @@ def _autosync_worker():
                         logger.info("[History] pruned %d entries older than %d days", _pruned, _hrd)
                 except Exception as _pe:
                     logger.debug("[History] prune failed: %s", _pe)
+                # Same hourly slot: drop cached track lists whose file is gone,
+                # so a library that gets reorganised does not grow the table
+                # forever. Batched inside, so this cannot become a library walk.
+                try:
+                    _dropped = prune_audio_track_cache()
+                    if _dropped:
+                        logger.debug("[AudioTracks] pruned %d stale entries", _dropped)
+                except Exception as _pe:
+                    logger.debug("[AudioTracks] prune failed: %s", _pe)
 
             mode = (os.environ.get("MEDIAFORGE_SYNC_MODE", "interval") or "interval").lower()
             schedule_key = os.environ.get("MEDIAFORGE_SYNC_SCHEDULE", "0")

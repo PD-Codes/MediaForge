@@ -1104,6 +1104,22 @@ function clearSelection() {
   _updateBatchToolbar();
 }
 
+// Bridge between the one document-level mf-multiselect listener and the
+// per-open closure inside openEditModal(). Reassigned on every open; the
+// listener below is registered exactly once.
+let _editExtraSync = null;
+let _editExtraGet = () => [];
+
+function _editExtraFromDom() {
+  const root = document.getElementById("editExtraLanguages");
+  if (!root || !window.mfMultiSelect) return [];
+  return window.mfMultiSelect.values(root);
+}
+
+document.addEventListener("mf-multiselect-change", (e) => {
+  if (e.target && e.target.id === "editExtraLanguages" && _editExtraSync) _editExtraSync();
+});
+
 async function openEditModal(id) {
   try {
     const res = await fetch("/api/autosync");
@@ -1152,6 +1168,71 @@ async function openEditModal(id) {
       langSelect.appendChild(optgroup);
     }
     langSelect.value = job.language || "German Dub";
+
+    // Extra audio tracks: mirrored from the language dropdown above, minus the
+    // primary itself and minus the two values that already mean "one file per
+    // language" (a group, "All Languages"). Rebuilt whenever the primary
+    // changes, because the primary can never be its own extra track.
+    let editExtraPicked = [];
+    try {
+      const raw = job.extra_languages;
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (Array.isArray(parsed)) editExtraPicked = parsed.filter((x) => x);
+    } catch (e) { editExtraPicked = []; }
+
+    const extraRow = document.getElementById("editExtraLanguagesRow");
+    const extraRoot = document.getElementById("editExtraLanguages");
+
+    function rebuildEditExtras() {
+      if (!extraRow || !extraRoot) return;
+      const primary = langSelect.value;
+      const usable = primary.indexOf("group:") !== 0 && primary !== "All Languages";
+      const options = usable
+        ? Array.from(langSelect.options)
+            .map((o) => o.value)
+            .filter((v) => v && v !== primary && v !== "All Languages" && v.indexOf("group:") !== 0)
+        : [];
+      editExtraPicked = editExtraPicked.filter((v) => options.indexOf(v) !== -1);
+      const box = extraRoot.querySelector(".mf-multiselect-dropdown");
+      box.innerHTML = "";
+      options.forEach((l) => {
+        const label = document.createElement("label");
+        label.className = "mf-multiselect-item";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "chb-main";
+        cb.value = l;
+        cb.checked = editExtraPicked.indexOf(l) !== -1;
+        const span = document.createElement("span");
+        span.textContent = l;
+        // Burned-in subtitles cannot ride along as an audio track, so these
+        // add a second video stream and grow the file. Flagged in the list
+        // rather than only afterwards. See languages.burned_subtitle_labels().
+        if ((window.MF_BURNED_SUB_LANGS || []).includes(l)) {
+          const mark = document.createElement("em");
+          mark.className = "mf-multiselect-note";
+          mark.textContent = t(" (Videospur)", " (video track)");
+          span.appendChild(mark);
+          label.title = t(
+            "Untertitel sind ins Bild gebrannt: ergibt eine zusätzliche Videospur, keine Tonspur.",
+            "Subtitles are burned into the picture: this adds a second video stream, not an audio track.",
+          );
+        }
+        label.appendChild(cb);
+        label.appendChild(span);
+        box.appendChild(label);
+      });
+      extraRow.hidden = !options.length;
+      if (window.mfMultiSelect) window.mfMultiSelect.refresh(extraRoot);
+    }
+
+    // onchange, not addEventListener: openEditModal() runs again for the next
+    // job, and repeated addEventListener calls would stack up handlers all
+    // writing into their own stale closure.
+    langSelect.onchange = rebuildEditExtras;
+    _editExtraSync = () => { editExtraPicked = _editExtraFromDom(); };
+    _editExtraGet = () => (extraRow && extraRow.hidden ? [] : editExtraPicked);
+    rebuildEditExtras();
 
     document.getElementById("editProvider").value = job.provider || "VOE";
     document.getElementById("editEnabled").value = job.enabled ? "1" : "0";
@@ -1230,6 +1311,7 @@ async function saveEdit() {
     custom_path_id: pathVal ? parseInt(pathVal) : null,
     path_unavailable_action: pathActionEl ? pathActionEl.value : "skip",
     group_name: (document.getElementById("editGroup") ? document.getElementById("editGroup").value.trim() : ""),
+    extra_languages: _editExtraGet(),
   };
   if (_editPicker) {
     body.episode_filter = _editPicker.getFilter();

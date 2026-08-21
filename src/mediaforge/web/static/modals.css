@@ -810,12 +810,99 @@
   gap: 4px;
 }
 
+/* One shared label line for every field, whether it holds just a caption or a
+   caption plus an inline toggle. The three fields sit in a flex row, so a
+   label area even two pixels off pushes that field's <select> out of line with
+   its neighbours.
+   Three deliberate choices, each one a bug that already happened:
+   * `height`, not `min-height` -- min-height still lets a taller child (the
+     toggle plus its border) grow the box.
+   * `margin: 0` -- forms.css sets `label { margin-bottom: 6px }` on the
+     ELEMENT, so a bare <label> got it and the .mf-fld-labelrow <div> did not.
+     Matching that number here would work until a theme pack changes it, so
+     the margin is dropped on both and the spacing below comes from .mf-fld's
+     own `gap` instead. Nothing here depends on a global element rule any more.
+   * 30px = the old 24px line plus the 6px margin it used to carry, so the
+     controls stay exactly where they were. It also gives the 20px pill room,
+     and centres caption and toggle on one line. */
+.mf-fld-label,
+.mf-fld-labelrow {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  margin: 0;
+  flex: none;
+}
+
 .mf-fld-label {
   font-size: 0.64rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.mf-fld-labelrow {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The row is the box now, so the caption inside it must add nothing of its own
+   -- including the global label margin, which would push the text off-centre. */
+.mf-fld-labelrow .mf-fld-label {
+  height: 100%;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mf-fld-toggle {
+  position: relative;
+  flex: none;
+  background: none;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.16));
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+  /* Must stay under the label row's 24px, or it grows the row again. The tap
+     target is widened below instead, which costs no layout height. */
+  height: 20px;
+  padding: 0 9px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+/* The visible pill is 22px so the row stays aligned; this extends the actual
+   hit area to ~38px in both directions for touch. Invisible and unclickable
+   for anything else, since it sits behind nothing and has no background. */
+.mf-fld-toggle::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.mf-fld-toggle:hover {
+  color: var(--text-primary, #fff);
+  border-color: var(--accent);
+}
+
+.mf-fld-toggle[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.mf-fld-hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.35;
 }
 
 .controls select {

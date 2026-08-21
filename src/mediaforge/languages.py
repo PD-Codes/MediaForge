@@ -174,3 +174,72 @@ def lang_folder_for(language):
     return LANG_FOLDER_MAP.get(
         language, (language or "").lower().replace(" ", "-")
     )
+
+
+# -----------------------------
+# Which tracks a label needs inside a file
+# -----------------------------
+# ISO-639-2 codes as ffprobe reports them in a stream's `tags.language`. This
+# repeats config.LANG_CODE_MAP as plain strings on purpose: that mapping is
+# keyed by enum members, and this module must stay import-free (see the module
+# docstring) so both the models and the web package can use it.
+_AUDIO_CODE = {"German": "deu", "English": "eng", "Japanese": "jpn"}
+_SUB_CODE = {"German": "deu", "English": "eng", "None": None}
+
+
+def tracks_for_label(language):
+    """``(audio_code, sub_video_code)`` a label expects inside the file.
+
+    ``sub_video_code`` is None for a dubbed language and otherwise the code of
+    the subtitles burned INTO THE PICTURE -- which is why it is checked against
+    the video streams, not the subtitle ones. Returns ``(None, None)`` for a
+    label this mapping does not know (a module's own language, say), which
+    callers must read as "cannot tell", never as "not present".
+    """
+    pair = LABEL_TO_LANG_PAIR.get(language)
+    if not pair:
+        return None, None
+    audio, subs = pair
+    return _AUDIO_CODE.get(audio), _SUB_CODE.get(subs)
+
+
+def burns_subtitles(language):
+    """Whether this language's subtitles are burned into the picture.
+
+    True means the language cannot be added to a file as an audio track: what
+    distinguishes it is the image, so ``download()`` fetches a second VIDEO
+    stream for it (see ``_dl_video``). That roughly doubles the file, which is
+    worth telling the user before they tick three of them.
+    """
+    return tracks_for_label(language)[1] is not None
+
+
+def burned_subtitle_labels():
+    """Every known label whose subtitles are burned in, for the web UI.
+
+    Handed to the templates by app.py's shared-modal context processor rather
+    than re-derived in JavaScript, so the rule lives in exactly one place.
+    """
+    return sorted(label for label in LABEL_TO_LANG_PAIR if burns_subtitles(label))
+
+
+def language_present_in(audio_langs, video_langs, language):
+    """Whether a file that carries these tracks already holds `language`.
+
+    Mirrors the need_audio/need_video rule in ``models/common/common.py``'s
+    ``download()`` -- the two must agree, or auto-sync queues an episode the
+    download then skips (or, worse, skips one the download would have taken).
+    The audio code alone is not enough: "English Sub" and "German Sub" are both
+    Japanese audio and differ only in the burned-in subtitles.
+
+    Unknown label or an unprobed file -> False, so the episode is queued and
+    the download decides. Guessing "present" here would silently drop a track.
+    """
+    audio_code, sub_video_code = tracks_for_label(language)
+    if not audio_code or audio_code not in (audio_langs or set()):
+        return False
+    if sub_video_code is None:
+        # A dubbed language needs any video stream; there is nothing burned in
+        # to distinguish, so the presence of the audio track settles it.
+        return bool(video_langs)
+    return sub_video_code in (video_langs or set())

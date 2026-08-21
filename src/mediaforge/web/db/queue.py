@@ -145,6 +145,21 @@ def init_queue_db():
         except sqlite3.OperationalError as _mig_err:
             if "duplicate column" not in str(_mig_err).lower():
                 logger.warning("[Migration] Unexpected error adding column: %s", _mig_err)
+        # Add path_language column (migration for existing DBs) — the language
+        # that decides the target FOLDER and FILE NAME, which is not always the
+        # language being downloaded. A multi-language download is queued as one
+        # row per language; the secondary rows only contribute an extra audio
+        # track to the file the primary row produced, so they must resolve
+        # {language} and the language-separation folder against the PRIMARY
+        # language or they would write a second, near-identical file next to it.
+        # NULL for every ordinary job, which then falls back to `language`.
+        try:
+            conn.execute(
+                "ALTER TABLE download_queue ADD COLUMN path_language TEXT"
+            )
+        except sqlite3.OperationalError as _mig_err:
+            if "duplicate column" not in str(_mig_err).lower():
+                logger.warning("[Migration] Unexpected error adding column: %s", _mig_err)
         # Migrate CHECK constraint to include 'partial' status (existing DBs)
         # SQLite cannot ALTER constraints — must recreate the table
         try:
@@ -172,6 +187,7 @@ def init_queue_db():
                     ("format_id",   "ALTER TABLE download_queue ADD COLUMN format_id TEXT"),
                     ("source_provider", "ALTER TABLE download_queue ADD COLUMN source_provider TEXT"),
                     ("replace_paths", "ALTER TABLE download_queue ADD COLUMN replace_paths TEXT NOT NULL DEFAULT '{}'"),
+                    ("path_language", "ALTER TABLE download_queue ADD COLUMN path_language TEXT"),
                 ]:
                     try:
                         conn.execute(sql)
@@ -189,7 +205,8 @@ def init_queue_db():
                             hidden = (SELECT hidden FROM _download_queue_old WHERE id = new.id),
                             format_id = (SELECT format_id FROM _download_queue_old WHERE id = new.id),
                             source_provider = (SELECT source_provider FROM _download_queue_old WHERE id = new.id),
-                            replace_paths = COALESCE((SELECT replace_paths FROM _download_queue_old WHERE id = new.id), '{}')"""
+                            replace_paths = COALESCE((SELECT replace_paths FROM _download_queue_old WHERE id = new.id), '{}'),
+                            path_language = (SELECT path_language FROM _download_queue_old WHERE id = new.id)"""
                     )
                 except Exception as _mig_err:
                     logger.warning("[Migration] Could not copy extra columns: %s", _mig_err)
@@ -227,6 +244,7 @@ def add_to_queue(
     format_id=None,
     source_provider=None,
     replace_paths=None,
+    path_language=None,
 ):
     """Queue a download.
 
@@ -234,14 +252,18 @@ def add_to_queue(
     the listed files are deleted once that episode has been downloaded again in
     the better language. Only auto-sync sets it (see autosync_worker), so a
     manual download never removes anything.
+
+    `path_language` overrides which language the target folder and file name are
+    derived from. Set only on the secondary rows of a multi-language download,
+    where it names the primary language so every row writes to the same file.
     """
     import json
 
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO download_queue (title, series_url, episodes, total_episodes, language, provider, username, custom_path_id, source, upscale, format_id, source_provider, replace_paths) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO download_queue (title, series_url, episodes, total_episodes, language, provider, username, custom_path_id, source, upscale, format_id, source_provider, replace_paths, path_language) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 title,
                 series_url,
@@ -256,6 +278,7 @@ def add_to_queue(
                 format_id,
                 source_provider,
                 json.dumps(replace_paths or {}),
+                path_language,
             ),
         )
         row_id = cur.lastrowid

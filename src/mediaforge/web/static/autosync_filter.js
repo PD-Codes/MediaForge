@@ -465,6 +465,84 @@
     // show the first language as if that were the job's setting.
     langSelect.value = (isGroup(wantedLang) && !groupName(wantedLang)) ? langs[0] : wantedLang;
 
+    // ── Extra audio tracks ───────────────────────────────────────────────
+    // Same feature as the manual download's "Multiple" toggle: the language
+    // above stays the primary and decides folder and file name, the languages
+    // ticked here are muxed into its file as additional audio tracks. Kept as
+    // a separate row rather than turning the select into a multi-select,
+    // because "which language is the primary" has to stay a single, obvious
+    // answer -- everything downstream (folder, file name, provider) hangs off
+    // it. Groups and "All Languages" are excluded: both already mean one file
+    // per language, so they cannot also be a track inside another file.
+    const extraRoot = el("div", {
+      class: "mf-multiselect",
+      "data-mf-multiselect": "",
+      "data-none-label": tr("Keine", "None"),
+      "data-many-label": tr("Sprachen", "languages"),
+    });
+    extraRoot.innerHTML =
+      '<button type="button" class="mf-multiselect-trigger" aria-expanded="false" aria-haspopup="true">' +
+      '<span class="mf-multiselect-label"></span>' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<polyline points="6 9 12 15 18 9"/></svg></button>' +
+      '<div class="mf-multiselect-dropdown"></div>';
+    const extraRow = el("div", { class: "asf-row" }, [
+      el("label", { text: tr("Zusätzliche Sprachen", "Extra languages") }),
+      extraRoot,
+    ]);
+    extraRow.hidden = true;  // until rebuildExtras() has seen the options
+
+    let extraPicked = [];
+    if (existing && existing.extra_languages) {
+      try {
+        const parsed = typeof existing.extra_languages === "string"
+          ? JSON.parse(existing.extra_languages)
+          : existing.extra_languages;
+        if (Array.isArray(parsed)) extraPicked = parsed.filter((x) => x);
+      } catch (e) { extraPicked = []; }
+    }
+
+    function rebuildExtras() {
+      const primary = langSelect.value;
+      const box = extraRoot.querySelector(".mf-multiselect-dropdown");
+      const usable = !isGroup(primary) && primary !== "All Languages";
+      // The primary is never its own extra, so it drops out of the list and
+      // out of the selection when it changes.
+      const options = usable
+        ? langs.filter((l) => l !== "All Languages" && l !== primary)
+        : [];
+      extraPicked = extraPicked.filter((v) => options.indexOf(v) !== -1);
+      box.innerHTML = "";
+      options.forEach((l) => {
+        const cb = el("input", { type: "checkbox", class: "chb-main", value: l });
+        cb.checked = extraPicked.indexOf(l) !== -1;
+        // Burned-in subtitles add a second video stream instead of an audio
+        // track -- see languages.burned_subtitle_labels().
+        const burned = (window.MF_BURNED_SUB_LANGS || []).indexOf(l) !== -1;
+        const caption = el("span", { text: l });
+        if (burned) {
+          caption.appendChild(el("em", {
+            class: "mf-multiselect-note",
+            text: tr(" (Videospur)", " (video track)"),
+          }));
+        }
+        box.appendChild(el("label", {
+          class: "mf-multiselect-item",
+          title: burned ? tr(
+            "Untertitel sind ins Bild gebrannt: ergibt eine zusätzliche Videospur, keine Tonspur.",
+            "Subtitles are burned into the picture: this adds a second video stream, not an audio track.",
+          ) : null,
+        }, [cb, caption]));
+      });
+      extraRow.hidden = !options.length;
+      if (window.mfMultiSelect) window.mfMultiSelect.refresh(extraRoot);
+    }
+
+    extraRoot.addEventListener("mf-multiselect-change", (e) => {
+      extraPicked = ((e.detail && e.detail.values) || []).slice();
+    });
+    langSelect.addEventListener("change", rebuildExtras);
+
     const provSelect = el("select", { class: "asf-select" },
       providers.map((p) => el("option", { value: p, text: p })));
     provSelect.value = (existing && existing.provider) || opts.currentProvider || providers[0];
@@ -513,6 +591,7 @@
       el("h2", { class: "asf-title", text: existing && existing.id ? tr("Auto-Sync bearbeiten", "Edit Auto-Sync") : tr("Auto-Sync einrichten", "Set up Auto-Sync") }),
       el("div", { class: "asf-sub", text: opts.title || opts.seriesUrl || "" }),
       el("div", { class: "asf-row" }, [el("label", { text: tr("Sprache", "Language") }), langSelect]),
+      extraRow,
       el("div", { class: "asf-row" }, [el("label", { text: tr("Provider", "Provider") }), provSelect]),
       el("div", { class: "asf-row" }, [el("label", { text: tr("Pfad", "Path") }), pathSelect]),
       pickerHost,
@@ -538,6 +617,8 @@
       customPaths,
     });
 
+    rebuildExtras();
+
     saveBtn.addEventListener("click", async () => {
       if (!picker.validate()) {
         toast(tr("Ungültiger Episodenbereich (z. B. „1-12“).", "Invalid episode range (e.g. \"1-12\")."));
@@ -554,6 +635,7 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               language: langSelect.value,
+              extra_languages: extraRow.hidden ? [] : extraPicked,
               provider: provSelect.value,
               custom_path_id: pathVal,
               episode_filter: filter,
@@ -572,6 +654,7 @@
               series_url: opts.seriesUrl,
               cover_url: coverUrl,
               language: langSelect.value,
+              extra_languages: extraRow.hidden ? [] : extraPicked,
               provider: provSelect.value,
               custom_path_id: pathVal,
               episode_filter: filter,

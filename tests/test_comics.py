@@ -1560,7 +1560,7 @@ def test_a_throttled_lookup_is_not_cached_as_a_miss(cvmod, monkeypatch):
 
 
 def test_an_outage_is_not_cached_as_a_miss(cvmod, monkeypatch):
-    session = cvmod(raises=OSError("connection reset"))
+    cvmod(raises=OSError("connection reset"))
     assert cv.search_volume("Saga") is None
 
     ok_session = _FakeSession(payload=_ok([VOLUME]))

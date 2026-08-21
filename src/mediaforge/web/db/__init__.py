@@ -223,6 +223,14 @@ from .seerr import (  # noqa: F401
     init_seerr_hidden_db,
     unhide_seerr_request,
 )
+from .audio_tracks import (  # noqa: F401
+    _PRUNE_BATCH,
+    _stat,
+    get_cached_tracks,
+    init_audio_track_db,
+    prune_audio_track_cache,
+    set_cached_tracks,
+)
 from .library import (  # noqa: F401
     get_all_library_cache,
     get_library_aliases,

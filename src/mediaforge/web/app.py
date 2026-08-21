@@ -32,6 +32,7 @@ from .db import (
     init_language_groups_db,
     init_queue_db,
     init_library_db,
+    init_audio_track_db,
     init_media_ignored_db,
     init_download_history_db,
     init_app_settings_db,
@@ -679,10 +680,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # appears in the dropdown without a restart.
     @app.context_processor
     def _inject_shared_modal_context():
+        from ..languages import burned_subtitle_labels
+
         return {
             "lang_labels": LANG_LABELS,
             "sto_lang_labels": STO_LANG_LABELS,
             "supported_providers": WORKING_PROVIDERS,
+            # Languages whose subtitles are burned into the picture. Those add
+            # a second VIDEO stream rather than an audio track, so the UI warns
+            # before one is picked as an extra. Passed down instead of being
+            # re-derived in JS so the rule stays in languages.py alone.
+            "burned_sub_labels": burned_subtitle_labels(),
         }
 
     # Initialize download queue, custom paths and autosync (works with or without auth)
@@ -693,6 +701,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     init_favourites_db()
     init_seerr_hidden_db()
     init_library_db()
+    init_audio_track_db()
     init_media_ignored_db()
     init_app_settings_db()
     init_download_history_db()

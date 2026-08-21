@@ -202,7 +202,26 @@ def register_queue_routes(app):
         """
         data = payload if payload is not None else (request.get_json(silent=True) or {})
         episodes = data.get("episodes", [])
-        language = data.get("language", "German Dub")
+        # Multi-language download: `languages` is an ordered list whose FIRST
+        # entry is the primary language. The primary is what `language` has
+        # always meant -- it decides the target folder and the file name -- and
+        # every further entry is queued as its own row that muxes one more audio
+        # track into that same file. Callers that send only `language` (module
+        # re-dispatch, /api/v1, seerr.js) are unaffected.
+        extra_languages = []
+        _langs = data.get("languages")
+        if isinstance(_langs, list) and _langs:
+            _seen = set()
+            _ordered = []
+            for _l in _langs:
+                _l = str(_l).strip()
+                if _l and _l not in _seen:
+                    _seen.add(_l)
+                    _ordered.append(_l)
+            language = _ordered[0]
+            extra_languages = _ordered[1:]
+        else:
+            language = data.get("language", "German Dub")
         provider = data.get("provider", "VOE")
         title = data.get("title", "Unknown")
         series_url = str(data.get("series_url", "")).strip().rstrip("/")
@@ -240,6 +259,23 @@ def register_queue_routes(app):
             if not resolve_chain(language):
                 return jsonify({"error": "Diese Sprachgruppe existiert nicht mehr."}), 400
 
+        if extra_languages:
+            # A fallback group means "take the first of these that exists", a
+            # multi-selection means "take all of these". Combining the two has
+            # no meaning the queue could act on, so it is refused rather than
+            # silently resolved to one of the readings.
+            if is_group_ref(language) or any(is_group_ref(x) for x in extra_languages):
+                return jsonify({"error": "Sprachgruppen können nicht mit einer Mehrfach-Sprachauswahl kombiniert werden."}), 400
+            if "All Languages" in extra_languages or language == "All Languages":
+                return jsonify({"error": "'Alle Sprachen' kann nicht mit einer Mehrfach-Sprachauswahl kombiniert werden."}), 400
+            # Deliberately NOT gated on dl_audio_track_merge. That setting is
+            # about the automatic merge between two separately queued jobs --
+            # a guess about intent. Picking several languages in one download
+            # IS the intent, so the worker forces the merge for these rows
+            # (queue_worker sets episode._force_track_merge).
+            if os.environ.get("MEDIAFORGE_DISABLE_ENGLISH_SUB", "0") == "1":
+                extra_languages = [x for x in extra_languages if x != "English Sub"]
+
         username = None
         if runtime_state.AUTH_ENABLED:
             user = get_current_user()
@@ -270,7 +306,32 @@ def register_queue_routes(app):
                 custom_path_id=custom_path_id,
                 upscale=upscale,
             )
-        return jsonify({"queue_id": queue_id})
+
+            # One extra row per secondary language, queued AFTER the primary.
+            # The worker is a single serial loop that claims by position, so
+            # ordering here is what guarantees the primary's file exists before
+            # anything tries to mux into it -- two rows running at once would
+            # put two ffmpeg processes on the same output file.
+            #
+            # `upscale` is deliberately not repeated: it would re-encode the
+            # finished file once per extra language. The primary row already
+            # carries it, and it runs last in the chain anyway.
+            extra_ids = []
+            for _extra in extra_languages:
+                if is_series_queued_or_running(series_url, _extra, requested_episodes=episodes):
+                    continue
+                extra_ids.append(add_to_queue(
+                    title,
+                    series_url,
+                    episodes,
+                    _extra,
+                    provider,
+                    username,
+                    custom_path_id=custom_path_id,
+                    upscale=False,
+                    path_language=language,
+                ))
+        return jsonify({"queue_id": queue_id, "extra_queue_ids": extra_ids})
     @app.route("/api/queue")
     def api_queue():
         """Return all queue items plus ffmpeg encode progress and pause state.
@@ -288,6 +349,15 @@ def register_queue_routes(app):
 
         for _it in items:
             _it["language_label"] = language_display(_it.get("language"))
+            # Secondary row of a multi-language download. Without saying so the
+            # queue shows what looks like the same season queued twice; the
+            # arrow says this row only adds a track to the other one's file.
+            _pl = _it.get("path_language")
+            if _pl and _pl != _it.get("language"):
+                _it["merges_into_language"] = language_display(_pl)
+                _it["language_label"] = "%s → %s" % (
+                    _it["language_label"], language_display(_pl),
+                )
             # Group this item's raw errors by cause. A twelve-episode job that
             # failed twelve times almost always failed for one reason, and the
             # queue is the place that has to say which -- a traceback there is
