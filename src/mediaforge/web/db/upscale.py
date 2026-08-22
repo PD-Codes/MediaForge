@@ -270,10 +270,23 @@ def finalize_upscale_item(item_id, processed_count):
 
 
 def get_upscale_queue():
+    """Every upscale job, oldest position first.
+
+    `username` is joined in from the download row this job came from
+    (`queue_item_id`): the upscale queue has no owner of its own, but every job
+    that a download produced belongs to whoever queued that download. NULL for
+    a job started straight from the library -- that route is admin-only, so
+    those are the instance's own.
+
+    Used by routes/upscale.py to show a non-admin their own jobs in full and
+    everyone else's as anonymous placeholders.
+    """
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM upscale_queue ORDER BY position ASC, id ASC"
+            "SELECT u.*, d.username AS username FROM upscale_queue u "
+            "LEFT JOIN download_queue d ON d.id = u.queue_item_id "
+            "ORDER BY u.position ASC, u.id ASC"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -281,10 +294,13 @@ def get_upscale_queue():
 
 
 def get_upscale_item(item_id):
+    """One upscale job, with the owner joined in -- see get_upscale_queue()."""
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT * FROM upscale_queue WHERE id = ?", (item_id,)
+            "SELECT u.*, d.username AS username FROM upscale_queue u "
+            "LEFT JOIN download_queue d ON d.id = u.queue_item_id "
+            "WHERE u.id = ?", (item_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -462,12 +478,25 @@ def is_upscale_cancelled(item_id):
         conn.close()
 
 
-def clear_upscale_completed():
+def clear_upscale_completed(username=None):
+    """Delete finished upscale jobs.
+
+    `username` limits it to jobs that came from that account's downloads, so a
+    non-admin tidying up cannot clear everyone else's rows. None means all of
+    them, which is the admin case and the previous behaviour. Jobs with no
+    owner (started from the library, an admin-only route) count as the
+    instance's and are only cleared by an admin.
+    """
     conn = get_db()
     try:
-        conn.execute(
-            "DELETE FROM upscale_queue WHERE status IN ('completed', 'failed', 'cancelled')"
-        )
+        query = ("DELETE FROM upscale_queue "
+                 "WHERE status IN ('completed', 'failed', 'cancelled')")
+        params = ()
+        if username:
+            query += (" AND queue_item_id IN "
+                      "(SELECT id FROM download_queue WHERE username = ?)")
+            params = (username,)
+        conn.execute(query, params)
         conn.commit()
     finally:
         conn.close()
@@ -485,7 +514,8 @@ def get_queue_badge_info():
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, series_url, title, status, current_episode, total_episodes "
+            "SELECT id, series_url, title, status, current_episode, total_episodes, "
+            "username "
             "FROM download_queue "
             "WHERE status IN ('queued', 'running') AND hidden = 0"
         ).fetchall()
@@ -505,12 +535,25 @@ def get_queue_badge_info():
                         "series_url": r["series_url"],
                         "current_episode": r["current_episode"],
                         "total_episodes": r["total_episodes"],
+                        # So the caller can tell whether this job is the
+                        # current account's before showing its title.
+                        "username": r["username"],
                     }
             else:
                 queued += 1
         return {
             "active": len(rows),
             "urls": [r["series_url"] for r in rows if r["series_url"]],
+            # The same list per owner. `urls` drives the "currently
+            # downloading" marker on browse cards, so handing the whole list
+            # to every account would say which series the others are fetching
+            # -- visible without ever opening the queue. The caller picks
+            # which of the two it may use (see routes/queue.py's badge).
+            "urls_by_owner": {
+                owner: [r["series_url"] for r in rows
+                        if r["series_url"] and r["username"] == owner]
+                for owner in {r["username"] for r in rows}
+            },
             "running": running,
             "queued": queued,
         }

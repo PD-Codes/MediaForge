@@ -236,6 +236,10 @@ _IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # slow-but-working CDN usable while bounding the damage at ~11s.
 _IMG_FETCH_RETRIES = 2
 _IMG_FETCH_TIMEOUT = 5
+# Redirect hops the image fetch follows, each one re-checked against
+# is_safe_url(). Matches stream_proxy.MAX_PROXY_REDIRECTS -- a CDN handing off
+# to its regional edge is one or two hops, never five.
+_IMG_MAX_REDIRECTS = 5
 
 # url -> Event, for requests that are already fetching that URL. Without this,
 # three tabs opening the same browse page produced three upstream requests per
@@ -327,6 +331,7 @@ def _img_fetch_with_retries(raw_url: str):
     User-Agent; we fall back to plain ``requests`` when it is unavailable.
     """
     import time as _time
+    from urllib.parse import urljoin as _urljoin
 
     import requests as _rq
 
@@ -340,17 +345,52 @@ def _img_fetch_with_retries(raw_url: str):
     headers.update(_img_upstream_headers(raw_url))
 
     # Prefer a Chrome-impersonating client to defeat Cloudflare fingerprinting.
+    #
+    # Redirects are followed BY HAND, one hop at a time, because both clients
+    # follow them silently otherwise. The caller's is_safe_url() check only
+    # ever saw the URL the browser asked for: an allowlisted CDN answering
+    # 302 -> http://127.0.0.1:8080/... or -> 169.254.169.254 got the proxy to
+    # fetch that and hand the body back, cached under the harmless-looking
+    # original URL. stream_proxy._CheckedRedirectHandler solves the same
+    # problem for the stream proxy; this is that check, for a client library
+    # that has no handler to hook into.
+    from ..stream_proxy import is_safe_url as _safe
+
     try:
         from curl_cffi import requests as _curl_requests  # type: ignore
 
-        def _do_get():
+        def _fetch_one(url):
             return _curl_requests.get(
-                raw_url, timeout=_IMG_FETCH_TIMEOUT,
-                headers=headers, impersonate="chrome120",
+                url, timeout=_IMG_FETCH_TIMEOUT, headers=headers,
+                impersonate="chrome120", allow_redirects=False,
             )
     except Exception:
-        def _do_get():
-            return _rq.get(raw_url, timeout=_IMG_FETCH_TIMEOUT, headers=headers)
+        def _fetch_one(url):
+            return _rq.get(url, timeout=_IMG_FETCH_TIMEOUT, headers=headers,
+                           allow_redirects=False)
+
+    def _do_get():
+        url = raw_url
+        for _hop in range(_IMG_MAX_REDIRECTS):
+            resp = _fetch_one(url)
+            if resp.status_code not in (301, 302, 303, 307, 308):
+                return resp
+            target = resp.headers.get("Location") or ""
+            if not target:
+                return resp
+            # Relative Location is legal and common; resolve it against the
+            # URL we actually asked, not against the original.
+            url = _urljoin(url, target)
+            if not _safe(url):
+                # WARNING, not debug: an allowlisted host pointing the proxy at
+                # an internal address is either a compromised CDN or someone
+                # probing, and both are worth seeing in a default-level log.
+                logger.warning(
+                    "[ImageProxy] refused redirect from %s to a forbidden "
+                    "address (%s)", raw_url, url,
+                )
+                raise PermissionError("redirect to a forbidden address")
+        raise PermissionError("too many redirects")
 
     last_exc = None
     for attempt in range(_IMG_FETCH_RETRIES):
@@ -360,6 +400,10 @@ def _img_fetch_with_retries(raw_url: str):
                 _time.sleep(0.25 * (2**attempt))
                 continue
             return resp
+        except PermissionError:
+            # A refused redirect is a verdict, not a hiccup. Retrying it would
+            # just ask the same hostile upstream the same question again.
+            raise
         except Exception as e:
             last_exc = e
             if attempt + 1 < _IMG_FETCH_RETRIES:

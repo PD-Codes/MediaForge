@@ -150,10 +150,23 @@ def add_to_encoding_queue(title, file_path, output_path=None, source="manual", f
 
 
 def get_encoding_queue():
+    """Every encoding job, oldest position first.
+
+    `username` is joined in from the download row this job came from
+    (`queue_item_id`): the encoding queue has no owner of its own, but every job
+    that a download produced belongs to whoever queued that download. NULL for
+    a job started straight from the library -- that route is admin-only, so
+    those are the instance's own.
+
+    Used by routes/encoding.py to show a non-admin their own jobs in full and
+    everyone else's as anonymous placeholders.
+    """
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM encoding_queue ORDER BY position ASC, id ASC"
+            "SELECT e.*, d.username AS username FROM encoding_queue e "
+            "LEFT JOIN download_queue d ON d.id = e.queue_item_id "
+            "ORDER BY e.position ASC, e.id ASC"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -161,10 +174,13 @@ def get_encoding_queue():
 
 
 def get_encoding_item(item_id):
+    """One encoding job, with the owner joined in -- see get_encoding_queue()."""
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT * FROM encoding_queue WHERE id = ?", (item_id,)
+            "SELECT e.*, d.username AS username FROM encoding_queue e "
+            "LEFT JOIN download_queue d ON d.id = e.queue_item_id "
+            "WHERE e.id = ?", (item_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -345,12 +361,25 @@ def is_encoding_cancelled(item_id):
         conn.close()
 
 
-def clear_encoding_completed():
+def clear_encoding_completed(username=None):
+    """Delete finished encoding jobs.
+
+    `username` limits it to jobs that came from that account's downloads, so a
+    non-admin tidying up cannot clear everyone else's rows. None means all of
+    them, which is the admin case and the previous behaviour. Jobs with no
+    owner (started from the library, an admin-only route) count as the
+    instance's and are only cleared by an admin.
+    """
     conn = get_db()
     try:
-        conn.execute(
-            "DELETE FROM encoding_queue WHERE status IN ('completed', 'failed', 'cancelled')"
-        )
+        query = ("DELETE FROM encoding_queue "
+                 "WHERE status IN ('completed', 'failed', 'cancelled')")
+        params = ()
+        if username:
+            query += (" AND queue_item_id IN "
+                      "(SELECT id FROM download_queue WHERE username = ?)")
+            params = (username,)
+        conn.execute(query, params)
         conn.commit()
     finally:
         conn.close()

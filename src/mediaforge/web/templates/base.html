@@ -744,10 +744,15 @@
             style="display:none">{{ _('Disabled') }}</span>
           <button class="btn btn-secondary btn-sm" id="qhubClearBtn" onclick="qhubClear()"
             title="{{ _('Remove completed, failed and cancelled entries') }}">{{ _('Clear Entries') }}</button>
+          {# Pausing halts the queue for every account, so the endpoint is
+             admin-only. Hidden here rather than left to fail with a 403: a
+             button that is visible and refuses reads as a broken button. #}
+          {% if not auth_enabled or (current_user and current_user.role == 'admin') %}
           <button class="btn btn-ghost btn-sm" id="queuePauseBtn" onclick="toggleQueuePause()"
             title="{{ _('Pause downloads') }}" style="display:none">
             <span id="queuePauseLabel">{{ _('Pause all') }}</span>
           </button>
+          {% endif %}
         </div>
       </div>
 
@@ -930,6 +935,10 @@
   <script>
     // i18n helper — returns the German or English string based on the session language
     window.__LANG = "{{ ui_language }}";
+    {# For hiding controls whose endpoint is admin-only, so they are not
+       offered and then refused. Never a substitute for the server-side check
+       -- this is cosmetics, the gate lives in the route. #}
+    window.__IS_ADMIN = {{ 'true' if (not auth_enabled or (current_user and current_user.role == 'admin')) else 'false' }};
     window.__UPTIME_ENABLED = {{ 'true' if uptime_enabled else 'false' }};
     window.__SEERR_CONFIGURED = {{ 'true' if seerr_configured else 'false' }};
     function t(de, en) { return window.__LANG === 'de' ? de : en; }

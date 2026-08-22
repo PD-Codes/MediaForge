@@ -21,6 +21,8 @@ from ..runtime_state import request_episode_skip
 from ..runtime_state import set_queue_paused
 from .. import runtime_state
 from ..auth import get_current_user
+from ..request_context import anonymise_foreign_rows as _anonymise
+from ..request_context import get_current_user_info as _get_current_user_info
 from ..language_groups import is_group_ref
 from ..language_groups import lang_separation_enabled
 from ..language_groups import language_display
@@ -182,6 +184,55 @@ def _attach_cached_posters(items):
         pass
 
 
+def _may_touch_queue_item(item):
+    """Whether the current request may act on this queue row.
+
+    The queue is deliberately a SHARED view -- everyone sees every job, which
+    is what makes it useful on a household server. Acting on someone else's
+    job is a different question, and the answer was missing: cancel, remove,
+    move, restart and the per-episode endpoints only ever took an id, so any
+    logged-in account could kill a download it did not start.
+    ``routes/history.py`` already had the pattern; the queue never got it.
+
+    An item whose ``username`` is NULL belongs to nobody -- auth-disabled
+    instances, or a job auto-sync created before jobs recorded an owner. Those
+    are treated as the system's, which only an admin may touch. With auth off
+    ``get_current_user_info()`` reports admin, so nothing changes there.
+    """
+    username, is_admin = _get_current_user_info()
+    if is_admin:
+        return True
+    owner = (item or {}).get("username")
+    return bool(owner) and owner == username
+
+
+# Everything a foreign queue row is allowed to tell a non-admin. The point of
+# showing it at all is "something else is ahead of you", so position, status
+# and the episode counters stay -- without them the queue looks frozen while a
+# stranger's 40-episode season runs, and "when am I up?" has no answer. The
+# title, the series URL, the provider, the language, the poster and the error
+# details are what identifies the OTHER person's viewing, and none of it is
+# needed to answer that question.
+_FOREIGN_QUEUE_FIELDS = (
+    "id", "position", "status", "current_episode", "total_episodes", "hidden",
+)
+
+
+def _queue_item_for_request(queue_id):
+    """``(item, None)`` if the caller may act on it, else ``(None, response)``.
+
+    404 for both "gone" and "not yours" on purpose: a shared queue already
+    shows the row, so hiding its existence buys nothing -- but 403 would still
+    confirm which ids belong to which user for anyone probing the API.
+    """
+    item = get_queue_item(queue_id)
+    if not item:
+        return None, (jsonify({"error": "Queue item not found"}), 404)
+    if not _may_touch_queue_item(item):
+        return None, (jsonify({"error": "Queue item not found"}), 404)
+    return item, None
+
+
 def register_queue_routes(app):
     """Register the download queue CRUD, pause/resume and per-item control endpoints."""
     @app.route("/api/download", methods=["POST"])
@@ -341,13 +392,18 @@ def register_queue_routes(app):
         """
         from ...models.common.common import get_ffmpeg_progress
 
-        items = get_queue()
+        # Reduced FIRST: everything below decorates rows with labels, error
+        # summaries and posters, and none of that should be computed -- let
+        # alone returned -- for a row the caller may not see.
+        items = _anonymise(get_queue(), _FOREIGN_QUEUE_FIELDS)
         ffmpeg_pct = get_ffmpeg_progress()
         # Items using a fallback group store the internal "group:<id>"; the
         # queue rows show the group's name instead.
         from ..error_explain import summarize as _explain_errors
 
         for _it in items:
+            if _it.get("foreign"):
+                continue
             _it["language_label"] = language_display(_it.get("language"))
             # Secondary row of a multi-language download. Without saying so the
             # queue shows what looks like the same season queued twice; the
@@ -392,11 +448,28 @@ def register_queue_routes(app):
         from ...models.common.common import get_ffmpeg_progress
         from ..db import get_queue_badge_info
         info = get_queue_badge_info()
+
+        _username, _is_admin = _get_current_user_info()
+        _running = info.get("running")
+        if not _is_admin:
+            # `urls` marks browse cards as "currently downloading". Left whole
+            # it would tell every account exactly which series the others are
+            # fetching -- on the browse page, without even opening the queue.
+            info["urls"] = info.get("urls_by_owner", {}).get(_username, [])
+            # The counts stay instance-wide on purpose: the queue hub shows
+            # foreign jobs as anonymous rows, so a badge that counted only own
+            # jobs would disagree with the list right next to it.
+            if _running and _running.get("username") != _username:
+                _running = {k: _running.get(k) for k in _FOREIGN_QUEUE_FIELDS
+                            if k in _running}
+                _running["status"] = "running"
+                _running["foreign"] = True
+
         return jsonify({
             "ok": True,
             "badge": info["active"],
             "urls": info["urls"],
-            "running": info.get("running"),
+            "running": _running,
             "queued": info.get("queued", 0),
             "ffmpeg_progress": get_ffmpeg_progress(),
             "paused": is_queue_paused(),
@@ -406,7 +479,14 @@ def register_queue_routes(app):
         """Pause the download queue worker.
 
         POST /api/queue/pause. Called from queue.js's toggleQueuePause().
+
+        Admin only: this halts the queue for every account on the instance,
+        which is not a decision one user gets to make for the others. The
+        per-item endpoints are owner-or-admin instead.
         """
+        _username, _is_admin = _get_current_user_info()
+        if not _is_admin:
+            return jsonify({"error": "not permitted"}), 403
         set_queue_paused(True)
         return jsonify({"paused": True})
     @app.route("/api/queue/resume", methods=["POST"])
@@ -414,7 +494,12 @@ def register_queue_routes(app):
         """Resume the download queue worker.
 
         POST /api/queue/resume. Called from queue.js's toggleQueuePause().
+
+        Admin only, same reasoning as the pause endpoint above.
         """
+        _username, _is_admin = _get_current_user_info()
+        if not _is_admin:
+            return jsonify({"error": "not permitted"}), 403
         set_queue_paused(False)
         return jsonify({"paused": False})
     @app.route("/api/queue/<int:queue_id>", methods=["DELETE"])
@@ -424,6 +509,9 @@ def register_queue_routes(app):
         DELETE /api/queue/<queue_id>. Called from queue.js's
         removeQueueItem().
         """
+        _item, _denied = _queue_item_for_request(queue_id)
+        if _denied:
+            return _denied
         ok, err = remove_from_queue(queue_id)
         if not ok:
             return jsonify({"error": err}), 400
@@ -435,7 +523,9 @@ def register_queue_routes(app):
         POST /api/queue/<queue_id>/cancel. Called from queue.js's
         cancelQueueItem().
         """
-        item = get_queue_item(queue_id)
+        item, _denied = _queue_item_for_request(queue_id)
+        if _denied:
+            return _denied
         ok, err = cancel_queue_item(queue_id)
         if not ok:
             return jsonify({"error": err}), 400
@@ -466,9 +556,9 @@ def register_queue_routes(app):
         URLs when available, otherwise the full episode list.
         """
         import json as _json
-        item = get_queue_item(queue_id)
-        if not item:
-            return jsonify({"error": "Queue item not found"}), 404
+        item, _denied = _queue_item_for_request(queue_id)
+        if _denied:
+            return _denied
         if item["status"] not in ("failed", "cancelled", "completed"):
             return jsonify({"error": "Only failed, cancelled or completed items can be restarted"}), 400
 
@@ -502,9 +592,9 @@ def register_queue_routes(app):
         POST /api/queue/<queue_id>/skip-episode. No confirmed frontend
         caller found in static/ or templates/ at time of writing.
         """
-        item = get_queue_item(queue_id)
-        if not item:
-            return jsonify({"error": "Queue item not found"}), 404
+        item, _denied = _queue_item_for_request(queue_id)
+        if _denied:
+            return _denied
         if item["status"] != "running":
             return jsonify({"error": "Job is not running"}), 400
         request_episode_skip(queue_id)
@@ -520,9 +610,9 @@ def register_queue_routes(app):
         ep_url = data.get("url", "").strip()
         if not ep_url:
             return jsonify({"error": "Missing episode URL"}), 400
-        item = get_queue_item(queue_id)
-        if not item:
-            return jsonify({"error": "Queue item not found"}), 404
+        item, _denied = _queue_item_for_request(queue_id)
+        if _denied:
+            return _denied
         if item["status"] not in ("failed", "cancelled", "completed"):
             return jsonify({"error": "Only failed, cancelled or completed items support per-episode retry"}), 400
         ok, err = retry_single_episode(queue_id, ep_url)
@@ -540,6 +630,9 @@ def register_queue_routes(app):
         direction = data.get("direction", "").strip()
         if direction not in ("up", "down"):
             return jsonify({"error": "direction must be 'up' or 'down'"}), 400
+        _item, _denied = _queue_item_for_request(queue_id)
+        if _denied:
+            return _denied
         ok, err = move_queue_item(queue_id, direction)
         if not ok:
             return jsonify({"error": err}), 400
@@ -587,6 +680,14 @@ def register_queue_routes(app):
 
         done, failed = [], {}
         for queue_id in ids:
+            # Same ownership rule as the singular endpoints this batches --
+            # a bulk call must not be the way around them. Reported per id
+            # rather than failing the whole batch, exactly like a row that
+            # disappeared between selecting and submitting.
+            _item, _denied = _queue_item_for_request(queue_id)
+            if _denied:
+                failed[str(queue_id)] = "not found"
+                continue
             try:
                 if action == "cancel":
                     ok, err = cancel_queue_item(queue_id)
@@ -641,6 +742,11 @@ def register_queue_routes(app):
 
         DELETE /api/queue/completed. Called from queue.js's
         clearOldQueueItems().
+
+        Scoped to the caller's own finished rows rather than refused: tidying
+        up after yourself is a reasonable thing for any account to do, and
+        clearing everyone's history is not. Admins keep the whole queue.
         """
-        clear_completed()
+        username, is_admin = _get_current_user_info()
+        clear_completed(username=None if is_admin else username)
         return jsonify({"ok": True})

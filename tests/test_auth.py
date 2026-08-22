@@ -91,6 +91,33 @@ def test_upscale_add_library_is_admin_only(app):
     assert "api_upscale_add_library" in app.config["ADMIN_ONLY_ENDPOINTS"]
 
 
+def test_instance_wide_encoding_settings_are_admin_only(app):
+    """The siblings api_encoding_settings_post was gated without.
+
+    All four write instance-wide state from the admin-only encoding page, and
+    two of them decide whether finished files are overwritten in place
+    (upscaling_replace_original / encoding_replace_original). They were simply
+    forgotten when the first one was added, which is the failure mode a
+    hand-maintained set has.
+    """
+    admin_only = app.config["ADMIN_ONLY_ENDPOINTS"]
+    for endpoint in ("api_upscale_settings_post", "api_encoding_timing_post",
+                     "api_upscale_check_engines", "api_upscale_download_shaders",
+                     "api_stream_reset_encoders"):
+        assert endpoint in admin_only, endpoint
+
+
+def test_reading_the_upscale_mode_stays_open(app):
+    """GET must NOT follow its POST into the admin set.
+
+    Every account's download modal reads it to decide whether to offer the
+    upscale checkbox (_loadUpscaleMode() in static/app.js). Gating it would
+    take the checkbox away from everyone -- the kind of collateral damage a
+    "close the whole endpoint" fix causes.
+    """
+    assert "api_upscale_settings_get" not in app.config["ADMIN_ONLY_ENDPOINTS"]
+
+
 def test_module_settings_api_is_admin_only(app):
     """The generic module settings pair (thirdparties/registry.py).
 

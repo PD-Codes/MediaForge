@@ -20,6 +20,9 @@ from ..db import remove_from_encoding_queue
 from ..db import set_setting
 from ..runtime_state import _encoding_active_cancel_events
 from ..runtime_state import _encoding_cancel_lock
+from ..request_context import anonymise_foreign_rows as _anonymise
+from ..request_context import get_current_user_info as _get_current_user_info
+from ..db import get_encoding_item
 from flask import jsonify
 from flask import render_template
 from flask import request
@@ -38,6 +41,37 @@ def reset_detect_hw_cache():
     with _detect_hw_lock:
         _detect_hw_cache = None
         _detect_hw_cache_at = 0.0
+
+
+# What a foreign job of this queue may say: enough to explain the wait
+# (position, status, progress, how many files), nothing that names the file or
+# the title. Same reasoning as _FOREIGN_QUEUE_FIELDS in routes/queue.py.
+_FOREIGN_FIELDS = (
+    "id", "position", "status", "progress_pct",
+    "current_file_idx", "total_files",
+)
+
+
+
+def _job_for_request(getter, item_id):
+    """``(item, None)`` if the caller may act on this job, else ``(None, resp)``.
+
+    Mirrors _queue_item_for_request() in routes/queue.py, including the 404 for
+    "not yours": these jobs are visible as anonymous rows, so a distinguishable
+    403 would only say which ids belong to whom.
+
+    A job with no owner came from the library route, which is admin-only.
+    """
+    from flask import jsonify as _jsonify
+
+    row = getter(item_id)
+    if not row:
+        return None, (_jsonify({"ok": False, "error": "not found"}), 404)
+    username, is_admin = _get_current_user_info()
+    owner = row.get("username")
+    if is_admin or (owner and owner == username):
+        return row, None
+    return None, (_jsonify({"ok": False, "error": "not found"}), 404)
 
 
 def register_encoding_routes(app):
@@ -103,7 +137,7 @@ def register_encoding_routes(app):
         GET /api/encoding/queue. Called from encoding_queue.js's
         loadEncodingQueue() to render the encoding queue modal.
         """
-        items = get_encoding_queue()
+        items = _anonymise(get_encoding_queue(), _FOREIGN_FIELDS)
         badge = get_encoding_badge_count()
         return jsonify({"ok": True, "items": items, "badge": badge})
     @app.route("/api/encoding/queue/progress")
@@ -133,6 +167,9 @@ def register_encoding_routes(app):
         DELETE /api/encoding/queue/<item_id>. Called from encoding_queue.js's
         removeEncodingItem().
         """
+        _row, _denied = _job_for_request(get_encoding_item, item_id)
+        if _denied:
+            return _denied
         ok, err = remove_from_encoding_queue(item_id)
         if ok:
             return jsonify({"ok": True})
@@ -144,6 +181,9 @@ def register_encoding_routes(app):
         POST /api/encoding/queue/<item_id>/cancel. Called from
         encoding_queue.js's cancelEncodingItem().
         """
+        _row, _denied = _job_for_request(get_encoding_item, item_id)
+        if _denied:
+            return _denied
         ok, err = cancel_encoding_item(item_id)
         if ok:
             with _encoding_cancel_lock:
@@ -160,7 +200,8 @@ def register_encoding_routes(app):
         POST /api/encoding/queue/clear. Called from encoding_queue.js's
         clearEncodingQueue().
         """
-        clear_encoding_completed()
+        _username, _is_admin = _get_current_user_info()
+        clear_encoding_completed(username=None if _is_admin else _username)
         return jsonify({"ok": True})
     @app.route("/api/encoding/queue/<int:item_id>/move", methods=["POST"])
     def api_encoding_queue_move(item_id):
@@ -171,6 +212,9 @@ def register_encoding_routes(app):
         """
         data = request.get_json(force=True, silent=True) or {}
         direction = data.get("direction", "up")
+        _row, _denied = _job_for_request(get_encoding_item, item_id)
+        if _denied:
+            return _denied
         ok, err = move_encoding_queue_item(item_id, direction)
         if ok:
             return jsonify({"ok": True})

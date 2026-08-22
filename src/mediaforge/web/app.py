@@ -1467,6 +1467,24 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_encoding_settings_get",
             "api_encoding_settings_post",
             "api_encoding_detect_hw",
+            # The three siblings of api_encoding_settings_post that were left
+            # out when it was added -- an inconsistency, not a decision. All of
+            # them write INSTANCE-WIDE settings from the same admin-only
+            # encoding page, and two of them (upscaling_replace_original,
+            # encoding_replace_original) decide whether finished files are
+            # overwritten in place.
+            #
+            # Only the POSTs. GET /api/upscale/settings is read by every
+            # account's download modal to decide whether to offer the upscale
+            # checkbox (see _loadUpscaleMode() in static/app.js), so closing it
+            # would take the checkbox away from everyone.
+            "api_upscale_settings_post",
+            "api_encoding_timing_post",
+            # Both probe the host's encoders / fetch the Anime4K shader pack,
+            # are instance-wide, and are only ever reached from the admin-only
+            # encoding and settings pages (templates/_encoding_body.html).
+            "api_upscale_check_engines",
+            "api_upscale_download_shaders",
             # Replaces files in place (upscaling_replace_original defaults to
             # on), so it belongs in the same tier as library delete/rename/move.
             "api_upscale_add_library",
@@ -1477,6 +1495,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # settings page they are shown on.
             "api_comic_cache",
             "api_comic_cache_clear",
+            # Clears the host's encoder-detection cache, forcing every stream
+            # to re-probe. Instance-wide, and nothing in static/ or templates/
+            # calls it -- an undocumented maintenance endpoint that had no
+            # reason to be open to any logged-in account.
+            "api_stream_reset_encoders",
             "api_library_delete",
             "api_library_rename",
             "api_library_move",

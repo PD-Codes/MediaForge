@@ -692,14 +692,24 @@ def clear_captcha_url(queue_id: int):
         conn.close()
 
 
-def clear_completed():
-    """Hide all finished entries from the queue UI while keeping them for statistics."""
+def clear_completed(username=None):
+    """Hide finished entries from the queue UI while keeping them for statistics.
+
+    `username` limits it to that account's own rows -- what a non-admin gets,
+    so tidying up after yourself cannot clear everyone else's history too.
+    None means every row, which is the admin case and the previous behaviour.
+    """
     conn = get_db()
     try:
-        conn.execute(
+        query = (
             "UPDATE download_queue SET hidden = 1 "
             "WHERE status IN ('completed', 'partial', 'failed', 'cancelled')"
         )
+        params = ()
+        if username:
+            query += " AND username = ?"
+            params = (username,)
+        conn.execute(query, params)
         conn.commit()
     finally:
         conn.close()

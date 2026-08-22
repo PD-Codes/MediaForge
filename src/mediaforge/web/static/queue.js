@@ -481,6 +481,33 @@ function _qNormDownload(item) {
       : phase === "ffmpeg" ? t("⚙ FFmpeg", "⚙ FFmpeg")
         : t("⬇ Download", "⬇ Download");
 
+  // Another account's job, reduced to position + status by the server. It is
+  // shown so the queue reads as the shared, serial pipeline it is -- a wait
+  // with nothing visible ahead of you looks like a broken queue -- but it
+  // carries no title, source or poster to render.
+  if (item.foreign) {
+    return {
+      queue: "downloads",
+      id: item.id,
+      raw: item,
+      title: t("Anderer Download", "Another download"),
+      episode: item.total_episodes > 1 ? item.total_episodes + " Ep." : "",
+      chip: "",
+      language: "",
+      poster: "",
+      foreign: true,
+      station: 0,
+      state: item.status,
+      attn: false,
+      running: item.status === "running",
+      pct: 0,
+      statusText: item.status === "running"
+        ? t("Läuft", "Running") : t("Wartet", "Waiting"),
+      fp: fp,
+      phase: phase,
+    };
+  }
+
   const src = Q.sourceLabel(item.series_url);
   return {
     queue: "downloads",
@@ -559,6 +586,32 @@ function _qNormJob(item, queue) {
   else if (item.status === "failed") statusText = t("FEHLER", "FAILED");
   else statusText = t("ABGEBROCHEN", "CANCELLED");
 
+  // Another account's job. Same treatment as in _qNormDownload(): visible so
+  // the wait makes sense, but with no title and no file name -- the server
+  // never sent them (see routes/encoding.py / routes/upscale.py).
+  if (item.foreign) {
+    return {
+      queue: queue,
+      id: item.id,
+      raw: item,
+      epPct: null,
+      epLabel: epLabel,
+      title: isEnc ? t("Anderes Encoding", "Another encoding job")
+        : t("Anderes Upscaling", "Another upscaling job"),
+      episode: totalFiles > 1 ? totalFiles + " " + t("Dateien", "files") : "",
+      chip: "",
+      language: "",
+      poster: "",
+      foreign: true,
+      station: isEnc ? 1 : 2,
+      state: item.status,
+      attn: false,
+      running: running,
+      pct: pct,
+      statusText: statusText,
+    };
+  }
+
   // "Series – file.mkv" is what both queues store as the title
   const dash = String(item.title || "").indexOf(" – ");
   const seriesTitle = dash > 0 ? item.title.substring(0, dash) : (item.title || "");
@@ -621,6 +674,10 @@ function _qhubEntries() {
 function _qhubActions(e) {
   const Q = window.QHub;
   const q = e.queue;
+  // Someone else's job. The server already refuses these endpoints for a
+  // stranger (routes/queue.py), so this is not the protection -- it is not
+  // offering a row of buttons that every one of them would refuse.
+  if (e.raw && e.raw.foreign) return "";
   const mv = q === "downloads" ? "moveQueueItem" : (q === "encoding" ? "moveEncodingItem" : "moveUpscaleItem");
   const rm = q === "downloads" ? "removeQueueItem" : (q === "encoding" ? "removeEncodingItem" : "removeUpscaleItem");
   const cn = q === "downloads" ? "cancelQueueItem" : (q === "encoding" ? "cancelEncodingItem" : "cancelUpscaleItem");
@@ -914,7 +971,9 @@ function _qhubHero(e) {
     return { label: label, state: i < active ? "done" : (i === active ? "active" : "todo") };
   }));
 
-  const pauseBtn = (e.queue === "downloads" && !e.attn)
+  // Pausing is instance-wide and the endpoint is admin-only (routes/queue.py),
+  // so a non-admin is not offered the button here either.
+  const pauseBtn = (e.queue === "downloads" && !e.attn && window.__IS_ADMIN)
     ? '<button class="btn btn-secondary btn-sm qhub-hero-btn" onclick="toggleQueuePause()">'
     + (_queueIsPaused ? t("Fortsetzen", "Resume") : t("Pause", "Pause")) + '</button>'
     : '';
