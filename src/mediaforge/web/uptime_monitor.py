@@ -38,7 +38,12 @@ _MONITOR_SITES = {
     "aniworld":   ("AniWorld",     "https://aniworld.to",     "aniworld.to",     ["aniworld"],     {"server": "ddos-guard"}),
     "sto":        ("SerienStream", "https://serienstream.to", "serienstream.to", ["serienstream"], {"server": "ddos-guard"}),
     "filmpalast": ("FilmPalast",   "https://filmpalast.to",   "filmpalast.to",   ["filmpalast"],   {"server": "cloudflare"}),
-    "megakino":   ("MegaKino",     "https://megakino.to",     "megakino.to",     ["megakino"],     {"server": "cloudflare"}),
+    # No domain written here on purpose. MegaKino's rotates, and the one place
+    # it is written down is mirrors.DEFAULT_SITE_MIRRORS' seed entry; the empty
+    # url/expected_domain are filled in from there (or from the domain feed) by
+    # _with_resolved_domain() on the way out of active_monitor_sites(), which is
+    # the only way any caller reads this table.
+    "megakino":   ("MegaKino",     "",                        "",                ["megakino"],     {"server": "cloudflare"}),
     # The three newest sources ship WITHOUT a header signature ({}), on
     # purpose. The signatures above were each confirmed against the live site;
     # for these three no such confirmation exists yet, and guessing one is the
@@ -455,18 +460,70 @@ def active_monitor_sites() -> dict:
 
     Copying also keeps callers safe from a module registering/unregistering a
     site mid-iteration from a request thread.
+
+    The url/expected_domain of a site whose domain rotates (MegaKino, see
+    domain_resolver.py) is rewritten to the currently resolved domain on the
+    way out. Without that the monitor would keep probing the domain the release
+    happened to ship with and report the source as down forever -- while the
+    app itself was quite happily scraping the live one.
     """
     try:
         from .thirdparties.registry import item_enabled
     except Exception:
-        return dict(_MONITOR_SITES)
+        item_enabled = None
 
-    disabled = {
-        site_id
-        for item_id, site_id in list(_EXTRA_MONITOR_SITES.items())
-        if not item_enabled(item_id)
-    }
-    return {sid: cfg for sid, cfg in list(_MONITOR_SITES.items()) if sid not in disabled}
+    if item_enabled is None:
+        sites = dict(_MONITOR_SITES)
+    else:
+        disabled = {
+            site_id
+            for item_id, site_id in list(_EXTRA_MONITOR_SITES.items())
+            if not item_enabled(item_id)
+        }
+        sites = {sid: cfg for sid, cfg in list(_MONITOR_SITES.items()) if sid not in disabled}
+
+    resolved = {sid: _with_resolved_domain(sid, cfg) for sid, cfg in sites.items()}
+    # A site whose domain is not known yet (MegaKino before the first lookup
+    # answers) is left out entirely rather than probed with an empty URL: that
+    # would fail every round and report a healthy source as permanently down.
+    return {sid: cfg for sid, cfg in resolved.items() if cfg[1] and cfg[2]}
+
+
+def _with_resolved_domain(site_id, cfg):
+    """Point one monitor entry at the domain currently in use for it.
+
+    Asked of ``mirrors.canonical_host`` rather than of the domain feed
+    directly, so this covers both halves in one go: the feed's answer when
+    there is one, and the shipped seed otherwise. That matters for the entries
+    above that carry no domain at all -- for a site whose domain rotates,
+    writing one here would be a second copy to keep in sync, and a stale copy
+    is exactly what put the monitor on a dead host in the first place.
+
+    A no-op for every site whose entry already names its domain and whose
+    domain is not resolved remotely, i.e. all of them except MegaKino.
+    """
+    label, url, expected_domain, markers, headers = cfg
+    try:
+        from .. import mirrors
+        host = mirrors.canonical_host(site_id)
+    except Exception:  # pragma: no cover - defensive
+        host = ""
+    if not host or host == expected_domain:
+        return cfg
+    # A site that names its own domain keeps it unless the feed overrode it --
+    # s.to's monitor deliberately probes serienstream.to, and canonical_host()
+    # would otherwise silently retarget it.
+    if expected_domain and not _is_resolved_site(site_id):
+        return cfg
+    return (label, f"https://{host}", host, markers, headers)
+
+
+def _is_resolved_site(site_id):
+    try:
+        from ..domain_resolver import resolved_host
+        return bool(resolved_host(site_id))
+    except Exception:  # pragma: no cover - defensive
+        return False
 
 
 # Throttle state for flag.uptime_monitor: the monotonic timestamp of the last

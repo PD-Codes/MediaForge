@@ -1,4 +1,8 @@
-"""MegaKino episode (megakino.to). Synthetic URL: <watch-post>?episode=<n>."""
+"""MegaKino episode. Synthetic URL: <post-url>?episode=<n>.
+
+The post URL is ``/<category>/<id>-<slug>.html`` -- see config.py's
+MEGAKINO_* patterns for why the category segment is not significant.
+"""
 import os
 import re
 from pathlib import Path

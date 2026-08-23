@@ -2393,6 +2393,23 @@ def register(app):
   session of your own — only `GLOBAL_SESSION` is wired to the failover
   logic). `hosts[0]` is the canonical host your `Provider`'s patterns should
   be written against.
+
+  Two calls exist for reading a site's primary host back, and they are not
+  interchangeable: **`mirrors.canonical_host(site_id)`** is the host URLs are
+  currently written with, **`mirrors.shipped_canonical_host(site_id)`** is
+  the one that was registered. They differ only for a site whose domain is
+  resolved remotely (`mediaforge/domain_resolver.py` — MegaKino mints a new
+  numbered domain whenever the current one is blocked, so its canonical host
+  comes from a first-party feed rather than from the shipped list). That feed
+  is core-only and opts sites in explicitly, so a module's site is never
+  affected by it: `canonical_host()` and `shipped_canonical_host()` return the
+  same value for anything you register.
+
+  Do write your URLs against `canonical_host(site_id)` rather than a constant
+  anyway. It costs nothing (the value is served from a 30-second cache), it
+  keeps working if a site of yours ever gains a resolved domain, and a URL you
+  built against an old host still resolves as long as that host is left in the
+  list — the failover rewrites it on egress.
 - **`register_monitor_site(item_id, site_id, label, url, expected_domain, body_markers, expected_headers=None, enabled_setting_key=None, enabled_setting_default=True, tracked_by_default=True)`**
   (`mediaforge/web/uptime_monitor.py`) is also optional, and equally
   free-standing — it adds an entry to `_MONITOR_SITES`, the **same dict both

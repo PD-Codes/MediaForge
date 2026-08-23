@@ -1,4 +1,4 @@
-"""MegaKino series (megakino.to, tv=1). One /watch post == one season."""
+"""MegaKino series. One post page == one season."""
 import re
 
 try:

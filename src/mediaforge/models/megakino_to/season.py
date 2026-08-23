@@ -1,4 +1,4 @@
-"""MegaKino season == one megakino.to /watch post."""
+"""MegaKino season == one post page (``/<category>/<id>-<slug>.html``)."""
 try:
     from ...config import MEGAKINO_SERIES_PATTERN
     from . import scraper

@@ -6,6 +6,7 @@ Extracted from create_app as a plain route-registration function
 
 from .. import runtime_state as _runtime_state
 from .. import selfupdate
+from ... import domain_resolver as _domain_resolver
 from ... import mirrors as _mirrors
 from ...config import LANG_LABELS
 from ..autosync_worker import _normalize_sync_times
@@ -549,13 +550,25 @@ def register_settings_routes(app):
                         {
                             "id": _site,
                             "label": _mirrors.SITE_LABELS.get(_site, _site),
+                            # The host URLs are currently written with. For a
+                            # site with a rotating domain that is the resolved
+                            # one, so the card shows what is actually in use.
                             "canonical": _mirrors.canonical_host(_site),
+                            # The hardcoded one. The fallback list the user
+                            # edits is anchored to this, never to a resolved
+                            # domain that goes stale on the next rotation.
+                            "shipped": _mirrors.shipped_canonical_host(_site),
                             "hosts": _mirrors.get_mirrors(_site),
                             "active": _mirrors.active_host(_site),
                             "default": list(_default_hosts),
+                            # {} for every site whose domain does not rotate.
+                            "resolved": _domain_resolver.resolved_info(_site),
                         }
                         for _site, _default_hosts in _mirrors.DEFAULT_SITE_MIRRORS.items()
                     ],
+                    # The master switch for the remote domain lookup
+                    # (domain_resolver.py). Applies to every resolvable site.
+                    "resolver_enabled": "1" if _domain_resolver.is_enabled() else "0",
                 },
             }
         )
@@ -834,7 +847,14 @@ def register_settings_routes(app):
         # module that is switched off: probing those would keep a disabled
         # module's domains in the DNS test (and in outbound traffic).
         for _sid, (label, url, expected_domain, markers, headers) in active_monitor_sites().items():
-            results[label] = _probe_site(url, expected_domain, markers, expected_headers=headers, timeout=10)
+            _probe = _probe_site(url, expected_domain, markers, expected_headers=headers, timeout=10)
+            # The domain that was actually probed. Carried back because it is
+            # not always the one the template hardcoded next to the row:
+            # active_monitor_sites() rewrites a rotating domain to the one
+            # currently resolved (MegaKino), and showing "megakino.to" beside a
+            # result measured against megakino16.com is simply wrong.
+            _probe["domain"] = expected_domain
+            results[label] = _probe
 
         # Non-null when this Python installation has a broken ssl.SSLContext
         # and we had to fall back from the OS trust store to certifi. It is a
@@ -1524,6 +1544,7 @@ def register_settings_routes(app):
         # _build_attempt_plan().
         _provider_keys = ("provider_order", "provider_fallback_enabled")
         _mirror_keys = tuple("site_mirrors_" + s for s in _mirrors.DEFAULT_SITE_MIRRORS)
+        _mirror_keys += (_domain_resolver.ENABLED_SETTING,)
         if any(_k in data for _k in _provider_keys + _mirror_keys):
             _pu, _padmin = _get_current_user_info()
             if not _padmin:
@@ -1564,6 +1585,25 @@ def register_settings_routes(app):
                     hosts.append(host)
             set_setting(_key, ",".join(hosts))
             _mirrors_changed = True
+
+        # -- Automatic domain lookup (admin only, gated above) --
+        # Off means the shipped/edited mirror lists are the only source of
+        # truth again; on re-enables the remote feed (domain_resolver.py).
+        # set_enabled() invalidates the mirror cache itself, so a flip takes
+        # effect on the next request rather than up to 30s later.
+        if _domain_resolver.ENABLED_SETTING in data:
+            _resolver_on = str(data[_domain_resolver.ENABLED_SETTING]).lower() in ("true", "1")
+            _domain_resolver.set_enabled(_resolver_on)
+            if _resolver_on:
+                # Refresh right away instead of waiting for the TTL: the user
+                # just asked for this, so the card must show a real domain when
+                # the page reloads. Backgrounded -- the settings PUT must not
+                # wait on a third-party endpoint.
+                threading.Thread(
+                    target=_domain_resolver.refresh, kwargs={"force": True},
+                    name="domain-resolver-manual", daemon=True,
+                ).start()
+
         if _mirrors_changed:
             _mirrors.invalidate_cache()  # re-read the lists + retry the primary host
 

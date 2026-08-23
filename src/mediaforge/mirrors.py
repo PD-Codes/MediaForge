@@ -32,6 +32,18 @@ Wiring:
 The active-mirror choice is in-memory only and resets to the primary host
 after ``_PRIMARY_RETRY_AFTER`` seconds, so a temporary outage never pins
 the app to a fallback host forever.
+
+Rotating domains
+----------------
+A hardcoded list only helps against domains that are *known*. MegaKino does
+not rotate between known domains, it mints new ones (megakino.to ->
+megakino14.com -> megakino16.com -> ...), so no shipped list can ever contain
+the current one. For those sites :mod:`mediaforge.domain_resolver` looks the
+live domain up from a first-party feed and this module pulls it to the FRONT
+of that site's list -- it becomes the canonical host, the shipped domains stay
+behind it as fallbacks. Everything downstream is unchanged: a favourite, queue
+row or history entry stored against the old domain still maps to the site
+(the old host is still in the list) and is rewritten to the live one on egress.
 """
 
 import re
@@ -54,7 +66,14 @@ DEFAULT_SITE_MIRRORS = {
     "aniworld":   ["aniworld.to", "aniworld.cc", "186.2.175.111"],
     "sto":        ["s.to", "serienstream.to", "186.2.175.5"],
     "filmpalast": ["filmpalast.to"],
-    "megakino":   ["megakino.to", "megakino.tv", "megakino.org"],
+    # EMPTY on purpose -- MegaKino is the one site with no hardcoded domain
+    # anywhere in this codebase. It mints a new numbered domain whenever the
+    # current one is blocked (megakino.to -> megakino14.com -> megakino16.com
+    # -> ...), so any name written here is wrong by the next rotation and
+    # becomes a second source of truth to keep in sync with the feed. The
+    # domain comes from domain_resolver.py, full stop; the only thing a user
+    # can add here is a mirror of their own, which then acts as the fallback.
+    "megakino":   [],
     # One entry each: no verified alternate domain is known for these three
     # yet. They are registered anyway so the failover machinery, the DNS
     # pinning fed from all_hosts() (config._chromium_map_hosts) and the
@@ -138,8 +157,25 @@ def _clean_host(raw):
     return value
 
 
+def _resolved_host(site):
+    """The live domain the remote domain feed reports for *site*, or ``""``.
+
+    Non-blocking by contract (see domain_resolver.resolved_host) — this runs
+    inside the mirror-table build, i.e. on the HTTP egress path, so it must
+    never make a network call of its own. Wrapped defensively because a
+    failure here has to degrade to "use the shipped domains", never to an
+    exception on every outgoing request.
+    """
+    try:
+        from .domain_resolver import resolved_host
+        return resolved_host(site)
+    except Exception:  # pragma: no cover - defensive
+        return ""
+
+
 def _load_mirrors():
-    """Merged mirror lists: DB override per site, else the shipped default."""
+    """Merged mirror lists: DB override per site, else the shipped default,
+    with the remotely resolved domain (if any) pulled to the front."""
     try:
         from .web.db import get_setting
     except Exception:  # pragma: no cover - DB not available (e.g. CLI import)
@@ -158,10 +194,20 @@ def _load_mirrors():
         if not hosts:
             hosts = list(default)
         # The canonical host must always stay first and present -- it is what
-        # every URL in the app is written with.
-        canonical = default[0]
-        hosts = [h for h in hosts if h != canonical]
-        mirrors[site] = [canonical] + hosts
+        # every URL in the app is written with. For a site whose domain rotates
+        # (MegaKino), that canonical host is whatever the domain feed currently
+        # reports, and the shipped list is empty, so the feed is the only
+        # source; anything the user added follows behind it as a fallback.
+        #
+        # default may legitimately be empty (see DEFAULT_SITE_MIRRORS), in which
+        # case the list stays empty until the feed answers -- callers treat an
+        # empty list as "no domain known yet" rather than crashing on it.
+        canonical = _resolved_host(site) or (default[0] if default else "")
+        ordered = [canonical]
+        if default:
+            ordered.append(default[0])
+        ordered.extend(hosts)
+        mirrors[site] = list(dict.fromkeys(h for h in ordered if h))
     return mirrors
 
 
@@ -316,7 +362,29 @@ def site_for_url(url):
 
 
 def canonical_host(site):
-    return DEFAULT_SITE_MIRRORS.get(site, [""])[0]
+    """The host every URL for *site* is currently written with.
+
+    That is the domain the remote feed resolved for the site when there is one
+    (MegaKino rotates its domain, see domain_resolver.py), else the shipped
+    canonical from :data:`DEFAULT_SITE_MIRRORS`. Also the ``Host:`` header sent
+    when falling back to a bare-IP mirror.
+    """
+    return _resolved_host(site) or shipped_canonical_host(site)
+
+
+def shipped_canonical_host(site):
+    """The hardcoded canonical host, ignoring the remote domain feed.
+
+    Used by the Settings -> Mirrors editor: the user's saved fallback list must
+    be anchored to the stable shipped domain, not to whatever the feed happens
+    to report at save time (which would freeze a rotating domain into the
+    saved list and go stale on the next rotation).
+
+    ``""`` for a site that ships no domain at all (MegaKino) -- there the feed
+    is the only source and there is nothing to anchor to.
+    """
+    hosts = DEFAULT_SITE_MIRRORS.get(site) or []
+    return hosts[0] if hosts else ""
 
 
 def _active_index(site, count):
@@ -352,11 +420,27 @@ def mark_failed(site, index):
         _active[site] = {"idx": index + 1, "ts": time.time()}
 
 
+def _pins_to_primary(site):
+    """True for a site whose primary host is resolved remotely.
+
+    Such a site must NOT stick to a fallback after one bad answer. Its
+    fallbacks are the domains it already abandoned (megakino.to, .tv, .org --
+    dead, parked or seized), so a single Cloudflare challenge on the live
+    domain would otherwise pin every request for the next ten minutes to a host
+    that can only ever answer with a parking page. The live domain is the
+    authoritative one here, and the feed -- not a failed request -- is what
+    decides when it changes.
+    """
+    return bool(_resolved_host(site))
+
+
 def active_host(site):
     """The host currently used for *site* (for status/debug output)."""
     hosts = get_mirrors(site)
     if not hosts:
         return ""
+    if _pins_to_primary(site):
+        return hosts[0]
     return hosts[_active_index(site, len(hosts))]
 
 
@@ -380,7 +464,9 @@ def iter_candidates(url, from_primary=False):
     When *from_primary* is True the walk always starts at the canonical host
     (index 0) instead of the sticky active mirror -- used by the UpTime monitor
     so a check measures the real primary host and never stays pinned to a
-    fallback that a transient failure selected earlier.
+    fallback that a transient failure selected earlier. A site whose primary
+    host comes from the domain feed behaves that way unconditionally, see
+    :func:`_pins_to_primary`.
 
     For a URL that doesn't belong to any known site, yields exactly one
     candidate: the URL unchanged, with site=None.
@@ -395,7 +481,10 @@ def iter_candidates(url, from_primary=False):
         yield url, {}, None, None, 0
         return
 
-    start = 0 if from_primary else _active_index(site, len(hosts))
+    if from_primary or _pins_to_primary(site):
+        start = 0
+    else:
+        start = _active_index(site, len(hosts))
     order = list(range(start, len(hosts))) + list(range(0, start))
     canonical = canonical_host(site)
 

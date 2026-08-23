@@ -18,6 +18,11 @@ os.environ["MEDIAFORGE_CONFIG_DIR"] = str(_TMP_CONFIG_DIR)
 os.environ.setdefault("MEDIAFORGE_DOWNLOAD_PATH", str(_TMP_CONFIG_DIR / "downloads"))
 # Keep the test run offline and quiet.
 os.environ.setdefault("MEDIAFORGE_NO_UPDATE_CHECK", "1")
+# Same reason, plus one specific to it: mediaforge/domain_resolver.py refreshes
+# in a daemon thread through GLOBAL_SESSION, and several tests stub that
+# session with a queue of canned responses -- a stray background request would
+# consume one of them and fail an unrelated test, depending on run order.
+os.environ.setdefault("MEDIAFORGE_NO_DOMAIN_LOOKUP", "1")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 

@@ -268,12 +268,30 @@ _AD_SAFE_HOST_SUFFIXES = (
     # sites pulled an asset from a sibling domain during a captcha solve, at
     # which point it was aborted as if it were an ad. Listed now so every
     # source is treated the same way.
-    "megakino.to",
+    # MegaKino is absent on purpose: its domain rotates and can only come from
+    # mirrors.all_hosts(), which _site_host_suffixes() below merges in.
     "hanime.tv",
     "filmo.to",
     "9anime.or.at",
     "aniwaves.ru",
 )
+
+
+def _site_host_suffixes():
+    """The static list above plus every host currently in the mirror registry.
+
+    Needed because a source's domain is not necessarily one of the shipped
+    ones: MegaKino's rotates (megakino16.com today, see domain_resolver.py) and
+    a user or third-party module can add mirrors of their own under Settings.
+    Those hosts are the *sources themselves*, so an asset one of them pulls
+    from a sibling domain must not be aborted as an ad.
+    """
+    try:
+        from ..mirrors import all_hosts
+        extra = all_hosts()
+    except Exception:  # pragma: no cover - defensive
+        extra = ()
+    return tuple(dict.fromkeys(_AD_SAFE_HOST_SUFFIXES + tuple(extra)))
 
 
 def _ad_host_allowed(host: str, home_netloc: str) -> bool:
@@ -287,7 +305,7 @@ def _ad_host_allowed(host: str, home_netloc: str) -> bool:
         return True
     if _is_known_provider_url("https://" + host):
         return True
-    return any(host == s or host.endswith("." + s) for s in _AD_SAFE_HOST_SUFFIXES)
+    return any(host == s or host.endswith("." + s) for s in _site_host_suffixes())
 
 
 def _install_network_adblock(context, home_netloc: str, weiter_event=None) -> None:

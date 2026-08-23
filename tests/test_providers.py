@@ -1570,3 +1570,555 @@ def test_the_fallback_session_shares_the_cookie_jar(monkeypatch):
     fallback = proxy._get_system_session()
     assert fallback is not primary
     assert fallback.cookies is primary.cookies
+
+
+# ==========================================================================
+# Remote domain resolution (mediaforge/domain_resolver.py)
+#
+# MegaKino mints a new numbered domain whenever the current one is blocked
+# (megakino.to -> megakino14.com -> megakino16.com -> ...), so it is looked up from a
+# first-party feed instead of shipped as a constant. What matters here:
+#
+#   * the feed's answer becomes the canonical host, with the shipped domains
+#     left behind it as fallbacks (a stored URL must keep resolving),
+#   * every URL the app builds follows it, and
+#   * NOTHING the feed says is trusted without validation -- its answer decides
+#     where the scraper and the image proxy send traffic.
+# ==========================================================================
+import mediaforge.domain_resolver as DR
+
+
+class _FeedResp:
+    """The streaming response shape domain_resolver.refresh() reads."""
+
+    def __init__(self, body, status=200, headers=None):
+        self._body = body if isinstance(body, bytes) else body.encode()
+        self.status_code = status
+        self.headers = headers or {}
+
+    def iter_content(self, chunk_size=8192):
+        for i in range(0, len(self._body), chunk_size):
+            yield self._body[i:i + chunk_size]
+
+    def close(self):
+        pass
+
+
+@pytest.fixture()
+def feed(monkeypatch):
+    """Serve a canned domains.json and reset the resolver's module state."""
+    monkeypatch.delenv("MEDIAFORGE_NO_DOMAIN_LOOKUP", raising=False)
+    monkeypatch.setattr(DR, "_state", {})
+    monkeypatch.setattr(DR, "_last_attempt", 0.0)
+    monkeypatch.setattr(DR, "_last_failed", False)
+    monkeypatch.setattr(DR, "_enabled_cache", {"ts": 0.0, "value": True})
+    # No DB in this test module: persistence is a no-op, the in-memory cache
+    # is what is under test.
+    monkeypatch.setattr(DR, "_db", lambda: (None, None))
+    mirrors.invalidate_cache()
+
+    def _serve(body, **kwargs):
+        resp = _FeedResp(body, **kwargs)
+        monkeypatch.setattr(
+            config, "GLOBAL_SESSION",
+            types.SimpleNamespace(get=lambda url, **kw: resp),
+        )
+        return resp
+
+    yield _serve
+    mirrors.invalidate_cache()
+
+
+_GOOD_FEED = json.dumps({
+    "megakino": {"final_url": "https://megakino16.com",
+                 "last_check": "2026-08-23T10:33:51.699325"},
+})
+
+
+def test_the_resolved_domain_becomes_the_canonical_host(feed):
+    """The feed's answer is the host every URL is written with.
+
+    The shipped entry is only a seed -- MegaKino keeps no alternates, so
+    megakino.to/.tv/.org were removed once they stopped resolving to the site.
+    A dead domain kept as a "fallback" only means a failed request gets
+    answered by a parking page instead of failing honestly.
+    """
+    feed(_GOOD_FEED)
+    assert DR.refresh(force=True) == 1
+
+    assert mirrors.canonical_host("megakino") == "megakino16.com"
+    assert mirrors.get_mirrors("megakino")[0] == "megakino16.com"
+    assert not any(h.endswith((".to", ".tv", ".org"))
+                   for h in mirrors.get_mirrors("megakino"))
+    assert mirrors.site_for_url("https://megakino16.com/films/1-x.html") == "megakino"
+
+
+def test_every_url_the_app_builds_follows_the_resolved_domain(feed):
+    """A base URL captured at import time is the bug this whole module exists
+    to prevent -- it pins the provider to a dead host until the next restart."""
+    feed(_GOOD_FEED)
+    DR.refresh(force=True)
+
+    from mediaforge.models.megakino_to import scraper as mk
+
+    assert config.megakino_base_url() == "https://megakino16.com"
+    assert mk.base_url() == "https://megakino16.com"
+    # The URL patterns match any host carrying the brand, so a link built
+    # against the new domain still classifies as a MegaKino movie.
+    assert config.MEGAKINO_MOVIE_PATTERN.match(
+        "https://megakino16.com/films/6420-some-film.html")
+
+
+@pytest.mark.parametrize("final_url", [
+    "http://localhost",              # our own machine
+    "https://127.0.0.1",             # ditto, as a literal
+    "https://megakino.internal",     # internal TLD
+    "https://evil.example",          # not the site at all
+    "ftp://megakino16.com",          # not an http(s) URL
+    "",                              # nothing
+    None,                            # field missing
+])
+def test_a_domain_that_is_not_plausibly_the_site_is_refused(feed, final_url):
+    """The feed decides where the scraper AND the image-proxy allowlist point.
+    A compromised or mistyped one must not be able to aim either somewhere
+    else, so the answer is validated rather than trusted."""
+    feed(json.dumps({"megakino": {"final_url": final_url, "last_check": "x"}}))
+
+    assert DR.refresh(force=True) == 0
+    assert DR.resolved_host("megakino") == ""
+    # Nothing is left to fall back to, and that is the point: MediaForge ships
+    # no MegaKino domain, so a refused answer means "no domain known" rather
+    # than "quietly keep using a stale hardcoded one".
+    assert mirrors.canonical_host("megakino") == ""
+
+
+def test_a_broken_feed_keeps_the_last_known_domain(feed):
+    """Every failure mode degrades to the last good answer, never to a dead
+    domain: the feed being down is not a reason to take the source down."""
+    feed(_GOOD_FEED)
+    DR.refresh(force=True)
+
+    for broken in (b"<html>not json</html>", b"[]", b"x" * (DR._MAX_BODY + 1)):
+        feed(broken)
+        assert DR.refresh(force=True) == 0
+        assert DR.resolved_host("megakino") == "megakino16.com"
+
+    # A Content-Length over the cap is refused before a byte is read.
+    feed(_GOOD_FEED, headers={"Content-Length": str(DR._MAX_BODY + 1)})
+    assert DR.refresh(force=True) == 0
+
+    # HTTP error.
+    feed(_GOOD_FEED, status=503)
+    assert DR.refresh(force=True) == 0
+    assert mirrors.canonical_host("megakino") == "megakino16.com"
+
+
+def test_reading_the_domain_never_makes_a_network_call(feed, monkeypatch):
+    """resolved_host() runs inside mirrors._load_mirrors(), i.e. on the egress
+    path of every scraper request. A blocking fetch there would put a network
+    round-trip in front of each one and hang the caller when the feed does."""
+    feed(_GOOD_FEED)
+    started = []
+    monkeypatch.setattr(DR, "_maybe_refresh", lambda: started.append(1))
+
+    assert DR.resolved_host("megakino") == ""   # nothing cached yet
+    assert started == [1]                        # refresh only scheduled
+
+
+def test_the_switch_off_leaves_no_domain_behind(feed, monkeypatch):
+    feed(_GOOD_FEED)
+    DR.refresh(force=True)
+    assert mirrors.canonical_host("megakino") == "megakino16.com"
+
+    monkeypatch.setattr(DR, "_enabled_cache", {"ts": time.time(), "value": False})
+    mirrors.invalidate_cache()
+    assert DR.resolved_host("megakino") == ""
+    # With the lookup off and no hand-added mirror there is no domain at all --
+    # config.megakino_base_url() returns "" and the scraper reports the source
+    # as unavailable rather than building URLs against a dead host.
+    assert mirrors.canonical_host("megakino") == ""
+
+
+def test_only_opted_in_sites_are_resolvable(feed):
+    """The feed may list anything; a site is opted in by RESOLVABLE_SITES, and
+    a key nobody mapped must not silently start steering a source."""
+    feed(json.dumps({
+        "megakino": {"final_url": "https://megakino16.com", "last_check": "x"},
+        "aniworld": {"final_url": "https://aniworld99.example", "last_check": "x"},
+    }))
+    DR.refresh(force=True)
+
+    assert DR.resolved_host("aniworld") == ""
+    assert mirrors.canonical_host("aniworld") == "aniworld.to"
+    assert mirrors.canonical_host("megakino") == "megakino16.com"
+
+
+def test_a_failed_request_never_pins_a_rotating_site_to_a_dead_domain(feed):
+    """The fallbacks of a rotating site are the domains it already abandoned.
+
+    Normally one "site is not here" answer makes mirrors.py stick to the next
+    host for ten minutes. Any host MegaKino previously used is dead, parked or
+    seized, so a single Cloudflare challenge on the live domain would have
+    every following request answered by a parking page for ten minutes -- which
+    is why the shipped list holds no stale MegaKino domains at all any more,
+    and why a user-added one must not become sticky either.
+    """
+    feed(_GOOD_FEED)
+    DR.refresh(force=True)
+
+    mirrors.mark_failed("megakino", 0)
+    assert mirrors.active_host("megakino") == "megakino16.com"
+    first = next(iter(mirrors.iter_candidates(
+        "https://megakino16.com/data/watch/?_id=x")))[0]
+    assert first.startswith("https://megakino16.com/")
+
+    # A site with hand-curated mirrors keeps the normal sticky failover.
+    mirrors.mark_failed("aniworld", 0)
+    assert mirrors.active_host("aniworld") != "aniworld.to"
+
+
+def test_the_plain_session_is_rebuilt_when_the_domain_changes(feed):
+    """It bakes in a Referer and carries a cookie jar, and both belong to one
+    origin. Sending the old domain's referer to the new one is the shape a bot
+    filter answers with a challenge page instead of JSON."""
+    feed(_GOOD_FEED)
+    DR.refresh(force=True)
+
+    from mediaforge.models.megakino_to import scraper as mk
+    mk.reset_session()
+    first = mk._get_session()
+    assert first.headers["Referer"] == "https://megakino16.com/"
+
+    DR._state["megakino"]["host"] = "megakino17.com"
+    mirrors.invalidate_cache()
+    second = mk._get_session()
+    assert second is not first
+    assert second.headers["Referer"] == "https://megakino17.com/"
+    mk.reset_session()
+
+
+def test_only_https_feeds_are_accepted(monkeypatch):
+    """The answer steers scraper traffic, so plain http -- rewritable by
+    anyone on the path -- is not an acceptable transport for it."""
+    monkeypatch.setenv("MEDIAFORGE_DOMAINS_URL", "http://feed.invalid/domains.json")
+    assert DR._feed_url() == DR.DEFAULT_DOMAINS_URL
+
+    monkeypatch.setenv("MEDIAFORGE_DOMAINS_URL", "https://feed.invalid/domains.json")
+    assert DR._feed_url() == "https://feed.invalid/domains.json"
+
+
+# ==========================================================================
+# MegaKino on DataLife Engine
+#
+# The site dropped its JSON API (/data/browse/, /data/watch/ now answer 404)
+# and server-renders everything instead, behind a cookie gate. The HTML below
+# is trimmed from the real pages -- only the structure the parser keys off is
+# kept, so these tests fail if the parser starts keying off something else.
+# ==========================================================================
+import mediaforge.models.megakino_to.scraper as MK
+
+_MK_BASE = "https://megakino16.com"
+
+
+@pytest.fixture()
+def mk(monkeypatch):
+    """Pin the scraper to a known origin and hand it canned pages."""
+    monkeypatch.setattr(MK, "megakino_base_url", lambda: _MK_BASE)
+    MK.reset_session()
+    served = {}
+
+    def _serve(pages):
+        served.clear()
+        served.update(pages)
+
+    def _fake(url, headers, timeout):
+        path = url[len(_MK_BASE):] if url.startswith(_MK_BASE) else url
+        body = served.get(path)
+        if body is None:
+            raise AssertionError("unexpected request: %s" % path)
+        return types.SimpleNamespace(
+            text=body, status_code=200, url=url, headers={},
+            raise_for_status=lambda: None)
+
+    monkeypatch.setattr(MK, "_doh_get", _fake)
+    monkeypatch.setattr(MK, "_plain_get", _fake)
+    yield _serve
+    MK.reset_session()
+
+
+_MOVIE_HTML = """
+<html><body>
+<h1>Exit 8</h1>
+<div class="pmovie__original-title">８番出口</div>
+<div class="pmovie__year">Japan, 2025, 95 min</div>
+<div class="pmovie__genres">Filme / Kinofilme / Horror / Mystery / Thriller</div>
+<div class="pmovie__poster"><img data-src="/uploads/posts/2026-08/exit8.webp"
+     src="/templates/popcornie-dark/images/no-img.png" alt="Exit 8"></div>
+<div itemprop="description">Ein Mann geraet in einer U-Bahn-Station in eine Notlage.</div>
+<div class="pmovie__player tabs-block">
+  <div class="tabs-block__select d-flex"><span class="is-active">Voe</span><span>Stream in HD</span></div>
+  <div class="tabs-block__content"><iframe data-src="https://voe.sx/e/yjwl4oyfsrcj"></iframe></div>
+  <div class="tabs-block__content d-none"><iframe data-src="https://watch.gxplayer.xyz/watch?v=YG4X0K8F"></iframe></div>
+</div>
+<div class="pmovie__trailer"><iframe src="https://www.youtube.com/embed/q5GBSTza77w"></iframe></div>
+</body></html>
+"""
+
+_SERIES_HTML = """
+<html><body>
+<h1>Reacher - 4 Staffel</h1>
+<div class="pmovie__year">USA, 2026, 50 min</div>
+<div class="pmovie__genres">Serien / Action / Crime</div>
+<div class="pmovie__poster"><img data-src="/uploads/posts/2026-08/reacher.webp"></div>
+<div class="pmovie__player tabs-block">
+  <div class="pmovie__series-select">
+    <select name="pmovie__select-items" class="se-select">
+      <option value="ep1">Episode 1</option>
+      <option value="ep2">Episode 2</option>
+    </select>
+    <select class="mr-select" id="ep1"><option value="https://voe.sx/e/aaa">Voe</option></select>
+    <select class="mr-select" id="ep2" style="display: none;">
+      <option value="https://voe.sx/e/bbb">Voe</option>
+      <option value="https://filemoon.sx/e/ccc">Filemoon</option>
+    </select>
+  </div>
+</div>
+<div class="pmovie__trailer"><iframe src="https://www.youtube.com/embed/zzz"></iframe></div>
+</body></html>
+"""
+
+_LIST_HTML = """
+<html><body><div id="dle-content">
+<a class="poster grid-item" href="/films/6451-ein-einfacher-unfall.html">
+  <div class="poster__img"><img data-src="/uploads/posts/2026-08/unfall.webp"
+       src="/templates/popcornie-dark/images/no-img.png" alt="Ein einfacher Unfall">
+    <div class="poster__label">HD</div></div>
+  <div class="poster__desc"><h3 class="poster__title">Ein einfacher Unfall</h3>
+    <ul class="poster__subtitle"><li>Iran, France,, 2025</li>
+      <li>Filme / Mystery / Thriller</li></ul></div>
+</a>
+<a class="poster grid-item" href="/crime/4692-the-penguin-staffel-1.html">
+  <div class="poster__img"><img src="/templates/popcornie-dark/images/no-img.png" alt="The Penguin"></div>
+  <div class="poster__desc"><h3 class="poster__title">The Penguin</h3>
+    <ul class="poster__subtitle"><li>USA, 2024</li><li>Serien / Crime</li></ul></div>
+</a>
+</div></body></html>
+"""
+
+
+def test_a_movie_page_yields_its_hosters_and_never_the_trailer(mk):
+    """The YouTube trailer sits on the same page as the hosters.
+
+    It is excluded structurally, not by hostname: hoster iframes carry
+    ``data-src`` inside ``.tabs-block__content``, the trailer a plain ``src``
+    inside ``.pmovie__trailer``. Filtering on "is it youtube" would break the
+    day a hoster is embedded from a domain nobody listed.
+    """
+    mk({"/films/6420-exit-8.html": _MOVIE_HTML})
+    data = MK.fetch_watch(_MK_BASE + "/films/6420-exit-8.html")
+
+    assert data["tv"] == "0"
+    hosters = MK.movie_hosters(data)
+    assert hosters["VOE"] == "https://voe.sx/e/yjwl4oyfsrcj"
+    assert hosters["GXPlayer"] == "https://watch.gxplayer.xyz/watch?v=YG4X0K8F"
+    assert not any("youtube" in u for u in hosters.values())
+    assert MK.episode_numbers(data) == []
+
+
+def test_a_movie_pages_metadata(mk):
+    mk({"/films/6420-exit-8.html": _MOVIE_HTML})
+    meta = MK.parse_meta(MK.fetch_watch(_MK_BASE + "/films/6420-exit-8.html"))
+
+    assert meta["title"] == "Exit 8"
+    assert meta["year"] == "2025"
+    # "Filme" is the DLE category, not a genre -- it would otherwise show up on
+    # every single card.
+    assert "Filme" not in meta["genres"]
+    assert "Horror" in meta["genres"] and "Thriller" in meta["genres"]
+    # Posters are the site's own uploads now, not TMDB paths.
+    assert meta["poster_url"] == _MK_BASE + "/uploads/posts/2026-08/exit8.webp"
+    assert meta["description"].startswith("Ein Mann")
+
+
+def test_a_season_page_maps_episodes_to_their_own_hosters(mk):
+    """The episode<->hoster link is the select's id, never document order.
+
+    Order would silently shift every following episode the moment the site
+    omits one, and a wrong episode is not a visible failure -- it downloads the
+    wrong file under the right name.
+    """
+    mk({"/serials/6406-reacher-4-staffel.html": _SERIES_HTML})
+    data = MK.fetch_watch(_MK_BASE + "/serials/6406-reacher-4-staffel.html")
+
+    assert data["tv"] == "1"
+    assert MK.season_number(data) == 4
+    assert MK.episode_numbers(data) == [1, 2]
+    assert MK.episode_hosters(data, 1) == {"VOE": "https://voe.sx/e/aaa"}
+    assert MK.episode_hosters(data, 2) == {
+        "VOE": "https://voe.sx/e/bbb", "Filemoon": "https://filemoon.sx/e/ccc"}
+    # A season post has no movie-style hosters to hand out.
+    assert MK.movie_hosters(data) == {}
+    assert MK.strip_season_suffix(MK.parse_meta(data)["title"]) == "Reacher"
+
+
+def test_listing_cards_survive_a_varying_category_segment(mk):
+    """Search and listings mix /films/, /serials/, /crime/, /action/ ...
+
+    Nothing may key off that segment; a series is recognised by the season
+    marker in the slug instead.
+    """
+    mk({"/films/": _LIST_HTML})
+    cards = MK._cards_from_html(_LIST_HTML)
+
+    assert [c["title"] for c in cards] == ["Ein einfacher Unfall", "The Penguin"]
+    assert cards[0]["url"] == _MK_BASE + "/films/6451-ein-einfacher-unfall.html"
+    assert cards[0]["year"] == "2025"
+    assert cards[0]["is_series"] is False
+    assert cards[1]["url"] == _MK_BASE + "/crime/4692-the-penguin-staffel-1.html"
+    assert cards[1]["is_series"] is True
+    # The lazy-load placeholder is not a poster.
+    assert cards[1]["poster_url"] == ""
+
+
+# -- the cookie gate ------------------------------------------------------
+_GATE_HTML = (
+    "<!doctype html><meta charset=utf-8><script>"
+    "fetch('/index.php?yg=deadbeef', {credentials:'include'})"
+    ".then(function(){location.replace('/films/6420-exit-8.html')})"
+    ".catch(function(){location.reload()})</script>"
+)
+
+
+def test_the_cookie_gate_is_replayed_and_then_the_real_page_is_read(monkeypatch):
+    """A client without the site's cookie gets ~230 bytes of bootstrap script
+    instead of the page. That stub is what the scraper used to report as a
+    "block/challenge page"."""
+    monkeypatch.setattr(MK, "megakino_base_url", lambda: _MK_BASE)
+    calls = []
+
+    def _fake(url, headers, timeout):
+        calls.append(url)
+        if url.endswith("?yg=deadbeef"):
+            body = "ok"
+        elif len(calls) == 1:
+            body = _GATE_HTML          # first ask -> the gate
+        else:
+            body = _MOVIE_HTML         # after the handshake -> the page
+        return types.SimpleNamespace(
+            text=body, status_code=200, url=url, headers={},
+            raise_for_status=lambda: None)
+
+    monkeypatch.setattr(MK, "_doh_get", _fake)
+    html = MK._get_html("/films/6420-exit-8.html")
+
+    assert "pmovie__player" in html
+    assert calls[1] == _MK_BASE + "/index.php?yg=deadbeef"
+    assert len(calls) == 3
+
+
+def test_the_gate_is_never_followed_to_another_host(monkeypatch):
+    """The stub is untrusted input from the network. Following its URL to an
+    arbitrary host would make this an open redirect that fetches whatever the
+    page names."""
+    monkeypatch.setattr(MK, "megakino_base_url", lambda: _MK_BASE)
+    hostile = _GATE_HTML.replace("'/index.php?yg=deadbeef'",
+                                 "'https://evil.example/steal'")
+    asked = []
+
+    def _fake(url, headers, timeout):
+        asked.append(url)
+        return types.SimpleNamespace(
+            text=hostile, status_code=200, url=url, headers={},
+            raise_for_status=lambda: None)
+
+    monkeypatch.setattr(MK, "_doh_get", _fake)
+    monkeypatch.setattr(MK, "_plain_get", _fake)
+    with pytest.raises(MK.MegakinoUnavailable):
+        MK._get_html("/films/6420-exit-8.html")
+    assert not any("evil.example" in u for u in asked)
+
+
+def test_a_real_page_is_never_mistaken_for_the_gate():
+    assert MK._looks_like_gate(_GATE_HTML)
+    assert not MK._looks_like_gate(_MOVIE_HTML)
+    assert not MK._looks_like_gate(_LIST_HTML)
+    assert not MK._looks_like_gate("")
+
+
+def test_without_a_resolved_domain_the_source_reports_itself_unavailable(monkeypatch):
+    """MediaForge ships no MegaKino domain at all, so "not resolved yet" is a
+    real state -- and it has to surface as an unavailable source rather than as
+    requests against ``https:///...``."""
+    monkeypatch.setattr(MK, "megakino_base_url", lambda: "")
+    with pytest.raises(MK.MegakinoUnavailable):
+        MK.base_url()
+    # Decorative callers must not blow up over it, though.
+    assert MK.poster_url("/uploads/x.webp") == ""
+
+
+def test_the_url_patterns_follow_the_new_scheme():
+    ok = "https://megakino16.com/films/6420-exit-8.html"
+    assert config.MEGAKINO_MOVIE_PATTERN.match(ok)
+    assert config.MEGAKINO_MOVIE_PATTERN.match(
+        "https://megakino16.com/crime/4692-the-penguin-staffel-1.html")
+    assert config.MEGAKINO_EPISODE_PATTERN.match(ok + "?episode=3")
+    # The bare landing must NOT match the episode pattern, or every movie would
+    # route to the series provider (see providers.py).
+    assert not config.MEGAKINO_EPISODE_PATTERN.match(ok)
+    # The old scheme is no longer a content URL -- only the migration matches it.
+    old = "https://megakino.to/watch/exit-8/" + "a" * 24
+    assert not config.MEGAKINO_MOVIE_PATTERN.match(old)
+    assert config.MEGAKINO_LEGACY_PATTERN.match(old)
+    assert config.MEGAKINO_LEGACY_PATTERN.match(old + "?episode=2")
+
+
+# -- the stored-URL migration --------------------------------------------
+def test_old_urls_are_re_found_by_their_slug(monkeypatch):
+    """The new URL cannot be built from the old one: the numeric post id is not
+    the old 24-hex id, and the category segment is not derivable. The slug is
+    the title, so the row is re-found through the site's own search."""
+    from mediaforge.web import megakino_url_migration as MIG
+
+    assert MIG.slug_to_title(
+        "https://megakino.to/watch/ein-einfacher-unfall/" + "a" * 24
+    ) == "ein einfacher unfall"
+
+    monkeypatch.setattr(
+        MIG, "_resolve",
+        lambda title, cache: _MK_BASE + "/films/6451-ein-einfacher-unfall.html")
+    old = "https://megakino.to/watch/ein-einfacher-unfall/" + "a" * 24
+    assert MIG._rewrite(old, {}) == _MK_BASE + "/films/6451-ein-einfacher-unfall.html"
+    # The synthetic ?episode=N is MediaForge's own convention and survives.
+    assert MIG._rewrite(old + "?episode=7", {}) == (
+        _MK_BASE + "/films/6451-ein-einfacher-unfall.html?episode=7")
+
+
+def test_the_migration_refuses_an_ambiguous_match():
+    """A wrong match silently repoints somebody's favourite at a different
+    film. Leaving the row for the user to fix is the better failure."""
+    from mediaforge.web import megakino_url_migration as MIG
+
+    cards = [{"title": "Batman", "url": "u1"}, {"title": "Batman Returns", "url": "u2"}]
+    assert MIG._best_match("Batman", cards)["url"] == "u1"       # exact wins
+    assert MIG._best_match("Batma", cards) is None               # two prefixes -> no
+    assert MIG._best_match("Nothing Like It", cards) is None
+
+
+def test_the_queue_poster_falls_back_to_a_movie_only_providers_class():
+    """A movie-only source registers the film itself as the "episode" and
+    declares no series_cls at all -- MegakinoFilm, Filmo and FilmPalast all do.
+    The queue's poster resolver only looked at series_cls, so every movie in
+    the queue rendered the placeholder however good the poster on its page was.
+    They also call the attribute image_url, not poster_url.
+    """
+    from mediaforge.providers import resolve_provider
+    from mediaforge.web.routes.queue import _POSTER_ATTRS
+
+    for url in ("https://megakino16.com/films/6420-exit-8.html",
+                "https://filmpalast.to/stream/anything",
+                "https://filmo.to/movies/anything"):
+        prov = resolve_provider(url)
+        assert getattr(prov, "series_cls", None) is None, prov.name
+        cls = getattr(prov, "series_cls", None) or getattr(prov, "episode_cls", None)
+        assert cls is not None, prov.name
+        assert any(hasattr(cls, a) for a in _POSTER_ATTRS), prov.name

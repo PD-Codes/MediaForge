@@ -2,7 +2,7 @@
 
 # MediaForge
 
-**MediaForge** is a free, self-hosted, open-source **media downloader and media server companion** with a modern **web UI** — download anime from **aniworld.to**, **9anime.or.at** and **aniwaves.ru**, series from **s.to**, movies from **filmpalast.to**, **megakino.to** and **filmo.to**, or any direct video/`.m3u8` link, then browse, stream and manage everything from one place.
+**MediaForge** is a free, self-hosted, open-source **media downloader and media server companion** with a modern **web UI** — download anime from **aniworld.to**, **9anime.or.at** and **aniwaves.ru**, series from **s.to**, movies from **filmpalast.to**, **MegaKino** and **filmo.to**, or any direct video/`.m3u8` link, then browse, stream and manage everything from one place.
 
 It works as an **anime downloader**, **series & movie downloader**, **AutoSync / auto-download manager**, **media library with built-in web player and eBook reader**, and integrates with **Jellyfin, Plex, Jellyseerr and Overseerr**. Runs on **Windows, macOS, Linux, Docker and NAS**, with **multi-user login, OIDC SSO, a REST API** and a UI in **English, German, Spanish, French and Italian**.
 
@@ -51,7 +51,7 @@ Useful launch flags: `-wP <port>` (custom port) · `-wH 0.0.0.0` (expose to LAN/
 ## Highlights
 
 - **Catalogue** — the complete A–Z list AniWorld and SerienStream publish (2.4k and 10.8k titles), with instant filtering, an A–Z jump rail, filters for what you already have, queued or auto-sync, A–Z/Z–A sorting, multi-select and a details view per title that marks which episodes are already on disk; the lists are kept in the database and refreshed in the background, so the page opens instantly and keeps working while a source site is down; titles are matched against TMDB in the background (needs a TMDB key) so “already in your library” is decided by ID rather than by name; hand the whole selection to the download queue or to Auto-Sync in one go
-- **Browse, search & download** full series, seasons or single episodes from aniworld.to, s.to, filmpalast.to, megakino.to, filmo.to, 9anime.or.at, aniwaves.ru and hanime.tv
+- **Browse, search & download** full series, seasons or single episodes from aniworld.to, s.to, filmpalast.to, MegaKino, filmo.to, 9anime.or.at, aniwaves.ru and hanime.tv
   - 9anime.or.at and aniwaves.ru are **English-only** sources and ship **switched off** — enable them under Settings → Sources (no age confirmation, they are not adult sources)
 - **Direct Link downloads** — paste any raw media URL (`.m3u8`, MP4 or anything yt-dlp can read), pick a quality variant and queue it like any other download
 - **AutoSync** — keep series up to date automatically on an **interval or weekly schedule**, with per-job **season/episode filters** and a separate path for movies/specials, plus a **dry run** that shows exactly what a job would queue right now without queueing it, touching the job's schedule, or leaving an error behind if the check fails
@@ -155,7 +155,7 @@ Actively in development — current work in progress:
 
 ## Supported Sites & Extractors
 
-URLs from **aniworld.to**, **s.to**, **filmpalast.to**, **megakino.to**, **filmo.to**, **9anime.or.at**, **aniwaves.ru** and **hanime.tv** are supported, delivered behind the scenes via hosters such as VOE, Vidoza, Vidmoly, Filemoon, Doodstream, Vidara, Veev, LoadX, Luluvdo, Streamtape, Vidavaca, Megaplay, OneAnime, EchoVideo and Hanime. **Direct links** (`.m3u8`, MP4 and everything else yt-dlp understands) work without a source site at all, and installed **modules can register additional sources and search providers**.
+URLs from **aniworld.to**, **s.to**, **filmpalast.to**, **MegaKino**, **filmo.to**, **9anime.or.at**, **aniwaves.ru** and **hanime.tv** are supported, delivered behind the scenes via hosters such as VOE, Vidoza, Vidmoly, Filemoon, Doodstream, Vidara, Veev, LoadX, Luluvdo, Streamtape, Vidavaca, Megaplay, OneAnime, EchoVideo and Hanime. **Direct links** (`.m3u8`, MP4 and everything else yt-dlp understands) work without a source site at all, and installed **modules can register additional sources and search providers**.
 
 → See **[Supported Sites](https://github.com/PD-Codes/MediaForge/wiki/Supported-Sites)** for the live status of each site and extractor, and which hosters are prioritized per site.
 

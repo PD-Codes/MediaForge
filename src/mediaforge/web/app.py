@@ -819,6 +819,15 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     init_reading_progress_db()
     init_reading_bookmarks_db()
     init_uptime_db()
+    # Look up the domains of the sources that rotate them (MegaKino) before the
+    # UpTime monitor's first round, so it probes the live domain instead of the
+    # one this release happened to ship with. Non-blocking: prime() seeds the
+    # cache from app_settings and hands the actual fetch to a daemon thread.
+    try:
+        from ..domain_resolver import prime as _prime_domains
+        _prime_domains()
+    except Exception:
+        logger.exception("[Domains] Could not start the domain resolver")
     _start_uptime_monitor()
     init_devinfos_db()
     _start_devinfos_poller()
@@ -832,6 +841,17 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         start_alias_resolver()
     except Exception:
         logger.exception("[Aliases] Resolver could not be started")
+    # MegaKino changed its URL scheme with the move off its JSON API, so stored
+    # favourites/queue/history rows point at pages that no longer exist. This
+    # re-finds them through the site's search and rewrites them. Background and
+    # resumable, and a no-op once done -- it needs the network, so it must not
+    # sit in the schema-migration engine that runs before anything is serving.
+    # See web/megakino_url_migration.py.
+    try:
+        from .megakino_url_migration import start_megakino_url_migration
+        start_megakino_url_migration()
+    except Exception:
+        logger.exception("[MegaKino] URL migration could not be started")
     # Telemetry: sys.excepthook + Flask error handler + background sender
     # thread. Consent-gated (see mediaforge/telemetry/settings.py) — safe to
     # always initialize since nothing is ever sent before the user has

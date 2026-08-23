@@ -1422,7 +1422,11 @@
         </label>
         <label class="settings-checkbox-row" for="uptimeTrack_megakino">
           <input type="checkbox" class="chb-main" id="uptimeTrack_megakino" onchange="saveUptimeSettings()" />
-          <span>MegaKino <small style="opacity:.6">megakino.to</small></span>
+          <!-- The domain is filled in from /api/uptime/status: MegaKino mints a
+               new one whenever the current is blocked (see
+               mediaforge/domain_resolver.py), so a hardcoded label goes stale.
+               The text below is only what shows before that answer arrives. -->
+          <span>MegaKino <small style="opacity:.6" data-uptime-domain="megakino"></small></span>
         </label>
         <label class="settings-checkbox-row" for="uptimeTrack_filmo">
           <input type="checkbox" class="chb-main" id="uptimeTrack_filmo" onchange="saveUptimeSettings()" />

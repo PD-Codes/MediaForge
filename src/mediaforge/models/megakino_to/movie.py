@@ -1,4 +1,4 @@
-"""MegaKino movie (megakino.to, tv=0). Flat single-file download, VOE by default."""
+"""MegaKino movie. Flat single-file download, VOE by default."""
 import os
 import re
 from pathlib import Path
@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover
 
 
 class MegakinoMovie:
-    """A standalone MegaKino movie page (megakino.to /watch/<slug>/<id>,
+    """A standalone MegaKino movie page (``/<category>/<id>-<slug>.html``,
     no ``?episode=`` query param). NOT a superclass of MegakinoEpisode --
     they are distinguished purely by URL shape, see models/megakino_to/__init__.py.
 

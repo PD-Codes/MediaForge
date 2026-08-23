@@ -47,6 +47,7 @@
 }
 
 .mirror-site-primary,
+.mirror-resolved-badge,
 .mirror-active-badge {
   display: inline-flex;
   align-items: center;
@@ -57,6 +58,16 @@
   border: 1px solid rgba(148, 163, 184, 0.3);
   color: var(--text-muted, #55556a);
   white-space: nowrap;
+}
+
+/* Sites whose domain rotates carry this badge next to the primary chip: the
+   domain shown was looked up, not shipped (see mediaforge/domain_resolver.py).
+   Deliberately quieter than .mirror-active-badge -- an auto-resolved domain is
+   the normal state for those sites, a live failover is the exception. */
+.mirror-resolved-badge {
+  border-color: rgba(52, 168, 110, 0.45);
+  color: var(--success, #34a86e);
+  cursor: help;
 }
 
 .mirror-active-badge {
@@ -239,5 +250,33 @@ textarea.mirror-hosts {
   .source-section-toggle {
     flex: 1 1 auto;
     text-align: center;
+  }
+
+  /* The mirror card head is label + primary domain + up to two badges. On a
+     phone that never fits on one line, and the chips have white-space:nowrap,
+     so without this the head pushed the card into a horizontal scroll. Label
+     on its own line, chips wrapping underneath it. */
+  .mirror-site-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .mirror-site-primary,
+  .mirror-resolved-badge,
+  .mirror-active-badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+  }
+
+  /* Full-width buttons instead of two cramped ones at the right edge. */
+  .mirror-site-actions {
+    flex-wrap: wrap;
+  }
+
+  .mirror-site-actions .btn {
+    flex: 1 1 45%;
   }
 }

@@ -77,20 +77,39 @@ _queue_poster_inflight: set = set()
 _queue_poster_inflight_lock = threading.Lock()
 
 
+# Attribute names a provider class may expose its poster under. The series
+# classes settled on ``poster_url``; the movie-only ones (MegakinoMovie,
+# FilmoMovie, FilmPalastEpisode) all call it ``image_url``, which is why they
+# have to be listed here -- see _resolve_queue_poster_bg.
+_POSTER_ATTRS = ("poster_url", "poster", "image_url")
+
+
 def _resolve_queue_poster_bg(series_url):
-    """Background worker: resolve one series' poster via its Provider class
+    """Background worker: resolve one item's poster via its Provider class
     and cache the result -- positive or negative, so a source with no poster
-    (or a provider that's down) is not retried on every poll."""
+    (or a provider that's down) is not retried on every poll.
+
+    Falls back to ``episode_cls`` when a Provider has no ``series_cls``. That
+    is not an edge case: a movie-only source registers the film itself as the
+    "episode" and declares no series class at all (MegakinoFilm, Filmo,
+    FilmPalast -- see providers.py). Without the fallback this function found
+    nothing for any of them and every movie in the queue rendered the
+    placeholder, no matter how good the poster on its page was.
+    """
     poster = ""
     try:
         from ...providers import resolve_provider
         from .image_proxy import _poster_proxy
 
         prov = resolve_provider(series_url)
-        series_cls = getattr(prov, "series_cls", None)
-        if series_cls:
-            s_inst = series_cls(url=series_url)
-            raw = getattr(s_inst, "poster_url", "") or getattr(s_inst, "poster", "")
+        cls = getattr(prov, "series_cls", None) or getattr(prov, "episode_cls", None)
+        if cls:
+            inst = cls(url=series_url)
+            raw = ""
+            for attr in _POSTER_ATTRS:
+                raw = getattr(inst, attr, "") or ""
+                if raw:
+                    break
             if raw:
                 poster = _poster_proxy(raw)
     except Exception:

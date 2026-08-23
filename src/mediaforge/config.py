@@ -801,7 +801,8 @@ _CHROMIUM_MAP_HOSTS = (
     "serienstream.to", "www.serienstream.to",
     "aniworld.to", "www.aniworld.to",
     "filmpalast.to", "www.filmpalast.to",
-    "megakino.to", "www.megakino.to",
+    # MegaKino is absent on purpose: its domain rotates, so it can only come
+    # from mirrors.all_hosts() below -- a name written here would go stale.
     "filmo.to", "www.filmo.to",
     "9anime.or.at", "www.9anime.or.at",
     "aniwaves.ru", "www.aniwaves.ru",
@@ -1173,25 +1174,110 @@ SERIENSTREAM_EPISODE_PATTERN = re.compile(
 # -----------------------------
 # MegaKino (megakino.to)
 # -----------------------------
-# megakino.to is a React SPA backed by a JSON API. Content lives at
+# MegaKino is a React SPA backed by a JSON API. Content lives at
 # /watch/<slug>/<24-hex-id>; movies and series share that URL form (the media
 # type is decided by the API's ``tv`` field). Episodes use a synthetic
 # ``…?episode=<n>`` URL. The base URL is overridable and the patterns match any
 # host containing "megakino".
-MEGAKINO_BASE_URL = os.environ.get("MEGAKINO_BASE_URL", "https://megakino.to").rstrip("/")
+#
+# MegaKino does not keep one domain: it mints a new numbered one whenever the
+# current gets blocked (megakino.to -> megakino14.com -> megakino16.com -> ...),
+# which is why this is NOT a constant any more. megakino_base_url() asks
+# mirrors.canonical_host("megakino"), which is fed by domain_resolver.py's
+# remote domain feed. Read it per call -- a value captured at import time goes
+# stale on the next rotation.
+#
+# There is deliberately NO hardcoded domain here. The one and only place a
+# MegaKino domain is written down in this codebase is the seed entry in
+# mirrors.DEFAULT_SITE_MIRRORS, and it exists purely so the very first request
+# of a fresh install has somewhere to go before the feed answers. Every other
+# consumer -- this function, the UpTime monitor, the captcha ad filter, the
+# Chromium DNS pinning -- reads it back from there rather than repeating it,
+# so a rotation is a one-line change in the feed and nothing else.
+MEGAKINO_BASE_URL_ENV = os.environ.get("MEGAKINO_BASE_URL", "").strip().rstrip("/")
 
-# Movie / series landing (no query): /watch/<slug>/<hexid>
+
+# How long the first MegaKino request may wait for the domain lookup. Paid at
+# most once per installation (see domain_resolver.resolved_host): afterwards a
+# value is cached and persisted, and refreshes happen in the background.
+_MEGAKINO_FIRST_LOOKUP_WAIT = 10.0
+
+
+def megakino_base_url() -> str:
+    """The live MegaKino base URL (scheme + host, no trailing slash).
+
+    Returns ``""`` when no domain is known -- callers must treat that as "the
+    source is unavailable right now" rather than building a URL from it. There
+    is no fallback domain to offer, by design: see DEFAULT_SITE_MIRRORS.
+
+    An explicit ``MEGAKINO_BASE_URL`` environment variable always wins -- it is
+    the manual override for a user who knows the current domain (or points the
+    scraper at a local fixture) and it must not be second-guessed by the feed.
+    """
+    if MEGAKINO_BASE_URL_ENV:
+        return MEGAKINO_BASE_URL_ENV
+    host = ""
+    try:
+        # Asked of the resolver directly rather than through the mirror table,
+        # because only this path may block: mirrors._load_mirrors() runs on the
+        # egress path of every request and must stay non-blocking.
+        from .domain_resolver import resolved_host
+        host = resolved_host("megakino", wait=_MEGAKINO_FIRST_LOOKUP_WAIT)
+    except Exception:  # pragma: no cover - defensive
+        host = ""
+    if not host:
+        try:
+            # A mirror the user added by hand under Settings -> Sources is the
+            # only other source, and the right one to fall back to when the
+            # feed is unreachable.
+            from .mirrors import canonical_host
+            host = canonical_host("megakino")
+        except Exception:  # pragma: no cover - defensive
+            host = ""
+    return f"https://{host}" if host else ""
+
+
+def __getattr__(name):
+    """Module-level fallbacks (PEP 562).
+
+    ``MEGAKINO_BASE_URL`` stopped being a stored constant when MegaKino's
+    domain became a moving target (see above). It is kept as an attribute so
+    third-party modules and any ``from ...config import MEGAKINO_BASE_URL``
+    still work -- but note that such an import snapshots the value at import
+    time. In-tree code calls :func:`megakino_base_url` instead.
+    """
+    if name == "MEGAKINO_BASE_URL":
+        return megakino_base_url()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+# Movie / series landing: /<category>/<id>-<slug>.html
+#
+# The category segment VARIES and carries no meaning for us: a title lives
+# under /films/ or /serials/, but just as well under /crime/, /action/,
+# /kinofilme/, ... and search results mix all of them. Only the numeric post id
+# is stable, so the pattern accepts any single segment in front of it.
 MEGAKINO_MOVIE_PATTERN = re.compile(
-    r"^https?://[^/]*megakino[^/]*/watch/[^/?#]+/[a-f0-9]{24}$",
+    r"^https?://[^/]*megakino[^/]*/[^/?#]+/\d+-[^/?#]*\.html$",
     re.IGNORECASE,
 )
 
-# Series and movies share the same landing URL form.
+# Series and movies share the same landing URL form -- which of the two a page
+# is only shows in its content (a season post carries an episode selector).
 MEGAKINO_SERIES_PATTERN = MEGAKINO_MOVIE_PATTERN
 
-# Synthetic single-episode URL: <watch-post>?episode=<n>
+# Synthetic single-episode URL: <post-url>?episode=<n>
 MEGAKINO_EPISODE_PATTERN = re.compile(
-    r"^https?://[^/]*megakino[^/]*/watch/[^/?#]+/[a-f0-9]{24}\?episode=\d+$",
+    r"^https?://[^/]*megakino[^/]*/[^/?#]+/\d+-[^/?#]*\.html\?episode=\d+$",
+    re.IGNORECASE,
+)
+
+# The URL form the site used BEFORE it moved off its JSON API:
+# /watch/<slug>/<24-hex-id>, optionally with the synthetic ?episode=N. Those
+# pages no longer exist, but they are still sitting in users' favourites,
+# queue, history and auto-sync rows -- web/dbmigrate.py rewrites them onto the
+# new URLs, and this is what it matches them with.
+MEGAKINO_LEGACY_PATTERN = re.compile(
+    r"^https?://[^/]*megakino[^/]*/watch/[^/?#]+/[a-f0-9]{24}(\?episode=\d+)?$",
     re.IGNORECASE,
 )
 

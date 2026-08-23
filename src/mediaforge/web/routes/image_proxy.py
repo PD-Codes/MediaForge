@@ -11,7 +11,7 @@ from ...config import HANIME_SEARCH_URL
 from ...config import ANIWAVES_BASE_URL
 from ...config import FILMO_BASE_URL
 from ...config import MEDIAFORGE_CONFIG_DIR
-from ...config import MEGAKINO_BASE_URL
+from ...config import megakino_base_url
 from ...config import NINEANIME_BASE_URL
 from ..db import get_setting
 from ..db import get_tmdb_cache_bulk
@@ -77,10 +77,33 @@ def _domains_of(*urls):
 # in the exact-host set above. Without them every card from these three
 # sources renders the placeholder, because /api/img rejects the poster with
 # 403 "Forbidden host" before it ever fetches it.
+# MegaKino is NOT in this static set: its domain rotates, so it is resolved per
+# call in _rotating_image_domains() below.
 _ALLOWED_IMAGE_DOMAINS = _domains_of(
-    MEGAKINO_BASE_URL, HANIME_BASE_URL, HANIME_API_BASE, HANIME_SEARCH_URL,
+    HANIME_BASE_URL, HANIME_API_BASE, HANIME_SEARCH_URL,
     FILMO_BASE_URL, NINEANIME_BASE_URL, ANIWAVES_BASE_URL,
 ) | {h for h in HANIME_IMAGE_HOSTS if h}
+
+
+def _rotating_image_domains():
+    """Domains of sources whose base URL is resolved at runtime.
+
+    MegaKino's domain rotates (see config.megakino_base_url), so its entry in
+    the static set above only ever covers the *shipped* domain -- the moment
+    the site moved on, every MegaKino poster was rejected with 403 "Forbidden
+    host" and the whole grid rendered placeholders. Resolved per call, which is
+    cheap: mirrors.py serves the host from a 30s cache.
+
+    This only widens *which domain the proxy may fetch from*, and only to a
+    host domain_resolver.py already validated as a public hostname carrying the
+    site's own brand token. The independent stream_proxy.is_safe_url() check in
+    api_image_proxy() -- which resolves the host and rejects internal/loopback
+    addresses -- still applies to it exactly as to every other host here.
+    """
+    try:
+        return _domains_of(megakino_base_url())
+    except Exception:  # pragma: no cover - defensive
+        return set()
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +229,8 @@ def _image_host_allowed(netloc: str) -> bool:
     if host in _ALLOWED_IMAGE_HOSTS or host.removeprefix("www.") in _ALLOWED_IMAGE_HOSTS:
         return True
     if any(host == d or host.endswith("." + d) for d in _ALLOWED_IMAGE_DOMAINS):
+        return True
+    if any(host == d or host.endswith("." + d) for d in _rotating_image_domains()):
         return True
     bare_host = host.removeprefix("www.")
     with _image_hosts_lock:

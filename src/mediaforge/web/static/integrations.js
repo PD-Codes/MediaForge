@@ -634,8 +634,27 @@ async function loadUptimeSettings() {
       const cb = document.getElementById("uptimeTrack_" + sid);
       if (cb) cb.checked = trackedMap[sid] !== undefined ? trackedMap[sid] : (sid !== "hanime");
     });
+    _applyUptimeDomains(data.sources);
     _applyUptimeState();
   } catch (e) {}
+}
+
+// Replace the domain shown next to a built-in tracking checkbox with the one
+// the monitor is actually probing. Only sources whose domain rotates carry a
+// [data-uptime-domain] element (MegaKino today) -- everything else keeps the
+// static label from the template. textContent, never innerHTML: the domain
+// originates from the remote feed in mediaforge/domain_resolver.py.
+function _applyUptimeDomains(sources) {
+  (sources || []).forEach(function (s) {
+    if (!s || !s.id || !s.url) return;
+    const el = document.querySelector('[data-uptime-domain="' + CSS.escape(s.id) + '"]');
+    if (!el) return;
+    try {
+      el.textContent = new URL(s.url).hostname;
+    } catch (e) {
+      /* Malformed URL: keep the template's label. */
+    }
+  });
 }
 
 function _applyUptimeState() {

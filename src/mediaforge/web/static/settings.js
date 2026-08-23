@@ -1854,6 +1854,12 @@ async function runDnsTest() {
     for (const [label, site] of Object.entries(data.sites || {})) {
       const row = _dnsSiteRow(label);
       if (!row) continue;
+      // Keep the row's domain honest: a source whose domain rotates was
+      // probed against the currently resolved one, not the one hardcoded in
+      // settings.html. textContent, so a domain that came from the remote
+      // feed can never be interpreted as markup.
+      const nameEl = row.querySelector(".dns-test-site-name");
+      if (nameEl && site && site.domain) nameEl.textContent = site.domain;
       const resEl = row.querySelector(".dns-test-site-result");
       if (!resEl) continue;
       _dnsRenderSiteResult(resEl, site);
@@ -4136,7 +4142,19 @@ let _mirrorSites = [];
 
 function _loadMirrorSettings(mirrors) {
   _mirrorSites = mirrors.sites || [];
+  const box = document.getElementById("domainResolverEnabled");
+  if (box) box.checked = (mirrors.resolver_enabled || "1") !== "0";
   _renderMirrorSites();
+}
+
+// Escapes text that goes into the innerHTML below. Site labels and resolved
+// domains reach this from the settings API, and a domain ultimately comes from
+// a remote feed -- it is validated server-side (domain_resolver._valid_host),
+// but a value from off-box must never be concatenated into markup unescaped.
+function _mirrorEsc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
 }
 
 function _renderMirrorSites() {
@@ -4146,34 +4164,83 @@ function _renderMirrorSites() {
   _mirrorSites.forEach(site => {
     const wrap = document.createElement("div");
     wrap.className = "mirror-site";
-    const fallbacks = (site.hosts || []).slice(1);
+    // hosts[0] is the primary shown in the head chip; the textarea holds the
+    // editable fallbacks. When a domain was resolved remotely it is hosts[0]
+    // AND the shipped domain sits right behind it -- that one is a fallback
+    // the user may edit, so it must stay in the textarea.
+    const shipped = site.shipped || site.canonical;
+    const fallbacks = (site.hosts || []).filter(h => h !== site.canonical);
+    const resolved = site.resolved || {};
     const activeNote = site.active && site.active !== site.canonical
-      ? '<span class="mirror-active-badge">' + t("aktiv: ", "active: ") + site.active + '</span>'
+      ? '<span class="mirror-active-badge">' + t("aktiv: ", "active: ") + _mirrorEsc(site.active) + '</span>'
       : '';
+    // Only sites with a rotating domain carry a resolved block.
+    let resolvedNote = '';
+    if (resolved.host) {
+      const when = _mirrorResolvedWhen(resolved.last_check);
+      resolvedNote =
+        '<span class="mirror-resolved-badge" title="' +
+          _mirrorEsc(t("Automatisch ermittelt über ", "Resolved automatically via ") + (resolved.source || "")) + '">' +
+          t("automatisch", "auto-resolved") + (when ? " · " + _mirrorEsc(when) : "") +
+        '</span>';
+    }
     wrap.innerHTML =
       '<div class="mirror-site-head">' +
-        '<span class="mirror-site-label">' + site.label + '</span>' +
-        '<span class="mirror-site-primary">' + site.canonical + '</span>' +
+        '<span class="mirror-site-label">' + _mirrorEsc(site.label) + '</span>' +
+        '<span class="mirror-site-primary">' + _mirrorEsc(site.canonical) + '</span>' +
+        resolvedNote +
         activeNote +
       '</div>' +
       '<textarea class="mirror-hosts" id="mirrorHosts-' + site.id + '" rows="' + Math.max(2, fallbacks.length + 1) + '" ' +
-        'placeholder="' + t("z. B. serienstream.to", "e.g. serienstream.to") + '">' + fallbacks.join("\n") + '</textarea>' +
+        'placeholder="' + t("z. B. serienstream.to", "e.g. serienstream.to") + '">' + _mirrorEsc(fallbacks.join("\n")) + '</textarea>' +
       '<div class="mirror-site-actions">' +
         '<button type="button" class="btn btn-secondary btn-sm" onclick="resetMirrorHosts(\'' + site.id + '\')">' + t("Standard", "Default") + '</button>' +
         '<button type="button" class="btn btn-primary btn-sm" onclick="saveMirrorHosts(\'' + site.id + '\')">' + t("Speichern", "Save") + '</button>' +
       '</div>';
+    // shipped is kept on the element so _mirrorPayload can anchor the saved
+    // list to it even after a re-render.
+    wrap.dataset.shipped = shipped;
     box.appendChild(wrap);
   });
 }
 
+// "2026-08-23T10:33:51.699325" -> date + time in the APP language, or "" if
+// unparsable. window.mfFormatDateTime (base.html) rather than a bare
+// toLocaleString: the whole UI must not mix the app language with whatever the
+// browser happens to be set to.
+function _mirrorResolvedWhen(iso) {
+  if (!iso) return "";
+  if (typeof window.mfFormatDateTime !== "function") return "";
+  return window.mfFormatDateTime(iso) || "";
+}
+
 function _mirrorPayload(siteId, fallbackLines) {
   const site = _mirrorSites.find(s => s.id === siteId);
-  const hosts = [site.canonical].concat(
+  // Anchored to the SHIPPED domain, never to a remotely resolved one: saving
+  // "megakino16.com" into the user's list would freeze today's rotation into
+  // it and go stale the moment the site moves on.
+  const shipped = site.shipped || site.canonical;
+  const hosts = [shipped].concat(
     fallbackLines.map(l => l.trim()).filter(Boolean)
-  );
+  ).filter((h, i, a) => h && a.indexOf(h) === i);
   const payload = {};
   payload["site_mirrors_" + siteId] = hosts.join(",");
   return { payload: payload, hosts: hosts };
+}
+
+// Master switch for the remote domain lookup (mediaforge/domain_resolver.py).
+async function saveDomainResolver() {
+  const box = document.getElementById("domainResolverEnabled");
+  if (!box) return;
+  const ok = await _putSettings(
+    { domain_resolver_enabled: box.checked ? "1" : "0" },
+    t("Gespeichert", "Saved"),
+  );
+  if (!ok) { box.checked = !box.checked; return; }
+  // The primary domain of every resolvable site changes with this switch, so
+  // re-read rather than patching the cards locally. The lookup itself runs in
+  // the background, hence the short delay before refetching.
+  setTimeout(() => { if (typeof loadSettings === "function") loadSettings(); }, 1200);
 }
 
 async function saveMirrorHosts(siteId) {

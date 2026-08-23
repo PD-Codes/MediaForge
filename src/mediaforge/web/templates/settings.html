@@ -820,6 +820,13 @@
     <div class="settings-section">
       <h2>{{ _('Domain fallback (mirrors)') }}</h2>
       <div class="settings-hint">{{ _('Alternative domains per site, tried top to bottom whenever a domain is unreachable or blocked (e.g. s.to → serienstream.to → 186.2.175.5). The first entry is the primary domain and cannot be removed. An IP address is called with the primary domain as its Host header. One entry per line.') }}</div>
+      <div class="settings-row">
+        <label class="settings-checkbox-row" for="domainResolverEnabled">
+          <input type="checkbox" class="chb-main" id="domainResolverEnabled" onchange="saveDomainResolver()" />
+          <span>{{ _('Resolve domains automatically') }}</span>
+        </label>
+      </div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Some sites mint a new numbered domain whenever the current one is blocked (megakino.to → megakino16.com → …). MediaForge looks the live domain up and uses it automatically, so no domain for those sites is shipped at all. Turn this off to use only the lists below — the affected sources then need a domain entered by hand.') }}</div>
       <div id="mirrorSitesList"></div>
     </div>
   </div>
@@ -1354,7 +1361,7 @@
               <span class="dns-test-site-result dns-test-idle">—</span>
             </div>
             <div class="dns-test-site-row" id="dnsTestRowMegaKino">
-              <span class="dns-test-site-name">megakino.to</span>
+              <span class="dns-test-site-name">MegaKino</span>
               <span class="dns-test-site-result dns-test-idle">—</span>
             </div>
             <div class="dns-test-site-row" id="dnsTestRowFilmo">
