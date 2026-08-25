@@ -325,6 +325,20 @@ def thirdparty_mirror_ids() -> set:
     return set(_EXTRA_SITES)
 
 
+def site_owner(site_id) -> str | None:
+    """Which module registered this site, or None for a built-in one.
+
+    Counterpart of :func:`hoster_owner` in ``extractors`` -- lets a caller ask
+    whether the module behind a mirror list is currently switched on, which
+    the registry itself does not say (a disabled module's register(app) still
+    ran).
+    """
+    for item_id, registered in _EXTRA_SITES.items():
+        if registered == site_id:
+            return item_id
+    return None
+
+
 def get_mirrors(site=None):
     """All mirror lists, or the list for one site."""
     mirrors, _ = _get_tables()

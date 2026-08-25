@@ -77,7 +77,7 @@ def register_catalogue_routes(app):
         own view passes (see web/app.py's index view) -- which is exactly why
         the two dropdowns rendered empty when this page assumed otherwise.
         """
-        from ..runtime_state import WORKING_PROVIDERS
+        from .. import runtime_state as _runtime_state
         from ...config import LANG_LABELS
 
         return render_template(
@@ -86,7 +86,7 @@ def register_catalogue_routes(app):
             # Same three labels the start page hardcodes for SerienStream.
             sto_lang_labels={"1": "German Dub", "2": "English Dub",
                              "3": "English Dub (German Sub)"},
-            supported_providers=WORKING_PROVIDERS,
+            supported_providers=_runtime_state.enabled_providers(),
         )
 
     @app.route("/api/catalogue/sources")

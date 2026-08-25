@@ -160,6 +160,30 @@ def _home_page_defaults():
     }
 
 
+def _mirror_site_enabled(site_id) -> bool:
+    """Whether this site's mirror card belongs on the Sources tab.
+
+    Built-in sites always do. A site a module registered
+    (mirrors.register_site_mirrors) only while that module is switched ON: a
+    module's register(app) runs regardless of its enabled flag -- the gate
+    sits at the point of use, see thirdparties/registry.py's item_enabled() --
+    so the registry alone would keep showing an editable mirror card for a
+    source that cannot be used at all.
+    """
+    try:
+        owner = _mirrors.site_owner(site_id)
+    except Exception:
+        return True
+    if not owner:
+        return True
+    try:
+        from ..thirdparties.registry import item_enabled
+        return item_enabled(owner)
+    except Exception:
+        # Fail open: a broken lookup must not hide a working site's mirrors.
+        return True
+
+
 def register_settings_routes(app):
     """Register the settings page and all General/Sync/DNS/CaptchaBrowser/
     SSO/CineInfo/legacy-import/custom-paths/API-key settings API routes on
@@ -539,7 +563,9 @@ def register_settings_routes(app):
                 # which queue_worker.py walks when the hoster picked for a
                 # download fails. See runtime_state.get_provider_fallback_chain().
                 "providers": {
-                    "available": list(_runtime_state.WORKING_PROVIDERS),
+                    # enabled_providers(): a module that is installed but
+                    # switched off must not still be listed here.
+                    "available": _runtime_state.enabled_providers(),
                     "order": _runtime_state.get_provider_order(),
                     "fallback_enabled": "1" if _runtime_state.is_provider_fallback_enabled() else "0",
                 },
@@ -565,6 +591,7 @@ def register_settings_routes(app):
                             "resolved": _domain_resolver.resolved_info(_site),
                         }
                         for _site, _default_hosts in _mirrors.DEFAULT_SITE_MIRRORS.items()
+                        if _mirror_site_enabled(_site)
                     ],
                     # The master switch for the remote domain lookup
                     # (domain_resolver.py). Applies to every resolvable site.
@@ -1621,9 +1648,12 @@ def register_settings_routes(app):
         return jsonify(
             {
                 "paths": paths,
+                # Same gate as the mirror cards: a custom path must not offer
+                # "default for <site>" for a source whose module is off.
                 "site_options": [
                     {"key": key, "label": label}
                     for key, label in _mirrors.SITE_LABELS.items()
+                    if _mirror_site_enabled(key)
                 ],
                 "current_site": _mirrors.site_for_url(request.args.get("url", "")),
                 # Which of those paths is the default for that site, resolved

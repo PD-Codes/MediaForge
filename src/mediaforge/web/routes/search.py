@@ -49,6 +49,7 @@ from ..queue_worker import _nineanime_enabled
 from ..queue_worker import _is_aniwaves_url
 from ..queue_worker import _aniwaves_enabled
 from ..runtime_state import WORKING_PROVIDERS
+from .. import runtime_state as _runtime_state
 from ..runtime_state import _SERIES_LINK_PATTERN
 from ..runtime_state import _STO_SERIES_LINK_PATTERN
 from flask import jsonify
@@ -2159,7 +2160,7 @@ def register_search_routes(app):
             "advanced_search.html",
             lang_labels=LANG_LABELS,
             sto_lang_labels=sto_lang_labels,
-            supported_providers=WORKING_PROVIDERS,
+            supported_providers=_runtime_state.enabled_providers(),
         )
     @app.route("/api/tmdb/info")
     def api_tmdb_info():

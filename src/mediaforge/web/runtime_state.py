@@ -119,6 +119,45 @@ def refresh_working_providers() -> None:
     WORKING_PROVIDERS[:] = _get_working_providers()
 
 
+def enabled_providers():
+    """WORKING_PROVIDERS minus the hosters of switched-off modules.
+
+    A module's ``register(app)`` runs whether or not the module is enabled --
+    detaching its registrations on the disable *edge* would not help a module
+    that was already off at boot, so the gate sits at the point of use instead
+    (see thirdparties/registry.py's ``item_enabled()``). WORKING_PROVIDERS is
+    therefore the list of hosters that EXIST, not of hosters that may be used,
+    and every caller that offers hosters to a user, or walks them as a
+    fallback chain, wants this one instead.
+
+    Built-in hosters have no owning module and are always in. So is a hoster
+    whose module id was never passed to ``register_thirdparty()`` -- the same
+    fail-open ``item_enabled()`` applies, for the same reason.
+
+    Not a filter on WORKING_PROVIDERS itself: modules bind that list by
+    identity at import time, and it also answers "does an extractor for this
+    name exist", which stays true while a module is off.
+    """
+    try:
+        from ..extractors import hoster_owner
+        from .thirdparties.registry import item_enabled
+    except Exception:
+        return list(WORKING_PROVIDERS)
+
+    out = []
+    for name in WORKING_PROVIDERS:
+        try:
+            owner = hoster_owner(name)
+            if owner and not item_enabled(owner):
+                continue
+        except Exception:
+            # A broken lookup must not empty the hoster list -- that would
+            # take every download with it.
+            pass
+        out.append(name)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Provider fallback order
 # ---------------------------------------------------------------------------
@@ -131,19 +170,27 @@ def refresh_working_providers() -> None:
 # that episode), instead of failing the episode outright.
 
 def get_provider_order():
-    """The user's hoster order, restricted to providers that actually work."""
+    """The user's hoster order, restricted to providers that are usable now.
+
+    `enabled_providers()`, not WORKING_PROVIDERS: a switched-off module's
+    hoster must not appear in the Settings list, and must not be walked as a
+    fallback -- it would be tried and fail on every episode. A saved order
+    that still names it keeps the name in app_settings, so switching the
+    module back on restores its place instead of appending it at the end.
+    """
     order = []
     try:
         raw = get_setting("provider_order", "") or ""
     except Exception:
         raw = ""
+    usable = enabled_providers()
     wanted = [p.strip() for p in raw.split(",") if p.strip()]
-    by_lower = {p.lower(): p for p in WORKING_PROVIDERS}
+    by_lower = {p.lower(): p for p in usable}
     for name in wanted:
         canonical = by_lower.get(name.lower())
         if canonical and canonical not in order:
             order.append(canonical)
-    for p in WORKING_PROVIDERS:  # append anything the setting didn't mention
+    for p in usable:  # append anything the setting didn't mention
         if p not in order:
             order.append(p)
     return order

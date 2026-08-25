@@ -35,7 +35,7 @@ from ..db import get_hidden_seerr_requests
 from ..db import get_setting
 from ..db import hide_seerr_request
 from ..db import unhide_seerr_request
-from ..runtime_state import WORKING_PROVIDERS
+from .. import runtime_state as _runtime_state
 from flask import jsonify
 from flask import render_template
 from flask import request
@@ -596,7 +596,7 @@ def register_seerr_routes(app):
             "seerr.html",
             lang_labels=LANG_LABELS,
             sto_lang_labels=sto_lang_labels,
-            supported_providers=WORKING_PROVIDERS,
+            supported_providers=_runtime_state.enabled_providers(),
         )
 
     @app.route("/api/seerr/requests/<int:req_id>/approve", methods=["POST"])

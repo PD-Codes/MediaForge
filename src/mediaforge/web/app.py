@@ -67,8 +67,8 @@ logger = get_logger(__name__)
 # (Each feature module below also imports whatever it needs on its own —
 # this block only lists what create_app/start_web_ui use directly.)
 # ---------------------------------------------------------------------------
+from . import runtime_state as _runtime_state
 from .runtime_state import (
-    WORKING_PROVIDERS,
     _active_cancel_events,
     _active_cancel_events_lock,
     _upscale_active_cancel_events,
@@ -685,7 +685,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         return {
             "lang_labels": LANG_LABELS,
             "sto_lang_labels": STO_LANG_LABELS,
-            "supported_providers": WORKING_PROVIDERS,
+            # enabled_providers(), not the raw list: a switched-off
+            # module's hoster must not be offered in the Hoster dropdown.
+            "supported_providers": _runtime_state.enabled_providers(),
             # Languages whose subtitles are burned into the picture. Those add
             # a second VIDEO stream rather than an audio track, so the UI warns
             # before one is picked as an extra. Passed down instead of being
@@ -1227,7 +1229,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "index.html",
             lang_labels=LANG_LABELS,
             sto_lang_labels=sto_lang_labels,
-            supported_providers=WORKING_PROVIDERS,
+            supported_providers=_runtime_state.enabled_providers(),
             devinfo_banners=_devinfo_banners,
             devinfo_importants=_devinfo_importants,
             new_home=_new_home,

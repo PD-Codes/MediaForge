@@ -284,6 +284,22 @@ def thirdparty_hoster_ids() -> set:
     return set(_EXTRA_HOSTERS)
 
 
+def hoster_owner(name) -> str | None:
+    """Which module registered this hoster, or None for a built-in one.
+
+    The reverse of :data:`_EXTRA_HOSTERS`, so a caller can ask
+    ``thirdparties.registry.item_enabled()`` whether a hoster should be offered
+    right now. A module's ``register(app)`` runs even while the module is
+    switched off (see item_enabled's docstring for why the gate sits at the
+    point of use), so the registry alone never answers that question.
+    """
+    key = str(name or "").lower()
+    for item_id, registered in _EXTRA_HOSTERS.items():
+        if registered == key:
+            return item_id
+    return None
+
+
 def unregister_hoster(item_id) -> None:
     """Drop a hoster previously added via :func:`register_hoster`. Leaves
     ``config.SUPPORTED_PROVIDERS``/``HOST_PROVIDER_MAP`` entries in place
