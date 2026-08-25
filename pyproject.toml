@@ -77,8 +77,11 @@ classifiers = [
   "Natural Language :: English",
   "Natural Language :: German",
 ]
-license = "GPL-3.0-or-later"
-license-files = ["LICENSE", "COPYRIGHT", "LICENSE-CAPTCHA"]
+# PEP 639: the package as a whole is GPL-3.0-or-later, except for the
+# separately licensed captcha solver (see LICENSE-CAPTCHA), which is shipped
+# in the distribution and therefore part of the license expression.
+license = "GPL-3.0-or-later AND LicenseRef-MediaForge-Captcha"
+license-files = ["LICENSE", "COPYRIGHT", "LICENSE-CAPTCHA", "LICENSE.old"]
 
 [project.urls]
 homepage = "https://github.com/PD-Codes/MediaForge"
@@ -89,7 +92,8 @@ issues = "https://github.com/PD-Codes/MediaForge/issues"
 tracker = "https://github.com/PD-Codes/MediaForge/issues"
 
 [build-system]
-requires = ["setuptools>=68"]
+# setuptools >= 77 is required for PEP 639 license expressions / license-files
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

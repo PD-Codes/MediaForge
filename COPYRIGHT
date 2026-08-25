@@ -29,6 +29,17 @@ installation. Any use, extraction, modification, or redistribution outside of
 MediaForge requires prior written permission from the PD-Codes Team. The full
 terms are in the file LICENSE-CAPTCHA.
 
+Clarification for forks and modified distributions (in the spirit of
+GPLv3 section 7): the file src/mediaforge/playwright/captcha.py is a
+separately licensed, non-GPL component. LICENSE-CAPTCHA permits its
+redistribution only as part of a complete, UNMODIFIED MediaForge
+distribution. If you distribute a modified version of MediaForge (e.g. a
+fork), you must REMOVE this file from your distribution unless you have
+prior written permission from the PD-Codes Team. Removing the file does
+not affect the GPL-3.0-or-later rights in the remainder of MediaForge;
+MediaForge remains fully runnable without it — only captcha solving
+itself is disabled, so captcha-protected pages cannot be resolved.
+
 
 Vendored third-party libraries
 ------------------------------
@@ -43,3 +54,13 @@ them are compatible with the GPL-3.0-or-later grant above.
     pdf.min.js, pdf.worker.min.js    pdf.js v3.11 (Mozilla) Apache-2.0
     epub.min.js                      epub.js v0.3.93        BSD-2-Clause
     jszip.min.js                     JSZip v3.10.1          MIT or GPL-3.0-or-later
+
+The following files under src/mediaforge/anime4k/shader/ are unmodified
+upstream shaders from the Anime4K project (https://github.com/bloc97/Anime4K),
+vendored for the built-in Anime4K upscaling feature. Each file carries its own
+license header; all of them are compatible with the GPL-3.0-or-later grant
+above.
+
+    Anime4K_*.glsl (37 files)        Anime4K, (c) 2019-2021 bloc97   MIT
+    Anime4K_AutoDownscalePre_x2.glsl Anime4K                         Unlicense
+    Anime4K_AutoDownscalePre_x4.glsl Anime4K                         Unlicense

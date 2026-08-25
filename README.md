@@ -204,6 +204,14 @@ MediaForge is licensed under the **GNU General Public License v3.0 or later**
 > other project — open source or commercial — requires **prior written
 > permission** from the PD-Codes Team. Full terms:
 > [LICENSE-CAPTCHA](LICENSE-CAPTCHA).
+>
+> **Forks / modified distributions:** LICENSE-CAPTCHA only permits
+> redistribution of `captcha.py` as part of a complete, *unmodified*
+> MediaForge distribution. If you distribute a modified version of MediaForge,
+> you must **remove** `src/mediaforge/playwright/captcha.py` from your
+> distribution (unless you have prior written permission). MediaForge remains
+> fully runnable without the file — only captcha solving itself is disabled,
+> so captcha-protected pages cannot be resolved.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
