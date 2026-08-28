@@ -183,6 +183,26 @@ def _cached_browse(key, fetch_fn):
     if entry and now - entry[0] < _BROWSE_TTL:
         return entry[1]
 
+    # Under test: refresh inline, never from a daemon thread. Same reason
+    # ensure_prefetch_worker() refuses to start -- a thread started here
+    # outlives the test that triggered it, and then writes into caches the
+    # next test has just stubbed. Worse, its requests.get() lands inside a
+    # window where another test has monkeypatched requests.get and eats a
+    # scripted response (the order-dependent IndexError in
+    # tests/test_image_proxy_redirects.py). Inline keeps stubbed fetchers
+    # working and leaves nothing running once the test returns.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            r = fetch_fn()
+        except Exception:
+            logger.exception("[Browse] Fetch failed for %s", key)
+            r = None
+        if r:
+            _browse_cache_set(key, (now, r))
+            set_browse_cache(key, r)
+            return r
+        return entry[1] if entry else None
+
     # 4. Stale or missing — avoid duplicate concurrent refreshes
     with _browse_refresh_mutex:
         already_refreshing = key in _browse_refresh_locks

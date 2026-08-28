@@ -40,15 +40,25 @@ def fake_upstream(monkeypatch):
 
     Patching the client rather than the helper is deliberate: the code walking
     the redirects is exactly the code under test.
+
+    `requests.get` is a process-wide name, and daemon workers started by other
+    tests (search prefetch, uptime probes) keep calling it. Such a call used to
+    consume a scripted response and shift every later index, so this module
+    failed with an IndexError depending on run order. Only calls from the test's
+    own thread are scripted; anything else gets a neutral 503 and is ignored.
     """
     import sys
+    import threading
 
     import requests
 
     def _install(responses):
         seen = []
+        test_thread = threading.get_ident()
 
         def _fake_get(url, **kwargs):
+            if threading.get_ident() != test_thread:
+                return _Resp(503)
             seen.append(url)
             # Following redirects ourselves is the entire point; if the helper
             # ever hands that back to the client, the test is meaningless.
