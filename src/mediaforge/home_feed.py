@@ -61,8 +61,14 @@ def register_home_feed_source(item_id, source_id, label, fetchers,
       form that works in every UI language (a brand name usually is).
     - ``fetchers``: ``{"new": fn}`` and/or ``{"popular": fn}``. Each ``fn()``
       takes no arguments and returns a list of
-      ``{"title", "url", "poster_url", "genre"}`` dicts -- the same card shape
-      every built-in browse list returns. ``url`` should be resolvable by
+      ``{"title", "url", "poster_url", "genre", "fsk"}`` dicts -- the same card
+      shape every built-in browse list returns. ``fsk`` is the age rating as a
+      number ("0"/"6"/"12"/"16"/"18") and is optional but not free: a card
+      without one counts as unrated, and an unrated MODULE card is hidden
+      whenever a kids ceiling is active (web/age_gate.py). The core fills it in
+      from the TMDB cache when it can match the title, so a catalogue TMDB does
+      not know is exactly the case where the value has to come from here.
+      ``url`` should be resolvable by
       :func:`mediaforge.providers.resolve_provider`. Returning ``None``
       signals "upstream failed", which makes the row report the source as
       unavailable instead of silently empty; returning ``[]`` means "nothing

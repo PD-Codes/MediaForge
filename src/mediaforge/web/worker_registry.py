@@ -211,6 +211,13 @@ DEFAULT_STALL_AFTER = 900
 # Kept as an alias so anything still importing the old name keeps working.
 STALE_AFTER = DEFAULT_STALL_AFTER
 
+# How long fail() pushes the next attempt out, one rung per consecutive
+# failure, the last rung repeating forever. A dead upstream is retried four
+# times in the first twenty minutes and hourly after that -- enough to recover
+# on its own from a blip, quiet enough that a site that is down for a day does
+# not get 2880 requests from us about it.
+RETRY_BACKOFF = (60, 300, 900, 3600)
+
 _local = threading.local()
 
 # Workers whose heartbeat has already failed once. See beat()'s except clause:
@@ -377,15 +384,48 @@ def beat(worker: str, *, state: str = STATE_IDLE, detail: str = "",
             logger.debug("[Workers] Heartbeat for %s failed: %s", worker, exc)
 
 
-def fail(worker: str, error: str, detail: str = "", extra: dict | None = None) -> None:
+def fail(worker: str, error: str, *, detail: str = "",
+         extra: dict | None = None, retry_in: int | None = None) -> None:
+    """Report a failed attempt and schedule the next one with backoff.
+
+    ``detail`` is keyword-only on purpose. Every other reporter in this module
+    takes ``(worker, detail)`` as its two positional arguments, so a positional
+    second argument here used to land in ``error`` -- the failure message and
+    the detail line quietly swapping places, which nothing catches because both
+    are free text. It cannot be passed positionally any more.
+
+    ``retry_in`` overrides the backoff for callers that know better (a rate
+    limit that tells you when to come back). Otherwise the delay follows
+    :data:`RETRY_BACKOFF`, stepping one rung per consecutive failure -- see
+    :func:`due`, which is the half that reads it back.
+    """
+    fails = _fail_count(worker) + 1
+    delay = retry_in if retry_in is not None else RETRY_BACKOFF[
+        min(fails, len(RETRY_BACKOFF)) - 1]
+    merged = dict(extra or {})
+    merged["fails"] = fails
     beat(worker, state=STATE_ERROR, detail=detail, error=str(error),
-         last_run=_now(), extra=extra)
+         last_run=_now(),
+         next_run=(_dt.datetime.now()
+                   + _dt.timedelta(seconds=max(0, int(delay)))
+                   ).isoformat(timespec="seconds"),
+         extra=merged)
 
 
 def done(worker: str, detail: str = "", next_run: str | None = None,
          extra: dict | None = None) -> None:
+    merged = dict(extra or {})
+    # A completed run ends the backoff (see fail()) -- both halves of it: the
+    # counter AND the retry date fail() parked in next_run, which is otherwise
+    # sticky and would keep due() false long after the worker recovered. Only
+    # cleared when there was a backoff, so a caller that relies on its own
+    # schedule surviving a bare done() still gets that.
+    fails = _fail_count(worker)
+    merged["fails"] = 0
+    if next_run is None and fails:
+        next_run = ""
     beat(worker, state=STATE_IDLE, detail=detail, last_run=_now(),
-         next_run=next_run, error="", extra=extra)
+         next_run=next_run, error="", extra=merged)
 
 
 def working(worker: str, detail: str = "", extra: dict | None = None) -> None:
@@ -402,6 +442,53 @@ def idle(worker: str, detail: str = "", next_run: str | None = None,
     it, an idle queue worker would keep advancing "last run" every few seconds.
     """
     beat(worker, state=STATE_IDLE, detail=detail, next_run=next_run, extra=extra)
+
+
+def _fail_count(worker: str) -> int:
+    """Consecutive failures recorded for *worker* (0 when it last succeeded)."""
+    import json as _json
+    try:
+        from .db import get_db
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT extra FROM worker_heartbeats WHERE worker = ?",
+                (worker,)).fetchone()
+        finally:
+            conn.close()
+        stored = _json.loads((row and row["extra"]) or "{}")
+        return int(stored.get("fails") or 0) if isinstance(stored, dict) else 0
+    except Exception:
+        return 0
+
+
+def due(worker: str) -> bool:
+    """Whether *worker* may attempt its work now.
+
+    False exactly while the ``next_run`` its last :func:`fail` / :func:`done`
+    wrote still lies in the future. That is the whole retry policy: a worker
+    loop wakes on its own short tick, asks this, and goes back to sleep if the
+    answer is no -- instead of every worker (and every module) hand-rolling its
+    own "sleep 30s and hammer the dead API again" loop, which is what the
+    backoff exists to stop.
+
+    Unknown worker, no row, unparsable date: True. A missing heartbeat must
+    never be able to block real work -- see the module header.
+    """
+    try:
+        from .db import get_db
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT next_run FROM worker_heartbeats WHERE worker = ?",
+                (worker,)).fetchone()
+        finally:
+            conn.close()
+        if not row or not row["next_run"]:
+            return True
+        return _dt.datetime.fromisoformat(row["next_run"]) <= _dt.datetime.now()
+    except Exception:
+        return True
 
 
 def stall_after(worker: str) -> int | None:

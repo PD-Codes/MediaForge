@@ -627,6 +627,33 @@ def test_errors_are_sticky_until_explicitly_cleared(app):
         assert _row(app, "pytest-sticky")["last_error"] == ""
 
 
+def test_failures_back_off_and_a_success_clears_them(app):
+    """The point of due(): a dead upstream must not be retried every 30s."""
+    import datetime as dt
+    import json
+
+    with app.app_context():
+        worker_registry.fail("pytest-backoff", "boom")
+        assert not worker_registry.due("pytest-backoff")
+        first = dt.datetime.fromisoformat(_row(app, "pytest-backoff")["next_run"])
+
+        worker_registry.fail("pytest-backoff", "boom again")
+        row = _row(app, "pytest-backoff")
+        assert json.loads(row["extra"])["fails"] == 2
+        # Second failure waits longer than the first.
+        assert dt.datetime.fromisoformat(row["next_run"]) > first
+
+        worker_registry.done("pytest-backoff")
+        assert json.loads(_row(app, "pytest-backoff")["extra"])["fails"] == 0
+        assert worker_registry.due("pytest-backoff")
+
+
+def test_due_is_true_for_a_worker_that_never_reported(app):
+    """A missing heartbeat may never block real work."""
+    with app.app_context():
+        assert worker_registry.due("pytest-never-seen")
+
+
 def test_last_run_is_not_erased_by_a_plain_heartbeat(app):
     with app.app_context():
         worker_registry.done("pytest-lastrun")

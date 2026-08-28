@@ -478,6 +478,18 @@ def test_unrated_titles_are_kept_on_purpose(app):
     assert [i["title"] for i in filter_items(items, 6)] == ["unrated"]
 
 
+def test_unrated_module_cards_are_dropped(app):
+    """A module's catalogue is not something the core can vouch for, so with a
+    ceiling active its unrated cards are hidden instead of shown."""
+    from mediaforge.web.age_gate import filter_items
+
+    items = [{"title": "rated", "fsk": "6"}, {"title": "unrated"}]
+    assert [i["title"] for i in
+            filter_items(items, 6, require_rating=True)] == ["rated"]
+    # No ceiling, no opinion -- the flag must not filter on its own.
+    assert len(filter_items(items, None, require_rating=True)) == 2
+
+
 def test_both_item_shapes_are_understood():
     """Browse results carry an inlined tmdb dict, library rows a flat fsk."""
     from mediaforge.web.age_gate import rating_of

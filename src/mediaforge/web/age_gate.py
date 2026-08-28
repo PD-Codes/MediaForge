@@ -24,11 +24,14 @@ What is enforced where:
     settings/modules  web/app.py (the blanket route gate)
 
 The honest limit of all of this: it can only judge a title TMDB has a
-certification for. Anything unrated is *shown*, deliberately — dropping every
-unrated title would empty the app on an instance without a TMDB key, and an
-empty app is one people switch the protection off for. The one restriction
-that does not depend on ratings at all is the adult source, which is excluded
-by media type before anything is fetched.
+certification for. Anything unrated from a *built-in* source is shown,
+deliberately — dropping every unrated title would empty the app on an instance
+without a TMDB key, and an empty app is one people switch the protection off
+for. Cards from a third-party module are the exception (``require_rating``):
+the core has no idea what a module's catalogue contains, so with a ceiling
+active an unrated module card is hidden instead. The one restriction that does
+not depend on ratings at all is the adult source, which is excluded by media
+type before anything is fetched.
 """
 
 from __future__ import annotations
@@ -137,23 +140,31 @@ def rating_of(item) -> "int | None":
         return None
 
 
-def permits(item, limit=None) -> bool:
-    """Whether *item* may be shown. Unrated items pass — see the module note."""
+def permits(item, limit=None, require_rating=False) -> bool:
+    """Whether *item* may be shown. Unrated items pass — see the module note.
+
+    ``require_rating`` flips that for content the core cannot vouch for: a
+    third-party module's card carries whatever the module put in it, so
+    "unrated" there means "nobody looked", not "TMDB has no certification".
+    With a ceiling active those are hidden rather than shown.
+    """
     limit = ceiling() if limit is None else limit
     if limit is None:
         return True
     rating = rating_of(item)
-    return rating is None or rating <= limit
+    if rating is None:
+        return not require_rating
+    return rating <= limit
 
 
-def filter_items(items, limit=None) -> list:
+def filter_items(items, limit=None, require_rating=False) -> list:
     """Drop everything rated above the ceiling. Safe on None/empty."""
     if not items:
         return items if isinstance(items, list) else []
     limit = ceiling() if limit is None else limit
     if limit is None:
         return items
-    return [item for item in items if permits(item, limit)]
+    return [item for item in items if permits(item, limit, require_rating)]
 
 
 def filter_library_titles(titles, limit=None) -> list:

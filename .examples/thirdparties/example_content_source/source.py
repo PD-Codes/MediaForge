@@ -34,6 +34,7 @@ _CATALOG = {
         "release_year": "2024",
         "description": "Placeholder series used to demonstrate providers.register_provider() end to end.",
         "genres": ["Demo"],
+        "fsk": "6",
         "poster_url": "",
         "episode_count": 3,
     },
@@ -56,6 +57,10 @@ def browse(row: str = "new") -> list:
             "url": f"https://example-source.invalid/serie/{slug}",
             "poster_url": data["poster_url"],
             "genre": ", ".join(data["genres"]),
+            # Age rating. Optional, but a module card without one is hidden
+            # while a kids ceiling is active -- the core can only fill this in
+            # for titles TMDB knows by name.
+            "fsk": data["fsk"],
         })
     return cards
 

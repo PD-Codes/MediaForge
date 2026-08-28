@@ -594,11 +594,16 @@ def _feed_max_fsk():
     return ceiling()
 
 
-def _feed_apply_age_limit(items, max_fsk):
+def _feed_apply_age_limit(items, max_fsk, builtin=True):
     """Drop cards rated above *max_fsk*. See web/age_gate.py for the rule --
-    in particular why an unrated title is kept rather than dropped."""
+    in particular why an unrated built-in title is kept rather than dropped.
+
+    *builtin* False marks a module's cards, where an unrated card is dropped
+    instead: the rating comes from the TMDB cache keyed by title, so a module
+    catalogue the core cannot resolve would otherwise pass a kids ceiling
+    untouched, every card of it."""
     from ..age_gate import filter_items
-    return filter_items(items, max_fsk)
+    return filter_items(items, max_fsk, require_rating=not builtin)
 
 
 def _feed_proxy_remote_posters(items):
@@ -1356,7 +1361,9 @@ def register_browse_routes(app):
         # 4. Proxy posters + inline cached TMDB, once per source list (both
         #    read settings, so this stays in the request thread).
         for key, items in fetched.items():
-            fetched[key] = _feed_apply_age_limit(_proxy_result_list(items), max_fsk)
+            fetched[key] = _feed_apply_age_limit(
+                _proxy_result_list(items), max_fsk,
+                builtin=bool(meta.get(key[1], {}).get("builtin")))
 
         # 5. Rows. `taken` spans all three, so nothing is shown twice.
         labels = {sid: meta[sid]["label"] for sid in meta}
