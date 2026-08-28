@@ -184,18 +184,31 @@ def _read_encoding_settings():
         _db = _Path.home() / ".mediaforge" / "mediaforge.db"
         if not _db.exists():
             return None
-        _conn = _sqlite3.connect(str(_db))
+        # Called from download paths on worker threads while the queue and
+        # autosync workers write, so this needs the same lock patience as
+        # web/db's own connections (_configure_connection). Without it a
+        # perfectly normal write lock raises "database is locked" here, the
+        # except below turns that into "no encoding settings", and the
+        # download silently falls back to default codecs instead of the
+        # user's configuration.
+        _conn = _sqlite3.connect(str(_db), timeout=30)
         _conn.row_factory = _sqlite3.Row
         try:
+            _conn.execute("PRAGMA busy_timeout=30000")
             rows = _conn.execute(
                 "SELECT key, value FROM app_settings WHERE key LIKE 'encoding_%'"
             ).fetchall()
             return {r["key"]: r["value"] for r in rows}
         except Exception:
+            # Never silent: a failure here downgrades the user's encoding
+            # settings to defaults, which otherwise looks like "the setting
+            # is being ignored" with nothing in the log to explain it.
+            logger.warning("[Encoding] could not read encoding settings", exc_info=True)
             return None
         finally:
             _conn.close()
     except Exception:
+        logger.warning("[Encoding] could not open the settings database", exc_info=True)
         return None
 
 

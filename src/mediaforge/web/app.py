@@ -1522,6 +1522,19 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # calls it -- an undocumented maintenance endpoint that had no
             # reason to be open to any logged-in account.
             "api_stream_reset_encoders",
+            # Probes every tracked source site over the network and reports
+            # the host's active DNS mode/server. Instance-wide diagnostics,
+            # only ever called from runDnsTest() on the admin-only settings
+            # page -- and its sibling api_settings_dns is already admin-gated,
+            # so leaving the test half open was an oversight, not a decision.
+            "api_dns_test",
+            # Wipes the instance-wide TMDB/CineInfo cache (SQLite table, browse
+            # cache, discover cache, Fernsehserien + Crunchyroll caches) and
+            # kicks off a fresh prefetch. Called from the admin-only
+            # integrations page (static/integrations.js), and one logged-in
+            # account should not be able to make every other account's browse
+            # and search re-fetch from scratch.
+            "api_tmdb_cache_clear",
             "api_library_delete",
             "api_library_rename",
             "api_library_move",

@@ -38,6 +38,16 @@ def init_watch_progress_db() -> None:
     conn = get_db()
     try:
         conn.execute(_CREATE_WATCH_PROGRESS_TABLE)
+        # The table's only index is the UNIQUE(file_path, username) constraint,
+        # whose leading column is file_path -- unusable for the two readers,
+        # which both filter on username alone (one with ORDER BY updated_at
+        # DESC). Without this they full-scan plus build a temp B-tree, on a
+        # table that grows one row per file per user and is read on every
+        # library and browse render. Mirrors idx_reading_progress_user below.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_watch_progress_user "
+            "ON watch_progress(username, updated_at DESC)"
+        )
         conn.commit()
         # ── Migrate legacy schema (UNIQUE on file_path, no username column) ──
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watch_progress)").fetchall()]
@@ -200,6 +210,14 @@ CREATE TABLE IF NOT EXISTS uptime_heartbeats (
 _CREATE_UPTIME_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_uptime_source_ts "
     "ON uptime_heartbeats(source, ts)"
+)
+# The prune (prune_uptime_heartbeats) deletes by ts with no source predicate,
+# which cannot seek on the composite index above -- its leading column is
+# source. Without a ts-only index the periodic prune full-scans a table that
+# grows one row per monitored source per poll.
+_CREATE_UPTIME_TS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_uptime_ts "
+    "ON uptime_heartbeats(ts)"
 )
 
 
@@ -447,6 +465,7 @@ def init_uptime_db():
     try:
         conn.execute(_CREATE_UPTIME_TABLE)
         conn.execute(_CREATE_UPTIME_INDEX)
+        conn.execute(_CREATE_UPTIME_TS_INDEX)
         conn.commit()
     finally:
         conn.close()

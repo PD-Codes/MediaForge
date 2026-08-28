@@ -367,6 +367,7 @@ from .misc import (  # noqa: F401
     _CREATE_READING_PROGRESS_TABLE,
     _CREATE_UPTIME_INDEX,
     _CREATE_UPTIME_TABLE,
+    _CREATE_UPTIME_TS_INDEX,
     _CREATE_WATCH_PROGRESS_TABLE,
     _normalize_user,
     add_reading_bookmark,

@@ -22,16 +22,25 @@ dependencies = [
   "python-dotenv",
   "rich",
   "fake-useragent",
-  "flask",
-  "flask-wtf",
-  "flask-limiter",
-  "authlib",
-  "joserfc",
+  # Upper bounds on the security- and API-sensitive packages only. The Docker
+  # build resolves through uv.lock and is unaffected, but a plain `pip install
+  # mediaforge` and the PyInstaller build resolve from the ambient environment
+  # and would otherwise pick up whatever major release landed that day --
+  # Flask, Authlib, cryptography and bleach all break API across majors, and a
+  # silently-changed auth or sanitiser is not something a build should decide.
+  # Bumping a bound is a deliberate act; the floors are the versions currently
+  # locked. Everything else stays unpinned on purpose.
+  "flask>=3.1,<4",
+  "flask-wtf>=1.2,<2",
+  "flask-limiter>=4.1,<5",
+  "authlib>=1.6,<2",
+  "joserfc>=1.7,<2",
   "requests",
   "beautifulsoup4",
-  "waitress",
+  "waitress>=3.0,<4",
   "packaging",
-  "cryptography",
+  # Floor lives in [tool.uv] constraint-dependencies below (CVE-2026-69247).
+  "cryptography<51",
   "patchright==1.61.2",
   "pywebpush",
   "watchdog",
@@ -39,7 +48,8 @@ dependencies = [
   "curl_cffi",
   "flask-babel",
   "markdown",
-  "bleach",
+  # Sanitises the untrusted devInfo feed (web/markdown_utils.py).
+  "bleach>=6.2,<7",
   # Validate TLS certificates against the OS trust store (Windows/macOS/Linux)
   # instead of the ageing certifi bundle. Used as an explicitly passed SSLContext
   "truststore",

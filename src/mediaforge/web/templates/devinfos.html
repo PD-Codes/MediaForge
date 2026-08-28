@@ -50,7 +50,14 @@
           <a class="devinfo-release-btn-sm" href="{{ url_for('settings_page') }}#updates">{{ _('Go to updates') }}</a>
         </div>
         {% endif %}
-        <div class="devinfo-body devinfo-markdown">{{ post.body_html|default(post.body, true)|safe }}</div>
+        {# body_html is the bleach-sanitised render of the (untrusted) remote
+           feed body -- see web/markdown_utils.py. There used to be a
+           |default(post.body, true) fallback here, which substituted the RAW
+           body and then marked it safe whenever the sanitised HTML came back
+           falsy: i.e. exactly when bleach had stripped everything, which is
+           the case where empty is the correct output. index.html renders the
+           same field without a fallback. #}
+        <div class="devinfo-body devinfo-markdown">{{ post.body_html|safe }}</div>
         {# The release notes, collapsed by default: GitHub release bodies are
            often long and this is a feed, not a changelog page. <details> does
            the open/close natively -- no JS, and it keeps working in the list

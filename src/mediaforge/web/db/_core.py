@@ -89,6 +89,13 @@ SENSITIVE_KEYS: frozenset = frozenset({
     "notif_discord_webhook_url",
     "notif_ntfy_auth_token",
     "notif_ntfy_password",
+    # Twilio account SID + auth token behind the WhatsApp channel
+    # (notifications.py's _send_whatsapp). The token is a full Twilio API
+    # credential -- same tier as every other notifier secret above, and the
+    # SID identifies the account it unlocks. GET /api/notifications already
+    # withholds both from non-admins; this encrypts them at rest as well.
+    "notif_whatsapp_sid",
+    "notif_whatsapp_auth_token",
     "pushover_user_key",
     "crunchyroll_email",
     "crunchyroll_password",
