@@ -1957,12 +1957,24 @@ def download(self, cancel_event=None):
             _cancel = _th.Event()
             _proc_a = [None]  # holds the audio ffmpeg Popen
             _proc_v = [None]  # holds the video ffmpeg Popen
-            # Bridge external cancel_event → internal _cancel
+            # Bridge external cancel_event → internal _cancel.
+            #
+            # Polled, not an untimed wait on the external event: that event belongs to
+            # ONE download attempt and is never set when that attempt succeeds, so an
+            # unbounded wait() parked this daemon thread forever. One leaked thread per
+            # successfully downloaded episode — after a few hundred episodes the process
+            # hits its thread ceiling and every later Thread.start() anywhere in the app
+            # dies with "RuntimeError: can't start new thread" (autosync's prefetch pool
+            # was the usual victim). _finished below is what lets it exit.
+            _finished = _th.Event()
             if cancel_event is not None:
                 def _ext_watcher():
-                    cancel_event.wait()
-                    _cancel.set()
-                _th.Thread(target=_ext_watcher, daemon=True).start()
+                    while not _finished.wait(0.5):
+                        if cancel_event.is_set():
+                            _cancel.set()
+                            return
+                _th.Thread(target=_ext_watcher, daemon=True,
+                           name="dl-cancel-bridge").start()
 
             def _run_audio():
                 try:
@@ -1994,8 +2006,11 @@ def download(self, cancel_event=None):
             t_v = _th.Thread(target=_run_video, daemon=True)
             t_a.start()
             t_v.start()
-            t_a.join()
-            t_v.join()
+            try:
+                t_a.join()
+                t_v.join()
+            finally:
+                _finished.set()  # release the cancel bridge, success or failure
             if _exc[0]:
                 raise _exc[0]
             if _exc[1]:
