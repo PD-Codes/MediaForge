@@ -59,6 +59,38 @@ _autosync_start_lock = threading.Lock()
 
 _last_history_prune: "float" = 0.0  # throttle: download-history retention prune (~hourly)
 
+# One shared provider_data prefetch pool for the whole process, created lazily.
+#
+# It used to be a fresh ThreadPoolExecutor per sync run. A pool does not create
+# its workers up front — submit() spawns one whenever fewer than max_workers
+# exist — so a per-run pool had to grow five brand-new OS threads on every single
+# run, and every run was one more chance to hit the process thread ceiling. One
+# long-lived pool spawns at most five threads ever: after that submit() only
+# appends to the pool's queue and the next free worker picks the job up.
+#
+# Shared across concurrently running sync jobs on purpose. Five prefetch threads
+# in total is the ceiling now, instead of five per job — /api/autosync/sync-all
+# fans out one thread per job with no cap, and this used to multiply on top of it.
+_pd_pool = None
+_pd_pool_lock = threading.Lock()
+
+
+def _get_pd_pool():
+    """Return the shared prefetch pool, creating it on first use.
+
+    Constructing the executor allocates no threads, so this cannot fail on a
+    thread-starved process — submit() is where that shows up, and the caller
+    handles it there.
+    """
+    global _pd_pool
+    with _pd_pool_lock:
+        if _pd_pool is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _pd_pool = ThreadPoolExecutor(
+                max_workers=5, thread_name_prefix="autosync-pd"
+            )
+        return _pd_pool
+
 
 def _normalize_episode_filter(value):
     """Normalise an episode_filter payload to a JSON string or None.
@@ -627,10 +659,30 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                 logger.debug("Auto-sync: provider_data prefetch failed for %s: %s", ep_url, exc)
                 _pd_cache[ep_url] = None
 
-        from concurrent.futures import ThreadPoolExecutor as _TPE
-        with _TPE(max_workers=5) as _pool:
+        # Submit everything to the shared pool and wait for it, the way the old
+        # per-run `with ThreadPoolExecutor(...)` block did.
+        #
+        # The pool is a speed optimisation, not a requirement. Should submit()
+        # still fail to grow the pool (RuntimeError: can't start new thread, i.e.
+        # the process is out of threads), fall back to fetching serially rather
+        # than aborting the whole sync run — a slow sync still queues episodes, a
+        # dead one queues nothing. _fetch_pd skips URLs already in the cache, so
+        # re-running over the full list is idempotent.
+        import concurrent.futures as _cf
+        _pd_futures = []
+        try:
+            _pool = _get_pd_pool()
             for (_s, _e, _url, _ep, _is_movie, _cand) in online_episodes:
-                _pool.submit(_fetch_pd, _url, _ep)
+                _pd_futures.append(_pool.submit(_fetch_pd, _url, _ep))
+            _cf.wait(_pd_futures)
+        except RuntimeError as _pool_exc:
+            logger.warning(
+                "Auto-sync: prefetch pool could not grow (%s) — fetching provider_data "
+                "serially. The process is at its thread limit.", _pool_exc
+            )
+            _cf.wait(_pd_futures)  # let whatever was accepted finish first
+            for (_s, _e, _url, _ep, _is_movie, _cand) in online_episodes:
+                _fetch_pd(_url, _ep)
 
         # Compute scan_roots once — same for all languages
         raw = os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")

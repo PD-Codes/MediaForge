@@ -23,6 +23,30 @@ def test_cancel_bridge_waits_with_a_timeout():
     )
 
 
+def test_prefetch_pool_is_shared_and_bounded():
+    """The autosync provider_data pool must be one long-lived pool, not a new one
+    per sync run: a pool only spawns a worker when it has fewer than max_workers,
+    so a shared pool creates at most five threads for the whole process lifetime
+    and every later submit just queues behind a free worker.
+    """
+    import threading
+
+    from mediaforge.web import autosync_worker as aw
+
+    pool = aw._get_pd_pool()
+    assert aw._get_pd_pool() is pool, "pool must be a singleton, not per call"
+    assert pool._max_workers == 5
+
+    before = threading.active_count()
+    done = threading.Event()
+    futures = [pool.submit(lambda: done.wait(0.05)) for _ in range(50)]
+    for f in futures:
+        f.result(timeout=30)
+    # 50 tasks, never more than 5 new threads — they queued instead.
+    assert threading.active_count() - before <= 5
+
+
 if __name__ == "__main__":
     test_cancel_bridge_waits_with_a_timeout()
+    test_prefetch_pool_is_shared_and_bounded()
     print("ok")
