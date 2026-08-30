@@ -97,6 +97,25 @@ SITE_LABELS = {
     "hanime":     "hanime",
 }
 
+# First-party infrastructure, deliberately NOT in DEFAULT_SITE_MIRRORS /
+# SITE_LABELS: those two dicts drive the Settings -> Sources mirror editor, the
+# "default for site" dropdown of the custom paths and the source multiselects,
+# and every one of those is about CONTENT sources. The MediaForge server is
+# none -- it serves the module store, the telemetry ingest, the devInfo feed
+# and domains.json -- it only wants the same transparent host failover, so it
+# is merged into the mirror table in _load_mirrors() and nowhere else.
+#
+# Not user-editable either (the settings save loop iterates DEFAULT_SITE_MIRRORS
+# only), which is the point: telemetry requests are signed, the store is
+# trust-pinned, and letting an admin retarget either through a text field would
+# be a redirect of exactly the traffic that must not be redirectable.
+#
+# The old softarchiv.com host stays behind the new one as the fallback for
+# installs whose network/DNS has not caught up with the move yet.
+INFRA_MIRRORS = {
+    "mediaforge": ["mediaforge.pd-codes.net", "mediaforge.softarchiv.com"],
+}
+
 # How long a non-primary mirror stays active before the primary host is
 # retried again (seconds).
 _PRIMARY_RETRY_AFTER = 600
@@ -182,9 +201,12 @@ def _load_mirrors():
         get_setting = None
 
     mirrors = {}
-    for site, default in DEFAULT_SITE_MIRRORS.items():
+    for site, default in {**DEFAULT_SITE_MIRRORS, **INFRA_MIRRORS}.items():
         hosts = None
-        if get_setting is not None:
+        # Infra hosts are code-controlled: no settings row is ever written for
+        # them, and one placed in the DB by hand must not retarget the store or
+        # the telemetry ingest either. See INFRA_MIRRORS.
+        if get_setting is not None and site not in INFRA_MIRRORS:
             try:
                 raw = get_setting("site_mirrors_" + site, "")
             except Exception:

@@ -11,7 +11,7 @@ has seen yet cannot be in a hardcoded fallback list.
 So the domain is looked up instead of hardcoded. A small first-party endpoint
 tracks the live domain and publishes it as JSON::
 
-    GET https://mediaforge.softarchiv.com/domains.json
+    GET https://mediaforge.pd-codes.net/domains.json
 
     {"megakino": {"final_url": "https://megakino16.com",
                   "last_check": "2026-08-23T10:33:51.699325"}}
@@ -70,7 +70,7 @@ logger = get_logger(__name__)
 # test run can point at its own endpoint. Only https is accepted (see
 # _feed_url()): the answer decides where the scraper sends its traffic, so it
 # must not be tamperable in transit.
-DEFAULT_DOMAINS_URL = "https://mediaforge.softarchiv.com/domains.json"
+DEFAULT_DOMAINS_URL = "https://mediaforge.pd-codes.net/domains.json"
 
 # Sites whose domain may be taken from the feed: JSON key -> (mirror site id,
 # brand token). The brand token must appear in the hostname the feed hands
@@ -415,10 +415,13 @@ def refresh(force=False):
     try:
         # GLOBAL_SESSION, not a bare session: it carries the project's DoH
         # resolver and its system-resolver fallback, which is exactly what a
-        # user with a filtering ISP needs here too. mediaforge.softarchiv.com
-        # is not a mirrored site, so mirrors.request_with_failover() passes the
-        # request straight through -- but it does read the mirror table, which
-        # re-enters this module. _refreshing makes that a plain cache read.
+        # user with a filtering ISP needs here too. The feed host is itself in
+        # the mirror table (mirrors.INFRA_MIRRORS), so a blocked/dead primary
+        # falls back to the previous domain -- the feed cannot be the one thing
+        # that has no fallback of its own. Reading that table re-enters this
+        # module; _refreshing makes that a plain cache read, and the infra site
+        # is not in RESOLVABLE_SITES, so resolved_host() answers "" for it
+        # without any lookup at all.
         from .config import GLOBAL_SESSION
         # stream=True so an endpoint answering with a multi-gigabyte body cannot
         # make this thread allocate it: the size is checked while reading, and

@@ -39,7 +39,7 @@ import threading
 
 from ..logger import get_logger
 from . import events
-from .classify import is_transport_failure, is_user_cancellation
+from .classify import is_local_storage_error, is_transport_failure, is_user_cancellation
 from .client import get_client
 from .sanitize import mentions_adult_provider
 
@@ -165,6 +165,11 @@ class _TelemetryLogHandler(logging.Handler):
             # with no exception object attached.
             if is_transport_failure(message=raw_message):
                 return
+            # Same for the local disk: no write permission on a media folder or
+            # a full volume. The operator's environment, and it repeats once per
+            # queue item until they fix it. See classify.is_local_storage_error().
+            if is_local_storage_error(message=raw_message):
+                return
             # The 18+ hard rule (sanitize.is_adult_provider) applied to the raw
             # log text, before anything is built. Call sites log content-
             # identifying URLs directly -- web/queue_worker.py's download
@@ -182,6 +187,8 @@ class _TelemetryLogHandler(logging.Handler):
             if exc_info and exc_info[0] is not None and is_user_cancellation(exc_info[0], exc_info[1]):
                 return
             if exc_info and exc_info[0] is not None and is_transport_failure(exc_info[0], exc_info[1]):
+                return
+            if exc_info and exc_info[0] is not None and is_local_storage_error(exc_info[0], exc_info[1]):
                 return
             if exc_info and exc_info[0] is not None:
                 event = events.build_crash_event(*exc_info)

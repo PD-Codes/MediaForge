@@ -52,7 +52,7 @@ hand if that one ever changes -- both name the same devInfo server.
 
 # Same server web/devinfos_monitor.py polls for changelog posts -- kept as
 # an independent literal on purpose, see module docstring above.
-DEVINFOS_SERVER_URL = "https://mediaforge.softarchiv.com"
+DEVINFOS_SERVER_URL = "https://mediaforge.pd-codes.net"
 
 # ---------------------------------------------------------------------------
 # devInfo server endpoints (telemetry side)

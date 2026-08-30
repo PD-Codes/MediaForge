@@ -1,6 +1,6 @@
 """Classification helpers that decide what is NOT worth reporting.
 
-Two independent questions live here, both answered without importing
+Three independent questions live here, all answered without importing
 anything from this package or from ``mediaforge.web`` -- this module has to
 stay a dependency-free leaf so ``web/devinfos_monitor.py`` and the telemetry
 event builders can both use it without an import cycle:
@@ -22,12 +22,20 @@ event builders can both use it without an import cycle:
      whether the crash channel reports it at all -- a source site timing out
      is the network being the network, not a defect in this app.
 
-Both functions are deliberately generous in what they match: a false
+  3. ``is_local_storage_error()`` -- did the LOCAL machine refuse the write?
+     A media/download folder mounted read-only or owned by another uid
+     (permission denied), or a full disk / exceeded quota. Both are the
+     operator's environment, not a defect in this app, and both repeat on
+     every single item of a queue run -- one wrong mount produced hundreds of
+     identical crash reports.
+
+All functions are deliberately generous in what they match: a false
 positive here means one report is not sent (harmless), a false negative
 means noise reaches the user's console or an admin's crash list (the exact
 thing this module exists to prevent).
 """
 
+import errno
 import re
 
 # ---------------------------------------------------------------------------
@@ -310,6 +318,84 @@ def is_server_unreachable(exc) -> bool:
         for pattern in _UNREACHABLE_MESSAGE_PATTERNS:
             if pattern.search(text):
                 return True
+    except Exception:
+        return False
+    return False
+
+
+# ---------------------------------------------------------------------------
+# 3. Local storage refused the write (permissions / disk full)
+# ---------------------------------------------------------------------------
+
+# errno values that mean "the machine this runs on will not let us write here".
+# Matched on the errno rather than the class name because Python raises a plain
+# OSError for most of them and PermissionError only for EACCES/EPERM.
+_STORAGE_ERRNOS = frozenset({
+    errno.EACCES,   # permission denied
+    errno.EPERM,    # operation not permitted (chown/chmod on a CIFS mount)
+    errno.EROFS,    # read-only file system
+    errno.ENOSPC,   # no space left on device
+    errno.EDQUOT,   # disk quota exceeded
+    errno.EFBIG,    # file too large for the filesystem
+})
+
+# The same conditions as free text: ffmpeg, yt-dlp, mkvmerge and the Windows
+# shell all report them as a message inside a RuntimeError rather than as an
+# OSError with an errno. German wording included -- localized OS messages reach
+# the log line verbatim on a German Windows install.
+_STORAGE_MESSAGE_PATTERNS = (
+    re.compile(r"permission denied", re.IGNORECASE),
+    re.compile(r"operation not permitted", re.IGNORECASE),
+    re.compile(r"read-only file ?system", re.IGNORECASE),
+    re.compile(r"zugriff (verweigert|wurde verweigert)", re.IGNORECASE),
+    re.compile(r"kein zugriff auf", re.IGNORECASE),
+    re.compile(r"schreibgesch(ü|ue)tzt", re.IGNORECASE),
+    re.compile(r"no space left on device", re.IGNORECASE),
+    re.compile(r"disk quota exceeded", re.IGNORECASE),
+    re.compile(r"(nicht gen(ü|ue)gend|zu wenig) (speicherplatz|platz auf)", re.IGNORECASE),
+    re.compile(r"kein speicherplatz", re.IGNORECASE),
+    re.compile(r"there is not enough space on the disk", re.IGNORECASE),
+    re.compile(r"insufficient (disk )?space", re.IGNORECASE),
+)
+
+
+def is_local_storage_error(exc_type=None, exc_value=None, message=None) -> bool:
+    """True when the LOCAL filesystem refused a write: no permission, or full.
+
+    Same shape and the same reasoning as is_transport_failure() one section
+    up, just pointed at the machine instead of the network. A media folder
+    bind-mounted read-only, a share mounted with the wrong uid, or a volume
+    that ran out of space is something only the operator can fix -- the app
+    already surfaces it in the queue item's error and in the log. Filing it as
+    a crash report additionally means one misconfigured mount emits a report
+    per queue item, which is exactly the noise the crash channel must not
+    carry.
+    """
+    try:
+        for exc in (exc_value, exc_type):
+            code = getattr(exc, "errno", None)
+            if code in _STORAGE_ERRNOS:
+                return True
+        if exc_value is not None:
+            # Walk the chain: the interesting OSError is frequently wrapped in
+            # a RuntimeError by the queue/encoding paths.
+            current, depth = exc_value, 0
+            while current is not None and depth < 10:
+                if getattr(current, "errno", None) in _STORAGE_ERRNOS:
+                    return True
+                current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+                depth += 1
+        if exc_type is not None and getattr(exc_type, "__name__", "") == "PermissionError":
+            return True
+        texts = []
+        if exc_value is not None:
+            texts.append(str(exc_value))
+        if message:
+            texts.append(str(message))
+        for text in texts:
+            for pattern in _STORAGE_MESSAGE_PATTERNS:
+                if pattern.search(text):
+                    return True
     except Exception:
         return False
     return False

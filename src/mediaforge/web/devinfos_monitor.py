@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 # Fixed Dev Info server endpoint. Intentionally NOT admin-configurable —
 # do not add a settings UI or DB-backed override for this.
-DEVINFOS_SERVER_URL = "https://mediaforge.softarchiv.com"
+DEVINFOS_SERVER_URL = "https://mediaforge.pd-codes.net"
 DEVINFOS_POLL_INTERVAL_SECONDS = 300
 
 # Default short timeout for the outbound fetch — the remote admin app is a

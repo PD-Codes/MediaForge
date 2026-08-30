@@ -118,7 +118,7 @@ logger = get_logger(__name__)
 #
 # "" is valid: a build with no store of its own. The Modulmanager then shows no
 # official repository, only whatever the admin added themselves.
-DEFAULT_STORE_URL = "https://mediaforge.softarchiv.com/store"
+DEFAULT_STORE_URL = "https://mediaforge.pd-codes.net/store"
 
 # What an admin CAN configure, and the limits of it. Both are strictly additive:
 # neither can touch the official store above, and neither can make MediaForge trust a
@@ -262,11 +262,48 @@ def _http_get(url: str, max_bytes: int, timeout: int = HTTP_TIMEOUT) -> bytes:
     store when truststore is installed, Python's default otherwise). The
     signature check against the built-in keys (see trusted_keys.py) stays the
     second line of defence for the package itself.
+
+    A host with a known fallback domain (mirrors.INFRA_MIRRORS -- the official
+    store moved from softarchiv.com to pd-codes.net) is retried on the next
+    domain when the first one cannot be reached at all. Only unreachability
+    fails over: an HTTP error, a bad certificate or an oversized body is an
+    answer, and answering wrongly must stay visible rather than being papered
+    over by a second host. This client does not go through GLOBAL_SESSION (it
+    builds its own TLS context, see above), so it cannot inherit
+    mirrors.request_with_failover() and asks for the candidate list directly.
     """
     from ...config import ssl_context_for
 
+    last_exc = None
+    for cand_url in _fallback_urls(url):
+        try:
+            return _http_get_once(cand_url, max_bytes, timeout, ssl_context_for(cand_url))
+        except urllib.error.HTTPError:
+            # An HTTP status IS an answer -- 404/410/500 from the store means the
+            # store answered, and the caller has to see that, not a second host's
+            # opinion of the same path. (HTTPError subclasses URLError, so it has
+            # to be caught before it.)
+            raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            last_exc = exc
+            logger.debug("[ModuleStore] %s unreachable (%s) — trying next domain", cand_url, exc)
+    raise last_exc
+
+
+def _fallback_urls(url: str) -> list:
+    """*url* plus the same URL on each known fallback domain (or just *url*)."""
+    try:
+        from ...mirrors import iter_candidates
+        # Skip bare-IP candidates: they need a Host header and TLS verification
+        # off, which is exactly what this client must not do.
+        return [c for c, headers, _v, _s, _i in iter_candidates(url) if not headers] or [url]
+    except Exception:  # pragma: no cover - defensive, mirrors is optional here
+        return [url]
+
+
+def _http_get_once(url: str, max_bytes: int, timeout: int, ctx) -> bytes:
+    """One _http_get() attempt against one concrete URL."""
     req = urllib.request.Request(url, headers={"User-Agent": "MediaForge-ModuleStore/1.0"})
-    ctx = ssl_context_for(url)
     try:
         data = _urlopen_read(req, timeout, ctx, max_bytes)
     except RecursionError:

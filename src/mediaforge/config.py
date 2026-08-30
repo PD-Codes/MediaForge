@@ -658,9 +658,10 @@ class _SessionProxy:
     # Every request for one of the scraper sites (s.to, aniworld.to, ...) is
     # routed through mediaforge.mirrors, which rewrites the host to whichever
     # mirror of that site is currently healthy and walks the rest of the list
-    # if it isn't (e.g. s.to -> serienstream.to -> the bare origin IP). URLs
-    # for anything else (TMDB, hosters, DoH endpoints, ...) pass through
-    # untouched. See mirrors.py.
+    # if it isn't (e.g. s.to -> serienstream.to -> the bare origin IP). The
+    # same applies to MediaForge's own server (store/telemetry/devInfo/domain
+    # feed, see mirrors.INFRA_MIRRORS). URLs for anything else (TMDB, hosters,
+    # DoH endpoints, ...) pass through untouched. See mirrors.py.
     def request(self, method, url, **kwargs):
         from .mirrors import request_with_failover
         # No host is exempt from certificate verification here any more; the
