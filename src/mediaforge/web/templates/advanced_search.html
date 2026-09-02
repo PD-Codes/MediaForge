@@ -187,8 +187,10 @@
           <div class="adv-field">
             <label class="adv-label" for="excludeProviderInput">{{ _('Exclude Providers') }}</label>
             <div class="mf-token-field">
+              {# Deliberately not the same placeholder as the include field:
+                 side by side the two boxes were indistinguishable. #}
               <input type="text" id="excludeProviderInput" class="mf-token-input"
-                placeholder="{{ _('Search provider (e.g. Netflix)...') }}" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+                placeholder="{{ _('Exclude provider (e.g. Netflix)...') }}" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
               <div class="mf-token-suggestions" id="excludeProviderAutocomplete" role="listbox"></div>
             </div>
             <div class="mf-token-list" id="selectedExcludeProviders"></div>

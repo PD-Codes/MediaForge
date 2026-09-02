@@ -1838,6 +1838,10 @@ msgstr "Anbieter suchen (z.B. Netflix)..."
 msgid "Exclude Providers"
 msgstr "Anbieter ausschließen"
 
+#: src/mediaforge/web/templates/advanced_search.html:191
+msgid "Exclude provider (e.g. Netflix)..."
+msgstr "Anbieter ausschließen (z.B. Netflix)..."
+
 #: src/mediaforge/web/templates/advanced_search.html:203
 msgid "Keywords"
 msgstr "Keywords"

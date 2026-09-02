@@ -1763,6 +1763,10 @@ msgstr ""
 msgid "Exclude Providers"
 msgstr ""
 
+#: src/mediaforge/web/templates/advanced_search.html:191
+msgid "Exclude provider (e.g. Netflix)..."
+msgstr "Escludi provider (es. Netflix)..."
+
 #: src/mediaforge/web/templates/advanced_search.html:203
 msgid "Keywords"
 msgstr ""
