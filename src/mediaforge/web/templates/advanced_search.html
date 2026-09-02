@@ -209,6 +209,18 @@
             <div class="mf-token-list" id="selectedKeywords"></div>
           </div>
 
+          {# TMDB only supports with_people on /discover/movie — the field is
+             hidden for series, where it would silently do nothing. #}
+          <div class="adv-field adv-movie-only">
+            <label class="adv-label" for="personInput">{{ _('Actor') }}</label>
+            <div class="mf-token-field">
+              <input type="text" id="personInput" class="mf-token-input"
+                placeholder="{{ _('Search actor (e.g. Tom Hanks)...') }}" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+              <div class="mf-token-suggestions" id="personAutocomplete" role="listbox"></div>
+            </div>
+            <div class="mf-token-list" id="selectedPeople"></div>
+          </div>
+
           <div class="adv-field">
             <label class="adv-label" for="originalLanguage">{{ _('Original language') }}</label>
             <select id="originalLanguage" class="mf-token-input" style="cursor:pointer">

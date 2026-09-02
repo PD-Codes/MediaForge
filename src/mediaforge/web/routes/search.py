@@ -195,6 +195,8 @@ _DISCOVER_ALLOWED_PARAMS = frozenset({
     "with_runtime.gte", "with_runtime.lte",
     "with_status", "with_type",
     "with_networks", "with_companies", "without_companies",
+    # Movies only — TMDB ignores people filters on /discover/tv.
+    "with_people", "with_cast", "with_crew",
     "vote_average.gte", "vote_average.lte",
     "vote_count.gte", "vote_count.lte",
     "first_air_date.gte", "first_air_date.lte",
@@ -894,6 +896,70 @@ def register_search_routes(app):
         except Exception as e:
             logger.error(f"Error searching TMDB keywords: {e}")
             return jsonify({"error": str(e)}), 500
+    @app.route("/api/tmdb/people")
+    def api_tmdb_people():
+        """Autocomplete search for cast/crew members via TMDB /search/person.
+
+        GET /api/tmdb/people?q=... -> {"results": [{id, name, known_for}]}
+
+        Feeds the "Actor" filter of the Advanced Search, whose ids end up in
+        the discover parameter ``with_people``. Only the three fields the token
+        field actually renders are forwarded — the raw TMDB person object also
+        carries the full known_for media list, which is far more payload than a
+        dropdown row needs.
+        """
+        import requests as _req
+        from ..db import get_setting
+
+        query = request.args.get("q", "").strip()
+        if len(query) < 2:
+            return jsonify({"results": []})
+        query = query[:_DISCOVER_MAX_VALUE_LEN]
+
+        api_key = get_setting("cineinfo_tmdb_api_key", "").strip()
+        if not api_key:
+            return jsonify({"error": "No TMDB API Key", "code": "no_api_key"}), 400
+
+        _ui_lang = session.get("ui_language", "de")
+        _tmdb_lang = "en-US" if _ui_lang == "en" else "de-DE"
+        cache_key = f"people:{_tmdb_lang}:{query.lower()}"
+        cached = _ref_cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        import urllib.parse
+        qs = urllib.parse.urlencode({
+            "query": query,
+            "language": _tmdb_lang,
+            "include_adult": "false",
+            "api_key": api_key,
+        })
+        try:
+            _tmdb_rl.acquire()
+            resp = _req.get(
+                f"https://api.themoviedb.org/3/search/person?{qs}",
+                headers={"accept": "application/json"}, timeout=10,
+            )
+            resp.raise_for_status()
+            results = []
+            for person in (resp.json().get("results") or [])[:20]:
+                name = (person.get("name") or "").strip()
+                if not name or not person.get("id"):
+                    continue
+                known_for = ", ".join(
+                    (item.get("title") or item.get("name") or "").strip()
+                    for item in (person.get("known_for") or [])[:2]
+                    if (item.get("title") or item.get("name"))
+                )
+                results.append({"id": person["id"], "name": name, "known_for": known_for})
+            payload = {"results": results}
+            # Short TTL: same bucket as the discover pages, and a person's
+            # popularity ranking shifts far more often than the genre list.
+            _ref_cache_put(cache_key, payload, _TMDB_DISCOVER_TTL)
+            return jsonify(payload)
+        except Exception as e:
+            return _tmdb_error_response(e, "person search")
+
     @app.route("/api/tmdb/watch_regions")
     def api_tmdb_watch_regions():
         """Fetch the list of available watch-provider regions from TMDB (cached)."""

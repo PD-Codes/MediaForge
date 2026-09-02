@@ -484,7 +484,8 @@ def uninstall_theme(folder: str) -> dict:
         logger.exception("[Themes] could not delete theme '%s'", folder)
         return {"ok": False, "error": f"could not delete theme: {exc}"}
     invalidate_cache()
-    _report_theme_change()   # the default may have been reset above, and any
-                             # account override pointing here now resolves away
+    # The instance default may have been reset above, and any account override
+    # pointing at this folder now resolves away -- both change the reported set.
+    _report_theme_change()
     logger.info("[Themes] uninstalled theme pack '%s'", folder)
     return {"ok": True, "error": None, "restart_required": False}

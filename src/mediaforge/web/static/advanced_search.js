@@ -49,6 +49,7 @@
     genres: [],          // included genre ids (numbers)
     genresExcluded: [],  // excluded genre ids (numbers)
     keywords: [],        // [{ id, name }]
+    people: [],          // [{ id, name }] — cast/crew, movies only
     incProviders: [],    // [{ provider_id, provider_name }]
     excProviders: [],
     networks: [],        // [{ id, name }]
@@ -176,6 +177,7 @@
           genres: S.genres,
           genresExcluded: S.genresExcluded,
           keywords: S.keywords,
+          people: S.people,
           incProviders: S.incProviders,
           excProviders: S.excProviders,
           networks: S.networks,
@@ -239,6 +241,7 @@
     S.genres = Array.isArray(f.genres) ? f.genres.map(Number).filter(function (n) { return !isNaN(n); }) : [];
     S.genresExcluded = Array.isArray(f.genresExcluded) ? f.genresExcluded.map(Number).filter(function (n) { return !isNaN(n); }) : [];
     S.keywords = Array.isArray(f.keywords) ? f.keywords : [];
+    S.people = Array.isArray(f.people) ? f.people : [];
     S.incProviders = Array.isArray(f.incProviders) ? f.incProviders : [];
     S.excProviders = Array.isArray(f.excProviders) ? f.excProviders : [];
     S.networks = Array.isArray(f.networks) ? f.networks : [];
@@ -456,10 +459,15 @@
   }
 
   function applyTypeVisibility() {
-    // with_status / with_networks only exist for series on TMDB.
+    // with_status / with_networks only exist for series on TMDB, with_people
+    // only for movies. Fields that would silently do nothing are hidden and
+    // their selection dropped, so no invisible filter narrows the results.
     var isTv = S.type === "tv";
     document.querySelectorAll(".adv-tv-only").forEach(function (el) {
       el.hidden = !isTv;
+    });
+    document.querySelectorAll(".adv-movie-only").forEach(function (el) {
+      el.hidden = isTv;
     });
     if (!isTv) {
       S.statuses = [];
@@ -467,6 +475,9 @@
       document.querySelectorAll(".adv-status-checkbox").forEach(function (cb) { cb.checked = false; });
       renderNetworks();
       updateStatusLabel();
+    } else {
+      S.people = [];
+      renderPeople();
     }
   }
 
@@ -564,6 +575,17 @@
       function (id) {
         S.keywords = S.keywords.filter(function (k) { return String(k.id) !== String(id); });
         renderKeywords();
+        afterFilterChange();
+      });
+  }
+
+  function renderPeople() {
+    renderTokens("selectedPeople", S.people,
+      function (p) { return p.name; },
+      function (p) { return p.id; },
+      function (id) {
+        S.people = S.people.filter(function (p) { return String(p.id) !== String(id); });
+        renderPeople();
         afterFilterChange();
       });
   }
@@ -744,6 +766,17 @@
         clear: function () {
           S.keywords = S.keywords.filter(function (k) { return k.id !== kw.id; });
           renderKeywords();
+        },
+      });
+    });
+
+    S.people.forEach(function (person) {
+      chips.push({
+        group: "details",
+        label: t("Schauspieler", "Actor") + ": " + person.name,
+        clear: function () {
+          S.people = S.people.filter(function (p) { return p.id !== person.id; });
+          renderPeople();
         },
       });
     });
@@ -971,6 +1004,9 @@
     if (S.type === "tv") {
       if (S.statuses.length) params.append("with_status", S.statuses.join("|"));
       if (S.networks.length) params.append("with_networks", S.networks.map(function (n) { return n.id; }).join("|"));
+    } else if (S.people.length) {
+      // Comma = AND: everyone picked has to be in the same film.
+      params.append("with_people", S.people.map(function (p) { return p.id; }).join(","));
     }
 
     if (S.region) params.append("watch_region", S.region);
@@ -1520,6 +1556,7 @@
     S.genres = [];
     S.genresExcluded = [];
     S.keywords = [];
+    S.people = [];
     S.incProviders = [];
     S.excProviders = [];
     S.networks = [];
@@ -1554,6 +1591,7 @@
     updateStatusLabel();
     syncGenreCheckboxes();
     renderKeywords();
+    renderPeople();
     renderProviders("include");
     renderProviders("exclude");
     renderNetworks();
@@ -1718,6 +1756,25 @@
         if (S.keywords.some(function (k) { return k.id === kw.id; })) return;
         S.keywords.push({ id: kw.id, name: kw.name });
         renderKeywords();
+        afterFilterChange();
+      },
+    });
+
+    initTokenField({
+      inputId: "personInput",
+      suggestionsId: "personAutocomplete",
+      minChars: 2,
+      debounce: 350,
+      labelOf: function (p) { return p.known_for ? p.name + " — " + p.known_for : p.name; },
+      remoteSource: function (q) {
+        return fetch("/api/tmdb/people?q=" + encodeURIComponent(q))
+          .then(function (r) { return r.json(); })
+          .then(function (d) { return d.results || []; });
+      },
+      onPick: function (p) {
+        if (S.people.some(function (x) { return x.id === p.id; })) return;
+        S.people.push({ id: p.id, name: p.name });
+        renderPeople();
         afterFilterChange();
       },
     });

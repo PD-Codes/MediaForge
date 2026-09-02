@@ -1771,6 +1771,14 @@ msgstr ""
 msgid "Search keyword (e.g. anime)..."
 msgstr ""
 
+#: src/mediaforge/web/templates/advanced_search.html:215
+msgid "Actor"
+msgstr "Attore"
+
+#: src/mediaforge/web/templates/advanced_search.html:218
+msgid "Search actor (e.g. Tom Hanks)..."
+msgstr "Cerca attore (es. Tom Hanks)..."
+
 #: src/mediaforge/web/templates/advanced_search.html:213
 msgid "Original language"
 msgstr ""

@@ -13,15 +13,22 @@ import pytest
 from mediaforge.telemetry import events
 
 
+class _Conn(sqlite3.Connection):
+    """The builder closes the connection after each read, so this one stays
+    open across the two reads a single event does."""
+
+    def close(self):
+        pass
+
+
 @pytest.fixture
 def db(monkeypatch):
     """An in-memory DB with just the two tables build_system_info_event reads."""
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(":memory:", factory=_Conn)
     conn.row_factory = sqlite3.Row
     conn.execute("CREATE TABLE users (language TEXT)")
     conn.execute("CREATE TABLE user_ui_prefs (user_id INT, key TEXT, value TEXT)")
     conn.commit()
-    conn.close_real, conn.close = conn.close, lambda: None  # builder closes per read
     monkeypatch.setattr("mediaforge.web.db.get_db", lambda: conn)
     return conn
 
