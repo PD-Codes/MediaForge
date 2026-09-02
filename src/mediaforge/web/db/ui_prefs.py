@@ -406,9 +406,17 @@ def set_user_ui_prefs(user_id: int, prefs: dict,
                 (user_id, key, value),
             )
         conn.commit()
-        return True, None
     finally:
         conn.close()
+    # A per-account theme pick is part of the telemetry system_info event
+    # (which theme packs this install actually wears). That event is built
+    # once per process, so without this the change stayed invisible to the
+    # server until the next restart. Guarded and off-thread inside; no-op
+    # unless the user enabled system_info.
+    if "theme_pack" in cleaned:
+        from ..themes import _report_theme_change
+        _report_theme_change()
+    return True, None
 
 
 def clear_user_ui_prefs(user_id: int) -> None:

@@ -216,6 +216,33 @@ def install_log_handler():
         logger.debug("[Telemetry] log handler installed")
 
 
+def emit_system_info():
+    """Submit a fresh system_info event (if the user has it enabled).
+
+    Called at startup and again whenever an install-level field inside that
+    event changes at runtime -- in practice the applied theme pack, which
+    otherwise sat unreported on the server until the next restart: the event
+    is built once per process and a theme is switched far more often than the
+    app is restarted.
+
+    Off-thread and fully guarded, for the same reason the startup emit is:
+    building the event runs sysinfo.collect(), whose (cached) first run may
+    spawn ffmpeg/nvidia-smi probes. No request should ever wait on that, and
+    a telemetry hiccup must never fail the setting the user just saved.
+    """
+    def _run():
+        try:
+            event = events.build_system_info_event()
+            if event:
+                get_client().submit(event)
+        except Exception:
+            logger.debug("[Telemetry] system_info event failed", exc_info=True)
+
+    threading.Thread(
+        target=_run, daemon=True, name="telemetry-sysinfo"
+    ).start()
+
+
 def register_error_handler(app):
     """Register a Flask app.errorhandler(Exception) that reports the crash
     and then re-raises, handing back to Flask's own normal exception
@@ -282,25 +309,7 @@ def init_telemetry(app):
     # A one-off system_info event on startup (if the user has enabled it) so
     # the devInfo server sees an install "check in" even on runs with no
     # crash at all -- not gated behind any particular route/request.
-    #
-    # Emitted from a short-lived daemon thread rather than inline: building the
-    # event now runs the extended sysinfo.collect() probes, which may spawn
-    # ffmpeg/nvidia-smi subprocesses (each bounded by a per-probe timeout).
-    # That is cheap and cached, but on a slow NAS the very first ffmpeg spawn
-    # can take a couple of seconds -- doing it inline would add that straight
-    # onto create_app()/app startup. Off-thread, it never delays anything the
-    # user is waiting on; the TelemetryClient queue it submits to is already
-    # thread-safe.
-    def _emit_startup_system_info():
-        try:
-            event = events.build_system_info_event()
-            if event:
-                get_client().submit(event)
-        except Exception:
-            logger.debug("[Telemetry] startup system_info event failed", exc_info=True)
-
-    threading.Thread(
-        target=_emit_startup_system_info, daemon=True, name="telemetry-sysinfo"
-    ).start()
+    # emit_system_info() does it off-thread; see its docstring for why.
+    emit_system_info()
 
     logger.debug("[Telemetry] initialized")

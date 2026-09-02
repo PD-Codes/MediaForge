@@ -363,6 +363,7 @@ def set_active_theme(folder: str) -> tuple[bool, str]:
     folder = (folder or "").strip()
     if not folder or folder == BUILTIN_THEME_ID:
         set_setting(ACTIVE_THEME_KEY, "")
+        _report_theme_change()
         return True, ""
     theme = theme_by_folder(folder)
     if theme is None:
@@ -370,7 +371,24 @@ def set_active_theme(folder: str) -> tuple[bool, str]:
     if not theme["valid"]:
         return False, "theme is invalid: " + "; ".join(theme["errors"])
     set_setting(ACTIVE_THEME_KEY, folder)
+    _report_theme_change()
     return True, ""
+
+
+def _report_theme_change() -> None:
+    """Re-send the telemetry system_info event, which carries the applied
+    theme pack(s). The event is otherwise built once per process, so without
+    this a theme switch stayed invisible to the server until the next
+    restart. No-op unless the user enabled system_info; never raises.
+
+    Also called from db/ui_prefs.py (per-account theme override) and from
+    uninstall_theme() below, which resets the instance default in place.
+    """
+    try:
+        from ..telemetry.hooks import emit_system_info
+        emit_system_info()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -466,5 +484,7 @@ def uninstall_theme(folder: str) -> dict:
         logger.exception("[Themes] could not delete theme '%s'", folder)
         return {"ok": False, "error": f"could not delete theme: {exc}"}
     invalidate_cache()
+    _report_theme_change()   # the default may have been reset above, and any
+                             # account override pointing here now resolves away
     logger.info("[Themes] uninstalled theme pack '%s'", folder)
     return {"ok": True, "error": None, "restart_required": False}

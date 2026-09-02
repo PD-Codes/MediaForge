@@ -1026,6 +1026,28 @@ Subscriber queues are bounded and drop their oldest message under pressure, so
 treat a message as a hint to re-read state rather than as data you must not
 lose.
 
+## Display availability (`display_status`)
+
+Anything that launches a visible browser needs a screen, and on a headless
+Linux host there may be none. Ask before you launch instead of debugging a
+`TargetClosedError`:
+
+```python
+from ...autodeps import display_status
+
+if display_status()["mode"] == "unavailable":
+    raise RuntimeError("no display — install Xvfb")
+```
+
+`mode` is `"native"` (a real display server), `"virtual"` (Xvfb — ours, or the
+Docker image's) or `"unavailable"`. The call has no side effects: it probes,
+never starts anything. `autodeps._ensure_xvfb()` is what actually starts (and,
+if needed, installs) a virtual display — the captcha stack already calls it, so
+a module that goes through the core captcha helpers gets this for free.
+
+Note for `virtual`: a virtual display costs roughly 300–500 MB extra RAM and
+renders in software, so don't spin up several browsers in parallel there.
+
 ## TMDB metadata (`lookup_media`)
 
 Don't import `_tmdb_lookup_cached` — it's core-internal, and every caller that

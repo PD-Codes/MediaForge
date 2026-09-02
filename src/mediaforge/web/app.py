@@ -1225,6 +1225,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         # did not choose reads as the wrong one being selected.
         _start_tab = str(_prefs.get("home_tab") or _tab_default)
         _start_tab = "disc" if _start_tab == "disc" else "dash"
+        # Headless Linux without Xvfb: the captcha browser (and every provider
+        # behind one) cannot run at all. Surfaced here because that failure is
+        # otherwise invisible until a download dies -- see autodeps.display_status.
+        from ..autodeps import display_status as _display_status
+        _display = _display_status()
         return render_template(
             "index.html",
             lang_labels=LANG_LABELS,
@@ -1241,6 +1246,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             start_tab=_start_tab,
             foryou_hero_default=_foryou_hero_default,
             foryou_rail_default=_foryou_rail_default,
+            display_info=_display,
         )
 
 

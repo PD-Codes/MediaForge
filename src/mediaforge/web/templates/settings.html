@@ -405,6 +405,23 @@
       </div>
       <div class="settings-hint" style="padding:0 22px 14px;">{{ _('Writes detailed logs. Takes effect immediately — no restart needed.') }}</div>
       <div class="settings-hint" id="debugForcedHint" style="display:none;padding:0 22px 14px;color:var(--accent,#4ea1ff);">{{ _('The application was started with --debug. Debug mode is locked on and cannot be changed here.') }}</div>
+
+      {# Display mode: the captcha browser must run headed, so "is there a
+         screen" decides whether several providers work at all. Read-only --
+         the mode follows the host, there is nothing to configure here. #}
+      <h3 class="settings-subtitle" style="padding:0 22px">{{ _('Display mode') }}</h3>
+      <div class="settings-row" style="padding:0 22px;">
+        <div class="mf-display-mode" id="displayModeBox">
+          <span class="mf-display-dot" id="displayModeDot"></span>
+          <div>
+            <div class="mf-display-title" id="displayModeTitle">{{ _('Checking…') }}</div>
+            <div class="mf-display-desc" id="displayModeDesc"></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-hint" style="padding:0 22px 14px;">{{ _('MediaForge needs a real screen for captcha solving and browser-based providers. Without one it starts a virtual display (Xvfb) automatically, exactly like the Docker image does.') }}</div>
+      <div class="settings-hint" id="displayModeRamHint" style="display:none;padding:0 22px 14px;">{{ _('A virtual display costs extra memory: plan for roughly 300–500 MB on top of the normal usage (X server plus the headed Chromium it hosts), and a little more CPU because rendering is done in software. On a 1 GB machine this is the first thing to run out.') }}</div>
+      <div class="settings-hint" id="displayModeFixHint" style="display:none;padding:0 22px 14px;color:var(--danger,#ff6b81);"></div>
       {% if is_admin %}
       <h3 class="settings-subtitle" style="padding:0 22px">{{ _('Restart') }}</h3>
       <div class="settings-row" style="padding:0 22px;">

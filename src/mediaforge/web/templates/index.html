@@ -188,6 +188,35 @@
 {% endblock %}
 
 {% block content %}
+{# ── No display available ──────────────────────────────────────────────
+   Headless Linux where Xvfb is missing and could not be installed
+   automatically. Everything that needs the visible captcha browser is dead in
+   that state, so admins get told here instead of finding out through failed
+   downloads. Reuses the Dev Info banner styling (already loaded above). #}
+{% set _is_admin = not auth_enabled or (current_user and current_user.role == 'admin') %}
+{% if _is_admin and display_info and display_info.mode == 'unavailable' %}
+<div class="devinfo-warning-banners">
+  <div class="devinfo-warning-banner devinfo-warning-banner-important">
+    <div class="devinfo-warning-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <line x1="8" y1="21" x2="16" y2="21" />
+        <line x1="12" y1="17" x2="12" y2="21" />
+      </svg>
+    </div>
+    <div class="devinfo-warning-content">
+      <span class="devinfo-warning-flag">{{ _('Limited functionality') }}</span>
+      <div class="devinfo-warning-title">{{ _('No display available — captcha solving and browser-based providers cannot run') }}</div>
+      <div class="devinfo-warning-body">
+        {{ _('This host has no graphical display and MediaForge could not install a virtual one (Xvfb) automatically. Install it manually — Debian/Ubuntu: "sudo apt install xvfb", Fedora: "sudo dnf install xorg-x11-server-Xvfb", Arch: "sudo pacman -S xorg-server-xvfb" — and restart MediaForge, or use the official Docker image, which ships it.') }}
+        {% if display_info.error %}<br><small>{{ _('Automatic install failed:') }} {{ display_info.error }}</small>{% endif %}
+        <br><a href="{{ url_for('settings_page') }}#general">{{ _('Show display mode in Settings') }}</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 {# ── Dev Info banners ──────────────────────────────────────────────────
    "warning", "important" and "release" posts all land here (app.py's index()
    builds devinfo_banners from the three). "important" additionally raises the

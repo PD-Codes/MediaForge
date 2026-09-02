@@ -319,6 +319,9 @@ async function loadSettings() {
       if (trayOpts) trayOpts.style.opacity = "0.6";
     }
 
+    // System: which display the browser stack runs on
+    _renderDisplayMode(data.display);
+
     // Design tab - Extended Settings
     _loadDesignCheckboxes();
 
@@ -337,6 +340,63 @@ async function loadSettings() {
   }
   loadApiKey();
   loadSsoSettings();
+}
+
+// ─── Display mode (General -> System) ───────────────────────────────────────
+
+/**
+ * Render the read-only display status from /api/settings' `display` block.
+ *
+ * Three states, because they need three different answers: a real screen (all
+ * good), a virtual framebuffer (works, costs RAM -- hence the extra hint), and
+ * no screen at all (captcha solving is dead until Xvfb is installed).
+ */
+function _renderDisplayMode(info) {
+  const box = document.getElementById("displayModeBox");
+  if (!box || !info) return;
+  const dot = box;
+  const title = document.getElementById("displayModeTitle");
+  const desc = document.getElementById("displayModeDesc");
+  const ram = document.getElementById("displayModeRamHint");
+  const fix = document.getElementById("displayModeFixHint");
+  const mode = info.mode || "unavailable";
+
+  dot.classList.remove("is-native", "is-virtual", "is-unavailable");
+  dot.classList.add("is-" + mode);
+  if (ram) ram.style.display = mode === "virtual" ? "" : "none";
+  if (fix) fix.style.display = "none";
+
+  const where = info.display ? " (DISPLAY=" + info.display + ")" : "";
+  if (mode === "native") {
+    title.textContent = t("Echter Bildschirm", "Real display");
+    desc.textContent = t(
+      "Ein Display-Server ist vorhanden — der Captcha-Browser läuft direkt darauf.",
+      "A display server is present — the captcha browser runs on it directly."
+    ) + where;
+  } else if (mode === "virtual") {
+    title.textContent = info.docker
+      ? t("Virtueller Bildschirm (Xvfb, Docker)", "Virtual display (Xvfb, Docker)")
+      : t("Virtueller Bildschirm (Xvfb)", "Virtual display (Xvfb)");
+    desc.textContent = (info.active
+      ? t("Läuft. Kein echter Bildschirm vorhanden, MediaForge nutzt ein virtuelles Framebuffer-Display 1920×1080.",
+          "Running. No real screen available, MediaForge uses a 1920×1080 virtual framebuffer.")
+      : t("Kein echter Bildschirm vorhanden. Xvfb ist installiert und wird beim ersten Bedarf automatisch gestartet.",
+          "No real screen available. Xvfb is installed and starts automatically when first needed.")) + where;
+  } else {
+    title.textContent = t("Kein Bildschirm — Funktionen eingeschränkt",
+                          "No display — limited functionality");
+    desc.textContent = t(
+      "Captcha-Lösung und Browser-basierte Anbieter können nicht laufen.",
+      "Captcha solving and browser-based providers cannot run."
+    );
+    if (fix) {
+      fix.style.display = "";
+      fix.textContent = t(
+        "Xvfb konnte nicht automatisch installiert werden. Bitte manuell installieren (Debian/Ubuntu: sudo apt install xvfb, Fedora: sudo dnf install xorg-x11-server-Xvfb, Arch: sudo pacman -S xorg-server-xvfb) und MediaForge neu starten.",
+        "Xvfb could not be installed automatically. Install it manually (Debian/Ubuntu: sudo apt install xvfb, Fedora: sudo dnf install xorg-x11-server-Xvfb, Arch: sudo pacman -S xorg-server-xvfb) and restart MediaForge."
+      ) + (info.error ? " [" + info.error + "]" : "");
+    }
+  }
 }
 
 // ─── Downloads tab ──────────────────────────────────────────────────────────

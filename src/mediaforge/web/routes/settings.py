@@ -351,6 +351,11 @@ def register_settings_routes(app):
         autostart_enabled    = get_setting("autostart_enabled", "0")
         open_browser_on_startup = get_setting("open_browser_on_startup", "1")
         is_docker            = os.path.exists("/.dockerenv") or os.environ.get("MEDIAFORGE_DOCKER") == "1"
+        # Display status is admin-only: it names the host's DISPLAY and package
+        # state, and the card that shows it sits inside the admin-only System
+        # section anyway.
+        from ...autodeps import display_status as _display_status
+        _display_info = _display_status() if _get_current_user_info()[1] else None
 
         return jsonify(
             {
@@ -424,6 +429,10 @@ def register_settings_routes(app):
                 "autostart_enabled":         autostart_enabled,
                 "open_browser_on_startup":   open_browser_on_startup,
                 "is_docker":                 is_docker,
+                # Which screen the browser stack runs on (real X, Xvfb, none).
+                # Read-only status, probed without side effects -- see
+                # autodeps.display_status.
+                "display":                   _display_info,
                 "syncplay_enabled":          get_setting("syncplay_enabled", "0"),
                 "auto_update_enabled":       get_setting("auto_update_enabled", "0"),
                 "auto_update_days":          get_setting("auto_update_days", "0,1,2,3,4,5,6"),

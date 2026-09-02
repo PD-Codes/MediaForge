@@ -676,3 +676,34 @@
   border-color: rgba(251, 191, 36, 0.5);
   color: var(--warning, #fbbf24);
 }
+
+/* ── Display mode (General -> System) ──────────────────────────────────
+   Read-only status row: dot + title + one explanatory line. Wraps on narrow
+   screens so the text never pushes the card sideways on a phone. */
+.mf-display-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated, var(--bg-secondary));
+  max-width: 100%;
+}
+
+.mf-display-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.mf-display-mode.is-native .mf-display-dot { background: var(--success, #3fb950); }
+.mf-display-mode.is-virtual .mf-display-dot { background: var(--warning, #fbbf24); }
+.mf-display-mode.is-unavailable .mf-display-dot { background: var(--danger, #ff6b81); }
+
+.mf-display-title { font-weight: 600; font-size: 0.92rem; }
+.mf-display-desc { font-size: 0.82rem; color: var(--text-secondary); word-break: break-word; }

@@ -737,6 +737,169 @@ def get_syncplay_path() -> Path:
 # -----------------------------
 _xvfb_proc = None
 _xvfb_lock = __import__("threading").Lock()
+_XVFB_DISPLAY = ":99"
+# One install attempt per process: a package manager that says "no" (no root,
+# no network, unknown distro) says no again a second later, and retrying on
+# every captcha would stall each solve by the apt timeout.
+_xvfb_install_tried = False
+_xvfb_install_error = ""
+# (timestamp, status dict) — see display_status.
+_display_cache = None
+
+
+def _in_docker() -> bool:
+    return os.path.exists("/.dockerenv") or os.environ.get("MEDIAFORGE_DOCKER") == "1"
+
+
+def _x_display_reachable(disp: str) -> bool:
+    """True when *disp* points at an X server that actually accepts connections.
+
+    A set DISPLAY is not proof of a usable display, which is the whole reason
+    this exists: a desktop session left in a systemd unit, a dropped ``ssh -X``
+    forwarding or a plain Debian terminal all leave the variable behind with
+    nothing listening. The old check trusted the variable, so Chromium was
+    launched against a dead display and died with the unreadable
+    TargetClosedError instead of falling back to Xvfb.
+    """
+    import socket
+
+    host, sep, rest = disp.rpartition(":")
+    if not sep or not rest:
+        return False
+    num = rest.split(".")[0]
+    if not num.isdigit():
+        return False
+    if host in ("", "unix"):
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(1.5)
+                s.connect(f"/tmp/.X11-unix/X{num}")
+            return True
+        except OSError:
+            return False
+    try:  # remote / TCP X server
+        with socket.create_connection((host, 6000 + int(num)), timeout=1.5):
+            return True
+    except OSError:
+        return False
+
+
+def _install_xvfb() -> bool:
+    """Best-effort install of Xvfb through the host package manager (Linux).
+
+    Runs as root directly, otherwise through ``sudo -n`` — never interactive:
+    this can fire from a queue worker where nobody is at a terminal to type a
+    password. Returns True only when Xvfb is on PATH afterwards; the failure
+    reason is kept in ``_xvfb_install_error`` for :func:`display_status`, which
+    is what the home-page notice and Settings show instead of leaving the user
+    with silently broken captcha solving.
+    """
+    global _xvfb_install_tried, _xvfb_install_error, _display_cache
+    if _xvfb_install_tried:
+        return bool(shutil.which("Xvfb"))
+    _xvfb_install_tried = True
+
+    if os.geteuid() == 0:
+        prefix: List[str] = []
+    elif shutil.which("sudo"):
+        prefix = ["sudo", "-n"]
+    else:
+        _xvfb_install_error = "no root privileges"
+        return False
+
+    managers = [
+        ("apt-get", [["apt-get", "update"],
+                     ["apt-get", "install", "-y", "--no-install-recommends", "xvfb"]]),
+        ("dnf",     [["dnf", "install", "-y", "xorg-x11-server-Xvfb"]]),
+        ("pacman",  [["pacman", "-Sy", "--noconfirm", "xorg-server-xvfb"]]),
+        ("zypper",  [["zypper", "--non-interactive", "install", "xorg-x11-server-Xvfb"]]),
+        ("apk",     [["apk", "add", "--no-cache", "xvfb"]]),
+    ]
+    env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+    for exe, commands in managers:
+        if not shutil.which(exe):
+            continue
+        logger.info("Installing Xvfb via %s …", exe)
+        for cmd in commands:
+            try:
+                subprocess.run(prefix + cmd, timeout=600, env=env,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:  # timeout, permission, killed
+                _xvfb_install_error = f"{exe}: {e}"
+                logger.warning("Xvfb install via %s failed: %s", exe, e)
+                break
+        if shutil.which("Xvfb"):
+            logger.info("Xvfb installed via %s", exe)
+            _xvfb_install_error = ""
+            _display_cache = None
+            return True
+        _xvfb_install_error = _xvfb_install_error or f"{exe} install did not provide Xvfb"
+    if not _xvfb_install_error:
+        _xvfb_install_error = "no supported package manager found"
+    return False
+
+
+def display_status() -> dict:
+    """Describe the display MediaForge's browser stack runs on. No side effects.
+
+    Deliberately probes instead of starting anything: this is called from the
+    Settings API and the home page on every load, and neither should be able to
+    spawn an Xvfb or an apt run as a side effect of someone opening a page.
+
+    ``mode`` is one of:
+
+    * ``native``  -- a real display server (Windows/macOS, or a reachable X)
+    * ``virtual`` -- a virtual framebuffer (Xvfb), ours or Docker's
+    * ``unavailable`` -- headless Linux with no Xvfb; the captcha browser and
+      every provider that needs it cannot run.
+
+    ``active`` separates "a virtual display is running" from "one would be
+    started on demand", so Settings can say which without starting it.
+    """
+    if PLATFORM != "Linux":
+        return {"mode": "native", "display": os.environ.get("DISPLAY", ""),
+                "active": True, "xvfb_installed": True, "docker": False, "error": ""}
+
+    # Short cache: the home page and the Settings API both call this on every
+    # load, and a DISPLAY pointing at a TCP X server that never answers costs
+    # the full connect timeout each time.
+    import time
+    global _display_cache
+    cached = _display_cache
+    if cached and time.monotonic() - cached[0] < 15:
+        return dict(cached[1])
+
+    disp = os.environ.get("DISPLAY", "")
+    ours = _xvfb_proc is not None and _xvfb_proc.poll() is None
+    reachable = bool(disp) and _x_display_reachable(disp)
+    xvfb = bool(shutil.which("Xvfb"))
+    docker = _in_docker()
+
+    if reachable and (ours or docker):
+        mode, active = "virtual", True
+    elif reachable:
+        mode, active = "native", True
+    elif xvfb:
+        mode, active = "virtual", False       # started on first use
+    else:
+        mode, active = "unavailable", False
+    status = {"mode": mode, "display": disp, "active": active,
+              "xvfb_installed": xvfb, "docker": docker, "error": _xvfb_install_error}
+    _display_cache = (time.monotonic(), status)
+    return dict(status)
+
+
+def prepare_display_async() -> None:
+    """Kick off the one Xvfb install attempt in the background, at startup.
+
+    Without this the attempt would only happen at the first captcha, i.e. after
+    the user already hit the failure the notice is supposed to warn about.
+    Skipped whenever a display is already available, so the normal case costs
+    one socket connect.
+    """
+    if PLATFORM != "Linux" or display_status()["mode"] != "unavailable":
+        return
+    threading.Thread(target=_install_xvfb, name="xvfb-install", daemon=True).start()
 
 
 def _ensure_xvfb() -> bool:
@@ -763,28 +926,31 @@ def _ensure_xvfb() -> bool:
     Used by: ``playwright/captcha.py`` before launching the visible captcha
     browser on Linux, and ``models/hanime_tv/browser.py``.
     """
-    global _xvfb_proc
+    global _xvfb_proc, _display_cache
     if platform.system() != "Linux":
         return True  # Windows/macOS always have a usable display server
-    if os.environ.get("DISPLAY"):
-        return True  # already set — Docker / host X11
+    disp = os.environ.get("DISPLAY")
+    if disp and _x_display_reachable(disp):
+        return True  # Docker / host X11, verified — not merely set
     with _xvfb_lock:
-        if os.environ.get("DISPLAY"):
+        disp = os.environ.get("DISPLAY")
+        if disp and _x_display_reachable(disp):
             return True
         if _xvfb_proc is not None and _xvfb_proc.poll() is None:
-            os.environ.setdefault("DISPLAY", ":99")
+            os.environ["DISPLAY"] = _XVFB_DISPLAY
             return True
-        xvfb = shutil.which("Xvfb")
+        xvfb = shutil.which("Xvfb") or (_install_xvfb() and shutil.which("Xvfb"))
         if not xvfb:
             logger.warning("Xvfb not found — captcha browser cannot run without a display")
             return False
         try:
             _xvfb_proc = subprocess.Popen(
-                [xvfb, ":99", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+                [xvfb, _XVFB_DISPLAY, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            os.environ["DISPLAY"] = ":99"
+            os.environ["DISPLAY"] = _XVFB_DISPLAY
+            _display_cache = None   # the mode just changed; don't serve the old one
             import time as _t
             _t.sleep(0.5)
             # Popen succeeds even when Xvfb dies immediately (display :99 already

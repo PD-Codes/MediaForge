@@ -211,18 +211,49 @@ def build_system_info_event():
     except Exception:
         pass
 
-    # Which theme pack this instance has applied -- the store's module id, or
-    # "default" for the built-in look. An install-level preference like
-    # ui_language above, and it answers the one question downloads cannot: a
-    # theme downloaded once and kept beats one downloaded fifty times and
-    # switched away from the same evening, and the built-in theme is never
-    # downloaded at all. The store counts NULL as "not reported" rather than
-    # folding it into the default, so the key is simply absent when this fails
-    # -- never an empty string, which would be neither fact.
+    # Which theme pack(s) this install actually wears -- store module ids, or
+    # "default" for the built-in look, comma-separated exactly like
+    # ui_language above. It answers the one question downloads cannot: a theme
+    # downloaded once and kept beats one downloaded fifty times and switched
+    # away from the same evening, and the built-in theme is never downloaded
+    # at all.
+    #
+    # The set is the instance default PLUS every per-account override
+    # (user_ui_prefs.theme_pack), because an account's own pick is the theme a
+    # human is really looking at -- reporting only the admin default made the
+    # field say "default" for an install where nobody sees the default. The
+    # instance default is always a member: accounts with no override, new
+    # accounts and the login page all follow it. Overrides are stored as
+    # FOLDER names and the wire format is the module id, so they are mapped
+    # through installed_themes(); a folder that no longer resolves (theme
+    # uninstalled, stale row) is dropped rather than reported as a raw folder
+    # name. The store counts NULL as "not reported" rather than folding it
+    # into the default, so the key is simply absent when this fails -- never
+    # an empty string, which would be neither fact.
     try:
         from ..web import themes as _themes
-        payload["active_theme"] = (_themes.active_theme() or {}).get(
+        from ..web.db import get_db
+
+        default_id = (_themes.active_theme() or {}).get(
             "id") or _themes.BUILTIN_THEME_ID
+        theme_ids = {default_id}
+        by_folder = {t["folder"]: t["id"] for t in _themes.installed_themes()}
+        conn = get_db()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT value FROM user_ui_prefs WHERE key = 'theme_pack'"
+            ).fetchall()
+        finally:
+            conn.close()
+        for row in rows:
+            folder = (row["value"] or "").strip()
+            if not folder:
+                continue  # "" = follow the instance default, already counted
+            if folder == _themes.BUILTIN_THEME_ID:
+                theme_ids.add(_themes.BUILTIN_THEME_ID)
+            elif folder in by_folder:
+                theme_ids.add(by_folder[folder])
+        payload["active_theme"] = ",".join(sorted(theme_ids))
     except Exception:
         pass
 

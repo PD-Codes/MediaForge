@@ -12703,3 +12703,35 @@ msgstr "Raum für alle schließen"
 #~ "dann gelten nur noch die Listen "
 #~ "unten."
 
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Display mode"
+msgstr "Anzeigemodus"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "MediaForge needs a real screen for captcha solving and browser-based providers. Without one it starts a virtual display (Xvfb) automatically, exactly like the Docker image does."
+msgstr "MediaForge braucht einen echten Bildschirm für die Captcha-Lösung und Browser-basierte Anbieter. Ist keiner vorhanden, startet MediaForge automatisch ein virtuelles Display (Xvfb) — genau wie das Docker-Image."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "A virtual display costs extra memory: plan for roughly 300–500 MB on top of the normal usage (X server plus the headed Chromium it hosts), and a little more CPU because rendering is done in software. On a 1 GB machine this is the first thing to run out."
+msgstr "Ein virtuelles Display kostet zusätzlichen Arbeitsspeicher: rund 300–500 MB über den normalen Verbrauch hinaus (X-Server plus das darin laufende Chromium) und etwas mehr CPU, weil in Software gerendert wird. Auf einer 1-GB-Maschine geht genau das zuerst aus."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Limited functionality"
+msgstr "Eingeschränkte Funktionen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "No display available — captcha solving and browser-based providers cannot run"
+msgstr "Kein Bildschirm verfügbar — Captcha-Lösung und Browser-basierte Anbieter können nicht laufen"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "This host has no graphical display and MediaForge could not install a virtual one (Xvfb) automatically. Install it manually — Debian/Ubuntu: \"sudo apt install xvfb\", Fedora: \"sudo dnf install xorg-x11-server-Xvfb\", Arch: \"sudo pacman -S xorg-server-xvfb\" — and restart MediaForge, or use the official Docker image, which ships it."
+msgstr "Dieser Host hat keinen grafischen Bildschirm und MediaForge konnte auch kein virtuelles Display (Xvfb) automatisch installieren. Bitte manuell installieren — Debian/Ubuntu: „sudo apt install xvfb\", Fedora: „sudo dnf install xorg-x11-server-Xvfb\", Arch: „sudo pacman -S xorg-server-xvfb\" — und MediaForge neu starten, oder das offizielle Docker-Image nutzen, das Xvfb mitbringt."
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Automatic install failed:"
+msgstr "Automatische Installation fehlgeschlagen:"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Show display mode in Settings"
+msgstr "Anzeigemodus in den Einstellungen anzeigen"

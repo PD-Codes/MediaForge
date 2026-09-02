@@ -47,7 +47,7 @@ def _silence_insecure_request_warnings():
 _silence_insecure_request_warnings()
 
 from .arguments import parse_args
-from .autodeps import ensure_patchright_chromium
+from .autodeps import ensure_patchright_chromium, prepare_display_async
 from .config import MEDIAFORGE_CONFIG_DIR, VERSION
 from .env import prepare_env
 from .logger import get_logger
@@ -83,6 +83,10 @@ def mediaforge() -> int:
         logger.debug("Starting WebUI...")
         set_terminal_title()
         ensure_patchright_chromium()
+        # Headless Linux (Debian server, systemd unit, plain SSH): make sure a
+        # virtual display exists — or that we know it cannot, before the first
+        # captcha needs one. Background, never blocks startup.
+        prepare_display_async()
 
         args = parse_args()
 
