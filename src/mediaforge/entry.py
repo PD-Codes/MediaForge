@@ -86,7 +86,14 @@ def mediaforge() -> int:
         # Headless Linux (Debian server, systemd unit, plain SSH): make sure a
         # virtual display exists — or that we know it cannot, before the first
         # captcha needs one. Background, never blocks startup.
-        prepare_display_async()
+        #
+        # Guarded: this runs on the same path a self-update restart comes back
+        # through, and nothing about probing for a screen is worth turning a
+        # finished update into an app that does not start again.
+        try:
+            prepare_display_async()
+        except Exception:
+            logger.warning("Display check skipped due to an error", exc_info=True)
 
         args = parse_args()
 

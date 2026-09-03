@@ -589,8 +589,13 @@ DATA_REGISTRY = {
         "stage": 3, "group": "self_update",
         "label": {"de": "Selbst-Update-Ergebnis", "en": "Self-update result"},
         "explain": {
-            "de": "Ob ein Selbst-Update erfolgreich war oder fehlgeschlagen ist.",
-            "en": "Whether a self-update succeeded or failed.",
+            "de": "Ob ein Selbst-Update erfolgreich war oder fehlgeschlagen ist — "
+                  "bei einem Fehlschlag zusätzlich eine grobe Ursache "
+                  "(z. B. abgebrochen, Upgrade-Befehl fehlgeschlagen). Nie das "
+                  "Update-Log oder die pip-Ausgabe.",
+            "en": "Whether a self-update succeeded or failed — on failure also a "
+                  "coarse cause (e.g. interrupted, upgrade command failed). "
+                  "Never the update log or the pip output.",
         },
     },
     "detail.captcha": {

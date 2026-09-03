@@ -770,13 +770,19 @@ def _x_display_reachable(disp: str) -> bool:
     if not num.isdigit():
         return False
     if host in ("", "unix"):
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.settimeout(1.5)
-                s.connect(f"/tmp/.X11-unix/X{num}")
-            return True
-        except OSError:
-            return False
+        # Both socket flavours: the filesystem one, and Linux's abstract
+        # namespace ("\0/tmp/.X11-unix/X0"), which is all a Snap/Flatpak or a
+        # container-shared X server may expose. Checking only the file would
+        # declare a perfectly good display dead and push those hosts onto Xvfb.
+        for target in (f"/tmp/.X11-unix/X{num}", f"\0/tmp/.X11-unix/X{num}"):
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                    s.settimeout(1.5)
+                    s.connect(target)
+                return True
+            except OSError:
+                continue
+        return False
     try:  # remote / TCP X server
         with socket.create_connection((host, 6000 + int(num)), timeout=1.5):
             return True

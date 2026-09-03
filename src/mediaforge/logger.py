@@ -1,8 +1,10 @@
 """Process-wide logging setup.
 
 Provides a single shared "mediaforge" logger (:func:`get_logger`) that logs
-to both a colored stdout stream and a plain-text file in the temp directory,
-plus a level tagged with the source file/line/function of each call. The
+to a colored stdout stream, a plain-text file in the temp directory (rewritten
+on every start) and a rotating ``mf.err`` in the config directory that keeps
+ERROR and above **across** restarts, plus a level tagged with the source
+file/line/function of each call. The
 DEBUG/WARNING level is driven by the ``MEDIAFORGE_DEBUG_MODE`` environment
 variable and can also be flipped at runtime via :func:`set_debug_mode`.
 """
@@ -10,6 +12,7 @@ variable and can also be flipped at runtime via :func:`set_debug_mode`.
 import logging
 import os
 import tempfile
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _global_logger = None
@@ -113,6 +116,33 @@ def get_logger(name=__name__, level=None):
         file_handler = logging.FileHandler(log_file_path, mode="w", encoding="utf-8")
         file_handler.setFormatter(PlainFormatter(log_format, datefmt=date_format))
         _global_logger.addHandler(file_handler)
+
+        # ------------------ Error file handler ------------------ #
+        # The handler above opens the log with mode="w", so every start wipes
+        # the previous run: by the time anyone asks why the last run died, the
+        # answer is gone. That is exactly what happened when a self-update was
+        # killed mid-flight — the app came back, truncated the log, and left
+        # nothing to read. This second handler keeps ERROR and above in the
+        # config directory, appended and rotated, so the evidence survives a
+        # restart. The whole thing is best effort: a read-only home must not
+        # stop the app from logging at all.
+        #
+        # The directory is resolved here rather than imported from config.py,
+        # because config.py imports THIS module.
+        try:
+            override = os.environ.get("MEDIAFORGE_CONFIG_DIR", "").strip()
+            cfg_dir = (Path(override).expanduser() if override
+                       else Path.home() / ".mediaforge")
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            err_handler = RotatingFileHandler(
+                cfg_dir / "mf.err", maxBytes=1_000_000, backupCount=3,
+                encoding="utf-8", delay=True,
+            )
+            err_handler.setLevel(logging.ERROR)
+            err_handler.setFormatter(PlainFormatter(log_format, datefmt=date_format))
+            _global_logger.addHandler(err_handler)
+        except OSError:
+            pass
 
         # ------------------ Console handler ------------------ #
         console_handler = logging.StreamHandler()

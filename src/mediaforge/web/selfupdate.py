@@ -44,6 +44,7 @@ import sys
 import time
 from pathlib import Path
 
+from ..config import MEDIAFORGE_CONFIG_DIR
 from ..logger import get_logger
 from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
@@ -58,7 +59,12 @@ REPO_URL = "https://github.com/PD-Codes/MediaForge.git"
 DEV_BRANCH = "main"
 DEV_SPEC = f"git+{REPO_URL}@{DEV_BRANCH}"
 
-CONFIG_DIR = Path.home() / ".mediaforge"
+# The real config directory, not a second hardcoded ~/.mediaforge: with the
+# literal, an instance started with MEDIAFORGE_CONFIG_DIR (a test run, a second
+# instance) wrote its update state into the *other* installation's directory --
+# and read the other one's state back when deciding whether an update was in
+# progress.
+CONFIG_DIR = MEDIAFORGE_CONFIG_DIR
 STATE_FILE = CONFIG_DIR / "update.state"        # idle|installing|restarting|success|failed
 META_FILE = CONFIG_DIR / "update.meta.json"
 LOG_FILE = CONFIG_DIR / "update.log"
@@ -76,6 +82,28 @@ _VALID_STATES = {"idle", "installing", "restarting", "success", "failed"}
 # ---------------------------------------------------------------------------
 def _in_docker() -> bool:
     return os.path.exists("/.dockerenv") or os.environ.get("MEDIAFORGE_DOCKER") == "1"
+
+
+def _supervisor() -> str | None:
+    """Name the process supervisor that owns this app, if any.
+
+    Why this matters for updating: the helper script is detached with
+    ``setsid``, which escapes the process *group* but not a systemd unit's
+    cgroup. With the default ``KillMode=control-group`` systemd kills every
+    remaining process in the unit the moment the main one exits — which is
+    precisely the moment the helper starts working. The update is then killed
+    between "pip upgrade running" and "app relaunched", and the next start
+    finds the state file still on ``installing``.
+
+    Detected, not fixed: the fix is a unit-file/`systemd-run` decision that
+    belongs to whoever installed the service. Recording it turns an
+    unexplained "interrupted" into a reported cause.
+    """
+    if os.environ.get("INVOCATION_ID") or os.environ.get("JOURNAL_STREAM"):
+        return "systemd"
+    if _in_docker():
+        return "docker"
+    return None
 
 
 def _is_frozen() -> bool:
@@ -505,6 +533,9 @@ def start_update(target_channel: str | None = None) -> dict:
         "error": None,
         "started_at": time.time(),
         "rollback_snapshot": rollback_snapshot,
+        # Read back by finalize_after_restart() when the update turns out to
+        # have been interrupted -- see _supervisor().
+        "supervisor": _supervisor(),
     }
     _write_meta(meta)
     _write_state("installing")
@@ -654,7 +685,15 @@ def finalize_after_restart() -> None:
                             to_version=meta.get("to_version"))
     elif state == "installing":
         meta = _read_meta()
+        supervisor = meta.get("supervisor")
         meta["error"] = "Update did not complete (process restarted unexpectedly)."
+        if supervisor == "systemd":
+            meta["error"] += (
+                " The app runs under systemd, which kills the whole unit cgroup"
+                " when the main process exits — including the detached update"
+                " helper. Set KillMode=process (or run the update outside the"
+                " unit) so the helper survives."
+            )
         # This branch leaves the state at "failed", which is exactly what the
         # branch below reacts to, so mark the run as reported here as well --
         # otherwise a second start before the user dismisses the result would
@@ -662,9 +701,23 @@ def finalize_after_restart() -> None:
         meta["telemetry_reported"] = True
         _write_meta(meta)
         _write_state("failed")
+        # ERROR, not warning: this is the one failure mode that leaves no other
+        # trace. logger.error lands in the persistent mf.err (see logger.py) AND
+        # in the crash channel via the telemetry log handler, so a killed update
+        # is visible afterwards instead of only as a state file nobody reads.
+        #
+        # Deliberately without the update-log tail: this line reaches the crash
+        # channel, and the pip/pipx output can carry package index URLs. The
+        # full log stays local in update.log, which the Updates tab shows.
+        logger.error("[SelfUpdate] update did not complete (state was still "
+                     "'installing' at startup; supervisor=%s, from=%s). "
+                     "See update.log in the config directory.",
+                     supervisor or "none", meta.get("from_version") or "?")
         _report_self_update_flag()
-        _report_self_update(status="failed", error_type="interrupted",
-                            from_version=meta.get("from_version"))
+        _report_self_update(
+            status="failed",
+            error_type="interrupted_systemd" if supervisor == "systemd" else "interrupted",
+            from_version=meta.get("from_version"))
     elif state == "failed":
         # The helper script itself already wrote "failed" (the pip/pipx
         # upgrade command exited non-zero) before relaunching the app -- this
@@ -677,6 +730,12 @@ def finalize_after_restart() -> None:
         if not meta.get("telemetry_reported"):
             meta["telemetry_reported"] = True
             _write_meta(meta)
+            # Same reasoning as the branch above: persistent record + crash
+            # channel, message only, never the pip output.
+            logger.error("[SelfUpdate] upgrade command failed (from=%s, target=%s). "
+                         "See update.log in the config directory.",
+                         meta.get("from_version") or "?",
+                         meta.get("target_channel") or "?")
             _report_self_update_flag()
             _report_self_update(status="failed", error_type="upgrade_command_failed",
                                 from_version=meta.get("from_version"))
