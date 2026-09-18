@@ -92,6 +92,23 @@ def workers_run_in_web_process() -> bool:
     return worker_mode() != "external"
 
 
+# Set by run() below: True only inside the dedicated worker-host process.
+_is_worker_host = False
+
+
+def this_process_owns_workers() -> bool:
+    """True when the workers belong to THIS process.
+
+    Two processes may import this module: the web process and, in external
+    mode, the worker host. Only one of them owns the worker threads, and only
+    the owner may run the "reset every 'running' item back to 'queued'" crash
+    recovery -- doing it from the other process resets a job the owner is
+    downloading right now and hands it to a second worker, which downloads the
+    same episode all over again (issue #31).
+    """
+    return _is_worker_host or workers_run_in_web_process()
+
+
 def selected_workers() -> list[str]:
     """Which workers this host owns. ``MEDIAFORGE_WORKERS=queue,encoding``."""
     raw = (os.environ.get("MEDIAFORGE_WORKERS") or "").strip()
@@ -235,6 +252,8 @@ def run(workers=None) -> int:
     from . import audit as _audit
     from . import worker_registry as _wr
 
+    global _is_worker_host
+    _is_worker_host = True
     os.environ.setdefault("MEDIAFORGE_WORKER_MODE", "external")
     names = list(workers or selected_workers())
 

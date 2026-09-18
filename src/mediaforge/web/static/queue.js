@@ -405,18 +405,27 @@ function applyDownloadBadge(active, urls) {
  */
 function _qEpisodeProgress(item) {
   const currentUrl = item.current_url || "";
-  const slot = _stickyProgressById[item.id] || { progress: {}, url: "" };
+  const slot = _stickyProgressById[item.id] || { progress: {}, url: "", phase: "" };
   if (lastFfmpegProgress.active && lastFfmpegProgress.percent > 0) {
     slot.progress = Object.assign({}, lastFfmpegProgress);
     slot.url = currentUrl;
   } else if (_queueIsPaused && !lastFfmpegProgress.active) {
     slot.progress = {};
     slot.url = "";
+    slot.phase = "";
   } else if (currentUrl && currentUrl !== slot.url) {
     // The item moved on to the next episode — the old snapshot is stale.
     slot.progress = {};
     slot.url = currentUrl;
+    slot.phase = "";
   }
+  // Remember the last phase the backend actually reported. Between two passes
+  // — yt-dlp finished, the ffmpeg pass has not started yet — the server clears
+  // `phase` to "", and the `|| "download"` fallback in _qNormDownload used to
+  // turn every one of those gaps into a fake "Download" step. On a job that
+  // runs several ffmpeg passes the rail flickered Download ↔ Encoding and read
+  // as if the episode were being fetched over and over (issue #31).
+  if (lastFfmpegProgress.phase) slot.phase = lastFfmpegProgress.phase;
   _stickyProgressById[item.id] = slot;
   return (lastFfmpegProgress.active && lastFfmpegProgress.percent > 0)
     ? lastFfmpegProgress
@@ -441,7 +450,10 @@ function _qNormDownload(item) {
   const cancelling = item.status === "cancelled" && !!item.current_url;
   const attn = running && !!item.captcha_url;
   const fp = (running || cancelling) ? _qEpisodeProgress(item) : {};
-  const phase = fp.phase || "download";
+  // fp.phase first, then the last phase this item actually reported (see
+  // _qEpisodeProgress), and only then the "download" default — otherwise every
+  // idle moment between two ffmpeg passes looks like a fresh download.
+  const phase = fp.phase || (_stickyProgressById[item.id] || {}).phase || "download";
   // A single-file download -- a movie, or one hand-picked episode -- has
   // nothing to aggregate: "episode 1 of 1" and "this file" are the same
   // number, so the hero card drew the identical percentage twice. Below,

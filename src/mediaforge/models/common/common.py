@@ -37,6 +37,7 @@ try:
         INVERSE_LANG_LABELS,
         LANG_CODE_MAP,
         LANG_KEY_MAP,
+        MEDIAFORGE_CONFIG_DIR,
         MEDIAFORGE_TEMP_DIR,
         PROVIDER_HEADERS_D,
         PROVIDER_HEADERS_W,
@@ -51,6 +52,7 @@ except ImportError:
         INVERSE_LANG_LABELS,
         LANG_CODE_MAP,
         LANG_KEY_MAP,
+        MEDIAFORGE_CONFIG_DIR,
         MEDIAFORGE_TEMP_DIR,
         PROVIDER_HEADERS_D,
         PROVIDER_HEADERS_W,
@@ -174,14 +176,19 @@ def _download_via_hoster(episode, cancel_event=None) -> bool:
 
 
 def _read_encoding_settings():
-    """Read encoding settings directly from the AniWorld SQLite DB.
+    """Read encoding settings directly from the MediaForge SQLite DB.
     Avoids importing mediaforge.web (which triggers __init__ → app.py → circular import).
     Returns a dict of {key: value} for all encoding_* keys, or None on failure.
     """
     try:
         import sqlite3 as _sqlite3
-        from pathlib import Path as _Path
-        _db = _Path.home() / ".mediaforge" / "mediaforge.db"
+        # MEDIAFORGE_CONFIG_DIR, not a hardcoded ~/.mediaforge: with
+        # MEDIAFORGE_CONFIG_DIR set (Docker, a second instance, the test
+        # suite) the hardcoded path pointed at a different database than
+        # web/db/_core.py's DB_PATH -- usually a missing one, so the download
+        # path silently fell back to default codecs while the encoding worker
+        # used the real settings. Two different encoders for the same job.
+        _db = MEDIAFORGE_CONFIG_DIR / "mediaforge.db"
         if not _db.exists():
             return None
         # Called from download paths on worker threads while the queue and
@@ -219,6 +226,48 @@ def _read_encoding_settings():
 # canonical definition lives in config.MEDIAFORGE_TEMP_DIR so the web workers
 # and this module can never drift to two different scratch directories.
 _MEDIAFORGE_TEMP_DIR = MEDIAFORGE_TEMP_DIR
+
+
+class PostDownloadError(RuntimeError):
+    """The stream was fetched, but a LOCAL step after the download failed.
+
+    Everything that happens once yt-dlp is done -- the ffmpeg tagging /
+    transcoding pass, the track merge, subtitle muxing, upscaling, the move to
+    the library -- depends on this machine alone, not on the hoster. Fetching
+    the very same bytes from the very same (or another) hoster therefore
+    cannot change the outcome: the local step fails again, in exactly the same
+    way.
+
+    Before this class existed the queue worker treated such a failure like any
+    other download error and ran its full retry / provider-fallback plan, so a
+    misconfigured encoder turned into "Download -> Encoding -> Download ->
+    Encoding -> ... -> failed", re-fetching the whole episode several times
+    before finally surfacing the ffmpeg error (issue #31). The worker now
+    surfaces this one immediately.
+    """
+
+
+def _is_cancellation(exc, cancel_event=None):
+    """True when *exc* is a user cancellation rather than a real failure."""
+    if cancel_event is not None and cancel_event.is_set():
+        return True
+    return "Download cancelled" in str(exc)
+
+
+def _local_step(func, *args, _cancel_event=None, **kwargs):
+    """Run a post-download local step; re-raise its failures as PostDownloadError.
+
+    Cancellations pass through untouched -- they are not a failure of the step.
+    """
+    try:
+        return func(*args, **kwargs)
+    except PostDownloadError:
+        raise
+    except Exception as exc:
+        if _is_cancellation(exc, _cancel_event):
+            raise
+        raise PostDownloadError(str(exc)) from exc
+
 
 def _get_ffmpeg_codec_opts():
     """Return (vcodec, acodec, extra_vopts) from DB encoding settings.
@@ -1651,6 +1700,12 @@ def download(self, cancel_event=None):
     if _download_via_hoster(self, cancel_event=cancel_event):
         return True
 
+    # Flipped once every stream this job needs is on disk. From that point on
+    # a failure is a local one (ffmpeg, upscale, subtitle mux, move) and is
+    # re-raised as PostDownloadError so the queue worker stops re-downloading
+    # the episode for it -- see that class and issue #31.
+    _downloads_done = False
+
     try:
         # Where the finished file goes. Normally the episode's own path, but the
         # audio-track merge can redirect it onto an existing copy of the same
@@ -1828,6 +1883,8 @@ def download(self, cancel_event=None):
                 cancel_event=cancel_event, impersonate=_impersonate,
                 audio_lang=audio_code, want_subtitles=_want_hoster_subs,
             )
+            # The stream is on disk -- everything below this line is local work.
+            _downloads_done = True
             if _want_subs:
                 _subtitle_files = _gather_subtitles(
                     self, raw_full, headers, want_hoster=_want_hoster_subs
@@ -1902,7 +1959,11 @@ def download(self, cancel_event=None):
                 _subtitle_files.extend(_found)
             # 2. Extract audio + apply language tag via ffmpeg (local → fast copy)
             _enc_vcodec_a, _enc_acodec_a, _enc_vopts_a, _enc_global_a = _get_ffmpeg_codec_opts_for_download()
-            _run_ffmpeg_with_progress(
+            # _local_step, because this pass runs while the video thread may
+            # still be downloading -- the outer _downloads_done flag cannot be
+            # set yet, but a failure here is local all the same.
+            _local_step(
+                _run_ffmpeg_with_progress,
                 ffmpeg.input(str(raw_audio)).output(
                     str(temp_audio),
                     acodec=_enc_acodec_a,
@@ -1911,6 +1972,7 @@ def download(self, cancel_event=None):
                 ),
                 label=ep_label + " [A-tag]",
                 cancel_event=cancel_event,
+                _cancel_event=cancel_event,
             )
             if raw_audio.exists():
                 raw_audio.unlink()
@@ -1943,10 +2005,14 @@ def download(self, cancel_event=None):
             )
             if _enc_global_v:
                 _enc_node_v = _enc_node_v.global_args(*_enc_global_v)
-            _run_ffmpeg_with_progress(
+            # See the [A-tag] pass above for why this one goes through
+            # _local_step instead of relying on _downloads_done.
+            _local_step(
+                _run_ffmpeg_with_progress,
                 _enc_node_v,
                 label=ep_label + " [V-tag]",
                 cancel_event=cancel_event,
+                _cancel_event=cancel_event,
             )
             if raw_video.exists():
                 raw_video.unlink()
@@ -2020,6 +2086,10 @@ def download(self, cancel_event=None):
         elif need_video:
             _dl_video(cancel_event=cancel_event)
 
+        # Every stream this job needs is downloaded and tagged: the mux,
+        # upscale, subtitle and move steps below are local-only.
+        _downloads_done = True
+
         logger.debug("[MUXING] combining streams")
         inputs = (
             [ffmpeg.input(str(target_path))]
@@ -2050,7 +2120,7 @@ def download(self, cancel_event=None):
         self._last_output_path = target_path
         return True
 
-    except Exception:
+    except Exception as _exc:
         # Clean up temp files from failed attempt (both destination and temp dir)
         _stem_exc = self._episode_path.stem
         for suffix in (
@@ -2087,6 +2157,16 @@ def download(self, cancel_event=None):
                 pass
 
         _remove_empty_dirs(self._folder_path, self._base_folder)
+
+        # The temp files are gone either way -- the raw download cannot be
+        # resumed -- but the queue worker still needs to know WHY this failed:
+        # once the streams were on disk, re-downloading them cannot help.
+        if (
+            _downloads_done
+            and not isinstance(_exc, PostDownloadError)
+            and not _is_cancellation(_exc, cancel_event)
+        ):
+            raise PostDownloadError(str(_exc)) from _exc
         raise
 
 

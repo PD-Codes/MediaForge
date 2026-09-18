@@ -1319,6 +1319,23 @@ def _queue_worker():
                             _episode_cancelled = True
                             last_error = None
                             break
+                        from ..models.common.common import PostDownloadError
+                        if isinstance(e, PostDownloadError):
+                            # The stream was fetched; a LOCAL step failed
+                            # afterwards (ffmpeg tag/transcode, mux, upscale,
+                            # subtitle embed, move). Neither another attempt on
+                            # this hoster nor a different one downloads
+                            # different bytes, so retrying only re-fetches the
+                            # whole episode and fails identically -- the
+                            # "Download -> Encoding -> Download -> Encoding"
+                            # loop of issue #31. Surface it right away.
+                            last_error = e
+                            _provider_errors[_hoster] = str(e)
+                            logger.error(
+                                f"Episode {ep_url}: download succeeded but local "
+                                f"post-processing failed — not retrying: {e}"
+                            )
+                            break
                         if _WATCHDOG_STUCK in str(e):
                             # A download thread that ignored the cancel event is
                             # still holding the output file. Neither a retry on
@@ -1666,10 +1683,24 @@ def _queue_worker():
 def _ensure_queue_worker():
     """Start the queue worker thread once.
 
-    Used by: app.py's create_app() (initial start) and routes/history.py
-    (lazy-starts the worker on first history access if it isn't running yet).
+    Used by: app.py's create_app() (initial start), routes/history.py
+    (lazy-starts the worker on first history access if it isn't running yet),
+    worker_watchdog.py (restart of a dead thread) and worker_host.py (external
+    mode). A no-op in a process that does not own the workers -- see the guard
+    below.
     """
     global _queue_worker_started
+    # Never in a process that does not own the workers. With
+    # MEDIAFORGE_WORKER_MODE=external (or simply a second web process) this
+    # module's flag is False here even while a worker host is busy
+    # downloading, so the crash recovery below would reset that host's
+    # *running* item back to 'queued' and this process would start a second
+    # queue worker that re-claims and re-downloads the very same episode --
+    # issue #31's symptom, reached from the other direction.
+    from .worker_host import this_process_owns_workers
+    if not this_process_owns_workers():
+        return
+
     with _queue_lock:
         if _queue_worker_started:
             return

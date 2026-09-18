@@ -144,6 +144,12 @@ _RULES: list[tuple[str, object]] = [
     # perfectly fine ffmpeg. Order matters: this must precede ffmpeg_missing.
     ("ffmpeg_failed",    "ffmpeg exited with code"),
     ("ffmpeg_failed",    "ffprobe exited with code"),
+    # The download path phrases the very same failure differently
+    # (models/common/common.py's _run_ffmpeg_with_progress). Without these two
+    # it fell through to ffmpeg_missing below and told the user to re-download
+    # a perfectly working ffmpeg instead of naming the real cause.
+    ("ffmpeg_failed",    "ffmpeg error (rc="),
+    ("ffmpeg_failed",    "ffmpeg aborted (rc="),
     ("ffmpeg_missing",   "ffmpeg"),
     ("ffmpeg_missing",   "ffprobe"),
 
