@@ -303,7 +303,7 @@ class SerienstreamEpisode:
     @property
     def provider_url(self):
         if self.__provider_url is None:
-            from urllib.parse import urlparse
+            from ...mirrors import site_for_url
             try:
                 from ...playwright.captcha import solve_sto_modal
             except ImportError:
@@ -311,7 +311,11 @@ class SerienstreamEpisode:
 
             # Try plain HTTP first — works when no modal is shown
             resp = GLOBAL_SESSION.get(self.redirect_url)
-            if urlparse(resp.url).netloc != urlparse(self.redirect_url).netloc:
+            # Compare against every s.to mirror, not the redirect's own host:
+            # the mirror failover may answer from another one (serienstream.to
+            # for a dead s.to, or the bare-IP mirror), and that is still the
+            # s.to page with its captcha modal, not the provider.
+            if site_for_url(resp.url) != "sto":
                 # Redirect left s.to — no modal, plain session worked
                 self.__provider_url = resp.url
             else:
