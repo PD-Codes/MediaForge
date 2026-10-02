@@ -44,3 +44,16 @@ def test_a_dead_primary_failing_over_to_serienstream_is_still_sto(resolve):
 
 def test_staying_on_the_same_mirror_still_gets_the_modal_solved(resolve):
     assert resolve("serienstream.to", "https://serienstream.to/r?t=token") == (PROVIDER, True)
+
+
+@pytest.mark.parametrize("url, on_sto", [
+    ("https://s.to/r?t=x", True),
+    ("https://serienstream.to/r?t=x", True),
+    ("https://www.serienstream.to/serie/x", True),
+    ("https://186.2.175.5/r?t=x", True),
+    ("about:blank", True),
+    ("https://voe.sx/e/abc123", False),
+    ("https://aniworld.to/anime/stream/x", False),
+])
+def test_the_modal_solver_treats_every_sto_mirror_as_home(url, on_sto):
+    assert captcha._is_sto_url(url) is on_sto

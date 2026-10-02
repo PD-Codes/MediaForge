@@ -294,6 +294,15 @@ def _site_host_suffixes():
     return tuple(dict.fromkeys(_AD_SAFE_HOST_SUFFIXES + tuple(extra)))
 
 
+def _is_sto_url(url: str) -> bool:
+    """True when *url* is still on s.to -- any of its mirrors, not just the
+    episode's own host (the /r redirect may answer from serienstream.to or the
+    bare-IP mirror). Host-less URLs (about:blank, data:) count as home too."""
+    from urllib.parse import urlparse as _up
+    from ..mirrors import site_for_url
+    return not _up(url).netloc or site_for_url(url) == "sto"
+
+
 def _ad_host_allowed(host: str, home_netloc: str) -> bool:
     """True when *host* may load during captcha solving (i.e. is not an ad)."""
     if not host:
@@ -2030,8 +2039,7 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                     pu = new_pg.url
                     if not pu or pu in ("about:blank", ""):
                         return
-                    from urllib.parse import urlparse as _up2
-                    if _up2(pu).netloc == sto_netloc:
+                    if _is_sto_url(pu):
                         return  # still on s.to — not a provider result
                     # Keep if: Weiter was already submitted, OR it's a known provider
                     if _weiter_submitted.is_set() or _is_known_provider_url(pu):
@@ -2140,13 +2148,13 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                 # 1. player-iframe by name (classic s.to behaviour).
                 #    IMPORTANT: the form POST to /r first loads an intermediate
                 #    s.to redirect page into the iframe before the final provider
-                #    URL arrives.  We must skip any URL still on sto_netloc so we
+                #    URL arrives.  We must skip any URL still on any s.to mirror so we
                 #    don't hand a serienstream.to URL to the VOE extractor.
                 for frame in page.frames:
                     if frame.name == "player-iframe":
                         fu = frame.url
                         if fu and fu not in ("about:blank", ""):
-                            if (_urlparse(fu).netloc not in ("", sto_netloc)
+                            if (not _is_sto_url(fu)
                                     and not _is_captcha_infra_url(fu)):
                                 final_url = fu
                                 break
@@ -2166,7 +2174,7 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                         fu = frame.url
                         if not fu or fu in ("about:blank", "", start_url, episode_url):
                             continue
-                        if _urlparse(fu).netloc in ("", sto_netloc):
+                        if _is_sto_url(fu):
                             continue
                         if _is_captcha_infra_url(fu):
                             continue  # Turnstile widget, not the provider
@@ -2183,7 +2191,7 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                 if not final_url:
                     try:
                         pu = page.url
-                        if (pu and _urlparse(pu).netloc not in ("", sto_netloc)
+                        if (pu and not _is_sto_url(pu)
                                 and not _is_captcha_infra_url(pu)):
                             if weiter_clicked or _is_known_provider_url(pu):
                                 final_url = pu

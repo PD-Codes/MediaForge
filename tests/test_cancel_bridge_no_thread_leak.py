@@ -37,13 +37,14 @@ def test_prefetch_pool_is_shared_and_bounded():
     assert aw._get_pd_pool() is pool, "pool must be a singleton, not per call"
     assert pool._max_workers == 5
 
-    before = threading.active_count()
     done = threading.Event()
     futures = [pool.submit(lambda: done.wait(0.05)) for _ in range(50)]
     for f in futures:
         f.result(timeout=30)
-    # 50 tasks, never more than 5 new threads — they queued instead.
-    assert threading.active_count() - before <= 5
+    # 50 tasks, never more than 5 worker threads -- they queued instead. Count
+    # the pool's own threads, not threading.active_count(): background threads
+    # left by other tests come and go during the run and made this flaky.
+    assert len(pool._threads) <= 5
 
 
 if __name__ == "__main__":
