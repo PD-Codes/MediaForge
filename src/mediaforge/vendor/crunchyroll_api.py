@@ -974,9 +974,14 @@ class CrunchyrollClient:
         self._account: Dict[str, Any] = {}
         self._active_profile_id: Optional[str] = None
 
-        self.http.headers.update(
-            {"User-Agent": self.config.user_agent or USER_AGENT}
-        )
+        # An impersonating session (curl_cffi) already sends the User-Agent and
+        # sec-ch-ua headers that match its TLS fingerprint; overriding the UA
+        # makes the two disagree, which Cloudflare treats as a bot. Only set the
+        # UA on a plain session, or when the caller asked for one explicitly.
+        if self.config.user_agent or not getattr(self.http, "impersonate", None):
+            self.http.headers.update(
+                {"User-Agent": self.config.user_agent or USER_AGENT}
+            )
 
     # ------------------------------------------------------------------ #
     # Authentication & session

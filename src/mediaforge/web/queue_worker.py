@@ -860,8 +860,6 @@ def _queue_worker():
                 lang_sep = True
             selected_path = None
 
-            from pathlib import Path
-
             # Determine base path: custom path or default
             custom_path_id = item.get("custom_path_id")
             if custom_path_id:
@@ -1643,8 +1641,11 @@ def _queue_worker():
                         except Exception:
                             errors = []
                         errors.append({"url": item.get("series_url", ""), "error": f"Internal worker error: {str(e)}"})
-                        update_queue_errors(item["id"], json.dumps(errors))
+                        # Status first: if recording the error text fails, the row
+                        # must not stay 'running' (claim_next_queued would then
+                        # refuse every other job).
                         set_queue_status(item["id"], "failed")
+                        update_queue_errors(item["id"], json.dumps(errors))
 
                         try:
                             from .notifications import notify_all, notif_lang, tr

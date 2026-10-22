@@ -313,9 +313,6 @@ async function loadCrunchyrollSettings() {
     chk("crCalWatchlist", d.calendar_watchlist === "1");
     chk("crCalLists", d.calendar_lists === "1");
     window.__crProfileId = d.profile_id || "";
-    // Real (non-anon) account configured? Lets the watchlist/list calendar
-    // toggles stay usable even when the master display toggle is off.
-    window.__crHasAccount = !!((d.email || "") && d.has_password);
 
     // Password is never returned; only show whether one is stored.
     const pw = document.getElementById("crPassword");
@@ -369,7 +366,7 @@ function _applyCrunchyrollState() {
   const enabled = !!document.getElementById("crEnabled")?.checked;
   const anon = !!document.getElementById("crAnon")?.checked;
   ["crEmail", "crPassword", "crLocale", "crAnon", "crShowProviders",
-   "crCalSimulcast", "crTestBtn"].forEach(function (id) {
+   "crCalSimulcast", "crCalWatchlist", "crCalLists", "crTestBtn"].forEach(function (id) {
     const el = document.getElementById(id);
     if (el) el.disabled = !enabled;
   });
@@ -386,16 +383,14 @@ function _applyCrunchyrollState() {
   // Simulcast sync is tied to the master Crunchyroll display toggle.
   const simEl = document.getElementById("crCalSimulcast");
   if (simEl) simEl.disabled = !enabled || !tmdbOk;
-  // Watchlist & custom-list sync are personal-account features: they work even
-  // with the master display toggle off, as long as a real (non-anonymous)
-  // account is configured and TMDB is set.
-  const hasAccount = !!window.__crHasAccount;
+  // Watchlist & custom-list sync are personal-account features: they need the
+  // master switch on, a real (non-anonymous) account and TMDB.
   ["crCalWatchlist", "crCalLists"].forEach(function (id) {
     const el = document.getElementById(id);
-    if (el) el.disabled = !tmdbOk || anon || (!enabled && !hasAccount);
+    if (el) el.disabled = !enabled || !tmdbOk || anon;
   });
   const hint = document.getElementById("crCalTmdbHint");
-  if (hint) hint.style.display = ((enabled || hasAccount) && !tmdbOk) ? "block" : "none";
+  if (hint) hint.style.display = (enabled && !tmdbOk) ? "block" : "none";
 }
 
 async function saveCrunchyrollSettings() {

@@ -1224,7 +1224,7 @@ let _homeFacts = "";
 async function refreshHomeRunFacts() {
   const slot = document.getElementById("homeRunFacts");
   if (!slot) return;
-  if (_homeFacts && Date.now() - _homeFactsAt < 60000) { slot.innerHTML = _homeFacts; return; }
+  if (_homeFactsAt && Date.now() - _homeFactsAt < 60000) { slot.innerHTML = _homeFacts; return; }
   const parts = [];
   // The panels answer with {stats:[{label_key, value}]}, so the figures are
   // looked up by their key rather than by position -- the order of that list

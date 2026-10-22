@@ -61,6 +61,13 @@ def init_download_history_db():
             "CREATE INDEX IF NOT EXISTS idx_download_history_status "
             "ON download_history(status)"
         )
+        # get_download_history_meta_for_path() runs on every watch-progress
+        # save (every few seconds while playing) and on stream start; without
+        # this index each call scanned the whole table.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_download_history_target_path "
+            "ON download_history(target_path)"
+        )
         # Migration: add error column for existing DBs
         try:
             conn.execute("ALTER TABLE download_history ADD COLUMN error TEXT")

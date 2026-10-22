@@ -74,7 +74,7 @@ _RECENT_MAX_ITEMS = 10
 _DISK_TTL = 30.0
 
 _cache_lock = threading.Lock()
-_badge_cache = {"at": 0.0, "values": {}}
+_badge_cache = {"at": 0.0, "values": {}, "admin": False}
 _disk_cache = {"at": 0.0, "value": []}
 
 
@@ -864,7 +864,9 @@ def _badges(is_admin) -> dict:
     """
     now = time.monotonic()
     with _cache_lock:
-        if now - _badge_cache["at"] < _BADGE_TTL:
+        # A cache filled by a non-admin lacks the admin-only badges; an admin
+        # must not be served that for a whole TTL (storage/system would read 0).
+        if now - _badge_cache["at"] < _BADGE_TTL and (_badge_cache["admin"] or not is_admin):
             return dict(_badge_cache["values"])
     values = {}
     for pid, _key, _view, badge, admin_only, _icon in _BUILTIN_PANELS:
@@ -880,6 +882,7 @@ def _badges(is_admin) -> dict:
         # request must not replace a full cache with a partial one -- merge.
         _badge_cache["values"].update(values)
         _badge_cache["at"] = now
+        _badge_cache["admin"] = bool(is_admin)
         return dict(_badge_cache["values"])
 
 

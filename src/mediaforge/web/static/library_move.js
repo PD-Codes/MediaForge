@@ -212,7 +212,7 @@ function _libMoveFinish(folder) {
   _libMoveToast('"' + folder + '" ' + t("wurde verschoben", "was moved"));
   // Only the library page has a list to refresh -- the move can now finish
   // while the user is on any other page, where libLoad() does not exist.
-  if (typeof libLoad === "function" && document.getElementById("libGrid")) { libLoad(false); }
+  if (typeof libLoad === "function" && document.getElementById("libGridView")) { libLoad(false); }
 }
 
 /** Toast, or a fallback that is not silence.

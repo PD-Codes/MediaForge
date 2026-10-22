@@ -58,12 +58,11 @@ class _TmdbRateLimiter:
             elapsed = now - self._last
             self._last = now
             self._tokens = min(self._rate, self._tokens + elapsed * self._rate)
-            if self._tokens >= 1.0:
-                self._tokens -= 1.0
-                wait = 0.0
-            else:
-                wait = (1.0 - self._tokens) / self._rate
-                self._tokens = 0.0
+            # Reserve the slot even when the bucket is empty: the balance goes
+            # negative, so concurrent callers queue up one slot apart instead
+            # of all sleeping the same 1/rate and firing together.
+            self._tokens -= 1.0
+            wait = max(0.0, -self._tokens / self._rate)
         if wait > 0:
             time.sleep(wait)
 

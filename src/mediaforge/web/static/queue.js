@@ -607,7 +607,7 @@ function _qNormJob(item, queue) {
       id: item.id,
       raw: item,
       epPct: null,
-      epLabel: epLabel,
+      epLabel: "",
       title: isEnc ? t("Anderes Encoding", "Another encoding job")
         : t("Anderes Upscaling", "Another upscaling job"),
       episode: totalFiles > 1 ? totalFiles + " " + t("Dateien", "files") : "",

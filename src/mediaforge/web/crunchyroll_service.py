@@ -103,6 +103,37 @@ _client: Any = None
 _client_signature: Optional[str] = None
 _client_logged_in_at: float = 0.0
 
+# After a failed login / Cloudflare block every caller (calendar watcher, one
+# availability lookup per poster card) used to retry the login at once, which
+# hammers Cloudflare and keeps the block alive. A failure now pauses all
+# Crunchyroll traffic; the pause doubles per consecutive failure up to a cap.
+_FAIL_BACKOFF = {"cloudflare": 15 * 60, "login": 30 * 60, "other": 2 * 60}
+_FAIL_BACKOFF_MAX = 6 * 3600
+_fail_until: float = 0.0
+_fail_count: int = 0
+
+
+def _set_backoff_locked(kind: str) -> None:
+    """Start/extend the pause after a failure. Caller holds ``_client_lock``."""
+    global _fail_until, _fail_count
+    _fail_count += 1
+    # Cap the exponent too, so a long outage cannot overflow the shift.
+    delay = min(_FAIL_BACKOFF.get(kind, 120) * 2 ** min(_fail_count - 1, 10), _FAIL_BACKOFF_MAX)
+    _fail_until = time.time() + delay
+    logger.warning("[Crunchyroll] %s failure #%d -- pausing requests for %d min",
+                   kind, _fail_count, delay // 60)
+
+
+def _note_failure(kind: str) -> None:
+    with _client_lock:
+        _set_backoff_locked(kind)
+
+
+def _note_exception(exc: BaseException) -> None:
+    """Back off when a *request* (not only the login) hit a Cloudflare block."""
+    if isinstance(exc, CloudflareBlockError):
+        _note_failure("cloudflare")
+
 # "on Crunchyroll?" lookups are cached persistently (SQLite, same mechanism as
 # the TMDB cache) so a restart doesn't lose 24h of work and negative results
 # don't need to be re-fetched on every process start.
@@ -124,13 +155,14 @@ def is_enabled() -> bool:
 
 
 def has_account() -> bool:
-    """True when a real (non-anonymous) Crunchyroll login is configured.
+    """True when the integration is on AND a real (non-anonymous) login is configured.
 
-    Used so personal-account features (watchlist / custom lists in the calendar)
-    can work even when the master display toggle (:func:`is_enabled`) is off, as
-    long as email + password are stored. Anonymous mode has no watchlist.
+    Gates the personal-account features (watchlist / custom lists in the
+    calendar). The master switch (:func:`is_enabled`) is authoritative: with it
+    off, stored credentials alone must not cause any request to Crunchyroll.
+    Anonymous mode has no watchlist.
     """
-    return _IMPORT_OK and bool(_s("email")) and bool(_s("password"))
+    return is_enabled() and bool(_s("email")) and bool(_s("password"))
 
 
 def _credentials_signature() -> str:
@@ -163,8 +195,13 @@ def _get_session_key() -> Optional[str]:
 # TLS fingerprint (JA3/JA4) that Cloudflare blocks on Windows builds even though
 # the User-Agent claims Chrome. curl_cffi replays a real Chrome TLS handshake so
 # the fingerprint matches the claimed browser. Mirrors mediaforge.config which
-# already uses impersonate="chrome120" for the hosters.
-_IMPERSONATE = "chrome120"
+# already uses impersonate="chrome120" for the hosters. "chrome" is curl_cffi's
+# alias for the newest Chrome profile the installed version ships, so the TLS
+# fingerprint does not age; chrome120 is from Dec 2023 and is increasingly
+# rejected by Cloudflare. The vendored client leaves the User-Agent alone on an
+# impersonating session (a hand-set UA that disagrees with the TLS handshake and
+# the sec-ch-ua headers is itself a bot signal).
+_IMPERSONATE = "chrome"
 
 
 def _make_http_session() -> Any:
@@ -214,13 +251,17 @@ def get_client() -> Any:
     refreshes the login after :data:`_RELOGIN_TTL`. Anonymous mode is used when
     no email/password is configured or the ``anon`` toggle is set.
     """
-    global _client, _client_signature, _client_logged_in_at
-    if not (is_enabled() or has_account()):
+    global _client, _client_signature, _client_logged_in_at, _fail_until, _fail_count
+    if not is_enabled():
         return None
 
     sig = _credentials_signature()
     now = time.time()
     with _client_lock:
+        # Paused after a failure: also covers a still-valid cached client, so a
+        # Cloudflare block seen mid-session stops the traffic too.
+        if now < _fail_until:
+            return None
         fresh = (
             _client is not None
             and _client_signature == sig
@@ -248,6 +289,7 @@ def get_client() -> Any:
             _client = client
             _client_signature = sig
             _client_logged_in_at = now
+            _fail_until, _fail_count = 0.0, 0
             logger.info("[Crunchyroll] logged in (%s)", "anonymous" if anon else email)
             # Telemetry: stage-2 usage counter -- only on a genuinely
             # established connection, never on a failed login below.
@@ -255,12 +297,16 @@ def get_client() -> Any:
             return _client
         except LoginError:
             logger.warning("[Crunchyroll] login failed — check credentials")
+            kind = "login"
         except CloudflareBlockError:
             logger.warning("[Crunchyroll] blocked by Cloudflare")
+            kind = "cloudflare"
         except Exception:
             logger.warning("[Crunchyroll] could not create client", exc_info=True)
+            kind = "other"
         _client = None
         _client_signature = None
+        _set_backoff_locked(kind)
         return None
 
 
@@ -269,11 +315,13 @@ def invalidate_client() -> None:
 
     Used by: routes/integrations.py after Crunchyroll settings are saved.
     """
-    global _client, _client_signature, _client_logged_in_at
+    global _client, _client_signature, _client_logged_in_at, _fail_until, _fail_count
     with _client_lock:
         _client = None
         _client_signature = None
         _client_logged_in_at = 0.0
+        # Settings changed (or the integration was toggled): allow a fresh try now.
+        _fail_until, _fail_count = 0.0, 0
     clear_provider_cache(_PROVIDER_CACHE_NS)
     _titles_cache.clear()
 
@@ -306,6 +354,7 @@ def list_account_profiles() -> List[Dict[str, Any]]:
         ]
     except Exception as exc:
         logger.debug("[Crunchyroll] list_account_profiles failed: %s", exc)
+        _note_exception(exc)
         return []
 
 
@@ -440,7 +489,9 @@ def is_available(title: str) -> bool:
                 break
     except Exception as exc:
         logger.debug("[Crunchyroll] availability lookup failed for %r: %s", title, exc)
-        found = False
+        _note_exception(exc)
+        # A failed lookup is not "not on Crunchyroll": don't cache it for 24 h.
+        return False
 
     set_provider_cache(_PROVIDER_CACHE_NS, key, {"found": found})
     return found
@@ -482,6 +533,7 @@ def _cached_titles(key: str, builder) -> List[str]:
         out = builder() or []
     except Exception as exc:
         logger.debug("[Crunchyroll] title builder %s failed: %s", key, exc)
+        _note_exception(exc)
         out = []
     # Don't cache an empty result (likely a transient login/API hiccup).
     if out:
@@ -504,6 +556,9 @@ def get_simulcast_titles() -> List[str]:
                 lineup = client.get_season_anime(slug, limit=_MAX_SERIES) or []
             except Exception as exc:
                 logger.debug("[Crunchyroll] lineup %s failed: %s", slug, exc)
+                _note_exception(exc)
+                if isinstance(exc, CloudflareBlockError):
+                    break
                 continue
             for sr in lineup:
                 t = (getattr(sr, "title", "") or "").strip()
@@ -540,6 +595,7 @@ def get_watchlist_titles() -> List[str]:
                     ids.append(cid)
         except Exception as exc:
             logger.debug("[Crunchyroll] watchlist fetch failed: %s", exc)
+            _note_exception(exc)
             return []
         # 2. Resolve ids -> objects (with titles) in chunks of 50.
         seen, out = set(), []
@@ -548,6 +604,9 @@ def get_watchlist_titles() -> List[str]:
                 objs = client.get_objects(ids[i:i + 50]) or []
             except Exception as exc:
                 logger.debug("[Crunchyroll] watchlist resolve failed: %s", exc)
+                _note_exception(exc)
+                if isinstance(exc, CloudflareBlockError):
+                    break
                 continue
             for obj in objs:
                 # Episode objects expose series_title; series/movies expose title.
@@ -586,6 +645,7 @@ def get_custom_list_entries() -> List[Dict[str, Any]]:
         lists = client.list_custom_lists() or []
     except Exception as exc:
         logger.debug("[Crunchyroll] custom lists failed: %s", exc)
+        _note_exception(exc)
         return out
 
     for lst in lists:
@@ -599,6 +659,9 @@ def get_custom_list_entries() -> List[Dict[str, Any]]:
             items = client.get_custom_list(list_id) or []
         except Exception as exc:
             logger.debug("[Crunchyroll] custom list %s failed: %s", list_id, exc)
+            _note_exception(exc)
+            if isinstance(exc, CloudflareBlockError):
+                break
             continue
         seen_in_list = set()
         for item in items:
@@ -639,6 +702,7 @@ def get_simulcast_seasons() -> List[Dict[str, Any]]:
         return client.list_simulcast_seasons() or []
     except Exception as exc:
         logger.debug("[Crunchyroll] simulcast seasons failed: %s", exc)
+        _note_exception(exc)
         return []
 
 

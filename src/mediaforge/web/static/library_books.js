@@ -563,8 +563,8 @@ function libRenderBookDetail(it, pfx) {
       // instead of a browser tab. The position is stored against the BOOK, so
       // the format picked here does not start a separate bookmark.
       h.push('<button type="button" class="mf-book-open" ' +
-             'onclick="libReadBook(\'' + libEscAttr(encodeURIComponent(f.path)) + '\', \'' +
-             libEscAttr(f.ext) + '\', \'' + libEscAttr(encodeURIComponent(book.key)) + '\')">' +
+             'onclick="libReadBook(\'' + libEscAttr(encodeURIComponent(f.path).replace(/'/g, "%27")) + '\', \'' +
+             libEscAttr(f.ext) + '\', \'' + libEscAttr(encodeURIComponent(book.key).replace(/'/g, "%27")) + '\')">' +
              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
              'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
              '<path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>' +
