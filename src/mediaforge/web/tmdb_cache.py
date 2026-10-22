@@ -381,6 +381,28 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
                 _tmdb_inflight.pop(cache_key, None)
             my_ev.set()
 
+# Calendar lookups that failed for a reason that may pass (timeout, 429, 5xx):
+# not cached as an answer, but not retried on every 10 s watcher cycle either.
+_TMDB_CAL_RETRY = 300.0
+_tmdb_cal_backoff: dict = {}
+
+
+def _is_transient_tmdb_error(exc) -> bool:
+    """False only for an answer TMDB really gave (e.g. 404 = no such season)."""
+    code = getattr(getattr(exc, "response", None), "status_code", None)
+    return code is None or code == 429 or code >= 500
+
+
+def _tmdb_cal_backed_off(cache_key) -> bool:
+    return _tmdb_cal_backoff.get(cache_key, 0.0) > time.monotonic()
+
+
+def _tmdb_cal_note_failure(cache_key) -> None:
+    if len(_tmdb_cal_backoff) > 2000:
+        _tmdb_cal_backoff.clear()
+    _tmdb_cal_backoff[cache_key] = time.monotonic() + _TMDB_CAL_RETRY
+
+
 def _tmdb_calendar_episodes(tmdb_id, api_key, ui_lang="de"):
     """Return {poster, title, episodes} of dated episodes around the currently
     airing season for a TV show. Results are cached for 6 h in tmdb_cache.
@@ -391,6 +413,8 @@ def _tmdb_calendar_episodes(tmdb_id, api_key, ui_lang="de"):
     cached = get_tmdb_cache(cache_key, ttl=21600.0)  # 6 h
     if cached is not None:
         return cached
+    if _tmdb_cal_backed_off(cache_key):
+        return {"poster": None, "title": "", "episodes": []}
 
     lang = "en-US" if ui_lang == "en" else "de-DE"
 
@@ -407,6 +431,7 @@ def _tmdb_calendar_episodes(tmdb_id, api_key, ui_lang="de"):
     poster = None
     title = ""
     episodes = []
+    transient = False
     try:
         details = _call("/tv/" + str(tmdb_id))
         poster = details.get("poster_path")
@@ -420,7 +445,8 @@ def _tmdb_calendar_episodes(tmdb_id, api_key, ui_lang="de"):
         for sn in sorted(season_numbers):
             try:
                 sdata = _call("/tv/" + str(tmdb_id) + "/season/" + str(sn))
-            except Exception:
+            except Exception as exc:
+                transient = transient or _is_transient_tmdb_error(exc)
                 continue
             for e in sdata.get("episodes", []):
                 ad = e.get("air_date")
@@ -435,9 +461,15 @@ def _tmdb_calendar_episodes(tmdb_id, api_key, ui_lang="de"):
                 })
     except Exception as exc:
         logger.debug("[Calendar] episode lookup failed for tmdb %s: %s", tmdb_id, exc)
+        transient = _is_transient_tmdb_error(exc)
 
     out = {"poster": poster, "title": title, "episodes": episodes}
-    set_tmdb_cache(cache_key, out)
+    # A timeout / 429 / 5xx must not be stored as "this show has these
+    # (partial or no) episodes" for the whole cache lifetime.
+    if transient:
+        _tmdb_cal_note_failure(cache_key)
+    else:
+        set_tmdb_cache(cache_key, out)
     return out
 
 # TMDB release types, in the order the calendar prefers them. A calendar
@@ -533,6 +565,9 @@ def _tmdb_movie_release(tmdb_id, api_key, ui_lang="de", country="DE"):
     if cached is not None:
         return cached
     lang = "en-US" if ui_lang == "en" else "de-DE"
+    if _tmdb_cal_backed_off(cache_key):
+        return {"poster": None, "title": "", "release_date": None,
+                "release_country": "", "release_type": 0}
     out = {"poster": None, "title": "", "release_date": None,
            "release_country": "", "release_type": 0}
     try:
@@ -558,6 +593,9 @@ def _tmdb_movie_release(tmdb_id, api_key, ui_lang="de", country="DE"):
         }
     except Exception as exc:
         logger.debug("[Calendar] movie lookup failed for tmdb %s: %s", tmdb_id, exc)
+        if _is_transient_tmdb_error(exc):
+            _tmdb_cal_note_failure(cache_key)
+            return out  # not cached: a later cycle retries
     set_tmdb_cache(cache_key, out)
     return out
 def _tmdb_fetch_season_and_episode(tmdb_id, season_num, episode_num, api_key, ui_lang='de'):

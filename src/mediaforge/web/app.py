@@ -73,6 +73,8 @@ from .runtime_state import (
     _active_cancel_events_lock,
     _upscale_active_cancel_events,
     _upscale_cancel_lock,
+    _encoding_active_cancel_events,
+    _encoding_cancel_lock,
     _load_queue_paused_from_db,
 )
 from .dns_patch import _apply_dns_patch, _DNS_PRESETS
@@ -2139,6 +2141,12 @@ def start_web_ui(
                         ev.set()
             except Exception:
                 pass
+            try:
+                with _encoding_cancel_lock:
+                    for ev in list(_encoding_active_cancel_events.values()):
+                        ev.set()
+            except Exception:
+                pass
 
             # Silence waitress's own death rattle. Closing the listening socket from this
             # thread makes the worker threads still servicing other requests fail their next
@@ -2184,6 +2192,12 @@ def start_web_ui(
             try:
                 with _upscale_cancel_lock:
                     for ev in list(_upscale_active_cancel_events.values()):
+                        ev.set()
+            except Exception:
+                pass
+            try:
+                with _encoding_cancel_lock:
+                    for ev in list(_encoding_active_cancel_events.values()):
                         ev.set()
             except Exception:
                 pass

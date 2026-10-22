@@ -397,9 +397,6 @@ def _encoding_worker():
                 set_encoding_status(item["id"], "cancelled")
                 _final_status_set = True
 
-            with _encoding_cancel_lock:
-                _encoding_active_cancel_events.pop(item["id"], None)
-
             # Job over: stamp last_run and drop back to idle, so no stall
             # countdown is shown for a worker with nothing to do.
             _wr.done("encoding", detail="")
@@ -438,6 +435,11 @@ def _encoding_worker():
             # `continue` out of a guard clause, or an exception.
             if _hb is not None:
                 _hb.stop()
+            # Also on the error path: a stale event would make /cancel report
+            # success for a job that is no longer running.
+            if item is not None:
+                with _encoding_cancel_lock:
+                    _encoding_active_cancel_events.pop(item.get("id"), None)
 
 
 def _ensure_encoding_worker():

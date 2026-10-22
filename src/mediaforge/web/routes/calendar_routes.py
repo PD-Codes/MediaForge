@@ -99,15 +99,40 @@ _LIB_RESOLVE_BATCH = 10
 _TITLE_RESOLVE_LANG = "de"
 
 
+# The watcher runs every 10 s and each calendar request asks too; one lookup is
+# four HTTP calls to Seerr. Requests change rarely, so keep the answer a while
+# and, after a failure, keep the last good one and retry later instead of
+# hammering an unreachable server.
+_SEERR_TTL = 120.0
+_SEERR_RETRY = 60.0
+_seerr_cache = {"key": None, "at": 0.0, "out": []}
+_seerr_lock = threading.Lock()
+
+
 def _seerr_requested_media():
     """Return [{tmdb_id, media_type}] of pending/approved Seerr requests that
     are not yet available. Empty list if Seerr is not configured/reachable."""
-    import urllib.request as _ur
-    import urllib.parse as _up
     seerr_url = (get_setting("seerr_url") or "").rstrip("/")
     seerr_key = get_setting("seerr_api_key") or ""
     if not seerr_url or not seerr_key:
         return []
+    key = (seerr_url, seerr_key)
+    with _seerr_lock:
+        if _seerr_cache["key"] == key and time.monotonic() < _seerr_cache["at"]:
+            return list(_seerr_cache["out"])
+    out, ok = _fetch_seerr_requested_media(seerr_url, seerr_key)
+    with _seerr_lock:
+        if ok or _seerr_cache["key"] != key:
+            _seerr_cache["out"] = out
+        _seerr_cache["key"] = key
+        _seerr_cache["at"] = time.monotonic() + (_SEERR_TTL if ok else _SEERR_RETRY)
+        return list(_seerr_cache["out"])
+
+
+def _fetch_seerr_requested_media(seerr_url, seerr_key):
+    """(items, ok). ok is False when any call failed."""
+    import urllib.request as _ur
+    import urllib.parse as _up
 
     def seerr_get(path, params=None):
         url = seerr_url + path
@@ -119,6 +144,7 @@ def _seerr_requested_media():
 
     out = []
     seen = set()
+    ok = True
     try:
         for mt in ("tv", "movie"):
             for f in ("pending", "approved"):
@@ -139,7 +165,8 @@ def _seerr_requested_media():
                     out.append({"tmdb_id": tid, "media_type": mt})
     except Exception as exc:
         logger.debug("[Calendar] Seerr request fetch failed: %s", exc)
-    return out
+        ok = False
+    return out, ok
 
 
 # ---------------------------------------------------------------------------

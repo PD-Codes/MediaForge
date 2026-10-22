@@ -95,12 +95,16 @@ function _libMoveStopPolling() {
 function _libMoveStartPolling(folder, interval) {
   _libMoveStopPolling();
   var period = interval || (_libMoveModalOpen() ? _LIB_MOVE_POLL_OPEN : _LIB_MOVE_POLL_BG);
+  var inFlight = false;
   _libMovePollTimer = setInterval(async function () {
     // Re-tune when the modal is opened or minimized, without restarting the
     // move or losing the fail streak.
     var wanted = _libMoveModalOpen() ? _LIB_MOVE_POLL_OPEN : _LIB_MOVE_POLL_BG;
     if (wanted !== period) { period = wanted; _libMoveStartPolling(folder, wanted); return; }
 
+    // A slow response must not be overtaken by the next tick.
+    if (inFlight) return;
+    inFlight = true;
     try {
       var r = await fetch("/api/library/move_status/" + _libMoveJobId);
       if (r.status === 404) {
@@ -123,6 +127,8 @@ function _libMoveStartPolling(folder, interval) {
       else if (s.status === "error") { _libMoveError(s.error || t("Unbekannter Fehler", "Unknown error")); }
     } catch (e) {
       _libMoveTransientFailure(t("Verbindung unterbrochen", "Connection interrupted"));
+    } finally {
+      inFlight = false;
     }
   }, period);
 }

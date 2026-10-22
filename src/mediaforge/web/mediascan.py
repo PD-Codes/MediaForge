@@ -98,20 +98,30 @@ def _mediascan_fetch_jellyfin(jf_url: str, jf_key: str) -> list:
     import urllib.request as _req
     import json as _json
 
+    # A failed request raises: returning what was fetched so far would make
+    # _run_mediascan() replace the whole cache with a partial (or empty) list.
     entries = []
+    page = 1000
     for item_type in ("Series", "Movie"):
-        url = (
-            f"{jf_url}/Items"
-            f"?Recursive=true"
-            f"&IncludeItemTypes={item_type}"
-            f"&fields=ProviderIds,Name"
-            f"&Limit=5000"
-            f"&api_key={jf_key}"
-        )
-        try:
-            with _req.urlopen(url, timeout=30) as r:
-                data = _json.loads(r.read())
-            for item in data.get("Items") or []:
+        start = 0
+        while True:
+            url = (
+                f"{jf_url}/Items"
+                f"?Recursive=true"
+                f"&IncludeItemTypes={item_type}"
+                f"&fields=ProviderIds,Name"
+                f"&StartIndex={start}"
+                f"&Limit={page}"
+                f"&api_key={jf_key}"
+            )
+            try:
+                with _req.urlopen(url, timeout=30) as r:
+                    data = _json.loads(r.read())
+            except Exception as exc:
+                logger.warning("[MediaScan] Jellyfin fetch failed for %s: %s", item_type, exc)
+                raise RuntimeError("Jellyfin fetch failed for %s: %s" % (item_type, exc)) from exc
+            items = data.get("Items") or []
+            for item in items:
                 pids = item.get("ProviderIds") or {}
                 entries.append({
                     "tmdb_id":    str(pids.get("Tmdb") or "").strip() or None,
@@ -120,8 +130,9 @@ def _mediascan_fetch_jellyfin(jf_url: str, jf_key: str) -> list:
                     "title":      item.get("Name") or "",
                     "media_type": "show" if item_type == "Series" else "movie",
                 })
-        except Exception as exc:
-            logger.warning("[MediaScan] Jellyfin fetch failed for %s: %s", item_type, exc)
+            start += len(items)
+            if len(items) < page or start >= int(data.get("TotalRecordCount") or 0):
+                break
     return entries
 
 
@@ -170,8 +181,9 @@ def _mediascan_fetch_plex(plex_url: str, plex_key: str) -> list:
         with _req.urlopen(req, timeout=15) as r:
             sections_data = _json.loads(r.read())
     except Exception as exc:
+        # Raise instead of returning []: an empty list would wipe the cache.
         logger.warning("[MediaScan] Plex sections fetch failed: %s", exc)
-        return entries
+        raise RuntimeError("Plex sections fetch failed: %s" % exc) from exc
 
     directories = (
         sections_data.get("MediaContainer", {}).get("Directory") or []
@@ -196,7 +208,7 @@ def _mediascan_fetch_plex(plex_url: str, plex_key: str) -> list:
                 data = _json.loads(r.read())
         except Exception as exc:
             logger.warning("[MediaScan] Plex section %s fetch failed: %s", sec_id, exc)
-            continue
+            raise RuntimeError("Plex section %s fetch failed: %s" % (sec_id, exc)) from exc
 
         items = data.get("MediaContainer", {}).get("Metadata") or []
         for item in items:

@@ -291,7 +291,12 @@
   function load(isSilent) {
     if (!isSilent && !state.loaded) showState("loading");
     fetch("/api/calendar")
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        // An error body is not a calendar: without this a silent poll that hit
+        // a 500 replaced the shown events with an empty list.
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
       .then(function (data) {
         state.loaded = true;
         if (data && data.error === "no_key") { showState("noKey"); return; }
