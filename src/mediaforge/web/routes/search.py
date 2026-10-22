@@ -2281,11 +2281,16 @@ def register_search_routes(app):
         results = {}
         # max_workers=3 limits concurrent lookups; the rate limiter inside
         # _tmdb_lookup_cached serialises the actual TMDB HTTP calls globally.
-        with _cf.ThreadPoolExecutor(max_workers=3, thread_name_prefix="tmdb-batch") as pool:
-            future_to_title = {
-                pool.submit(_tmdb_lookup_cached, t, None, api_key, country, ui_lang): t
-                for t in titles
-            }
+        # No `with` block: its __exit__ waits for every worker, which made the
+        # 35 s timeout below meaningless (and as_completed's TimeoutError
+        # turned into a 500). Titles still pending at the deadline count as
+        # not found; queued ones are cancelled.
+        pool = _cf.ThreadPoolExecutor(max_workers=3, thread_name_prefix="tmdb-batch")
+        future_to_title = {
+            pool.submit(_tmdb_lookup_cached, t, None, api_key, country, ui_lang): t
+            for t in titles
+        }
+        try:
             for fut in _cf.as_completed(future_to_title, timeout=35):
                 t = future_to_title[fut]
                 try:
@@ -2293,6 +2298,13 @@ def register_search_routes(app):
                 except Exception as exc:
                     logger.debug("[CineInfo] batch lookup failed for %r: %s", t, exc)
                     results[t] = {"found": False}
+        except _cf.TimeoutError:
+            logger.warning("[CineInfo] batch lookup timed out, %d of %d titles done",
+                           len(results), len(titles))
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        for t in titles:
+            results.setdefault(t, {"found": False})
         # Layer any registered CineInfo module sources on top of the TMDB results.
         # A bulk-capable source resolves all titles in ONE request; a per-item
         # source is looped. Zero-overhead pass-through when nothing is registered.

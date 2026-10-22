@@ -53,6 +53,13 @@ _MEDIA_MEMO_LOCK = threading.Lock()
 _MEDIA_MEMO_MIN_INTERVAL = 60.0
 
 
+def _drop_media_memo():
+    """The ignore list feeds the media stats, so changing it must not wait for
+    the 60 s throttle in _media_results()."""
+    with _MEDIA_MEMO_LOCK:
+        _MEDIA_MEMO["stats"] = None
+
+
 def _cache_fingerprint(cache):
     """Cheap identity of the library cache: changes exactly when a scan does."""
     return tuple(sorted(
@@ -744,6 +751,7 @@ def register_stats_routes(app):
                 slots = [str(s).strip() for s in (it.get("slots") or []) if str(s).strip()]
             if folder and slots:
                 add_media_ignores(folder, slots, title)
+        _drop_media_memo()
         return jsonify({"ok": True})
     @app.route("/api/media/unignore", methods=["POST"])
     def api_media_unignore():
@@ -762,6 +770,7 @@ def register_stats_routes(app):
             if not slot:
                 return jsonify({"error": "slot required"}), 400
             remove_media_ignore(folder, slot=slot)
+        _drop_media_memo()
         return jsonify({"ok": True})
     @app.route("/api/stats/sync")
     def api_stats_sync():

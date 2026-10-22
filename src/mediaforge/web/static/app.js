@@ -974,11 +974,9 @@ window.addEventListener("popstate", function () {
 document.addEventListener("keydown", function (ev) {
   if (ev.key !== "Escape") return;
   if (!document.body.classList.contains("is-searching")) return;
-  // Not while a modal or the suggestion list is open -- Escape belongs to
-  // whatever is on top, and those close themselves first.
+  // Not while a modal is open -- Escape belongs to whatever is on top, and
+  // those close themselves first.
   if (document.querySelector(".directlink-overlay[style*='flex'], .queue-overlay[style*='flex']")) return;
-  const suggest = document.getElementById("searchSuggest");
-  if (suggest && !suggest.hidden) return;
   exitSearch();
 });
 
@@ -2424,223 +2422,19 @@ function scrollBrowseGrid(btn, dir) {
 
 initBrowseScrollButtons();
 
-// ── Recent searches ─────────────────────────────────────────────────────────
-// The search field is the whole point of the home page and used to be the
-// dumbest thing on it: no history, no shortcut, no way back to what you looked
-// up yesterday. The list is per browser on purpose -- it is typing history,
-// not a setting, and it never leaves the device.
-const _RECENT_KEY = "mf-recent-searches";
-const _RECENT_MAX = 8;
+// The search field used to have a suggestion dropdown with a per-browser
+// "recent searches" list; drop what it left in storage.
+try { localStorage.removeItem("mf-recent-searches"); } catch (e) { /* private mode */ }
 
 function _homeText(key, de, en) {
   const map = window.__HOME_I18N || {};
   return map[key] || t(de, en);
 }
 
-function _recentSearches() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(_RECENT_KEY) || "[]");
-    return Array.isArray(raw) ? raw.filter(function (x) { return typeof x === "string"; }) : [];
-  } catch (e) { return []; }
-}
-
-function _saveRecentSearches(list) {
-  try { localStorage.setItem(_RECENT_KEY, JSON.stringify(list.slice(0, _RECENT_MAX))); }
-  catch (e) { /* private mode */ }
-}
-
-function pushRecentSearch(keyword) {
-  const kw = String(keyword || "").trim();
-  if (!kw) return;
-  const list = _recentSearches().filter(function (x) { return x.toLowerCase() !== kw.toLowerCase(); });
-  list.unshift(kw);
-  _saveRecentSearches(list);
-}
-
-function _suggestBox() { return document.getElementById("searchSuggest"); }
-
-function closeSearchSuggest() {
-  const box = _suggestBox();
-  if (!box) return;
-  box.hidden = true;
-  box.innerHTML = "";
+// "/" jumps to the search field, the way every search-first page does it.
+(function () {
   const input = document.getElementById("searchInput");
-  if (input) input.setAttribute("aria-expanded", "false");
-}
-
-// Suggestions fetched from /api/home/suggest for the current query. Kept
-// outside renderSearchSuggest() so the dropdown can repaint instantly from
-// the local history while the server answer is still on its way -- a preview
-// that only appears once the network replies is not a preview.
-let _suggestGroups = [];
-let _suggestQuery = "";
-let _suggestTimer = null;
-
-const _SUGGEST_GROUP_LABELS = {
-  library: ["suggest_library", "In deiner Mediathek", "In your library"],
-  watchlist: ["suggest_watchlist", "Auf deiner Merkliste", "On your watchlist"],
-};
-
-/** Ask the server what it already knows about *typed*.
-    Debounced and query-checked: answers that arrive after the user has typed
-    on are dropped rather than replacing a newer list. */
-function _fetchSuggest(typed) {
-  clearTimeout(_suggestTimer);
-  if (typed.length < 2) { _suggestGroups = []; _suggestQuery = ""; return; }
-  _suggestTimer = setTimeout(async function () {
-    try {
-      const resp = await fetch("/api/home/suggest?q=" + encodeURIComponent(typed));
-      const data = await resp.json();
-      const input = document.getElementById("searchInput");
-      const still = input && input.value.trim().toLowerCase();
-      if (still !== typed) return;          // the user has moved on
-      _suggestGroups = Array.isArray(data.groups) ? data.groups : [];
-      _suggestQuery = typed;
-      renderSearchSuggest(true);
-    } catch (e) {
-      _suggestGroups = [];
-    }
-  }, 180);
-}
-
-function renderSearchSuggest(skipFetch) {
-  const box = _suggestBox();
-  const input = document.getElementById("searchInput");
-  if (!box || !input) return;
-  const typed = input.value.trim().toLowerCase();
-  if (!skipFetch) {
-    if (typed !== _suggestQuery) { _suggestGroups = []; }
-    _fetchSuggest(typed);
-  }
-  const list = _recentSearches().filter(function (x) {
-    return !typed || x.toLowerCase().indexOf(typed) !== -1;
-  });
-  const groups = typed === _suggestQuery ? _suggestGroups : [];
-  if (!list.length && !groups.length) { closeSearchSuggest(); return; }
-
-  let html = "";
-  // Server groups first: "the thing you are looking for is already on disk"
-  // is a more useful answer than "you searched for this before".
-  groups.forEach(function (group) {
-    const meta = _SUGGEST_GROUP_LABELS[group.key];
-    if (!meta || !(group.items || []).length) return;
-    html += '<div class="home-suggest-head">' +
-      escapeHtml(_homeText(meta[0], meta[1], meta[2])) + "</div>";
-    group.items.forEach(function (item) {
-      html += '<div class="home-suggest-item" role="option" tabindex="-1"' +
-        ' data-kw="' + escapeHtml(item.title || "") + '"' +
-        (item.href ? ' data-href="' + escapeHtml(item.href) + '"' : "") +
-        (item.url ? ' data-url="' + escapeHtml(item.url) + '"' : "") + ">" +
-        '<span class="home-suggest-dot" data-group="' + escapeHtml(group.key) + '"></span>' +
-        "<span>" + escapeHtml(item.title || "") + "</span>" +
-        (item.sub ? '<small class="home-suggest-sub">' + escapeHtml(item.sub) + "</small>" : "") +
-        "</div>";
-    });
-  });
-
-  if (list.length) {
-    html += '<div class="home-suggest-head">' +
-      escapeHtml(_homeText("recent_searches", "Zuletzt gesucht", "Recent searches")) +
-      '<button type="button" class="home-suggest-clear" data-clear="1">' +
-      escapeHtml(_homeText("clear_history", "Verlauf löschen", "Clear history")) + "</button></div>" +
-      list.map(function (kw) {
-        return '<div class="home-suggest-item" role="option" tabindex="-1" data-kw="' + escapeHtml(kw) + '">' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>' +
-          '<span>' + escapeHtml(kw) + "</span>" +
-          '<button type="button" class="home-suggest-del" data-del="' + escapeHtml(kw) + '" aria-label="' +
-          escapeHtml(_homeText("remove_entry", "Entfernen", "Remove")) + '">&times;</button></div>';
-      }).join("");
-  }
-
-  box.innerHTML = html;
-  box.hidden = false;
-  input.setAttribute("aria-expanded", "true");
-}
-
-/** Act on one suggestion. A watchlist entry carries a real series URL, so it
-    opens that series directly instead of starting a search for its own
-    name; everything else falls back to the ordinary search. */
-function _applySuggestion(item) {
-  const input = document.getElementById("searchInput");
-  closeSearchSuggest();
-  if (item.dataset.href) { window.location.href = item.dataset.href; return; }
-  if (item.dataset.url && typeof openSeries === "function") {
-    openSeries(item.dataset.url);
-    return;
-  }
-  if (input) input.value = item.dataset.kw || "";
-  if (typeof doSearch === "function") doSearch();
-}
-
-// The search field carries autofocus (the home page is a search page), and a
-// focus event is a focus event -- so the history panel used to be open before
-// the user had done anything at all, covering the first row of the feed. Only
-// a focus the user actually caused may open it: the very first pointer or key
-// event on the page arms it, which the browser's own autofocus never fires.
-let _suggestArmed = false;
-["pointerdown", "keydown", "touchstart"].forEach(function (evt) {
-  document.addEventListener(evt, function () { _suggestArmed = true; },
-    { capture: true, once: true, passive: true });
-});
-
-function initSearchSuggest() {
-  const input = document.getElementById("searchInput");
-  const box = _suggestBox();
-  if (!input || !box) return;
-
-  input.addEventListener("focus", function () {
-    if (_suggestArmed) renderSearchSuggest();
-  });
-  input.addEventListener("input", function () { renderSearchSuggest(); });
-  input.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape") { closeSearchSuggest(); return; }
-    if (box.hidden) return;
-    const items = Array.prototype.slice.call(box.querySelectorAll(".home-suggest-item"));
-    if (!items.length) return;
-    const current = items.indexOf(box.querySelector(".home-suggest-item.is-active"));
-    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
-      ev.preventDefault();
-      const next = ev.key === "ArrowDown"
-        ? (current + 1) % items.length
-        : (current <= 0 ? items.length - 1 : current - 1);
-      items.forEach(function (el) { el.classList.remove("is-active"); });
-      items[next].classList.add("is-active");
-      // Keeps the highlighted row inside the (scrollable) dropdown.
-      items[next].scrollIntoView({ block: "nearest" });
-      return;
-    }
-    // Enter only takes the highlighted entry -- without a highlight it must
-    // still start the search for exactly what was typed.
-    if (ev.key === "Enter" && current >= 0) {
-      ev.preventDefault();
-      _applySuggestion(items[current]);
-    }
-  });
-  box.addEventListener("mousedown", function (ev) {
-    // mousedown, not click: the input's blur would close the box first.
-    const del = ev.target.closest("[data-del]");
-    if (del) {
-      ev.preventDefault();
-      _saveRecentSearches(_recentSearches().filter(function (x) { return x !== del.dataset.del; }));
-      renderSearchSuggest();
-      return;
-    }
-    if (ev.target.closest("[data-clear]")) {
-      ev.preventDefault();
-      _saveRecentSearches([]);
-      closeSearchSuggest();
-      return;
-    }
-    const item = ev.target.closest(".home-suggest-item");
-    if (!item) return;
-    ev.preventDefault();
-    _applySuggestion(item);
-  });
-  document.addEventListener("click", function (ev) {
-    if (!ev.target.closest(".home-search-field")) closeSearchSuggest();
-  });
-
-  // "/" jumps to the search field, the way every search-first page does it.
+  if (!input) return;
   document.addEventListener("keydown", function (ev) {
     if (ev.key !== "/" || ev.ctrlKey || ev.metaKey || ev.altKey) return;
     const el = document.activeElement;
@@ -2651,9 +2445,7 @@ function initSearchSuggest() {
     input.focus();
     input.select();
   });
-}
-
-initSearchSuggest();
+})();
 
 /**
  * "Still searching" text for a fan-out search, or "" when nothing is left.
@@ -2676,8 +2468,6 @@ window.mfSearchPendingText = mfSearchPendingText;
 async function doSearch() {
   const keyword = searchInput.value.trim().replace(/!+$/, "");
   if (!keyword) return;
-  pushRecentSearch(keyword);
-  if (typeof closeSearchSuggest === "function") closeSearchSuggest();
   searchBtn.disabled = true;
   searchSpinner.style.display = "block";
   // Create a search grid with skeletons

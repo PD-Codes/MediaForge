@@ -1,5 +1,4 @@
-"""Home page 2.1 endpoints: media-server profile link, Wrapped, onboarding,
-search suggestions.
+"""Home page 2.1 endpoints: media-server profile link, Wrapped, onboarding.
 
 These live in their own module rather than in browse.py because they answer
 questions *about* the home page instead of filling one of its rows:
@@ -8,7 +7,6 @@ questions *about* the home page instead of filling one of its rows:
     /api/mediaplayer/image     artwork proxy for the media server
     /api/home/wrapped          the monthly recap card
     /api/home/onboarding       "what is still missing on this instance?"
-    /api/home/suggest          the instant search dropdown
 
 All of them are read-only and all of them degrade to an empty answer rather
 than an error: none is important enough to break the home page over.
@@ -28,11 +26,6 @@ from .. import mediaplayer
 from ..db import get_setting
 
 logger = get_logger(__name__)
-
-# How many suggestions the dropdown shows per group. Deliberately small: a
-# list you have to scan is not faster than pressing Enter.
-_SUGGEST_PER_GROUP = 4
-
 
 def _current_user():
     from ..request_context import get_current_user_info
@@ -165,8 +158,10 @@ def register_home_extras_routes(app):
         # a path that was added but never scanned is exactly the state this
         # step is meant to catch.
         try:
-            from ..db import get_all_library_cache
-            has_library = bool(get_all_library_cache())
+            from ..db import get_library_cache_status
+            # Status only: this just asks "was anything ever scanned?", not
+            # for the whole parsed title tree.
+            has_library = bool(get_library_cache_status())
         except Exception:
             has_library = True
         step("library", has_library, "/settings#library", admin_only=True)
@@ -256,37 +251,6 @@ def register_home_extras_routes(app):
             return jsonify({"ok": False, "error": err or "save failed"}), 400
         return jsonify({"ok": True, "mode": mode, "max_fsk": raw_fsk})
 
-    # -------------------------------------------------------------- suggestions
-    @app.route("/api/home/suggest")
-    def api_home_suggest():
-        """Instant search suggestions. GET /api/home/suggest?q=…
-
-        Three groups, cheapest first: what is already in the library (a local
-        dict lookup), what the TMDB cache already knows (no network call --
-        the point of this endpoint is that it answers between keystrokes),
-        and the account's own recent searches.
-
-        Deliberately does NOT ask the providers: a scrape per keystroke is
-        what the full search is for, and five sites cannot answer in the time
-        a dropdown has.
-        """
-        query = str(request.args.get("q", "") or "").strip()
-        if len(query) < 2:
-            return jsonify({"query": query, "groups": []})
-        needle = query.lower()
-        groups = []
-
-        library = _suggest_library(needle)
-        if library:
-            groups.append({"key": "library", "items": library})
-
-        username, _is_admin = _current_user()
-        favourites = _suggest_favourites(needle, username)
-        if favourites:
-            groups.append({"key": "watchlist", "items": favourites})
-
-        return jsonify({"query": query, "groups": groups})
-
 
 # ------------------------------------------------------------------ helpers
 
@@ -328,64 +292,3 @@ def _wrapped_downloads(username, start_iso, end_iso):
         logger.debug("[Wrapped] download history unavailable", exc_info=True)
         return {"count": 0, "size_mb": 0.0, "top_sources": [], "top_titles": [],
                 "biggest": None}
-
-
-def _suggest_library(needle):
-    """Titles already on disk. Substring match on the folder name -- the same
-    thing the Library page's own search does."""
-    out = []
-    try:
-        from .library import lib_iter_cached_titles, lib_path_keys_for_kind
-        from ..db import get_all_library_cache
-        from ..media_kinds import KIND_VIDEO
-        active = lib_path_keys_for_kind(KIND_VIDEO)
-        seen = set()
-        for path_key, entry in (get_all_library_cache() or {}).items():
-            if path_key not in active:
-                continue
-            for title in lib_iter_cached_titles(entry.get("data")):
-                name = str(title.get("folder") or "")
-                low = name.lower()
-                if needle not in low or low in seen:
-                    continue
-                seen.add(low)
-                out.append({
-                    "title": name,
-                    "sub": ("movie" if title.get("is_movie") else "series"),
-                    "episodes": title.get("total_episodes") or 0,
-                    "href": "/library?q=" + name,
-                })
-                if len(out) >= _SUGGEST_PER_GROUP:
-                    return out
-    except Exception:
-        logger.debug("[Suggest] library lookup failed", exc_info=True)
-    return out
-
-
-def _suggest_favourites(needle, username):
-    """The account's own watchlist.
-
-    This is the second group instead of "titles from the sources": a provider
-    scrape per keystroke is what the full search is for, and five sites cannot
-    answer in the time a dropdown has. The favourites table is a local lookup
-    that already carries a real URL, so picking an entry opens the series
-    directly rather than starting a search for its own name.
-    """
-    out = []
-    try:
-        from ..db import get_favourites
-        for fav in (get_favourites(added_by=username) or []):
-            name = str(fav.get("title") or "")
-            if needle not in name.lower():
-                continue
-            out.append({
-                "title": name,
-                "sub": str(fav.get("provider") or ""),
-                "url": str(fav.get("series_url") or ""),
-                "href": "",
-            })
-            if len(out) >= _SUGGEST_PER_GROUP:
-                break
-    except Exception:
-        logger.debug("[Suggest] favourites lookup failed", exc_info=True)
-    return out

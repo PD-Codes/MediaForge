@@ -872,85 +872,8 @@
   color: var(--text-muted);
 }
 
-/* ── Recent searches ────────────────────────────────────────────────────
-   Anchored to .home-search-field, which is why that one is position:
-   relative -- the dropdown has to line up with the input, not the whole
-   search bar (the bar also holds the two buttons). */
+/* Anchor for anything positioned inside the search field. */
 .home-search-field { position: relative; }
-
-.home-suggest {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 40;
-  padding: 6px;
-  border-radius: var(--radius-lg, 14px);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-modal);
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.home-suggest[hidden] { display: none; }
-
-.home-suggest-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 4px 8px 8px;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.home-suggest-clear {
-  font: inherit;
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 6px;
-}
-
-.home-suggest-clear:hover { color: var(--text-primary); background: var(--bg-hover); }
-
-.home-suggest-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md, 10px);
-  font-size: 0.88rem;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.home-suggest-item:hover { background: var(--bg-hover); }
-
-.home-suggest-item svg { width: 14px; height: 14px; color: var(--text-muted); flex: none; }
-.home-suggest-item > span { flex: unset !important; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.home-suggest-del {
-  font: inherit;
-  font-size: 1rem;
-  line-height: 1;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 6px;
-  flex: none;
-}
-
-.home-suggest-del:hover { color: var(--text-primary); background: var(--bg-hover); }
 
 @media (max-width: 640px) {
   .home-pcard { width: 142px; }
@@ -2547,28 +2470,6 @@ a.hp-item:focus-visible {
   border-color: transparent;
   color: #06240f;
 }
-
-/* ── Search suggestions: grouped ─────────────────────────────────────── */
-.home-suggest-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.home-suggest-dot[data-group="library"] { background: var(--success, #4ade80); }
-.home-suggest-sub {
-  margin-left: auto;
-  padding-left: 10px;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-/* Both the pointer hover and the arrow-key highlight, so they cannot drift
-   apart visually. */
-.home-suggest-item.is-active,
-.home-suggest-item:hover { background: var(--bg-hover); }
 
 /* ── Phones ──────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {

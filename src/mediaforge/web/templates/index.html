@@ -376,11 +376,7 @@
         </svg>
       </span>
       <input type="text" id="searchInput" placeholder="{{ _('Search anime & series…') }}"
-             autocomplete="off" role="combobox" aria-expanded="false"
-             aria-controls="searchSuggest" aria-autocomplete="list" autofocus />
-      {# Recent searches / suggestions. Filled by app.js's search history --
-         empty (and invisible) until the user has searched at least once. #}
-      <div class="home-suggest" id="searchSuggest" role="listbox" hidden></div>
+             autocomplete="off" autofocus />
     </div>
     {# Direct Link is the quieter alternative to searching, so it reads as a
        ghost button and the accent pill anchors the right end of the field. #}
@@ -641,9 +637,6 @@
       'minutes_left': _('{} min left'),
       'hours_left': _('{} h left'),
       'player_loading': _('Player loading…'),
-      'recent_searches': _('Recent searches'),
-      'clear_history': _('Clear history'),
-      'remove_entry': _('Remove'),
       'panel_loading': _('Loading…'),
       'panel_failed': _('This panel could not be loaded.'),
       'panel_unavailable': _('This panel is not available right now.'),
@@ -698,9 +691,6 @@
       'density_comfortable': _('Comfortable'),
       'density_compact': _('Compact'),
       'density_list': _('List'),
-      'suggest_library': _('In your library'),
-      'suggest_watchlist': _('On your watchlist'),
-      'suggest_history': _('Recent searches'),
       'onboard_title': _('Finish setting up MediaForge'),
       'onboard_dismiss': _('Hide this'),
       'onboard_sources': _('Switch on the sources you want'),

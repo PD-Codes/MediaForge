@@ -492,6 +492,18 @@ def _precache_image_bg(url: str):
         logger.debug(f"img pre-cache failed for {url}: {exc}")
 
 
+_img_precache_pending: set = set()
+_img_precache_lock = threading.Lock()
+
+
+def _precache_image_job(url: str):
+    try:
+        _precache_image_bg(url)
+    finally:
+        with _img_precache_lock:
+            _img_precache_pending.discard(url)
+
+
 def _poster_proxy(url: str) -> str:
     """
     Convert a raw source poster URL to the server-side proxy URL AND
@@ -503,7 +515,13 @@ def _poster_proxy(url: str) -> str:
         return ""
     if url.startswith("/api/img"):
         return url  # already proxied — no-op
-    _img_pool.submit(_precache_image_bg, url)
+    # One queued pre-cache per URL: a browse page proxies the same poster on
+    # every render, and each duplicate used to occupy a pool slot.
+    with _img_precache_lock:
+        queued = url in _img_precache_pending
+        _img_precache_pending.add(url)
+    if not queued:
+        _img_pool.submit(_precache_image_job, url)
     return "/api/img?url=" + _up_img.quote(url, safe="")
 
 
