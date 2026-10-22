@@ -311,7 +311,18 @@ def _configure_connection(conn):
     up per-user rows explicitly -- see delete_user().
     """
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError as exc:
+        conn.close()
+        if "locked" in str(exc).lower():
+            # Appended, not replaced: callers matching "database is locked" still work.
+            raise sqlite3.OperationalError(
+                f"{exc} - the database file could not be locked. This usually means the "
+                "MediaForge config directory is on a network share (NFS/SMB) or another "
+                "process/instance is using it. Keep it on local storage, one instance only."
+            ) from exc
+        raise
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA cache_size=-16000")   # 16 MB page cache, negative = KiB

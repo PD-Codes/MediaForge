@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 from . import settings
 from .classify import (is_cancel_exception_name, is_cancel_status, is_local_storage_error,
-                       is_user_cancellation)
+                       is_not_a_defect, is_user_cancellation)
 from .registry import consent_key_for, source_flag_key
 from .sanitize import (clean_url, collapse_paths_in_text, is_adult_provider,
                         mentions_adult_provider, redact_secrets, redact_urls_in_text,
@@ -78,6 +78,8 @@ def build_crash_event(exc_type, exc_value, tb):
     # the queue item already shows it, and it repeats for every item of the run.
     if is_local_storage_error(exc_type, exc_value):
         return None
+    if is_not_a_defect(exc_type, exc_value):
+        return None
     payload = sanitize_exception(exc_type, exc_value, tb)
     # The hard 18+ rule (sanitize.is_adult_provider) applies to this channel too:
     # an exception message or a source line can carry the watch URL just as a log
@@ -116,6 +118,8 @@ def build_log_error_event(record):
     # as plain text by the code that handled it -- the operator's environment,
     # not a defect. See classify.is_local_storage_error().
     if is_local_storage_error(message=raw_message):
+        return None
+    if is_not_a_defect(message=raw_message):
         return None
     # The crash channel is stage 1 and can be enabled entirely on its own, so a
     # log line naming the age-gated provider (the download watchdog logs the

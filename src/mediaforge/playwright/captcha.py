@@ -1939,6 +1939,34 @@ def _inject_session_cookies(context, url: str) -> None:
         pass
 
 
+def _resolvable_sto_host(url: str) -> str:
+    """Host of the first s.to mirror (active one first) that this machine's own
+    resolver can look up.
+
+    Chromium resolves through the OS, while GLOBAL_SESSION resolves through DoH:
+    the host the HTTP request reached can therefore still be unreachable for the
+    browser, and page.goto() on it dies with net::ERR_NAME_NOT_RESOLVED instead
+    of trying the registered alternative (serienstream.to). Bare-IP mirrors are
+    skipped -- their certificate never matches in a browser.
+
+    Raises RuntimeError (with the DNS hint) when no mirror resolves at all.
+    """
+    import socket
+    from urllib.parse import urlparse as _up
+    from ..mirrors import _is_ip_host, iter_candidates
+    from ..telemetry.classify import DNS_HINT
+    for cand_url, _hdrs, _verify, _site, _idx in iter_candidates(url):
+        host = _up(cand_url).hostname
+        if not host or _is_ip_host(host):
+            continue
+        try:
+            socket.getaddrinfo(host, 443)
+            return host
+        except socket.gaierror:
+            continue
+    raise RuntimeError(DNS_HINT)
+
+
 def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                     redirect_url: str = None):
     """
@@ -1986,6 +2014,14 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
         # _solve_captcha_interactive for why.
         _raise_if_cancelled()
         _require_display()
+
+        # Open the episode on a mirror the browser can actually resolve, not
+        # blindly on the canonical host (see _resolvable_sto_host).
+        from ..mirrors import map_url as _map_url
+        _host = _resolvable_sto_host(episode_url)
+        episode_url = _map_url(episode_url, _host)
+        if redirect_url:
+            redirect_url = _map_url(redirect_url, _host)
 
         # The Turnstile captcha modal lives on the s.to *episode page* itself.
         # It is shown by the in-page player JS when the provider's play button
@@ -2289,6 +2325,13 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
     except Exception as e:
         from ..logger import get_logger
         _log = get_logger(__name__)
+        # No mirror resolves (or the browser still could not resolve one): the
+        # user's DNS, not a defect. Tell them in the queue error, keep it out of
+        # telemetry (WARNING + a fixed text; the raw Chromium message is not used).
+        from ..telemetry.classify import DNS_HINT, is_dns_failure
+        if str(e) == DNS_HINT or is_dns_failure(str(e)):
+            _log.warning("solve_sto_modal: %s", DNS_HINT)
+            raise RuntimeError(DNS_HINT) from None
         _reason = _classify_browser_error(e)
         # Logged WITHOUT the exception text and without exc_info. A failed
         # browser launch raises with the whole Chromium command line attached,

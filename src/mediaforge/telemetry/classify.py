@@ -91,6 +91,9 @@ _CANCEL_MESSAGE_PATTERNS = (
     re.compile(r"\b(encoding|transcoding|upscaling|scan|upload|job|queue\s+item)\s+cancell?ed\b",
                re.IGNORECASE),
     re.compile(r"\bcancell?ed\s+by\s+request\b", re.IGNORECASE),
+    # German wording of the same thing ("Upscaling abgebrochen."). Action word
+    # plus "abgebrochen", never the bare adjective -- see the note above.
+    re.compile(r"\b(upscaling|encoding|transcoding|download)\s+abgebrochen\b", re.IGNORECASE),
     re.compile(r"\boperation\s+was\s+cancell?ed\b", re.IGNORECASE),
 )
 
@@ -258,7 +261,34 @@ _UNREACHABLE_MESSAGE_PATTERNS = (
     re.compile(r"bad gateway", re.IGNORECASE),
     re.compile(r"service (temporarily )?unavailable", re.IGNORECASE),
     re.compile(r"gateway time-?out", re.IGNORECASE),
+    # Chromium's own wording (patchright/playwright Page.goto), e.g.
+    # "net::ERR_NAME_NOT_RESOLVED at https://s.to/...".
+    re.compile(r"net::ERR_(NAME_NOT_RESOLVED|INTERNET_DISCONNECTED|NETWORK_CHANGED|"
+               r"ADDRESS_UNREACHABLE|CONNECTION_(REFUSED|TIMED_OUT|RESET|CLOSED))"),
 )
+
+# The subset of the above that points at the resolver rather than the remote
+# site: worth telling the USER about, because the fix is on their side.
+_DNS_FAILURE_PATTERNS = (
+    re.compile(r"ERR_NAME_NOT_RESOLVED"),
+    re.compile(r"name or service not known", re.IGNORECASE),
+    re.compile(r"temporary failure in name resolution", re.IGNORECASE),
+    re.compile(r"getaddrinfo failed", re.IGNORECASE),
+    re.compile(r"NameResolutionError"),
+)
+
+DNS_HINT = ("The site's domain could not be resolved. The DNS server configured for "
+            "this machine/container is most likely wrong or blocking it - check the DNS "
+            "settings (Docker/VPN/router) or Settings > DNS.")
+
+
+def is_dns_failure(message) -> bool:
+    """True when *message* says a host name could not be resolved."""
+    try:
+        text = str(message or "")
+        return any(p.search(text) for p in _DNS_FAILURE_PATTERNS)
+    except Exception:
+        return False
 
 
 def is_transport_failure(exc_type=None, exc_value=None, message=None) -> bool:
@@ -356,6 +386,10 @@ _STORAGE_MESSAGE_PATTERNS = (
     re.compile(r"kein speicherplatz", re.IGNORECASE),
     re.compile(r"there is not enough space on the disk", re.IGNORECASE),
     re.compile(r"insufficient (disk )?space", re.IGNORECASE),
+    # Network shares (NFS/SMB) that stall or refuse locks: EAGAIN on a media
+    # folder, or SQLite unable to lock its file. Also the operator's setup.
+    re.compile(r"resource temporarily unavailable", re.IGNORECASE),
+    re.compile(r"database is locked", re.IGNORECASE),
 )
 
 
@@ -399,3 +433,58 @@ def is_local_storage_error(exc_type=None, exc_value=None, message=None) -> bool:
     except Exception:
         return False
     return False
+
+
+# ---------------------------------------------------------------------------
+# 4. Known harmless / third-party failures that are not a defect in this app
+# ---------------------------------------------------------------------------
+
+# ffmpeg diagnostics that mean "the INPUT stream is damaged": a hoster
+# delivered a truncated or corrupt transport stream. Nothing MediaForge can fix;
+# a retry or another provider does. Specific ffmpeg phrases only, so a genuine
+# ffmpeg usage error ("Unrecognized option", "Invalid argument" on its own)
+# still reaches the crash channel.
+_CORRUPT_SOURCE_PATTERNS = (
+    re.compile(r"packet corrupt", re.IGNORECASE),
+    re.compile(r"corrupt input packet", re.IGNORECASE),
+    re.compile(r"non-existing PPS", re.IGNORECASE),
+    re.compile(r"FMO is not implemented", re.IGNORECASE),
+    re.compile(r"missing picture in access unit", re.IGNORECASE),
+    re.compile(r"error parsing ADTS frame header", re.IGNORECASE),
+    re.compile(r"can'?t write packet with unknown timestamp", re.IGNORECASE),
+    re.compile(r"invalid data found when processing input", re.IGNORECASE),
+)
+
+_NOT_A_DEFECT_PATTERNS = _CORRUPT_SOURCE_PATTERNS + (
+    # TMDB simply has no such id (removed/merged entry). The proxy routes already
+    # answer the browser properly; nothing to fix here.
+    re.compile(r"404 Client Error: Not Found for url: https?://api\.themoviedb\.org", re.IGNORECASE),
+    # Server socket closed while serve_forever() was still polling: Windows'
+    # wording for the user closing the console / stopping the dev server.
+    re.compile(r"\[WinError 10038\]"),
+)
+
+
+def is_corrupt_source_stream(message) -> bool:
+    """True when ffmpeg output says the input stream itself was damaged."""
+    try:
+        text = str(message or "")
+        return any(p.search(text) for p in _CORRUPT_SOURCE_PATTERNS)
+    except Exception:
+        return False
+
+
+def is_not_a_defect(exc_type=None, exc_value=None, message=None) -> bool:
+    """True for failures that are known to be someone else's problem: a damaged
+    source stream, a TMDB 404, a socket closed during shutdown.
+
+    Same calling convention as is_local_storage_error(); matched on the text
+    only, so it also works on a wrapped RuntimeError that quotes ffmpeg's stderr.
+    """
+    try:
+        texts = [str(message)] if message else []
+        if exc_value is not None:
+            texts.append(str(exc_value))
+        return any(p.search(t) for t in texts for p in _NOT_A_DEFECT_PATTERNS)
+    except Exception:
+        return False

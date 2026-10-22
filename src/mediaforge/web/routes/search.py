@@ -177,7 +177,9 @@ def _tmdb_error_response(exc, context):
     # The exception text carries the request URL — redact the key before it
     # reaches the log file, which users routinely attach to support requests.
     detail = re.sub(r"api_key=[^&\s'\"]+", "api_key=<redacted>", str(exc))
-    logger.error("[TMDB] %s failed: %s", context, detail, exc_info=False)
+    # A 404 is TMDB saying "no such id", not a failure of ours: no ERROR, no crash report.
+    log = logger.warning if code == "tmdb_not_found" else logger.error
+    log("[TMDB] %s failed: %s", context, detail, exc_info=False)
     return jsonify({"error": message, "code": code}), 502
 
 

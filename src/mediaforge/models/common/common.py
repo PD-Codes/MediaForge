@@ -30,6 +30,7 @@ from typing import Tuple
 import ffmpeg
 
 from ...autodeps import ensure_ffmpeg
+from ...telemetry.classify import is_corrupt_source_stream
 
 try:
     from ...autodeps import get_player_path, get_syncplay_path
@@ -1016,13 +1017,25 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
         if len(detail) > 4000:
             # Keep the end -- that is where the cause is.
             detail = "…" + detail[-4000:]
-        logger.error(f"[FFmpeg] Process failed (rc={process.returncode}):\n{detail}")
+        # Windows reports exit codes unsigned (4294967274 is really -22).
+        rc = process.returncode
+        if rc > 0x7FFFFFFF:
+            rc -= 1 << 32
+        if is_corrupt_source_stream(detail):
+            # The hoster delivered a damaged stream; nothing to fix here. WARNING
+            # keeps it out of the crash channel, the message tells the user what to do.
+            logger.warning(f"[FFmpeg] Corrupt source stream (rc={rc}):\n{detail}")
+            raise RuntimeError(
+                f"The source stream is corrupt (the hoster delivered damaged data) - "
+                f"retry later or choose another provider. ffmpeg (rc={rc}): {detail}"
+            )
+        logger.error(f"[FFmpeg] Process failed (rc={rc}):\n{detail}")
         if kill_reason:
             # Not an ffmpeg failure at all -- we pulled the plug. Saying so
             # keeps these out of the "ffmpeg is broken" bucket in telemetry,
             # while the stderr tail above still reaches the log.
-            raise RuntimeError(f"ffmpeg aborted (rc={process.returncode}): {kill_reason}")
-        raise RuntimeError(f"ffmpeg error (rc={process.returncode}): {detail}")
+            raise RuntimeError(f"ffmpeg aborted (rc={rc}): {kill_reason}")
+        raise RuntimeError(f"ffmpeg error (rc={rc}): {detail}")
 
 
 # Leftovers yt-dlp writes next to its output while a download is in flight.
