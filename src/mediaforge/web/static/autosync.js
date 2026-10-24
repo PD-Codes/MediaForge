@@ -45,7 +45,17 @@ let customPathsCache = [];
 let langSepEnabled = false;
 let languageGroupsCache = [];
 let _runningJobs = new Set();
+let _queuedJobs = new Set();         // waiting for a manual-sync slot (Sync now / Sync all)
 let _pollTimer = null;
+let _lastNextCheckSig = "";          // "next check" texts of the last render, see pollRunningJobs()
+
+// Polling cadence. Fast while something runs or waits, because the cards
+// change every few seconds then. Slow otherwise -- slow, not off: the
+// background worker starts due jobs on its own, and a page that only polled
+// while something was ALREADY running when it was opened never noticed that,
+// so every overdue job sat at "soon" until the page was reloaded by hand.
+const POLL_FAST_MS = 3000;
+const POLL_IDLE_MS = 15000;
 
 let currentLayout = 'list';  // 'list' or 'grid'
 let currentPage = 1;
@@ -61,29 +71,61 @@ let _collapsedGroups = {};           // auto-group collapse state (persisted)
 let _lastAutoKeys = [];              // index -> full collapse key for the last render
 let _renameOldName = "";
 
+function _sameIdSet(a, b) {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
+
+// The "next check" text of every job, as the cards would show it right now.
+// Compared against the last render so the list is redrawn when a due time
+// passes, not only when a job starts or finishes.
+function _nextCheckSignature(jobs) {
+  return (jobs || []).map((j) => j.id + ":" + (j.enabled ? computeNextCheck(j.last_check, j) : "")).join("|");
+}
+
 async function pollRunningJobs() {
+  _pollTimer = null;
+  // Hidden tab: no requests. The visibilitychange listener below picks up
+  // again as soon as the page is looked at.
+  if (document.hidden) return;
   try {
     const res = await fetch("/api/autosync/running");
     const data = await res.json();
     const nowRunning = new Set(data.running || []);
-    const changed = nowRunning.size !== _runningJobs.size ||
-      [...nowRunning].some(id => !_runningJobs.has(id)) ||
-      [..._runningJobs].some(id => !nowRunning.has(id));
+    const nowQueued = new Set(data.queued || []);
+    const changed = !_sameIdSet(nowRunning, _runningJobs) || !_sameIdSet(nowQueued, _queuedJobs);
     _runningJobs = nowRunning;
-    if (changed) loadAutosyncJobs();
-    if (_runningJobs.size > 0) {
-      _pollTimer = setTimeout(pollRunningJobs, 3000);
-    } else {
-      _pollTimer = null;
+    _queuedJobs = nowQueued;
+    if (changed) {
+      // A finished run has a new last check, so reload rather than re-render.
+      await loadAutosyncJobs();
+    } else if (_nextCheckSignature(currentJobs) !== _lastNextCheckSig) {
+      renderJobs(currentJobs);
     }
-  } catch (_) {}
+  } catch (_) {
+    // A failed poll must not end polling for good -- try again next round.
+  }
+  startPollingIfNeeded();
 }
 
 function startPollingIfNeeded() {
-  if (_runningJobs.size > 0 && !_pollTimer) {
-    _pollTimer = setTimeout(pollRunningJobs, 3000);
-  }
+  if (_pollTimer || document.hidden) return;
+  const busy = _runningJobs.size > 0 || _queuedJobs.size > 0;
+  _pollTimer = setTimeout(pollRunningJobs, busy ? POLL_FAST_MS : POLL_IDLE_MS);
 }
+
+// Restart polling with a fast first round, e.g. right after Sync now / Sync all.
+function _pollSoon() {
+  if (_pollTimer) clearTimeout(_pollTimer);
+  _pollTimer = setTimeout(pollRunningJobs, 500);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
+  pollRunningJobs();
+});
 
 async function loadSyncSchedule() {
   try {
@@ -124,6 +166,7 @@ async function loadAutosyncJobs() {
     const jobsData = await jobsRes.json();
     const runningData = await runningRes.json();
     _runningJobs = new Set(runningData.running || []);
+    _queuedJobs = new Set(runningData.queued || []);
     renderJobs(jobsData.jobs || []);
     startPollingIfNeeded();
   } catch (e) {
@@ -138,14 +181,15 @@ async function loadAutosyncJobs() {
   }
 }
 
-function _nextWeeklyCheck() {
+// The next weekly-plan slot as a Date, or null when the plan has no days/times.
+function _nextWeeklySlot() {
   const days = new Set(
     currentSyncDays.split(",").map((x) => parseInt(x.trim(), 10)).filter((x) => !isNaN(x)),
   );
   const times = currentSyncTimes.split(",").map((s) => s.trim()).filter(Boolean)
     .map((s) => s.split(":").map((n) => parseInt(n, 10)))
     .filter((a) => a.length === 2 && !isNaN(a[0]) && !isNaN(a[1]));
-  if (!days.size || !times.length) return "—";
+  if (!days.size || !times.length) return null;
   const now = new Date();
   for (let d = 0; d < 8; d++) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);
@@ -153,31 +197,53 @@ function _nextWeeklyCheck() {
     if (!days.has(pyWeekday)) continue;
     for (const [hh, mm] of times.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1])) {
       const slot = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm);
-      if (slot > now) {
-        const pad = (n) => String(n).padStart(2, "0");
-        return pad(slot.getDate()) + "." + pad(slot.getMonth() + 1) + "." + slot.getFullYear() +
-               " " + pad(slot.getHours()) + ":" + pad(slot.getMinutes());
-      }
+      if (slot > now) return slot;
     }
   }
-  return "—";
+  return null;
 }
 
-function computeNextCheck(lastCheck, job) {
-  if (currentSyncMode === "weekly") return _nextWeeklyCheck();
-  if (!lastCheck || currentSyncSchedule === "0") return "—";
+function _nextWeeklyCheck() {
+  const slot = _nextWeeklySlot();
+  if (!slot) return "—";
+  const pad = (n) => String(n).padStart(2, "0");
+  return pad(slot.getDate()) + "." + pad(slot.getMonth() + 1) + "." + slot.getFullYear() +
+         " " + pad(slot.getHours()) + ":" + pad(slot.getMinutes());
+}
+
+// When the job is due next, in ms since the epoch, or null when there is no
+// schedule to compute it from. Mirrors the worker's interval logic.
+function _nextCheckMs(lastCheck, job) {
+  if (currentSyncMode === "weekly") {
+    const slot = _nextWeeklySlot();
+    return slot ? slot.getTime() : null;
+  }
+  if (!lastCheck || currentSyncSchedule === "0") return null;
   let interval = SCHEDULE_INTERVALS[currentSyncSchedule];
-  if (!interval) return "—";
+  if (!interval) return null;
   // While a job is in Adaptive Auto-Sync pause mode it is re-checked on the
   // wider "retry after" interval, not the regular schedule (mirrors the worker).
   if (job && job.adaptive_paused && adaptiveEnabled) {
     const unitSecs = ADAPTIVE_UNIT_SECONDS[adaptiveRetryUnit] || 86400;
     interval = adaptiveRetryValue * unitSecs;
   }
-  const lastMs = new Date(lastCheck + "Z").getTime();
-  const nextMs = lastMs + interval * 1000;
-  const now = Date.now();
-  if (!nextMs || nextMs <= now) return t("Bald", "Soon");
+  const nextMs = new Date(lastCheck + "Z").getTime() + interval * 1000;
+  return isNaN(nextMs) ? null : nextMs;
+}
+
+function computeNextCheck(lastCheck, job) {
+  if (job && _runningJobs.has(job.id)) return t("Läuft gerade", "Running now");
+  if (job && _queuedJobs.has(job.id)) return t("In Warteschlange", "Queued");
+  // On hold the worker re-checks the path about once a minute and resumes
+  // the job as soon as it is back -- there is no time to show.
+  if (job && job.on_hold === 1) return t("Wenn Pfad erreichbar", "When path is reachable");
+  if (currentSyncMode === "weekly") return _nextWeeklyCheck();
+  const nextMs = _nextCheckMs(lastCheck, job);
+  if (nextMs === null) return "—";
+  // Due already. The background worker runs due jobs one after another, so
+  // with many of them this one waits for its turn -- "soon" promised more
+  // than that.
+  if (nextMs <= Date.now()) return t("Fällig", "Due");
   return formatDate(
     new Date(nextMs)
       .toISOString()
@@ -185,6 +251,17 @@ function computeNextCheck(lastCheck, job) {
       .replace("T", " ")
       .slice(0, 19),
   );
+}
+
+// Sort key for "next check": what runs first comes first. Compared as numbers
+// -- the displayed texts are "DD.MM.YYYY" dates and words, which sorted as
+// strings put the 1st of next month before the 30th of this one.
+function _nextCheckSortKey(job) {
+  if (_runningJobs.has(job.id)) return -2;
+  if (_queuedJobs.has(job.id)) return -1;
+  if (!job.enabled || job.on_hold === 1) return Infinity;
+  const ms = _nextCheckMs(job.last_check, job);
+  return ms === null ? Infinity : ms;
 }
 
 function onSortChange() {
@@ -203,9 +280,10 @@ function _sortJobs(jobs, sortKey) {
       case 'name': return mult * (a.title || '').localeCompare(b.title || '');
       case 'last_check': return mult * ((a.last_check || '') < (b.last_check || '') ? -1 : 1);
       case 'next_check': {
-        const na = computeNextCheck(a.last_check, a);
-        const nb = computeNextCheck(b.last_check, b);
-        return mult * ((na || '') < (nb || '') ? -1 : 1);
+        const na = _nextCheckSortKey(a);
+        const nb = _nextCheckSortKey(b);
+        if (na === nb) return 0;
+        return mult * (na < nb ? -1 : 1);
       }
       case 'episodes': return mult * ((a.episodes_found || 0) - (b.episodes_found || 0));
       case 'last_new': return mult * ((a.last_new_found || '') < (b.last_new_found || '') ? -1 : 1);
@@ -220,12 +298,18 @@ function _renderStats(jobs) {
   const total = jobs.length;
   const enabled = jobs.filter(j => j.enabled).length;
   const running = _runningJobs.size;
+  const queued = _queuedJobs.size;
   const episodes = jobs.reduce((s, j) => s + (j.episodes_found || 0), 0);
   const pulseDot = running > 0 ? '<span class="autosync-stat-pulse"></span>' : '';
+  // Only shown while something waits: "0 queued" next to "0 running" says nothing.
+  const queuedChip = queued > 0
+    ? `<span class="autosync-stat-chip">${queued} ${t('In Warteschlange','Queued')}</span>`
+    : '';
   el.innerHTML = `
     <span class="autosync-stat-chip">${total} ${t('Jobs','Jobs')}</span>
     <span class="autosync-stat-chip">${enabled} ${t('Aktiv','Active')}</span>
     <span class="autosync-stat-chip ${running > 0 ? 'stat-running' : ''}">${pulseDot}${running} ${t('Laufend','Running')}</span>
+    ${queuedChip}
     <span class="autosync-stat-chip">${episodes} ${t('Episoden','Episodes')}</span>
   `;
 }
@@ -233,6 +317,7 @@ function _renderStats(jobs) {
 function renderJobs(jobs) {
   // Keep currentJobs in sync for batch ops
   currentJobs = jobs;
+  _lastNextCheckSig = _nextCheckSignature(jobs);
   // Drop selections for jobs that no longer exist
   const existing = new Set(jobs.map((j) => j.id));
   [...selectedJobIds].forEach((id) => { if (!existing.has(id)) selectedJobIds.delete(id); });
@@ -487,6 +572,7 @@ function toggleAutoGroupCollapse(idx) {
 
 function _buildJobCard(job, grayed) {
   const isRunning = _runningJobs.has(job.id);
+  const isQueued = !isRunning && _queuedJobs.has(job.id);
   const isOnHold = job.on_hold === 1;
   const isAdaptivePaused = job.adaptive_paused && !isOnHold;
   let statusColor, statusClass, statusBadgeClass, statusText, cardClasses = 'sync-card';
@@ -496,6 +582,10 @@ function _buildJobCard(job, grayed) {
     statusBadgeClass = 'queue-status-running';
     statusText = `<span class="sync-spinner"></span>${t('Läuft…','Running…')}`;
     cardClasses += ' sync-card-running';
+  } else if (isQueued) {
+    statusColor = 'var(--accent, #7c3aed)';
+    statusBadgeClass = 'queue-status-queued';
+    statusText = `⏳ ${t('In Warteschlange','Queued')}`;
   } else if (isOnHold) {
     statusColor = 'var(--warning, #f59e0b)';
     statusBadgeClass = 'queue-status-hold';
@@ -598,7 +688,7 @@ function _buildJobCard(job, grayed) {
 
   const actionsHtml = `<div class="sync-card-actions">
     ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn" onclick="openEditModal(${job.id})">${editSvg} ${t('Edit','Edit')}</button>` : ''}
-    <button class="btn btn-ghost sync-card-btn sync-card-btn-sync" onclick="syncNow(${job.id})" ${isRunning || grayed ? 'disabled' : ''}>${syncSvg} Sync</button>
+    <button class="btn btn-ghost sync-card-btn sync-card-btn-sync" onclick="syncNow(${job.id})" ${isRunning || isQueued || grayed ? 'disabled' : ''}>${syncSvg} Sync</button>
     <button class="btn btn-ghost sync-card-btn" onclick="dryRunJob(${job.id})" ${isRunning ? 'disabled' : ''} title="${t('Zeigt, was dieser Job jetzt tun würde — ohne etwas zu tun','Shows what this job would do right now — without doing any of it')}">${dryRunSvg} ${t('Testlauf','Dry run')}</button>
     ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn sync-card-btn-del" onclick="removeJob(${job.id})">${delSvg} ${t('Entf.','Del')}</button>` : ''}
   </div>`;
@@ -736,10 +826,19 @@ async function syncNow(id) {
     });
     const data = await res.json();
     if (data.ok) {
-      showToast(t("Sync gestartet", "Sync started"));
-      _runningJobs.add(id);
-      startPollingIfNeeded();
-      setTimeout(loadAutosyncJobs, 500);
+      showToast(data.status === "pending"
+        ? t("Sync ist bereits eingereiht", "Sync is already queued")
+        : t("Sync gestartet", "Sync started"));
+      // Queued until a manual-sync slot is free -- usually right away. The
+      // poll below shows whichever it is.
+      _queuedJobs.add(id);
+      renderJobs(currentJobs);
+      _pollSoon();
+    } else if (res.status === 409) {
+      showToast(t("Sync läuft bereits", "Sync is already running"));
+      _pollSoon();
+    } else if (res.status === 503) {
+      showToast(t("Sync konnte nicht gestartet werden", "Sync could not be started"));
     } else {
       showToast(data.error || t("Sync konnte nicht gestartet werden", "Sync could not be started"));
     }
@@ -872,11 +971,15 @@ async function syncAll() {
     const res = await fetch("/api/autosync/sync-all", { method: "POST" });
     const data = await res.json();
     if (data.ok) {
+      // Queued, not all started at once: the server works through them a
+      // couple at a time so a long list does not hit the site in one burst.
       const msg = data.started > 0
-        ? `${data.started} ${t('Job(s) gestartet', 'job(s) started')}${data.skipped > 0 ? `, ${data.skipped} ${t('bereits aktiv', 'already active')}` : ""}`
+        ? `${data.started} ${t('Job(s) eingereiht (max. 2 gleichzeitig)', 'job(s) queued (max. 2 at a time)')}${data.skipped > 0 ? `, ${data.skipped} ${t('bereits aktiv', 'already active')}` : ""}`
         : t("Keine Jobs zum Starten (alle bereits aktiv oder deaktiviert)", "No jobs to start (all already active or disabled)");
       showToast(msg);
-      setTimeout(loadAutosyncJobs, 2000);
+      _pollSoon();
+    } else if (res.status === 503) {
+      showToast(t("Sync konnte nicht gestartet werden", "Sync could not be started"));
     } else {
       showToast(data.error || t("Fehler beim Starten", "Error starting"));
     }
@@ -958,15 +1061,20 @@ function setLayout(mode) {
 
 function _buildCompactCard(job, grayed) {
   const isRunning = _runningJobs.has(job.id);
+  const isQueued = !isRunning && _queuedJobs.has(job.id);
   const isOnHold = job.on_hold === 1;
   const isAdaptivePaused = job.adaptive_paused && !isOnHold;
   let statusColor, statusBadgeClass, statusText, cardClasses = 'sync-card sync-card-compact';
-  
+
   if (isRunning) {
     statusColor = 'var(--accent, #7c3aed)';
     statusBadgeClass = 'queue-status-running';
     statusText = `<span class="sync-spinner"></span>${t('Läuft…','Running…')}`;
     cardClasses += ' sync-card-running';
+  } else if (isQueued) {
+    statusColor = 'var(--accent, #7c3aed)';
+    statusBadgeClass = 'queue-status-queued';
+    statusText = `⏳ ${t('In Warteschlange','Queued')}`;
   } else if (isOnHold) {
     statusColor = 'var(--warning, #f59e0b)';
     statusBadgeClass = 'queue-status-hold';
@@ -1030,7 +1138,7 @@ function _buildCompactCard(job, grayed) {
       <div class="sync-progress-bar"><div class="sync-progress-fill" style="width:${pct}%"></div></div>
       <div class="sync-card-actions">
         ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn" onclick="openEditModal(${job.id})" title="${t('Bearbeiten','Edit')}">${editSvg}</button>` : ''}
-        <button class="btn btn-ghost sync-card-btn sync-card-btn-sync" onclick="syncNow(${job.id})" ${isRunning || grayed ? 'disabled' : ''} title="Sync">${syncSvg}</button>
+        <button class="btn btn-ghost sync-card-btn sync-card-btn-sync" onclick="syncNow(${job.id})" ${isRunning || isQueued || grayed ? 'disabled' : ''} title="Sync">${syncSvg}</button>
         <button class="btn btn-ghost sync-card-btn" onclick="dryRunJob(${job.id})" ${isRunning ? 'disabled' : ''} title="${t('Testlauf','Dry run')}">${dryRunSvg}</button>
         ${autosyncCanManage ? `<button class="btn btn-ghost sync-card-btn sync-card-btn-del" onclick="removeJob(${job.id})" title="${t('Entfernen','Remove')}">${delSvg}</button>` : ''}
       </div>

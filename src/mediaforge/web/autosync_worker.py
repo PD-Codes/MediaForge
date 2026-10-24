@@ -1,9 +1,11 @@
 """Auto-sync worker — periodic new/missing-episode detection and queueing."""
 
 import json
+import queue as _queue_module
 import re
 import threading
 import time
+from pathlib import Path
 
 from ..config import INVERSE_LANG_LABELS, LANG_KEY_MAP
 from ..logger import get_logger
@@ -11,6 +13,7 @@ from ..providers import resolve_provider
 from ..languages import language_present_in
 from .db import (
     add_to_queue,
+    get_autosync_job,
     get_autosync_jobs,
     get_cached_tracks,
     get_custom_path_by_id,
@@ -42,6 +45,7 @@ from .runtime_state import (
     SYNC_ADAPTIVE_UNIT_MAP,
     SYNC_RETRY_MAP,
     SYNC_SCHEDULE_MAP,
+    _queued_sync_jobs,
     _syncing_jobs,
     _syncing_jobs_lock,
     is_layout_backoff_active,
@@ -69,8 +73,8 @@ _last_history_prune: "float" = 0.0  # throttle: download-history retention prune
 # appends to the pool's queue and the next free worker picks the job up.
 #
 # Shared across concurrently running sync jobs on purpose. Five prefetch threads
-# in total is the ceiling now, instead of five per job — /api/autosync/sync-all
-# fans out one thread per job with no cap, and this used to multiply on top of it.
+# in total is the ceiling, instead of five per job: the background loop and the
+# manual-sync runner below can have a few jobs in flight at the same time.
 _pd_pool = None
 _pd_pool_lock = threading.Lock()
 
@@ -90,6 +94,139 @@ def _get_pd_pool():
                 max_workers=5, thread_name_prefix="autosync-pd"
             )
         return _pd_pool
+
+
+# ---------------------------------------------------------------------------
+# Custom path reachability
+# ---------------------------------------------------------------------------
+# is_dir() on an unreachable network share (NAS asleep, VPN down, mapped drive
+# gone) can block for tens of seconds. Every job checks its custom path before
+# it does anything else, and a job on hold is re-checked over and over, so one
+# offline share used to cost that timeout once per job per check -- with many
+# jobs on the same share, the worker spent its whole round waiting on it.
+#
+# Only the NEGATIVE answer is reused. "Reachable" is always checked fresh:
+# trusting a stale "reachable" would let a sync scan a share that just went
+# away, find no files, and queue the whole series again.
+_PATH_UNAVAILABLE_TTL = 60  # seconds an "unreachable" answer is reused
+_path_unavailable_until: dict = {}  # path -> time.monotonic() deadline
+_path_unavailable_lock = threading.Lock()
+
+
+def _custom_path_reachable(path_str) -> bool:
+    """Whether a custom download path is reachable right now (see above)."""
+    key = str(path_str)
+    with _path_unavailable_lock:
+        until = _path_unavailable_until.get(key)
+        if until is not None and time.monotonic() < until:
+            return False
+    try:
+        ok = Path(key).expanduser().is_dir()
+    except Exception:
+        ok = False
+    with _path_unavailable_lock:
+        if ok:
+            _path_unavailable_until.pop(key, None)
+        else:
+            _path_unavailable_until[key] = time.monotonic() + _PATH_UNAVAILABLE_TTL
+    return ok
+
+
+# A job on hold (custom path unreachable, path_unavailable_action=hold) never
+# gets a new last_check, so the poll loop sees it as due on every 10 s tick.
+# Re-trying it that often bought nothing but a log line and a path probe per
+# job per tick; once a minute still resumes it promptly once the path is back.
+_HOLD_RECHECK_SECONDS = 60
+_hold_last_attempt: dict = {}  # job_id -> time.monotonic() of the last attempt
+
+
+# ---------------------------------------------------------------------------
+# Manually requested syncs
+# ---------------------------------------------------------------------------
+# "Sync now", "Sync all", a new job's first scan and a changed episode filter
+# all want a sync outside the schedule. Each used to get a thread of its own,
+# so "Sync all" with a hundred jobs started a hundred concurrent syncs: a
+# hundred series pages fetched at once from the same site (the fastest way
+# into a rate limit or a bot wall), all of them competing for the same five
+# prefetch threads, and every job marked "running" for as long as that took.
+#
+# They now go through a small queue with a fixed number of daemon worker
+# threads. Daemon threads on purpose, and the reason this is not a
+# ThreadPoolExecutor: an executor's threads are joined at interpreter exit, so
+# a long "Sync all" backlog would hold up every shutdown and restart until the
+# last queued job had run.
+_MANUAL_SYNC_WORKERS = 2
+_manual_sync_queue = _queue_module.Queue()
+_manual_sync_threads: list = []
+_manual_sync_threads_lock = threading.Lock()
+
+
+def _manual_sync_loop(work_queue):
+    """Worker thread of the manual-sync runner: one queued job at a time.
+
+    The queue is passed in rather than read from the module global on every
+    turn, so a thread stays bound to the queue it was started for.
+    """
+    while True:
+        job_id, kwargs = work_queue.get()
+        try:
+            # Re-read the job: it may have been edited or deleted while it was
+            # waiting, and running it with the settings it had when somebody
+            # clicked "Sync all" ten minutes ago would be wrong either way.
+            job = get_autosync_job(job_id)
+            with _syncing_jobs_lock:
+                _queued_sync_jobs.discard(job_id)
+            if job:
+                _run_autosync_for_job(job, **kwargs)
+        except Exception:
+            logger.exception("[AutoSync] Manual sync of job %s failed", job_id)
+        finally:
+            with _syncing_jobs_lock:
+                _queued_sync_jobs.discard(job_id)
+            work_queue.task_done()
+
+
+def request_manual_sync(job_id, **kwargs) -> str:
+    """Queue a sync for *job_id* outside the schedule.
+
+    ``kwargs`` are passed on to ``_run_autosync_for_job`` (force_notify,
+    queue_downloads, ...). Returns what happened, for the caller to report:
+
+    * ``"queued"``  -- accepted, runs as soon as a runner thread is free
+    * ``"running"`` -- this job is syncing right now, nothing was queued
+    * ``"pending"`` -- already waiting in the queue, nothing was added
+    * ``"failed"``  -- no runner thread could be started (process at its
+      thread limit) and none is alive to pick the job up
+
+    Used by: routes/autosync.py (create, filter change, Sync now, Sync all).
+    """
+    with _syncing_jobs_lock:
+        if job_id in _syncing_jobs:
+            return "running"
+        if job_id in _queued_sync_jobs:
+            return "pending"
+        _queued_sync_jobs.add(job_id)
+
+    work_queue = _manual_sync_queue
+    with _manual_sync_threads_lock:
+        _manual_sync_threads[:] = [t for t in _manual_sync_threads if t.is_alive()]
+        while len(_manual_sync_threads) < _MANUAL_SYNC_WORKERS:
+            thread = threading.Thread(target=_manual_sync_loop, args=(work_queue,),
+                                      daemon=True, name="autosync-manual")
+            try:
+                thread.start()
+            except RuntimeError as exc:  # can't start new thread
+                logger.warning("[AutoSync] Could not start a manual-sync thread: %s", exc)
+                break
+            _manual_sync_threads.append(thread)
+        have_runner = bool(_manual_sync_threads)
+
+    if not have_runner:
+        with _syncing_jobs_lock:
+            _queued_sync_jobs.discard(job_id)
+        return "failed"
+    work_queue.put((job_id, kwargs))
+    return "queued"
 
 
 def _normalize_episode_filter(value):
@@ -301,7 +438,9 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
     try:
         # Telemetry: stage-2 usage counter — fires once per actual sync
         # attempt (not for skipped/held jobs above), no title/URL involved.
-        telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.autosync"))
+        # Not for a dry run: the docstring promises a preview no telemetry.
+        if not dry_run:
+            telemetry_client.submit(telemetry_events.build_feature_flag_event("flag.autosync"))
 
         # ------------------------------------------------------------------ #
         # Custom Path availability check                                       #
@@ -309,7 +448,6 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
         # before doing any online fetching. Depending on the job's             #
         # path_unavailable_action setting we either skip or hold.              #
         # ------------------------------------------------------------------ #
-        from pathlib import Path as _Path
         _cp_ids = [cid for cid in (job.get("custom_path_id"), job.get("movie_custom_path_id")) if cid]
         _cp_record = None
         _cp_available = True
@@ -317,14 +455,12 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             _rec = get_custom_path_by_id(_cp_id)
             if not _rec:
                 _cp_available = False
-                _cp_record = {"path": f"ID #{_cp_id} (gelöscht/nicht gefunden)"}
+                _cp_record = {"path": _tr(_job_notif_lang(job),
+                                          f"ID #{_cp_id} (gelöscht/nicht gefunden)",
+                                          f"ID #{_cp_id} (deleted/not found)")}
                 break
-            try:
-                if not _Path(_rec["path"]).expanduser().is_dir():
-                    _cp_available = False
-                    _cp_record = _rec
-                    break
-            except Exception:
+            # Cached for a minute when unreachable -- see _custom_path_reachable.
+            if not _custom_path_reachable(_rec["path"]):
                 _cp_available = False
                 _cp_record = _rec
                 break
@@ -333,6 +469,18 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             _global_action = os.environ.get("MEDIAFORGE_SYNC_PATH_UNAVAILABLE_ACTION", "skip").lower()
             _action = (job.get("path_unavailable_action") or _global_action or "skip").lower()
             _was_on_hold = bool(job.get("on_hold"))
+
+            report["blocked"] = "path_unavailable"
+            report["error"] = _tr(
+                _job_notif_lang(job),
+                "Custom Path nicht erreichbar: ",
+                "Custom path unreachable: ",
+            ) + str(_cp_record["path"] if _cp_record else _cp_ids)
+            if dry_run:
+                # Hold and skip below both write to the job (on_hold, last_check,
+                # last_error) and the first one also notifies. A preview does
+                # neither -- it reports what a real run would run into.
+                return report
 
             if _action == "hold":
                 if not _was_on_hold:
@@ -368,7 +516,7 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                         "Auto-sync still on HOLD for '%s' — custom path still unavailable",
                         job.get("title", "?"),
                     )
-                return  # wait for next cycle
+                return report  # wait for next cycle
             else:
                 # action == "skip" (default)
                 logger.info(
@@ -382,8 +530,8 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                         "Custom Path nicht erreichbar — Sync übersprungen",
                         "Custom path unreachable — sync skipped"),
                 )
-                return
-        elif job.get("on_hold"):
+                return report
+        elif job.get("on_hold") and not dry_run:
             # Path is accessible — if we were on hold, clear it and notify resume
             update_autosync_job(job["id"], on_hold=0, last_error=None)
             logger.info(
@@ -454,6 +602,12 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                 "(this site has no series/season concept that can be "
                 "detected from the URL).",
             )
+            report["blocked"] = "unsupported_provider"
+            report["error"] = _msg
+            if dry_run:
+                # The real run disables the job and notifies; a preview only
+                # says that it would.
+                return report
             logger.warning(
                 "Auto-sync job '%s' targets provider '%s' which has no "
                 "series_cls/season_cls -- disabling the job instead of "
@@ -482,10 +636,10 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                 )
             except Exception as notif_exc:
                 logger.warning("[AutoSync] Unsupported-provider notification failed: %s", notif_exc)
-            return
+            return report
         series = prov.series_cls(url=job["series_url"])
 
-        if not job.get("cover_url"):
+        if not job.get("cover_url") and not dry_run:
             _poster = getattr(series, "poster_url", None)
             if callable(_poster):
                 try:
@@ -645,44 +799,28 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
         total_new_queued = 0
         max_local_found = 0
 
-        # Pre-fetch provider_data for all online episodes once, shared across all
-        # languages — avoids one HTTP request per episode per language (N+1).
-        _pd_cache: dict = {}  # url -> pd_data dict (or None on error)
-
-        def _fetch_pd(ep_url, ep_obj):
-            if ep_url in _pd_cache:
-                return
-            try:
-                pd = ep_obj.provider_data
-                _pd_cache[ep_url] = pd._data if hasattr(pd, "_data") else pd
-            except Exception as exc:
-                logger.debug("Auto-sync: provider_data prefetch failed for %s: %s", ep_url, exc)
-                _pd_cache[ep_url] = None
-
-        # Submit everything to the shared pool and wait for it, the way the old
-        # per-run `with ThreadPoolExecutor(...)` block did.
+        # If the series page didn't parse, stop here — do not sync "nothing".
         #
-        # The pool is a speed optimisation, not a requirement. Should submit()
-        # still fail to grow the pool (RuntimeError: can't start new thread, i.e.
-        # the process is out of threads), fall back to fetching serially rather
-        # than aborting the whole sync run — a slow sync still queues episodes, a
-        # dead one queues nothing. _fetch_pd skips URLs already in the cache, so
-        # re-running over the full list is idempotent.
-        import concurrent.futures as _cf
-        _pd_futures = []
-        try:
-            _pool = _get_pd_pool()
-            for (_s, _e, _url, _ep, _is_movie, _cand) in online_episodes:
-                _pd_futures.append(_pool.submit(_fetch_pd, _url, _ep))
-            _cf.wait(_pd_futures)
-        except RuntimeError as _pool_exc:
-            logger.warning(
-                "Auto-sync: prefetch pool could not grow (%s) — fetching provider_data "
-                "serially. The process is at its thread limit.", _pool_exc
-            )
-            _cf.wait(_pd_futures)  # let whatever was accepted finish first
-            for (_s, _e, _url, _ep, _is_movie, _cand) in online_episodes:
-                _fetch_pd(_url, _ep)
+        # A title of None means the markup had no series-title block: the site served a
+        # captcha, a block page, an error page, or changed its layout. The episode list
+        # scraped from that same page is then empty too — and an empty episode list is
+        # indistinguishable, further down, from "this series genuinely has no new
+        # episodes". The run would end in the success path, clear last_error, reset the
+        # new-episode counter and record a clean last_check. A blocked fetch would look
+        # exactly like being up to date, which is the worst thing a sync can do quietly.
+        #
+        # So: say what happened, in a sentence that names the likely cause, and let the
+        # normal error handling retry it next cycle. Checked before any per-episode
+        # request goes out: a page that did not parse is not worth one more request.
+        series_title = getattr(series, "title", None)
+        if not series_title:
+            # The provider already worked out *why* while it still had the evidence (status
+            # code, body, the page itself) — see AniworldSeries.page_problem. Repeating a
+            # vaguer version of that here would mean the user reads "could not read the
+            # series page" in the job card while the log knows it was an HTTP 503.
+            problem = (getattr(series, "page_problem", None)
+                       or "could not read the series page (no title in the response)")
+            raise RuntimeError(f"{problem} — sync skipped, not treated as 'no new episodes'")
 
         # Compute scan_roots once — same for all languages
         raw = os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")
@@ -699,28 +837,6 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             if not cp_path.is_absolute():
                 cp_path = Path.home() / cp_path
             scan_roots.append(cp_path)
-
-        # If the series page didn't parse, stop here — do not sync "nothing".
-        #
-        # A title of None means the markup had no series-title block: the site served a
-        # captcha, a block page, an error page, or changed its layout. The episode list
-        # scraped from that same page is then empty too — and an empty episode list is
-        # indistinguishable, further down, from "this series genuinely has no new
-        # episodes". The run would end in the success path, clear last_error, reset the
-        # new-episode counter and record a clean last_check. A blocked fetch would look
-        # exactly like being up to date, which is the worst thing a sync can do quietly.
-        #
-        # So: say what happened, in a sentence that names the likely cause, and let the
-        # normal error handling retry it next cycle.
-        series_title = getattr(series, "title", None)
-        if not series_title:
-            # The provider already worked out *why* while it still had the evidence (status
-            # code, body, the page itself) — see AniworldSeries.page_problem. Repeating a
-            # vaguer version of that here would mean the user reads "could not read the
-            # series page" in the job card while the log knows it was an HTTP 503.
-            problem = (getattr(series, "page_problem", None)
-                       or "could not read the series page (no title in the response)")
-            raise RuntimeError(f"{problem} — sync skipped, not treated as 'no new episodes'")
 
         title_clean = (getattr(series, "title_cleaned", "") or series_title).lower()
         # Shared with the library scanner and the download dialog -- a local
@@ -752,16 +868,31 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                 return cached[1]
             eps: dict = {}
             if base.is_dir() and title_clean:
-                for folder in base.iterdir():
-                    # Same rule the download dialog uses: a plain startswith()
-                    # here meant a job created from one provider could not see
-                    # episodes a different provider had already written, and
-                    # re-downloaded the lot. folder_holds_title() adds the alias
-                    # index, which covers a provider that calls the show by a
-                    # different name entirely.
-                    if not folder.is_dir() or not _folder_holds(folder.name, title_clean,
-                                                                _alias_cache):
-                        continue
+                # os.scandir instead of Path.iterdir() + is_dir(): this loop
+                # visits every folder of every scan root, once per job, and
+                # is_dir() on a Path is one more stat per folder -- over SMB
+                # that is a network round trip each. A DirEntry answers is_dir()
+                # from the directory listing itself on Windows (and from d_type
+                # on most Linux filesystems). The name test goes first because
+                # it costs nothing at all.
+                with os.scandir(base) as _entries:
+                    _folders = []
+                    for _entry in _entries:
+                        # Same rule the download dialog uses: a plain startswith()
+                        # here meant a job created from one provider could not see
+                        # episodes a different provider had already written, and
+                        # re-downloaded the lot. folder_holds_title() adds the alias
+                        # index, which covers a provider that calls the show by a
+                        # different name entirely.
+                        if not _folder_holds(_entry.name, title_clean, _alias_cache):
+                            continue
+                        try:
+                            if not _entry.is_dir():
+                                continue
+                        except OSError:
+                            continue
+                        _folders.append(Path(_entry.path))
+                for folder in _folders:
                     for f in folder.rglob("*"):
                         if f.is_file():
                             m = ep_re.search(f.name)
@@ -796,6 +927,99 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                         found.setdefault(pair, []).extend(paths)
             return found
 
+        # What is on disk already, per language this run looks at -- scanned
+        # BEFORE any provider_data is requested, because it decides which
+        # episodes need provider_data at all.
+        present_by_lang = {lang: _scan_languages([lang]) for lang in lang_chain}
+        downloaded_by_lang = {
+            lang: set(_scan_languages([lang])) for lang in target_languages
+        }
+
+        # The (audio, subtitles) pair each target language stands for, used to
+        # ask provider_data whether an episode is offered in it. Compared by
+        # string value so it works for both aniworld and s.to enums (separate
+        # classes with identical values). None: no availability check possible
+        # for that label, the episode is queued on "missing" alone.
+        target_lang_strs = {}
+        for target_lang in target_languages:
+            _lang_str = None
+            _lang_key = INVERSE_LANG_LABELS.get(target_lang)
+            if _lang_key:
+                _target_enum = LANG_KEY_MAP.get(_lang_key)
+                if _target_enum:
+                    _lang_str = (_target_enum[0].value, _target_enum[1].value)
+            target_lang_strs[target_lang] = _lang_str
+
+        # provider_data costs one request per episode -- it is the episode's
+        # own page. It used to be fetched for EVERY episode of the series on
+        # every run, including the hundreds that were downloaded long ago and
+        # for which the answer changes nothing: a caught-up 500-episode series
+        # cost 500 requests per sync, and with many jobs one round of the
+        # (single, sequential) worker took longer than the sync interval. Jobs
+        # then sat at "due" indefinitely while the site got hammered into rate
+        # limits. Only episodes whose answer can change what this run does are
+        # fetched now:
+        #   * fallback group: not on disk in the group's first (best) language.
+        #     Present there already, the episode is left alone whatever the
+        #     site offers -- see the group pass below.
+        #   * single language / All Languages: missing on disk in a language
+        #     whose availability can be checked.
+        need_pd: dict = {}  # url -> episode object, insertion-ordered
+        for (_s, _e, _url, _ep, _is_movie, _cand) in online_episodes:
+            if lang_chain and not _present_paths(present_by_lang[lang_chain[0]], _cand):
+                need_pd[_url] = _ep
+                continue
+            for target_lang in target_languages:
+                if target_lang_strs[target_lang] is None:
+                    continue
+                if not any(pair in downloaded_by_lang[target_lang] for pair in _cand):
+                    need_pd[_url] = _ep
+                    break
+
+        # Shared across all languages — one request per episode, not one per
+        # episode per language (N+1).
+        _pd_cache: dict = {}  # url -> pd_data dict (or None on error)
+
+        def _fetch_pd(ep_url, ep_obj):
+            if ep_url in _pd_cache:
+                return
+            try:
+                pd = ep_obj.provider_data
+                _pd_cache[ep_url] = pd._data if hasattr(pd, "_data") else pd
+            except Exception as exc:
+                logger.debug("Auto-sync: provider_data prefetch failed for %s: %s", ep_url, exc)
+                _pd_cache[ep_url] = None
+
+        # Submit everything to the shared pool and wait for it, the way the old
+        # per-run `with ThreadPoolExecutor(...)` block did.
+        #
+        # The pool is a speed optimisation, not a requirement. Should submit()
+        # still fail to grow the pool (RuntimeError: can't start new thread, i.e.
+        # the process is out of threads), fall back to fetching serially rather
+        # than aborting the whole sync run — a slow sync still queues episodes, a
+        # dead one queues nothing. _fetch_pd skips URLs already in the cache, so
+        # re-running over the full list is idempotent.
+        if need_pd:
+            import concurrent.futures as _cf
+            _pd_futures = []
+            try:
+                _pool = _get_pd_pool()
+                for _url, _ep in need_pd.items():
+                    _pd_futures.append(_pool.submit(_fetch_pd, _url, _ep))
+                _cf.wait(_pd_futures)
+            except RuntimeError as _pool_exc:
+                logger.warning(
+                    "Auto-sync: prefetch pool could not grow (%s) — fetching provider_data "
+                    "serially. The process is at its thread limit.", _pool_exc
+                )
+                _cf.wait(_pd_futures)  # let whatever was accepted finish first
+                for _url, _ep in need_pd.items():
+                    _fetch_pd(_url, _ep)
+        logger.debug(
+            "Auto-sync: '%s' — provider data fetched for %d of %d episode(s)",
+            job.get("title", "?"), len(need_pd), total_online_count,
+        )
+
         # What this run will queue: (language, series_urls, movie_urls,
         # {episode_url: [files to delete afterwards]}). Both modes below fill
         # the same plan so the queueing code stays single.
@@ -816,7 +1040,6 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             # Whether the upgrade replaces the old file or leaves both languages
             # on disk is the group's own "delete old files" switch.
             _replace_old_files = deletes_replaced(job["language"])
-            present_by_lang = {lang: _scan_languages([lang]) for lang in lang_chain}
             local_pairs = set()
             for _lang_present in present_by_lang.values():
                 local_pairs |= _lang_present.keys()
@@ -825,6 +1048,19 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
             # language -> ([series urls], [movie urls], {url: [old paths]})
             chain_buckets: dict = {}
             for (s_num, e_num, url, ep_obj, is_movie, candidates) in online_episodes:
+                # Languages this episode is already on disk in, best-ranked ones
+                # first — everything ranked below `chosen` is what an upgrade
+                # would replace.
+                have_ranks = [
+                    rank for rank, lang in enumerate(lang_chain)
+                    if _present_paths(present_by_lang[lang], candidates)
+                ]
+                if have_ranks and min(have_ranks) == 0:
+                    # Already there in the group's first (best) language: there
+                    # is nothing to download and nothing to upgrade to, whatever
+                    # the site offers -- which is why its provider_data was not
+                    # fetched at all.
+                    continue
                 available = labels_from_provider_data(_pd_cache.get(url))
                 chosen = pick_language(lang_chain, available)
                 if not chosen:
@@ -837,13 +1073,6 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                     )
                     continue
                 chosen_rank = lang_chain.index(chosen)
-                # Languages this episode is already on disk in, worst-ranked ones
-                # first — everything ranked below `chosen` is what an upgrade
-                # would replace.
-                have_ranks = [
-                    rank for rank, lang in enumerate(lang_chain)
-                    if _present_paths(present_by_lang[lang], candidates)
-                ]
                 if have_ranks and min(have_ranks) <= chosen_rank:
                     # Already there in the best language available right now
                     # (or in an even better one) — leave it alone.
@@ -881,22 +1110,16 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                     queue_plan.append((chosen_lang, series_urls, movie_urls, replace_map, None))
 
         for target_lang in target_languages:
-            # Build set of downloaded (season, episode) on disk using cached scans
-            downloaded_eps = set(_scan_languages([target_lang]))
+            # Downloaded (season, episode) pairs, scanned once above
+            downloaded_eps = downloaded_by_lang[target_lang]
 
             in_scope_local = _count_local(downloaded_eps)
             if in_scope_local > max_local_found:
                 max_local_found = in_scope_local
 
-            # Build the lang-enum target for language-availability checks.
-            # We compare by string value so it works for both aniworld and s.to
-            # enums (which are separate classes with identical values).
-            _lang_key = INVERSE_LANG_LABELS.get(target_lang)
-            _target_lang_str = None
-            if _lang_key:
-                _target_enum = LANG_KEY_MAP.get(_lang_key)
-                if _target_enum:
-                    _target_lang_str = (_target_enum[0].value, _target_enum[1].value)
+            # The lang-enum target for language-availability checks (see
+            # target_lang_strs above).
+            _target_lang_str = target_lang_strs[target_lang]
 
             # Collect episode URLs that are not yet present on disk AND whose
             # target language is actually available online. Movies/specials are
@@ -1281,7 +1504,9 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                     )
                 except Exception as notif_exc:
                     logger.warning("[AutoSync] Layout-change notification failed: %s", notif_exc)
-            return
+            report["ok"] = False
+            report["error"] = str(e)
+            return report
 
         if _is_transient:
             logger.warning(
@@ -1348,6 +1573,52 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
     # still has to say why rather than returning nothing.
     report.setdefault("ok", False)
     return report
+
+
+def _run_due_job(snapshot) -> bool:
+    """Run one job the poll loop found due -- if it still is.
+
+    A round over many jobs takes a while, and the list it works through was
+    read when the round started. By the time a job's turn comes it may have
+    been disabled, deleted, edited, synced by hand or put into the manual-sync
+    queue. Running the stale snapshot ignored all of that: a disabled job ran
+    anyway, an edited one ran with its old language or filter, and one synced
+    by hand a minute earlier ran a second time. So the job is read again here
+    and only run if nothing happened to it in the meantime.
+
+    Jobs on hold are only retried every _HOLD_RECHECK_SECONDS (see there).
+
+    Returns True when the job ran.
+    """
+    job_id = snapshot.get("id")
+    with _syncing_jobs_lock:
+        if job_id in _queued_sync_jobs or job_id in _syncing_jobs:
+            return False
+
+    if snapshot.get("on_hold"):
+        now_mono = time.monotonic()
+        last_try = _hold_last_attempt.get(job_id)
+        if last_try is not None and now_mono - last_try < _HOLD_RECHECK_SECONDS:
+            return False
+        _hold_last_attempt[job_id] = now_mono
+    else:
+        _hold_last_attempt.pop(job_id, None)
+
+    job = get_autosync_job(job_id)
+    if not job or not job.get("enabled"):
+        return False
+    if job.get("last_check") != snapshot.get("last_check"):
+        # Checked since this round started (Sync now, Sync all, ...). When it
+        # is due next follows from that run, on the next round.
+        return False
+
+    from . import worker_registry as _wr
+    _wr.working("autosync", detail=job.get("title", ""))
+    try:
+        _run_autosync_for_job(job)
+    finally:
+        _wr.done("autosync", detail=job.get("title", ""))
+    return True
 
 
 def _autosync_worker():
@@ -1440,6 +1711,7 @@ def _autosync_worker():
                     if passed:
                         weekly_slot_utc = max(passed) - utc_off  # local -> naive UTC
 
+            due = []
             for job in jobs:
                 if not job.get("enabled"):
                     continue
@@ -1481,10 +1753,14 @@ def _autosync_worker():
                         should_run = True
 
                 if should_run:
-                    from . import worker_registry as _wr
-                    _wr.working("autosync", detail=job.get("title", ""))
-                    _run_autosync_for_job(job)
-                    _wr.done("autosync", detail=job.get("title", ""))
+                    due.append((last_dt, job))
+
+            # Most overdue first. With more due jobs than one round can get
+            # through before they are due again, plain id order kept serving
+            # the low ids first while the rest waited round after round.
+            due.sort(key=lambda item: (item[0], item[1].get("id") or 0))
+            for _last_dt, job in due:
+                _run_due_job(job)
 
             from . import worker_registry as _wr
             _wr.beat("autosync", state="idle", detail="%d job(s)" % len(jobs))
@@ -1517,5 +1793,5 @@ def _ensure_autosync_worker():
         if _autosync_worker_started:
             return
         _autosync_worker_started = True
-    thread = threading.Thread(target=_autosync_worker, daemon=True)
+    thread = threading.Thread(target=_autosync_worker, daemon=True, name="autosync-worker")
     thread.start()

@@ -37,6 +37,7 @@ from ..db import get_uptime_range
 from ..mediascan import _mediascan_status
 from ..mediascan import _mediascan_status_lock
 from ..queue_worker import _is_job_adaptive_paused
+from ..runtime_state import _queued_sync_jobs
 from ..runtime_state import _syncing_jobs
 from ..runtime_state import _syncing_jobs_lock
 from ..runtime_state import is_queue_paused
@@ -729,9 +730,12 @@ def register_v1_api_routes(app):
         jobs = get_autosync_jobs()
         with _syncing_jobs_lock:
             running_ids = set(_syncing_jobs)
+            queued_ids = set(_queued_sync_jobs)
         for job in jobs:
             job["adaptive_paused"] = _is_job_adaptive_paused(job)
             job["running"] = job.get("id") in running_ids
+            # Waiting for a slot in the manual-sync runner (Sync now / Sync all).
+            job["queued"] = job.get("id") in queued_ids
         return _v1_json(jobs)
     @app.route("/api/v1/uptime")
     def api_v1_uptime():

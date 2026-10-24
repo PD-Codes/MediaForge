@@ -1121,7 +1121,7 @@ def test_jellyfin_timestamps_survive_the_parser(value, expected):
 
 
 # ---------------------------------------------------------------------------
-# Onboarding / suggestions / wrapped
+# Onboarding / wrapped
 # ---------------------------------------------------------------------------
 
 def test_onboarding_hides_admin_only_steps_from_a_normal_account(as_user):
@@ -1131,11 +1131,6 @@ def test_onboarding_hides_admin_only_steps_from_a_normal_account(as_user):
                    as_user("admin").get("/api/home/onboarding").get_json()["steps"]}
     assert "sources" in admin_steps and "sources" not in user_steps
     assert "modules" in user_steps
-
-
-def test_suggest_says_nothing_until_there_is_something_to_say(as_user):
-    data = as_user("user").get("/api/home/suggest?q=a").get_json()
-    assert data["groups"] == []
 
 
 def test_wrapped_defaults_to_the_month_that_just_ended(as_user):

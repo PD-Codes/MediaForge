@@ -187,7 +187,9 @@ def _is_known_provider_url(url: str) -> bool:
     """Return True when *url* belongs to a known video-provider domain."""
     try:
         from urllib.parse import urlparse as _up
-        netloc = _up(url).netloc.lower().lstrip("www.")
+        # removeprefix, not lstrip: lstrip("www.") strips any run of the
+        # characters "w" and "." -- "wvoe.sx" became "voe.sx" and was trusted.
+        netloc = _up(url).netloc.lower().removeprefix("www.")
         return any(netloc == p or netloc.endswith("." + p) for p in _KNOWN_PROVIDER_NETLOCS)
     except Exception:
         return False
@@ -1006,13 +1008,10 @@ def _is_turnstile_token_ready(page) -> bool:
     """Check whether the Turnstile hidden input already carries a token.
 
     Searches the main document *and* every sub-frame, because s.to renders the
-    Turnstile widget inside a modal that may live in a nested frame.
+    Turnstile widget inside a modal that may live in a nested frame. Same check
+    as _is_challenge_token_ready(page, "turnstile") -- see _TOKEN_READY_JS.
     """
-    js = (
-        "() => { const el = document.querySelector"
-        "('input[name=\"cf-turnstile-response\"]');"
-        " return !!(el && el.value && el.value.length > 20); }"
-    )
+    js = _TOKEN_READY_JS["turnstile"]
     try:
         if page.evaluate(js):
             return True
@@ -1046,13 +1045,27 @@ def _is_turnstile_token_ready(page) -> bool:
 
 _HUMAN_CHECKBOX_KEYWORDS = ("robot", "roboter", "human", "mensch", "captcha", "bot")
 
-# Scans every checkbox <input> on the page/frame for one whose label/parent
-# text mentions "robot"/"human"/etc. Returns 'checked' | 'unchecked' | null.
-_HUMAN_CHECKBOX_SCAN_JS = """
-(kws) => {
-  const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-  for (const cb of boxes) {
+# Whole words only. A plain substring test matched "bot" inside ordinary German
+# words ("Angebot", "verboten"), so any unrelated checkbox near such a word --
+# a cookie banner, a settings toggle -- counted as a captcha that never became
+# "ready", and the form was never submitted.
+_HUMAN_CHECKBOX_PATTERN = r"\b(?:" + "|".join(_HUMAN_CHECKBOX_KEYWORDS) + r")\b"
+
+# The candidate test the two snippets below share. Skipped:
+#  * checkboxes inside <altcha-widget>: ALTCHA's own box is driven as the
+#    'altcha' kind, which knows when its proof of work is still running.
+#    Counted twice, the box got clicked mid-verification by the 'checkbox'
+#    handler, which restarts the computation.
+#  * checkboxes that are not rendered at all (display:none, a detached
+#    template, a honeypot): nobody could tick them, so they would never be
+#    "ready" either.
+_HUMAN_CHECKBOX_CANDIDATES_JS = """
+  const re = new RegExp(pattern, 'i');
+  const candidates = [];
+  for (const cb of Array.from(document.querySelectorAll('input[type="checkbox"]'))) {
     if (cb.disabled) continue;
+    if (cb.closest('altcha-widget')) continue;
+    if (!cb.getClientRects().length) continue;
     let text = '';
     if (cb.id) {
       try {
@@ -1063,42 +1076,37 @@ _HUMAN_CHECKBOX_SCAN_JS = """
     const pl = cb.closest('label');
     if (pl) text += ' ' + pl.textContent;
     if (cb.parentElement) text += ' ' + cb.parentElement.textContent;
-    text = text.toLowerCase();
-    if (kws.some(k => text.includes(k))) {
-      return cb.checked ? 'checked' : 'unchecked';
-    }
+    if (re.test(text)) candidates.push(cb);
   }
-  return null;
-}
 """
+
+# Scans every checkbox <input> on the page/frame for one whose label/parent
+# text mentions "robot"/"human"/etc. Returns 'checked' | 'unchecked' | null.
+_HUMAN_CHECKBOX_SCAN_JS = (
+    "(pattern) => {"
+    + _HUMAN_CHECKBOX_CANDIDATES_JS
+    + """
+  if (!candidates.length) return null;
+  // Ready only when every such box is ticked, not just the first one found.
+  return candidates.every(cb => cb.checked) ? 'checked' : 'unchecked';
+}
+""")
 
 # Same scan, but marks the matching unchecked box with a data attribute so
 # Playwright can locate + click it as a real element (native click, not a
 # simulated mouse-move — it's a normal form control, not an iframe overlay).
-_HUMAN_CHECKBOX_MARK_JS = """
-(kws) => {
-  const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-  for (const cb of boxes) {
-    if (cb.checked || cb.disabled) continue;
-    let text = '';
-    if (cb.id) {
-      try {
-        const lbl = document.querySelector(`label[for="${CSS.escape(cb.id)}"]`);
-        if (lbl) text += ' ' + lbl.textContent;
-      } catch (e) {}
-    }
-    const pl = cb.closest('label');
-    if (pl) text += ' ' + pl.textContent;
-    if (cb.parentElement) text += ' ' + cb.parentElement.textContent;
-    text = text.toLowerCase();
-    if (kws.some(k => text.includes(k))) {
-      cb.setAttribute('data-mf-human-cb', '1');
-      return true;
-    }
+_HUMAN_CHECKBOX_MARK_JS = (
+    "(pattern) => {"
+    + _HUMAN_CHECKBOX_CANDIDATES_JS
+    + """
+  for (const cb of candidates) {
+    if (cb.checked) continue;
+    cb.setAttribute('data-mf-human-cb', '1');
+    return true;
   }
   return false;
 }
-"""
+""")
 
 
 def _human_checkbox_state(page):
@@ -1107,7 +1115,7 @@ def _human_checkbox_state(page):
     else None."""
     for ctx in [page] + list(page.frames):
         try:
-            r = ctx.evaluate(_HUMAN_CHECKBOX_SCAN_JS, list(_HUMAN_CHECKBOX_KEYWORDS))
+            r = ctx.evaluate(_HUMAN_CHECKBOX_SCAN_JS, _HUMAN_CHECKBOX_PATTERN)
         except Exception:
             r = None
         if r:
@@ -1123,7 +1131,7 @@ def _click_human_checkbox(page, logger=None) -> bool:
         return True
     for ctx in [page] + list(page.frames):
         try:
-            found = ctx.evaluate(_HUMAN_CHECKBOX_MARK_JS, list(_HUMAN_CHECKBOX_KEYWORDS))
+            found = ctx.evaluate(_HUMAN_CHECKBOX_MARK_JS, _HUMAN_CHECKBOX_PATTERN)
         except Exception:
             found = False
         if not found:
@@ -1150,14 +1158,27 @@ def _click_human_checkbox(page, logger=None) -> bool:
 # ---------------------------------------------------------------------------
 # ALTCHA (https://altcha.org) is not an iframe challenge and not a plain
 # checkbox — it's a <altcha-widget> custom element that runs a client-side
-# proof-of-work computation and exposes a small JS API: el.getState() reports
-# 'unverified' | 'verifying' | 'verified' | 'error' | 'expired' | 'code', and
-# el.verify() starts the computation. Driving it through simulated mouse
-# clicks would mean reaching into its (often closed) Shadow DOM for whatever
-# internal checkbox its 'checkbox'/'switch' display type renders — the
-# documented .verify() method does exactly what that click would trigger, so
-# we call it directly instead. Searches every frame, same as the other
+# proof-of-work computation. States: 'unverified' | 'verifying' | 'verified' |
+# 'error' | 'expired' | 'code'. Searches every frame, same as the other
 # challenge kinds, since a modal can embed the widget in a sub-frame.
+#
+# Its JS API (el.getState(), el.verify()) is defined by the page's own script
+# -- and patchright runs page.evaluate() in an ISOLATED world by default
+# (isolated_context=True, to avoid the Runtime.enable leak). An isolated world
+# shares the DOM but none of the page's JavaScript objects, so custom-element
+# methods do not exist there. The state check used to rely on getState() alone
+# and fell back to a "state" attribute the widget never sets: under patchright
+# it read 'unverified' forever. The widget still got solved (its checkbox was
+# clicked as a plain robot checkbox), but the solver kept waiting for a
+# 'verified' it could not see and never submitted the form -- the captchas
+# showed as solved while "Weiter" was never clicked.
+#
+# So everything is read from the DOM, which every world shares: the widget
+# mirrors its state into a data-state attribute on its inner container (light
+# DOM on s.to; an open shadow root is searched too), and a verified widget
+# carries its payload in a hidden form field. Verification is started the way
+# a person starts it, by clicking the widget's checkbox. getState()/verify()
+# are still used where they are visible (plain Playwright, main world).
 
 _ALTCHA_STATE_JS = """
 () => {
@@ -1166,18 +1187,22 @@ _ALTCHA_STATE_JS = """
   try {
     if (typeof el.getState === 'function') return el.getState();
   } catch (e) {}
+  const root = el.shadowRoot || el;
+  const inner = root.querySelector('[data-state]');
+  if (inner && inner.getAttribute('data-state')) return inner.getAttribute('data-state');
+  const field = root.querySelector('input[type="hidden"]');
+  if (field && field.value) return 'verified';
   return el.getAttribute('state') || 'unverified';
 }
 """
 
+# Only works where the page's own objects are visible (see above); the caller
+# falls back to clicking the widget's checkbox when this returns false.
 _ALTCHA_VERIFY_JS = """
 () => {
   const el = document.querySelector('altcha-widget');
   if (!el) return false;
   try {
-    const state = (typeof el.getState === 'function') ? el.getState() : null;
-    // Already done or already computing — don't restart a running PoW.
-    if (state === 'verified' || state === 'verifying') return true;
     if (typeof el.verify === 'function') {
       el.verify();
       return true;
@@ -1203,9 +1228,12 @@ def _altcha_widget_state(page):
 
 
 def _trigger_altcha_widget(page, logger=None) -> bool:
-    """Start (or confirm already-running) ALTCHA proof-of-work verification by
-    calling the widget's own .verify() method, rather than trying to click
-    through its Shadow-DOM internals."""
+    """Start (or confirm already-running) ALTCHA proof-of-work verification.
+
+    Uses the widget's own verify() where it is visible, and otherwise clicks
+    the widget's checkbox, which starts the same computation (see the ALTCHA
+    notes above for why verify() is usually not visible under patchright).
+    """
     if _env_flag("MEDIAFORGE_CAPTCHA_MANUAL"):
         if logger:
             logger.debug("Captcha manual mode — auto-verify skipped (altcha)")
@@ -1213,13 +1241,33 @@ def _trigger_altcha_widget(page, logger=None) -> bool:
     _focus_page(page)
     for ctx in [page] + list(page.frames):
         try:
-            ok = ctx.evaluate(_ALTCHA_VERIFY_JS)
+            state = ctx.evaluate(_ALTCHA_STATE_JS)
         except Exception:
-            ok = False
-        if ok:
-            if logger:
-                logger.warning("Triggered ALTCHA proof-of-work verification")
+            state = None
+        if not state:
+            continue  # no widget in this frame
+        if state in ("verified", "verifying"):
+            # Done, or computing right now -- never restart a running proof of
+            # work: a second start aborts the first and begins from zero.
             return True
+        try:
+            if ctx.evaluate(_ALTCHA_VERIFY_JS):
+                if logger:
+                    logger.warning("Triggered ALTCHA proof-of-work verification")
+                return True
+        except Exception:
+            pass
+        try:
+            box = ctx.locator('altcha-widget input[type="checkbox"]').first
+            box.scroll_into_view_if_needed(timeout=1500)
+            box.click(timeout=2000)
+            if logger:
+                logger.warning("Clicked the ALTCHA checkbox to start its proof of work")
+            return True
+        except Exception as e:
+            if logger:
+                logger.warning(f"ALTCHA checkbox click failed: {e}")
+            return False
     if logger:
         logger.debug("No altcha-widget found to verify")
     return False
@@ -1240,22 +1288,41 @@ _CHALLENGE_IFRAME_SELECTORS = {
     ),
 }
 
+def _token_ready_js(selector: str) -> str:
+    """JS that answers "does every live widget matching *selector* hold a token?".
+
+    querySelector() used to look at the first match only. With two widgets of
+    the same kind on a page (one in a login dialog that is not even open, one
+    in the modal that matters) that could be the empty one, and the solver
+    then waited for a token that was never coming. Now every match whose widget
+    is actually rendered must carry one; a hidden input has no layout box of
+    its own, so its widget container (the parent) decides. Only if none is
+    rendered at all are all of them considered, as before.
+    """
+    return (
+        "() => {"
+        " const els = Array.from(document.querySelectorAll('" + selector + "'));"
+        " if (!els.length) return false;"
+        " const live = els.filter(el => !el.parentElement"
+        " || el.parentElement.getClientRects().length > 0);"
+        " return (live.length ? live : els)"
+        ".every(el => !!(el.value && el.value.length > 20));"
+        " }"
+    )
+
+
 _TOKEN_READY_JS = {
-    "turnstile": (
-        "() => { const el = document.querySelector"
-        "('input[name=\"cf-turnstile-response\"]');"
-        " return !!(el && el.value && el.value.length > 20); }"
+    # The id form also covers a widget rendered with a custom
+    # response-field-name: Turnstile always names its input's id after the
+    # widget, whatever the field's name is.
+    "turnstile": _token_ready_js(
+        'input[name="cf-turnstile-response"], '
+        'input[id^="cf-chl-widget-"][id$="_response"]'
     ),
-    "recaptcha": (
-        "() => { const el = document.querySelector"
-        "('#g-recaptcha-response, textarea[name=\"g-recaptcha-response\"]');"
-        " return !!(el && el.value && el.value.length > 20); }"
+    "recaptcha": _token_ready_js(
+        '#g-recaptcha-response, textarea[name="g-recaptcha-response"]'
     ),
-    "hcaptcha": (
-        "() => { const el = document.querySelector"
-        "('textarea[name=\"h-captcha-response\"]');"
-        " return !!(el && el.value && el.value.length > 20); }"
-    ),
+    "hcaptcha": _token_ready_js('textarea[name="h-captcha-response"]'),
 }
 
 
@@ -1463,6 +1530,106 @@ class _ChallengeSolver:
         return all_ready
 
 
+# Where the submit ("Weiter") button is looked for, most specific first: the
+# form that holds the captcha widgets (on s.to <form id="player-prepare-form">
+# with Turnstile, ALTCHA and "Weiter"). The plain "first visible submit button"
+# entries are only tried on the top-level page, for widgets that sit outside
+# any form -- never in sub-frames, where they could hit some unrelated form.
+# ":has()" and ":visible" are Playwright selector features.
+_FORM_SUBMIT_SELECTORS = tuple(
+    f'form:has({widget}) button[type="submit"]:visible'
+    for widget in (
+        "altcha-widget",
+        'input[name="cf-turnstile-response"]',
+        'input[id^="cf-chl-widget-"]',
+        'textarea[name="g-recaptcha-response"]',
+        'textarea[name="h-captcha-response"]',
+        "input[data-mf-human-cb]",
+    )
+)
+_PAGE_SUBMIT_SELECTORS = (
+    'button[type="submit"]:visible',
+    'input[type="submit"]:visible',
+)
+
+# Fallback when the click itself fails (something covers the button, or it
+# never settles): submit its form directly. requestSubmit() runs the same steps
+# a click does -- validation, the "submit" event the page listens for, then
+# the navigation into the form's target -- it just cannot be intercepted by an
+# overlay. A native DOM method, so it also works from an isolated world.
+_REQUEST_SUBMIT_JS = """
+(btn) => {
+  const form = btn.form || btn.closest('form');
+  if (!form) return false;
+  if (typeof form.requestSubmit === 'function') {
+    form.requestSubmit(btn.form === form ? btn : undefined);
+  } else {
+    btn.click();
+  }
+  return true;
+}
+"""
+
+
+def _submit_challenge_form(page, logger=None) -> bool:
+    """Submit the captcha form (click "Weiter"). True if it was submitted.
+
+    This used to be page.locator('button[type="submit"]') + wait_for() +
+    click() with Playwright's default 30 s timeout, failures swallowed:
+    * locators are strict, so a second submit button anywhere on the page (a
+      search or login form) made every attempt throw a strict-mode violation
+      and the form was never submitted at all;
+    * a button covered by an overlay made every attempt hang for 30 s;
+    * the generic solvers said nothing about either.
+    Now the button is looked up inside the form that holds the widgets, the
+    click has a short timeout, a failed click falls back to requestSubmit(),
+    and failures are logged.
+    """
+    contexts = [(page, _FORM_SUBMIT_SELECTORS + _PAGE_SUBMIT_SELECTORS)]
+    try:
+        contexts += [(fr, _FORM_SUBMIT_SELECTORS)
+                     for fr in page.frames if fr != page.main_frame]
+    except Exception:
+        pass
+
+    for ctx, selectors in contexts:
+        btn = None
+        for selector in selectors:
+            try:
+                matches = ctx.locator(selector)
+                if matches.count():
+                    btn = matches.first
+                    break
+            except Exception:
+                continue
+        if btn is None:
+            continue
+
+        try:
+            btn.scroll_into_view_if_needed(timeout=1500)
+        except Exception:
+            pass
+        try:
+            btn.click(timeout=4000)
+            return True
+        except Exception as e:
+            if logger:
+                logger.warning("Submit button click failed (%s) — submitting the form directly",
+                               str(e).splitlines()[0][:200] if str(e) else type(e).__name__)
+        try:
+            if btn.evaluate(_REQUEST_SUBMIT_JS):
+                return True
+        except Exception as e:
+            if logger:
+                logger.warning("Submitting the captcha form failed: %s",
+                               str(e).splitlines()[0][:200] if str(e) else type(e).__name__)
+        return False
+
+    if logger:
+        logger.debug("No submit button found for the captcha form")
+    return False
+
+
 def _is_captcha_page_dom(page) -> bool:
     """Lightweight DOM query to detect an active CF challenge — avoids full page.content() serialization."""
     try:
@@ -1572,6 +1739,13 @@ def _solve_captcha_cli(url: str) -> bool:
                 timeout = _captcha_timeout(300)  # default 5 minutes
                 start = _time.time()
                 solved = False
+                # Set by the player-iframe branch below only. It used to be
+                # unbound for the other two ways a solve can succeed (clearance
+                # cookie, challenge gone), so a successful solve died on the
+                # return statement with UnboundLocalError -- caught by the
+                # generic handler, logged at ERROR (a crash report) and
+                # returned as a failure.
+                final_url = None
                 challenge_solver = _ChallengeSolver()
 
                 while _time.time() - start < timeout:
@@ -1612,18 +1786,20 @@ def _solve_captcha_cli(url: str) -> bool:
                     # second stacked reCAPTCHA/hCaptcha widget if present) and
                     # only submit once every widget on the page has a token.
                     if challenge_solver.ready_to_submit(page, logger):
-                        try:
-                            _focus_page(page)
-                            weiter = page.locator('button[type="submit"]')
-                            weiter.wait_for(state="visible", timeout=1500)
-                            weiter.click()
+                        _focus_page(page)
+                        if _submit_challenge_form(page, logger):
                             page.wait_for_timeout(2000)
-                        except Exception:
-                            pass
 
                     _time.sleep(1.5)
 
                 if solved:
+                    if not final_url:
+                        # Solved without a player iframe: the page itself is
+                        # the result, as in the web-UI solver.
+                        try:
+                            final_url = page.url
+                        except Exception:
+                            final_url = url
                     for cookie in context.cookies():
                         GLOBAL_SESSION.cookies.set(
                             cookie["name"],
@@ -1813,14 +1989,9 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
                 # second stacked reCAPTCHA/hCaptcha widget if present) and
                 # only submit once every widget on the page has a token.
                 if challenge_solver.ready_to_submit(page, logger):
-                    try:
-                        _focus_page(page)
-                        weiter_button = page.locator('button[type="submit"]')
-                        weiter_button.wait_for(state="visible", timeout=2000)
-                        weiter_button.click()
+                    _focus_page(page)
+                    if _submit_challenge_form(page, logger):
                         page.wait_for_timeout(2000)
-                    except Exception:
-                        pass
 
                 page.wait_for_timeout(1000)
 
@@ -1898,12 +2069,13 @@ def _extract_iframe_url(page, current_url: str) -> str:
     """
     try:
         from urllib.parse import urlparse
-        current_netloc = urlparse(current_url).netloc.lstrip("www.")
+        # removeprefix, not lstrip: see _is_known_provider_url.
+        current_netloc = urlparse(current_url).netloc.removeprefix("www.")
         for frame in page.frames:
             u = frame.url
             if not u or u in ("about:blank", current_url):
                 continue
-            nl = urlparse(u).netloc.lstrip("www.")
+            nl = urlparse(u).netloc.removeprefix("www.")
             if nl and nl != current_netloc:
                 return u
     except Exception:
@@ -2259,21 +2431,23 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                 # is only clicked once *every* widget on the page has a token.
                 if not weiter_clicked:
                     if challenge_solver.ready_to_submit(page, logger):
-                        try:
-                            # Remove ad overlays before clicking Weiter so the
-                            # submit button click isn't hijacked by the overlay.
-                            _remove_ad_overlays(page)
-                            _focus_page(page)
-                            weiter = page.locator('button[type="submit"]')
-                            weiter.wait_for(state="visible", timeout=2000)
-                            # Signal BEFORE the click so the new-tab handler
-                            # never races ahead of the flag being set.
-                            _weiter_submitted.set()
-                            weiter.click()
+                        # Remove ad overlays before clicking Weiter so the
+                        # submit button click isn't hijacked by the overlay.
+                        _remove_ad_overlays(page)
+                        _focus_page(page)
+                        # Signal BEFORE the click so the new-tab handler
+                        # never races ahead of the flag being set ...
+                        _weiter_submitted.set()
+                        if _submit_challenge_form(page, logger):
                             logger.warning("Submit clicked (all captcha tokens ready)")
                             weiter_clicked = True
-                        except Exception as e:
-                            logger.warning(f"Submit button error: {e}")
+                        else:
+                            # ... and take it back when nothing was submitted.
+                            # Left set, the ad-blocker let third-party pages
+                            # through and the new-tab handler kept the next ad
+                            # tab as "the provider" -- the solve could end on
+                            # an ad URL.
+                            _weiter_submitted.clear()
 
                 _time.sleep(0.8)
 

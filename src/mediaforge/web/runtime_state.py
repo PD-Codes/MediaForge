@@ -295,6 +295,15 @@ def set_queue_paused(paused: bool):
 _syncing_jobs = set()
 _syncing_jobs_lock = threading.Lock()
 
+# Jobs a person asked to sync (Sync now, Sync all, a new job's first scan, a
+# changed filter) that are waiting for a free slot in autosync_worker.py's
+# manual-sync runner. Guarded by _syncing_jobs_lock as well, so "queued" and
+# "running" can be checked and changed together. Reported by
+# /api/autosync/running so the page can show "queued" instead of a stale
+# "soon"; the background poll loop skips these jobs because they are about to
+# run anyway.
+_queued_sync_jobs = set()
+
 # AniWorld layout-change backoff.
 #
 # When the parser detects that the page loaded but none of the known title

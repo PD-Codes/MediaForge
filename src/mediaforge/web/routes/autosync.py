@@ -12,6 +12,7 @@ from ...search import query as aniworld_query
 from ...search import query_s_to
 from ..autosync_worker import _normalize_episode_filter
 from ..autosync_worker import _run_autosync_for_job
+from ..autosync_worker import request_manual_sync
 from ..db import add_autosync_job
 from ..db import find_autosync_by_url
 from ..db import get_autosync_job
@@ -28,6 +29,7 @@ from ..queue_worker import _nineanime_enabled
 from ..queue_worker import _is_job_adaptive_paused
 from ..runtime_state import _SERIES_LINK_PATTERN
 from ..runtime_state import _STO_SERIES_LINK_PATTERN
+from ..runtime_state import _queued_sync_jobs
 from ..runtime_state import _syncing_jobs
 from ..runtime_state import _syncing_jobs_lock
 from flask import jsonify
@@ -37,7 +39,6 @@ from html import unescape as _html_unescape
 import json
 import os
 import re
-import threading
 from ..request_context import get_current_user_info as _get_current_user_info
 from ...logger import get_logger
 
@@ -375,14 +376,10 @@ def register_autosync_routes(app):
             cover_url=cover_url,
             extra_languages=extra_languages,
         )
-        fresh_job = get_autosync_job(job_id)
-        if fresh_job:
-            threading.Thread(
-                target=_run_autosync_for_job,
-                args=(fresh_job,),
-                kwargs={"queue_downloads": False},
-                daemon=True
-            ).start()
+        # First scan: establishes the baseline counts without queueing
+        # anything. Through the bounded manual-sync runner, so importing or
+        # bulk-adding many jobs does not start one concurrent scan per job.
+        request_manual_sync(job_id, queue_downloads=False)
         return jsonify({"ok": True, "id": job_id})
     @app.route("/api/autosync/site-search", methods=["POST"])
     def api_autosync_site_search():
@@ -448,12 +445,9 @@ def register_autosync_routes(app):
         if filter_changed:
             fresh = get_autosync_job(job_id)
             if fresh and fresh.get("enabled"):
-                with _syncing_jobs_lock:
-                    _busy = job_id in _syncing_jobs
-                if not _busy:
-                    threading.Thread(
-                        target=_run_autosync_for_job, args=(fresh,), daemon=True
-                    ).start()
+                # A no-op while the job is running or already queued; the
+                # runner re-reads the job, so a queued run uses the new filter.
+                request_manual_sync(job_id)
         return jsonify({"ok": True})
     @app.route("/api/autosync/<int:job_id>", methods=["DELETE"])
     def api_autosync_delete(job_id):
@@ -485,11 +479,17 @@ def register_autosync_routes(app):
         username, is_admin = _get_current_user_info()
         if not is_admin and job.get("added_by") != username:
             return jsonify({"error": "Not authorized"}), 403
-        with _syncing_jobs_lock:
-            if job_id in _syncing_jobs:
-                return jsonify({"error": "Sync already running for this job"}), 409
-        threading.Thread(target=_run_autosync_for_job, args=(job, True), daemon=True).start()
-        return jsonify({"ok": True, "message": "Sync started"})
+        status = request_manual_sync(job_id, force_notify=True)
+        if status == "running":
+            return jsonify({"error": "Sync already running for this job"}), 409
+        if status == "failed":
+            return jsonify({"error": "Sync could not be started"}), 503
+        # "queued": starts as soon as one of the manual-sync slots is free,
+        # which is immediately unless a "Sync all" is being worked through.
+        # "pending": was already waiting; nothing was added twice.
+        return jsonify({"ok": True, "status": status,
+                        "message": "Sync already queued" if status == "pending"
+                        else "Sync started"})
     @app.route("/api/autosync/<int:job_id>/dry-run", methods=["POST"])
     def api_autosync_dry_run(job_id):
         """Answer "what would this job do if it ran right now?".
@@ -528,36 +528,46 @@ def register_autosync_routes(app):
 
     @app.route("/api/autosync/running")
     def api_autosync_running():
-        """Return the set of currently running sync job IDs.
+        """Return the IDs of the sync jobs running right now, and of those
+        waiting in the manual-sync queue (Sync now / Sync all).
 
         Route: GET /api/autosync/running. Called from static/autosync.js's
         `pollRunningJobs()` and `loadAutosyncJobs()`.
         """
         with _syncing_jobs_lock:
-            return jsonify({"running": list(_syncing_jobs)})
+            return jsonify({"running": list(_syncing_jobs),
+                            "queued": list(_queued_sync_jobs)})
     @app.route("/api/autosync/sync-all", methods=["POST"])
     def api_autosync_sync_all():
         """Trigger sync for all enabled jobs the current user owns (or all if admin).
 
         Route: POST /api/autosync/sync-all. Called from static/autosync.js's
         `syncAll()`.
+
+        The jobs are queued, not started all at once: the manual-sync runner
+        works through them a few at a time (see autosync_worker.py's
+        request_manual_sync). ``started`` counts the jobs that were queued,
+        ``skipped`` the ones already running or already waiting.
         """
         username, is_admin = _get_current_user_info()
         jobs = get_autosync_jobs()
         started = 0
         skipped = 0
+        failed = 0
         for job in jobs:
             if not job.get("enabled"):
                 continue
             if not is_admin and job.get("added_by") != username:
                 continue
-            job_id = job["id"]
-            with _syncing_jobs_lock:
-                if job_id in _syncing_jobs:
-                    skipped += 1
-                    continue
-            threading.Thread(target=_run_autosync_for_job, args=(job,), daemon=True).start()
-            started += 1
+            status = request_manual_sync(job["id"])
+            if status == "queued":
+                started += 1
+            elif status == "failed":
+                failed += 1
+            else:
+                skipped += 1
+        if failed and not started:
+            return jsonify({"error": "Sync could not be started"}), 503
         return jsonify({"ok": True, "started": started, "skipped": skipped})
     @app.route("/api/autosync/check", methods=["GET"])
     def api_autosync_check():
