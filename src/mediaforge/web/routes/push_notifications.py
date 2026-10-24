@@ -51,11 +51,21 @@ def register_push_notifications_routes(app):
         Route: POST /api/push/unsubscribe. Called from static/pwa.js's push
         unsubscribe flow.
         """
+        from flask import session as _sess
         from ..notifications import remove_push_subscription
         data = request.get_json(silent=True)
         if not data or "endpoint" not in data:
             return jsonify({"error": "missing endpoint"}), 400
-        remove_push_subscription(data["endpoint"])
+        # Only the account the subscription belongs to (or an admin) may
+        # remove it. An endpoint is hard to guess, but it is no credential.
+        from ..request_context import get_current_user_info
+        _user, is_admin = get_current_user_info()
+        owner = None
+        if not is_admin:
+            owner = _sess.get("user_id")
+            if owner is None:
+                owner = -1  # no account in the session: only ownerless rows match
+        remove_push_subscription(str(data["endpoint"]), owner_id=owner)
         return jsonify({"ok": True})
     @app.route("/api/notif/settings")
     def api_notif_settings_get():

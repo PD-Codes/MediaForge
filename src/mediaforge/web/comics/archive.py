@@ -66,6 +66,12 @@ def sniff(path) -> str:
             head = fh.read(512)
     except OSError:
         return ""
+    return sniff_head(head)
+
+
+def sniff_head(head: bytes) -> str:
+    """sniff() for the first 512 bytes of a file the caller already has open
+    -- so a scan can read the container from the same handle afterwards."""
     if len(head) < 4:
         return ""
 
@@ -173,9 +179,13 @@ def read_page(path, name, fmt=None):
     try:
         if fmt == FMT_ZIP:
             with zipfile.ZipFile(path) as zf:
-                if name not in zf.namelist():
+                # A dict lookup. `name in zf.namelist()` built and scanned a
+                # list of every member, for every page served.
+                try:
+                    info = zf.getinfo(name)
+                except KeyError:
                     return None
-                return zf.read(name)
+                return zf.read(info)
         if fmt == FMT_TAR:
             with tarfile.open(path) as tf:
                 member = tf.getmember(name)

@@ -77,13 +77,18 @@ def register_themes_routes(app):
         can swap themes client-side. ETag'd on version+mtime so a theme update
         busts caches without any build step.
         """
-        css, etag = themes.bundle_css(folder)
-        if css is None:
-            return ("/* no such theme */", 404, {"Content-Type": "text/css; charset=utf-8"})
-        if request.if_none_match.contains(etag):
+        # Revalidation first, from stat() alone: the stylesheets are only
+        # read when the browser's copy is actually out of date.
+        # contains_weak(): with gzip the stored ETag is the weak form, and
+        # If-None-Match uses the weak comparison anyway (RFC 9110 13.1.2).
+        etag = themes.bundle_css_etag(folder)
+        if etag and request.if_none_match.contains_weak(etag):
             resp = make_response("", 304)
             resp.set_etag(etag)
             return resp
+        css, etag = themes.bundle_css(folder)
+        if css is None:
+            return ("/* no such theme */", 404, {"Content-Type": "text/css; charset=utf-8"})
         resp = make_response(css)
         resp.headers["Content-Type"] = "text/css; charset=utf-8"
         resp.set_etag(etag)

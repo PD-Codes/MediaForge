@@ -73,9 +73,12 @@ cache_stats = _CACHE.stats
 cleanup_covers = _CACHE.cleanup
 
 
-def cover_path(src, start_conversion: bool = True):
+def cover_path(src, start_conversion: bool = True, resolved: bool = False):
     """The cached cover for *src*, extracting it once if needed. None if there
     is none to have.
+
+    *resolved*: *src* is already canonical (the cover route's guard resolved
+    it), so the cache key need not resolve it a second time.
 
     None is a normal answer, not a failure: a PDF (pdf.js draws its own first
     page), a CBR on a machine with no extractor, an archive holding no images,
@@ -92,7 +95,7 @@ def cover_path(src, start_conversion: bool = True):
     """
     src = Path(src)
     try:
-        key = cache_key(src)
+        key = cache_key(src, resolved=resolved)
     except OSError:
         return None
 

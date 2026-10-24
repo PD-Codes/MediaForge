@@ -1033,7 +1033,7 @@ async function loadPlexLibraries(selectedId) {
   } catch (e) {
     showToast(t("Bibliotheken konnten nicht geladen werden", "Libraries could not be loaded"));
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "↻ Laden"; }
+    if (btn) { btn.disabled = false; btn.textContent = t("↻ Laden", "↻ Load"); }
   }
 }
 
@@ -1242,10 +1242,17 @@ function _applyMediascanUI(d) {
 function _formatRelTime(ts) {
   if (!ts) return "—";
   const diff = Math.round((Date.now() / 1000) - ts);
-  if (diff < 60)  return "Gerade eben";
-  if (diff < 3600) return `vor ${Math.round(diff/60)} Min.`;
-  if (diff < 86400) return `vor ${Math.round(diff/3600)} Std.`;
-  return `vor ${Math.round(diff/86400)} Tag(en)`;
+  if (diff < 60)  return t("Gerade eben", "Just now");
+  if (diff < 3600) {
+    const mins = Math.round(diff / 60);
+    return t(`vor ${mins} Min.`, `${mins} min ago`);
+  }
+  if (diff < 86400) {
+    const hours = Math.round(diff / 3600);
+    return t(`vor ${hours} Std.`, `${hours} h ago`);
+  }
+  const days = Math.round(diff / 86400);
+  return t(`vor ${days} Tag(en)`, `${days} day(s) ago`);
 }
 
 function _updateMediascanStatusUI(d) {

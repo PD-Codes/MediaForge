@@ -171,14 +171,19 @@
 
   // ── Summary (breakdown charts) ─────────────────────────────────
 
+  // Its own counter: state.seq also moves on a sort or page change, which do
+  // not touch the summary -- sharing it threw away a summary that was still
+  // loading, so the charts stayed empty until the next filter change.
+  var summarySeq = 0;
+
   function loadSummary() {
     var host = document.getElementById("histSummary");
     if (!host) return;
-    var seq = state.seq;
+    var seq = ++summarySeq;
     fetch("/api/history/summary?days=30&" + filterParams().toString())
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (seq !== state.seq) return;      // a newer filter change won
+        if (seq !== summarySeq) return;     // a newer filter change won
         renderSummary(data);
       })
       .catch(function () { host.innerHTML = ""; });
@@ -281,8 +286,16 @@
     if (reset) reset.style.display = filtersActive() ? "" : "none";
   }
 
+  var pageAbort = null;   // AbortController of the list request in flight
+
   function fetchPage() {
-    if (state.loading) return;
+    // A newer request replaces the one in flight. This used to return early
+    // while a request was running: a search, filter or sort change made during
+    // a fetch was dropped, the old answer was then discarded by the seq check
+    // below, and the spinner stayed up until the next interaction.
+    if (pageAbort) pageAbort.abort();
+    var ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    pageAbort = ctrl;
     state.loading = true;
     var seq = state.seq;
     var params = filterParams();
@@ -291,11 +304,13 @@
     params.set("sort", state.sort);
     params.set("dir", state.dir);
 
-    fetch("/api/history?" + params.toString())
+    fetch("/api/history?" + params.toString(), ctrl ? { signal: ctrl.signal } : undefined)
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        state.loading = false;
+        // Superseded: the newer request owns the loading state and the view.
         if (seq !== state.seq) return;
+        state.loading = false;
+        pageAbort = null;
         state.total = data.total || 0;
         var entries = data.entries || [];
         if (!entries.length) {
@@ -314,8 +329,12 @@
         updateSortIndicators();
       })
       .catch(function () {
+        // An aborted (superseded) request lands here too; it must not end the
+        // loading state of the request that replaced it.
+        if (seq !== state.seq) return;
         state.loading = false;
-        if (seq === state.seq) showOnly("empty");
+        pageAbort = null;
+        showOnly("empty");
       });
   }
 

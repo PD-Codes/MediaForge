@@ -27,9 +27,11 @@ except ImportError:
 # Which files are worth waking up for. Both sets come from web/media_types.py
 # now: this module and the scanner used to keep separate lists that had drifted
 # apart, so a .m4v could trigger a rescan that then refused to index it.
-from .media_types import BOOK_ALL_EXTS, VIDEO_WATCH_EXTS
+from .media_types import BOOK_ALL_EXTS, COMIC_EXTS, VIDEO_WATCH_EXTS
 
-_WATCHED_EXTS = frozenset(VIDEO_WATCH_EXTS | BOOK_ALL_EXTS)
+# Comics included: a new or removed .cbz/.cbr/... used to wake nothing, so a
+# comic shelf only changed with the daily auto-rescan or a manual refresh.
+_WATCHED_EXTS = frozenset(VIDEO_WATCH_EXTS | BOOK_ALL_EXTS | COMIC_EXTS)
 
 # Sidecar files carrying a book's metadata. Calibre rewrites these without
 # touching the book itself -- editing an author changes only the .opf -- so

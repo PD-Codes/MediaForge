@@ -40,6 +40,7 @@ from flask import jsonify
 from flask import render_template
 from flask import request
 import json
+import re
 import threading
 from ...logger import get_logger
 from ...telemetry import client as telemetry_client
@@ -52,6 +53,19 @@ logger = get_logger(__name__)
 # this exact value, so a form that was loaded and saved unchanged keeps the
 # secret instead of overwriting it with the mask.
 SECRET_PLACEHOLDER = "***"
+
+_SCHEME_RE = re.compile(r"^\s*https?://", re.IGNORECASE)
+
+
+def _strip_scheme(value) -> str:
+    """Drop a leading http:// or https:// from a server address.
+
+    This used to be ``.lstrip("http://").lstrip("https://")``, which strips
+    any run of the CHARACTERS h, t, p, s, ':' and '/' -- "plex.home:32400"
+    was stored as "lex.home:32400", "truenas.local" as "ruenas.local", and
+    MediaScan silently failed for every host starting with one of them.
+    """
+    return _SCHEME_RE.sub("", str(value or "")).strip()
 
 
 def _report_integration_error(integration, *, error_type=None, reason=None):
@@ -791,7 +805,7 @@ def register_integrations_routes(app):
         # Validate URLs before persisting
         if "jf_url" in data:
             ssl = data.get("jf_ssl", False)
-            raw = (data["jf_url"] or "").strip().lstrip("http://").lstrip("https://")
+            raw = _strip_scheme(data["jf_url"])
             jf_url_full = (("https://" if ssl else "http://") + raw) if raw else ""
             try:
                 _validate_server_url(jf_url_full)
@@ -801,7 +815,7 @@ def register_integrations_routes(app):
             jf_url_full = None
         if "plex_url" in data:
             ssl = data.get("plex_ssl", False)
-            raw = (data["plex_url"] or "").strip().lstrip("http://").lstrip("https://")
+            raw = _strip_scheme(data["plex_url"])
             plex_url_full = (("https://" if ssl else "http://") + raw) if raw else ""
             try:
                 _validate_server_url(plex_url_full)

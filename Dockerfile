@@ -181,6 +181,6 @@ EXPOSE 8080
 ENV DISPLAY=:99
 
 # Health check: verify the web UI is reachable
-HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/')" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')" || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

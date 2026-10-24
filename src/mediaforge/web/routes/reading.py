@@ -37,11 +37,22 @@ _MAX_LABEL_LEN = 200
 
 
 def _username():
+    # get_current_user_info() returns a (username, is_admin) TUPLE. This used
+    # to call .get() on it; the AttributeError was swallowed and every account
+    # read and wrote the one shared '' bucket -- positions and bookmarks of
+    # all users mixed together.
     try:
-        info = get_current_user_info() or {}
-        return info.get("username") or ""
+        username, _is_admin = get_current_user_info()
+        return username or ""
     except Exception:
         return ""
+
+
+# Rows written before the fix above all live under ''. Reads fall back to that
+# bucket while a user has no row of their own, so nobody loses a place they
+# had; every new save goes to the user's own row. With auth disabled the user
+# IS '' and nothing changes.
+_LEGACY_USER = ""
 
 
 def register_reading_routes(app):
@@ -76,7 +87,11 @@ def register_reading_routes(app):
         book = str(request.args.get("book") or "")[:_MAX_BOOK_KEY_LEN]
         if not book:
             return jsonify({})
-        return jsonify(get_reading_progress(book, username=_username()) or {})
+        user = _username()
+        row = get_reading_progress(book, username=user)
+        if not row and user:
+            row = get_reading_progress(book, username=_LEGACY_USER)
+        return jsonify(row or {})
 
     @app.route("/api/reading/bulk", methods=["POST"])
     def api_reading_bulk():
@@ -91,7 +106,15 @@ def register_reading_routes(app):
         if not isinstance(books, list):
             return jsonify({})
         keys = [str(b)[:_MAX_BOOK_KEY_LEN] for b in books[:_MAX_BULK] if b]
-        return jsonify(get_reading_progress_bulk(keys, username=_username()))
+        user = _username()
+        out = get_reading_progress_bulk(keys, username=user)
+        if user:
+            missing = [k for k in keys if k not in out]
+            if missing:
+                legacy = get_reading_progress_bulk(missing, username=_LEGACY_USER)
+                for key, row in legacy.items():
+                    out.setdefault(key, row)
+        return jsonify(out)
 
     @app.route("/api/reading/reset", methods=["POST"])
     def api_reading_reset():
@@ -100,7 +123,12 @@ def register_reading_routes(app):
         book = str(data.get("book") or "")[:_MAX_BOOK_KEY_LEN]
         if not book:
             return jsonify({"error": "book is required"}), 400
-        delete_reading_progress(book, username=_username())
+        user = _username()
+        delete_reading_progress(book, username=user)
+        if user:
+            # Otherwise the read fallback would bring the old shared position
+            # straight back.
+            delete_reading_progress(book, username=_LEGACY_USER)
         return jsonify({"ok": True})
 
     # ---- bookmarks -----------------------------------------------------
@@ -115,7 +143,14 @@ def register_reading_routes(app):
         if not book:
             return jsonify({"bookmarks": []})
         try:
-            return jsonify({"bookmarks": list_reading_bookmarks(book, username=_username())})
+            user = _username()
+            marks = list_reading_bookmarks(book, username=user)
+            if user:
+                seen = {m.get("location") for m in marks}
+                marks += [m for m in list_reading_bookmarks(book, username=_LEGACY_USER)
+                          if m.get("location") not in seen]
+                marks.sort(key=lambda m: (m.get("percent") or 0, m.get("created_at") or ""))
+            return jsonify({"bookmarks": marks})
         except Exception:
             logger.exception("[Reading] Could not list bookmarks for %s", book)
             return jsonify({"bookmarks": []})
@@ -160,7 +195,11 @@ def register_reading_routes(app):
         if not book or not location:
             return jsonify({"error": "book and location are required"}), 400
         try:
-            delete_reading_bookmark(book, location, username=_username())
+            user = _username()
+            delete_reading_bookmark(book, location, username=user)
+            if user:
+                # A bookmark listed from the legacy bucket (see above).
+                delete_reading_bookmark(book, location, username=_LEGACY_USER)
         except Exception:
             logger.exception("[Reading] Could not delete a bookmark from %s", book)
             return jsonify({"error": "could not delete"}), 500

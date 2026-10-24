@@ -682,7 +682,7 @@ def test_library_panel_reads_the_cache_dict_not_its_keys(as_user, app, monkeypat
         ],
         "books": [],
     }}
-    monkeypatch.setattr("mediaforge.web.db.get_all_library_cache",
+    monkeypatch.setattr("mediaforge.web.db.get_all_library_cache_shared",
                         lambda: {"default": entry})
     monkeypatch.setattr("mediaforge.web.routes.library.lib_path_keys_for_kind",
                         lambda kind: {"default"})
@@ -705,7 +705,7 @@ def test_language_separated_libraries_are_counted_too(app, monkeypatch):
         {"name": "English", "titles": [{"folder": "S2", "is_movie": False,
                                         "total_episodes": 4, "total_size": 0}]},
     ]}}
-    monkeypatch.setattr("mediaforge.web.db.get_all_library_cache",
+    monkeypatch.setattr("mediaforge.web.db.get_all_library_cache_shared",
                         lambda: {"default": entry})
     monkeypatch.setattr("mediaforge.web.routes.library.lib_path_keys_for_kind",
                         lambda kind: {"default"})

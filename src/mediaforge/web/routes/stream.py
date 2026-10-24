@@ -186,12 +186,17 @@ def _resolve_media_path(file_path: str):
     """
     from pathlib import Path as _Path
     from ..db import get_custom_paths as _get_custom_paths
+    from ..media_types import VIDEO_WATCH_EXTS
 
     if not file_path:
         return None
     try:
         resolved = _Path(file_path).expanduser().resolve()
     except Exception:
+        return None
+    # Only video files: every caller hands the file to ffprobe/ffmpeg, and
+    # "inside a library root" alone also admitted .nfo, .m3u8, .txt, ...
+    if resolved.suffix.lower() not in VIDEO_WATCH_EXTS:
         return None
 
     raw_dl = get_setting("download_path") or os.environ.get("MEDIAFORGE_DOWNLOAD_PATH", "")
@@ -897,44 +902,35 @@ def register_stream_routes(app):
                     ready = ".ts" in _pf.read()
             except Exception:
                 pass
-        # Try to read stderr tail (non-blocking peek)
-        stderr_tail = ""
-        if sess.process and sess.process.stderr:
-            import select, os as _os
+        # ffmpeg's stderr is read continuously by the session's drain thread
+        # (transcoder._drain_stderr) into a ring buffer; the tail comes from
+        # there. It used to be os.read() from the pipe right here: on Windows
+        # that read blocked -- ffmpeg runs with "-v error" and stays silent
+        # while it works -- so the status request (and the player waiting on
+        # it) hung until ffmpeg exited. It also raced the drain thread for the
+        # same bytes, and appending text to the ring buffer raised TypeError.
+        def _stderr_text(limit):
+            buf = getattr(sess, "_stderr_buf", None)
+            if not buf:
+                return ""
             try:
-                # Non-blocking read on Windows via os.read with a small chunk
-                fd = sess.process.stderr.fileno()
-                # Drain up to 4 KB without blocking
-                chunk = b""
-                try:
-                    import msvcrt
-                    # Windows: check if data available
-                    while msvcrt.kbhit() if False else True:
-                        c = _os.read(fd, 4096)
-                        if c:
-                            chunk += c
-                        break
-                except Exception:
-                    pass
-                if chunk:
-                    stderr_tail = chunk.decode(errors="replace")[-300:]
-                    # Cache it on the session for death diagnosis
-                    sess._stderr_buf = getattr(sess, "_stderr_buf", "") + stderr_tail
+                chunks = buf.copy() if hasattr(buf, "copy") else list(buf)
+                return b"".join(chunks).decode(errors="replace")[-limit:]
             except Exception:
-                pass
-        # If process died without segments, collect stderr
+                return ""
+
+        stderr_tail = _stderr_text(300)
+        # If process died without segments, report why
         if not alive and not ready:
-            err = sess.error or "ffmpeg beendet ohne Ausgabe"
-            if sess.process:
-                try:
-                    out = sess.process.stderr.read()
-                    buf = getattr(sess, "_stderr_buf", "")
-                    full = (buf + out.decode(errors="replace"))[-600:] if out else buf[-600:]
-                    if full:
-                        err = err + ": " + full
-                        sess.error = err
-                except Exception:
-                    pass
+            err = sess.error
+            if not err:
+                # wait_for_playlist() puts the stderr tail into sess.error
+                # itself; only add it when nothing did.
+                err = "ffmpeg beendet ohne Ausgabe"
+                full = _stderr_text(600).strip()
+                if full:
+                    err = err + ": " + full
+                sess.error = err
             return jsonify({"ready": False, "error": err, "alive": False})
         return jsonify({"ready": ready, "error": sess.error, "alive": alive,
                         "stderr_tail": stderr_tail})

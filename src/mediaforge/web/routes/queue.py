@@ -8,8 +8,10 @@ from ..db import add_to_queue
 from ..db import cancel_queue_item
 from ..db import clear_completed
 from ..db import get_queue
+from ..db import get_queue_without_episodes
 from ..db import get_queue_item
 from ..db import move_queue_item
+from ..db import move_queue_item_to
 from ..db import remove_from_queue
 from ..db import restart_queue_item_inplace
 from ..db import retry_single_episode
@@ -164,7 +166,7 @@ def _attach_cached_posters(items):
     """
     try:
         from ..db import get_setting
-        from ..db import get_tmdb_cache_bulk
+        from ..db import get_tmdb_cache_bulk_light
         from flask import session
         import urllib.parse as _up
 
@@ -178,13 +180,12 @@ def _attach_cached_posters(items):
                 if title:
                     keys[title] = title + "|||" + country + "|||" + ui_lang
             if keys:
-                hits = get_tmdb_cache_bulk(list(keys.values()))
+                # The light projection: reading the poster path used to parse
+                # each title's whole TMDB payload -- credits and all -- on
+                # every 2-second poll (see db.get_tmdb_cache_bulk_light).
+                hits = get_tmdb_cache_bulk_light(list(set(keys.values())))
                 for it in items:
-                    cached = hits.get(keys.get(it.get("title"), ""))
-                    if not isinstance(cached, dict):
-                        continue
-                    details = cached.get("raw_details")
-                    path = details.get("poster_path") if isinstance(details, dict) else None
+                    path = (hits.get(keys.get(it.get("title"), "")) or {}).get("poster_path")
                     if path:
                         raw = "https://image.tmdb.org/t/p/w154" + path
                         it["poster"] = "/api/img?url=" + _up.quote(raw, safe="")
@@ -250,6 +251,43 @@ def _queue_item_for_request(queue_id):
     if not _may_touch_queue_item(item):
         return None, (jsonify({"error": "Queue item not found"}), 404)
     return item, None
+
+
+_ERROR_SUMMARY_MAX = 256
+_error_summaries: dict = {}
+
+
+def _error_summary(raw_errors, explain):
+    """error_explain.summarize() of a row's raw `errors` JSON, memoised by the
+    raw text: finished rows keep their errors forever, and the queue hub
+    re-classified every one of them on every 2-second poll."""
+    hit = _error_summaries.get(raw_errors)
+    if hit is not None or raw_errors in _error_summaries:
+        return hit
+    try:
+        summary = explain(json.loads(raw_errors))
+    except Exception:
+        summary = None
+    if len(_error_summaries) >= _ERROR_SUMMARY_MAX:
+        _error_summaries.clear()
+    _error_summaries[raw_errors] = summary
+    return summary
+
+
+def _restart_episodes(item):
+    """The episode URLs a restart re-queues: the ones that failed when the
+    row recorded any, otherwise the whole job. Returns (episodes, error)."""
+    try:
+        errors = json.loads(item.get("errors") or "[]")
+        failed_urls = [e["url"] for e in errors if isinstance(e, dict) and e.get("url")]
+    except Exception:
+        failed_urls = []
+    if failed_urls:
+        return failed_urls, None
+    try:
+        return json.loads(item.get("episodes") or "[]"), None
+    except Exception:
+        return [], "unparsable"
 
 
 def register_queue_routes(app):
@@ -414,13 +452,17 @@ def register_queue_routes(app):
         # Reduced FIRST: everything below decorates rows with labels, error
         # summaries and posters, and none of that should be computed -- let
         # alone returned -- for a row the caller may not see.
-        items = _anonymise(get_queue(), _FOREIGN_QUEUE_FIELDS)
+        items = _anonymise(get_queue_without_episodes(), _FOREIGN_QUEUE_FIELDS)
         ffmpeg_pct = get_ffmpeg_progress()
         # Items using a fallback group store the internal "group:<id>"; the
         # queue rows show the group's name instead.
         from ..error_explain import summarize as _explain_errors
 
         for _it in items:
+            # No `episodes`: every row's full episode-URL list was ~80% of this
+            # payload (polled every 2 s) and nothing that reads /api/queue
+            # uses it; the hub works from total_episodes/current_episode.
+            # /api/v1/queue still returns it.
             if _it.get("foreign"):
                 continue
             _it["language_label"] = language_display(_it.get("language"))
@@ -438,17 +480,18 @@ def register_queue_routes(app):
             # queue is the place that has to say which -- a traceback there is
             # information nobody can act on.
             if _it.get("errors") and _it["errors"] != "[]":
-                try:
-                    _it["error_summary"] = _explain_errors(json.loads(_it["errors"]))
-                except Exception:
-                    _it["error_summary"] = None
+                _it["error_summary"] = _error_summary(_it["errors"], _explain_errors)
         _attach_cached_posters(items)
 
-        return jsonify({
+        resp = jsonify({
             "items": items,
             "ffmpeg_progress": ffmpeg_pct,
             "paused": is_queue_paused()
         })
+        # While nothing changes (most polls), the browser revalidates and
+        # gets an empty 304 instead of the whole list again.
+        resp.add_etag()
+        return resp.make_conditional(request)
     @app.route("/api/queue/badge")
     def api_queue_badge():
         """Return just the active download count and its series URLs.
@@ -574,28 +617,15 @@ def register_queue_routes(app):
         restartQueueItem(). Re-queues only the previously failed episode
         URLs when available, otherwise the full episode list.
         """
-        import json as _json
         item, _denied = _queue_item_for_request(queue_id)
         if _denied:
             return _denied
         if item["status"] not in ("failed", "cancelled", "completed"):
             return jsonify({"error": "Only failed, cancelled or completed items can be restarted"}), 400
 
-        # Prefer re-queuing only the failed episode URLs; fall back to full list
-        try:
-            errors = _json.loads(item.get("errors") or "[]")
-            failed_urls = [e["url"] for e in errors if e.get("url")]
-        except Exception:
-            failed_urls = []
-
-        if failed_urls:
-            episodes = failed_urls
-        else:
-            try:
-                episodes = _json.loads(item.get("episodes") or "[]")
-            except Exception:
-                return jsonify({"error": "Could not parse episode list"}), 500
-
+        episodes, err = _restart_episodes(item)
+        if err == "unparsable":
+            return jsonify({"error": "Could not parse episode list"}), 500
         if not episodes:
             return jsonify({"error": "No episodes to restart"}), 400
 
@@ -696,6 +726,14 @@ def register_queue_routes(app):
                 ids.append(int(value))
             except (TypeError, ValueError):
                 continue
+        if action in ("top", "bottom"):
+            # Each move puts the item in front of (behind) everything else, so
+            # the order of processing decides the final order. Moving the
+            # selection in reverse queue order for "top" (queue order for
+            # "bottom") keeps the selected rows in their relative order --
+            # processing them as sent used to reverse them.
+            positions = {row["id"]: row.get("position") or 0 for row in get_queue()}
+            ids.sort(key=lambda i: positions.get(i, 0), reverse=(action == "top"))
 
         done, failed = [], {}
         for queue_id in ids:
@@ -715,30 +753,29 @@ def register_queue_routes(app):
                             ev = _active_cancel_events.get(queue_id)
                         if ev is not None:
                             ev.set()
+                        # Keep the episode counter, like the single cancel:
+                        # resetting it made a cancelled job read "0 of N".
                         try:
-                            update_queue_progress(queue_id, 0, "")
+                            update_queue_progress(
+                                queue_id, (_item or {}).get("current_episode") or 0, "")
                         except Exception:
                             pass
                 elif action == "remove":
                     ok, err = remove_from_queue(queue_id)
                 elif action == "retry":
-                    item = get_queue_item(queue_id)
-                    if not item:
-                        ok, err = False, "not found"
+                    # Same rules as the single restart: only finished rows,
+                    # and only the episodes that failed when there are any
+                    # (this used to re-queue every episode of the job).
+                    if _item.get("status") not in ("failed", "cancelled", "completed"):
+                        ok, err = False, "not restartable"
                     else:
-                        ok, err = restart_queue_item_inplace(
-                            queue_id, json.loads(item.get("episodes") or "[]"))
+                        episodes, _perr = _restart_episodes(_item)
+                        if not episodes:
+                            ok, err = False, "no episodes"
+                        else:
+                            ok, err = restart_queue_item_inplace(queue_id, episodes)
                 else:
-                    # "top" / "bottom": move_queue_item only steps one place,
-                    # so repeat it. Bounded by the queue length, which is what
-                    # the loop counts down -- not by a while-True that a
-                    # move which silently stops working would turn into a hang.
-                    direction = "up" if action == "top" else "down"
-                    ok, err = True, None
-                    for _ in range(len(get_queue()) or 1):
-                        moved, _merr = move_queue_item(queue_id, direction)
-                        if not moved:
-                            break
+                    ok, err = move_queue_item_to(queue_id, action)
                 if ok:
                     done.append(queue_id)
                 else:

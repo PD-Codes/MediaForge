@@ -21,7 +21,7 @@ never the concrete path, query string or any id from it.
 """
 
 from .. import selfupdate
-from ..db import get_all_library_cache
+from ..db import get_all_library_cache_shared
 from ..db import get_autosync_jobs
 from ..db import get_download_history
 from ..db import get_general_stats
@@ -37,6 +37,7 @@ from ..db import get_uptime_range
 from ..mediascan import _mediascan_status
 from ..mediascan import _mediascan_status_lock
 from ..queue_worker import _is_job_adaptive_paused
+from ..queue_worker import adaptive_pause_config
 from ..runtime_state import _queued_sync_jobs
 from ..runtime_state import _syncing_jobs
 from ..runtime_state import _syncing_jobs_lock
@@ -469,7 +470,7 @@ def check_api_key(scope: str = ""):
 
 def _v1_library_data(only_movies: bool | None = None):
     """Return library cache as a clean list of location objects."""
-    cache = get_all_library_cache()
+    cache = get_all_library_cache_shared()
     locations = []
     for path_key, entry in cache.items():
         loc_data = entry.get("data") or {}
@@ -731,8 +732,9 @@ def register_v1_api_routes(app):
         with _syncing_jobs_lock:
             running_ids = set(_syncing_jobs)
             queued_ids = set(_queued_sync_jobs)
+        pause_cfg = adaptive_pause_config()
         for job in jobs:
-            job["adaptive_paused"] = _is_job_adaptive_paused(job)
+            job["adaptive_paused"] = _is_job_adaptive_paused(job, pause_cfg)
             job["running"] = job.get("id") in running_ids
             # Waiting for a slot in the manual-sync runner (Sync now / Sync all).
             job["queued"] = job.get("id") in queued_ids

@@ -1651,6 +1651,16 @@ async function saveStartupSettings() {
 let _webConsoleTimer = null;
 let _webConsoleSeq = 0;
 let _webConsolePolling = false;
+// Lines kept in the output: the same bound as the server's ring buffer
+// (console_capture.py's _MAX_LINES). Without it a settings tab left open
+// with debug logging piled up tens of thousands of nodes.
+const _WC_MAX_LINES = 2000;
+// Whether the output follows new lines. Taken from the reader's own scrolling
+// (see _wcHookScroll) instead of being measured at poll time: the console
+// starts polling while its panel may sit on another settings tab, where it has
+// no layout to measure, and a panel shown again starts at the top -- measured
+// then, it would read as "scrolled up" and never follow again.
+let _wcFollow = true;
 
 function setWebConsoleVisible(visible) {
   const wrap = document.getElementById("webConsoleWrap");
@@ -1709,6 +1719,17 @@ function _wcAtBottom(el) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
 }
 
+// Scrolling up to read stops the output from following; scrolling back down
+// to the end resumes it. Hooked once per element.
+function _wcHookScroll(out) {
+  if (out._wcScrollHooked) return;
+  out._wcScrollHooked = true;
+  out.addEventListener("scroll", function () {
+    // A hidden panel reports all zeros, which is not where the reader is.
+    if (out.clientHeight) _wcFollow = _wcAtBottom(out);
+  }, { passive: true });
+}
+
 async function _webConsolePoll() {
   const out = document.getElementById("webConsoleOutput");
   const statusEl = document.getElementById("webConsoleStatus");
@@ -1726,7 +1747,10 @@ async function _webConsolePoll() {
 
     const autoEl = document.getElementById("webConsoleAutoscroll");
     const autoscroll = !autoEl || autoEl.checked;
-    const stick = autoscroll && _wcAtBottom(out);
+    // Follow only while auto-scroll is on AND the reader has not scrolled up.
+    // The old `stick || autoscroll` was just `autoscroll`, so whoever scrolled
+    // up to read something was pulled back down every 1.5 s.
+    const stick = autoscroll && _wcFollow;
 
     // Remove any previously rendered partial (transient) line.
     const oldPartial = out.querySelector(".web-console-partial");
@@ -1739,13 +1763,16 @@ async function _webConsolePoll() {
         if (typeof ln.seq === "number") _webConsoleSeq = ln.seq;
       }
       out.appendChild(frag);
+      // Oldest lines go first (the partial line was removed above, so only
+      // complete lines are counted).
+      while (out.childElementCount > _WC_MAX_LINES) out.removeChild(out.firstElementChild);
     }
     if (data.partial) {
       const p = _wcRenderLine(data.partial);
       p.classList.add("web-console-partial");
       out.appendChild(p);
     }
-    if (stick || autoscroll) out.scrollTop = out.scrollHeight;
+    if (stick) out.scrollTop = out.scrollHeight;
     if (statusEl) statusEl.textContent = "";
   } catch (e) {
     if (statusEl) statusEl.textContent = t("Verbindung verloren …", "Connection lost …");
@@ -1756,7 +1783,8 @@ function startWebConsole() {
   if (_webConsolePolling) return;
   _webConsolePolling = true;
   const out = document.getElementById("webConsoleOutput");
-  if (out) { out.innerHTML = ""; }
+  if (out) { out.innerHTML = ""; _wcHookScroll(out); }
+  _wcFollow = true;
   _webConsoleSeq = 0;
   _webConsolePoll();
   _webConsoleTimer = window.mfPoll(_webConsolePoll, 1500);
@@ -1854,10 +1882,10 @@ function _dnsRenderSiteResult(resEl, site) {
     txt.textContent = t("✗ Sperr-/Blockseite erkannt — nicht die echte Seite","✗ Block/ISP page detected — not the real site") + ip;
   } else if (site.http_ok && !site.site_verified) {
     resEl.className = "dns-test-site-result dns-test-warn";
-    txt.textContent = t("⚠ Erreichbar","⚠ Reachable") + ip + t(", aber echte Seite nicht bestätigt (evtl. Schutz-/Challenge-Seite)"," , but real site not confirmed (possibly protection/challenge page)");
+    txt.textContent = t("⚠ Erreichbar","⚠ Reachable") + ip + t(", aber echte Seite nicht bestätigt (evtl. Schutz-/Challenge-Seite)",", but real site not confirmed (possibly protection/challenge page)");
   } else if (site.socket_ok) {
     resEl.className = "dns-test-site-result dns-test-warn";
-    txt.textContent = t("⚠ DNS aufgelöst","⚠ DNS resolved") + ip + t(", aber HTTP fehlgeschlagen"," , but HTTP failed");
+    txt.textContent = t("⚠ DNS aufgelöst","⚠ DNS resolved") + ip + t(", aber HTTP fehlgeschlagen",", but HTTP failed");
     if (site.http_error) dnsTestAppendErrorBtn(resEl, site.http_error);
   } else {
     resEl.className = "dns-test-site-result dns-test-fail";
@@ -1888,12 +1916,17 @@ async function runDnsTest() {
       const mode = data.dns_mode || "system";
       const active = data.dns_active_server;
       const modeLabel = { system: "System-DNS", cloudflare: "Cloudflare (1.1.1.1)", google: "Google (8.8.8.8)", quad9: "Quad9 (9.9.9.9)", custom: t("Benutzerdefiniert","Custom") }[mode] || mode;
+      // Escaped before they go into innerHTML: the active server is the
+      // stored custom DNS string (free text, no IP validation on save), and an
+      // unknown mode falls through as the raw stored value.
+      const modeHtml = window.mfEscape(modeLabel);
+      const activeHtml = window.mfEscape(active);
       if (mode === "system") {
         statusEl.innerHTML = t('<span class="dns-test-ok">✓ System-DNS aktiv (kein eigener DNS konfiguriert)</span>','<span class="dns-test-ok">✓ System DNS active (no own DNS configured)</span>');
       } else if (active) {
-        statusEl.innerHTML = t('<span class="dns-test-ok">✓ ' + modeLabel + ' aktiv — Server: ' + active + '</span>','<span class="dns-test-ok">✓ ' + modeLabel + ' active — Server: ' + active + '</span>');
+        statusEl.innerHTML = t('<span class="dns-test-ok">✓ ' + modeHtml + ' aktiv — Server: ' + activeHtml + '</span>','<span class="dns-test-ok">✓ ' + modeHtml + ' active — Server: ' + activeHtml + '</span>');
       } else {
-        statusEl.innerHTML = t('<span class="dns-test-warn">⚠ Gespeicherter Modus: ' + modeLabel + ' — aber kein Server aktiv. Einstellungen erneut speichern?</span>','<span class="dns-test-warn">⚠ Saved mode: ' + modeLabel + ' — but no server active. Save settings again?</span>');
+        statusEl.innerHTML = t('<span class="dns-test-warn">⚠ Gespeicherter Modus: ' + modeHtml + ' — aber kein Server aktiv. Einstellungen erneut speichern?</span>','<span class="dns-test-warn">⚠ Saved mode: ' + modeHtml + ' — but no server active. Save settings again?</span>');
       }
       // A broken ssl.SSLContext in this Python installation is neither a DNS
       // nor a network fault, but it looks exactly like one from the outside
@@ -1925,7 +1958,8 @@ async function runDnsTest() {
       _dnsRenderSiteResult(resEl, site);
     }
   } catch (e) {
-    if (statusEl) statusEl.innerHTML = t('<span class="dns-test-fail">✗ Fehler: ' + e.message + '</span>','<span class="dns-test-fail">✗ Error: ' + e.message + '</span>');
+    const errHtml = window.mfEscape(e.message);
+    if (statusEl) statusEl.innerHTML = t('<span class="dns-test-fail">✗ Fehler: ' + errHtml + '</span>','<span class="dns-test-fail">✗ Error: ' + errHtml + '</span>');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = t("↺ Erneut testen","↺ Test again"); }
   }
@@ -1951,8 +1985,8 @@ async function saveDnsSettings() {
     });
     const data = await resp.json();
     if (data.ok) {
-      const modeLabel = { system: "System-DNS", cloudflare: "Cloudflare (1.1.1.1)", google: "Google (8.8.8.8)", quad9: "Quad9 (9.9.9.9)", custom: "Benutzerdefiniert" }[mode] || mode;
-      showToast(mode === "system" ? t("DNS zurückgesetzt — System-DNS aktiv","DNS reset — System DNS active") : t("DNS gespeichert — ", "DNS saved — ") + modeLabel + " aktiv", "success");
+      const modeLabel = { system: "System-DNS", cloudflare: "Cloudflare (1.1.1.1)", google: "Google (8.8.8.8)", quad9: "Quad9 (9.9.9.9)", custom: t("Benutzerdefiniert", "Custom") }[mode] || mode;
+      showToast(mode === "system" ? t("DNS zurückgesetzt — System-DNS aktiv","DNS reset — System DNS active") : t("DNS gespeichert — " + modeLabel + " aktiv", "DNS saved — " + modeLabel + " active"), "success");
     } else {
       showToast(data.error || t("Fehler beim Speichern","Error saving"), "error");
     }
@@ -3086,7 +3120,7 @@ async function copyUpdateCmd() {
   if (!el) return;
   try {
     await navigator.clipboard.writeText(el.textContent.trim());
-    showToast("Befehl kopiert", "success");
+    showToast(t("Befehl kopiert", "Command copied"), "success");
   } catch (e) {
     showToast(t("Kopieren fehlgeschlagen","failed to copy"), "error");
   }
@@ -3151,11 +3185,11 @@ const esc = window.mfEscape;
 
 // ─── Kick off ─────────────────────────────────────────────────────────────────
 loadSettings();
-// Cache sizes and extractor diagnostics for the Comics and eBooks blocks on
-// the Library tab. Their own requests: /api/settings carries settings, not
-// measurements, and the two libraries have separate caches.
-loadComicCacheStats();
-loadBookCacheStats();
+// The cache sizes and extractor diagnostics of the Library tab are not loaded
+// here: switchTab("library") loads them, and restoreTab() has already run it
+// for a page opened on #library. Loading them here as well walked both cache
+// directories on every settings visit, whatever tab was open -- and twice on
+// #library.
 
 // ─── .env migration banner ───────────────────────────────────────────────────
 
@@ -4457,7 +4491,14 @@ async function backupExport() {
   }
 }
 
+// What the last preview said about the chosen file: { file, encrypted }.
+// backupImport() only waives the password for an explicit "not encrypted"
+// about that same file -- no preview, another file or an answer without the
+// flag keep the password required.
+let _backupPreviewState = null;
+
 function backupOnFileChange() {
+  _backupPreviewState = null;
   // Reflect the chosen filename in the styled picker and hide stale preview.
   const input = document.getElementById("backupImportFile");
   const label = document.getElementById("backupFileLabel");
@@ -4476,6 +4517,7 @@ async function backupPreview() {
   if (!file) { showToast(t("Bitte eine Backup-Datei wählen", "Please choose a backup file")); return; }
   const btn = document.getElementById("backupPreviewBtn");
   if (btn) btn.disabled = true;
+  _backupPreviewState = null;
   try {
     // Upload as a JSON body (the .mfbackup file is JSON text) — every /api/
     // POST must be application/json; see backup.py route docstring.
@@ -4487,6 +4529,7 @@ async function backupPreview() {
     });
     const data = await res.json();
     if (data.error) { showToast(data.error); return; }
+    _backupPreviewState = { file: file, encrypted: data.encrypted };
     const info = document.getElementById("backupPreviewInfo");
     const created = data.created_utc || "?";
     const ver = data.app_version || "?";
@@ -4512,7 +4555,11 @@ async function backupImport() {
   const pw = (document.getElementById("backupImportPw") || {}).value || "";
   const file = fileInput && fileInput.files && fileInput.files[0];
   if (!file) { showToast(t("Bitte eine Backup-Datei wählen", "Please choose a backup file")); return; }
-  if (!pw) { showToast(t("Bitte das Backup-Passwort eingeben", "Please enter the backup password")); return; }
+  // An unencrypted backup needs no password (the server accepts an empty
+  // one), and the preview says so -- it used to be refused here anyway.
+  const unencrypted = !!_backupPreviewState && _backupPreviewState.file === file &&
+                      _backupPreviewState.encrypted === false;
+  if (!pw && !unencrypted) { showToast(t("Bitte das Backup-Passwort eingeben", "Please enter the backup password")); return; }
   const cats = _backupSelectedCats(document.getElementById("backupImportCats"));
   if (!cats.length) { showToast(t("Keine Kategorie ausgewählt", "No category selected")); return; }
   const mode = (document.querySelector('input[name="backupMode"]:checked') || {}).value || "merge";

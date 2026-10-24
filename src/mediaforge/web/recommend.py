@@ -72,6 +72,11 @@ def _fraction(row) -> float:
     return max(0.0, min(float(row.get("position_seconds") or 0) / duration, 1.0))
 
 
+def _library_title_name(title: dict) -> str:
+    """The display/matching name of one scanned library title."""
+    return str(title.get("folder") or title.get("title") or title.get("name") or "")
+
+
 def _library_index() -> dict:
     """``file_path -> {title, genres, poster, ...}`` from the library cache.
 
@@ -81,20 +86,29 @@ def _library_index() -> dict:
     """
     index: dict[str, dict] = {}
     try:
-        from .db import get_all_library_cache
+        from .db import get_all_library_cache_shared
         from .routes.library import lib_iter_cached_titles
     except Exception:
         return index
 
     try:
-        for _key, entry in (get_all_library_cache() or {}).items():
+        for _key, entry in (get_all_library_cache_shared() or {}).items():
             data = (entry or {}).get("data") or {}
             for title in lib_iter_cached_titles(data):
-                for episode in title.get("episodes") or []:
+                # A scanned title is {"folder", "seasons": {skey: [episode,
+                # ...]}, ...}. This used to read "episodes"/"title"/"name",
+                # which no library title has, so the index was always empty
+                # and "Because you watched" never showed up. The folder name
+                # is also the key the TMDB cache knows the title under.
+                name = _library_title_name(title)
+                episodes = list(title.get("episodes") or [])
+                for season_eps in (title.get("seasons") or {}).values():
+                    episodes.extend(season_eps or [])
+                for episode in episodes:
                     path = episode.get("path") or episode.get("file_path")
                     if path:
                         index[str(path)] = {
-                            "title": title.get("title") or title.get("name") or "",
+                            "title": name,
                             "poster": title.get("poster") or title.get("poster_url") or "",
                             "series_url": title.get("url") or "",
                             "total_episodes": title.get("total_episodes") or 0,
@@ -277,15 +291,18 @@ def _owned_titles() -> set[str]:
     """
     owned: set[str] = set()
     try:
-        from .db import get_all_library_cache
+        from .db import get_all_library_cache_shared
         from .routes.library import lib_iter_cached_titles
     except Exception:
         return owned
     try:
-        for _key, entry in (get_all_library_cache() or {}).items():
+        for _key, entry in (get_all_library_cache_shared() or {}).items():
             data = (entry or {}).get("data") or {}
             for title in lib_iter_cached_titles(data):
-                name = _norm(title.get("title") or title.get("name"))
+                # "folder" -- see _library_index(): without it nothing was
+                # ever owned, so "For you" was empty without a linked media
+                # server and never excluded what the library already holds.
+                name = _norm(_library_title_name(title))
                 if name:
                     owned.add(name)
     except Exception as exc:

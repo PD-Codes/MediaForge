@@ -5,6 +5,9 @@ former single 6939-line ``db.py`` was split up and how the public API stayed
 byte-for-byte identical.
 """
 
+import threading
+from collections import OrderedDict
+
 from ...logger import get_logger
 
 from ._core import _sql_chunks, get_db
@@ -78,6 +81,94 @@ def get_tmdb_cache_bulk(cache_keys: list, ttl: float = 86400.0) -> dict:
                         out[row["cache_key"]] = _json.loads(row["data_json"])
                     except Exception:
                         pass
+        return out
+    finally:
+        conn.close()
+
+
+# get_tmdb_cache_bulk_light(): cache_key -> (cached_at, projection). A row is
+# only parsed again when its cached_at changed, i.e. when it was rewritten.
+_TMDB_LIGHT_MEMO: "OrderedDict[str, tuple]" = OrderedDict()
+_TMDB_LIGHT_MAX = 20000
+_TMDB_LIGHT_LOCK = threading.Lock()
+TMDB_LIGHT_KEYS = ("found", "tmdb_id", "media_type", "title", "title_confident",
+                   "genres", "providers", "fsk", "vote_average")
+
+
+def tmdb_light_projection(data) -> dict:
+    """The small part of a cached TMDB lookup most readers need: the card
+    fields plus imdb_id and poster_path, which otherwise sit inside the
+    10-50 KB raw_details blob."""
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    if not isinstance(data, dict):
+        return {}
+    out = {k: data[k] for k in TMDB_LIGHT_KEYS if k in data}
+    raw = data.get("raw_details") if isinstance(data.get("raw_details"), dict) else {}
+    imdb_id = (data.get("imdb_id") or raw.get("imdb_id")
+               or (raw.get("external_ids") or {}).get("imdb_id"))
+    if imdb_id:
+        out["imdb_id"] = imdb_id
+    if raw.get("poster_path"):
+        out["poster_path"] = raw.get("poster_path")
+    return out
+
+
+def get_tmdb_cache_bulk_light(cache_keys: list, ttl: float = 86400.0) -> dict:
+    """get_tmdb_cache_bulk(), reduced to tmdb_light_projection().
+
+    The full rows are 10-50 KB of JSON each (credits, alternative titles,
+    recommendations, ...). Browse rows, the age gate, the calendar watcher and
+    the queue read them by the hundred -- the calendar every 10 seconds -- to
+    look at a few fields. Here only the timestamps are read in bulk, and a
+    row's JSON is parsed again only when the row was rewritten.
+
+    READ-ONLY: the returned dicts are shared between callers. Copy before
+    changing one.
+    """
+    if not cache_keys:
+        return {}
+    import json as _json
+    import time as _time
+    now = _time.time()
+    out = {}
+    stale = []
+    conn = get_db()
+    try:
+        for chunk, placeholders in _sql_chunks(list(dict.fromkeys(cache_keys))):
+            rows = conn.execute(
+                f"SELECT cache_key, cached_at FROM tmdb_cache WHERE cache_key IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            with _TMDB_LIGHT_LOCK:
+                for row in rows:
+                    if (now - row["cached_at"]) >= ttl:
+                        continue
+                    hit = _TMDB_LIGHT_MEMO.get(row["cache_key"])
+                    if hit is not None and hit[0] == row["cached_at"]:
+                        _TMDB_LIGHT_MEMO.move_to_end(row["cache_key"])
+                        out[row["cache_key"]] = hit[1]
+                    else:
+                        stale.append(row["cache_key"])
+        for chunk, placeholders in _sql_chunks(stale):
+            rows = conn.execute(
+                f"SELECT cache_key, data_json, cached_at FROM tmdb_cache "
+                f"WHERE cache_key IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                if (now - row["cached_at"]) >= ttl:
+                    continue
+                try:
+                    light = tmdb_light_projection(_json.loads(row["data_json"]))
+                except Exception:
+                    continue
+                out[row["cache_key"]] = light
+                with _TMDB_LIGHT_LOCK:
+                    _TMDB_LIGHT_MEMO[row["cache_key"]] = (row["cached_at"], light)
+                    _TMDB_LIGHT_MEMO.move_to_end(row["cache_key"])
+                    while len(_TMDB_LIGHT_MEMO) > _TMDB_LIGHT_MAX:
+                        _TMDB_LIGHT_MEMO.popitem(last=False)
         return out
     finally:
         conn.close()

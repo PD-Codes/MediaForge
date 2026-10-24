@@ -6,6 +6,7 @@ hitting the TMDB API for every search. Only runs when advanced search is
 enabled in settings, and only re-downloads once per day.
 """
 
+import os
 import threading
 from datetime import timedelta
 
@@ -69,8 +70,12 @@ def _tmdb_keywords_sync_worker():
                     with urllib.request.urlopen(req, timeout=30) as response:
                         with gzip.GzipFile(fileobj=response) as gz:
                             data = gz.read()
-                            with open(dest_file, "wb") as f:
-                                f.write(data)
+                    # Written next to the target and swapped in, so the keyword
+                    # search never reads a half-written file.
+                    tmp_file = dest_file.with_name(dest_file.name + ".tmp")
+                    with open(tmp_file, "wb") as f:
+                        f.write(data)
+                    os.replace(tmp_file, dest_file)
                     logger.info("Successfully downloaded TMDB keywords.")
                 except Exception as e:
                     logger.warning(f"Failed to download TMDB keywords: {e}")

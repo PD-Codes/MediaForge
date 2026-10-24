@@ -1253,6 +1253,7 @@
   var auditOffset = 0;
   var auditDebounce = null;
   var auditReady = false;
+  var auditSeq = 0;   // only the newest list request may paint
 
   window.opsAuditDebounced = function () {
     clearTimeout(auditDebounce);
@@ -1276,8 +1277,21 @@
             return '<option value="' + esc(s) + '">' + esc(T("sev_" + s, s)) + "</option>";
           }).join("");
       }
+      // The same answer carries the stat row; it used to be fetched a second
+      // time right after this one.
+      renderAuditStats(data.stats);
       auditReady = true;
     });
+  }
+
+  // The stat row on its own: the figures are global (not filtered), so they
+  // are read when the tab opens and after a retention change -- not on every
+  // search keystroke and page flip, where five full-table aggregates ran
+  // before the list itself was even requested.
+  function refreshAuditStats() {
+    api("/api/ops/audit/stats").then(function (data) {
+      renderAuditStats(data.stats);
+    }).catch(function () { /* the old figures stay */ });
   }
 
   function renderAuditStats(stats) {
@@ -1302,12 +1316,13 @@
       offset: auditOffset
     });
 
+    // Typing fast (or flipping pages) has several of these in flight; without
+    // the guard an older, slower answer could paint over the newer one.
+    var seq = ++auditSeq;
     fillAuditFilters().then(function () {
-      return api("/api/ops/audit/stats");
-    }).then(function (data) {
-      renderAuditStats(data.stats);
       return api("/api/ops/audit?" + params.toString());
     }).then(function (data) {
+      if (seq !== auditSeq) { return; }
       var entries = data.entries || [];
       if (!entries.length) {
         list.innerHTML = '<div class="settings-hint">' + esc(T("no_entries", "No entries.")) + '</div>';
@@ -1335,6 +1350,7 @@
       }).join("");
       renderPager(data.total, data.limit);
     }).catch(function (exc) {
+      if (seq !== auditSeq) { return; }
       list.innerHTML = '<div class="settings-hint">' + esc(exc.message) + '</div>';
     });
   };
@@ -1374,7 +1390,7 @@
     // own: this is a setting, and a second write path to app_settings is a
     // second place for the encryption/validation rules to drift.
     api("/api/settings", { method: "PUT", body: { audit_retention_days: days } })
-      .then(function () { toast(T("saved", "Saved"), "success"); })
+      .then(function () { toast(T("saved", "Saved"), "success"); refreshAuditStats(); })
       .catch(fail);
   };
 

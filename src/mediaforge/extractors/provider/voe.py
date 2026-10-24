@@ -168,6 +168,12 @@ def is_maintenance_page(html):
 # -----------------------------
 def get_direct_link_from_voe(embeded_voe_link, headers=None, max_retries=3, timeout=30):
     """Get direct VOE video URL with improved retry logic."""
+    # Rejected up front like the other extractors do. An empty URL used to go
+    # through the whole retry loop -- 2 s + 4 s of backoff sleeps -- and the
+    # startup provider probe (runtime_state._get_working_providers) calls
+    # every extractor with "" exactly once, so every start waited 6 s here.
+    if not embeded_voe_link:
+        raise ValueError("Embed URL cannot be empty")
     if headers is None:
         headers = PROVIDER_HEADERS_D.get("VOE", {"User-Agent": DEFAULT_USER_AGENT})
     

@@ -123,7 +123,7 @@ function _libMoveStartPolling(folder, interval) {
       if (s.error && s.status !== "done") { _libMoveError(s.error); return; }
       var pct = s.total_bytes > 0 ? Math.round(s.copied_bytes / s.total_bytes * 100) : 0;
       _libMoveSetProgress(pct, s.current_file || "");
-      if (s.status === "done") { _libMoveFinish(folder || s.folder || _libMoveFolder); }
+      if (s.status === "done") { _libMoveFinish(folder || s.folder || _libMoveFolder, s.leftover_count || 0); }
       else if (s.status === "error") { _libMoveError(s.error || t("Unbekannter Fehler", "Unknown error")); }
     } catch (e) {
       _libMoveTransientFailure(t("Verbindung unterbrochen", "Connection interrupted"));
@@ -207,7 +207,7 @@ function _libMoveSetProgress(pct, file) {
   _libShowMovePill(pct);
 }
 
-function _libMoveFinish(folder) {
+function _libMoveFinish(folder, leftovers) {
   _libMoveRemember(null, "");
   _libMoveStopPolling();
   _libMoveFailStreak = 0;
@@ -215,7 +215,14 @@ function _libMoveFinish(folder) {
   libCloseMoveModal();
   // The closing quote goes before the verb, and the space after it is not
   // optional -- without it this read "Serienamewurde verschoben".
-  _libMoveToast('"' + folder + '" ' + t("wurde verschoben", "was moved"));
+  var msg = '"' + folder + '" ' + t("wurde verschoben", "was moved");
+  // The copy is complete, but some files of the old folder could not be
+  // deleted (in use, read-only). They are still there -- say so.
+  if (leftovers > 0) {
+    msg += " " + t("– " + leftovers + " Element(e) am alten Ort konnten nicht gelöscht werden",
+                   "– " + leftovers + " item(s) could not be removed from the old location");
+  }
+  _libMoveToast(msg);
   // Only the library page has a list to refresh -- the move can now finish
   // while the user is on any other page, where libLoad() does not exist.
   if (typeof libLoad === "function" && document.getElementById("libGridView")) { libLoad(false); }

@@ -12,7 +12,8 @@ async function updateDevInfoBadge() {
   const badge = document.getElementById("devinfoBadge");
   if (!badge) return;
   try {
-    const resp = await fetch("/api/devinfos/status");
+    // Count only: the full answer renders and ships every post.
+    const resp = await fetch("/api/devinfos/status?posts=0");
     if (!resp.ok) return;
     const data = await resp.json();
     const n = data.count || 0;

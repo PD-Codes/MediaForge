@@ -277,6 +277,15 @@ def _normalize_state(state) -> str:
     return s if s in (STATE_IDLE, STATE_WORKING, STATE_ERROR) else STATE_IDLE
 
 
+# worker -> (signature, time.monotonic() of the last DB write) -- see beat().
+_last_written: dict = {}
+_last_written_lock = threading.Lock()
+# How long an unchanged idle heartbeat may go without being written. Idle
+# workers have no stall deadline (only "working" ones do, 900 s and up), so
+# this only coarsens the "last seen" age the Operations view shows.
+_IDLE_REWRITE_SECONDS = 60.0
+
+
 def beat(worker: str, *, state: str = STATE_IDLE, detail: str = "",
          last_run: str | None = None, next_run: str | None = None,
          error: str | None = None, extra: dict | None = None) -> None:
@@ -294,7 +303,24 @@ def beat(worker: str, *, state: str = STATE_IDLE, detail: str = "",
     """
     try:
         import json as _json
+        import time as _time
         from .db import get_db
+
+        # The idle loops (queue every 3 s, encoding/upscale every 4 s, ...)
+        # beat constantly with nothing to say: almost one write transaction
+        # per second on an idle install, a disk that never spins down and the
+        # write lock taken every second. An idle beat that repeats the last
+        # written one is only written once a minute.
+        signature = (_normalize_state(state), str(detail)[:300], os.getpid())
+        quiet = (signature[0] == STATE_IDLE and error is None and last_run is None
+                 and next_run is None and not extra)
+        if quiet:
+            with _last_written_lock:
+                prev = _last_written.get(worker)
+            if (prev and prev[0] == signature
+                    and _time.monotonic() - prev[1] < _IDLE_REWRITE_SECONDS):
+                return
+
         conn = get_db()
         try:
             # last_error is NOT NULL, so the INSERT branch can never receive
@@ -361,6 +387,8 @@ def beat(worker: str, *, state: str = STATE_IDLE, detail: str = "",
             conn.commit()
         finally:
             conn.close()
+        with _last_written_lock:
+            _last_written[worker] = (signature, _time.monotonic())
         # Push the change to any connected Operations view. Best-effort,
         # non-blocking, and deduplicated -- see _publish(). A browser that is
         # not listening costs nothing, and a failing publish must not break a

@@ -699,23 +699,39 @@ function _ignSelectionCount() {
   return n;
 }
 
-function statsIgnToggleSeries(folderEnc, checked, titleEnc) {
-  var folder = decodeURIComponent(folderEnc);
-  if (checked) {
+// The ignore/restore controls carry folder, slot and title in data-* attributes
+// (escaped with escHtml): the row's data-folder/data-title, the control's own
+// data-slot. Their handlers only ever receive `this`. The values come from disk
+// and from downloaded titles, and they used to be interpolated into the inline
+// handler as encodeURIComponent() strings -- which does not encode ', so every
+// title with an apostrophe ("Hell's Paradise") broke the handler, and a
+// crafted folder name ran its own script on click.
+function _ignRowOf(el) {
+  return (el && el.closest) ? el.closest("tr[data-folder]") : null;
+}
+
+function statsIgnToggleSeries(box) {
+  var row = _ignRowOf(box);
+  if (!row) return;
+  var folder = row.getAttribute("data-folder");
+  if (box.checked) {
     _ignSel.series[folder] = true;
     // Remember the title with the selection: the full series list no longer
     // lives in the browser, so it cannot be looked up at submit time.
-    if (titleEnc) _ignSel.titles[folder] = decodeURIComponent(titleEnc);
+    _ignSel.titles[folder] = row.getAttribute("data-title") || folder;
   } else {
     delete _ignSel.series[folder];
   }
   _updateIgnActions();
 }
 
-function statsIgnToggleSlot(folderEnc, slotEnc, checked, titleEnc) {
-  var folder = decodeURIComponent(folderEnc);
-  var slot = decodeURIComponent(slotEnc);
-  if (titleEnc) _ignSel.titles[folder] = decodeURIComponent(titleEnc);
+function statsIgnToggleSlot(box) {
+  var row = _ignRowOf(box);
+  if (!row) return;
+  var folder = row.getAttribute("data-folder");
+  var slot = box.getAttribute("data-slot");
+  var checked = box.checked;
+  _ignSel.titles[folder] = row.getAttribute("data-title") || folder;
   var list = _ignSel.slots[folder] || (_ignSel.slots[folder] = []);
   var at = list.indexOf(slot);
   if (checked && at === -1) list.push(slot);
@@ -785,20 +801,17 @@ function _incompleteTableHtml(info) {
     '</tr></thead><tbody id="incompleteBody">';
   info.items.forEach(function (item) {
     var miss = item.missing || [];
-    var folderEnc = encodeURIComponent(item.folder);
-    var titleEnc = encodeURIComponent(item.title || item.folder);
     var seriesChecked = !!_ignSel.series[item.folder];
     var picked = _ignSel.slots[item.folder] || [];
     var chips = miss.map(function (sl) {
       var on = picked.indexOf(sl) !== -1 ? " checked" : "";
       return '<label class="ignore-slot-chip is-selectable"><input type="checkbox" class="ign-slot chb-main"' +
-        on + ' onchange="statsIgnToggleSlot(\'' + folderEnc + "','" + encodeURIComponent(sl) +
-        '\', this.checked, \'' + titleEnc + '\')"> ' + escHtml(sl) + "</label>";
+        on + ' data-slot="' + escHtml(sl) + '" onchange="statsIgnToggleSlot(this)"> ' +
+        escHtml(sl) + "</label>";
     }).join(" ");
     mh += '<tr data-folder="' + escHtml(item.folder) + '" data-title="' + escHtml(item.title || "") + '">' +
       '<td class="td-check" data-label=""><input type="checkbox" class="ign-series chb-main"' +
-      (seriesChecked ? " checked" : "") + ' onchange="statsIgnToggleSeries(\'' + folderEnc +
-      '\', this.checked, \'' + titleEnc + '\')" title="' +
+      (seriesChecked ? " checked" : "") + ' onchange="statsIgnToggleSeries(this)" title="' +
       escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) + '"><span class="td-check-label">' +
       escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) + "</span></td>" +
       '<td class="dup-title-cell" data-label="' + escHtml(t("Serie", "Series")) + '" title="' +
@@ -833,7 +846,6 @@ function _ignoredTableHtml(info) {
   info.items.forEach(function (item) {
     var slots = item.slots || [];
     var isAll = slots.indexOf("__all__") !== -1;
-    var folderEnc = encodeURIComponent(item.folder);
     var slotHtml;
     if (isAll) {
       slotHtml = '<span class="ignore-slot-chip ignore-all-chip">' +
@@ -841,17 +853,18 @@ function _ignoredTableHtml(info) {
     } else {
       slotHtml = slots.map(function (sl) {
         return '<span class="ignore-slot-chip">' + escHtml(sl) +
-          ' <a href="#" class="ignore-remove-x" onclick="mediaUnignore(\'' + folderEnc + "','" +
-          encodeURIComponent(sl) + '\');return false;" title="' +
+          ' <a href="#" class="ignore-remove-x" data-slot="' + escHtml(sl) +
+          '" onclick="mediaUnignore(this);return false;" title="' +
           escHtml(t("Wiederherstellen", "Restore")) + '">×</a></span>';
       }).join(" ");
     }
-    mh += "<tr>" +
+    // data-folder on the row: read back by mediaUnignore(), see _ignRowOf().
+    mh += '<tr data-folder="' + escHtml(item.folder) + '">' +
       '<td class="speed-modal-title" data-label="' + escHtml(t("Serie", "Series")) + '" title="' +
       escHtml(item.title) + '">' + escHtml(item.title) + "</td>" +
       '<td data-label="' + escHtml(t("Ignoriert", "Ignored")) + '"><div class="ignore-slot-wrap">' + slotHtml + "</div></td>" +
-      '<td data-label=""><button class="btn btn-ghost ignore-restore-btn" onclick="mediaUnignore(\'' + folderEnc +
-      '\',null)">' + escHtml(t("Alle wiederherstellen", "Restore all")) + "</button></td></tr>";
+      '<td data-label=""><button class="btn btn-ghost ignore-restore-btn" onclick="mediaUnignore(this)">' +
+      escHtml(t("Alle wiederherstellen", "Restore all")) + "</button></td></tr>";
   });
   mh += "</tbody></table></div>";
   mh += _paginationHtml("ignored", info);
@@ -1164,10 +1177,14 @@ function mediaIgnoreSelected() {
   }).catch(function () { if (typeof showToast === "function") showToast(t("Fehler.", "Error.")); });
 }
 
-function mediaUnignore(folderEnc, slotEnc) {
-  var body = { folder: decodeURIComponent(folderEnc) };
-  if (slotEnc == null) body.all = true;
-  else body.slot = decodeURIComponent(slotEnc);
+/** Restore one slot (the control has data-slot) or the whole series (it has none). */
+function mediaUnignore(el) {
+  var row = _ignRowOf(el);
+  if (!row) return;
+  var body = { folder: row.getAttribute("data-folder") };
+  var slot = el.getAttribute("data-slot");
+  if (slot == null) body.all = true;
+  else body.slot = slot;
   fetch("/api/media/unignore", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -59,6 +59,8 @@ function _updateUpscaleBadges(count) {
     if (count > 0) el.textContent = count;
   });
   if (window.updateTotalQueueBadge) window.updateTotalQueueBadge();
+  _upscaleBadgeCount = count || 0;
+  _syncUpscaleBadgePoll();
 }
 
 // ── Actions (names referenced by generated rows) ─────────────────────
@@ -86,9 +88,20 @@ async function clearUpscaleQueue() {
 }
 
 // ── Background badge poll ────────────────────────────────────────────
+// Runs only while the count can change by itself: while upscaling is switched
+// on (downloads queue jobs on their own), or while jobs are left -- the worker
+// processes library jobs whatever the mode. With the mode at its default
+// "disabled" and an empty queue, this asked every 8 s, on every page and for
+// every account, for the same 0. Jobs queued from this page restart it through
+// _updateUpscaleBadges().
+let _upscaleBadgePoll = null;
+let _upscaleBadgeCount = 0;
+let _upscaleModeOff = false;   // true once the server said the mode is "disabled"
+
 function _startUpscaleBadgePoll() {
+  if (_upscaleBadgePoll) return;
   // mfPoll: paused while the tab is hidden (static/mf_poll.js).
-  window.mfPoll(async () => {
+  _upscaleBadgePoll = window.mfPoll(async () => {
     if (_upscalePaneActive()) return;   // the hub's own 2s poll is running
     try {
       const d = await (await fetch("/api/upscale/badge")).json();
@@ -97,9 +110,33 @@ function _startUpscaleBadgePoll() {
   }, 8000);
 }
 
+function _syncUpscaleBadgePoll() {
+  if (!_upscaleModeOff || _upscaleBadgeCount > 0) {
+    _startUpscaleBadgePoll();
+  } else if (_upscaleBadgePoll) {
+    window.mfPollStop(_upscaleBadgePoll);
+    _upscaleBadgePoll = null;
+  }
+}
+
+/** The upscaling mode, or "" when it could not be read (keeps polling). */
+function _readUpscaleMode() {
+  // Pages with app.js have already asked for it at startup (_loadUpscaleMode
+  // memoizes the request); everywhere else this is the one extra request.
+  if (typeof _loadUpscaleMode === "function") return _loadUpscaleMode();
+  return fetch("/api/upscale/settings")
+    .then(r => (r.ok ? r.json() : null))
+    .then(d => (d && d.ok && d.settings && d.settings.mode) || "")
+    .catch(() => "");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   _startUpscaleBadgePoll();
   fetch("/api/upscale/badge").then(r => r.json()).then(d => {
     if (d.ok) _updateUpscaleBadges(d.count || 0);
+  }).catch(() => { });
+  _readUpscaleMode().then(mode => {
+    _upscaleModeOff = mode === "disabled";
+    _syncUpscaleBadgePoll();
   }).catch(() => { });
 });

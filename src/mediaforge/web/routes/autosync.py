@@ -27,6 +27,7 @@ from ..queue_worker import _aniwaves_enabled
 from ..queue_worker import _hanime_enabled
 from ..queue_worker import _nineanime_enabled
 from ..queue_worker import _is_job_adaptive_paused
+from ..queue_worker import adaptive_pause_config
 from ..runtime_state import _SERIES_LINK_PATTERN
 from ..runtime_state import _STO_SERIES_LINK_PATTERN
 from ..runtime_state import _queued_sync_jobs
@@ -45,8 +46,11 @@ from ...logger import get_logger
 
 logger = get_logger(__name__)
 
+# Overall time budget for find_site_candidates()' parallel source lookups.
+_SITE_SEARCH_DEADLINE = 20.0
 
-def find_site_candidates(title: str) -> list:
+
+def find_site_candidates(title: str, include_adult: bool = True) -> list:
     """Resolve a free-text title to candidate series/movie pages on
     AniWorld / S.TO / MegaKino (+ the opt-in 9anime / Aniwaves / hanime
     sources, each only when enabled), scored against `title` by fuzzy string
@@ -68,8 +72,20 @@ def find_site_candidates(title: str) -> list:
     which polls this once an hour per pending release to auto-create an
     AutoSync job the moment a release becomes available on one of these
     sites.
+
+    `include_adult=False` leaves the 18+ sources out even when they are
+    switched on for the instance -- the route passes the session's age gate
+    here, so an age-limited account cannot get adult titles and URLs out of
+    this lookup that /api/search would refuse it. In-process callers without
+    a session keep the instance setting (the default).
+
+    The sources are queried in parallel. One after the other, a slow or dead
+    site added its full timeout to the request (up to a minute and more on a
+    request thread); the results are still merged in the fixed order below,
+    so ranking and de-duplication are exactly what they were.
     """
     import difflib
+    from concurrent.futures import ThreadPoolExecutor, wait as _wait
 
     def _norm(s):
         return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
@@ -98,6 +114,34 @@ def find_site_candidates(title: str) -> list:
                 "title": name, "url": url, "score": round(score, 3),
             })
 
+    def _collect_plain(items, site, site_label, series_only=False):
+        for item in (items or []):
+            url = item.get("url", "")
+            if series_only and not item.get("is_series"):  # Auto-Sync tracks series only
+                continue
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            name = _html_unescape(item.get("title") or "Unknown")
+            score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+            candidates.append({
+                "site": site, "site_label": site_label,
+                "title": name, "url": url, "score": round(score, 3),
+            })
+
+    def _collect_module(items, site_id, label):
+        for item in (items or []):
+            url = item.get("url") or item.get("link") or ""
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            name = _html_unescape(item.get("title") or item.get("name") or "Unknown")
+            score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
+            candidates.append({
+                "site": site_id, "site_label": label,
+                "title": name, "url": url, "score": round(score, 3),
+            })
+
     # Same gate the opt-in sources below already used, now applied to the three
     # that were queried unconditionally: a source switched off in Settings ->
     # Sources must not cost a request here either. It read as a bug from the
@@ -105,83 +149,33 @@ def find_site_candidates(title: str) -> list:
     # an AutoSync job created against a disabled source can never run.
     from ..source_policy import source_enabled as _src_on
 
+    adult_ok = bool(include_adult) and _hanime_enabled()
+
+    # (name, fetch, merge) in the order the results are merged.
+    jobs = []
     if _src_on("aniworld"):
-        try:
-            _collect(aniworld_query(title), "aniworld", "AniWorld",
-                     "https://aniworld.to", _SERIES_LINK_PATTERN)
-        except Exception as e:
-            logger.debug("[AutosyncSearch] AniWorld search failed: %s", e)
+        jobs.append(("AniWorld", lambda: aniworld_query(title),
+                     lambda r: _collect(r, "aniworld", "AniWorld",
+                                        "https://aniworld.to", _SERIES_LINK_PATTERN)))
     if _src_on("sto"):
-        try:
-            _collect(query_s_to(title), "sto", "S.TO",
-                     "https://serienstream.to", _STO_SERIES_LINK_PATTERN)
-        except Exception as e:
-            logger.debug("[AutosyncSearch] S.TO search failed: %s", e)
+        jobs.append(("S.TO", lambda: query_s_to(title),
+                     lambda r: _collect(r, "sto", "S.TO",
+                                        "https://serienstream.to", _STO_SERIES_LINK_PATTERN)))
     if _src_on("megakino"):
-        try:
-            for item in (megakino_search(title) or []):
-                url = item.get("url", "")
-                if not item.get("is_series"):  # Auto-Sync tracks series only
-                    continue
-                if url in seen:
-                    continue
-                seen.add(url)
-                name = _html_unescape(item.get("title") or "Unknown")
-                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-                candidates.append({
-                    "site": "megakino", "site_label": "MegaKino",
-                    "title": name, "url": url, "score": round(score, 3),
-                })
-        except Exception as e:
-            logger.debug("[AutosyncSearch] MegaKino search failed: %s", e)
+        jobs.append(("MegaKino", lambda: megakino_search(title),
+                     lambda r: _collect_plain(r, "megakino", "MegaKino", series_only=True)))
     # 9anime / Aniwaves: opt-in, non-adult series sources. Only queried when
     # the user enabled them in Settings -> Sources, same gate the search route
     # and the browse routes use -- a disabled source must not cost a request.
     if _nineanime_enabled():
-        try:
-            for item in (nineanime_search(title) or []):
-                url = item.get("url", "")
-                if not url or url in seen:
-                    continue
-                seen.add(url)
-                name = _html_unescape(item.get("title") or "Unknown")
-                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-                candidates.append({
-                    "site": "nineanime", "site_label": "9anime (EN)",
-                    "title": name, "url": url, "score": round(score, 3),
-                })
-        except Exception as e:
-            logger.debug("[AutosyncSearch] 9anime search failed: %s", e)
+        jobs.append(("9anime", lambda: nineanime_search(title),
+                     lambda r: _collect_plain(r, "nineanime", "9anime (EN)")))
     if _aniwaves_enabled():
-        try:
-            for item in (aniwaves_search(title) or []):
-                url = item.get("url", "")
-                if not url or url in seen:
-                    continue
-                seen.add(url)
-                name = _html_unescape(item.get("title") or "Unknown")
-                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-                candidates.append({
-                    "site": "aniwaves", "site_label": "Aniwaves (EN)",
-                    "title": name, "url": url, "score": round(score, 3),
-                })
-        except Exception as e:
-            logger.debug("[AutosyncSearch] Aniwaves search failed: %s", e)
-    if _hanime_enabled():
-        try:
-            for item in (hanime_search(title) or []):
-                url = item.get("url", "")
-                if not url or url in seen:
-                    continue
-                seen.add(url)
-                name = _html_unescape(item.get("title") or "Unknown")
-                score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-                candidates.append({
-                    "site": "hanime", "site_label": "hanime 18+",
-                    "title": name, "url": url, "score": round(score, 3),
-                })
-        except Exception as e:
-            logger.debug("[AutosyncSearch] hanime search failed: %s", e)
+        jobs.append(("Aniwaves", lambda: aniwaves_search(title),
+                     lambda r: _collect_plain(r, "aniwaves", "Aniwaves (EN)")))
+    if adult_ok:
+        jobs.append(("hanime", lambda: hanime_search(title),
+                     lambda r: _collect_plain(r, "hanime", "hanime 18+")))
 
     # Module-registered sources (register_search_source). They were missing
     # entirely, so a module could add a content source to the app and its
@@ -190,9 +184,10 @@ def find_site_candidates(title: str) -> list:
     # drops sources whose module is switched off, and get_search_source()
     # re-checks it, so a disabled module cannot be scraped from here.
     #
-    # An adult module source is skipped unless the adult source is on, matching
-    # how the built-in hanime branch above is gated: an 18+ hit appearing in a
-    # lookup nobody asked for is not a missing feature.
+    # An adult module source is skipped unless the adult source is on (and the
+    # caller may see adult content), matching how the built-in hanime branch
+    # above is gated: an 18+ hit appearing in a lookup nobody asked for is not
+    # a missing feature.
     try:
         from ...search import (
             drop_unresolvable,
@@ -201,7 +196,7 @@ def find_site_candidates(title: str) -> list:
         )
         for src in thirdparty_search_sources():
             site_id = src["site_id"]
-            if src.get("adult") and not _hanime_enabled():
+            if src.get("adult") and not adult_ok:
                 continue
             # A module may reuse a settings key it already owns instead of the
             # source_enabled_<id> convention -- pass it through, or the check
@@ -212,24 +207,36 @@ def find_site_candidates(title: str) -> list:
             entry = get_search_source(site_id)
             if not entry:
                 continue
-            try:
-                # Same filter api_search() applies: a URL no provider resolves
-                # cannot ever be synced, so it must not become a candidate.
-                for item in drop_unresolvable(entry["search_fn"](title), site_id):
-                    url = item.get("url") or item.get("link") or ""
-                    if not url or url in seen:
-                        continue
-                    seen.add(url)
-                    name = _html_unescape(item.get("title") or item.get("name") or "Unknown")
-                    score = difflib.SequenceMatcher(None, target, _norm(name)).ratio()
-                    candidates.append({
-                        "site": site_id, "site_label": src.get("label") or site_id,
-                        "title": name, "url": url, "score": round(score, 3),
-                    })
-            except Exception as e:
-                logger.debug("[AutosyncSearch] %s search failed: %s", site_id, e)
+            # Same filter api_search() applies: a URL no provider resolves
+            # cannot ever be synced, so it must not become a candidate.
+            jobs.append((
+                site_id,
+                (lambda fn=entry["search_fn"], sid=site_id: drop_unresolvable(fn(title), sid)),
+                (lambda r, sid=site_id, label=(src.get("label") or site_id):
+                    _collect_module(r, sid, label)),
+            ))
     except Exception as e:
         logger.debug("[AutosyncSearch] module sources unavailable: %s", e)
+
+    if not jobs:
+        return []
+    pool = ThreadPoolExecutor(max_workers=min(6, len(jobs)),
+                              thread_name_prefix="autosync-site-search")
+    try:
+        futures = [pool.submit(fetch) for _name, fetch, _merge in jobs]
+        # An overall deadline: a source still busy after this is dropped from
+        # the answer instead of holding the request (its own timeout ends it).
+        _wait(futures, timeout=_SITE_SEARCH_DEADLINE)
+        for (name, _fetch, merge), fut in zip(jobs, futures):
+            if not fut.done():
+                logger.debug("[AutosyncSearch] %s search timed out", name)
+                continue
+            try:
+                merge(fut.result())
+            except Exception as e:
+                logger.debug("[AutosyncSearch] %s search failed: %s", name, e)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     candidates.sort(key=lambda c: c["score"], reverse=True)
     return candidates[:12]
@@ -316,8 +323,9 @@ def register_autosync_routes(app):
         username, is_admin = _get_current_user_info()
         # Admins see all jobs; regular users see only their own
         jobs = get_autosync_jobs(username=None if is_admin else username)
+        pause_cfg = adaptive_pause_config()
         for job in jobs:
-            job["adaptive_paused"] = _is_job_adaptive_paused(job)
+            job["adaptive_paused"] = _is_job_adaptive_paused(job, pause_cfg)
         return jsonify({"jobs": jobs})
     @app.route("/api/autosync", methods=["POST"])
     def api_autosync_create():
@@ -395,7 +403,8 @@ def register_autosync_routes(app):
         title = (data.get("title") or "").strip()
         if not title:
             return jsonify({"error": "title is required"}), 400
-        return jsonify({"results": find_site_candidates(title)})
+        from ..age_gate import allows_adult
+        return jsonify({"results": find_site_candidates(title, include_adult=allows_adult())})
     @app.route("/api/autosync/<int:job_id>", methods=["PUT"])
     def api_autosync_update(job_id):
         """Update an AutoSync job's settings (owner or admin only).
@@ -682,6 +691,34 @@ def register_autosync_routes(app):
             except Exception as exc:
                 errors.append(f"{title}: {exc}")
         return jsonify({"ok": True, "imported": imported, "skipped": skipped, "errors": errors})
+    @app.route("/api/autosync/group/rename", methods=["POST"])
+    def api_autosync_group_rename():
+        """Rename an AutoSync group: move every job of group `old` to `new`.
+
+        Route: POST /api/autosync/group/rename  {old, new} -> {ok, updated}.
+        Called from static/autosync.js's `confirmRenameGroup()`, which existed
+        long before this route did -- the rename button always failed with a
+        404. Same ownership rule as /api/autosync/batch: a regular account
+        only moves its own jobs.
+        """
+        username, is_admin = _get_current_user_info()
+        if not is_admin and not username:
+            # get_autosync_jobs(None) would mean "every job".
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        data = request.get_json(silent=True) or {}
+        old = str(data.get("old") or "").strip()
+        new = str(data.get("new") or "").strip()[:100]
+        if not old or not new:
+            return jsonify({"ok": False, "error": "old and new are required"}), 400
+        if old == new:
+            return jsonify({"ok": True, "updated": 0})
+        updated = 0
+        for job in get_autosync_jobs(username=None if is_admin else username):
+            if (job.get("group_name") or "") != old:
+                continue
+            update_autosync_job(job["id"], group_name=new)
+            updated += 1
+        return jsonify({"ok": True, "updated": updated})
     @app.route("/api/autosync/batch", methods=["POST"])
     def api_autosync_batch():
         """Batch-update multiple autosync jobs at once.

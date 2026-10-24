@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import threading
@@ -207,6 +208,7 @@ _CACHE_TTL = 5.0  # seconds — cheap freshness; install/uninstall invalidate ex
 def invalidate_cache() -> None:
     with _CACHE_LOCK:
         _CACHE["themes"] = None
+        _ENTRY_CACHE.clear()
 
 
 def installed_themes(refresh: bool = False) -> list[dict]:
@@ -230,17 +232,63 @@ def installed_themes(refresh: bool = False) -> list[dict]:
         entries = sorted(root.iterdir())
     except OSError:
         entries = []
+    seen = set()
     for folder in entries:
         if not folder.is_dir() or folder.name.startswith("_"):
             continue
         if folder.name in RESERVED_THEME_NAMES:
             continue
-        themes.append(_theme_entry(folder))
+        seen.add(str(folder))
+        themes.append(_theme_entry_cached(folder))
 
     with _CACHE_LOCK:
         _CACHE["themes"] = themes
         _CACHE["at"] = time.monotonic()
+        for key in [k for k in _ENTRY_CACHE if k not in seen]:
+            _ENTRY_CACHE.pop(key, None)
     return themes
+
+
+# str(folder) -> (fingerprint, entry). _theme_entry() validates every file and
+# SHA-256-hashes the whole folder for the signature check -- 25 ms for three
+# themes on a fast box, several times that on a NAS -- and the listing is
+# rebuilt every _CACHE_TTL seconds from request threads. The entry is reused
+# while no file in the folder changed (same paths, sizes and mtimes), which
+# keeps exactly the old semantics: any edit, including a hand-edited
+# stylesheet that breaks the signature, is picked up on the next rebuild.
+_ENTRY_CACHE: dict = {}
+
+
+def _folder_fingerprint(folder: Path):
+    files = []
+    for dirpath, dirnames, filenames in os.walk(folder):
+        dirnames.sort()
+        for name in sorted(filenames):
+            full = os.path.join(dirpath, name)
+            try:
+                st = os.lstat(full)
+            except OSError:
+                continue
+            files.append((os.path.relpath(full, folder), st.st_size, st.st_mtime_ns))
+    return tuple(files)
+
+
+def _theme_entry_cached(folder: Path) -> dict:
+    key = str(folder)
+    try:
+        fingerprint = _folder_fingerprint(folder)
+    except OSError:
+        fingerprint = None
+    if fingerprint is not None:
+        with _CACHE_LOCK:
+            hit = _ENTRY_CACHE.get(key)
+        if hit and hit[0] == fingerprint:
+            return hit[1]
+    entry = _theme_entry(folder)
+    if fingerprint is not None:
+        with _CACHE_LOCK:
+            _ENTRY_CACHE[key] = (fingerprint, entry)
+    return entry
 
 
 def _theme_entry(folder: Path) -> dict:
@@ -395,6 +443,45 @@ def _report_theme_change() -> None:
 # CSS bundle — one <link> per theme, whatever the manifest declares
 # ---------------------------------------------------------------------------
 
+def _bundle_parts(folder: str):
+    """(theme, [(rel, path, stat), ...], etag) for a bundle -- stat() only.
+
+    Split out of bundle_css() so the route can answer a revalidation (304)
+    without reading every stylesheet first, which it used to do on every
+    page view.
+    """
+    theme = theme_by_folder(folder)
+    if theme is None or not theme["valid"] or not theme["stylesheets"]:
+        return None, [], ""
+    root = themes_dir() / theme["folder"]
+    parts = []
+    newest = 0.0
+    total = 0
+    for rel in theme["stylesheets"]:
+        path = root / rel
+        try:
+            stat = path.stat()
+        except OSError as exc:
+            logger.warning("[Themes] cannot read %s/%s: %s", folder, rel, exc)
+            continue
+        if stat.st_size > MAX_STYLESHEET_BYTES:
+            logger.warning("[Themes] %s/%s exceeds %d bytes — skipped",
+                           folder, rel, MAX_STYLESHEET_BYTES)
+            continue
+        newest = max(newest, stat.st_mtime)
+        total += stat.st_size
+        parts.append((rel, path, stat))
+    if not parts:
+        return theme, [], ""
+    # Unquoted — the route sets it via response.set_etag(), which quotes it.
+    return theme, parts, f'{theme["version"]}-{int(newest)}-{total}'
+
+
+def bundle_css_etag(folder: str) -> str:
+    """The ETag bundle_css() would return, without reading any stylesheet."""
+    return _bundle_parts(folder)[2]
+
+
 def bundle_css(folder: str) -> tuple[str | None, str]:
     """Concatenate the theme's declared stylesheets -> (css, etag).
 
@@ -404,33 +491,18 @@ def bundle_css(folder: str) -> tuple[str | None, str]:
     Relative url(...) references inside the CSS keep working because the bundle
     is served from inside the theme's own URL prefix.
     """
-    theme = theme_by_folder(folder)
-    if theme is None or not theme["valid"] or not theme["stylesheets"]:
-        return None, ""
-    root = themes_dir() / theme["folder"]
-    parts: list[str] = []
-    newest = 0.0
-    total = 0
-    for rel in theme["stylesheets"]:
-        path = root / rel
+    _theme, parts, etag = _bundle_parts(folder)
+    texts: list[str] = []
+    for rel, path, _stat in parts:
         try:
-            stat = path.stat()
-            if stat.st_size > MAX_STYLESHEET_BYTES:
-                logger.warning("[Themes] %s/%s exceeds %d bytes — skipped",
-                               folder, rel, MAX_STYLESHEET_BYTES)
-                continue
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             logger.warning("[Themes] cannot read %s/%s: %s", folder, rel, exc)
             continue
-        newest = max(newest, stat.st_mtime)
-        total += stat.st_size
-        parts.append(f"/* --- {rel} --- */\n{text}")
-    if not parts:
+        texts.append(f"/* --- {rel} --- */\n{text}")
+    if not texts:
         return None, ""
-    # Unquoted — the route sets it via response.set_etag(), which quotes it.
-    etag = f'{theme["version"]}-{int(newest)}-{total}'
-    return "\n\n".join(parts), etag
+    return "\n\n".join(texts), etag
 
 
 # ---------------------------------------------------------------------------

@@ -2394,7 +2394,9 @@ window.OPS_I18N = {
 {{ startpage.start_page_i18n() }}
 <script src="{{ url_for('static', filename='settings.js') }}"></script>
 <script src="{{ url_for('static', filename='start_page.js') }}"></script>
-<script src="{{ url_for('static', filename='pwa.js') }}"></script>
+{# pwa.js is not loaded here: base.html already includes it on every page, and
+   a second copy registered the service worker twice and replaced
+   window.togglePushSubscription with a duplicate of itself. #}
 <!-- Generic collapsible-card behaviour + enable toggle for any thirdparty
      registered with settings_host="settings" (see _settings_card_macro.html
      / web/thirdparties/registry.py) -- same script integrations.html/

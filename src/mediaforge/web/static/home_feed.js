@@ -598,7 +598,33 @@
     return null;
   }
 
-  function renderRows() {
+  /** Everything a discovery row's markup is built from, as one string: the
+      cards, plus what addSourcePills() reads beside them (the source's label
+      and which "also on" sources are switched on). Equal keys render equal
+      rows. rowKeyGen is bumped by load(), which asks for the library/Auto-Sync
+      badge data again (app.js answers from a one-minute cache) -- that is not
+      part of the cards, so every row is repainted once after a (re)load. */
+  let rowKeyGen = 0;
+
+  function rowKey(list) {
+    try {
+      return rowKeyGen + "|" + JSON.stringify(list.map(function (item) {
+        const src = sourceById(item.source);
+        return [item, src ? src.label : "",
+          (item.also || []).filter(function (a) { return sourceOn(a.source); })];
+      }));
+    } catch (e) {
+      return null;                         // unserialisable: never "unchanged"
+    }
+  }
+
+  /** onlyChanged (a row response) repaints just the rows whose cards changed:
+      the row that arrived, and a later row the cross-row dedupe thinned out.
+      renderBrowseCards() rebuilds a grid from scratch, so repainting every row
+      on every response -- up to ~20 times while sources warm up -- re-created
+      every poster and threw a row the user was swiping back to its first
+      card. Without it (a filter change) every row is repainted, as before. */
+  function renderRows(onlyChanged) {
     DISCOVERY_ROWS.forEach(function (row) {
       const list = visibleCards(row);
       // A row that has not been fetched yet stays visible with its skeletons:
@@ -607,13 +633,24 @@
       const waiting = rowState[row] === "pending" || rowState[row] === "loading";
       const grid = showSection(row, list.length > 0 || waiting);
       if (!grid) return;
-      if (!list.length) { if (!waiting) grid.innerHTML = ""; return; }
+      if (!list.length) {
+        if (!waiting) { grid.innerHTML = ""; grid._mfFeedKey = null; }
+        return;
+      }
+      const key = rowKey(list);
+      if (onlyChanged && key !== null && grid._mfFeedKey === key &&
+          grid.children.length === list.length) return;
       renderBrowseCards(grid, list, {
         skipTmdb: list.every(function (i) { return i.media_type === "adult"; }),
       });
       addSourcePills(grid, list);
+      grid._mfFeedKey = key;
     });
-    renderPersonal();
+    // The personal rows are not repainted here. They draw `personal`, which
+    // neither a row response nor a filter changes (the status filter skips
+    // them on purpose), so they follow their own data: the personal fetch in
+    // load() and a dismissed gap. The current source list still reaches the
+    // Dashboard cards through renderAlerts() below.
     renderAlerts();
 
     const anyVisible = Object.keys(ROW_GRIDS).some(function (row) {
@@ -1003,8 +1040,11 @@
       feedError = HT("feed_failed");
     }
     dedupeRows();
-    renderRows();
-    applyUptimeStatus();
+    renderRows(true);
+    // No applyUptimeStatus() here: it ran after every row response, retries
+    // included (~21 /api/uptime/status per cold load). load() asks once, and
+    // the "down" marks it reports live on in downIds, which renderFilters()
+    // and renderAlerts() re-apply whenever a response re-renders them.
     prewarmRowMetadata(row);
   }
 
@@ -1075,6 +1115,10 @@
     inFlight = true;
     feedError = "";
     DISCOVERY_ROWS.forEach(function (row) { rowState[row] = "pending"; });
+    // Which sources the UpTime monitor reports as down -- once per load, in
+    // parallel with the requests below. app.js hands the answer to
+    // mfFeedMarkDown(), which keeps it for every later render.
+    applyUptimeStatus();
 
     try {
       // The badges need their own data before any card is built — same order
@@ -1133,6 +1177,8 @@
       inFlight = false;
     }
 
+    // The badge data was just asked for again: repaint each row once more.
+    rowKeyGen++;
     renderFilters();
     scheduleRows();
 
@@ -1144,6 +1190,9 @@
       renderPersonal();
     } catch (e) {
       personal = {};
+      // renderRows() used to repaint the personal rows on every row response,
+      // which is what cleared them after a failed fetch. It no longer does.
+      renderPersonal();
     }
   }
 

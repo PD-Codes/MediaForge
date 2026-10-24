@@ -155,6 +155,12 @@ let mediascanActive = false;  // true when source is plex/jellyfin (not folders)
 
 // Auto-Sync URLs set (series_url -> job object)
 let autoSyncUrlMap = {};
+// The jobs' titles through _normalizeForMediascan(), for the title fallbacks
+// in mfCardOnAutoSync() and addSyncBadgeForTmdb(Multi). They normalised every
+// job's title again for every card (seven regex replaces each), ~280 ms per
+// pass at 200 cards x 300 jobs. Rebuilt by _syncAutoSyncTitles() whenever
+// autoSyncUrlMap changes.
+let _autoSyncTitles = new Set();
 
 // CineInfo display settings (cached)
 let cineinfoSettings = null;
@@ -163,22 +169,35 @@ let crunchyrollSettings = null;
 let fernsehserienSettings = null;
 
 let _generalSettingsPromise = null;
+let _generalSettingsFailedAt = 0;   // when the last read failed, 0 after a good one
 function loadGeneralSettings() {
+  // A failed read is not the final answer: the next caller after 30 s asks
+  // again. Not sooner -- renderBrowseCards() calls this once per card, and a
+  // server that is down must not get one request per card for it.
+  if (_generalSettingsFailedAt && Date.now() - _generalSettingsFailedAt >= 30000) {
+    _generalSettingsPromise = null;
+    _generalSettingsFailedAt = 0;
+  }
   if (!_generalSettingsPromise) {
     _generalSettingsPromise = (async () => {
       try {
-        const resp = await fetch("/api/settings");
+        // The read-only subset every account may read. /api/settings is
+        // admin-only: a normal account got a 403 there, and its error body was
+        // taken for the settings -- no CineInfo, and the home page showed every
+        // source block, the empty "hanime 18+" one included.
+        const resp = await fetch("/api/settings/client");
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
         const data = await resp.json();
         generalSettings = data;
         cineinfoSettings = data.cineinfo || {};
         crunchyrollSettings = data.crunchyroll || {};
         fernsehserienSettings = data.fernsehserien || {};
-        console.log("[General] Settings loaded (combined):", generalSettings);
         _reEnrichPendingCards();
         _reEnrichCrunchyrollCards();
         return generalSettings;
       } catch (e) {
         console.error("[General] Failed to load settings:", e);
+        _generalSettingsFailedAt = Date.now();
         generalSettings = {};
         cineinfoSettings = {};
         crunchyrollSettings = {};
@@ -334,29 +353,62 @@ async function _flushTmdbBatch() {
   // rather than a shared one two UNRELATED titleAlike entries could collide
   // on).
   const titles = [...new Set(batch.map(([, entry]) => entry.title))];
-  try {
-    const resp = await fetch("/api/tmdb/batch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ titles }),
-      // Deprioritize vs. poster images competing for the same connection pool
-      // (Chrome/Edge; harmlessly ignored elsewhere) — CineInfo/pill data is
-      // secondary to actually seeing the card art.
-      priority: "low",
+  // /api/tmdb/batch answers at most 25 titles per request (routes/search.py
+  // cuts the list there). Sent in one piece, every card past the 25th title
+  // got no answer and was never asked about again. One chunk after another,
+  // like mfPrewarmTmdb().
+  for (let i = 0; i < titles.length; i += 25) {
+    const chunk = new Set(titles.slice(i, i + 25));
+    const entries = batch.filter(([, entry]) => chunk.has(entry.title));
+    try {
+      const resp = await fetch("/api/tmdb/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titles: [...chunk] }),
+        // Deprioritize vs. poster images competing for the same connection pool
+        // (Chrome/Edge; harmlessly ignored elsewhere) — CineInfo/pill data is
+        // secondary to actually seeing the card art.
+        priority: "low",
+      });
+      if (!resp.ok) { _tmdbRetryLater(entries); continue; }
+      const results = await resp.json();
+      entries.forEach(([key, entry]) => {
+        const tmdb = results[entry.title];
+        if (!tmdb) return;
+        // Remember it: the same title/url pair reappears constantly (a row
+        // refilled after a filter switch, the same series in "New" and in
+        // "Movies"), and asking again for something already answered is the
+        // flicker this memo removes.
+        _tmdbMemo.set(key, tmdb);
+        entry.cards.forEach(card => _applyTmdbToCard(card, tmdb));
+      });
+    } catch (e) {
+      _tmdbRetryLater(entries);
+    }
+  }
+}
+
+// A failed batch used to leave its cards marked "queued" for good. Each card
+// gets two more tries, a few seconds apart, through the same observer -- so
+// only cards still on the page ask again, and a server that keeps failing is
+// not asked in a loop.
+const _TMDB_RETRY_MS = 5000;
+const _TMDB_MAX_RETRIES = 2;
+
+function _tmdbRetryLater(entries) {
+  entries.forEach(([, entry]) => {
+    entry.cards.forEach((card) => {
+      const tries = (card._mfTmdbTries || 0) + 1;
+      if (tries > _TMDB_MAX_RETRIES) return;
+      card._mfTmdbTries = tries;
+      setTimeout(() => {
+        if (!card.isConnected) return;     // re-rendered or removed meanwhile
+        delete card.dataset.tmdbQueued;
+        if (_tmdbObserver) _tmdbObserver.observe(card);
+        else _queueTmdbEnrich(card, entry.title);
+      }, _TMDB_RETRY_MS * tries);
     });
-    if (!resp.ok) return;
-    const results = await resp.json();
-    batch.forEach(([key, entry]) => {
-      const tmdb = results[entry.title];
-      if (!tmdb) return;
-      // Remember it: the same title/url pair reappears constantly (a row
-      // refilled after a filter switch, the same series in "New" and in
-      // "Movies"), and asking again for something already answered is the
-      // flicker this memo removes.
-      _tmdbMemo.set(key, tmdb);
-      entry.cards.forEach(card => _applyTmdbToCard(card, tmdb));
-    });
-  } catch (e) { /* best-effort */ }
+  });
 }
 
 function _queueTmdbEnrich(card, title) {
@@ -480,16 +532,43 @@ function _reEnrichCrunchyrollCards() {
   });
 }
 
-async function loadAutoSyncJobs() {
-  try {
-    const resp = await fetch("/api/autosync");
-    const data = await resp.json();
-    autoSyncUrlMap = {};
-    (data.jobs || []).forEach(j => {
-      const norm = (j.series_url || "").replace(/\/+$/, "").toLowerCase();
-      autoSyncUrlMap[norm] = j;
-    });
-  } catch (e) { /* best-effort */ }
+// The library index and the Auto-Sync list are shared by every caller for a
+// minute. Each classic home loader, the home feed, the Advanced Search and
+// every cross-provider lookup fetched both again -- 5-8 times per home page
+// load -- and /api/downloaded-folders walks every download folder live (one
+// stat per series folder, slow on a NAS). Pass `force` for fresh data.
+const _LIB_INDEX_TTL_MS = 60000;
+let _autoSyncPromise = null;
+let _autoSyncAt = 0;
+
+function loadAutoSyncJobs(force) {
+  if (!force && _autoSyncPromise && Date.now() - _autoSyncAt < _LIB_INDEX_TTL_MS) {
+    return _autoSyncPromise;
+  }
+  _autoSyncAt = Date.now();
+  _autoSyncPromise = (async () => {
+    try {
+      const resp = await fetch("/api/autosync");
+      const data = await resp.json();
+      autoSyncUrlMap = {};
+      (data.jobs || []).forEach(j => {
+        const norm = (j.series_url || "").replace(/\/+$/, "").toLowerCase();
+        autoSyncUrlMap[norm] = j;
+      });
+      _syncAutoSyncTitles();
+    } catch (e) { /* best-effort */ }
+  })();
+  return _autoSyncPromise;
+}
+
+/** Rebuild _autoSyncTitles from autoSyncUrlMap. Call after every change to it. */
+function _syncAutoSyncTitles() {
+  const titles = new Set();
+  Object.values(autoSyncUrlMap).forEach((j) => {
+    const norm = _normalizeForMediascan(j.title || "");
+    if (norm) titles.add(norm);
+  });
+  _autoSyncTitles = titles;
 }
 
 
@@ -563,7 +642,21 @@ async function loadCustomPaths() {
   }
 }
 
-async function loadDownloadedFolders() {
+let _dlFoldersPromise = null;
+let _dlFoldersAt = 0;
+
+/** The library index: download folders, their alias index and the MediaScan
+ *  ids. Shared by every caller for a minute (see _LIB_INDEX_TTL_MS). */
+function loadDownloadedFolders(force) {
+  if (!force && _dlFoldersPromise && Date.now() - _dlFoldersAt < _LIB_INDEX_TTL_MS) {
+    return _dlFoldersPromise;
+  }
+  _dlFoldersAt = Date.now();
+  _dlFoldersPromise = _fetchDownloadedFolders();
+  return _dlFoldersPromise;
+}
+
+async function _fetchDownloadedFolders() {
   try {
     const resp = await fetch("/api/downloaded-folders");
     const data = await resp.json();
@@ -914,6 +1007,21 @@ async function loadHanimeBrowse() {
 // entirely).
 let _searchScrollY = 0;
 
+// Bumped by every doSearch() and by exitSearch(). A search whose number is no
+// longer current must not touch the page: searching B while A was still
+// running let A's "No results found" wipe B's results, and A's `finally`
+// re-enabled the button and hid the spinner while B was still running.
+let _searchSeq = 0;
+let _searchAbort = null;     // aborts the running search's requests
+
+function _cancelSearch() {
+  _searchSeq++;
+  if (_searchAbort) {
+    _searchAbort.abort();
+    _searchAbort = null;
+  }
+}
+
 /** The bar above the results: where you are, and how to leave.
     Rendered into #searchHead, which lives OUTSIDE #results -- the render
     functions replace #results.innerHTML wholesale, so a header inside it
@@ -949,6 +1057,11 @@ function enterSearchView(keyword) {
 /** Put the home page back. Safe to call when no search is showing. */
 function exitSearch(fromHistory) {
   if (!document.body.classList.contains("is-searching")) return;
+  // A search still running would otherwise paint its answers (or "No results
+  // found") onto the home page it was just left for. Once cancelled, its
+  // `finally` leaves the button alone, so it is released here.
+  _cancelSearch();
+  if (searchBtn) searchBtn.disabled = false;
   document.body.classList.remove("is-searching");
   if (resultsDiv) resultsDiv.innerHTML = "";
   const head = document.getElementById("searchHead");
@@ -981,6 +1094,8 @@ document.addEventListener("keydown", function (ev) {
 });
 
 async function showBrowseSections() {
+  // The classic layout's rows only; the new home page has no #browse.
+  if (!browseDiv) return;
   browseDiv.style.display = "";
   let settings = {};
   try { settings = await loadGeneralSettings(); } catch (e) { settings = {}; }
@@ -1219,10 +1334,23 @@ window.renderHomeRunStrip = function (items, progress, paused) {
 // rather than an error.
 let _homeFactsAt = 0;
 let _homeFacts = "";
+let _homeFactsBusy = false;
 async function refreshHomeRunFacts() {
   const slot = document.getElementById("homeRunFacts");
   if (!slot) return;
-  if (_homeFactsAt && Date.now() - _homeFactsAt < 60000) { slot.innerHTML = _homeFacts; return; }
+  // The queue poll calls this every 2 s. The minute is counted from the START
+  // of a refresh, and a refresh still running is not started twice: a cold
+  // storage panel (one disk_usage per root, seconds on a stale SMB mount) used
+  // to get a new request pair every 2 s until the first one answered.
+  if (_homeFactsBusy || (_homeFactsAt && Date.now() - _homeFactsAt < 60000)) {
+    slot.innerHTML = _homeFacts;
+    return;
+  }
+  _homeFactsBusy = true;
+  _homeFactsAt = Date.now();
+  // Both at once rather than one after the other.
+  const sysP = fetch("/api/home-panel/system").then((r) => r.json()).catch(() => null);
+  const stP = fetch("/api/home-panel/storage").then((r) => r.json()).catch(() => null);
   const parts = [];
   // The panels answer with {stats:[{label_key, value}]}, so the figures are
   // looked up by their key rather than by position -- the order of that list
@@ -1235,7 +1363,7 @@ async function refreshHomeRunFacts() {
     return "";
   }
   try {
-    const sys = await (await fetch("/api/home-panel/system")).json();
+    const sys = await sysP;
     const busy = parseInt(statValue(sys, "hp_encoding"), 10) || 0;
     const up = parseInt(statValue(sys, "hp_upscaling"), 10) || 0;
     if (busy) parts.push(escapeHtml(_homeText("status_encoding", "{} im Encoding", "{} encoding")
@@ -1244,7 +1372,7 @@ async function refreshHomeRunFacts() {
       .replace("{}", String(up))));
   } catch (e) { /* admin-only panel: one fact fewer, not an error */ }
   try {
-    const st = await (await fetch("/api/home-panel/storage")).json();
+    const st = await stP;
     const fullest = statValue(st, "hp_fullest");
     if (fullest) {
       parts.push(escapeHtml(_homeText("status_fullest", "{} voll", "{} full")
@@ -1252,8 +1380,11 @@ async function refreshHomeRunFacts() {
     }
   } catch (e) { /* admin-only */ }
   _homeFacts = parts.join(" · ");
-  _homeFactsAt = Date.now();
-  slot.innerHTML = _homeFacts;
+  _homeFactsBusy = false;
+  // Looked up again: renderHomeRunStrip() rebuilds the strip on every poll,
+  // so the slot found above is usually detached by now.
+  const current = document.getElementById("homeRunFacts");
+  if (current) current.innerHTML = _homeFacts;
 }
 
 // ── Source offline banner (only when UpTime monitoring is enabled) ──────────
@@ -1349,7 +1480,12 @@ function _applySourceLayout(sources) {
       if (visible) anyVisible = true;
     });
     if (!so.length) anyVisible = true; // sources without configurable sections (e.g. FilmPalast)
-    const disabled = enabled[prov] === "0";
+    // The same rule showBrowseSections() loads by: an opt-in source counts as
+    // off unless it says "1". The settings leave an adult source out entirely
+    // for an age-limited session, and reading that as "on" showed an empty
+    // "hanime 18+" block to kids accounts.
+    const optIn = prov === "nineanime" || prov === "aniwaves" || prov === "hanime";
+    const disabled = optIn ? enabled[prov] !== "1" : enabled[prov] === "0";
     // Hide the whole block if the source is disabled or all its sections are hidden.
     block.style.display = (disabled || !anyVisible) ? "none" : "";
   });
@@ -1618,8 +1754,7 @@ function mfCardOnAutoSync(item) {
   const candidates = [item.series_title, item.title]
     .filter(Boolean).map(_normalizeForMediascan).filter(Boolean);
   if (!candidates.length) return false;
-  return Object.values(autoSyncUrlMap).some((job) =>
-    candidates.indexOf(_normalizeForMediascan(job.title || "")) !== -1);
+  return candidates.some((title) => _autoSyncTitles.has(title));
 }
 
 window.mfCardInLibrary = mfCardInLibrary;
@@ -1653,11 +1788,7 @@ function addSyncBadgeForTmdb(card, title) {
   if (!title) return;
   const normTitle = _normalizeForMediascan(title);
   if (!normTitle) return;
-  const hasMatchingJob = Object.values(autoSyncUrlMap).some(j => {
-    const jobTitle = j.title || "";
-    return _normalizeForMediascan(jobTitle) === normTitle;
-  });
-  if (!hasMatchingJob) return;
+  if (!_autoSyncTitles.has(normTitle)) return;
   _createSyncBadge(card);
 }
 
@@ -1668,11 +1799,7 @@ function addSyncBadgeForTmdb(card, title) {
 function addSyncBadgeForTmdbMulti(card, titles) {
   const candidates = (titles || []).map(_normalizeForMediascan).filter(Boolean);
   if (!candidates.length) return;
-  const hasMatchingJob = Object.values(autoSyncUrlMap).some((j) => {
-    const jobTitle = _normalizeForMediascan(j.title || "");
-    return candidates.includes(jobTitle);
-  });
-  if (!hasMatchingJob) return;
+  if (!candidates.some((title) => _autoSyncTitles.has(title))) return;
   _createSyncBadge(card);
 }
 
@@ -1811,7 +1938,14 @@ function _rebuildLanguageSelect(foundLangs = null) {
   rebuildLanguageSelectOptions(foundLangs);
   if (!languageSelect || !languageSelect.options.length) return;
   const has = (v) => Array.from(languageSelect.options).some((o) => o.value === v);
-  if (has(prev)) return;
+  if (has(prev)) {
+    // Put it back explicitly: rebuilding the options dropped the selection to
+    // the first one, which is "All Languages" with language separation on --
+    // a value no hoster list is keyed by ("No Source available").
+    languageSelect.value = prev;
+    syncLangAvailPills();
+    return;
+  }
   if (defaultSyncLanguage && has(defaultSyncLanguage)) {
     languageSelect.value = defaultSyncLanguage;
     syncLangAvailPills();
@@ -2132,10 +2266,10 @@ if (searchInput) {
     if (e.key === "Enter") doSearch();
   });
   searchInput.addEventListener("input", () => {
-    if (!searchInput.value.trim()) {
-      if (resultsDiv) resultsDiv.innerHTML = "";
-      showBrowseSections();
-    }
+    // Emptying the field leaves the search the way the Back button does, on
+    // either home layout. It used to call showBrowseSections(), which threw on
+    // the new home page (no #browse) and left an empty page behind.
+    if (!searchInput.value.trim()) exitSearch();
   });
 }
 if (languageSelect) {
@@ -2174,7 +2308,9 @@ function renderBrowseCards(grid, items, opts) {
     card.onclick = () => openSeries(item.url);
     card.innerHTML =
       (item.censored ? `<div class="hanime-pill hanime-pill-${esc(String(item.censored).toLowerCase())}">${esc(_hanimeCensLabel(item.censored))}</div>` : ``) +
-      `<img src="${esc(proxyImg(item.poster_url))}" alt="" onload="this.parentElement.classList.add('loaded')" onerror="this.parentElement.classList.add('loaded'); this.style.display='none'">` +
+      // lazy: a row holds 20-30 cards of which 6-8 are on screen, and a home
+      // page has up to eleven rows -- every poster used to be requested at once.
+      `<img src="${esc(proxyImg(item.poster_url))}" alt="" loading="lazy" decoding="async" onload="this.parentElement.classList.add('loaded')" onerror="this.parentElement.classList.add('loaded'); this.style.display='none'">` +
       `<div class="browse-info">` +
       `<div class="browse-title">${esc(item.title)}</div>` +
       `<div class="browse-genre">${esc(item.genre)}</div>` +
@@ -2468,6 +2604,11 @@ window.mfSearchPendingText = mfSearchPendingText;
 async function doSearch() {
   const keyword = searchInput.value.trim().replace(/!+$/, "");
   if (!keyword) return;
+  // A search still running is replaced, not raced (see _searchSeq).
+  _cancelSearch();
+  const mySeq = _searchSeq;
+  const cancel = _searchAbort = new AbortController();
+  const isCurrent = () => mySeq === _searchSeq;
   searchBtn.disabled = true;
   searchSpinner.style.display = "block";
   // Create a search grid with skeletons
@@ -2491,6 +2632,9 @@ async function doSearch() {
   const searchSite = async (site) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
+    // A newer search aborts this one's requests too.
+    const onCancel = () => controller.abort();
+    cancel.signal.addEventListener("abort", onCancel);
     try {
       const resp = await fetch("/api/search", {
         method: "POST",
@@ -2504,6 +2648,7 @@ async function doSearch() {
       return [];
     } finally {
       clearTimeout(timeoutId);
+      cancel.signal.removeEventListener("abort", onCancel);
     }
   };
 
@@ -2524,6 +2669,7 @@ async function doSearch() {
         const on = _sourceIsOn(src, _en);
         return src.adult ? on : (on || !_hide);
       });
+    if (!isCurrent()) return;
 
     // One request per source (that was always the case), but the results are
     // painted the moment THAT source answers instead of when the slowest one
@@ -2557,6 +2703,7 @@ async function doSearch() {
     let _anyResults = false;
     await Promise.all(_asked.map(function (src, i) {
       return searchSite(src.id).catch(() => []).then(function (results) {
+        if (!isCurrent()) return;
         _pending--;
         searchSpinner.textContent = mfSearchPendingText(_pending);
         // The censorship filter is a property of the hanime source's own
@@ -2575,7 +2722,7 @@ async function doSearch() {
     // Only once every source has had its say -- an empty state shown while
     // requests are still running would be wrong for the whole time it takes
     // the next one to answer.
-    if (!_anyResults) {
+    if (!_anyResults && isCurrent()) {
       resultsDiv.innerHTML =
         '<div style="width:100%;text-align:center;color:#888;padding:40px">' +
         escapeHtml(t("Keine Ergebnisse gefunden.", "No results found.")) + "</div>";
@@ -2583,10 +2730,14 @@ async function doSearch() {
   } catch (e) {
     // The message belonged to both languages, not just to the English one --
     // the German toast used to end after the colon.
-    showToast(t("Suche fehlgeschlagen: ", "Search failed: ") + e.message);
+    if (isCurrent()) showToast(t("Suche fehlgeschlagen: ", "Search failed: ") + e.message);
   } finally {
-    searchBtn.disabled = false;
-    searchSpinner.style.display = "none";
+    // A replaced search leaves the button and the spinner to its successor.
+    if (isCurrent()) {
+      _searchAbort = null;
+      searchBtn.disabled = false;
+      searchSpinner.style.display = "none";
+    }
   }
 }
 
@@ -2646,7 +2797,7 @@ function buildSourceSection(sec) {
     card.onclick = () => openSeries(r.url);
     card.innerHTML =
       (r.censored ? '<div class="hanime-pill hanime-pill-' + esc(String(r.censored).toLowerCase()) + '">' + esc(_hanimeCensLabel(r.censored)) + '</div>' : '') +
-      '<img src="" alt="" style="width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--bg-elevated);display:block">' +
+      '<img src="" alt="" loading="lazy" decoding="async" style="width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--bg-elevated);display:block">' +
       '<div class="browse-info"><div class="browse-title">' + esc(r.title) + '</div><div class="browse-genre">' + esc(r.genre || '') + '</div></div>';
     // Same franchise-vs-episode title split as renderBrowseCards (hanime).
     // Skipped for an adult source: "already downloaded"/"already syncing"
@@ -2664,7 +2815,12 @@ function buildSourceSection(sec) {
       addSyncBadge(card, r.url);
     }
     grid.appendChild(card);
-    loadPoster(r.url, card.querySelector("img"));
+    // Most sources' search answers carry the poster already (MegaKino, filmo,
+    // 9anime, Aniwaves, hanime, modules). Only the others (AniWorld, S.to,
+    // FilmPalast) need /api/series, which scrapes the source page -- see
+    // loadPoster().
+    if (r.poster_url) _showPoster(card.querySelector("img"), r.poster_url);
+    else loadPoster(r.url, card.querySelector("img"));
     // hanime is adult content and isn't in TMDB's database, so — same as
     // the dedicated hanime Browse tab (renderBrowseCards' skipTmdb option)
     // — skip the TMDB/Crunchyroll/Fernsehserien lookup chain entirely here
@@ -2702,30 +2858,98 @@ window.updateRunningCards = function (runningUrls) {
   });
 };
 
-async function loadPoster(url, imgEl) {
-  try {
-    const resp = await fetch("/api/series?url=" + encodeURIComponent(url));
-    const data = await resp.json();
-    if (data.poster_url) {
-      imgEl.src = proxyImg(data.poster_url);
-      imgEl.onload = () => {
-        const card = imgEl.closest('.browse-card, .card');
-        if (card) card.classList.add('loaded');
-      };
-      imgEl.onerror = () => {
-        const card = imgEl.closest('.browse-card, .card');
-        if (card) card.classList.add('loaded');
-        imgEl.style.display = 'none';
-      };
-    } else {
-      const card = imgEl.closest('.browse-card, .card');
-      if (card) card.classList.add('loaded');
-      imgEl.style.display = 'none';
-    }
-  } catch (e) {
-    const card = imgEl.closest('.browse-card, .card');
-    if (card) card.classList.add('loaded');
+/** Show `posterUrl` in a result card's <img>; an empty one hides the image.
+ *  The card counts as loaded either way (it stops shimmering). */
+function _showPoster(imgEl, posterUrl) {
+  const card = imgEl.closest('.browse-card, .card');
+  const done = () => { if (card) card.classList.add('loaded'); };
+  if (!posterUrl) {
+    done();
     imgEl.style.display = 'none';
+    return;
+  }
+  imgEl.onload = done;
+  imgEl.onerror = () => {
+    done();
+    imgEl.style.display = 'none';
+  };
+  imgEl.src = proxyImg(posterUrl);
+}
+
+// Poster lookups for search hits that arrive without one. Each is a
+// /api/series call, i.e. a live scrape of the source page plus a TMDB lookup,
+// and a search used to start one per card at once: 30-80 scrapes tying up the
+// server's threads and hitting sites behind DDoS-Guard in one burst. Now a
+// card asks when it comes near the screen, at most three run at a time, and a
+// URL is only ever asked once per page load.
+const _POSTER_MAX_ACTIVE = 3;
+const _posterDone = new Map();      // series url -> poster url ("" = none)
+const _posterRunning = new Map();   // series url -> Promise<poster url>
+const _posterQueue = [];            // [{url, img}] waiting for a free slot
+let _posterActive = 0;
+
+const _posterObserver = ('IntersectionObserver' in window)
+  ? new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      _posterObserver.unobserve(entry.target);
+      _queuePoster(entry.target._mfPosterUrl, entry.target);
+    });
+  }, { rootMargin: '200px' })
+  : null;
+
+function _queuePoster(url, imgEl) {
+  _posterQueue.push({ url: url, img: imgEl });
+  _pumpPosters();
+}
+
+function _pumpPosters() {
+  while (_posterQueue.length && _posterActive < _POSTER_MAX_ACTIVE) {
+    const job = _posterQueue.shift();
+    // Its search was replaced (or its modal closed) while it waited.
+    if (!job.img.isConnected) continue;
+    if (_posterDone.has(job.url)) {
+      _showPoster(job.img, _posterDone.get(job.url));
+      continue;
+    }
+    const show = (poster) => { if (job.img.isConnected) _showPoster(job.img, poster); };
+    const running = _posterRunning.get(job.url);
+    if (running) {
+      running.then(show);
+      continue;
+    }
+    _posterActive++;
+    const lookup = fetch("/api/series?url=" + encodeURIComponent(job.url))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
+      .then((data) => {
+        const poster = (data && data.poster_url) || "";
+        _posterDone.set(job.url, poster);
+        return poster;
+      })
+      .catch(() => "")       // not remembered: a later search may ask again
+      .then((poster) => {
+        _posterRunning.delete(job.url);
+        _posterActive--;
+        _pumpPosters();
+        return poster;
+      });
+    _posterRunning.set(job.url, lookup);
+    lookup.then(show);
+  }
+}
+
+function loadPoster(url, imgEl) {
+  if (!imgEl) return;
+  if (_posterDone.has(url)) {
+    _showPoster(imgEl, _posterDone.get(url));
+    return;
+  }
+  if (_posterObserver) {
+    imgEl._mfPosterUrl = url;
+    _posterObserver.observe(imgEl);
+  } else {
+    // Next task: the card is often still being built, not yet on the page.
+    setTimeout(() => _queuePoster(url, imgEl), 0);
   }
 }
 
@@ -2777,7 +3001,9 @@ async function openSeries(url) {
     _mtS.style.display = "none";
     _mtS.querySelector('.season-header').classList.remove('expanded');
     _mtS.querySelector('.season-body').classList.remove('expanded');
-    document.getElementById("modalTrailer").innerHTML = "";
+    const _mt = document.getElementById("modalTrailer");
+    _mt.innerHTML = "";
+    delete _mt.dataset.key;
   }
   const _mrS = document.getElementById("recommendationsSection");
   if (_mrS) {
@@ -2893,7 +3119,7 @@ async function openSeries(url) {
         availableProviders = { "German Dub": seriesData.available_providers };
         updateProviderDropdown();
       } else {
-        fetchProviders(currentSeriesUrl || url);
+        fetchProviders(currentSeriesUrl || url, _mySeq);
       }
     }
 
@@ -2933,8 +3159,23 @@ async function openSeries(url) {
   } catch (e) {
     document.getElementById("modal").classList.remove("skeleton");
     document.getElementById("modalPoster").style.opacity = "";
-    showToast(t("Serie konnte nicht geladen werden: ", "Series could not be loaded: " + e.message));
+    // The message belongs to both languages (it used to sit inside the
+    // English argument, so the German toast ended after the colon).
+    showToast(t("Serie konnte nicht geladen werden: ", "Series could not be loaded: ") + e.message);
   }
+}
+
+// At most this many seasons are fetched at a time. Each /api/episodes call is a
+// live scrape of the source site (behind DDoS-Guard for some of them), and a
+// long series used to fire one per season at once -- twenty and more for One
+// Piece. The seasons are painted as they arrive instead (see buildAccordion).
+const _EPISODE_FETCH_LIMIT = 3;
+// The _seriesLoadSeq of the season list that is still arriving, 0 when none is.
+let _episodesLoadingSeq = 0;
+
+/** True while later seasons of the open title are still being fetched. */
+function _episodesStillLoading() {
+  return _episodesLoadingSeq !== 0 && _episodesLoadingSeq === _seriesLoadSeq;
 }
 
 function buildAccordion(seasons, _seq) {
@@ -2950,49 +3191,22 @@ function buildAccordion(seasons, _seq) {
     _locEl.innerHTML = "";
   }
 
-  // Fetch all seasons' episodes in parallel
-  const fetches = seasons.map((s, i) =>
-    fetch("/api/episodes?url=" + encodeURIComponent(s.url))
-      .then((r) => r.json())
-      .then((data) => ({
-        index: i,
-        episodes: data.episodes || [],
-        locations: data.locations || [],
-      }))
-      .catch(() => ({ index: i, episodes: [], locations: [] })),
-  );
+  // openSeries() may have moved on to a different series while these
+  // per-season episode fetches were in flight — see _seriesLoadSeq.
+  const stale = () => _seq !== undefined && _seq !== _seriesLoadSeq;
+  _episodesLoadingSeq = _seq !== undefined ? _seq : _seriesLoadSeq;
+  window._epLangMap = {};
+  const results = [];          // by season index, filled as the answers arrive
+  let rendered = 0;            // seasons [0, rendered) are on screen
+  let firstProviderUrl = null;
 
-  Promise.all(fetches).then((results) => {
-    // openSeries() may have moved on to a different series while these
-    // per-season episode fetches were in flight — see _seriesLoadSeq.
-    if (_seq !== undefined && _seq !== _seriesLoadSeq) return;
-    episodeSpinner.style.display = "none";
-    let firstProviderUrl = null;
-
-    results.sort((a, b) => a.index - b.index);
-
-    // Find all languages actually present in the episodes
-    const foundLangs = new Set();
-    results.forEach(({ episodes }) => {
-      episodes.forEach((ep) => {
-        if (ep.languages) {
-          ep.languages.forEach((l) => foundLangs.add(l));
-        }
-      });
-    });
-
-    if (foundLangs.size > 0) {
-      const prevVal = languageSelect.value;
-      rebuildLanguageSelect(foundLangs);
-      if (Array.from(languageSelect.options).some(o => o.value === prevVal)) {
-        languageSelect.value = prevVal;
-      }
-    }
-
+  // Put seasons on screen, in order. Called with each run of seasons that has
+  // become complete from the front, so a season never lands above an earlier
+  // one that is still loading.
+  const paint = (batch) => {
     // Per-episode language lookup (keyed by URL) so the download flow can detect
     // episodes that lack the chosen language and offer a per-episode fallback.
-    window._epLangMap = {};
-    results.forEach(({ index, episodes }) => {
+    batch.forEach(({ index, episodes }) => {
       const season = seasons[index];
       episodes.forEach((ep) => {
         window._epLangMap[ep.url] = {
@@ -3005,7 +3219,7 @@ function buildAccordion(seasons, _seq) {
       });
     });
 
-    results.forEach(({ index, episodes }) => {
+    batch.forEach(({ index, episodes }) => {
       const season = seasons[index];
       const section = document.createElement("div");
       section.className = "season-section";
@@ -3033,7 +3247,7 @@ function buildAccordion(seasons, _seq) {
         header.className = "season-header";
         header.innerHTML =
           `<div class="season-label"><span class="season-arrow">&#9654;</span> ${esc(label)}${seasonDlIcon}</div>` +
-          `<label class="season-all-label" onclick="event.stopPropagation()"><input type="checkbox" class="chb-main" onchange="toggleSeasonAll(this, ${index})"> Alle</label>`;
+          `<label class="season-all-label" onclick="event.stopPropagation()"><input type="checkbox" class="chb-main" onchange="toggleSeasonAll(this, ${index})"> ${esc(t("Alle", "All"))}</label>`;
         header.addEventListener("click", () => toggleSeason(index));
       }
 
@@ -3058,7 +3272,7 @@ function buildAccordion(seasons, _seq) {
         });
         const title = ep.title_en || ep.title_de || "";
         const dlIcon = ep.downloaded
-          ? '<span class="ep-downloaded" title="Downloaded">&#10003;</span>'
+          ? `<span class="ep-downloaded" title="${esc(t("Heruntergeladen", "Downloaded"))}">&#10003;</span>`
           : "";
 
         let langsHtml = "";
@@ -3072,7 +3286,8 @@ function buildAccordion(seasons, _seq) {
         }
 
         const epNumHtml = isSingleMovie ? "" : `<span class="ep-num">E${ep.episode_number}</span>`;
-        const cb = `<input type="checkbox" class="chb-main" value="${esc(ep.url)}" data-season="${index}"${isSingleMovie ? " checked" : ""}>`;
+        // A season arriving after "select all" was ticked joins the selection.
+        const cb = `<input type="checkbox" class="chb-main" value="${esc(ep.url)}" data-season="${index}"${isSingleMovie || selectAllCb.checked ? " checked" : ""}>`;
         const streamBtn = `<button type="button" class="ep-stream-btn" title="${esc(t('Stream starten','Start stream'))}" aria-label="${esc(t('Stream starten','Start stream'))}"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>`;
         div.innerHTML = `${cb}${epNumHtml}${dlIcon}<span class="ep-title">${esc(title)}</span>${langsHtml}${streamBtn}`;
         const _sBtn = div.querySelector(".ep-stream-btn");
@@ -3093,6 +3308,32 @@ function buildAccordion(seasons, _seq) {
       section.appendChild(body);
       seasonAccordion.appendChild(section);
     });
+  };
+
+  // What needs the whole series: the languages it offers, the availability
+  // banner, where its files are, and the hoster list. Unchanged from when
+  // every season was painted at once.
+  const finish = () => {
+    _episodesLoadingSeq = 0;
+    episodeSpinner.style.display = "none";
+
+    // Find all languages actually present in the episodes
+    const foundLangs = new Set();
+    results.forEach(({ episodes }) => {
+      episodes.forEach((ep) => {
+        if (ep.languages) {
+          ep.languages.forEach((l) => foundLangs.add(l));
+        }
+      });
+    });
+
+    if (foundLangs.size > 0) {
+      const prevVal = languageSelect.value;
+      rebuildLanguageSelect(foundLangs);
+      if (Array.from(languageSelect.options).some(o => o.value === prevVal)) {
+        languageSelect.value = prevVal;
+      }
+    }
 
     // Language availability banner
     renderLangAvailBanner(results);
@@ -3102,9 +3343,41 @@ function buildAccordion(seasons, _seq) {
 
     // Fetch providers from first episode (updates dynamically with checked availability)
     if (firstProviderUrl) {
-      fetchProviders(firstProviderUrl);
+      fetchProviders(firstProviderUrl, _seq);
     }
-  });
+  };
+
+  let next = 0;                // next season to fetch
+  let active = 0;              // fetches running
+  const pump = () => {
+    while (active < _EPISODE_FETCH_LIMIT && next < seasons.length) {
+      const i = next++;
+      active++;
+      fetch("/api/episodes?url=" + encodeURIComponent(seasons[i].url))
+        .then((r) => r.json())
+        .then((data) => ({
+          index: i,
+          episodes: data.episodes || [],
+          locations: data.locations || [],
+        }))
+        .catch(() => ({ index: i, episodes: [], locations: [] }))
+        .then((result) => {
+          active--;
+          // A superseded title stops here: nothing is painted, and its
+          // remaining seasons are not fetched at all.
+          if (stale()) return;
+          results[i] = result;
+          const ready = [];
+          while (rendered < seasons.length && results[rendered]) ready.push(results[rendered++]);
+          paint(ready);
+          if (rendered === seasons.length) finish();
+          else pump();
+        });
+    }
+  };
+
+  if (seasons.length) pump();
+  else Promise.resolve().then(() => { if (!stale()) finish(); });
 }
 
 /* One flag per language label, used by BOTH the availability pills and the
@@ -3121,7 +3394,9 @@ const LANG_FLAG_SRC = {
 
 /** Identity of one storage location, for grouping across seasons. */
 function _locKey(loc) {
-  return (loc.root_label || "") + " " + (loc.folder || "");
+  // NUL as the separator: it cannot occur in either part. Written as an
+  // escape -- as a raw byte in this file it made git treat app.js as binary.
+  return (loc.root_label || "") + "\u0000" + (loc.folder || "");
 }
 
 /** "Anime NAS › Naruto (2002)" — the label every account gets to see.
@@ -3397,12 +3672,15 @@ function getSelectedEpisodeUrls() {
 // list in place instead -- usable, and the real cause (a module whose
 // provider_data the backend could not read) stays visible in the log rather
 // than showing up as a dead dropdown.
-async function fetchProviders(episodeUrl) {
+async function fetchProviders(episodeUrl, seq) {
   try {
     const resp = await fetch(
       "/api/providers?url=" + encodeURIComponent(episodeUrl),
     );
     const data = await resp.json();
+    // /api/providers can be slow (live checks for movies): an answer for the
+    // title opened before this one must not replace its hoster list.
+    if (seq !== undefined && seq !== _seriesLoadSeq) return;
     if (data.providers && Object.keys(data.providers).length) {
       availableProviders = data.providers;
       // For a site whose languages are not one of the two hardcoded sets,
@@ -3512,6 +3790,33 @@ function closeVeevCheck() {
   overlay.style.display = "none";
 }
 
+/** The message for a failed /api/veev/check answer, in the UI language.
+ *  The server's `error` text is German only; its `reason` code says which
+ *  case it is. For resolve_failed / check_failed the technical cause after the
+ *  colon is kept -- it is what a bug report needs. Unknown codes (an older or
+ *  newer server) fall back to the server's text. */
+function _veevCheckMessage(data) {
+  const error = String((data && data.error) || "");
+  const detail = error.replace(/^[^:]*:\s*/, "");
+  switch (data && data.reason) {
+    case "missing_url":
+      return t("Für die Veev-Prüfung fehlt die Episode.", "The Veev check did not receive an episode.");
+    case "unavailable":
+      return t("Dieser Film ist auf Veev momentan nicht verfügbar (kein Stream gefunden).",
+               "This movie is currently not available on Veev (no stream found).");
+    case "busy":
+      return t("Es laufen bereits Veev-Prüfungen, bitte gleich erneut versuchen.",
+               "Veev checks are already running, please try again in a moment.");
+    case "resolve_failed":
+      return t("Episode konnte nicht aufgelöst werden", "The episode could not be resolved") +
+        (detail ? ": " + detail : "");
+    case "check_failed":
+      return t("Veev-Prüfung fehlgeschlagen", "The Veev check failed") +
+        (detail ? ": " + detail : "");
+  }
+  return error || t("Dieser Film ist auf Veev momentan nicht verfügbar.", "This movie is currently not available on Veev.");
+}
+
 /**
  * Prüft ob eine Veev-Episode tatsächlich abrufbar ist.
  * Gibt true zurück wenn verfügbar, false wenn nicht (Fehler wird im Modal angezeigt).
@@ -3533,7 +3838,7 @@ async function veevCheckAvailability(episodeUrl) {
     document.getElementById("veevCheckSpinnerWrap").style.display = "none";
     document.getElementById("veevCheckText").style.display = "none";
     const errEl = document.getElementById("veevCheckError");
-    errEl.textContent = data.error || t("Dieser Film ist auf Veev momentan nicht verfügbar.", "This movie is currently not available on Veev.");
+    errEl.textContent = _veevCheckMessage(data);
     errEl.style.display = "block";
     document.getElementById("veevCheckCloseBtn").style.display = "inline-block";
     return false;
@@ -3541,7 +3846,9 @@ async function veevCheckAvailability(episodeUrl) {
     document.getElementById("veevCheckSpinnerWrap").style.display = "none";
     document.getElementById("veevCheckText").style.display = "none";
     const errEl = document.getElementById("veevCheckError");
-    errEl.textContent = t("Fehler bei der Verfügbarkeitsprüfung: ", "Error checking availability: " + e.message);
+    // The message belongs to both languages; the German text used to end
+    // after the colon.
+    errEl.textContent = t("Fehler bei der Verfügbarkeitsprüfung: ", "Error checking availability: ") + e.message;
     errEl.style.display = "block";
     document.getElementById("veevCheckCloseBtn").style.display = "inline-block";
     return false;
@@ -3615,6 +3922,13 @@ window.mfPlayerResolveNext = function (current) {
 };
 
 async function startDownload(all) {
+  // Seasons now appear as they arrive (buildAccordion). "All", or a selection
+  // made with "select all", means seasons that may not be on screen yet --
+  // queueing what happens to be there would silently leave the rest out.
+  if (_episodesStillLoading() && (all || selectAllCb.checked)) {
+    showToast(t("Die Episoden werden noch geladen …", "Episodes are still loading …"));
+    return;
+  }
   const episodes = all ? getAllEpisodeUrls() : getSelectedEpisodeUrls();
   if (!episodes.length) {
     showToast(all ? t("Keine Episoden verfügbar.", "No episodes available.") : t("Keine Episoden ausgewählt.", "No episodes selected."));
@@ -3843,6 +4157,9 @@ function closeModal() {
   overlay.style.display = "none";
   document.body.style.overflow = "";
   _currentSyncJob = null;
+  // A trailer that was playing kept playing in the hidden modal.
+  const _trailer = document.getElementById("modalTrailer");
+  if (_trailer) _trailer.innerHTML = "";
   // Drop the multi-language selection with the modal: the next title has its
   // own set of languages, and carrying three ticks over into it would queue
   // tracks nobody asked for.
@@ -3975,9 +4292,13 @@ function openAutoSyncConfig() {
         } catch (e) {
           /* ignore */
         }
+        // The whole job, not a {series_url} stub: the title-matched badges
+        // (addSyncBadgeForTmdb on the Advanced Search, mfCardOnAutoSync) need
+        // its title, and only appeared after the next /api/autosync reload.
         if (_currentSyncJob && typeof autoSyncUrlMap === "object")
-          autoSyncUrlMap[_key] = { series_url: currentSeriesUrl };
+          autoSyncUrlMap[_key] = _currentSyncJob;
       }
+      _syncAutoSyncTitles();
       _updateSyncConfigBtn();
       if (typeof refreshSyncBadges === "function") refreshSyncBadges();
     },
@@ -4071,6 +4392,27 @@ function _makeProviderPill(name, opts) {
   return pill;
 }
 
+// One Crunchyroll / Fernsehserien.de answer per title and page load. The card
+// provider chain runs again on every re-render (each home-feed row response,
+// filter clicks, the settings re-enrich) and asked the server again each time.
+// title -> Promise<answer|null>; a request that failed is forgotten again.
+const _crAvailMemo = new Map();
+const _fsAvailMemo = new Map();
+
+function _availabilityFor(memo, path, title) {
+  let answer = memo.get(title);
+  if (!answer) {
+    answer = fetch(path + encodeURIComponent(title).replace(/'/g, "%27"), { priority: "low" })
+      .then((r) => r.json())
+      .catch(() => {
+        memo.delete(title);
+        return null;
+      });
+    memo.set(title, answer);
+  }
+  return answer;
+}
+
 // Add a "Crunchyroll" provider pill to a container if the title is on
 // Crunchyroll. Gated on the frontend flag so no request fires when the
 // integration is off. Works for fresh simulcasts TMDB doesn't list yet.
@@ -4084,9 +4426,7 @@ async function _crProviderPill(title, containerEl, opts) {
   if (crunchyrollSettings.show_providers === '0') return false;
   if (!title || !containerEl) return false;
   try {
-    const resp = await fetch('/api/crunchyroll/availability?title=' +
-      encodeURIComponent(title).replace(/'/g, "%27"), { priority: "low" });
-    const cd = await resp.json();
+    const cd = await _availabilityFor(_crAvailMemo, '/api/crunchyroll/availability?title=', title);
     if (!cd || !cd.available) return false;
     const already = Array.from(containerEl.querySelectorAll('span')).some(
       el => /crunchyroll/i.test(el.textContent || ''));
@@ -4118,9 +4458,16 @@ async function _crProviderPill(title, containerEl, opts) {
 const _fsQueue = [];
 let _fsQueueRunning = false;
 
-function _enqueueFsLookup(title, containerEl, opts) {
+// `urgent` (the detail modal, which the user is looking at) goes to the head of
+// the queue instead of waiting behind every card on the page.
+function _enqueueFsLookup(title, containerEl, opts, urgent) {
+  // Asked already this page load: there is no request to pace, so no place in
+  // the queue either.
+  if (_fsAvailMemo.has(title)) return _fsProviderPill(title, containerEl, opts);
   return new Promise((resolve) => {
-    _fsQueue.push({ title, containerEl, opts, resolve });
+    const job = { title, containerEl, opts, resolve };
+    if (urgent) _fsQueue.unshift(job);
+    else _fsQueue.push(job);
     _runFsQueue();
   });
 }
@@ -4128,8 +4475,17 @@ function _enqueueFsLookup(title, containerEl, opts) {
 async function _runFsQueue() {
   if (_fsQueueRunning) return;
   _fsQueueRunning = true;
+  // One microtask first: a card is often built detached and inserted by the
+  // same code that queued its lookup, and the check below must see it placed.
+  await null;
   while (_fsQueue.length) {
     const job = _fsQueue.shift();
+    // Its card was re-rendered or removed while it waited. At ~1.5 s per
+    // lookup, a backlog of such jobs held up every live one, the modal's too.
+    if (job.containerEl && !job.containerEl.isConnected) {
+      job.resolve(false);
+      continue;
+    }
     let added = false;
     try {
       added = await _fsProviderPill(job.title, job.containerEl, job.opts);
@@ -4156,9 +4512,7 @@ async function _fsProviderPill(title, containerEl, opts) {
   if (fernsehserienSettings.show_providers === '0') return false;
   if (!title || !containerEl) return false;
   try {
-    const resp = await fetch('/api/fernsehserien/availability?title=' +
-      encodeURIComponent(title).replace(/'/g, "%27"), { priority: "low" });
-    const fd = await resp.json();
+    const fd = await _availabilityFor(_fsAvailMemo, '/api/fernsehserien/availability?title=', title);
     if (!fd || !fd.available || !fd.provider) return false;
     const already = Array.from(containerEl.querySelectorAll('span')).some(
       el => el.textContent === fd.provider);
@@ -4388,7 +4742,7 @@ async function _modalProviderChain(title, provEl, d, imdbId, staleFn) {
     } else if (id === "crunchyroll") {
       added = await _crProviderPill((d && d.title) || title, provEl);
     } else if (id === "fernsehserien") {
-      added = await _enqueueFsLookup((d && d.title) || title, provEl);
+      added = await _enqueueFsLookup((d && d.title) || title, provEl, undefined, true);
     } else if (id.startsWith("ext:")) {
       added = await _extensionProviderPill((d && d.title) || title, provEl, {
         imdbId: imdbId || (d && d.imdb_id),
@@ -4470,6 +4824,29 @@ function _mfSetBackdrop(path) {
   img.src = url;
 }
 
+// The trailer player is created when its section is opened, not on every
+// modal open. Inside the collapsed section it still loaded YouTube's player
+// (about 1 MB, and the only contact with youtube.com this app makes) for every
+// title opened, whether or not anybody watched the trailer.
+function _mfMountTrailer() {
+  const el = document.getElementById("modalTrailer");
+  if (!el || el.querySelector("iframe")) return;
+  const key = el.dataset.key || "";
+  if (!/^[A-Za-z0-9_-]{5,20}$/.test(key)) return;
+  el.innerHTML = `<iframe src="https://www.youtube.com/embed/${key}" allowfullscreen></iframe>`;
+}
+
+(function () {
+  const section = document.getElementById("trailerSection");
+  const header = section && section.querySelector(".season-header");
+  if (!header) return;
+  // Runs after the header's inline onclick (shared_modals.html), which has
+  // just toggled "expanded".
+  header.addEventListener("click", () => {
+    if (header.classList.contains("expanded")) _mfMountTrailer();
+  });
+})();
+
 async function enrichModalWithTmdb(title, imdbId, _seq) {
   const provEl = document.getElementById('tmdbProviders');
   if (!provEl) return;
@@ -4490,11 +4867,8 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
     const resp = await fetch(tmdbUrl);
     const d = await resp.json();
     if (_stale()) return;
-    console.log("[CineInfo] Full Modal Data for", title, ":", d);
-    console.log("[CineInfo] Settings Debug - General:", generalSettings, "CineInfo:", cineinfoSettings);
-    const sTrailer = cineinfoSettings?.show_trailer ?? "1";
-    const sRecs = cineinfoSettings?.show_recommendations ?? "1";
-    console.log("[CineInfo] Final Checks - show_trailer:", sTrailer, "show_recs:", sRecs);
+    // No debug dumps here: they printed the whole settings blob on every
+    // modal open, API keys included when it came from /api/settings.
     if (!d.found) {
       // No TMDB data at all — the chain skips TMDB and runs the rest of the
       // configured order (Crunchyroll, Fernsehserien.de, module pills).
@@ -4614,11 +4988,16 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
       // merely escaped -- anything else is not a video id anyway.
       const trailerKey = /^[A-Za-z0-9_-]{5,20}$/.test(String(d.trailer_key || ''))
         ? String(d.trailer_key) : '';
+      trailerEl.innerHTML = '';
       if (showT && trailerKey) {
-        trailerEl.innerHTML = `<iframe src="https://www.youtube.com/embed/${trailerKey}" allowfullscreen></iframe>`;
+        // The player itself is only created when the section is opened
+        // (_mfMountTrailer).
+        trailerEl.dataset.key = trailerKey;
         trailerSection.style.display = 'block';
+        const body = trailerSection.querySelector('.season-body');
+        if (body && body.classList.contains('expanded')) _mfMountTrailer();
       } else {
-        trailerEl.innerHTML = '';
+        delete trailerEl.dataset.key;
         trailerSection.style.display = 'none';
       }
     }
@@ -4629,12 +5008,15 @@ async function enrichModalWithTmdb(title, imdbId, _seq) {
       const showR = (cineinfoSettings?.show_recommendations !== '0');
       if (showR && d.recommendations && d.recommendations.length) {
         recSection.style.display = 'block';
+        // The posters are lazy: the section stays collapsed (display:none)
+        // until it is opened, and lazy images are not fetched before that --
+        // it was up to ~20 poster requests on every modal open.
         let html = '<div class="recommendations-grid">';
         d.recommendations.forEach(r => {
           const poster = r.poster_path ? `https://image.tmdb.org/t/p/w185${r.poster_path}` : '';
           html += `
             <div class="rec-card" data-title="${esc(r.title)}" onclick="searchForTitle(this.dataset.title)">
-              <img class="rec-poster" src="${proxyImg(poster)}" alt="">
+              <img class="rec-poster" src="${proxyImg(poster)}" alt="" loading="lazy" decoding="async">
               <div class="rec-title" title="${esc(r.title)}">${esc(r.title)}</div>
             </div>
           `;
@@ -4700,8 +5082,12 @@ let defaultSyncLanguage = "German Dub";
 
 async function checkLangSeparation() {
   try {
-    const resp = await fetch("/api/settings");
-    const data = await resp.json();
+    // From the settings loadGeneralSettings() holds for the page instead of a
+    // fresh /api/settings read on every modal open. That read ran before the
+    // series and season requests could start, and it is admin-only, so every
+    // other account got a 403 and never saw language groups or "All
+    // Languages". A change made in another tab applies after a reload.
+    const data = (await loadGeneralSettings()) || {};
     langSeparationEnabled = data.lang_separation === "1";
     // Language fallback groups are offered alongside the plain languages in
     // every language dropdown (see rebuildLanguageSelect).
@@ -4719,6 +5105,11 @@ async function checkLangSeparation() {
 }
 
 async function startDownloadAllLangs() {
+  // Every episode of every season: wait until all seasons are there.
+  if (_episodesStillLoading()) {
+    showToast(t("Die Episoden werden noch geladen …", "Episodes are still loading …"));
+    return;
+  }
   const episodes = getAllEpisodeUrls();
   if (!episodes.length) {
     showToast(t("Keine Episoden verfügbar.", "No episodes available."));
@@ -4817,7 +5208,7 @@ async function toggleFavourite() {
       btn.textContent = "♡";
       btn.style.color = "var(--text-secondary)";
       btn.dataset.isFav = "0";
-      showToast("Aus Favoriten entfernt");
+      showToast(t("Aus Favoriten entfernt", "Removed from favorites"));
     } else {
       // Send metadata so the favourites page can badge & group by type,
       // source and language. media_type is derived from is_movie; language is
@@ -4851,7 +5242,9 @@ window.openSeriesModal = function (url, title) {
   openSeries(url);
 };
 
-// Pre-load autosync map on page start so search results also get badges
+// Pre-load autosync map on page start so search results also get badges.
+// Page scripts that ask again (advanced_search.js's init, the home feed) share
+// this request -- see _LIB_INDEX_TTL_MS.
 loadAutoSyncJobs();
 loadCineinfoSettings();
 loadGeneralSettings();
@@ -5437,7 +5830,9 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
 
     let allPromises = [];
     searchTitles.forEach(kw => {
-      _sources.forEach(src => allPromises.push(searchSite(src.id, kw)));
+      // Each hit carries the source that found it, for its label below.
+      _sources.forEach(src => allPromises.push(searchSite(src.id, kw).then(arr =>
+        (Array.isArray(arr) ? arr : []).map(r => Object.assign({}, r, { _mfSource: src })))));
     });
 
     let displayTitle = primaryCleaned;
@@ -5491,12 +5886,16 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
       if (r.url.includes('s.to') || r.url.includes('serienstream.to')) provClass = 'prov-sto';
       if (r.url.includes('filmpalast.to')) provClass = 'prov-fp';
       if (r.url.includes('megakino')) provClass = 'prov-mk';
+      // The label of the source that returned the hit. Everything that was not
+      // AniWorld, S.to or MegaKino used to say "FilmPalast", although filmo,
+      // 9anime, Aniwaves and module sources are asked here too.
+      const srcLabel = r._mfSource ? (r._mfSource.label || r._mfSource.id || '') : '';
 
       card.innerHTML = `
         <img src="" loading="lazy" alt="Cover" style="width:100%;aspect-ratio:2/3;object-fit:cover;background:var(--bg-elevated);display:block" />
         <div class="browse-info">
           <div class="browse-title" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</div>
-          <div class="browse-provider ${provClass}">${provClass === 'prov-ani' ? 'AniWorld' : provClass === 'prov-sto' ? 'S.to' : provClass === 'prov-mk' ? 'MegaKino' : 'FilmPalast'}</div>
+          <div class="browse-provider ${provClass}">${escapeHtml(srcLabel)}</div>
         </div>
       `;
 
@@ -5510,8 +5909,11 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
 
       grid.appendChild(card);
 
-      // Always fetch poster from the source site (like the normal search does)
-      advLoadPoster(r.url, card.querySelector('img'));
+      // Same as the main search (buildSourceSection): the poster the answer
+      // carries, otherwise a lazy, rate-limited lookup (loadPoster).
+      const img = card.querySelector('img');
+      if (r.poster_url) _showPoster(img, r.poster_url);
+      else loadPoster(r.url, img);
     };
 
     // Every answer is painted as it arrives instead of after Promise.all.
@@ -5543,31 +5945,10 @@ async function runAniSearch(primaryTitle, tmdbId, type, posterPath, presetLocali
   }
 }
 
-async function advLoadPoster(url, imgEl) {
-  try {
-    const resp = await fetch("/api/series?url=" + encodeURIComponent(url));
-    const data = await resp.json();
-    if (data.poster_url) {
-      imgEl.src = (typeof proxyImg === 'function' ? proxyImg(data.poster_url) : data.poster_url);
-      imgEl.onload = () => {
-        const card = imgEl.closest('.browse-card');
-        if (card) card.classList.add('loaded');
-      };
-      imgEl.onerror = () => {
-        const card = imgEl.closest('.browse-card');
-        if (card) card.classList.add('loaded');
-        imgEl.style.display = 'none';
-      };
-    } else {
-      const card = imgEl.closest('.browse-card');
-      if (card) card.classList.add('loaded');
-      imgEl.style.display = 'none';
-    }
-  } catch (e) {
-    const card = imgEl.closest('.browse-card');
-    if (card) card.classList.add('loaded');
-    imgEl.style.display = 'none';
-  }
+// Kept for anything that still calls it: the same lookup as loadPoster(), which
+// it duplicated (an immediate /api/series scrape per card).
+function advLoadPoster(url, imgEl) {
+  loadPoster(url, imgEl);
 }
 
 function escapeHtml(unsafe) {

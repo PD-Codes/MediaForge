@@ -20,6 +20,7 @@ from ..devinfos_monitor import request_immediate_refresh
 from ..markdown_utils import render_markdown
 from flask import jsonify
 from flask import render_template
+from flask import request
 
 
 def _format_devinfo_timestamp(raw):
@@ -119,7 +120,13 @@ def register_devinfos_routes(app):
         ``is_read`` flag for the page's per-post "mark as read" button.
 
         Route: GET /api/devinfos/status.
+
+        ``?posts=0`` returns the count alone. The sidebar badge polls this on
+        every page every 60 s and only ever read the count, while each call
+        also rendered every post's Markdown and shipped all of it.
         """
+        if request.args.get("posts") == "0":
+            return jsonify({"count": get_devinfo_count()})
         return jsonify({
             "count": get_devinfo_count(),
             "posts": _posts_with_rendered_html(),

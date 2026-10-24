@@ -23,6 +23,11 @@
   var PLUS_ICON  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
   var MINUS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>';
 
+  // base.html defines t() in an inline script before this file, and the
+  // buttons are only built from DOMContentLoaded on. Guarded anyway, like the
+  // other global scripts, so a page without it still gets English labels.
+  function tt(de, en) { return (typeof t === "function") ? t(de, en) : en; }
+
   function fireChange(input) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -71,8 +76,8 @@
 
     input.parentNode.insertBefore(wrap, input);
 
-    var minusBtn = makeButton("num-step-down", MINUS_ICON, "Decrease");
-    var plusBtn  = makeButton("num-step-up", PLUS_ICON, "Increase");
+    var minusBtn = makeButton("num-step-down", MINUS_ICON, tt("Verringern", "Decrease"));
+    var plusBtn  = makeButton("num-step-up", PLUS_ICON, tt("Erhöhen", "Increase"));
 
     wrap.appendChild(minusBtn);
     wrap.appendChild(input);

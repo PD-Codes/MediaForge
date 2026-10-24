@@ -40,6 +40,10 @@ _active_cancel_events: dict = {}
 _active_cancel_events_lock = threading.Lock()
 
 
+# {extractor function: implemented?} -- see _get_working_providers().
+_PROBE_RESULTS: dict = {}
+
+
 def _get_working_providers():
     """Return only providers whose extractors are actually implemented.
 
@@ -89,11 +93,26 @@ def _get_working_providers():
             func_name = f"get_direct_link_from_{p.lower()}"
             if func_name not in provider_functions:
                 continue
-            try:
-                provider_functions[func_name]("")
-            except NotImplementedError:
-                continue
-            except Exception:
+            func = provider_functions[func_name]
+            # Memoised per function object: refresh_working_providers() runs
+            # again for every hoster a module registers or unregisters, and
+            # re-probing every built-in each time made a module install wait
+            # for all of them again. A re-registered hoster is a new function
+            # object, so it is still probed.
+            implemented = _PROBE_RESULTS.get(func)
+            if implemented is None:
+                try:
+                    func("")
+                    implemented = False  # returned on "" -- not a usable extractor
+                except NotImplementedError:
+                    implemented = False
+                except Exception:
+                    implemented = True
+                try:
+                    _PROBE_RESULTS[func] = implemented
+                except TypeError:
+                    pass  # unhashable callable: just probe it again next time
+            if implemented:
                 working.append(p)
     finally:
         for _t in _targets:

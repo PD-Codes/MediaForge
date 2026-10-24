@@ -55,6 +55,17 @@ var _libCoverPoll  = null;
 // its cached miss.
 var _libCoverBust  = 0;
 
+// One collator for every sort on this shelf. localeCompare() with a locale and
+// options builds a new ICU collator on EVERY comparison -- 5,000 series took
+// ~370 ms to sort that way and ~7 ms with this, and the shelf sorts on every
+// render (search keystroke, page change, idle refresh). Same ordering.
+var _libComicCollator = new Intl.Collator("de", { sensitivity: "base" });
+
+// The series list the shelf was last painted from (all pages, sorted), so a
+// click resolves to the card that was actually on screen -- see
+// libToggleSeries().
+var _libPaintedComics = [];
+
 // ---- Data ----
 
 function libFlattenComics(locations) {
@@ -99,7 +110,7 @@ function libSortIssues(items) {
       // newest-first is what people actually want from a flat list.
       v = (a.issue.added_at || 0) - (b.issue.added_at || 0);
     } else {
-      var s = (a.series.sort_series || "").localeCompare(b.series.sort_series || "", "de", { sensitivity: "base" });
+      var s = _libComicCollator.compare(a.series.sort_series || "", b.series.sort_series || "");
       if (s !== 0) { v = s; }
       else {
         // Inside one series, reading order beats alphabetical: "10" after "9".
@@ -177,8 +188,8 @@ function libSortComics(items) {
     } else if (libSortKey === "issues") {
       v = (a.series.issue_count || 0) - (b.series.issue_count || 0);
     } else {
-      v = (a.series.sort_series || a.series.series || "")
-            .localeCompare(b.series.sort_series || b.series.series || "", "de", { sensitivity: "base" });
+      v = _libComicCollator.compare(a.series.sort_series || a.series.series || "",
+                                    b.series.sort_series || b.series.series || "");
     }
     return libSortAsc ? v : -v;
   });
@@ -416,6 +427,7 @@ function libPaintComics(items) {
   var listEl = document.getElementById("libListView");
   var emptyEl = document.getElementById("libEmptyState");
   if (!gridEl || !listEl) return;
+  _libPaintedComics = items;
 
   if (!items.length) {
     gridEl.hidden = true;
@@ -787,12 +799,12 @@ function libCardKey(ev, pfx) {
 function libToggleSeries(pfx) {
   var el = document.getElementById(pfx);
   if (!el) return;
-  var items = libSortComics(libFilterComics(libFlattenComics(libLocations)).filter(function (it) {
-    if (!libSearchQuery) return true;
-    return libSeriesMatchesQuery(it.series, libSearchQuery.toLowerCase());
-  }));
+  // Resolved against the list the cards were painted from. Rebuilding it here
+  // filtered and sorted the whole shelf a second time per click (the repaint
+  // below does it once more), and a search typed since the last paint could
+  // map the index to a series that was not on screen.
   var idx = parseInt(pfx.replace("libComic", ""), 10);
-  var item = items[libPage * libPerPage + idx];
+  var item = _libPaintedComics[libPage * libPerPage + idx];
   if (!item) return;
   _libOpenSeriesKey = (_libOpenSeriesKey === item.series.key) ? null : item.series.key;
   libRenderComics();

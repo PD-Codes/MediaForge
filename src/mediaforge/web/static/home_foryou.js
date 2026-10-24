@@ -101,11 +101,10 @@
     // reverse the layers, so layer n stopped matching heroes[n].
     const anchor = hero.firstChild;
     heroes.forEach(function (item, i) {
+      // No backdrop yet: show() gives one to the slide it shows and the one
+      // after it (see paintLayer).
       const layer = document.createElement("div");
       layer.className = "fy-bd";
-      if (item.backdrop_url) {
-        layer.style.backgroundImage = "url(" + JSON.stringify(item.backdrop_url) + ")";
-      }
       hero.insertBefore(layer, anchor);
 
       const dot = document.createElement("button");
@@ -130,12 +129,28 @@
     return "";
   }
 
+  /** Give layer i its backdrop, once. Every backdrop is a w1280 image of
+      150-350 KB, and setting all five up front downloaded them on every home
+      load although the later ones show up 14-28 s later or never. */
+  function paintLayer(layers, i) {
+    const n = ((i % heroes.length) + heroes.length) % heroes.length;
+    const layer = layers[n];
+    const url = heroes[n] && heroes[n].backdrop_url;
+    if (!layer || !url || layer.style.backgroundImage) return;
+    layer.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+  }
+
   function show(i) {
     if (!heroes.length) return;
     at = ((i % heroes.length) + heroes.length) % heroes.length;
     const item = heroes[at];
 
-    hero.querySelectorAll(".fy-bd").forEach(function (el, n) {
+    const layers = hero.querySelectorAll(".fy-bd");
+    // The slide shown now and the next one, which then has a whole rotation
+    // (7 s) to load before it fades in.
+    paintLayer(layers, at);
+    paintLayer(layers, at + 1);
+    layers.forEach(function (el, n) {
       el.classList.toggle("is-on", n === at);
     });
     Array.prototype.forEach.call(dots.children, function (el, n) {

@@ -250,6 +250,14 @@
     } catch (e) { /* badges are a nicety, never a blocker */ }
   }
 
+  // Shared collators for the merged sort. localeCompare(b, locale, options)
+  // builds a new Intl.Collator on every call, which over ~13k titles froze the
+  // page for about a second per load. Same locale and options as the calls
+  // they replace (title: default locale, base sensitivity; source: defaults),
+  // so the order is unchanged.
+  const titleCollator = new Intl.Collator(undefined, { sensitivity: "base" });
+  const sourceCollator = new Intl.Collator();
+
   /** Fetch every enabled catalogue and merge them into one sorted list. */
   async function loadAll(force) {
     entries = [];
@@ -285,8 +293,8 @@
     // Sorted by title, then by source, so the two rows of a title both sites
     // carry sit next to each other instead of ~6000 apart.
     merged.sort((a, b) => {
-      const cmp = a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
-      return cmp !== 0 ? cmp : a.source.localeCompare(b.source);
+      const cmp = titleCollator.compare(a.title, b.title);
+      return cmp !== 0 ? cmp : sourceCollator.compare(a.source, b.source);
     });
     entries = combineByTmdbId(merged);
     pruneStoredState();
@@ -1633,9 +1641,12 @@
       const data = await resp.json();
       const busy = renderStatus(data);
       if (busy && !statusPoll) {
-        statusPoll = setInterval(pollStatus, 3000);
+        // mfPoll, not setInterval: paused while the tab is hidden. The ID
+        // backfill reports here for an hour or more, and a background tab
+        // used to poll all that time (static/mf_poll.js).
+        statusPoll = window.mfPoll(pollStatus, 3000);
       } else if (!busy && statusPoll) {
-        clearInterval(statusPoll);
+        window.mfPollStop(statusPoll);
         statusPoll = null;
         // A refresh that just finished replaced the rows underneath us.
         loadAll(false);
@@ -1766,16 +1777,24 @@
       fetch("/api/catalogue/bulk/" + encodeURIComponent(jobId) + "/cancel", { method: "POST" });
     };
 
-    if (jobPoll) clearInterval(jobPoll);
+    if (jobPoll) window.mfPollStop(jobPoll);
+    let poll = null;
+    const stop = () => {
+      window.mfPollStop(poll);
+      if (jobPoll === poll) jobPoll = null;
+    };
     const tick = async () => {
       try {
         const resp = await fetch("/api/catalogue/bulk/" + encodeURIComponent(jobId));
-        if (!resp.ok) { clearInterval(jobPoll); jobPoll = null; return; }
-        const job = await resp.json();
+        const job = resp.ok ? await resp.json() : null;
+        // A newer watchJob() took over (or this one already stopped) while the
+        // request was out: its answer must neither repaint the card nor stop
+        // the poll that is watching the new job.
+        if (poll !== jobPoll) return;
+        if (!job) { stop(); return; }
         renderJob(job);
         if (job.status !== "running") {
-          clearInterval(jobPoll);
-          jobPoll = null;
+          stop();
           el("catJobCancel").style.display = "none";
           // Badges are stale now -- and with a status chip off they decide
           // which rows exist, so this is applyFilter(), not render().
@@ -1783,7 +1802,9 @@
         }
       } catch (e) { /* transient — the next tick tries again */ }
     };
-    jobPoll = setInterval(tick, 1500);
+    // mfPoll, not setInterval: paused while the tab is hidden, and on return
+    // it ticks at once if one is due (static/mf_poll.js).
+    poll = jobPoll = window.mfPoll(tick, 1500);
     tick();
   }
 

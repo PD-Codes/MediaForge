@@ -5,6 +5,8 @@ former single 6939-line ``db.py`` was split up and how the public API stayed
 byte-for-byte identical.
 """
 
+import threading
+
 from ...logger import get_logger
 
 from ._core import get_db
@@ -172,6 +174,77 @@ def get_all_library_cache():
         }
     finally:
         conn.close()
+
+
+# get_all_library_cache_shared(): the parsed listing of every row, kept for as
+# long as no row changes. See that function.
+_SHARED_LISTING = {"fp": None, "data": {}}
+_SHARED_LISTING_LOCK = threading.Lock()
+
+
+def get_all_library_cache_shared():
+    """get_all_library_cache(), parsed once per change instead of per call.
+
+    The listing is a JSON blob per scan target -- several MB on a large
+    library, 40-130 ms per json.loads on a fast CPU and several times that on
+    a NAS. It was parsed again by every reader: the home feed, the
+    recommendation rows, the home panels (polled every 20 s), the calendar,
+    the library hub, /api/library ... three to five times per home page load.
+
+    The fingerprint is (path_key, scanned_at, length(data)) of every row,
+    read in the same snapshot as the data. Every write goes through
+    set_library_cache(), which always stores a new scanned_at, so the
+    fingerprint changes with every scan -- also when the scan ran in the
+    separate worker-host process.
+
+    READ-ONLY: the "data" objects are shared between all callers and
+    threads. Copy before changing anything (dict(data, titles=...) like
+    /api/library's _slim() does). Callers that modify the listing use
+    get_all_library_cache(), which still hands out a private copy.
+    """
+    import json as _json
+    conn = get_db()
+    try:
+        # One read transaction: the fingerprint and the data come from the
+        # same snapshot, so a scan finishing in between cannot be cached
+        # under the previous fingerprint. Inside a request this is the shared
+        # per-request connection: if the caller already has a transaction
+        # open, run inside it and leave it alone (a rollback here would throw
+        # away the caller's uncommitted writes).
+        own_txn = not conn.in_transaction
+        if own_txn:
+            conn.execute("BEGIN")
+        try:
+            rows = conn.execute(
+                "SELECT path_key, scanned_at, is_scanning, length(data) AS data_len "
+                "FROM library_cache"
+            ).fetchall()
+            fp = tuple(sorted((r["path_key"], r["scanned_at"], r["data_len"]) for r in rows))
+            with _SHARED_LISTING_LOCK:
+                data = _SHARED_LISTING["data"] if fp == _SHARED_LISTING["fp"] else None
+            if data is None:
+                data = {
+                    r["path_key"]: _json.loads(r["data"])
+                    for r in conn.execute("SELECT path_key, data FROM library_cache").fetchall()
+                }
+                with _SHARED_LISTING_LOCK:
+                    _SHARED_LISTING["fp"] = fp
+                    _SHARED_LISTING["data"] = data
+        finally:
+            if own_txn:
+                conn.rollback()
+    finally:
+        conn.close()
+    # Fresh outer dicts per call: is_scanning changes without a new
+    # scanned_at, and a caller may annotate its own copy of these.
+    return {
+        r["path_key"]: {
+            "data": data.get(r["path_key"], []),
+            "scanned_at": r["scanned_at"],
+            "is_scanning": bool(r["is_scanning"]),
+        }
+        for r in rows
+    }
 
 
 def get_library_cache_status():

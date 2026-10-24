@@ -369,12 +369,37 @@
       S._scanning = !!d.is_scanning;
       S.library = _flattenLibrary(d);
       _renderPicker();
-      // Large libraries scan in the background — keep refreshing while open.
-      if (S._scanning && $('spPicker') && !$('spPicker').hidden) {
-        S._libTimer = setTimeout(function () { S.library = null; _loadLibrary(); }, 3000);
-      }
+      // Large libraries scan in the background — keep watching while open.
+      if (S._scanning && _pickerOpen()) _scheduleScanPoll();
     }).catch(function () { toast(tt('Mediathek konnte nicht geladen werden', 'Could not load library')); });
   }
+
+  // While a scan runs, ask the small status endpoint every 3 s instead of
+  // downloading the whole listing (several MB on a large library) every 3 s.
+  // The listing is fetched again only when a location has been written
+  // (last_updated moved -- a multi-location scan still fills the picker
+  // location by location, as before) and once the scan is over.
+  function _pickerOpen() { return !!($('spPicker') && !$('spPicker').hidden); }
+  function _scheduleScanPoll() {
+    if (S._libTimer) clearTimeout(S._libTimer);
+    S._libTimer = setTimeout(_pollScan, 3000);
+  }
+  function _pollScan() {
+    S._libTimer = null;
+    if (!_pickerOpen()) return;
+    fetch('/api/library/status?kind=video').then(function (r) { return r.json(); }).then(function (st) {
+      if (!_pickerOpen()) return;
+      var stamp = st.last_updated || 0;
+      var moved = S._libStamp !== undefined && stamp !== S._libStamp;
+      S._libStamp = stamp;
+      if (!st.is_scanning || moved) { _loadLibrary(); return; }
+      _scheduleScanPoll();
+    }).catch(function () { if (_pickerOpen()) _scheduleScanPoll(); });
+  }
+
+  // One collator for the whole sort: localeCompare() with a locale and options
+  // builds a new ICU collator on every comparison (~50x slower on big lists).
+  var _titleCollator = new Intl.Collator('de', { sensitivity: 'base' });
 
   function _flattenLibrary(d) {
     var out = [];
@@ -396,7 +421,7 @@
         if (eps.length) out.push({ title: it.folder || '', is_movie: !!it.is_movie, episodes: eps });
       });
     });
-    out.sort(function (a, b) { return a.title.localeCompare(b.title, 'de', { sensitivity: 'base' }); });
+    out.sort(function (a, b) { return _titleCollator.compare(a.title, b.title); });
     return out;
   }
 
@@ -435,7 +460,13 @@
       grid.appendChild(div);
     });
   }
-  S.filterPicker = _renderPicker;
+  // Debounced like the library search: every keystroke rebuilt the whole
+  // picker, one element per library title. _renderPicker reads the field
+  // itself, so the last value typed is the one that counts.
+  S.filterPicker = function () {
+    if (S._filterTimer) clearTimeout(S._filterTimer);
+    S._filterTimer = setTimeout(function () { S._filterTimer = null; _renderPicker(); }, 200);
+  };
 
   // Episode chooser for a series (rendered into the same grid; back returns).
   function _renderEpisodes(item) {
@@ -470,8 +501,9 @@
   // ── Room directory (lobby) ──────────────────────────────
   function _startRoomsPoll() {
     _loadRooms();
-    if (S._roomsTimer) clearInterval(S._roomsTimer);
-    S._roomsTimer = setInterval(function () { if (!S.token) _loadRooms(); }, 4000);
+    // mfPoll: the lobby list is only worth fetching while someone looks at it.
+    if (S._roomsTimer) window.mfPollStop(S._roomsTimer);
+    S._roomsTimer = window.mfPoll(function () { if (!S.token) _loadRooms(); }, 4000);
   }
   function _loadRooms() {
     fetch('/api/syncplay/rooms').then(function (r) { return r.json(); }).then(function (d) { _renderRooms(d.rooms || []); }).catch(function () {});
@@ -644,12 +676,32 @@
     finally { setTimeout(function () { S.suppress = false; }, 400); }
   }
 
-  function _reportLoop() { _report(false); }
+  // Every second only while the room depends on it: our player is embedded
+  // and running (playing, or stalled while playing), the room's media changed
+  // since the last report (the "different episode" badge), or the last report
+  // said "buffering" (the room may be gated on us until the next one clears
+  // it). Otherwise a report is just a keepalive -- the server drops a member
+  // after 30 s of silence (MEMBER_TIMEOUT in syncplay_rooms.py) -- and one
+  // every 10 s is plenty. This used to post once a second from joining to
+  // leaving, with the player closed too.
+  var REPORT_IDLE_MS = 10000;
+  function _reportLoop() {
+    var st = window.playerGetMediaState ? window.playerGetMediaState() : null;
+    var running = !!(st && !st.paused && _isWatching());
+    var file = S.media ? S.media.file : null;
+    if (!running && !S.lastReportBuffering && file === S.lastReportFile &&
+        Date.now() - (S.lastReportAt || 0) < REPORT_IDLE_MS) return;
+    _report(false);
+  }
   function _report(buffering) {
     if (!S.token) return;
     var st = window.playerGetMediaState ? window.playerGetMediaState() : null;
     if (!st) return;
-    post('/api/syncplay/report', { token: S.token, position: st.position, paused: st.paused, buffering: !!buffering, file: S.media ? S.media.file : null });
+    var file = S.media ? S.media.file : null;
+    S.lastReportAt = Date.now();
+    S.lastReportBuffering = !!buffering;
+    S.lastReportFile = file;
+    post('/api/syncplay/report', { token: S.token, position: st.position, paused: st.paused, buffering: !!buffering, file: file });
   }
 
   // ── Auto-next episode (host drives, synced countdown) ───

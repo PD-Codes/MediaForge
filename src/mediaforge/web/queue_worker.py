@@ -266,36 +266,56 @@ def _parse_season_episode_from_url(ep_url: str):
     return None, None
 
 
-def _is_job_adaptive_paused(job) -> bool:
+def adaptive_pause_config() -> dict:
+    """The three settings _is_job_adaptive_paused() needs, read once.
+
+    A job list used to read them again for every job -- 900 SQL statements
+    for 300 jobs, on a list the home page fetched several times per load.
+    Callers annotating a whole list read this once and pass it in.
+    """
+    import os
+    from .runtime_state import SYNC_ADAPTIVE_PAUSE_MAP
+
+    enabled = (get_setting("sync_adaptive_enabled")
+               or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_ENABLED", "0")) == "1"
+    # Adaptive pause only applies in interval mode (weekly runs on fixed slots).
+    weekly = (os.environ.get("MEDIAFORGE_SYNC_MODE", "interval") or "interval").lower() == "weekly"
+    cfg = {"active": enabled and not weekly, "max_retries": 0, "pause_seconds": 4 * 7 * 86400}
+    if not cfg["active"]:
+        return cfg
+    try:
+        cfg["max_retries"] = int(get_setting("sync_error_retries")
+                                 or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRIES", "0"))
+    except (ValueError, TypeError):
+        cfg["max_retries"] = 0
+    pause_key = (get_setting("sync_adaptive_pause_after")
+                 or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_PAUSE_AFTER", "4w"))
+    cfg["pause_seconds"] = SYNC_ADAPTIVE_PAUSE_MAP.get(pause_key, 4 * 7 * 86400)
+    return cfg
+
+
+def _is_job_adaptive_paused(job, cfg=None) -> bool:
     """Return True if the job is currently in Adaptive Auto-Sync pause mode:
     enabled, not currently retrying after an error, and no new episode found
     for longer than the configured threshold. Mirrors the worker logic in
     `_autosync_worker` so the UI can show a matching status pill.
 
+    `cfg` is adaptive_pause_config(); pass it when checking a whole list.
+
     Used by: routes/autosync.py to annotate each job in the job list with an
     "adaptive_paused" flag for the frontend.
     """
-    import os
     from datetime import datetime, timedelta
-
-    from .runtime_state import SYNC_ADAPTIVE_PAUSE_MAP
 
     if not job.get("enabled"):
         return False
-    if (get_setting("sync_adaptive_enabled")
-            or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_ENABLED", "0")) != "1":
-        return False
-    # Adaptive pause only applies in interval mode (weekly runs on fixed slots).
-    if (os.environ.get("MEDIAFORGE_SYNC_MODE", "interval") or "interval").lower() == "weekly":
+    if cfg is None:
+        cfg = adaptive_pause_config()
+    if not cfg["active"]:
         return False
     # Jobs in the error-retry window are handled by that logic, not adaptive pause.
-    try:
-        max_retries = int(get_setting("sync_error_retries")
-                          or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRIES", "0"))
-    except (ValueError, TypeError):
-        max_retries = 0
     retry_count = job.get("retry_count", 0) or 0
-    if 0 < retry_count <= max_retries:
+    if 0 < retry_count <= cfg["max_retries"]:
         return False
     last_new = job.get("last_new_found")
     if not last_new:
@@ -304,10 +324,7 @@ def _is_job_adaptive_paused(job) -> bool:
         ref_dt = datetime.strptime(last_new, "%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
         return False
-    pause_key = (get_setting("sync_adaptive_pause_after")
-                 or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_PAUSE_AFTER", "4w"))
-    pause_seconds = SYNC_ADAPTIVE_PAUSE_MAP.get(pause_key, 4 * 7 * 86400)
-    return datetime.utcnow() >= ref_dt + timedelta(seconds=pause_seconds)
+    return datetime.utcnow() >= ref_dt + timedelta(seconds=cfg["pause_seconds"])
 
 
 _last_disk_notif_time: "float" = 0.0  # debounce: max once per hour per run

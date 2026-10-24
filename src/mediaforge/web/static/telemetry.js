@@ -349,8 +349,13 @@ async function telemetryLoadRequestStatus() {
     let html = "";
     data.forEach(function (req) {
       const kind = req.request_type === "delete" ? t("Löschung", "Deletion") : t("Export", "Export");
-      if (req.status === "completed" && req.download_url) {
-        html += '<div>' + esc(kind) + ': <a href="' + esc(req.download_url) + '" target="_blank" rel="noopener">' + t("Herunterladen", "Download") + '</a>' +
+      // download_url comes from the remote devInfo server and is forwarded
+      // unchanged (routes/settings.py), so it is scheme-checked before it
+      // becomes an href: escaping alone still lets a javascript: URL run on
+      // click. Anything that is not http(s) or same-origin gets no link.
+      const downloadUrl = window.mfSafeUrl ? window.mfSafeUrl(req.download_url) : "";
+      if (req.status === "completed" && downloadUrl) {
+        html += '<div>' + esc(kind) + ': <a href="' + esc(downloadUrl) + '" target="_blank" rel="noopener">' + t("Herunterladen", "Download") + '</a>' +
           (req.expires_at ? ' <span style="color:var(--text-muted)">(' + t("gültig bis", "valid until") + ' ' + esc(req.expires_at) + ')</span>' : '') + '</div>';
       } else if (req.status === "completed") {
         html += '<div>' + esc(kind) + ': ' + t("abgeschlossen", "completed") + '</div>';

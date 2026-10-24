@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask.sessions import SecureCookieSessionInterface
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from flask_babel import Babel
 
@@ -123,6 +124,65 @@ STO_LANG_LABELS = {
 }
 
 
+# Endpoints that serve cacheable files and never need the session written
+# back. See _AssetAwareSessionInterface.
+_ASSET_ENDPOINTS = frozenset({"static", "theme_bundle_css", "theme_asset",
+                              "api_image_proxy"})
+
+
+class _AssetAwareSessionInterface(SecureCookieSessionInterface):
+    """The default session interface, minus Set-Cookie on asset responses.
+
+    The session is permanent, so Flask re-signs it and sends a new cookie
+    (plus ``Vary: Cookie``) with EVERY response -- and the signature embeds a
+    timestamp, so the value changes every second. A browser stores a cached
+    asset under the cookie it was fetched with, so ``Vary: Cookie`` with an
+    ever-changing cookie meant no stylesheet, script or poster could ever be
+    reused as-is: Chromium revalidated each one, Firefox and every iOS
+    browser downloaded them again in full. Asset views never change the
+    session; the cookie the browser already holds stays valid.
+    """
+
+    def save_session(self, app, session, response):
+        if request.endpoint in _ASSET_ENDPOINTS:
+            return
+        super().save_session(app, session, response)
+
+
+# Request-body limits. Without them waitress accepted bodies of up to 1 GiB and
+# every request.get_json() read the whole thing into memory -- including on
+# endpoints that need no login (SyncPlay join), so one client could exhaust the
+# memory of a small NAS. Ordinary JSON (settings, job lists, profile imports)
+# stays far below the default; only the backup upload legitimately carries a
+# large body: up to 64 MB of backup text (routes/backup.py), which JSON string
+# escaping can at most double.
+_DEFAULT_BODY_LIMIT = 16 * 1024 * 1024
+_LARGE_BODY_LIMIT = 129 * 1024 * 1024
+_LARGE_BODY_ENDPOINTS = frozenset({"api_backup_preview", "api_backup_import"})
+
+
+class _BodyLimitedRequest(Flask.request_class):
+    """Request whose body limit depends on the matched endpoint.
+
+    The limit has to be known before anything reads the body, and CSRFProtect
+    does that in a before_request hook (it looks for a form token), so setting
+    ``request.max_content_length`` inside the view would come too late. The
+    URL is matched before any hook runs, so the endpoint is already known here.
+    """
+
+    @property
+    def max_content_length(self):
+        if self._max_content_length is not None:
+            return self._max_content_length
+        if self.endpoint in _LARGE_BODY_ENDPOINTS:
+            return _LARGE_BODY_LIMIT
+        return super().max_content_length
+
+    @max_content_length.setter
+    def max_content_length(self, value):
+        self._max_content_length = value
+
+
 def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     """Build and configure the Flask app: i18n, auth/session/CSRF, DB init,
     background workers, security headers, and route registration.
@@ -184,6 +244,22 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
 
     app = Flask(__name__)
     app.config['TEMPLATES_AUTO_RELOAD'] = False
+    app.session_interface = _AssetAwareSessionInterface()
+    app.request_class = _BodyLimitedRequest
+    app.config["MAX_CONTENT_LENGTH"] = _DEFAULT_BODY_LIMIT
+
+    @app.errorhandler(413)
+    def _body_too_large(_e):
+        # The UI reads every API answer as JSON; the default HTML page would
+        # surface as an unhelpful "invalid response" instead.
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "request body too large"}), 413
+        return "Request body too large", 413
+
+    # Registered first on purpose: after_request hooks run in reverse order,
+    # so this one runs last, once every other hook is done with the body.
+    from .compression import init_compression
+    init_compression(app)
     app.jinja_env.filters["markdown"] = render_markdown
 
     # ── i18n / Flask-Babel ──────────────────────────────────────────────────
@@ -464,12 +540,18 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
 
         @app.before_request
         def _refresh_role():
+            # Assets never look at the role, and their session is not saved
+            # back anyway (see _AssetAwareSessionInterface).
+            if request.endpoint in _ASSET_ENDPOINTS:
+                return None
             return refresh_session_role()
 
         @app.before_request
         def _sync_ui_language():
             """Keep ui_language in session in sync with DB preference."""
             from flask import session as _sess
+            if request.endpoint in _ASSET_ENDPOINTS:
+                return
             uid = _sess.get("user_id")
             if uid and uid > 0:
                 if "_lang_synced" not in _sess:
@@ -486,6 +568,11 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 resolve_provider_pill_scripts, resolve_dashboard_widgets, resolve_card,
                 resolve_module_settings,
             )
+            # Each sidebar section resolved once per render. Every section used
+            # to be resolved twice (menu + module items), each pass sorting the
+            # registry and reading a setting per module item.
+            _menu = {sec: resolve_menu_items(sec) for sec in
+                     ("discover", "management", "syncplay", "system", "library")}
             return {
                 "current_user": get_current_user(),
                 "ui_language": _sess.get("ui_language", "en"),
@@ -521,23 +608,23 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "appearance_defaults": _resolve_appearance_defaults(),
                 # Sidebar entries per category (see web/thirdparties/registry.py's
                 # section= param and base.html's per-category loops).
-                "discover_menu_items": resolve_menu_items("discover"),
-                "management_menu_items": resolve_menu_items("management"),
-                "syncplay_menu_items": resolve_menu_items("syncplay"),
-                "system_menu_items": resolve_menu_items("system"),
+                "discover_menu_items": _menu["discover"],
+                "management_menu_items": _menu["management"],
+                "syncplay_menu_items": _menu["syncplay"],
+                "system_menu_items": _menu["system"],
                 # Menu rework: module sidebar links no longer sit as their own
                 # top-level entries. base.html groups them into a collapsible
                 # "Module" sub-menu per main category. Discover absorbs the
                 # former SyncPlay category's modules (section="syncplay" stays
                 # a valid value -- back-compat -- and is merged in here).
-                "discover_module_items": resolve_menu_items("discover") + resolve_menu_items("syncplay"),
-                "management_module_items": resolve_menu_items("management"),
-                "system_module_items": resolve_menu_items("system"),
+                "discover_module_items": _menu["discover"] + _menu["syncplay"],
+                "management_module_items": _menu["management"],
+                "system_module_items": _menu["system"],
                 # Shelves contributed by modules, rendered inside the Library
                 # sub-menu (see base.html). A module that indexes a media kind
                 # MediaForge does not ship belongs next to the built-in
                 # shelves, not in a "Modules" group three entries away.
-                "library_module_items": resolve_menu_items("library"),
+                "library_module_items": _menu["library"],
                 # Module Settings page (under the Module Manager) -- every
                 # enabled module's settings card, grouped by the page its card
                 # also lives on. Handed over as the *function*, not its result:
@@ -581,7 +668,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         def _set_noauth_session():
             """In no-auth mode expose a virtual admin/user=0 so notification APIs work."""
             from flask import session as _sess
-            if not _sess.get("user_id"):
+            if request.endpoint in _ASSET_ENDPOINTS:
+                return
+            # `is None`, not falsiness: the virtual user's id IS 0, so
+            # `not user_id` rewrote the session -- and sent a new cookie --
+            # on every single request.
+            if _sess.get("user_id") is None:
                 _sess["user_id"]   = 0
                 _sess["user_role"] = "admin"
                 _sess["user_name"] = "admin"
@@ -595,6 +687,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 resolve_provider_pill_scripts, resolve_dashboard_widgets, resolve_card,
                 resolve_module_settings,
             )
+            # See the auth-mode context processor above.
+            _menu = {sec: resolve_menu_items(sec) for sec in
+                     ("discover", "management", "syncplay", "system", "library")}
             return {
                 "current_user": None,
                 "ui_language": _sess.get("ui_language", "en"),
@@ -625,23 +720,23 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "user_ui_prefs": _resolve_user_ui_prefs(),
                 # What an account that never picked one gets.
                 "appearance_defaults": _resolve_appearance_defaults(),
-                "discover_menu_items": resolve_menu_items("discover"),
-                "management_menu_items": resolve_menu_items("management"),
-                "syncplay_menu_items": resolve_menu_items("syncplay"),
-                "system_menu_items": resolve_menu_items("system"),
+                "discover_menu_items": _menu["discover"],
+                "management_menu_items": _menu["management"],
+                "syncplay_menu_items": _menu["syncplay"],
+                "system_menu_items": _menu["system"],
                 # Menu rework: module sidebar links no longer sit as their own
                 # top-level entries. base.html groups them into a collapsible
                 # "Module" sub-menu per main category. Discover absorbs the
                 # former SyncPlay category's modules (section="syncplay" stays
                 # a valid value -- back-compat -- and is merged in here).
-                "discover_module_items": resolve_menu_items("discover") + resolve_menu_items("syncplay"),
-                "management_module_items": resolve_menu_items("management"),
-                "system_module_items": resolve_menu_items("system"),
+                "discover_module_items": _menu["discover"] + _menu["syncplay"],
+                "management_module_items": _menu["management"],
+                "system_module_items": _menu["system"],
                 # Shelves contributed by modules, rendered inside the Library
                 # sub-menu (see base.html). A module that indexes a media kind
                 # MediaForge does not ship belongs next to the built-in
                 # shelves, not in a "Modules" group three entries away.
-                "library_module_items": resolve_menu_items("library"),
+                "library_module_items": _menu["library"],
                 # Module Settings page (under the Module Manager) -- every
                 # enabled module's settings card, grouped by the page its card
                 # also lives on. Handed over as the *function*, not its result:
@@ -737,7 +832,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             """Row count of the audit log, or None if it cannot be read."""
             try:
                 from . import audit as _audit_mod
-                return int(_audit_mod.stats().get("total") or 0)
+                return _audit_mod.row_count()
             except Exception:
                 return None
 
@@ -1054,6 +1149,12 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                 "Strict-Transport-Security",
                 "max-age=31536000; includeSubDomains",
             )
+        # A versioned static URL never changes content (see _static_max_age),
+        # so "immutable" also spares the conditional request a browser sends
+        # for every asset when the page is reloaded.
+        if (response.status_code == 200 and request.endpoint == "static"
+                and request.args.get("v")):
+            response.cache_control.immutable = True
         # Globally disable browser caching for dynamic settings and notification settings APIs
         if request.path.startswith("/api/settings") or request.path.startswith("/api/notif") or request.path.startswith("/api/autosync"):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -1659,6 +1760,15 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_autosync_delete",
             "api_autosync_trigger",
             "api_autosync_sync_all",
+            "api_autosync_group_rename",
+            # The lookup behind "add to Auto-Sync" -- it exists to create a
+            # job, which a kids account may not do.
+            "api_autosync_site_search",
+            # Direct Link queues any yt-dlp-supported URL straight into the
+            # library. /api/download and /api/catalogue/bulk refuse kids
+            # accounts; this was the way around both.
+            "api_direct_link_probe",
+            "api_direct_link_download",
             # UpTime: the dashboard lists every monitored source by label and
             # renders its URL as a clickable link -- including the adult one,
             # whose whole point is that it is opt-in and age-gated everywhere
@@ -1751,7 +1861,6 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "api_syncplay_password",
             "api_syncplay_away",
             "api_syncplay_typing",
-            "api_syncplay_reaction",
             "api_syncplay_track",
             "syncplay_page",
             # Stream endpoints reachable by SyncPlay guests (gated in before_request)
@@ -2000,7 +2109,21 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # sends no max-age at all and every page load revalidates all 34 CSS/JS
     # files -- 34 conditional requests, each going through the whole
     # before-request chain, just to be told "not modified".
-    app.config.setdefault("SEND_FILE_MAX_AGE_DEFAULT", 31536000)  # 1 year
+    #
+    # This used to be app.config.setdefault("SEND_FILE_MAX_AGE_DEFAULT", ...),
+    # which never did anything: Flask ships that key with the value None, so
+    # setdefault() left it alone and every asset kept going out with
+    # "Cache-Control: no-cache". It is decided per request now, because only
+    # a VERSIONED url may be cached for a year -- several static files are
+    # fetched by a fixed path (pdf.js loads its worker that way, stylesheets
+    # reference images, the service worker precaches by path), and a year-long
+    # max-age on those would pin the old copy after an update.
+    def _static_max_age(filename):
+        if request.args.get("v"):
+            return 31536000  # 1 year
+        return None  # Flask's default: no-cache, revalidated via ETag
+
+    app.get_send_file_max_age = _static_max_age
 
     @app.context_processor
     def inject_library_media_kinds():
@@ -2015,6 +2138,27 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         from .media_kinds import MEDIA_KINDS
         return dict(library_media_kinds=MEDIA_KINDS)
 
+    # mtimes for dated_url_for() below. A page render asks for ~50 static URLs
+    # and each one cost an exists() plus a stat(); remembered for a few
+    # seconds -- long enough to cover a render and the burst of requests
+    # around it, short enough that a changed file is picked up right away.
+    # Keyed by filename, which only templates choose, so it stays small.
+    _static_mtimes: dict = {}
+    _STATIC_MTIME_TTL = 5.0
+
+    def _static_mtime(filename):
+        import time as _time
+        now = _time.monotonic()
+        hit = _static_mtimes.get(filename)
+        if hit is not None and hit[0] > now:
+            return hit[1]
+        try:
+            mtime = int(os.stat(os.path.join(app.static_folder, filename)).st_mtime)
+        except OSError:
+            mtime = None
+        _static_mtimes[filename] = (now + _STATIC_MTIME_TTL, mtime)
+        return mtime
+
     @app.context_processor
     def override_url_for():
         """Override the `url_for` available in Jinja templates so static asset
@@ -2024,9 +2168,9 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             if endpoint == 'static':
                 filename = values.get('filename', None)
                 if filename:
-                    file_path = os.path.join(app.static_folder, filename)
-                    if os.path.exists(file_path):
-                        values['v'] = int(os.stat(file_path).st_mtime)
+                    mtime = _static_mtime(filename)
+                    if mtime is not None:
+                        values['v'] = mtime
             return url_for(endpoint, **values)
         return dict(url_for=dated_url_for)
 
@@ -2116,7 +2260,18 @@ def start_web_ui(
         # main thread parked in waitress' socket loop with no SIGINT handler,
         # so on Windows Ctrl+C is effectively ignored — the process keeps
         # running even after a download was aborted in the web UI.
-        server = create_server(app, host=host, port=port, threads=16)
+        # 32 threads by default (was 16): every open Server-Sent-Events stream
+        # -- one per SyncPlay member, one per Operations tab -- holds a thread
+        # for its whole lifetime, and a watch party could leave too few for
+        # page loads, polls and the static files of every navigation. Idle
+        # threads cost next to nothing. MEDIAFORGE_WEB_THREADS overrides it;
+        # web/sse_limits.py keeps a reserve of them free of streams.
+        from .sse_limits import web_threads as _web_threads
+        # max_request_body_size: waitress spools a body to disk before Flask
+        # sees it, and its own default allows 1 GiB. Nothing MediaForge
+        # accepts is larger than the backup-upload limit.
+        server = create_server(app, host=host, port=port, threads=_web_threads(),
+                               max_request_body_size=_LARGE_BODY_LIMIT)
 
         _shutting_down = threading.Event()
 

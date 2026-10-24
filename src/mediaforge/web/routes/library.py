@@ -5,6 +5,7 @@ Extracted from create_app as a plain route-registration function
 """
 
 from ..db import get_all_library_cache
+from ..db import get_all_library_cache_shared
 from ..db import get_library_cache_status
 from ..db import get_custom_path_by_id
 from ..db import get_custom_paths
@@ -17,6 +18,8 @@ from ..comics.scanner import scan_comics
 from ..comics import convert as comic_convert
 from ..comics import covers as comic_covers
 from ..media_types import BOOK_ALL_EXTS
+from ..media_types import BOOK_SIDECAR_NAMES
+from ..media_types import COMIC_EXTS
 from ..media_types import BOOK_CONVERTIBLE_EXTS
 from ..media_types import BOOK_COVER_EXTS
 from ..media_types import BOOK_EXTS
@@ -50,6 +53,7 @@ import os
 import re
 import threading
 import time as _time
+from stat import S_ISREG as _S_ISREG
 from ...logger import get_logger
 from ...telemetry import client as telemetry_client
 from ...telemetry import events as telemetry_events
@@ -261,6 +265,22 @@ def _lib_probe_workers():
 # instead of waiting a full rescan interval between passes.
 _LIB_PROBE_PENDING = set()
 
+# path_key -> monotonic time a scan last found that location unreachable.
+# /api/library starts a rescan for a location whose cached books/comics are
+# of an older scanner version -- which, for an offline share, did nothing but
+# report "scanning" on every request (the scan ends at once, keeping the old
+# rows, and /api/library/status then says "not scanning"), so the Library page
+# alternated between the two forever. Such a location is retried after
+# _LIB_UNREACHABLE_RETRY instead; the auto-rescan loop keeps trying too.
+_LIB_UNREACHABLE = {}
+_LIB_UNREACHABLE_RETRY = 300.0
+
+
+def _lib_recently_unreachable(path_key):
+    """True if a scan found this location unreachable within the retry window."""
+    at = _LIB_UNREACHABLE.get(path_key)
+    return at is not None and _time.monotonic() - at < _LIB_UNREACHABLE_RETRY
+
 
 def _lib_get_resolution(file_path):
     """Best-effort resolution label for a single file: try filename keyword/
@@ -317,6 +337,89 @@ def _lib_resolve_base():
     return dl_base
 
 
+def _lib_media_fields(mdata):
+    """resolution/codec fields of one cached episode entry.
+
+    Plus a "probed" marker when ffprobe ran and found nothing -- the only case
+    that has to be remembered explicitly, since a successful probe leaves a
+    resolution or codec behind anyway. The marker used to live only in the
+    scan's own in-memory map and never reached the cache, so the next full
+    scan could not see it: every unreadable file was probed again on every
+    scan, and a library with more of them than fit into the probe budget never
+    finished -- it stayed "probe pending" and was rescanned every 15 minutes,
+    starting over at the same files each time.
+    """
+    fields = {
+        "resolution": mdata.get("resolution"),
+        "video_codec": mdata.get("video_codec"),
+        "audio_codec": mdata.get("audio_codec"),
+    }
+    if mdata.get("probed") and not (fields["resolution"] or fields["video_codec"]):
+        fields["probed"] = True
+    return fields
+
+
+def _lib_regular_file_stat(path):
+    """``path.stat()`` if *path* is a regular file (symlinks followed), else None.
+
+    The scan used to ask is_file() and stat() of every video file twice -- once
+    while collecting probe candidates, once while building -- plus is_file() of
+    every other entry: ~4 stats per file, each a round trip on a network share.
+    One stat answers all of it. A failing stat is left to is_file() itself, so
+    an error that aborted the scan of a location before still does (which
+    errors Path.is_file() raises instead of answering False differs between
+    Python versions).
+    """
+    try:
+        st = path.stat()
+    except (OSError, ValueError):
+        path.is_file()
+        return None
+    return st if _S_ISREG(st.st_mode) else None
+
+
+def _lib_title_tree(folder):
+    """The entries of one title folder: ``(direct, below)``.
+
+    *direct* is what ``folder.iterdir()`` lists, in that order; *below* is
+    everything under *folder*, in exactly the order ``folder.rglob("*")``
+    yields it.
+
+    One listing per directory. The scan called iterdir() and rglob() twice per
+    title folder, and rglob() itself lists every directory twice (Python 3.12+),
+    so each season folder was read four times per scan. For the usual layouts
+    -- files directly in the title folder, or one level of season folders --
+    every supported Python's rglob() yields "the folder's entries, then each
+    subfolder's entries, in listing order", and that is what is built here.
+    A deeper tree goes through rglob() itself, because its order below the
+    first level differs between Python versions (it decides the order of the
+    seasons and of same-numbered episodes in the result), and so does any
+    listing error, because rglob() has its own rules for those.
+    """
+    with os.scandir(folder) as it:          # errors propagate, as iterdir()'s did
+        top = list(it)
+    direct = [folder / e.name for e in top]
+    below = list(direct)
+    shallow = True
+    try:
+        for entry, path in zip(top, direct):
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            with os.scandir(path) as it:
+                for sub in it:
+                    if sub.is_dir(follow_symlinks=False):
+                        shallow = False
+                        break
+                    below.append(path / sub.name)
+            if not shallow:
+                break
+    except OSError:
+        shallow = False
+    if not shallow:
+        below = list(folder.rglob("*"))
+    return direct, below
+
+
 def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None, only_loose=False):
     """Walk one library root and build its title/season/episode structure.
 
@@ -333,80 +436,106 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
       * only_loose  -- read just the top-level "loose movie" files.
     Both skip everything else, so the caller must merge the result into the
     existing cache instead of replacing it."""
-    from pathlib import Path
     from concurrent.futures import ThreadPoolExecutor
     lang_folder_set = set(_LIB_LANG_FOLDERS)
     titles = {}
     if not base.is_dir():
         return []
 
-    # Helper to check if file is video
-    def is_video_file(f):
-        if not f.is_file(): return False
-        fname = f.name
+    # Helper to check if a file NAME is one of a video. The is_file() half of
+    # the question is _lib_regular_file_stat(), asked only for names that pass.
+    def is_video_name(fname):
         if fname.startswith(".temp_") or fname.startswith("."): return False
         if ".part" in fname or fname.endswith(".part"): return False
         fname_lower = fname.lower()
         return any(fname_lower.endswith(ext) for ext in _LIB_VIDEO_EXTS)
 
-    # 1. Collect all video files
-    all_videos = []
-    
+    # 1. Collect all video files -- once. The probe step (2) and the build step
+    # (4) used to walk the tree separately (iterdir + rglob + is_file + stat per
+    # pass); both now work from these lists, each file with the one stat taken
+    # here. The lists keep the order the walks had, which is what the result's
+    # order of titles, seasons and same-numbered episodes depends on.
+    loose = []          # (path, stat) -- video files directly in base
+    folders = []        # (name, movies, episodes) per title folder
+    folder_paths = []
+
     # Zero-th pass candidates (skipped when only one title folder is wanted)
+    base_entries = []
     if not only_folder:
-        for f in base.iterdir():
-            if is_video_file(f):
+        with os.scandir(base) as it:
+            base_entries = list(it)
+    for entry in base_entries:
+        f = base / entry.name
+        if is_video_name(entry.name):
+            st = _lib_regular_file_stat(f)
+            if st is not None:
                 # Same question, same answer as the build pass below -- when
                 # these two disagree a file is built into the tree without
                 # ever having been probed, and shows up with no resolution.
-                if _lib_parse_episode(f.name, base.name) is not None:
-                    continue
-                all_videos.append(f)
+                if _lib_parse_episode(f.name, base.name) is None:
+                    loose.append((f, st))
+                continue
+        if only_loose:
+            continue
+        # Top-level folders to look at. The listing's own type information
+        # costs no extra syscall for anything but a symlink; on an error the
+        # answer is Path.is_dir()'s, as it always was.
+        try:
+            is_dir = entry.is_dir()
+        except OSError:
+            is_dir = f.is_dir()
+        if is_dir and entry.name not in lang_folder_set:
+            folder_paths.append(f)
+    if only_folder:
+        # Partial mode: just that one title folder below base.
+        one = base / only_folder
+        if one.is_dir() and one.name not in lang_folder_set:
+            folder_paths.append(one)
 
     # First and Second pass candidates
-    def title_folders():
-        """Top-level folders to look at -- narrowed down in partial mode."""
-        if only_loose:
-            return []
-        if only_folder:
-            one = base / only_folder
-            return [one] if one.is_dir() else []
-        return base.iterdir()
+    for folder in folder_paths:
+        direct, below = _lib_title_tree(folder)
+        movies = []
+        for f in direct:
+            if not is_video_name(f.name):
+                continue
+            if _lib_parse_episode(f.name, folder.name) is not None:
+                continue
+            st = _lib_regular_file_stat(f)
+            if st is not None:
+                movies.append((f, st))
+        episodes = []
+        for f in below:
+            if not is_video_name(f.name):
+                continue
+            parsed = _lib_parse_episode(f.name, f.parent.name)
+            if parsed is None:
+                continue
+            st = _lib_regular_file_stat(f)
+            if st is not None:
+                episodes.append((f, st, parsed))
+        folders.append((folder.name, movies, episodes))
 
-    for folder in title_folders():
-        if not folder.is_dir():
-            continue
-        name = folder.name
-        if name in lang_folder_set:
-            continue
-        for f in folder.iterdir():
-            if is_video_file(f):
-                if _lib_parse_episode(f.name, folder.name) is not None:
-                    continue
-                all_videos.append(f)
-        for f in folder.rglob("*"):
-            if is_video_file(f):
-                if _lib_parse_episode(f.name, f.parent.name) is not None:
-                    all_videos.append(f)
+    all_videos = list(loose)
+    for _name, movies, episodes in folders:
+        all_videos.extend(movies)
+        all_videos.extend((f, st) for f, st, _parsed in episodes)
 
     # Remove duplicates while preserving order
     seen = set()
     unique_videos = []
-    for f in all_videos:
+    for f, st in all_videos:
         if f not in seen:
             seen.add(f)
-            unique_videos.append(f)
+            unique_videos.append((f, st))
 
     # 2. Determine which videos need probing
     probe_candidates = []
     resolved_media_data = {} # Path -> {"resolution": ..., "video_codec": ..., "audio_codec": ...}
-    
-    for f in unique_videos:
-        try:
-            fsize = f.stat().st_size
-        except OSError:
-            fsize = 0
-        
+
+    for f, st in unique_videos:
+        fsize = st.st_size
+
         # Reuse what the previous scan already worked out for this exact file.
         #
         # The condition used to require a video_codec, which meant every file
@@ -529,19 +658,10 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
 
     # 4. Perform the actual build of titles/seasons structure using pre-resolved resolutions
     # Zero-th pass: video files sitting DIRECTLY in base (no title subfolder).
-    for f in (base.iterdir() if not only_folder else []):
-        if not is_video_file(f):
-            continue
-        if _lib_parse_episode(f.name, base.name) is not None:
-            continue
+    for f, _st in loose:
         title_name = f.stem
-        try:
-            _st = f.stat()
-            fsize = _st.st_size
-            fmtime = _st.st_mtime
-        except OSError:
-            fsize = 0
-            fmtime = 0
+        fsize = _st.st_size
+        fmtime = _st.st_mtime
         if title_name not in titles:
             titles[title_name] = {"folder": title_name, "seasons": {}, "total_size": 0, "is_movie": False, "_added_at": 0}
         entry = titles[title_name]
@@ -552,37 +672,21 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
             entry["seasons"]["movies"].append({
                 "episode": 1, "file": f.name, "size": fsize, "is_video": True,
                 "is_movie_file": True, "path": str(f),
-                "resolution": mdata.get("resolution"),
-                "video_codec": mdata.get("video_codec"),
-                "audio_codec": mdata.get("audio_codec")
+                **_lib_media_fields(mdata)
             })
             entry["total_size"] += fsize
             entry["is_movie"] = True
             entry["_added_at"] = max(entry.get("_added_at", 0), fmtime)
 
-    for folder in title_folders():
-        if not folder.is_dir():
-            continue
-        name = folder.name
-        if name in lang_folder_set:
-            continue
+    for name, movies, episodes in folders:
         if name not in titles:
             titles[name] = {"folder": name, "seasons": {}, "total_size": 0, "is_movie": False, "_added_at": 0}
         entry = titles[name]
 
         # First pass: direct video files in the title folder (no season subfolder)
-        for f in folder.iterdir():
-            if not is_video_file(f):
-                continue
-            if _lib_parse_episode(f.name, folder.name) is not None:
-                continue
-            try:
-                _st = f.stat()
-                fsize = _st.st_size
-                fmtime = _st.st_mtime
-            except OSError:
-                fsize = 0
-                fmtime = 0
+        for f, _st in movies:
+            fsize = _st.st_size
+            fmtime = _st.st_mtime
             skey = "movies"
             if skey not in entry["seasons"]:
                 entry["seasons"][skey] = []
@@ -591,29 +695,17 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
                 entry["seasons"][skey].append({
                     "episode": 1, "file": f.name, "size": fsize, "is_video": True,
                     "is_movie_file": True, "path": str(f),
-                    "resolution": mdata.get("resolution"),
-                    "video_codec": mdata.get("video_codec"),
-                    "audio_codec": mdata.get("audio_codec")
+                    **_lib_media_fields(mdata)
                 })
                 entry["total_size"] += fsize
                 entry["is_movie"] = True
                 entry["_added_at"] = max(entry.get("_added_at", 0), fmtime)
 
         # Second pass: recurse into subfolders for SxxExx episodes
-        for f in folder.rglob("*"):
-            if not is_video_file(f):
-                continue
-            parsed = _lib_parse_episode(f.name, f.parent.name)
-            if parsed is None:
-                continue
+        for f, _st, parsed in episodes:
             snum, enum = parsed
-            try:
-                _st = f.stat()
-                fsize = _st.st_size
-                fmtime = _st.st_mtime
-            except OSError:
-                fsize = 0
-                fmtime = 0
+            fsize = _st.st_size
+            fmtime = _st.st_mtime
             skey = str(snum)
             if skey not in entry["seasons"]:
                 entry["seasons"][skey] = []
@@ -622,9 +714,7 @@ def _lib_scan_base(base, old_cache_lookup=None, progress=None, only_folder=None,
                 entry["seasons"][skey].append({
                     "episode": enum, "file": f.name, "size": fsize, "is_video": True,
                     "path": str(f),
-                    "resolution": mdata.get("resolution"),
-                    "video_codec": mdata.get("video_codec"),
-                    "audio_codec": mdata.get("audio_codec")
+                    **_lib_media_fields(mdata)
                 })
                 entry["total_size"] += fsize
                 entry["_added_at"] = max(entry.get("_added_at", 0), fmtime)
@@ -984,6 +1074,17 @@ def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
     # way -- it just also refreshes the video side while it is at it.
     if any(Path(p).suffix.lower() in BOOK_ALL_EXTS for p in (changed_paths or ())):
         return False
+    # The same holds for comics (series are grouped across the location too),
+    # and for a book's sidecar files: a Calibre metadata edit only rewrites
+    # metadata.opf / cover.jpg. Taken down the video path below, such an edit
+    # carried the OLD book list over unchanged and stayed invisible until the
+    # next full scan.
+    if any(Path(p).suffix.lower() in COMIC_EXTS
+           or Path(p).name.lower() in BOOK_SIDECAR_NAMES
+           for p in (changed_paths or ())):
+        kinds = _lib_kinds_for(cp_id)
+        if KIND_BOOK in kinds or KIND_COMIC in kinds:
+            return False
 
     cache = get_all_library_cache().get(path_key) or {}
     data = cache.get("data") or {}
@@ -1008,7 +1109,12 @@ def _lib_apply_partial(path_key, label, cp_id, base, changed_paths, lang_sep):
                         "resolution": ep.get("resolution"),
                         "video_codec": ep.get("video_codec"),
                         "audio_codec": ep.get("audio_codec"),
-                        "probed": True,
+                        # The real marker, not a blanket True: a file the last
+                        # scan skipped because its probe budget ran out has
+                        # never been probed, and claiming otherwise here would
+                        # now be persisted (see _lib_media_fields) and keep it
+                        # unprobed for good.
+                        "probed": bool(ep.get("probed")),
                     }
 
     by_folder = {t.get("folder"): t for t in data["titles"]}
@@ -1090,16 +1196,19 @@ def _lib_scan_books_safe(base_path, label):
         return []
 
 
-def _lib_scan_comics_safe(base_path, label):
+def _lib_scan_comics_safe(base_path, label, previous=None):
     """Run the comic pass for one location, swallowing its failures.
 
     Same isolation as the book pass and for the same reason: a single
     malformed archive must not cost a location its films. Comics add one
     failure mode books do not have -- five container formats, two of which
     need an external tool -- so this is if anything more likely to trip.
+
+    *previous*: this location's comic rows from the last scan, for
+    scan_comics() to take unchanged files over from.
     """
     try:
-        return scan_comics(base_path)
+        return scan_comics(base_path, previous=previous)
     except Exception:
         logger.exception("[LibraryScan] Comic scan of %s (%s) failed", base_path, label)
         return []
@@ -1268,8 +1377,17 @@ def _lib_queue_comic_covers(series_list):
                 queued = 0
                 for path in issues:
                     try:
-                        state = comic_convert.request_conversion(_Path(path))
+                        # respect_failures: an archive that failed stays failed
+                        # for its retry window instead of being restarted on
+                        # every shelf load (the reader's own button still can).
+                        state = comic_convert.conversion_status(
+                            _Path(path), start=True, respect_failures=True)
                         queued += 1 if state.get("pending") else 0
+                        if state.get("queued"):
+                            # Every conversion slot is busy: asking about the
+                            # rest now only costs a stat and a sniff each. The
+                            # next shelf load or scan continues from here.
+                            break
                     except Exception:
                         logger.debug("[Comics] Could not queue %s for conversion",
                                      path, exc_info=True)
@@ -1332,11 +1450,18 @@ def _lib_do_scan_locked(targets, lang_sep):
 
     # Build lookup from old cache to optimize scans
     old_cache_lookup = {}
+    # path_key -> the comic rows of the last scan, which scan_comics() takes
+    # unchanged files over from. Only rows of the current scanner version:
+    # older ones do not say whether their ComicInfo.xml was ever read.
+    old_comics = {}
     try:
         cache = get_all_library_cache()
         for pk, entry in cache.items():
             if entry and entry.get("data"):
                 data = entry["data"]
+                if (isinstance(data, dict) and data.get("comics")
+                        and data.get("comics_version") == COMICS_FORMAT_VERSION):
+                    old_comics[pk] = data["comics"]
                 t_list = []
                 if data.get("titles"):
                     t_list.extend(data["titles"])
@@ -1351,7 +1476,12 @@ def _lib_do_scan_locked(targets, lang_sep):
                                 old_cache_lookup[(ep["path"], ep.get("size"))] = {
                                     "resolution": ep.get("resolution"),
                                     "video_codec": ep.get("video_codec"),
-                                    "audio_codec": ep.get("audio_codec")
+                                    "audio_codec": ep.get("audio_codec"),
+                                    # The sticky "nothing to learn here" marker
+                                    # (see _lib_media_fields). Left out, every
+                                    # file ffprobe cannot read was probed again
+                                    # on every full scan.
+                                    "probed": bool(ep.get("probed")),
                                 }
     except Exception as e:
         logger.warning("[LibraryScan] Failed to build resolution cache lookup: %s", e)
@@ -1376,6 +1506,13 @@ def _lib_do_scan_locked(targets, lang_sep):
         # offline at startup and (b) refresh scanned_at, so the auto-rescan
         # would not look at it again for a whole interval. Leaving both alone
         # keeps the last good scan visible and has the next tick retry.
+        #
+        # Flagged as scanning BEFORE the check: on an offline share is_dir()
+        # itself can take a network timeout, and during that time /api/library
+        # (which started this scan and said so) and /api/library/status (which
+        # reads this flag) answered differently -- and every page poll in
+        # between queued another scan.
+        set_library_scanning(path_key, True)
         try:
             reachable = Path(base_path).is_dir()
         except OSError:
@@ -1383,10 +1520,11 @@ def _lib_do_scan_locked(targets, lang_sep):
         if not reachable:
             logger.warning("[LibraryScan] %s (%s) is not reachable — keeping the previous scan",
                            base_path, label)
+            _LIB_UNREACHABLE[path_key] = _time.monotonic()
             set_library_scanning(path_key, False)
             continue
+        _LIB_UNREACHABLE.pop(path_key, None)
 
-        set_library_scanning(path_key, True)
         progress = {}
         found_here = 0
         try:
@@ -1398,7 +1536,8 @@ def _lib_do_scan_locked(targets, lang_sep):
             # Language separation does not apply: a book has no dub track, so
             # the same list is stored for both shapes.
             loc_books = _lib_scan_books_safe(base_path, label) if want_books else []
-            loc_comics = _lib_scan_comics_safe(base_path, label) if want_comics else []
+            loc_comics = (_lib_scan_comics_safe(base_path, label, old_comics.get(path_key))
+                          if want_comics else [])
             if loc_books:
                 _lib_queue_book_covers(loc_books)
             if loc_comics:
@@ -1523,6 +1662,43 @@ def _lib_watcher_scan_callback(path_key: str, changed_paths=None):
         return
 
 
+# Resolved scan-target bases for lib_resolve_library_file(). Every cover, comic
+# page and book file request passes that guard, and resolving a base is one
+# lstat per path component (plus a stat) -- for each configured location, on
+# every request, and on a network share every one of them a round trip. Keyed
+# by the configured (id, path) list, so a changed path setting applies at once;
+# the TTL only bounds how long a change on disk under an unchanged setting (a
+# symlinked base pointed elsewhere, a share mounted differently) goes unseen.
+_LIB_BASES_TTL = 30.0
+_lib_bases_memo = {"key": None, "at": 0.0, "bases": ()}
+_lib_bases_lock = threading.Lock()
+
+
+def _lib_resolved_bases(targets):
+    """``((cp_id, resolved base), ...)`` for *targets*, memoised (see above).
+
+    A base that cannot be resolved is left out, which is what the guard did
+    with it before: skip it and try the next one.
+    """
+    from pathlib import Path as _P
+    key = tuple((cp_id, str(base_path)) for (_label, cp_id, base_path) in targets)
+    now = _time.monotonic()
+    with _lib_bases_lock:
+        memo = _lib_bases_memo
+        if memo["key"] == key and now - memo["at"] < _LIB_BASES_TTL:
+            return memo["bases"]
+    bases = []
+    for cp_id, base_path in key:
+        try:
+            bases.append((cp_id, _P(base_path).resolve()))
+        except (OSError, ValueError):
+            continue
+    bases = tuple(bases)
+    with _lib_bases_lock:
+        _lib_bases_memo.update(key=key, at=now, bases=bases)
+    return bases
+
+
 def lib_resolve_library_file(path, exts=None, scoped=True):
     """Resolve *path* and return it only if it is a real media file inside one
     of the configured scan targets; otherwise None.
@@ -1566,10 +1742,10 @@ def lib_resolve_library_file(path, exts=None, scoped=True):
     if not resolved.is_file():
         return None
     scope = lib_current_scope() if scoped else ["*"]
-    for (_label, cp_id, base_path) in _lib_build_scan_targets():
+    for cp_id, base in _lib_resolved_bases(_lib_build_scan_targets()):
         try:
-            resolved.relative_to(_P(base_path).resolve())
-        except (ValueError, OSError):
+            resolved.relative_to(base)
+        except ValueError:
             continue
         if scoped and not lib_scope_allows(cp_id, scope):
             # Inside the library, but not inside THIS caller's part of it.
@@ -1605,12 +1781,54 @@ def _lib_move_resolve_base(cp_id):
     return p.resolve()
 
 
+def _lib_rmtree_collect(path):
+    """shutil.rmtree() that keeps going past files it cannot delete and
+    returns those paths instead of raising on the first one."""
+    import shutil
+    import sys
+    leftovers = []
+
+    def _keep_going(_func, failed_path, _exc):
+        leftovers.append(failed_path)
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(str(path), onexc=_keep_going)
+    else:
+        shutil.rmtree(str(path), onerror=_keep_going)
+    return leftovers
+
+
 def _lib_move_worker(job_id, src, dst):
     """Background thread: copy src→dst with progress tracking, then delete src."""
+    import os
     import shutil
     from pathlib import Path
     job = _move_jobs[job_id]
+    # Once this is True the destination holds a complete copy and must never
+    # be deleted again -- see the source-removal step below.
+    copy_complete = False
     try:
+        # Same volume: a rename is instant and atomic, where the copy below
+        # reads and writes every byte of a possibly 50 GB series. st_dev can
+        # match for two shares of one server that still cannot rename into
+        # each other, so a failed rename simply falls through to the copy.
+        try:
+            same_volume = os.stat(src).st_dev == os.stat(os.path.dirname(dst)).st_dev
+        except OSError:
+            same_volume = False
+        if same_volume:
+            try:
+                os.rename(src, dst)
+            except OSError:
+                pass
+            else:
+                invalidate_library_cache()
+                with _move_jobs_lock:
+                    job["status"] = "done"
+                    job["_final_at"] = _time.time()
+                    job["current_file"] = ""
+                return
+
         # Calculate total bytes
         all_files = [f for f in Path(src).rglob("*") if f.is_file()]
         total = sum(f.stat().st_size for f in all_files)
@@ -1650,21 +1868,35 @@ def _lib_move_worker(job_id, src, dst):
                 rel = src_dir.relative_to(src_path)
                 (dst_path / rel).mkdir(parents=True, exist_ok=True)
 
-        # Delete source
-        shutil.rmtree(str(src))
+        copy_complete = True
+
+        # Delete the source. rmtree() removes file by file and used to raise
+        # on the first one it could not delete (a file open in a player or a
+        # media-server scan, a read-only attribute, a NAS permission). That
+        # landed in the error path below, which then deleted the DESTINATION
+        # -- after part of the source was already gone, so those files were
+        # lost in both places. Now the copy stays, whatever is left of the
+        # source stays too, and the job reports how many files were left.
+        leftovers = _lib_rmtree_collect(src)
+        if leftovers:
+            logger.warning("[LibMove] Move job %s: copied, but %d item(s) could not be "
+                           "removed from the source", job_id, len(leftovers))
         invalidate_library_cache()
         with _move_jobs_lock:
             job["status"] = "done"
             job["_final_at"] = _time.time()
             job["current_file"] = ""
+            job["leftover_count"] = len(leftovers)
     except Exception as exc:
         logger.error("[LibMove] Move job %s failed: %s", job_id, exc, exc_info=True)
-        # Clean up partial destination
-        try:
-            import shutil as _sh
-            _sh.rmtree(str(dst), ignore_errors=True)
-        except Exception:
-            pass
+        # Clean up the partial destination -- only while the copy is still
+        # incomplete (the route refuses a destination that already exists,
+        # so everything under it was written by this job).
+        if not copy_complete:
+            try:
+                shutil.rmtree(str(dst), ignore_errors=True)
+            except Exception:
+                pass
         with _move_jobs_lock:
             job["status"] = "error"
             job["error"] = str(exc)
@@ -1692,15 +1924,25 @@ def _lib_move_loose_files_worker(job_id, file_paths, dst_dir):
             dst_file = dst_path / src_file.name
             with _move_jobs_lock:
                 job["current_file"] = src_file.name
-            with open(src_file, "rb") as fin, open(dst_file, "wb") as fout:
-                while True:
-                    buf = fin.read(256 * 1024)
-                    if not buf:
-                        break
-                    fout.write(buf)
-                    copied += len(buf)
-                    with _move_jobs_lock:
-                        job["copied_bytes"] = copied
+            try:
+                with open(src_file, "rb") as fin, open(dst_file, "wb") as fout:
+                    while True:
+                        buf = fin.read(256 * 1024)
+                        if not buf:
+                            break
+                        fout.write(buf)
+                        copied += len(buf)
+                        with _move_jobs_lock:
+                            job["copied_bytes"] = copied
+            except Exception:
+                # A half-written copy is not a file anybody wants; the
+                # source is still intact. (The route refuses a target name
+                # that already exists, so this file is ours.)
+                try:
+                    dst_file.unlink()
+                except OSError:
+                    pass
+                raise
             try:
                 shutil.copystat(str(src_file), str(dst_file))
             except Exception:
@@ -1729,7 +1971,7 @@ def _lib_overview_counts():
     that has never been scanned simply contributes nothing.
     """
     kinds_map = _lib_kinds_map()
-    cache = get_all_library_cache() or {}
+    cache = get_all_library_cache_shared() or {}
     scope = lib_current_scope()
 
     titles = episodes = books = series = issues = 0
@@ -1988,7 +2230,9 @@ def register_library_routes(app):
         # skipped by asking the API directly.
         targets = [t for t in _lib_scoped_targets()
                    if kind in (kinds_map.get(_lib_path_key(t[1])) or [])]
-        cache = get_all_library_cache()
+        # Shared, read-only parse (see get_all_library_cache_shared): _slim()
+        # below copies before it filters anything.
+        cache = get_all_library_cache_shared()
 
         locations = []
         any_scanning = False
@@ -2009,7 +2253,18 @@ def register_library_routes(app):
                 # skipped by asking the API directly.
                 from ..age_gate import filter_library_titles
                 titles = filter_library_titles(data.get("titles"))
-                return dict(data, titles=titles, books=[], comics=[])
+                # With language separation on, the titles live under
+                # lang_folders[*].titles and `titles` is None -- and those
+                # used to go out unfiltered, so an age-limited session saw
+                # the whole library there.
+                lang_folders = data.get("lang_folders")
+                if lang_folders:
+                    lang_folders = [
+                        dict(lf, titles=filter_library_titles(lf.get("titles") or []))
+                        for lf in lang_folders
+                    ]
+                return dict(data, titles=titles, lang_folders=lang_folders,
+                            books=[], comics=[])
             if kind == KIND_BOOK:
                 return dict(data, titles=None, lang_folders=None, comics=[])
             return dict(data, titles=None, lang_folders=None, books=[])
@@ -2030,11 +2285,19 @@ def register_library_routes(app):
                     # the files on disk has changed to trigger a rescan. The
                     # user then sees the old bug and reasonably reports it as
                     # not fixed. Same lesson as the conversion cache version.
+                    outdated = False
                     if data.get("books") and data.get("books_version") != BOOKS_FORMAT_VERSION:
                         data = dict(data, books=[])
-                        needs_initial_scan.append((label, cp_id, base_path))
+                        outdated = True
                     if data.get("comics") and data.get("comics_version") != COMICS_FORMAT_VERSION:
                         data = dict(data, comics=[])
+                        outdated = True
+                    # Queued once: with books AND comics outdated the location
+                    # used to be queued -- and scanned -- twice. And not while
+                    # it is offline (see _LIB_UNREACHABLE): that "scan" ends at
+                    # once and changes nothing, but this request said
+                    # "scanning" all the same, every time.
+                    if outdated and not _lib_recently_unreachable(path_key):
                         needs_initial_scan.append((label, cp_id, base_path))
                     if kind == KIND_BOOK:
                         _lib_queue_book_covers(data.get("books") or [])
@@ -2103,13 +2366,37 @@ def register_library_routes(app):
         Used by the UI to detect watcher-triggered rescans without transferring location data.
         GET /api/library/status.
 
-        Called from static/library_core.js's `libIdlePoll()`/`libPollScan()`."""
+        Called from static/library_core.js's `libIdlePoll()`/`libPollScan()`.
+
+        Optional `?kind=video|book|comic` limits both values to the locations
+        that feed that library (and that the caller may see), exactly like
+        /api/library?kind=. Without it a running book scan kept the video
+        page's scan poll alive -- and that poll re-downloaded the full
+        listing every 2.5 s. The watcher state is included so the scan poll
+        no longer needs the full listing for it either."""
         # Status only -- get_all_library_cache() would parse the whole cached
         # listing (several MB on a large library) for two numbers.
         cache = get_library_cache_status()
-        any_scanning = any(e["is_scanning"] for e in cache.values())
-        last_updated = max((e["scanned_at"] for e in cache.values()), default=0)
-        return jsonify({"is_scanning": any_scanning, "last_updated": last_updated})
+        kind = (request.args.get("kind") or "").strip().lower()
+        if kind in (KIND_VIDEO, KIND_BOOK, KIND_COMIC):
+            kinds_map = _lib_kinds_map()
+            keys = {_lib_path_key(t[1]) for t in _lib_scoped_targets()
+                    if kind in (kinds_map.get(_lib_path_key(t[1])) or [])}
+            entries = [e for k, e in cache.items() if k in keys]
+        else:
+            entries = list(cache.values())
+        any_scanning = any(e["is_scanning"] for e in entries)
+        last_updated = max((e["scanned_at"] for e in entries), default=0)
+        watcher = _get_lib_watcher()
+        return jsonify({
+            "is_scanning": any_scanning,
+            "last_updated": last_updated,
+            "watcher": {
+                "available": watcher.available,
+                "active": watcher.active,
+                "watched": watcher.watched,
+            },
+        })
     @app.route("/api/library/watcher")
     def api_library_watcher():
         """Return the library file watcher's current availability/active state
@@ -2152,7 +2439,8 @@ def register_library_routes(app):
             return jsonify({"error": "not found"}), 404
         served, mimetype = resolved, None
         try:
-            key = book_covers.cache_key(resolved)
+            # Already resolved by the guard above: no second realpath walk.
+            key = book_covers.cache_key(resolved, resolved=True)
             cached = book_covers._CACHE.cached(key)
             if cached is None:
                 cached = book_covers._CACHE.store_image(

@@ -214,6 +214,7 @@ import importlib
 import pkgutil
 import shutil
 import threading
+import time
 from pathlib import Path
 
 from . import deps as module_deps
@@ -687,10 +688,13 @@ def fire_module_hook(name, hook, *args):
     - ``on_enable(app)`` / ``on_disable(app)`` -- the admin flipped the
       module's master toggle (fired on the *edge* only, see registry.py's
       generic PUT route). Start/stop workers, clear caches.
-    - ``on_settings_changed(app, keys)`` -- a setting the module owns
-      (``module:<MODULE_ID>:*``) was written. Reconnect a client, reload a
-      config. Fired on a thread of its own, never on the request that saved it
-      (see _on_setting_changed()). A module that registered a background worker
+    - ``on_settings_changed(app, keys)`` -- settings the module owns
+      (``module:<MODULE_ID>:*``) changed. Reconnect a client, reload a
+      config. Fired on a thread of its own, never on the request that saved it,
+      once per burst of writes with every key of that burst in ``keys``; a
+      write that leaves the value as it was does not count, and neither do the
+      core's ``module:<MODULE_ID>:__*`` bookkeeping keys (see
+      _on_setting_changed()). A module that registered a background worker
       gets it restarted automatically as well and usually needs no hook at all.
 
     A hook raising must never take the app down with it -- a broken on_disable
@@ -1170,6 +1174,12 @@ def discover_and_register(app) -> None:
 _APP = None
 _LISTENER_INSTALLED = False
 
+# Module name -> keys written since its pending dispatch was scheduled; see
+# _on_setting_changed(). One settings save writes its keys within a few ms.
+_PENDING_SETTING_KEYS: dict = {}
+_PENDING_SETTINGS_LOCK = threading.Lock()
+_SETTINGS_CHANGE_DEBOUNCE = 0.5
+
 
 def _install_settings_listener(app) -> None:
     """Subscribe to db.set_setting() once, so a write to ``module:<id>:<key>``
@@ -1222,14 +1232,34 @@ def _on_setting_changed(key, value) -> None:
     able to make saving a setting fail.
     """
     try:
+        # "module:<id>:__<name>" keys are the core's own bookkeeping for the
+        # module (e.g. the installed version recorded right after on_install /
+        # on_upgrade), not settings of the module. Reacting to them restarted
+        # the worker that had just been started on every install and upgrade.
+        if str(key).split(":", 2)[-1].startswith("__"):
+            return
         name = _module_name_for_setting_key(key)
         if not name or _APP is None:
             return
         app = _APP
 
+        # Saving a module's settings form writes one key after the other. Each
+        # write used to start its own thread, call the hook and bounce the
+        # worker; now the writes of one burst are collected and handled once.
+        with _PENDING_SETTINGS_LOCK:
+            pending = _PENDING_SETTING_KEYS.get(name)
+            if pending is not None:
+                if key not in pending:
+                    pending.append(key)
+                return
+            _PENDING_SETTING_KEYS[name] = [key]
+
         def _run():
+            time.sleep(_SETTINGS_CHANGE_DEBOUNCE)
+            with _PENDING_SETTINGS_LOCK:
+                keys = tuple(_PENDING_SETTING_KEYS.pop(name, None) or (key,))
             try:
-                fire_module_hook(name, "on_settings_changed", app, (key,))
+                fire_module_hook(name, "on_settings_changed", app, keys)
             except Exception:
                 logger.exception("[Thirdparties] on_settings_changed failed for '%s'", name)
             try:
@@ -1242,8 +1272,13 @@ def _on_setting_changed(key, value) -> None:
             except Exception:
                 logger.exception("[Thirdparties] worker sync failed for '%s'", name)
 
-        threading.Thread(target=_run, daemon=True,
-                         name=f"settings-change-{name}").start()
+        try:
+            threading.Thread(target=_run, daemon=True,
+                             name=f"settings-change-{name}").start()
+        except Exception:
+            with _PENDING_SETTINGS_LOCK:
+                _PENDING_SETTING_KEYS.pop(name, None)
+            raise
     except Exception:
         logger.exception("[Thirdparties] settings-change dispatch failed for %r", key)
 

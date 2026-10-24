@@ -341,12 +341,12 @@ def register_catalogue_routes(app):
             if not resolve_chain(language):
                 return jsonify({"error": "Diese Sprachgruppe existiert nicht mehr."}), 400
 
-        username = None
-        from .. import runtime_state
-        if runtime_state.AUTH_ENABLED:
-            from ..request_context import get_current_user_info
-            user = get_current_user_info() or {}
-            username = user.get("username") if isinstance(user, dict) else None
+        # `username` comes from get_current_user_info() above (None with auth
+        # off). It used to be re-read here and treated as a dict -- the
+        # function returns a tuple, so the owner was always None: every
+        # account could list and cancel every other account's bulk job, and
+        # the queue rows it created belonged to nobody, so a non-admin could
+        # not cancel or retry their own downloads.
 
         # Stage 2: that the feature was used, nothing about WHAT was selected.
         # The per-source counters and the download events already carry that,

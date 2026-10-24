@@ -45,6 +45,11 @@ function libBookMatchesQuery(book, q) {
   return false;
 }
 
+// One collator for every comparison. localeCompare(b, "de", {...}) builds a new
+// Intl.Collator on each call, which made sorting a large shelf ~35x slower.
+// Same locale and options, so the order is unchanged.
+var _libBookCollator = new Intl.Collator("de", { sensitivity: "base" });
+
 function libSortBooks(items) {
   return items.slice().sort(function(a, b) {
     var v;
@@ -57,8 +62,8 @@ function libSortBooks(items) {
       if (sa && sa === sb) {
         v = (a.book.series_index || 0) - (b.book.series_index || 0);
       } else {
-        v = (a.book.sort_title || a.book.title || "")
-              .localeCompare(b.book.sort_title || b.book.title || "", "de", { sensitivity: "base" });
+        v = _libBookCollator.compare(a.book.sort_title || a.book.title || "",
+                                     b.book.sort_title || b.book.title || "");
       }
     }
     return libSortAsc ? v : -v;
@@ -367,11 +372,21 @@ function libBookShortPath(path) {
   return parts.slice(-2).join("/");
 }
 
+// The books painted on the current page, in card order. libToggleBook()
+// resolves a clicked card through this instead of rebuilding the list.
+var _libBookPageItems = [];
+
 function libPaintBooks(items) {
   var gridEl  = document.getElementById("libGridView");
   var listEl  = document.getElementById("libListView");
   var emptyEl = document.getElementById("libEmptyState");
   if (!gridEl || !listEl) return;
+
+  // Same contract as the video shelf: a full repaint drops the kebab-menu
+  // contexts of the cards it replaces (library_core.js). Book cards register
+  // none today; this keeps the registry bounded if they ever do.
+  libResetMenuCtx();
+  _libBookPageItems = [];
 
   if (!items.length) {
     gridEl.hidden = true;
@@ -408,6 +423,7 @@ function libPaintBooks(items) {
   if (libPage < 0) libPage = 0;
   var pageStart = libPage * libPerPage;
   var pageItems = items.slice(pageStart, pageStart + libPerPage);
+  _libBookPageItems = pageItems;
 
   var html = [];
   var openItem = null, openPfx = null;
@@ -616,12 +632,12 @@ function libBookCardKey(ev, pfx) {
 function libToggleBook(pfx) {
   var el = document.getElementById(pfx);
   if (!el) return;
-  var items = libSortBooks(libFlattenBooks(libLocations).filter(function(it) {
-    if (!libSearchQuery) return true;
-    return libBookMatchesQuery(it.book, libSearchQuery.toLowerCase());
-  }));
+  // The card index points into the page exactly as it was painted. Rebuilding
+  // the list here skipped the Series/Single filter, so with a filter active the
+  // index hit a different list and the wrong book opened -- and every click
+  // flattened and sorted the whole shelf twice.
   var idx = parseInt(pfx.replace("libBook", ""), 10);
-  var item = items[libPage * libPerPage + idx];
+  var item = _libBookPageItems[idx];
   if (!item) return;
   _libOpenBookKey = (_libOpenBookKey === item.book.key) ? null : item.book.key;
   libRenderBooks();

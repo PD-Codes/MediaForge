@@ -143,6 +143,18 @@ def _get_display_version():
     return base
 
 
+def get_version_info() -> dict:
+    """``{"version": <display version>, "base": <package version>}``.
+
+    Imported by diagnostics.py, settings_profile.py and dbmigrate.py, but it
+    never existed: every diagnostics bundle carried "cannot import name
+    'get_version_info'" instead of the version, and exported settings profiles
+    had an empty app_version.
+    """
+    base = _get_version()
+    return {"version": _get_display_version() or base, "base": base}
+
+
 def is_release_already_installed(tag) -> bool:
     """True if announcing *tag* would be telling this install old news.
 

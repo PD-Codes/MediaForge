@@ -352,6 +352,9 @@ class ContextConnection(sqlite3.Connection):
         super().close()
 
 
+_config_dir_ready = False
+
+
 def get_db():
     """Return a SQLite connection for the current context.
 
@@ -363,7 +366,12 @@ def get_db():
     worker, upscale worker, ...) do not immediately hit "database is
     locked" errors.
     """
-    MEDIAFORGE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    global _config_dir_ready
+    if not _config_dir_ready:
+        # Once per process instead of a mkdir() system call on every DB
+        # access (get_db() runs dozens of times per request).
+        MEDIAFORGE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        _config_dir_ready = True
     try:
         from flask import g, has_app_context
         if has_app_context():

@@ -4,6 +4,11 @@ from PyInstaller.utils.hooks import collect_data_files
 datas = [
     ("src/mediaforge/web/templates", "mediaforge/web/templates"),
     ("src/mediaforge/web/static",    "mediaforge/web/static"),
+    # Without the catalogs Flask-Babel finds no translation and the frozen
+    # build shows the English msgids everywhere, also with German selected.
+    ("src/mediaforge/web/translations", "mediaforge/web/translations"),
+    # The Anime4K shaders, otherwise only available after a runtime download.
+    ("src/mediaforge/anime4k/shader", "mediaforge/anime4k/shader"),
 ]
 
 # Pull in non-Python assets from third-party packages

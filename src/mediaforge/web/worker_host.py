@@ -289,7 +289,7 @@ def run(workers=None) -> int:
     # web process. Never both: two watchdogs would race to restart the same
     # worker, and the loser would kill the winner's freshly started thread.
     from .worker_watchdog import start as _start_watchdog, stop as _stop_watchdog
-    _start_watchdog()
+    _start_watchdog(owned=started)
 
     logger.info("[WorkerHost] Running. Ctrl-C or SIGTERM to stop.")
     try:

@@ -43,16 +43,18 @@ def _require_admin():
 
 
 def _read_upload(payload):
-    """Validate and return the uploaded backup text, or an (error, status) tuple.
+    """Validate the uploaded backup and return it UTF-8 encoded.
 
-    Returns a ``str`` on success or a Flask response tuple on failure.
+    Returns ``bytes`` on success or a Flask response tuple on failure. The
+    text is encoded once here and handed on as is -- a backup can be 64 MB.
     """
     file_text = payload.get("file") or ""
-    if not file_text:
+    if not isinstance(file_text, str) or not file_text:
         return jsonify({"error": "no backup file provided"}), 400
-    if len(file_text.encode("utf-8")) > _MAX_BACKUP_BYTES:
+    data = file_text.encode("utf-8")
+    if len(data) > _MAX_BACKUP_BYTES:
         return jsonify({"error": "backup file too large"}), 413
-    return file_text
+    return data
 
 
 def register_backup_routes(app):
@@ -101,11 +103,11 @@ def register_backup_routes(app):
         if denied:
             return denied
         payload = request.get_json(silent=True) or {}
-        file_text = _read_upload(payload)
-        if not isinstance(file_text, str):
-            return file_text  # error response tuple
+        data = _read_upload(payload)
+        if not isinstance(data, bytes):
+            return data  # error response tuple
         try:
-            info = _backup.preview_backup(file_text.encode("utf-8"), payload.get("password") or "")
+            info = _backup.preview_backup(data, payload.get("password") or "")
         except BackupError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception:
@@ -120,16 +122,16 @@ def register_backup_routes(app):
         if denied:
             return denied
         payload = request.get_json(silent=True) or {}
-        file_text = _read_upload(payload)
-        if not isinstance(file_text, str):
-            return file_text  # error response tuple
+        data = _read_upload(payload)
+        if not isinstance(data, bytes):
+            return data  # error response tuple
         # Password may be empty for an unencrypted backup; import_backup()
         # raises BackupError if the backup actually needs one.
         password = payload.get("password") or ""
         mode = payload.get("mode", "merge")
         categories = payload.get("categories") or []
         try:
-            report = _backup.import_backup(file_text.encode("utf-8"), password, categories, mode)
+            report = _backup.import_backup(data, password, categories, mode)
         except BackupError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception:

@@ -8,6 +8,8 @@ JS refresh path in static/devinfos.js), since the remote server is a
 separate, unauthenticated app and its content must be treated as untrusted.
 """
 
+import functools
+
 import bleach
 import markdown
 
@@ -33,8 +35,17 @@ ALLOWED_ATTRS = {
 
 def render_markdown(text: str) -> str:
     """Render Markdown to sanitized HTML for safe display of Dev Info post bodies."""
+    return _render_cached(text or "")
+
+
+# The output depends on nothing but the input text, and the same few posts
+# are rendered over and over: on every home page view (Dev-Info banners), on
+# every Dev Infos page refresh and on every badge poll. markdown + bleach cost
+# 1-20 ms per post on a fast CPU, several times that on a NAS.
+@functools.lru_cache(maxsize=256)
+def _render_cached(text: str) -> str:
     html = markdown.markdown(
-        text or "",
+        text,
         extensions=["fenced_code", "tables", "nl2br", "sane_lists"],
     )
     return bleach.clean(html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRS, strip=True)

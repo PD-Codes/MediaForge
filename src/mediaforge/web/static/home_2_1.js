@@ -106,6 +106,9 @@
         // non-event -- and a button that appears to do nothing is
         // indistinguishable from a broken one.
         if (data.error === "pin") { pinError(T("mode_locked")); return; }
+        // Too many wrong PINs in a row: the server waits before it checks
+        // again (see routes/home_extras.py).
+        if (data.error === "pin-wait") { pinError(T("mode_pin_wait")); return; }
         const why = data.error === "kids-disabled" ? T("mode_disabled")
           : (data.error === "no session" ? T("mode_no_session")
              : T("mode_failed") + " (" + resp.status + ")");

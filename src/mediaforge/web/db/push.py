@@ -30,10 +30,24 @@ def db_add_push_subscription(
         conn.close()
 
 
-def db_remove_push_subscription(endpoint):
+def db_remove_push_subscription(endpoint, owner_id=None):
+    """Delete the subscription for *endpoint*.
+
+    With *owner_id* only a subscription of that account (or one stored
+    without an owner) is deleted -- the unsubscribe route must not let one
+    account remove another's. Without it (expired-endpoint cleanup) the row
+    goes regardless of its owner.
+    """
     conn = get_db()
     try:
-        conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+        if owner_id is None:
+            conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+        else:
+            conn.execute(
+                "DELETE FROM push_subscriptions WHERE endpoint = ?"
+                " AND (user_id = ? OR user_id IS NULL)",
+                (endpoint, owner_id),
+            )
         conn.commit()
     finally:
         conn.close()

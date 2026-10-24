@@ -17,6 +17,9 @@ page keeps a single registration entry point in create_app().
 
 from __future__ import annotations
 
+import threading
+import time
+
 from flask import Response
 from flask import jsonify
 from flask import request
@@ -43,6 +46,39 @@ def _user_prefs():
         return get_user_ui_prefs(uid) if uid is not None else {}
     except Exception:
         return {}
+
+
+# Wrong kids-mode PINs per account: uid -> [consecutive failures, locked until].
+# In memory on purpose -- a restart forgets it, which costs an attacker a
+# restart per handful of guesses, and nothing has to be cleaned up.
+_PIN_FAILS: dict = {}
+_PIN_FAILS_LOCK = threading.Lock()
+_PIN_FREE_TRIES = 5          # typos are normal; the backoff starts after these
+_PIN_MAX_WAIT = 300          # seconds
+
+
+def _pin_wait_seconds(uid) -> int:
+    with _PIN_FAILS_LOCK:
+        entry = _PIN_FAILS.get(uid)
+        if not entry:
+            return 0
+        remaining = entry[1] - time.time()
+    return int(remaining) + 1 if remaining > 0 else 0
+
+
+def _pin_failed(uid) -> None:
+    with _PIN_FAILS_LOCK:
+        entry = _PIN_FAILS.setdefault(uid, [0, 0.0])
+        entry[0] += 1
+        over = entry[0] - _PIN_FREE_TRIES
+        if over >= 0:
+            # 30 s, 60 s, 120 s, ... capped.
+            entry[1] = time.time() + min(_PIN_MAX_WAIT, 30 * (2 ** over))
+
+
+def _pin_ok(uid) -> None:
+    with _PIN_FAILS_LOCK:
+        _PIN_FAILS.pop(uid, None)
 
 
 def register_home_extras_routes(app):
@@ -236,12 +272,20 @@ def register_home_extras_routes(app):
             # a PIN that does not exist and then accepting whatever is typed
             # is worse than not asking: it teaches that the lock works.
             if pin:
+                # A 4-8 digit PIN is 10^4 guesses at the short end; without a
+                # limit a script in kids mode tried them all in minutes.
+                wait = _pin_wait_seconds(uid)
+                if wait:
+                    return jsonify({"ok": False, "error": "pin-wait",
+                                    "retry_after": wait}), 429
                 given = str(data.get("pin", "") or "").strip()
                 # Constant-time compare: this is a short secret being checked
                 # by an endpoint anyone may call as often as they like.
                 import hmac
                 if not given or not hmac.compare_digest(given, pin):
+                    _pin_failed(uid)
                     return jsonify({"ok": False, "error": "pin"}), 403
+                _pin_ok(uid)
 
         patch = {"home_max_fsk": raw_fsk}
         if mode:

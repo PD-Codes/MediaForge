@@ -167,7 +167,9 @@ async function libIdlePoll() {
   // Skip if a scan poll is already running (it will handle the update)
   if (libScanPollTimer) return;
   try {
-    var resp = await fetch("/api/library/status");
+    // Scoped to this page's library: a book scan must not start the video
+    // page's scan poll (and the other way round).
+    var resp = await fetch("/api/library/status?kind=" + encodeURIComponent(LIB_KIND));
     var status = await resp.json();
     if (status.is_scanning) {
       // Watcher just triggered a scan — hand off to scan poller
@@ -183,28 +185,32 @@ async function libIdlePoll() {
   } catch (e) { /* ignore network errors */ }
 }
 
-// Poll only while a scan is running — stops itself when done
+// Poll only while a scan is running — stops itself when done.
+// Asks the small status endpoint. This used to fetch the full listing
+// (several MB on a large library) every 2.5 s only to read is_scanning and
+// throw the rest away; the listing is now fetched once, when the scan is over.
+var _libScanPollBusy = false;
 async function libPollScan() {
+  if (_libScanPollBusy) return;
+  _libScanPollBusy = true;
   try {
-    var resp = await fetch("/api/library?kind=" + encodeURIComponent(LIB_KIND));
-    var data = await resp.json();
-    libUpdateWatcherStatus(data.watcher || {});
-    libIsScanning = !!data.is_scanning;
-    if (!data.is_scanning) {
-      libLangSep   = !!data.lang_sep;
-      libLocations = data.locations || [];
-      libAllTargets = libLocations.map(function(loc) {
-        return { label: loc.label, custom_path_id: loc.custom_path_id };
-      });
-      libLastUpdated = data.last_updated || 0;
-      libRender(libLocations);
-      libUpdateSummary(libLocations);
-      libShowScanBadge(false);
-      window.mfPollStop(libScanPollTimer);
-      libScanPollTimer = null;
-      libUpdateTimestamp();
+    var resp = await fetch("/api/library/status?kind=" + encodeURIComponent(LIB_KIND));
+    var status = await resp.json();
+    if (status.watcher) libUpdateWatcherStatus(status.watcher);
+    if (!status.is_scanning) {
+      libIsScanning = false;
+      if (libScanPollTimer) {
+        window.mfPollStop(libScanPollTimer);
+        libScanPollTimer = null;
+      }
+      // Renders, hides the badge and updates the timestamp -- or restarts
+      // this poll if the server has just started another scan.
+      await libFetch();
     }
-  } catch (e) {}
+  } catch (e) {
+  } finally {
+    _libScanPollBusy = false;
+  }
 }
 
 function libUpdateTimestamp() {
@@ -245,7 +251,7 @@ function libUpdateWatcherStatus(watcher) {
     }
   } else {
     dot.className   = "lib-watcher-dot lib-watcher-starting";
-    label.textContent = "Watcher startet…";
+    label.textContent = t("Watcher startet…", "Watcher starting…");
   }
 }
 
@@ -296,6 +302,9 @@ function libOnSearch(value) {
 }
 
 function libClearSearch() {
+  // A search typed a moment ago may still be waiting out its debounce; left
+  // pending, it would put the old query back right after the field was cleared.
+  if (_libSearchTimer) { clearTimeout(_libSearchTimer); _libSearchTimer = null; }
   var input = document.getElementById("libSearchInput");
   if (input) { input.value = ""; input.focus(); }
   libSearchQuery = "";
@@ -449,6 +458,15 @@ function libRegMenuCtx(data) {
   return key;
 }
 
+// Drop every registered menu context. Called by a page's libRender() before
+// it repaints the whole shelf: the old cards (and the keys they carried) are
+// gone at that point, but their contexts -- each holding every file path of
+// a title -- stayed in the map for as long as the tab was open. The counter
+// keeps running, so a stale key can never hit a new context.
+function libResetMenuCtx() {
+  _libMenuContexts = {};
+}
+
 // Attribute-safe escaping. Same implementation as libEsc now -- the shared
 // escaper (static/mf_escape.js) is safe in both text and attribute context,
 // so the two names only survive to keep the call sites readable.
@@ -568,7 +586,8 @@ function libCopyToClipboard(text, btn) {
   navigator.clipboard.writeText(text).then(function() {
     if (btn) {
       var oldHtml = btn.innerHTML;
-      btn.innerHTML = '<span style="font-size:0.75rem;font-weight:bold;color:var(--text-success)">Kopiert!</span>';
+      btn.innerHTML = '<span style="font-size:0.75rem;font-weight:bold;color:var(--text-success)">' +
+        libEsc(t("Kopiert!", "Copied!")) + '</span>';
       setTimeout(function() {
         btn.innerHTML = oldHtml;
       }, 1500);

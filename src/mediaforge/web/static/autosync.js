@@ -129,7 +129,10 @@ document.addEventListener("visibilitychange", () => {
 
 async function loadSyncSchedule() {
   try {
-    const resp = await fetch("/api/settings");
+    // The read-only subset every account may fetch. /api/settings is
+    // admin-only: a normal user got a 403, read as "no settings", and so no
+    // schedule ("next check" stayed "—") and no language groups.
+    const resp = await fetch("/api/settings/client");
     const data = await resp.json();
     currentSyncSchedule = data.sync_schedule || "0";
     currentSyncMode = data.sync_mode === "weekly" ? "weekly" : "interval";
@@ -468,10 +471,18 @@ function onAutoGroupChange() {
   renderJobs(currentJobs);
 }
 
+// Debounced like the library search (libOnSearch): every keystroke used to
+// filter, sort, group and rebuild the whole job list ("All" per page = every
+// job).
+let _searchTimer = null;
 function onSearchInput(val) {
-  currentSearch = (val || "").trim().toLowerCase();
-  currentPage = 1;
-  renderJobs(currentJobs);
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => {
+    _searchTimer = null;
+    currentSearch = (val || "").trim().toLowerCase();
+    currentPage = 1;
+    renderJobs(currentJobs);
+  }, 200);
 }
 
 function _autoGroupValue(job, attr) {

@@ -13,6 +13,11 @@ anything is opened. On top of it, the page routes only ever serve a member
 name that came back out of `archive.list_pages()`, which rejects traversal
 inside the archive as well (see comics/archive.py).
 """
+import hashlib
+import os
+import threading
+from collections import OrderedDict
+
 from flask import jsonify
 from flask import request
 
@@ -23,6 +28,67 @@ from ..media_types import COMIC_EXTS
 from ...logger import get_logger
 
 logger = get_logger(__name__)
+
+
+# The page lists of the comics being read: (path, size, mtime_ns) ->
+# (fmt, source, source_fmt, pages). The reader asks /pages once and then /page
+# for every page, and each of those used to sniff the file, open the archive
+# and read + naturally sort its whole directory, then open and parse it again
+# for the one member: three opens and two directory reads per page turn, over
+# SMB on most NAS setups. Size and mtime in the key make a file replaced at
+# the same path a different entry. Only readable comics with pages are kept.
+_INDEX_MAX = 32
+_index = OrderedDict()
+_index_lock = threading.Lock()
+
+
+def _index_key(path):
+    """The memo key for *path*, or None if it cannot be stat'ed."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (str(path), st.st_size, st.st_mtime_ns)
+
+
+def _index_get(key):
+    if key is None:
+        return None
+    with _index_lock:
+        hit = _index.get(key)
+        if hit is not None:
+            _index.move_to_end(key)
+        return hit
+
+
+def _index_put(key, value):
+    if key is None:
+        return
+    with _index_lock:
+        _index[key] = value
+        _index.move_to_end(key)
+        while len(_index) > _INDEX_MAX:
+            _index.popitem(last=False)
+
+
+def _index_drop(key):
+    with _index_lock:
+        _index.pop(key, None)
+
+
+def _page_etag(key, source, index):
+    """Validator for one page: the comic's identity, where its pages are read
+    from (a converted copy's path carries the converter version) and the page."""
+    raw = "{}|{}|{}|{}|{}".format(key[0], key[1], key[2], source, index)
+    return hashlib.sha1(raw.encode("utf-8", "surrogateescape")).hexdigest()[:32]
+
+
+# Pages are addressed by ?path=&n=, a URL that stays the same when the file at
+# that path is replaced. So no `immutable` and no day-long freshness (which kept
+# showing a replaced issue's old pages for a day without ever asking): five
+# minutes, like the covers, then a revalidation that the ETag answers with a
+# 304 -- from the memo above, without opening the archive.
+_PAGE_CACHE_CONTROL = "private, max-age=300, must-revalidate"
 
 
 # Content types for the page images we are willing to serve. Derived from the
@@ -47,11 +113,13 @@ def _resolve(param="path"):
                                     exts=COMIC_EXTS)
 
 
-def _readable_source(path):
+def _readable_source(path, fmt=None):
     """The file pages can actually be read from: the original for a native
     container, the cached CBZ for a RAR/ACE that has already been converted,
-    or None when neither is available yet."""
-    fmt = archive.sniff(path)
+    or None when neither is available yet. *fmt* is the sniffed format of
+    *path*, when the caller has it already."""
+    if fmt is None:
+        fmt = archive.sniff(path)
     if archive.is_native(fmt):
         return path, fmt
     converted = convert.readable_source(path)
@@ -76,6 +144,13 @@ def register_comic_routes(app):
         if path is None:
             return jsonify({"ok": False, "error": "not found"}), 404
 
+        key = _index_key(path)
+        hit = _index_get(key)
+        if hit is not None:
+            fmt, _source, _source_fmt, pages = hit
+            return jsonify({"ok": True, "readable": True, "format": fmt,
+                            "count": len(pages), "pages": pages})
+
         fmt = archive.sniff(path)
         if fmt in archive.DIRECT_FORMATS:
             # A PDF is not an archive: pdf.js reads it straight from
@@ -83,7 +158,7 @@ def register_comic_routes(app):
             return jsonify({"ok": True, "direct": True, "format": fmt,
                             "readable": True, "count": 0, "pages": []})
 
-        source, source_fmt = _readable_source(path)
+        source, source_fmt = _readable_source(path, fmt)
         if source is None:
             status = convert.conversion_status(path)
             reason = status.get("reason") or ("needs_conversion" if status.get("ok") else "unreadable")
@@ -108,6 +183,7 @@ def register_comic_routes(app):
         if not pages:
             return jsonify({"ok": False, "readable": False, "format": fmt,
                             "reason": "no_pages", "count": 0, "pages": []})
+        _index_put(key, (fmt, source, source_fmt, pages))
         return jsonify({"ok": True, "readable": True, "format": fmt,
                         "count": len(pages), "pages": pages})
 
@@ -131,26 +207,47 @@ def register_comic_routes(app):
         except (TypeError, ValueError):
             return jsonify({"error": "bad page index"}), 400
 
-        source, source_fmt = _readable_source(path)
-        if source is None:
-            return jsonify({"error": "not readable"}), 409
+        key = _index_key(path)
+        hit = _index_get(key)
+        while True:
+            if hit is not None:
+                _fmt, source, source_fmt, pages = hit
+            else:
+                fmt = archive.sniff(path)
+                source, source_fmt = _readable_source(path, fmt)
+                if source is None:
+                    return jsonify({"error": "not readable"}), 409
+                pages = archive.list_pages(source, source_fmt)
+                if pages:
+                    _index_put(key, (fmt, source, source_fmt, pages))
+            if index < 0 or index >= len(pages):
+                return jsonify({"error": "page out of range"}), 404
 
-        pages = archive.list_pages(source, source_fmt)
-        if index < 0 or index >= len(pages):
-            return jsonify({"error": "page out of range"}), 404
-
-        name = pages[index]
-        data = archive.read_page(source, name, source_fmt)
+            name = pages[index]
+            etag = _page_etag(key, source, index) if key is not None else None
+            if etag is not None and request.if_none_match.contains_weak(etag):
+                not_modified = Response(status=304)
+                not_modified.set_etag(etag)
+                not_modified.headers["Cache-Control"] = _PAGE_CACHE_CONTROL
+                return not_modified
+            data = archive.read_page(source, name, source_fmt)
+            if data is not None or hit is None:
+                break
+            # A remembered source that does not read any more -- a converted
+            # copy removed by "clear cache" -- is looked up afresh, once.
+            _index_drop(key)
+            hit = None
         if data is None:
             return jsonify({"error": "page unreadable"}), 404
 
         from pathlib import PurePosixPath
         mime = _PAGE_MIME.get(PurePosixPath(name).suffix.lower(), "application/octet-stream")
         response = Response(data, mimetype=mime)
-        # Immutable: a page inside an archive cannot change without the file
-        # changing, and the file's mtime is part of every cache key upstream.
-        # `private` because a library path is not public.
-        response.headers["Cache-Control"] = "private, max-age=86400, immutable"
+        # `private` because a library path is not public; see
+        # _PAGE_CACHE_CONTROL for why this is no longer `immutable`.
+        response.headers["Cache-Control"] = _PAGE_CACHE_CONTROL
+        if etag is not None:
+            response.set_etag(etag)
         return response
 
     @app.route("/api/library/comic/cover")
@@ -168,8 +265,9 @@ def register_comic_routes(app):
         if path is None:
             return jsonify({"error": "not found"}), 404
         # start_conversion=False: a shelf render must never kick off 300
-        # background repacks just because it drew 300 cards.
-        cached = covers.cover_path(path, start_conversion=False)
+        # background repacks just because it drew 300 cards. resolved=True:
+        # _resolve() already did, so the cache key skips a second realpath.
+        cached = covers.cover_path(path, start_conversion=False, resolved=True)
         if cached is None:
             # A cover that does not exist YET is not a fact worth remembering.
             # Browsers heuristically cache a 404 that carries no caching

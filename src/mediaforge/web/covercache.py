@@ -95,6 +95,15 @@ class CoverCache:
         # platforms. ".webp" is always allowed: it is what _downscale writes,
         # whatever the source format was.
         self.allowed_exts = tuple(sorted(set(allowed_exts) | {".webp"}))
+        # Lookup order: ".webp" first, because that is what nearly every entry
+        # is stored as -- it used to be tried last, after six misses.
+        self._probe_order = (".webp",) + tuple(e for e in self.allowed_exts if e != ".webp")
+        # key -> extension of the entries looked up or stored lately, so a
+        # cover kept in its original format is found with one stat too.
+        # Only a hint: every hit is still checked on disk.
+        self._ext_hint = {}
+        # Cache directories already created by this process (see root()).
+        self._made_roots = set()
         self.log_prefix = str(log_prefix)
         self.max_edge = int(max_edge)
         self.quality = int(quality)
@@ -114,11 +123,22 @@ class CoverCache:
         except Exception:
             base = Path(tempfile.gettempdir()) / "mediaforge"
         root = base / self.subdir
-        root.mkdir(parents=True, exist_ok=True)
+        # Created once per process (and per location: tests point the config
+        # dir elsewhere). Every cover request used to pay a mkdir plus a stat
+        # here for a directory that has existed since the first one; _store()
+        # still makes sure it exists before it writes.
+        if str(root) not in self._made_roots:
+            root.mkdir(parents=True, exist_ok=True)
+            self._made_roots.add(str(root))
         return root
 
-    def cache_key(self, path) -> str:
+    def cache_key(self, path, resolved: bool = False) -> str:
         """Identity of one cover: path + mtime + size + version.
+
+        *resolved* says *path* is already canonical (it came out of
+        Path.resolve(), e.g. through routes/library.lib_resolve_library_file),
+        which saves resolving it again -- one lstat per path component, per
+        request. The key is the same either way.
 
         Raises OSError when the file is gone -- callers treat that as "no
         cover", which is also what it is.
@@ -126,18 +146,34 @@ class CoverCache:
         path = Path(path)
         stat = path.stat()
         raw = "{}|{}|{}|{}".format(
-            path.resolve(), int(stat.st_mtime), stat.st_size, self.version
+            path if resolved else path.resolve(), int(stat.st_mtime), stat.st_size, self.version
         )
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
 
     def cached(self, key: str):
         """The cached file for *key*, whatever image format it was stored in."""
         root = self.root()
-        for ext in self.allowed_exts:
-            candidate = root / (key + ext)
+        hint = self._ext_hint.get(key)
+        if hint is not None:
+            candidate = root / (key + hint)
             if candidate.is_file():
                 return candidate
+        for ext in self._probe_order:
+            if ext == hint:
+                continue
+            candidate = root / (key + ext)
+            if candidate.is_file():
+                self._remember_ext(key, ext)
+                return candidate
+        if hint is not None:
+            self._ext_hint.pop(key, None)
         return None
+
+    def _remember_ext(self, key: str, ext: str) -> None:
+        # Bounded the cheap way: a hint costs one stat when it is missing.
+        if len(self._ext_hint) >= 8192:
+            self._ext_hint.clear()
+        self._ext_hint[key] = ext
 
     def has_cover(self, src) -> bool:
         """True if a cover for *src* is already cached.
@@ -227,9 +263,13 @@ class CoverCache:
         target = root / (key + ext)
         tmp = root / "{}.{}-{}.part".format(key, os.getpid(), threading.get_ident())
         try:
+            # root() creates the directory only once per process; a write is
+            # rare enough to make sure it still exists.
+            root.mkdir(parents=True, exist_ok=True)
             with open(tmp, "wb") as fh:
                 fh.write(data)
             os.replace(tmp, target)
+            self._remember_ext(key, ext)
         except OSError as exc:
             logger.info("%s Cannot cache cover %s: %s", self.log_prefix, key, exc)
             try:

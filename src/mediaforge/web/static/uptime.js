@@ -434,7 +434,7 @@
     });
   }
 
-  // Guards the 10 s poll against itself. A status response that takes longer
+  // Guards the poll against itself. A status response that takes longer
   // than the poll interval used to let requests pile up, and because they can
   // complete out of order an older payload could overwrite a newer one — the
   // page then showed a status that had already been superseded. One request at
@@ -466,6 +466,7 @@
     }
     // A late answer from a superseded request must never repaint the page.
     if (seq !== _reqSeq) return;
+    followInterval(data.interval);
     const now = data.now || Math.floor(Date.now() / 1000);
     const sources = sortSources(data.sources || []);
     const grid = document.getElementById("uptimeGrid");
@@ -499,15 +500,40 @@
     setTimeout(function () { refresh({ force: true }); reset(); }, 4000);
   };
 
+  // How often the page asks again. The monitor probes once per configured
+  // interval (300 s by default, never under 60 s), and every status request
+  // re-buckets the whole window per source -- polling every 10 s asked about
+  // 30 times per new data point. A third of the interval, at most a minute;
+  // the range buttons, the custom range and "check now" still refresh at once.
+  const POLL_MAX_MS = 60000;
+  let pollMs = 0;
+  let probeInterval = 0;   // seconds, from the last status answer
+
+  function pollDelay() {
+    if (!probeInterval) return POLL_MAX_MS;
+    return Math.max(10000, Math.min(POLL_MAX_MS, Math.round(probeInterval * 1000 / 3)));
+  }
+
   // setInterval hands the callback its own arguments, so refresh must not be
   // passed to it bare — it would arrive as refresh(<number>) and be read as an
   // options object.
   function startPolling() {
     if (timer) return;
     refresh({ force: true });
-    timer = setInterval(function () { refresh(); }, 10000);
+    pollMs = pollDelay();
+    timer = setInterval(function () { refresh(); }, pollMs);
   }
   function stopPolling() { if (timer) { clearInterval(timer); timer = null; } }
+
+  // The interval is only known once the first answer is in (and it can be
+  // changed in the settings meanwhile), so the running timer follows it.
+  function followInterval(seconds) {
+    probeInterval = seconds || 0;
+    if (!timer || pollDelay() === pollMs) return;
+    stopPolling();
+    pollMs = pollDelay();
+    timer = setInterval(function () { refresh(); }, pollMs);
+  }
 
   document.addEventListener("DOMContentLoaded", function () {
     loadSel();

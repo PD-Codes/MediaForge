@@ -13,14 +13,14 @@ would report "a request came in" instead of "the feature was used".
 """
 
 from ..db import delete_calendar_episodes_except
-from ..db import get_all_library_cache
+from ..db import get_all_library_cache_shared
 from ..db import get_autosync_jobs
 from ..db import get_cached_calendar_media
 from ..db import get_calendar_episodes_from_db
 from ..db import get_media_ignores
 from ..db import get_mediascan_series
 from ..db import get_setting
-from ..db import get_tmdb_cache_bulk
+from ..db import get_tmdb_cache_bulk_light
 from ..db import save_calendar_episode
 from ..db import save_calendar_episodes
 from ..db import save_calendar_media
@@ -194,7 +194,7 @@ def _library_series_titles():
         # scan target" guard, and importing it at module level would couple two
         # route modules for one helper.
         from .stats import _active_library_cache
-        cache = _active_library_cache(get_all_library_cache())
+        cache = _active_library_cache(get_all_library_cache_shared())
         ignores = get_media_ignores()
     except Exception as exc:
         logger.debug("[Calendar] Library cache read failed: %s", exc)
@@ -241,7 +241,9 @@ def _library_tv_ids(api_key, country, live_budget=0):
     # Exactly the cache-key layout _tmdb_lookup_cached() writes for a title.
     keys = [t + "|||" + country + "|||" + _TITLE_RESOLVE_LANG for t in titles]
     try:
-        hits = get_tmdb_cache_bulk(keys)
+        # Light projection: found/media_type/tmdb_id is all this reads, and it
+        # runs every 10 s in the watcher (see db.get_tmdb_cache_bulk_light).
+        hits = get_tmdb_cache_bulk_light(keys)
     except Exception as exc:
         logger.debug("[Calendar] Bulk TMDB cache read failed: %s", exc)
         hits = {}
@@ -403,6 +405,28 @@ def _cr_calendar_targets(api_key, country, ui_lang, now):
     return list(_cr_calendar_ids)
 
 
+# tmdb_id -> time.time() before which the watcher does not try it again. Set
+# when a sync hit a transient TMDB error and therefore wrote nothing: without
+# it, a NEW id would keep the watcher in its 0.5 s busy cadence for the whole
+# TMDB backoff, and a stale one at the head of the refresh list would block
+# every other refresh behind it.
+_CAL_RETRY_AFTER: dict = {}
+_CAL_RETRY_DELAY = 300.0
+
+
+def _cal_note_transient(tmdb_id) -> None:
+    import time as _t
+    _CAL_RETRY_AFTER[tmdb_id] = _t.time() + _CAL_RETRY_DELAY
+    if len(_CAL_RETRY_AFTER) > 5000:
+        now = _t.time()
+        for key in [k for k, v in _CAL_RETRY_AFTER.items() if v <= now]:
+            _CAL_RETRY_AFTER.pop(key, None)
+
+
+def _cal_waiting(tmdb_id, now) -> bool:
+    return _CAL_RETRY_AFTER.get(tmdb_id, 0) > now
+
+
 def _sync_calendar_item(tmdb_id, media_type, api_key):
     """Fetch one TV show's or movie's schedule from TMDB and persist it to
     the calendar cache tables (media row + per-episode/release rows). Called
@@ -413,9 +437,19 @@ def _sync_calendar_item(tmdb_id, media_type, api_key):
     try:
         if media_type == "tv":
             cal = _tmdb_calendar_episodes(tmdb_id, api_key, "de")
+            if cal and cal.get("transient"):
+                # Timeout / 429 / 5xx: write nothing. This used to replace a
+                # good title and poster with the "TMDB TV #id" placeholder and
+                # bump last_updated -- 24 h of a nameless entry -- or save the
+                # half of the seasons that answered and delete the rest. The
+                # watcher skips the id for a while instead (_CAL_RETRY_AFTER).
+                _cal_note_transient(tmdb_id)
+                return
             if not cal or not cal.get("title"):
-                # Save a dummy media to db so we don't query it infinitely
-                save_calendar_media(tmdb_id, f"TMDB TV #{tmdb_id}", f"TMDB TV #{tmdb_id}", "")
+                # Save a dummy media to db so we don't query it infinitely --
+                # but never over a real entry.
+                if not get_cached_calendar_media([tmdb_id]):
+                    save_calendar_media(tmdb_id, f"TMDB TV #{tmdb_id}", f"TMDB TV #{tmdb_id}", "")
                 return
             cal_en = {}
             try:
@@ -458,8 +492,12 @@ def _sync_calendar_item(tmdb_id, media_type, api_key):
             # considered primary and never a real German cinema/streaming day.
             country = get_setting("cineinfo_country", "DE")
             mov = _tmdb_movie_release(tmdb_id, api_key, "de", country)
+            if mov and mov.get("transient"):
+                _cal_note_transient(tmdb_id)
+                return   # see the TV branch above
             if not mov or not mov.get("title") or not mov.get("release_date"):
-                save_calendar_media(tmdb_id, f"TMDB Movie #{tmdb_id}", f"TMDB Movie #{tmdb_id}", "")
+                if not get_cached_calendar_media([tmdb_id]):
+                    save_calendar_media(tmdb_id, f"TMDB Movie #{tmdb_id}", f"TMDB Movie #{tmdb_id}", "")
                 return
             title_en = mov["title"]
             try:
@@ -519,7 +557,24 @@ def _calendar_watcher_loop():
                         priority_titles.append(t)
 
             priority_tv_ids = set()
+            # One bulk read of the cached lookups first (light projection, no
+            # JSON parsing for unchanged rows); lookup_media() -- a full
+            # payload parse, or a live TMDB call on a miss -- only for the
+            # titles the cache does not answer. This loop runs every 10 s.
+            try:
+                _known = get_tmdb_cache_bulk_light(
+                    [t + "|||" + country + "|||" + ui_lang for t in priority_titles])
+            except Exception:
+                _known = {}
             for title in priority_titles:
+                light = _known.get(title + "|||" + country + "|||" + ui_lang)
+                if light is not None:
+                    if light.get("found") and light.get("media_type") == "tv" and light.get("tmdb_id"):
+                        try:
+                            priority_tv_ids.add(int(light["tmdb_id"]))
+                        except (TypeError, ValueError):
+                            pass
+                    continue
                 try:
                     info = lookup_media(title, media_type="tv", api_key=api_key,
                                         country=country, ui_lang=ui_lang)
@@ -608,11 +663,12 @@ def _calendar_watcher_loop():
             # Build List A (missing from DB)
             list_a_priority = []
             list_a_mediathek = []
+            _now_a = _t.time()
             for tid, mt in priority_media_targets:
-                if tid not in cached_times:
+                if tid not in cached_times and not _cal_waiting(tid, _now_a):
                     list_a_priority.append((tid, mt))
             for tid, mt in mediathek_media_targets:
-                if tid not in cached_times:
+                if tid not in cached_times and not _cal_waiting(tid, _now_a):
                     list_a_mediathek.append((tid, mt))
 
             # Build List B (existing in DB, needs refresh)
@@ -622,7 +678,7 @@ def _calendar_watcher_loop():
             list_b = []
             now = _t.time()
             for tid, mt in (priority_media_targets + mediathek_media_targets):
-                if tid in cached_times:
+                if tid in cached_times and not _cal_waiting(tid, now):
                     last_updated = cached_times[tid]
                     if now - last_updated >= refresh_seconds:
                         list_b.append((tid, mt))

@@ -250,23 +250,41 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
 
             if not results:
                 out = {"found": False}
-                set_tmdb_cache(cache_key, out)
+                # Under both keys, like a hit: the prefetch checks the title
+                # key first, and a miss stored only under the IMDB key sent it
+                # back to the source site for the IMDB id on every cycle.
+                for ck in filter(None, [imdb_key, title_key]):
+                    set_tmdb_cache(ck, out)
                 return out
             best = results[0]
             tid  = best["id"]
             mt   = best["media_type"]
-        # 3. Fetch details, watch-providers, FSK
-        # alternative_titles rides along on a request that is being made anyway
-        # (append_to_response costs no extra call and no extra rate-limiter
-        # slot). It is what makes a title recognisable under a name other than
-        # the one this instance's UI language happens to use -- a folder written
-        # as "Horizon in the Middle of Nowhere" and a card titled
+        # 3. Fetch details, watch-providers, FSK, trailers and recommendations
+        # in ONE request. append_to_response costs no extra call and no extra
+        # rate-limiter slot; these used to be five to six separate sequential
+        # requests (8 s timeout each) for every cold lookup.
+        # alternative_titles is what makes a title recognisable under a name
+        # other than the one this instance's UI language happens to use -- a
+        # folder written as "Horizon in the Middle of Nowhere" and a card titled
         # "Kyoukaisen-jou no Horizon" are the same show, and `name` +
         # `original_name` alone do not bridge the two. See all_titles() below.
-        details  = _call("/" + mt + "/" + str(tid),
-                         {"append_to_response": "credits,external_ids,alternative_titles"})
+        _rating_part = "content_ratings" if mt == "tv" else "release_dates"
+        details  = _call("/" + mt + "/" + str(tid), {
+            "append_to_response": ",".join((
+                "credits", "external_ids", "alternative_titles",
+                "watch/providers", _rating_part, "videos", "recommendations")),
+            # Videos follow `language` unless told otherwise: German and
+            # English trailers plus language-less ones, like the fallback
+            # order below expects.
+            "include_video_language": "de,en,null",
+        })
+        # Taken out again: the cached raw_details keep the shape they always
+        # had instead of growing by every video and recommendation.
+        wp_data  = details.pop("watch/providers", None) or {}
+        _ratings = details.pop(_rating_part, None) or {}
+        _videos  = details.pop("videos", None) or {}
+        _recs    = details.pop("recommendations", None) or {}
         genres   = [g["name"] for g in details.get("genres", [])]
-        wp_data  = _call("/" + mt + "/" + str(tid) + "/watch/providers")
         c_data   = wp_data.get("results", {}).get(country, {})
         flatrate = [p["provider_name"] for p in c_data.get("flatrate", [])]
         buy_list = [p["provider_name"] for p in c_data.get("buy", [])]
@@ -278,14 +296,12 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
         fsk = ""
         try:
             if mt == "tv":
-                cr = _call("/tv/" + str(tid) + "/content_ratings")
-                for r in cr.get("results", []):
+                for r in _ratings.get("results", []):
                     if r.get("iso_3166_1") == country:
                         fsk = r.get("rating", "")
                         break
             else:
-                rd = _call("/movie/" + str(tid) + "/release_dates")
-                for entry in rd.get("results", []):
+                for entry in _ratings.get("results", []):
                     if entry.get("iso_3166_1") == country:
                         for rdate in entry.get("release_dates", []):
                             c = rdate.get("certification", "")
@@ -296,34 +312,24 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
         except Exception:
             pass
 
-        # 4. Fetch Trailers (Videos) - Fetch ALL languages first
-        trailer_key = ""
-        try:
-            # Omit language to get all available videos
-            videos = _call("/" + mt + "/" + str(tid) + "/videos", {"language": ""}) 
-            results = videos.get("results", [])
-            
-            # Priority 1: German Trailer
-            for v in results:
-                if v.get("site") == "YouTube" and v.get("type") == "Trailer" and v.get("iso_639_1") == "de":
-                    trailer_key = v.get("key")
-                    break
-            
-            # Priority 2: English Trailer
-            if not trailer_key:
+        # 4. Trailers: German first, then English, then any.
+        def _pick_trailer(results):
+            for wanted in ("de", "en", None):
                 for v in results:
-                    if v.get("site") == "YouTube" and v.get("type") == "Trailer" and v.get("iso_639_1") == "en":
-                        trailer_key = v.get("key")
-                        break
-                        
-            # Priority 3: Any Trailer
-            if not trailer_key:
-                for v in results:
-                    if v.get("site") == "YouTube" and v.get("type") == "Trailer":
-                        trailer_key = v.get("key")
-                        break
-        except Exception:
-            pass
+                    if (v.get("site") == "YouTube" and v.get("type") == "Trailer"
+                            and (wanted is None or v.get("iso_639_1") == wanted)):
+                        return v.get("key") or ""
+            return ""
+
+        trailer_key = _pick_trailer(_videos.get("results", []))
+        if not trailer_key:
+            # Nothing in German, English or without a language: ask for every
+            # language, as the separate request always did.
+            try:
+                videos = _call("/" + mt + "/" + str(tid) + "/videos", {"language": ""})
+                trailer_key = _pick_trailer(videos.get("results", []))
+            except Exception:
+                pass
 
         if not trailer_key:
             try:
@@ -335,11 +341,10 @@ def _tmdb_lookup_cached(title, imdb_id, api_key, country, ui_lang="de"):
             except Exception:
                 pass
 
-        # 5. Fetch Recommendations
+        # 5. Recommendations (first page, already part of the details answer)
         recommendations = []
         try:
-            rec_data = _call("/" + mt + "/" + str(tid) + "/recommendations", {"page": 1})
-            for r in rec_data.get("results", [])[:6]: # Max 6
+            for r in _recs.get("results", [])[:6]:  # Max 6
                 recommendations.append({
                     "id": r.get("id"),
                     "title": r.get("name") or r.get("title"),
@@ -414,7 +419,9 @@ def _tmdb_calendar_episodes(tmdb_id, api_key, ui_lang="de"):
     if cached is not None:
         return cached
     if _tmdb_cal_backed_off(cache_key):
-        return {"poster": None, "title": "", "episodes": []}
+        # "transient": the caller must not treat this as a real answer --
+        # see _sync_calendar_item().
+        return {"poster": None, "title": "", "episodes": [], "transient": True}
 
     lang = "en-US" if ui_lang == "en" else "de-DE"
 
@@ -468,8 +475,10 @@ def _tmdb_calendar_episodes(tmdb_id, api_key, ui_lang="de"):
     # (partial or no) episodes" for the whole cache lifetime.
     if transient:
         _tmdb_cal_note_failure(cache_key)
-    else:
-        set_tmdb_cache(cache_key, out)
+        # Not cached, and flagged for the caller, which must not persist a
+        # partial or empty result either (_sync_calendar_item()).
+        return dict(out, transient=True)
+    set_tmdb_cache(cache_key, out)
     return out
 
 # TMDB release types, in the order the calendar prefers them. A calendar
@@ -567,7 +576,7 @@ def _tmdb_movie_release(tmdb_id, api_key, ui_lang="de", country="DE"):
     lang = "en-US" if ui_lang == "en" else "de-DE"
     if _tmdb_cal_backed_off(cache_key):
         return {"poster": None, "title": "", "release_date": None,
-                "release_country": "", "release_type": 0}
+                "release_country": "", "release_type": 0, "transient": True}
     out = {"poster": None, "title": "", "release_date": None,
            "release_country": "", "release_type": 0}
     try:
@@ -595,7 +604,7 @@ def _tmdb_movie_release(tmdb_id, api_key, ui_lang="de", country="DE"):
         logger.debug("[Calendar] movie lookup failed for tmdb %s: %s", tmdb_id, exc)
         if _is_transient_tmdb_error(exc):
             _tmdb_cal_note_failure(cache_key)
-            return out  # not cached: a later cycle retries
+            return dict(out, transient=True)  # not cached: a later cycle retries
     set_tmdb_cache(cache_key, out)
     return out
 def _tmdb_fetch_season_and_episode(tmdb_id, season_num, episode_num, api_key, ui_lang='de'):

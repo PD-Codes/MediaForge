@@ -11,9 +11,14 @@
     .register("/sw.js")
     .then((reg) => {
       _swReg = reg;
+      // The key is only needed by the push button (notifications page). This
+      // file loads on every page, and togglePushSubscription() fetches the key
+      // itself when it is missing -- so other pages skip the request.
+      if (!document.getElementById("pushBtn")) return null;
       return fetch("/api/push/vapid-public-key").then((r) => r.json());
     })
     .then((data) => {
+      if (!data) return;
       _vapidPublicKey = data.vapid_public_key || null;
       _updatePushButtonState();
     })

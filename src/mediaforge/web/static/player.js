@@ -29,9 +29,11 @@
   var _streamStart = 0;      // ffmpeg -ss offset of the running session
   var _hls         = null;
   var _saveTimer   = null;
+  var _lastSaved   = null;   // {path, pos, dur, done} of the last position sent (see _saveProgress)
   var _badgePoll   = null;
   var _uiRaf       = null;
   var _uiLastTick  = 0;
+  var _uiLast      = {};     // what _uiTick last wrote to the DOM (see _uiChanged)
   var _seeking     = false;
   var _closed      = true;
 
@@ -299,6 +301,7 @@
     _srcEpisodeUrl = null; _srcProvider = null; _srcLanguage = null; _srcMatrix = null;
     _next = null; _nextCancelled = false; _nextDone = false;
     _speed = 1;
+    _lastSaved = null;   // a new session always writes its first position
     _cancelFailover();
     _stopNextTimer();
   }
@@ -635,7 +638,31 @@
     })();
   }
 
+  // hls.js is no longer loaded with every page (see window.MF_LIBS in
+  // base.html); the first stream fetches it. _hlsLoadSeq lets only the most
+  // recent request continue once it has arrived -- a source switched while
+  // the library was loading must not be overtaken by the one it replaced.
+  // _cleanupHls() bumps it as well, so a stream whose session was torn down
+  // meanwhile (stop, restart, close) is dropped too.
+  var _hlsLoadSeq = 0;
+
   function _loadHls(url, streamStartPos) {
+    if (typeof Hls === 'undefined' && typeof window.mfLoadLib === 'function') {
+      _cleanupHls();
+      var seq = _hlsLoadSeq;
+      var resume = function () {
+        if (_closed || seq !== _hlsLoadSeq) return;
+        // On a failed load Hls stays undefined and _loadHlsNow takes the
+        // native-HLS / error branch, exactly as before.
+        _loadHlsNow(url, streamStartPos);
+      };
+      window.mfLoadLib('hls').then(resume, resume);
+      return;
+    }
+    _loadHlsNow(url, streamStartPos);
+  }
+
+  function _loadHlsNow(url, streamStartPos) {
     var video = $id('playerVideo');
     if (!video) return;
     _cleanupHls();
@@ -725,6 +752,12 @@
   }
 
   function _cleanupHls() {
+    // Also cancels a stream still waiting for hls.js (see _loadHls). Without
+    // this, a source switch or a seek-restart during the first library load
+    // attached the old, already stopped stream once hls.js arrived -- its
+    // errors then showed up (and could start a failover) while the new
+    // stream was still starting.
+    _hlsLoadSeq++;
     if (_hls) { try { _hls.destroy(); } catch (e) {} _hls = null; }
   }
 
@@ -919,11 +952,12 @@
       var total   = _duration || 0;
 
       var tt = $id('playerTimeText');
-      if (tt) tt.innerHTML = '<b>' + _esc(_fmt(filePos)) + '</b> / ' +
-                             _esc(total > 0 ? _fmt(total) : '--:--');
+      var timeHtml = '<b>' + _esc(_fmt(filePos)) + '</b> / ' +
+                     _esc(total > 0 ? _fmt(total) : '--:--');
+      if (tt && _uiChanged('time', timeHtml)) tt.innerHTML = timeHtml;
 
       var pct = total > 0 ? Math.min(100, (filePos / total) * 100) : 0;
-      if (!_seeking) {
+      if (!_seeking && _uiChanged('seek', pct)) {
         var fill = $id('playerSeekFill'), thumb = $id('playerSeekThumb');
         if (fill)  fill.style.width = pct + '%';
         if (thumb) thumb.style.left = pct + '%';
@@ -934,16 +968,28 @@
       var buf = $id('playerSeekBuf');
       if (buf && video.buffered.length > 0) {
         var bufEnd = video.buffered.end(video.buffered.length - 1) + _streamStart;
-        buf.style.width = (total > 0 ? Math.min(100, (bufEnd / total) * 100) : 0) + '%';
+        var bufW = (total > 0 ? Math.min(100, (bufEnd / total) * 100) : 0) + '%';
+        if (_uiChanged('buf', bufW)) buf.style.width = bufW;
       }
 
-      _syncPlayIcons(video.paused);
+      if (_uiChanged('paused', video.paused)) _syncPlayIcons(video.paused);
       _syncVolumeIcons(video);
       if (_subSource === 'file') _renderCueAt(filePos);
       _updateMarker(filePos);
       _updateNextUp(filePos, total);
     }
     _uiRaf = requestAnimationFrame(_uiTick);
+  }
+
+  // Most ticks change nothing on screen (a paused video, the same second), but
+  // assigning even an identical innerHTML rebuilds the nodes and every style
+  // write costs a style pass -- five times a second. So each value is compared
+  // with the last one written. Anything else that paints these elements (the
+  // seek-bar drag) clears its entry so the next tick repaints.
+  function _uiChanged(key, value) {
+    if (_uiLast[key] === value) return false;
+    _uiLast[key] = value;
+    return true;
   }
 
   function _syncPlayIcons(paused) {
@@ -957,10 +1003,14 @@
   function _syncVolumeIcons(video) {
     var vi = $id('playerVolIcon'), mi = $id('playerMuteIcon'), vs = $id('playerVolSlider');
     var muted = video.muted || video.volume === 0;
+    var level = muted ? 0 : video.volume;
+    // The slider value is set every time (a no-op when it already shows it,
+    // and it must catch up once the slider loses focus); icons and the fill
+    // variable only when something changed -- this runs from _uiTick too.
+    if (vs && document.activeElement !== vs) vs.value = level;
+    if (!_uiChanged('vol', muted + '|' + level)) return;
     if (vi && mi) { vi.style.display = muted ? 'none' : ''; mi.style.display = muted ? '' : 'none'; }
     if (!vs) return;
-    var level = muted ? 0 : video.volume;
-    if (document.activeElement !== vs) vs.value = level;
     // WebKit cannot paint the filled part of a range on its own, so the
     // track reads this variable (see player.css).
     vs.style.setProperty('--mfp-vol', Math.round(level * 100) + '%');
@@ -1907,6 +1957,9 @@
         var fill = $id('playerSeekFill'), thumb = $id('playerSeekThumb');
         if (fill)  fill.style.width = (f * 100) + '%';
         if (thumb) thumb.style.left = (f * 100) + '%';
+        // The bar no longer shows what _uiTick last wrote (a cancelled drag
+        // would otherwise stay painted on a paused video).
+        _uiLast.seek = null;
       }
 
       wrap.addEventListener('pointerdown', function (e) {
@@ -1964,6 +2017,13 @@
         _showControls();
       });
       video.addEventListener('pause', _showControls);
+      // Written right away, not on the next tick: a pause is often the last
+      // thing that happens before the tab or the app is left. Only while a
+      // session runs (_saveTimer): in between, e.g. during a seek-restart,
+      // the element's time is not a file position.
+      video.addEventListener('pause', function () {
+        if (!_closed && _saveTimer) _saveProgress().catch(function () {});
+      });
       video.addEventListener('ended', function () {
         if (_next && _prefs.autoplayNext && !_nextCancelled) _playNext();
       });
@@ -1978,6 +2038,15 @@
       var on = !!document.fullscreenElement;
       var a = $id('playerFsIcon'), b = $id('playerFsExitIcon');
       if (a && b) { a.style.display = on ? 'none' : ''; b.style.display = on ? '' : 'none'; }
+    });
+
+    // A hidden tab may never come back (closed, or the app swiped away on a
+    // phone), so the position is written now, by a request that outlives
+    // the page (see _postProgress).
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden' && !_closed && _saveTimer) {
+        _saveProgress(true).catch(function () {});
+      }
     });
 
     // A click anywhere else closes an open menu.
@@ -2143,6 +2212,9 @@
   function _hideHud() { _show($id('playerSwipeHud'), false); }
 
   // ── Progress saving ────────────────────────────────────────
+  // A plain interval, not mfPoll, on purpose: a video keeps playing in a
+  // hidden tab (audio, picture in picture) and its position must keep being
+  // written. An unchanged position is skipped in _saveProgress instead.
   function _startSaveTimer() {
     _stopSaveTimer();
     _saveTimer = setInterval(_saveProgress, SAVE_INTERVAL);
@@ -2151,34 +2223,72 @@
     if (_saveTimer) { clearInterval(_saveTimer); _saveTimer = null; }
   }
 
-  async function _saveProgress() {
+  async function _saveProgress(unloading) {
     var v = $id('playerVideo');
     if (!v || !_filePath) return;
     var filePos  = _filePos();
     var duration = _duration > 0 ? _duration : filePos;
     if (filePos < 1) return;
-    try {
-      await fetch('/api/progress/save', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: _filePath, position: filePos, duration: duration }),
-      });
-    } catch (e) {}
+    // Nothing moved since the last save (paused, or the overlay left open):
+    // skip it. Every save is a database write and, with watch telemetry on,
+    // up to three events -- it used to happen every 5 s regardless. When the
+    // page is going away, only a save the server already confirmed counts:
+    // one still in flight may be dropped together with the page.
+    var last = _lastSaved;
+    if (last && last.path === _filePath && Math.abs(filePos - last.pos) < 1 &&
+        Math.abs(duration - last.dur) < 1 && (last.done || !unloading)) return;
+    var mark = { path: _filePath, pos: filePos, dur: duration, done: false };
+    _lastSaved = mark;
+    var ok = await _postProgress(
+      JSON.stringify({ path: _filePath, position: filePos, duration: duration }), unloading);
+    // Not stored: forget it, so the next tick sends it again instead of
+    // skipping it as unchanged.
+    if (ok) mark.done = true;
+    else if (_lastSaved === mark) _lastSaved = null;
+  }
+
+  /**
+   * POST one position; resolves to whether it went out (or was accepted).
+   * While the tab is being hidden or the page unloaded, a normal request can
+   * be dropped together with the page -- sendBeacon is made for that moment.
+   * The route reads JSON only, hence the typed Blob; a browser that refuses a
+   * beacon of that type gets fetch with keepalive instead, same body.
+   */
+  function _postProgress(body, unloading) {
+    var url = '/api/progress/save';
+    if (unloading && navigator.sendBeacon) {
+      try {
+        if (navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }))) {
+          return Promise.resolve(true);
+        }
+      } catch (e) { /* refused: fetch below */ }
+    }
+    return fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: body, keepalive: !!unloading,
+    }).then(function (r) { return r.ok; }, function () { return false; });
   }
 
   // ── Stream badge ───────────────────────────────────────────
   function _startBadgePoll() {
     _stopBadgePoll();
     _updateStreamBadge(1);
-    _badgePoll = setInterval(async function () {
+    // Visibility-aware (mf_poll.js): the badge is only read in a visible tab,
+    // and a hidden one kept asking every 5 s for as long as a stream ran.
+    var poll = window.mfPoll(async function () {
       try {
         var r = await fetch('/api/stream/active');
         var d = await r.json();
+        // Stopped while this request was out: _playerStop has already set the
+        // badge to 0, and a late answer must not bring it back for good.
+        if (_badgePoll !== poll) return;
         _updateStreamBadge(d.count || 0);
       } catch (e) {}
     }, 5000);
+    _badgePoll = poll;
   }
   function _stopBadgePoll() {
-    if (_badgePoll) { clearInterval(_badgePoll); _badgePoll = null; }
+    if (_badgePoll) { window.mfPollStop(_badgePoll); _badgePoll = null; }
   }
   function _updateStreamBadge(count) {
     ['streamBadge', 'mobileStreamBadge'].forEach(function (id) {
@@ -2233,8 +2343,16 @@
   // Media keys / lock screen.
   if ('mediaSession' in navigator) {
     try {
-      navigator.mediaSession.setActionHandler('play',  function () { _togglePlay(); });
-      navigator.mediaSession.setActionHandler('pause', function () { _togglePlay(); });
+      // Commands, not toggles: a headset or the lock screen can send "pause"
+      // for a video that is already paused, and a toggle started it instead.
+      navigator.mediaSession.setActionHandler('play', function () {
+        var v = $id('playerVideo');
+        if (v) { v.play().catch(function () {}); _showControls(); }
+      });
+      navigator.mediaSession.setActionHandler('pause', function () {
+        var v = $id('playerVideo');
+        if (v) { v.pause(); _showControls(); }
+      });
       navigator.mediaSession.setActionHandler('seekbackward',  function () { _skip(-10); });
       navigator.mediaSession.setActionHandler('seekforward',   function () { _skip(10); });
       navigator.mediaSession.setActionHandler('nexttrack',     function () { if (_next) _playNext(); });

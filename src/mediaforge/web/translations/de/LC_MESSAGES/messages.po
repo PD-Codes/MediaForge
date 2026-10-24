@@ -4422,6 +4422,10 @@ msgstr "Standard"
 msgid "Wrong PIN — this mode is protected."
 msgstr "Falsche PIN — dieser Modus ist geschützt."
 
+#: src/mediaforge/web/templates/index.html
+msgid "Too many wrong PINs. Please wait a moment and try again."
+msgstr "Zu viele falsche PINs. Bitte kurz warten und erneut versuchen."
+
 #: src/mediaforge/web/templates/index.html:710
 msgid "The mode could not be switched."
 msgstr "Der Modus konnte nicht gewechselt werden."

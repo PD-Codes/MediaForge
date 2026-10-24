@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import time
+import re
 import urllib.parse
 import urllib.request
 
@@ -49,6 +50,7 @@ _DATA_TTL = 60            # resume list / stats
 
 # key -> (expires_at, value)
 _cache: dict = {}
+_CACHE_PRUNE_AT = 256
 
 
 def _cached(key, ttl, producer):
@@ -59,6 +61,11 @@ def _cached(key, ttl, producer):
     if hit and hit[0] > now:
         return hit[1]
     value = producer()
+    if len(_cache) >= _CACHE_PRUNE_AT:
+        # Keys carry the user and, for the stats, the current hour, so expired
+        # entries were never looked up again -- and never removed.
+        for k in [k for k, (exp, _v) in list(_cache.items()) if exp <= now]:
+            _cache.pop(k, None)
     _cache[key] = (now + ttl, value)
     return value
 
@@ -312,6 +319,16 @@ def _plex_user_token(cfg, user_id) -> str:
     return _cached("plextoken:%s" % user_id, _USERS_TTL, _fetch)
 
 
+# (jellyfin, plex) artwork paths image_bytes() may fetch -- exactly the shapes
+# continue_watching() hands out.
+_ARTWORK_PATH_RE = (
+    re.compile(r"^/Items/[0-9A-Za-z-]{1,64}/Images/(Primary|Thumb|Backdrop|Logo|Banner)"
+               r"(/\d{1,3})?(\?(maxHeight|maxWidth|tag|quality|fillHeight|fillWidth)=[0-9A-Za-z]{1,64}"
+               r"(&(maxHeight|maxWidth|tag|quality|fillHeight|fillWidth)=[0-9A-Za-z]{1,64})*)?$"),
+    re.compile(r"^/library/metadata/\d{1,12}/(thumb|art|banner|clearLogo|theme)(/\d{1,12})?$"),
+)
+
+
 def image_bytes(path) -> tuple:
     """Fetch an artwork *path* from the configured server, with the token.
 
@@ -324,6 +341,13 @@ def image_bytes(path) -> tuple:
     cfg = config()
     path = str(path or "")
     if not cfg or not path.startswith("/") or path.startswith("//") or "\\" in path:
+        return None, None
+    # Artwork paths only. The request is made with the server's (admin)
+    # token, and any logged-in account -- kids included -- can call the
+    # route: any other GET path made this a confused deputy. Plex has GET
+    # endpoints with side effects (library refresh, scrobble), and on
+    # Jellyfin it could read artwork of libraries the user may not see.
+    if not _ARTWORK_PATH_RE[cfg["kind"] == "plex"].match(path):
         return None, None
     try:
         if cfg["kind"] == "plex":

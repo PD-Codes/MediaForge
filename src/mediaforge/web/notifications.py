@@ -267,6 +267,19 @@ def _format_errors_text(errors: list, max_items: int = 5, lang: str | None = Non
         text += tr(lang, f"\n  ... und {rest} weitere", f"\n  ... and {rest} more")
     return text
 
+def _redact_url(url: str) -> str:
+    """Scheme and host only. The rest of a notification URL is a secret: the
+    Telegram bot token, the Discord webhook token, the ntfy topic. They are
+    encrypted at rest, and a failed POST used to write them in clear text to
+    the console, the log file and the web console."""
+    try:
+        from urllib.parse import urlsplit
+        parts = urlsplit(str(url))
+        return "%s://%s/..." % (parts.scheme, parts.netloc) if parts.netloc else "<url>"
+    except Exception:
+        return "<url>"
+
+
 def _post_json(url: str, payload: dict, headers: dict | None = None) -> int:
     data = json.dumps(payload).encode("utf-8")
     h = {
@@ -282,7 +295,7 @@ def _post_json(url: str, payload: dict, headers: dict | None = None) -> int:
     except urllib.error.HTTPError as exc:
         return exc.code
     except Exception as exc:
-        logger.warning("[Notif] HTTP POST to %s failed: %s", url, exc)
+        logger.warning("[Notif] HTTP POST to %s failed: %s", _redact_url(url), exc)
         return 0
 
 
@@ -296,8 +309,30 @@ def _utc_iso() -> str:
 # ---------------------------------------------------------------------------
 
 def _vapid_keys_file():
+    """The VAPID key file, in the configured config directory.
+
+    It used to be pinned to ~/.mediaforge whatever MEDIAFORGE_CONFIG_DIR said.
+    In Docker that is outside the persisted volume, so every recreated
+    container generated new keys and silently broke every push subscription
+    (and on a read-only root filesystem push could not work at all). A key
+    file that already sits at the old place is moved over once, so existing
+    subscriptions keep working.
+    """
     import pathlib
-    return pathlib.Path.home() / ".mediaforge" / "vapid_keys.json"
+    import shutil
+    from ..config import MEDIAFORGE_CONFIG_DIR
+    target = pathlib.Path(MEDIAFORGE_CONFIG_DIR) / "vapid_keys.json"
+    legacy = pathlib.Path.home() / ".mediaforge" / "vapid_keys.json"
+    try:
+        if not target.exists() and legacy.exists() and legacy.resolve() != target.resolve():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(legacy), str(target))
+    except OSError:
+        # Unreadable or read-only: keep using the legacy file rather than
+        # generating new keys next to it.
+        if not target.exists() and legacy.exists():
+            return legacy
+    return target
 
 
 def _ensure_vapid_keys() -> tuple:
@@ -356,9 +391,9 @@ def add_push_subscription(sub: dict, user_id: int | None = None) -> None:
     logger.debug("[WebPush] Subscription stored (user_id=%s)", user_id)
 
 
-def remove_push_subscription(endpoint: str) -> None:
+def remove_push_subscription(endpoint: str, owner_id: int | None = None) -> None:
     from .db import db_remove_push_subscription
-    db_remove_push_subscription(endpoint)
+    db_remove_push_subscription(endpoint, owner_id)
     logger.debug("[WebPush] Subscription removed: %s", endpoint[:60])
 
 
@@ -402,9 +437,13 @@ def notify_webpush(
         if not _pref_enabled(prefs, "webpush_" + _pref_event):
             return
     subs = get_push_subscriptions(user_id=uid)
-    # If user has no personal subscriptions, broadcast to all
+    # No personal subscription: fall back to the UNOWNED ones only -- devices
+    # subscribed before subscriptions were bound to a login. This used to
+    # fall back to every subscription of every account, so a download of one
+    # user ("<series>, 6 episodes downloaded") was pushed to everybody's
+    # devices, kids accounts included.
     if not subs:
-        subs = get_push_subscriptions()
+        subs = [sub for sub in get_push_subscriptions() if sub.get("user_id") is None]
 
     if not subs:
         return
@@ -847,7 +886,7 @@ def _post_text(url: str, text: str, headers: dict | None = None) -> int:
     except urllib.error.HTTPError as exc:
         return exc.code
     except Exception as exc:
-        logger.warning("[NTFY] HTTP POST to %s failed: %s", url, exc)
+        logger.warning("[NTFY] HTTP POST to %s failed: %s", _redact_url(url), exc)
         return 0
 
 

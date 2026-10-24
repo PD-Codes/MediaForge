@@ -151,8 +151,13 @@ def _run_bulk(source, misses, ctx, use_cache) -> dict:
 def _run_loop(source, misses, ctx, use_cache) -> dict:
     """One-by-one form: bounded thread pool, per-source rate limit + dedup."""
     out: dict = {}
-    with _cf.ThreadPoolExecutor(max_workers=_MAX_WORKERS,
-                                thread_name_prefix=f"cineinfo-{source.id}") as pool:
+    # Not a `with` block: leaving one calls shutdown(wait=True), which waited
+    # for every queued fetch after the timeout had fired -- so the timeout
+    # never bounded the request. Queued fetches are dropped instead; the ones
+    # already running finish on their own and still fill the cache.
+    pool = _cf.ThreadPoolExecutor(max_workers=_MAX_WORKERS,
+                                  thread_name_prefix=f"cineinfo-{source.id}")
+    try:
         fut_map = {pool.submit(_guarded_fetch_one, source, it, ctx, use_cache): it.get("key")
                    for it in misses}
         try:
@@ -167,6 +172,8 @@ def _run_loop(source, misses, ctx, use_cache) -> dict:
         except _cf.TimeoutError:
             logger.warning("[CineInfo] source %r loop timed out after %.0fs",
                            source.id, _QUERY_TIMEOUT)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     return out
 
 

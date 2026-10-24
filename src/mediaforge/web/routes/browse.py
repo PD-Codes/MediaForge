@@ -438,7 +438,51 @@ def ensure_prefetch_worker():
     logger.info("[Prefetch] Background worker started (interval=%d min)", _PREFETCH_INTERVAL // 60)
 
 
-def downloaded_folder_names() -> list:
+# One listing per base directory, reused while the directory's mtime is
+# unchanged (adding or removing an entry changes it) and for at most
+# _FOLDER_LIST_TTL seconds. The browse, search and catalogue pages ask for
+# this on every view.
+_FOLDER_LIST_TTL = 60.0
+_folder_list_cache: dict = {}   # str(base) -> (mtime_ns, expires_at, frozenset)
+_folder_list_lock = threading.Lock()
+
+
+def _subfolder_names(base) -> frozenset:
+    """Names of the directories directly inside `base` (empty when unreadable)."""
+    key = str(base)
+    try:
+        mtime = os.stat(key).st_mtime_ns
+    except OSError:
+        return frozenset()
+    now = time.monotonic()
+    with _folder_list_lock:
+        hit = _folder_list_cache.get(key)
+        if hit and hit[0] == mtime and hit[1] > now:
+            return hit[2]
+    names = set()
+    try:
+        # os.scandir, not Path.iterdir() + is_dir(): the entry type comes with
+        # the listing, so this is one directory read instead of a stat per
+        # entry -- on an SMB share, a network round trip per series folder.
+        with os.scandir(key) as it:
+            for entry in it:
+                try:
+                    if entry.is_dir():
+                        names.add(entry.name)
+                except OSError:
+                    continue
+    except OSError:
+        # An unreadable or vanished root is not an error worth failing the
+        # whole listing over -- the other roots are still a useful answer,
+        # and this runs on a background thread too.
+        return frozenset()
+    result = frozenset(names)
+    with _folder_list_lock:
+        _folder_list_cache[key] = (mtime, time.monotonic() + _FOLDER_LIST_TTL, result)
+    return result
+
+
+def downloaded_folder_names(scope=None) -> list:
     """Every folder name under the download root and every custom path.
 
     Sorted and deduplicated, names only -- the same answer
@@ -450,6 +494,9 @@ def downloaded_folder_names() -> list:
     Non-recursive by design: a series folder is a direct child of a root (or of
     a language folder under it), and walking deeper would list season folders as
     if they were titles.
+
+    `scope` (routes/library.lib_current_scope()) limits the roots to the
+    locations the caller may see; None means all of them (background callers).
     """
     from pathlib import Path
 
@@ -464,28 +511,22 @@ def downloaded_folder_names() -> list:
 
     lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
 
-    scan_roots = [dl_path]
+    scan_roots = [(dl_path, None)]
     for cp in get_custom_paths():
         cp_path = Path(cp["path"]).expanduser()
         if not cp_path.is_absolute():
             cp_path = Path.home() / cp_path
-        scan_roots.append(cp_path)
+        scan_roots.append((cp_path, cp["id"]))
+    if scope is not None:
+        from .library import lib_scope_allows
+        scan_roots = [(root, cp_id) for root, cp_id in scan_roots
+                      if lib_scope_allows(cp_id, scope)]
 
     folders = set()
-    for root in scan_roots:
+    for root, _cp_id in scan_roots:
         bases = [root / lf for lf in LANG_FOLDERS] if lang_sep else [root]
         for base in bases:
-            try:
-                if not base.is_dir():
-                    continue
-                for entry in base.iterdir():
-                    if entry.is_dir():
-                        folders.add(entry.name)
-            except OSError:
-                # An unreadable or vanished root is not an error worth failing
-                # the whole listing over -- the other roots are still a useful
-                # answer, and this runs on a background thread too.
-                continue
+            folders.update(_subfolder_names(base))
     return sorted(folders)
 
 
@@ -648,7 +689,7 @@ def _feed_library_posters(entries):
         return entries
     try:
         from flask import session
-        from ..db import get_tmdb_cache_bulk
+        from ..db import get_tmdb_cache_bulk_light
     except Exception:
         return entries
 
@@ -666,15 +707,14 @@ def _feed_library_posters(entries):
     if not keys:
         return entries
     try:
-        cached = get_tmdb_cache_bulk(list(keys.values())) or {}
+        cached = get_tmdb_cache_bulk_light(list(keys.values())) or {}
     except Exception:
         return entries
 
     for entry in entries:
         name = str(entry.get("title") or "")
         hit = cached.get(keys.get(name, "")) or {}
-        path = ((hit.get("raw_details") or {}).get("poster_path")
-                if isinstance(hit.get("raw_details"), dict) else None)
+        path = hit.get("poster_path")
         if path:
             entry["poster_url"] = _poster_proxy("https://image.tmdb.org/t/p/w300" + path)
     return entries
@@ -1558,12 +1598,12 @@ def register_browse_routes(app):
                     and "library" in hidden and "gaps" in hidden:
                 raise StopIteration
             from .library import lib_path_keys_for_kind, lib_iter_cached_titles
-            from ..db import get_all_library_cache
+            from ..db import get_all_library_cache_shared
             from ..media_kinds import KIND_VIDEO
             # Video only: "continue watching" and "new in your library"
             # are about episodes, and a path assigned to eBooks holds none.
             active = lib_path_keys_for_kind(KIND_VIDEO)
-            for path_key, entry in (get_all_library_cache() or {}).items():
+            for path_key, entry in (get_all_library_cache_shared() or {}).items():
                 if path_key not in active:
                     continue          # leftover of a removed scan target
                 # A cache entry is a DICT ({"titles": [...], "lang_folders":
@@ -1778,7 +1818,10 @@ def register_browse_routes(app):
             return jsonify({"folders": [], "aliases": {}, "source": "mediascan",
                             "mediascan_source": ms_source})
 
-        folders = downloaded_folder_names()
+        # Scoped: a group restricted to some locations must not learn the
+        # folder names of the others from here either.
+        from .library import lib_current_scope
+        folders = downloaded_folder_names(scope=lib_current_scope())
         aliases = {}
         try:
             from ..library_aliases import alias_index

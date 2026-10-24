@@ -66,10 +66,15 @@ MAX_BATCH_IDS = 50
 MAX_QUERY_LEN = 100
 
 _LIST_TTL = 8.0        # seconds -- covers a burst of infinite-scroll pages
+# The sidebar badge (static/queue.js, every 60 s on every page) only shows a
+# count; with the 8 s TTL every one of its polls refetched four 500-item lists
+# upstream. It accepts a list this old.
+_BADGE_LIST_TTL = 90.0
 _DETAIL_TTL = 600.0    # seconds -- TMDB titles/posters barely change
 _DETAIL_CACHE_MAX = 2000
 
-_list_cache = {}       # seerr_url -> (expires_at, merged_list)
+_list_cache = {}       # seerr_url -> (fetched_at, merged_list)
+_list_fill_locks = {}  # seerr_url -> Lock: one upstream refill at a time
 _detail_cache = {}     # (seerr_url, tmdb_id, media_type) -> (expires_at, detail)
 _cache_lock = threading.Lock()
 
@@ -247,14 +252,18 @@ def _seerr_session(seerr_url, seerr_key):
     return session
 
 
-def _moderate(seerr_url, seerr_key, req_id, action):
+def _moderate(seerr_url, seerr_key, req_id, action, session=None):
     """POST approve/decline for one request id.
 
     Returns (ok, error_code). The upstream status code and body are logged,
-    never returned -- see the module docstring.
+    never returned -- see the module docstring. A batch passes its own
+    *session*, so the CSRF handshake (one or two extra GETs) happens once per
+    batch instead of once per id.
     """
+    own_session = session is None
     try:
-        session = _seerr_session(seerr_url, seerr_key)
+        if own_session:
+            session = _seerr_session(seerr_url, seerr_key)
         resp = session.post(
             f"{seerr_url}/api/v1/request/{req_id}/{action}",
             json={},
@@ -272,27 +281,44 @@ def _moderate(seerr_url, seerr_key, req_id, action):
         logger.warning("Seerr %s req %s error: %s", action, req_id, e)
         _report_seerr_error(e)
         return False, "unreachable"
+    finally:
+        if own_session and session is not None:
+            session.close()
 
 
 # ---------------------------------------------------------------------------
 # Caches
 # ---------------------------------------------------------------------------
 
-def _cached_request_list(seerr_url, seerr_key):
+def _cached_request_list(seerr_url, seerr_key, max_age=None):
     """Return the merged pending+approved request list for this instance.
 
-    Cached for `_LIST_TTL` seconds and keyed by the Seerr URL only: the list
-    itself is instance-wide, per-user hiding is applied by the caller after the
-    fact. Infinite scroll previously re-issued four 500-item upstream calls for
-    every 20-item page.
+    Cached for `_LIST_TTL` seconds (or `max_age`, for callers that can live
+    with an older list) and keyed by the Seerr URL only: the list itself is
+    instance-wide, per-user hiding is applied by the caller after the fact.
+    Infinite scroll previously re-issued four 500-item upstream calls for
+    every 20-item page. Concurrent misses wait for one refill instead of
+    each fetching the lists again.
     """
+    max_age = _LIST_TTL if max_age is None else max_age
+    with _cache_lock:
+        hit = _list_cache.get(seerr_url)
+        if hit and time.time() - hit[0] < max_age:
+            return hit[1]
+        fill_lock = _list_fill_locks.setdefault(seerr_url, threading.Lock())
+    with fill_lock:
+        with _cache_lock:
+            hit = _list_cache.get(seerr_url)
+            if hit and time.time() - hit[0] < max_age:
+                return hit[1]
+        return _fetch_request_list(seerr_url, seerr_key)
+
+
+def _fetch_request_list(seerr_url, seerr_key):
+    """The upstream half of _cached_request_list(): fetch, merge, store."""
     from concurrent.futures import ThreadPoolExecutor
 
     now = time.time()
-    with _cache_lock:
-        hit = _list_cache.get(seerr_url)
-        if hit and hit[0] > now:
-            return hit[1]
 
     def fetch_filter(args):
         f, media_type = args
@@ -330,11 +356,13 @@ def _cached_request_list(seerr_url, seerr_key):
     merged.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
 
     with _cache_lock:
-        _list_cache[seerr_url] = (time.time() + _LIST_TTL, merged)
+        _list_cache[seerr_url] = (time.time(), merged)
         # Normally a single entry. Drop anything stale so a changed URL cannot
         # pin the old instance's list in memory forever.
-        for k in [k for k, (exp, _v) in _list_cache.items() if exp <= now]:
+        for k in [k for k, (at, _v) in _list_cache.items()
+                  if k != seerr_url and now - at >= _BADGE_LIST_TTL]:
             _list_cache.pop(k, None)
+            _list_fill_locks.pop(k, None)
     return merged
 
 
@@ -456,8 +484,10 @@ def register_seerr_routes(app):
         if dir_f not in ("asc", "desc"):
             dir_f = "desc" if sort_f == "added" else "asc"
 
+        # ?badge=1: the sidebar count (see _BADGE_LIST_TTL).
+        max_age = _BADGE_LIST_TTL if request.args.get("badge") == "1" else None
         try:
-            merged = _cached_request_list(seerr_url, seerr_key)
+            merged = _cached_request_list(seerr_url, seerr_key, max_age=max_age)
         except Exception as e:
             _report_seerr_error(e)
             logger.warning("[Seerr] request list unreachable: %s", e)
@@ -701,9 +731,19 @@ def register_seerr_routes(app):
             return _err("not_configured", 400)
 
         done, failed = [], []
-        for req_id in ids:
-            ok, _code = _moderate(seerr_url, seerr_key, req_id, action)
-            (done if ok else failed).append(req_id)
+        session = _seerr_session(seerr_url, seerr_key)
+        try:
+            for pos, req_id in enumerate(ids):
+                ok, _code = _moderate(seerr_url, seerr_key, req_id, action,
+                                      session=session)
+                (done if ok else failed).append(req_id)
+                if _code == "unreachable":
+                    # Seerr is down: every further id would wait for the same
+                    # 10 s timeout, one after the other.
+                    failed.extend(ids[pos + 1:])
+                    break
+        finally:
+            session.close()
         if done:
             # One event for the whole batch, not one per moderated id.
             _report_seerr_used()

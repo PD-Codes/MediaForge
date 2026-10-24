@@ -14,10 +14,11 @@ from ...config import MEDIAFORGE_CONFIG_DIR
 from ...config import megakino_base_url
 from ...config import NINEANIME_BASE_URL
 from ..db import get_setting
-from ..db import get_tmdb_cache_bulk
+from ..db import get_tmdb_cache_bulk_light
 from flask import request
 from flask import session
 import threading
+import time as _time_mod
 from ...logger import get_logger
 
 
@@ -446,13 +447,42 @@ def _img_cache_path(url: str, content_type: str = "image/jpeg") -> _Path:
 
 
 def _img_cache_path_any(url: str) -> "_Path | None":
-    """Return existing cache file for a URL (regardless of extension), or None."""
+    """Return existing cache file for a URL (regardless of extension), or None.
+
+    An empty file is not a cache entry: it is what an interrupted write left
+    behind (see _write_cache_file), and serving it would hand the browser a
+    broken poster it then keeps for seven days.
+    """
     url_hash = _hashlib.sha256(url.encode()).hexdigest()[:32]
     for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"):
         p = _IMAGE_CACHE_DIR / (url_hash + ext)
-        if p.exists():
-            return p
+        try:
+            if p.stat().st_size > 0:
+                return p
+        except OSError:
+            continue
     return None
+
+
+def _write_cache_file(path: _Path, data: bytes) -> None:
+    """Write a cache file atomically: temp file + os.replace().
+
+    Two writers exist (the background pre-cache and the request that missed),
+    and a reader checking for the file between open() and the end of a plain
+    write_bytes() served a truncated or empty image -- with a 7-day public
+    cache header.
+    """
+    import os as _os
+    tmp = path.with_name("%s.%d.%d.tmp" % (path.name, _os.getpid(), threading.get_ident()))
+    try:
+        tmp.write_bytes(data)
+        _os.replace(str(tmp), str(path))
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def cleanup_image_cache(max_age_days: int = 7):
@@ -487,7 +517,7 @@ def _precache_image_bg(url: str):
         ct = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip()
         if not ct.startswith("image/"):
             return
-        _img_cache_path(url, ct).write_bytes(resp.content)
+        _write_cache_file(_img_cache_path(url, ct), resp.content)
     except Exception as exc:
         logger.debug(f"img pre-cache failed for {url}: {exc}")
 
@@ -525,6 +555,23 @@ def _poster_proxy(url: str) -> str:
     return "/api/img?url=" + _up_img.quote(url, safe="")
 
 
+def _card_tmdb(light):
+    """The TMDB entry inlined into a browse/search card.
+
+    The cache row is the whole lookup: raw_details with credits, alternative
+    titles and external ids, recommendations, every alias -- 10-50 KB per
+    title. Each home-feed row asks for up to 120 cards, so every row request
+    parsed, re-serialised and shipped several MB of which a card reads a
+    handful of fields (static/app.js _applyTmdbToCard and the pill chain,
+    age_gate.rating_of on the server). `light` is the projection from
+    db.get_tmdb_cache_bulk_light(); imdb_id is passed on for the module pill
+    hook (_extensionCardPill), which used to get undefined.
+    """
+    if not isinstance(light, dict):
+        return light
+    return {k: v for k, v in light.items() if k != "poster_path"}
+
+
 def _proxy_result_list(results: list) -> list:
     """Return results with proxied poster URLs and inline cached TMDB data."""
     api_key = get_setting("cineinfo_tmdb_api_key", "")
@@ -541,7 +588,7 @@ def _proxy_result_list(results: list) -> list:
                 if title:
                     keys.append(title + "|||" + country + "|||" + ui_lang)
         if keys:
-            cache_hits = get_tmdb_cache_bulk(keys)
+            cache_hits = get_tmdb_cache_bulk_light(keys)
 
     out = []
     for r in results:
@@ -553,7 +600,7 @@ def _proxy_result_list(results: list) -> list:
             if title:
                 cached = cache_hits.get(title + "|||" + country + "|||" + ui_lang)
                 if cached is not None:
-                    r["tmdb"] = cached
+                    r["tmdb"] = _card_tmdb(cached)
         out.append(r)
     return out
 
@@ -621,9 +668,12 @@ def register_image_proxy_routes(app):
         # --- Serve from disk cache if available ---
         cached = _img_cache_path_any(raw_url)
         if cached and cached.exists():
-            # Touch the file to reset the LRU timer
+            # Touch the file to reset the LRU timer -- at most once a day.
+            # cleanup_image_cache() works in days, and touching on EVERY hit
+            # was a metadata write on the (NAS) config volume per poster.
             try:
-                cached.touch()
+                if _time_mod.time() - cached.stat().st_atime > 86400:
+                    cached.touch()
             except OSError:
                 pass
             ext = cached.suffix.lower()
@@ -680,7 +730,7 @@ def register_image_proxy_routes(app):
             # --- Save to disk cache ---
             cache_file = _img_cache_path(raw_url, content_type)
             try:
-                cache_file.write_bytes(data)
+                _write_cache_file(cache_file, data)
             except OSError as e:
                 logger.debug(f"Image cache write failed: {e}")
 

@@ -33,14 +33,21 @@
   var COMIC_PRELOAD = 2;
 
   var _open = false;
+  // Bumped by every openReader(). Work that finishes later (the saved position,
+  // a library that is still loading) only continues while it still belongs to
+  // the book on screen: _open alone cannot tell "closed and reopened with
+  // another book" from "still the same book".
+  var _openSeq = 0;
   var _kind = "";               // "pdf" | "epub" | "comic"
   var _bookKey = "";
   var _title = "";
   var _saveTimer = null;
+  var _lastSaved = null;        // {body, done} of the last position sent (see savePosition)
   var _pdf = null;              // pdf.js document
   var _pdfPage = 1;
   var _pdfScale = 1.1;
-  var _pdfRendering = {};
+  var _pdfRendering = {};       // page -> {task, cancelled} while it is being painted
+  var _pdfPainted = {};         // page -> canvas, for every canvas that holds a bitmap
   var _book = null;             // epub.js Book
   var _rendition = null;
   var _epubLocation = "";
@@ -108,15 +115,51 @@
       .catch(function () { return {}; });
   }
 
-  function savePosition() {
-    if (!_open || !_bookKey) return Promise.resolve();
+  function savePosition(unloading) {
+    // Only once the book is on screen, which is where the save timer starts:
+    // until then a PDF still reports page 1, and closing one that was still
+    // loading overwrote the saved position with the first page.
+    if (!_open || !_bookKey || !_saveTimer) return Promise.resolve();
     var location = currentLocation();
     if (!location) return Promise.resolve();
-    return fetch("/api/reading/save", {
+    var body = JSON.stringify({ book: _bookKey, location: location, percent: _percent, kind: _kind });
+    // Unchanged since the last save: skip it. Resting on one page used to send
+    // the same position every five seconds. When the page is going away, only
+    // a save the server already confirmed counts -- one still in flight may be
+    // dropped together with the page.
+    var last = _lastSaved;
+    if (last && last.body === body && (last.done || !unloading)) return Promise.resolve();
+    var mark = { body: body, done: false };
+    _lastSaved = mark;
+    return postPosition(body, unloading).then(function (ok) {
+      // Not stored: forget it, so the next tick sends it again instead of
+      // skipping it as unchanged.
+      if (ok) mark.done = true;
+      else if (_lastSaved === mark) _lastSaved = null;
+    });
+  }
+
+  // POST one position; resolves to whether it went out (or was accepted).
+  // While the tab is being hidden or the page unloaded, a normal request can
+  // be dropped together with the page -- sendBeacon is made for that moment.
+  // The route reads JSON only, hence the typed Blob; a browser that refuses a
+  // beacon of that type gets fetch with keepalive instead, same body.
+  function postPosition(body, unloading) {
+    var url = "/api/reading/save";
+    if (unloading && navigator.sendBeacon) {
+      try {
+        if (navigator.sendBeacon(url, new Blob([body], { type: "application/json" }))) {
+          return Promise.resolve(true);
+        }
+      } catch (e) { /* refused: fetch below */ }
+    }
+    return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ book: _bookKey, location: location, percent: _percent, kind: _kind })
-    }).catch(function () { /* a lost position must never interrupt reading */ });
+      body: body,
+      keepalive: !!unloading
+    }).then(function (r) { return r.ok; },
+            function () { return false; /* a lost position must never interrupt reading */ });
   }
 
   function startSaveTimer() {
@@ -297,26 +340,77 @@
     return true;
   }
 
+  // Pages this far beyond the render window give their canvas back. A painted
+  // page holds width x height x 4 bytes at the device pixel ratio -- 10 to 20
+  // MB for an A4 page on a phone -- and iOS Safari caps the canvas memory of a
+  // whole tab: keeping every page ever painted is what turned long PDFs blank
+  // halfway through, or crashed the tab. The margin keeps a page that was just
+  // scrolled past from being painted again right away.
+  var PDF_KEEP_EXTRA = 2;
+
   function renderPdfPage(num) {
     if (!_pdf || num < 1 || num > _pdf.numPages) return;
     var host = $id("readerPdf");
     var canvas = host.querySelector('[data-page="' + num + '"]');
     if (!canvas || canvas.getAttribute("data-rendered") === "1" || _pdfRendering[num]) return;
-    _pdfRendering[num] = true;
+    // One job per page, cancellable at any point (cancelPdfRender): before
+    // getPage() answers nothing gets painted at all, after it the RenderTask
+    // is cancelled and pdf.js lets go of the canvas at once.
+    var job = { task: null, cancelled: false };
+    _pdfRendering[num] = job;
     _pdf.getPage(num).then(function (page) {
+      if (job.cancelled) return;
       var viewport = page.getViewport({ scale: _pdfScale * (window.devicePixelRatio || 1) });
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+      _pdfPainted[num] = canvas;
       // Leave the CSS box alone: it was sized once from page 1 so the document
       // has a stable height. Only the backing store follows the pixel ratio.
-      return page.render({ canvasContext: canvas.getContext("2d"), viewport: viewport }).promise;
+      job.task = page.render({ canvasContext: canvas.getContext("2d"), viewport: viewport });
+      return job.task.promise.then(function () {
+        if (!job.cancelled) canvas.setAttribute("data-rendered", "1");
+        // The pixels are on the canvas; what pdf.js kept to draw them (the
+        // operator list, decoded images) is only needed for the next paint.
+        try { page.cleanup(); } catch (e) { /* nothing to free */ }
+      });
+    }).catch(function () {
+      // Includes the RenderingCancelledException of a cancelled job -- the
+      // expected outcome of scrolling on, nothing to report.
     }).then(function () {
-      canvas.setAttribute("data-rendered", "1");
-      delete _pdfRendering[num];
-    }).catch(function () { delete _pdfRendering[num]; });
+      if (_pdfRendering[num] === job) delete _pdfRendering[num];
+    });
+  }
+
+  function cancelPdfRender(num) {
+    var job = _pdfRendering[num];
+    if (!job) return;
+    job.cancelled = true;
+    if (job.task) { try { job.task.cancel(); } catch (e) { /* already settled */ } }
+    delete _pdfRendering[num];
+  }
+
+  // Zero size frees the bitmap at once (iOS Safari only lets go of it this
+  // way); the CSS size from sizePdfPlaceholders keeps the page box where it
+  // was, and the missing marker makes the page paint again when it returns.
+  function releasePdfCanvas(num) {
+    var canvas = _pdfPainted[num];
+    if (!canvas) return;
+    canvas.width = 0;
+    canvas.height = 0;
+    canvas.removeAttribute("data-rendered");
+    delete _pdfPainted[num];
   }
 
   function renderPdfWindow() {
+    var keepFrom = _pdfPage - PDF_RENDER_AHEAD - PDF_KEEP_EXTRA;
+    var keepTo = _pdfPage + PDF_RENDER_AHEAD + PDF_KEEP_EXTRA;
+    // Out of range first: a fast scroll also stops paints nobody will see.
+    Object.keys(_pdfRendering).forEach(function (key) {
+      if (+key < keepFrom || +key > keepTo) cancelPdfRender(key);
+    });
+    Object.keys(_pdfPainted).forEach(function (key) {
+      if (+key < keepFrom || +key > keepTo) releasePdfCanvas(key);
+    });
     for (var n = _pdfPage - PDF_RENDER_AHEAD; n <= _pdfPage + PDF_RENDER_AHEAD; n++) renderPdfPage(n);
   }
 
@@ -358,7 +452,16 @@
     });
   }
 
-  function openPdf(url, startPage) {
+  function openPdf(url, startPage, libTried) {
+    var seq = _openSeq;
+    // pdf.js is loaded on first use, not with every page (window.MF_LIBS in
+    // base.html). One attempt; if it fails, the message below says so.
+    if (!window.pdfjsLib && !libTried && typeof window.mfLoadLib === "function") {
+      setStatus(esc(tr("PDF wird geladen…", "Loading PDF…")));
+      var again = function () { if (_open && seq === _openSeq) openPdf(url, startPage, true); };
+      window.mfLoadLib("pdf").then(again, again);
+      return;
+    }
     if (!pdfWorkerReady()) {
       setStatus(esc(tr("Der PDF-Reader konnte nicht geladen werden.",
                        "The PDF reader could not be loaded.")), true);
@@ -366,6 +469,10 @@
     }
     setStatus(esc(tr("PDF wird geladen…", "Loading PDF…")));
     window.pdfjsLib.getDocument({ url: url }).promise.then(function (doc) {
+      // Closed, or another book opened, while the file was downloading: this
+      // document must not take over the reader (it used to, and its page
+      // number was then saved against the other book).
+      if (!_open || seq !== _openSeq) { try { doc.destroy(); } catch (e) {} return; }
       _pdf = doc;
       var host = $id("readerPdf");
       var html = [];
@@ -381,12 +488,14 @@
       // Size first, jump second: the target page has to have its real offset
       // before scrollIntoView is asked to find it.
       doc.getPage(1).then(function (first) {
+        if (!_open || seq !== _openSeq) return;
         sizePdfPlaceholders(first);
         pdfGoTo(startPage || 1, false);
         host.addEventListener("scroll", onPdfScroll, { passive: true });
         startSaveTimer();
       });
     }).catch(function (err) {
+      if (!_open || seq !== _openSeq) return;
       setStatus(esc(tr("PDF konnte nicht geöffnet werden: ", "Could not open the PDF: ") +
                     (err && err.message ? err.message : "?")), true);
     });
@@ -748,13 +857,16 @@
   // ---- opening ----
 
   function openComic(path, startPage) {
+    // Same guard as openPdf: a listing that arrives after another comic was
+    // opened must not take over (and get its page saved against that one).
+    var seq = _openSeq;
     _comicPath = path;
     setStatus('<div class="mfr-spinner"></div>' +
               esc(tr("Comic wird geöffnet…", "Opening comic…")));
     fetch(comicApi("pages", path, ""))
       .then(function (r) { return r.json(); })
       .then(function (res) {
-        if (!_open || _kind !== "comic") return;
+        if (!_open || _kind !== "comic" || seq !== _openSeq) return;
         if (!res || !res.ok || res.readable === false) {
           showComicBlocked(path, res || {});
           return;
@@ -771,7 +883,7 @@
         startSaveTimer();
       })
       .catch(function () {
-        if (!_open || _kind !== "comic") return;
+        if (!_open || _kind !== "comic" || seq !== _openSeq) return;
         showComicBlocked(path, { reason: "network" });
       });
   }
@@ -864,6 +976,9 @@
     // race each other into openComic().
     if (_convertTimer) { clearTimeout(_convertTimer); _convertTimer = null; }
     var started = Date.now();
+    // reset() clears the timer, but not a status request already out: its
+    // answer must not restart the loop (or open this archive) for another book.
+    var seq = _openSeq;
     // How often "convertible, but nothing is running" may be answered with a
     // fresh start request before giving up. The opening POST below is
     // fire-and-forget, so it can be lost (offline for a moment, a restart
@@ -919,15 +1034,15 @@
     }
 
     function poll() {
-      if (!_open || _kind !== "comic") return;
+      if (!_open || _kind !== "comic" || seq !== _openSeq) return;
       fetch(comicApi("convert/status", path, ""))
         .then(function (r) { return r.json(); })
         .then(function (res) {
-          if (!_open || _kind !== "comic") return;
+          if (!_open || _kind !== "comic" || seq !== _openSeq) return;
           var state = comicConvertState(res);
           if (state === "done") {
             loadPosition(_bookKey).then(function (pos) {
-              if (!_open || _kind !== "comic") return;
+              if (!_open || _kind !== "comic" || seq !== _openSeq) return;
               openComic(path, parseInt(pos.location, 10) || 1);
             });
             return;
@@ -947,14 +1062,120 @@
           if (Date.now() - started > COMIC_CONVERT_MAX_WAIT_MS) { fail("timeout"); return; }
           _convertTimer = setTimeout(poll, COMIC_CONVERT_POLL_MS);
         })
-        .catch(function () { fail("network"); });
+        .catch(function () {
+          if (_open && _kind === "comic" && seq === _openSeq) fail("network");
+        });
     }
     _convertTimer = setTimeout(poll, COMIC_CONVERT_POLL_MS);
   }
 
   // ---- EPUB ----
 
-  function openEpub(url, startLocation) {
+  // ---- location index, kept per file ----
+  // epub.js builds its "locations" (a CFI every EPUB_LOC_CHARS characters,
+  // which is what turns a position into a percentage) by loading and parsing
+  // every section of the book on the main thread: the stutter during the first
+  // page turns of a big book on a phone, repeated on every single open. The
+  // result depends on nothing but the file, so it is kept in localStorage,
+  // keyed by the URL plus the file's validators -- a replaced file gets a new
+  // key instead of a stale index. Bounded to EPUB_LOC_MAX books and
+  // EPUB_LOC_BUDGET characters in all, least recently used out first:
+  // localStorage is shared with every setting the app keeps there.
+  var EPUB_LOC_CHARS = 1200;
+  var EPUB_LOC_PREFIX = "mf-epubloc:";
+  var EPUB_LOC_INDEX = "mf-epubloc-index";   // [[storage key, length], ...], oldest first
+  var EPUB_LOC_MAX = 20;
+  var EPUB_LOC_BUDGET = 750000;               // characters, about 1.5 MB as stored
+
+  // What identifies the bytes behind a book URL. A converted book's URL does
+  // already: the server derives its key from the source's path, mtime and size
+  // (books/convert.py). A file served by path can be replaced in place, so its
+  // validators are asked for -- one HEAD request, made while the first page is
+  // being laid out. "" means unknown: the index is then built and not kept.
+  function epubFileVersion(url) {
+    if (url.indexOf("/api/library/book/converted/") === 0) return Promise.resolve("converted");
+    return fetch(url, { method: "HEAD" }).then(function (r) {
+      var etag = r.ok ? r.headers.get("ETag") || "" : "";
+      var modified = r.ok ? r.headers.get("Last-Modified") || "" : "";
+      if (!etag && !modified) return "";
+      return etag + "|" + modified + "|" + (r.headers.get("Content-Length") || "");
+    }, function () { return ""; });
+  }
+
+  function epubLocIndex() {
+    try {
+      var list = JSON.parse(localStorage.getItem(EPUB_LOC_INDEX) || "[]");
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+
+  function epubLocGet(key) {
+    var value = "";
+    try { value = localStorage.getItem(key) || ""; } catch (e) { return ""; }
+    if (value) {
+      try {
+        var list = epubLocIndex().filter(function (e) { return e[0] !== key; });
+        list.push([key, value.length]);   // most recently used last
+        localStorage.setItem(EPUB_LOC_INDEX, JSON.stringify(list));
+      } catch (e) { /* only the eviction order is lost */ }
+    }
+    return value;
+  }
+
+  function epubLocPut(key, value) {
+    if (typeof value !== "string" || !value || value.length > EPUB_LOC_BUDGET) return;
+    try {
+      var list = epubLocIndex().filter(function (e) { return e[0] !== key; });
+      var total = value.length;
+      list.forEach(function (e) { total += +e[1] || 0; });
+      while (list.length && (list.length >= EPUB_LOC_MAX || total > EPUB_LOC_BUDGET)) {
+        var gone = list.shift();
+        total -= +gone[1] || 0;
+        // Only ever one of our own keys, whatever the index says.
+        if (String(gone[0]).indexOf(EPUB_LOC_PREFIX) === 0) localStorage.removeItem(gone[0]);
+      }
+      localStorage.setItem(key, value);
+      list.push([key, value.length]);
+      localStorage.setItem(EPUB_LOC_INDEX, JSON.stringify(list));
+    } catch (e) {
+      // Out of quota (or no storage at all): the cache gives way, it must not
+      // crowd out the settings stored next to it. The index is written without
+      // this entry, so it lists nothing that is not stored.
+      try {
+        localStorage.removeItem(key);
+        localStorage.setItem(EPUB_LOC_INDEX, JSON.stringify((list || []).filter(function (x) {
+          return x[0] !== key;
+        })));
+      } catch (e2) { /* storage unavailable */ }
+    }
+  }
+
+  // Load the book's locations from the cache, or build them and keep them.
+  function loadEpubLocations(book, url, versionPromise) {
+    return versionPromise.then(function (version) {
+      var key = version ? EPUB_LOC_PREFIX + EPUB_LOC_CHARS + "|" + url + "|" + version : "";
+      var cached = key ? epubLocGet(key) : "";
+      if (cached) {
+        try {
+          var list = JSON.parse(cached);
+          if (Array.isArray(list)) { book.locations.load(list); return; }
+        } catch (e) { /* unreadable entry: built again below and overwritten */ }
+      }
+      return book.locations.generate(EPUB_LOC_CHARS).then(function () {
+        if (key) epubLocPut(key, book.locations.save());
+      });
+    });
+  }
+
+  function openEpub(url, startLocation, libTried) {
+    var seq = _openSeq;
+    // epub.js (and JSZip) on first use, same as pdf.js in openPdf().
+    if (!window.ePub && !libTried && typeof window.mfLoadLib === "function") {
+      setStatus(esc(tr("Buch wird geladen…", "Loading book…")));
+      var again = function () { if (_open && seq === _openSeq) openEpub(url, startLocation, true); };
+      window.mfLoadLib("epub").then(again, again);
+      return;
+    }
     if (!window.ePub) {
       setStatus(esc(tr("Der EPUB-Reader konnte nicht geladen werden.",
                        "The EPUB reader could not be loaded.")), true);
@@ -977,6 +1198,8 @@
       setStatus(esc(tr("Buch konnte nicht geöffnet werden.", "Could not open the book.")), true);
       return;
     }
+    var book = _book;
+    var fileVersion = epubFileVersion(url);   // see loadEpubLocations()
 
     // A CFI is only meaningful inside the exact rendering it came from. The
     // position is deliberately shared across a book's formats, so the CFI
@@ -993,15 +1216,21 @@
       : _rendition.display();
 
     start.then(function () {
+      // Closed, or another book opened, before the first page was up.
+      if (!_open || seq !== _openSeq) return;
       setStatus("");
       applyEpubStyles();
       startSaveTimer();
       // Locations let epub.js report a real percentage instead of "chapter 3
-      // of 12". It is a full pass over the text, so it happens in the
-      // background and the reader stays usable while it runs.
-      _book.locations.generate(1200).then(function () { updateEpubProgress(); }).catch(function () {});
+      // of 12". Building them is a full pass over the text, so it happens in
+      // the background and the reader stays usable while it runs -- and only
+      // once per file (loadEpubLocations).
+      loadEpubLocations(book, url, fileVersion).then(function () {
+        if (_open && seq === _openSeq) updateEpubProgress();
+      }).catch(function () {});
       buildEpubToc();
     }).catch(function () {
+      if (!_open || seq !== _openSeq) return;
       setStatus(esc(tr("Buch konnte nicht geöffnet werden.", "Could not open the book.")), true);
     });
 
@@ -1126,7 +1355,11 @@
 
   function buildEpubToc() {
     if (!_book) return;
+    // The navigation can arrive after this book was closed or another one
+    // opened; it must not put its chapters into the next book's list.
+    var seq = _openSeq;
     _book.loaded.navigation.then(function (nav) {
+      if (!_open || seq !== _openSeq) return;
       _tocEntries = flattenNav((nav && nav.toc) || [], 0, []);
       if (_tocEntries.length) {
         _tocScanned = true;
@@ -1139,6 +1372,7 @@
                               "Chapters are worked out when you open the list."));
       }
     }).catch(function () {
+      if (!_open || seq !== _openSeq) return;
       renderChapters([], tr("Kapitel werden beim Öffnen der Liste ermittelt.",
                             "Chapters are worked out when you open the list."));
     });
@@ -1160,10 +1394,16 @@
     if (!sections.length) return;
     renderChapters([], tr("Kapitel werden gelesen…", "Reading chapters…"));
 
+    // Same guard as everywhere else that finishes late: once this book is
+    // closed or replaced, the walk stops opening its sections and its result
+    // is dropped instead of becoming the next book's chapter list.
+    var seq = _openSeq;
+    var stale = function () { return !_open || seq !== _openSeq; };
     var entries = [];
     var chain = Promise.resolve();
     sections.slice(0, _MAX_SPINE_SCAN).forEach(function (section, index) {
       chain = chain.then(function () {
+        if (stale()) return;
         return section.load(_book.load.bind(_book)).then(function (doc) {
           var heading = null;
           try { heading = doc && doc.querySelector && doc.querySelector("h1, h2, h3, title"); }
@@ -1182,7 +1422,7 @@
       });
     });
     chain.then(function () {
-      if (!_open) return;
+      if (stale()) return;
       _tocEntries = entries;
       renderChapters(entries);
     });
@@ -1225,9 +1465,13 @@
 
   function loadBookmarks() {
     if (!_bookKey) return Promise.resolve();
+    // A slow answer for a book that has since been closed (or replaced) must
+    // not hand its bookmarks to the book now on screen.
+    var seq = _openSeq;
     return fetch("/api/reading/bookmarks?book=" + encodeURIComponent(_bookKey))
       .then(function (r) { return r.ok ? r.json() : {}; })
       .then(function (data) {
+        if (!_open || seq !== _openSeq) return;
         _bookmarks = (data && data.bookmarks) || [];
         renderBookmarks();
         syncMarkState();
@@ -1438,9 +1682,14 @@
     Array.prototype.forEach.call(host.querySelectorAll(".mfr-pdf-page"), function (c) {
       c.removeAttribute("data-rendered");
     });
-    _pdfRendering = {};
+    // Cancelled, not just forgotten: a paint at the old size would otherwise
+    // still mark its page as done, or collide with the new paint on the same
+    // canvas (pdf.js refuses two renders into one canvas).
+    Object.keys(_pdfRendering).forEach(cancelPdfRender);
     if (_pdf) {
+      var seq = _openSeq;
       _pdf.getPage(1).then(function (first) {
+        if (!_open || seq !== _openSeq) return;
         sizePdfPlaceholders(first);
         renderPdfWindow();
       });
@@ -1532,6 +1781,12 @@
     if (_bound) return;
     _bound = true;
     document.addEventListener("keydown", onKey);
+    // A hidden tab may never come back (closed, or the app swiped away on a
+    // phone), so the position is written now, by a request that outlives the
+    // page (see postPosition).
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "hidden" && _open) savePosition(true);
+    });
 
     var clicks = [
       ["readerClose", closeReader],
@@ -1627,6 +1882,11 @@
     _bookmarks = [];
     _chapterLabel = "";
     toggleSheet(false);
+    _lastSaved = null;
+    // Free the page bitmaps now rather than whenever the detached canvases are
+    // collected -- the next book may be opened right away.
+    Object.keys(_pdfRendering).forEach(cancelPdfRender);
+    Object.keys(_pdfPainted).forEach(releasePdfCanvas);
     if (_rendition) { try { _rendition.destroy(); } catch (e) {} }
     if (_book) { try { _book.destroy(); } catch (e) {} }
     if (_pdf) { try { _pdf.destroy(); } catch (e) {} }
@@ -1676,6 +1936,7 @@
     _title = title || "";
     _bookKey = bookKey || path;
     _open = true;
+    var seq = ++_openSeq;
 
     var overlay = $id("readerOverlay");
     overlay.style.display = "flex";
@@ -1694,7 +1955,7 @@
       // comic API; nothing about a comic goes through /api/library/book/file
       // except the download link on a dead end.
       loadPosition(_bookKey).then(function (pos) {
-        if (!_open) return;
+        if (!_open || seq !== _openSeq) return;
         openComic(path, parseInt(pos.location, 10) || 1);
       });
       return;
@@ -1718,8 +1979,13 @@
     }
 
     var url = "/api/library/book/file?path=" + encodeURIComponent(path);
+    // Start fetching the viewer library now, in parallel with the saved
+    // position; openPdf/openEpub only wait for what is still missing.
+    if (typeof window.mfLoadLib === "function") {
+      window.mfLoadLib(_kind === "pdf" ? "pdf" : "epub").catch(function () {});
+    }
     loadPosition(_bookKey).then(function (pos) {
-      if (!_open) return;
+      if (!_open || seq !== _openSeq) return;
       if (_kind === "pdf") openPdf(url, parseInt(pos.location, 10) || 1);
       else openEpub(url, pos.location || "");
     });
@@ -1737,6 +2003,9 @@
 
   function convertThenOpen(path, ext) {
     var started = Date.now();
+    var seq = _openSeq;
+    // The converted book opens in epub.js -- fetch it while the server works.
+    if (typeof window.mfLoadLib === "function") window.mfLoadLib("epub").catch(function () {});
     setStatus(
       '<div class="mfr-spinner"></div>' +
       esc(tr(ext.toUpperCase() + " wird für den Reader vorbereitet…",
@@ -1763,15 +2032,15 @@
     }
 
     function poll() {
-      if (!_open) return;
+      if (!_open || seq !== _openSeq) return;
       fetch("/api/library/book/convert?path=" + encodeURIComponent(path))
         .then(function (r) { return r.json(); })
         .then(function (res) {
-          if (!_open) return;
+          if (!_open || seq !== _openSeq) return;
           if (res.ready && res.key) {
             _kind = "epub";
             loadPosition(_bookKey).then(function (pos) {
-              if (!_open) return;
+              if (!_open || seq !== _openSeq) return;
               openEpub("/api/library/book/converted/" + encodeURIComponent(res.key) + ".epub",
                        pos.location || "");
             });
@@ -1784,7 +2053,7 @@
           }
           _convertTimer = setTimeout(poll, CONVERT_POLL_MS);
         })
-        .catch(function () { fail("network"); });
+        .catch(function () { if (_open && seq === _openSeq) fail("network"); });
     }
     poll();
   }

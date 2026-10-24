@@ -5,7 +5,8 @@ Extracted from create_app as a plain route-registration function
 """
 
 from ..db import add_media_ignores
-from ..db import get_all_library_cache
+from ..db import get_all_library_cache_shared
+from ..db import get_library_cache_status
 from ..db import get_general_stats
 from ..db import get_media_ignores
 from ..db import get_queue_stats
@@ -26,6 +27,7 @@ from .library import _lib_trigger_scan_async
 from flask import jsonify
 from flask import render_template
 from flask import request
+import functools
 import os
 import os.path
 import re
@@ -42,7 +44,8 @@ import time as _time
 # scan has finished, so the result is cached against a fingerprint of the
 # cache rows (path_key + scanned_at + is_scanning) and recomputed only when
 # that changes.
-_MEDIA_MEMO = {"fp": None, "stats": None, "duplicates": None, "at": 0.0}
+_MEDIA_MEMO = {"fp": None, "stats": None, "duplicates": None, "at": 0.0,
+               "stats_stale": False}
 _MEDIA_MEMO_LOCK = threading.Lock()
 
 # Minimum distance between two full recomputations. Statistics over a large
@@ -55,9 +58,13 @@ _MEDIA_MEMO_MIN_INTERVAL = 60.0
 
 def _drop_media_memo():
     """The ignore list feeds the media stats, so changing it must not wait for
-    the 60 s throttle in _media_results()."""
+    the 60 s throttle in _media_results().
+
+    Only the stats are marked stale. Ignores do not affect the duplicate
+    check, and dropping the whole memo re-ran it -- seconds of regex work on
+    a large library -- after every single ignore/restore click."""
     with _MEDIA_MEMO_LOCK:
-        _MEDIA_MEMO["stats"] = None
+        _MEDIA_MEMO["stats_stale"] = True
 
 
 def _cache_fingerprint(cache):
@@ -73,26 +80,47 @@ def _media_results(cache=None):
 
     Both are computed together and memoised, so a page of the duplicates
     modal costs a dict lookup instead of a full re-walk.
+
+    Without a `cache` argument the fingerprint comes from the status query
+    (no listing involved) and the full listing -- several MB of JSON on a
+    large library -- is only parsed when the memo cannot answer. It used to
+    be parsed first, on every page and search of the duplicates modal.
     """
+    active = lib_path_keys_for_kind(KIND_VIDEO)
     if cache is None:
-        cache = get_all_library_cache()
-    cache = _active_library_cache(cache)
-    fp = _cache_fingerprint(cache)
+        status = get_library_cache_status()
+        fp = _cache_fingerprint({k: v for k, v in status.items() if k in active})
+    else:
+        cache = {k: v for k, v in cache.items() if k in active}
+        fp = _cache_fingerprint(cache)
     now = _time.monotonic()
+    reuse_dups = None
     with _MEDIA_MEMO_LOCK:
         if _MEDIA_MEMO["stats"] is not None:
-            # Unchanged cache -> serve the memo. Changed cache -> still serve
-            # it while the throttle window is open (see above).
-            if _MEDIA_MEMO["fp"] == fp or (now - _MEDIA_MEMO["at"]) < _MEDIA_MEMO_MIN_INTERVAL:
-                return _MEDIA_MEMO["stats"], _MEDIA_MEMO["duplicates"]
+            fresh = (_MEDIA_MEMO["fp"] == fp
+                     or (now - _MEDIA_MEMO["at"]) < _MEDIA_MEMO_MIN_INTERVAL)
+            if not _MEDIA_MEMO["stats_stale"]:
+                # Unchanged cache -> serve the memo. Changed cache -> still
+                # serve it while the throttle window is open (see above).
+                if fresh:
+                    return _MEDIA_MEMO["stats"], _MEDIA_MEMO["duplicates"]
+            elif _MEDIA_MEMO["fp"] == fp:
+                # Only the ignore list changed: the duplicates still hold.
+                reuse_dups = _MEDIA_MEMO["duplicates"]
+    if cache is None:
+        cache = _active_library_cache(get_all_library_cache_shared())
     # Computed outside the lock: it is pure and side-effect free, so a rare
     # duplicate computation on a cold start is cheaper than serialising every
     # request behind one mutex.
     stats = _compute_media_stats(cache)
+    if reuse_dups is not None:
+        with _MEDIA_MEMO_LOCK:
+            _MEDIA_MEMO.update({"stats": stats, "stats_stale": False})
+        return stats, reuse_dups
     dups = _compute_media_duplicates(cache)
     with _MEDIA_MEMO_LOCK:
         _MEDIA_MEMO.update({"fp": fp, "stats": stats, "duplicates": dups,
-                            "at": _time.monotonic()})
+                            "at": _time.monotonic(), "stats_stale": False})
     return stats, dups
 
 
@@ -233,6 +261,11 @@ def _has_token(haystack, needle):
     return re.search(r"(?<![a-z0-9])" + re.escape(needle) + r"(?![a-z0-9])", haystack) is not None
 
 
+# Cached: the same directory names come up again for every episode of a
+# season, and each call runs up to 18 regex searches. On a 35k-episode library
+# without language markers in the file names this took the duplicate check
+# from ~9 s to ~2 s (more on a NAS, where it used to time requests out).
+@functools.lru_cache(maxsize=65536)
 def _match_lang(haystack, allow_bare_words=False):
     """Find a language label in an already-normalised string, or None.
 
@@ -334,7 +367,7 @@ def _compute_media_duplicates(cache=None):
     so distinct films in one folder are not falsely grouped. Returns a list of
     duplicate groups (each with its individual files) sorted by title."""
     if cache is None:
-        cache = get_all_library_cache()
+        cache = get_all_library_cache_shared()
     cache = _active_library_cache(cache)
     groups = {}  # identity key tuple -> group dict
     seen_paths = {}  # identity key -> set of normalised paths already counted
@@ -461,7 +494,7 @@ def _compute_media_stats(cache=None):
     name so each logical series is counted once; their seasons are unioned
     so an episode present in any language counts as present."""
     if cache is None:
-        cache = get_all_library_cache()
+        cache = get_all_library_cache_shared()
     cache = _active_library_cache(cache)
     any_scanning = any(e.get("is_scanning") for e in cache.values())
     ignores = get_media_ignores()
@@ -664,13 +697,14 @@ def register_stats_routes(app):
             # Load the library cache once and reuse it for both the media stats
             # and the duplicate scan, so the cache JSON is only decoded once per
             # request instead of on every helper call.
-            cache = get_all_library_cache()
             # Kick off an initial library scan if nothing has been scanned yet,
             # so the Media category isn't permanently empty for fresh installs.
-            if not cache:
+            # The status query answers that without parsing the listing;
+            # _media_results() parses it only when its memo is out of date.
+            if not get_library_cache_status():
                 lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
                 _lib_trigger_scan_async(_lib_build_scan_targets(), lang_sep)
-            media, dups = _media_results(cache)
+            media, dups = _media_results()
             # Only the count travels with the page payload. The rows themselves
             # are fetched per page from /api/media/duplicates: a 90k-file
             # library produces ~43k groups, which serialised to ~28 MB of JSON

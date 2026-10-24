@@ -16,6 +16,10 @@ let _selectedUrls = new Set();
 
 const _favListEl = () => document.getElementById("favouritesList");
 
+// A series URL as Auto-Sync compares it: trailing slashes and case ignored,
+// like find_autosync_by_url() on the server and app.js's autoSyncUrlMap.
+const _syncKey = (url) => (url || "").replace(/\/+$/, "").toLowerCase();
+
 const _PLAY_SVG =
   '<svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 
@@ -67,8 +71,10 @@ async function loadFavourites(forceRefresh = false) {
 
     if (syncRes.status === "fulfilled" && syncRes.value.ok) {
       const syncData = await syncRes.value.json();
-      const items = syncData.items || syncData.autosync || [];
-      _autoSyncUrls = new Set(items.map((i) => i.series_url).filter(Boolean));
+      // GET /api/autosync answers {"jobs": [...]} (routes/autosync.py). Read
+      // as `items`, the set stayed empty and the Auto-Sync badge never showed.
+      const items = syncData.jobs || syncData.items || [];
+      _autoSyncUrls = new Set(items.map((i) => _syncKey(i.series_url)).filter(Boolean));
     } else {
       _autoSyncUrls = new Set();
     }
@@ -199,7 +205,7 @@ function _favCard(f) {
   const poster = esc(proxyImg(f.poster_url || ""));
   const date = f.created_at ? esc(String(f.created_at).slice(0, 10)) : "";
   const isMovie = f.media_type === "movie";
-  const isAutoSynced = _autoSyncUrls.has(f.series_url);
+  const isAutoSynced = _autoSyncUrls.has(_syncKey(f.series_url));
   const isSelected = _selectedUrls.has(f.series_url);
 
   let topBadges = "";
@@ -265,7 +271,7 @@ function _favListCard(f) {
   const poster = esc(proxyImg(f.poster_url || ""));
   const date = f.created_at ? esc(String(f.created_at).slice(0, 10)) : "";
   const isMovie = f.media_type === "movie";
-  const isAutoSynced = _autoSyncUrls.has(f.series_url);
+  const isAutoSynced = _autoSyncUrls.has(_syncKey(f.series_url));
   const isSelected = _selectedUrls.has(f.series_url);
 
   let badges = "";
@@ -533,19 +539,27 @@ function _onFavListClick(e) {
 }
 
 function _bindFavControls() {
-  // Search Input
+  // Search Input. Debounced like the library search (libOnSearch): this page
+  // has no pagination, so every keystroke rebuilt every favourite card.
   const search = document.getElementById("favSearch");
+  let searchTimer = null;
   if (search) {
     search.addEventListener("input", () => {
-      _favSearch = (search.value || "").trim().toLowerCase();
-      renderFavourites();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchTimer = null;
+        _favSearch = (search.value || "").trim().toLowerCase();
+        renderFavourites();
+      }, 200);
     });
   }
 
-  // Clear Search Button
+  // Clear Search Button -- immediate, and drops a search still waiting to run.
   const clearBtn = document.getElementById("favSearchClear");
   if (clearBtn) {
     clearBtn.addEventListener("click", () => {
+      clearTimeout(searchTimer);
+      searchTimer = null;
       if (search) search.value = "";
       _favSearch = "";
       renderFavourites();

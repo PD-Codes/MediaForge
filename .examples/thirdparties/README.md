@@ -959,8 +959,16 @@ For anything beyond "restart me", implement the hook:
 
 ```python
 def on_settings_changed(app, keys):
-    """A module:<MODULE_ID>:* setting was saved."""
+    """module:<MODULE_ID>:* settings changed; `keys` lists all of them."""
 ```
+
+It fires only for real changes (writing the value that is already stored does
+nothing), once per burst of writes — one save of your settings form arrives as
+one call with every changed key — and the worker restart happens once per burst
+as well. `module:<MODULE_ID>:__*` keys belong to the core (e.g. the installed
+version) and never fire it. Progress your worker keeps for itself does not
+belong in `set_setting` (every change would restart the worker): use
+`module_data_dir()` or register the worker with `restart_on_settings=False`.
 
 ### Reporting status to Settings → Operations
 
@@ -1547,6 +1555,12 @@ Notes:
   are loaded on every page from `static/mf_escape.js`; do not write your own
   escaper. Better still, put values in `data-*` attributes and read them in
   the handler instead of interpolating them into an `onclick` string.
+- Need hls.js, pdf.js or epub.js? They are no longer on every page:
+  `window.mfLoadLib("hls" | "pdf" | "epub").then(() => { /* Hls, pdfjsLib, ePub */ })`
+  loads one on demand (from `base.html`, so every page that extends it has it).
+- Reading settings from a page a normal account opens? Use
+  `GET /api/settings/client` (read-only, no secrets, any logged-in account);
+  `/api/settings` is admin-only and answers 403 otherwise.
 - Requests are abortable: opening a second entry while the first is still
   loading cannot let the slower answer overwrite the newer one.
 - The "Search streams" button uses `openAniSearchModal()` when the host

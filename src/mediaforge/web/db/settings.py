@@ -236,18 +236,47 @@ def get_setting_int(key: str, default: int, env_key: str | None = None) -> int:
 
 
 def set_setting(key: str, value: str) -> None:
+    """Upsert one setting and tell the listeners -- but only if it changed.
+
+    The settings pages save whole sections at once, so most writes repeat the
+    stored value. Each one used to reach every listener all the same: an
+    audit-log row claiming the setting "changed", and for a module's setting a
+    restart of that module's background worker.
+    """
     conn = get_db()
     try:
-        stored = _encrypt_value(value) if is_sensitive_key(key) else value
-        conn.execute(
-            "INSERT INTO app_settings (key, value) VALUES (?, ?)"
-            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (key, stored),
-        )
+        if is_sensitive_key(key):
+            stored = _encrypt_value(value)
+            # Encryption output differs on every call, so only decrypting what
+            # is stored can tell whether this is the same secret again. A
+            # legacy plaintext row is rewritten (encrypted) all the same.
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?", (key,)
+            ).fetchone()
+            if row is not None:
+                old = row["value"]
+                if old == value == stored or (
+                    old and old.startswith(_ENC_PREFIX) and _decrypt_value(old) == value
+                ):
+                    return
+            cur = conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, stored),
+            )
+        else:
+            cur = conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+                " WHERE app_settings.value IS NOT excluded.value",
+                (key, value),
+            )
+        changed = cur.rowcount != 0
         conn.commit()
     finally:
         conn.close()
-    _notify_setting_listeners(key, value)
+    if changed:
+        _notify_setting_listeners(key, value)
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +350,8 @@ _SETTING_LISTENERS = []
 
 
 def add_setting_listener(fn) -> None:
-    """Call ``fn(key, value)`` after every successful set_setting().
+    """Call ``fn(key, value)`` after every set_setting() that changed a value
+    (rewriting the stored value again notifies nobody).
 
     `value` is the plaintext that was passed in, not what is stored (a sensitive
     key is encrypted at rest, and a listener has no business decrypting it just

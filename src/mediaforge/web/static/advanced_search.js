@@ -39,6 +39,7 @@
   var TMDB_MAX_PAGES = 500;                // TMDB's own hard limit
   var TMDB_MAX_RESULTS = TMDB_PAGE_SIZE * TMDB_MAX_PAGES;
   var MAX_CACHED_PAGES = 10;               // cap what we write to localStorage
+  var BADGE_SOURCES_TTL_MS = 60 * 1000;    // see runSearch()
 
   var TABS = ["basics", "quality", "streaming", "details"];
 
@@ -81,6 +82,7 @@
   var searchSeq = 0;      // generation counter; stale responses are discarded
   var lastError = null;
   var lastPageSize = 0;
+  var badgeSourcesAt = 0; // when the downloaded-folders badge data was last requested
 
   // ── Small helpers ──────────────────────────────────────────────────────
   function $(id) { return document.getElementById(id); }
@@ -1050,10 +1052,20 @@
     S.total = 0;
     S.pageIndex = 0;
 
-    // Refresh the "already downloaded" / "in auto-sync" badge sources in the
-    // background — never block the search on them.
-    callIfPresent("loadDownloadedFolders");
-    callIfPresent("loadAutoSyncJobs");
+    // Refresh the "already downloaded" badge source in the background — never
+    // block the search on it. At most once a minute: /api/downloaded-folders
+    // lists every download folder live (one stat per series folder, slow on a
+    // NAS), and that ran for every search click, preset and chip removal. Not
+    // dropped altogether: apart from opening a result (app.js runAniSearch)
+    // nothing reloads it during a visit, and downloads finish meanwhile.
+    // The Auto-Sync list is not reloaded here any more: init() loads it, and a
+    // job added or removed from a result's modal is written into app.js's map
+    // with its title (openAutoSyncConfig's onSaved), which is all the
+    // title-matched badge needs.
+    if (Date.now() - badgeSourcesAt >= BADGE_SOURCES_TTL_MS) {
+      badgeSourcesAt = Date.now();
+      callIfPresent("loadDownloadedFolders");
+    }
     callIfPresent("loadCineinfoSettings");
     callIfPresent("loadGeneralSettings");
 
@@ -1975,6 +1987,9 @@
     loadNetworks().then(renderNetworks);
 
     // Badge sources used by addDownloadedBadgeForTmdb / addSyncBadgeForTmdb.
+    // app.js shares each of these for a minute, so the Auto-Sync list its own
+    // preload is already fetching is not requested a second time.
+    badgeSourcesAt = Date.now();
     callIfPresent("loadDownloadedFolders");
     callIfPresent("loadAutoSyncJobs");
     callIfPresent("loadCineinfoSettings");

@@ -302,8 +302,14 @@ def _request_meta() -> tuple[str, str]:
 
 def audit(category: str, action: str, *, target: str = "", detail=None,
           outcome: str = "success", severity: str = "info",
-          actor_id=None, actor_name=None) -> None:
-    """Record one auditable event. Never raises, never blocks."""
+          actor_id=None, actor_name=None, actor_type=None) -> None:
+    """Record one auditable event. Never raises, never blocks.
+
+    `actor_type` overrides the type derived from the request ("system" for
+    events no request caused). audit_hooks.record_lifecycle() always passed
+    it, and without the parameter every lifecycle event -- app start,
+    restart, settings restore -- died in a TypeError before it was written.
+    """
     global _dropped
     try:
         if category not in CATEGORIES:
@@ -311,7 +317,9 @@ def audit(category: str, action: str, *, target: str = "", detail=None,
         if severity not in SEVERITIES:
             severity = "info"
 
-        auto_id, auto_name, actor_type = _actor()
+        auto_id, auto_name, auto_type = _actor()
+        if actor_type is None:
+            actor_type = auto_type
         ip, ua = _request_meta()
 
         payload = {
@@ -321,7 +329,7 @@ def audit(category: str, action: str, *, target: str = "", detail=None,
             "severity": severity,
             "actor_id": auto_id if actor_id is None else actor_id,
             "actor_name": (auto_name if actor_name is None else str(actor_name))[:120],
-            "actor_type": actor_type,
+            "actor_type": str(actor_type)[:40],
             "target": str(target)[:300],
             "ip": ip,
             "user_agent": ua,
@@ -407,6 +415,17 @@ def _row_out(row) -> dict:
     except Exception:
         out["detail"] = {}
     return out
+
+
+def row_count() -> int:
+    """Number of rows in the audit log -- just that. The hourly retention
+    heartbeat used stats() for this, i.e. four more full-table aggregates
+    every hour on a log that is kept forever by default."""
+    conn = _connect()
+    try:
+        return int(conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0])
+    finally:
+        conn.close()
 
 
 def stats() -> dict:

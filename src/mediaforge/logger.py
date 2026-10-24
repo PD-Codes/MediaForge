@@ -50,6 +50,11 @@ class ColorFormatter(logging.Formatter):
     """Formatter for colored stdout logs."""
 
     def format(self, record):
+        # Work on a copy: every handler after this one gets the SAME record.
+        # Rewriting levelname/msg in place handed them the ANSI-coloured text
+        # -- the telemetry log handler sent "\x1b[37mtimed out\x1b[0m", which
+        # its "transport error, not a crash" filter could no longer recognise.
+        record = logging.makeLogRecord(record.__dict__)
         level_color = COLORS.get(record.levelno, RESET)
         record.levelname = f"{level_color}{record.levelname}{RESET}"
 
@@ -81,6 +86,7 @@ class PlainFormatter(logging.Formatter):
     """Formatter for plain file logs (no color)."""
 
     def format(self, record):
+        record = logging.makeLogRecord(record.__dict__)  # see ColorFormatter
         cwd = os.getcwd()
         try:
             rel_path = os.path.relpath(record.pathname, cwd)
@@ -113,7 +119,16 @@ def get_logger(name=__name__, level=None):
         # ------------------ File handler ------------------ #
         temp_dir = tempfile.gettempdir()
         log_file_path = Path(temp_dir) / "mediaforge.log"
-        file_handler = logging.FileHandler(log_file_path, mode="w", encoding="utf-8")
+        # Started empty on every launch as before, but no longer unbounded: on
+        # a NAS with weeks of uptime (debug mode on) the file grew without
+        # limit, and in Docker /tmp is a RAM-backed tmpfs that Chromium and
+        # Xvfb need too. Diagnostics only read the last 2 MB anyway.
+        try:
+            open(log_file_path, "w", encoding="utf-8").close()
+        except OSError:
+            pass
+        file_handler = RotatingFileHandler(
+            log_file_path, maxBytes=10 * 1024 * 1024, backupCount=1, encoding="utf-8")
         file_handler.setFormatter(PlainFormatter(log_format, datefmt=date_format))
         _global_logger.addHandler(file_handler)
 

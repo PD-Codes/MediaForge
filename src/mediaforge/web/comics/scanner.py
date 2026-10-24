@@ -53,11 +53,21 @@ logger = get_logger(__name__)
 # their way out by routes/library.py's _lib_refresh_comic_conversion_state().
 # Minutes of rescanning to persist a boolean that is recomputed anyway is not a
 # trade worth making; the next scan that happens for its own reasons writes it.
-COMICS_FORMAT_VERSION = 2
+#
+# v3: rows the scan can take over the next time (see scan_comics' *previous*).
+# A row now says when its ComicInfo.xml was skipped for time ("meta_pending"),
+# and keeps its own "series" when that differs from the series it was grouped
+# under. A v2 row says neither, so it cannot be reused -- hence the bump, which
+# costs one full comic scan per location, once.
+COMICS_FORMAT_VERSION = 3
 
 # Fields that stay in an issue row even when they are falsy, because a
 # consumer distinguishes "absent" from "zero" for them.
 _ALWAYS_KEEP = frozenset({"path", "file", "key", "number", "size", "readable"})
+
+# The ComicInfo-derived fields of a row, i.e. what a reused row carries over.
+_META_FIELDS = ("number", "volume", "title", "year", "summary", "publisher",
+                "writers", "characters", "language", "page_count", "rtl")
 
 # Directories that never hold comics, skipped whole.
 _SKIP_DIRS = frozenset({
@@ -68,7 +78,9 @@ _SKIP_DIRS = frozenset({
 # Seconds this scan may spend reading ComicInfo.xml, across the whole location.
 # Everything past it falls back to the filename, which is what an archive
 # without a sidecar gets anyway -- so the degradation is "less metadata", not
-# "missing issues". The next scan starts a fresh budget and gets further.
+# "missing issues". Such a row is marked "meta_pending" and read by a later
+# scan; unchanged files are taken over from the previous scan without opening
+# them, so the budget goes to new files and the metadata accumulates.
 _COMICINFO_TIME_BUDGET = 45
 
 # Hard ceiling on files walked, so a path pointed at a whole disk cannot turn
@@ -101,14 +113,34 @@ def _walk_comic_files(base: Path):
             yield full, st
 
 
+def _read_container(path: Path, ext: str, deadline: float):
+    """``(fmt, ComicInfo dict, meta_pending)`` for one file, with ONE open of it.
+
+    The first bytes say what the container is, and the same handle is then
+    read as that archive for its ComicInfo.xml. It used to be opened three
+    times (sniff, list, read), each one a round trip on a network share and
+    the last two a read of the archive's whole directory.
+
+    *meta_pending* is True when a ComicInfo.xml could have been read but the
+    time budget was spent: the next scan reads it instead of reusing the row.
+    """
+    try:
+        with open(path, "rb") as fh:
+            fmt = archive.sniff_head(fh.read(512))
+            if ext not in COMIC_ARCHIVE_EXTS or not archive.is_native(fmt):
+                return fmt, {}, False
+            if time.monotonic() >= deadline:
+                return fmt, {}, True
+            return fmt, comicinfo.read_open(fh, fmt, path) or {}, False
+    except OSError:
+        # Unreadable: what archive.sniff() answers for it, and no metadata.
+        return "", {}, False
+
+
 def _issue_from(path: Path, st, base: Path, deadline: float) -> dict:
     """One issue row: ComicInfo if affordable, filename otherwise."""
     ext = path.suffix.lower()
-    fmt = archive.sniff(path)
-
-    meta = {}
-    if ext in COMIC_ARCHIVE_EXTS and time.monotonic() < deadline:
-        meta = comicinfo.read(path, fmt) or {}
+    fmt, meta, meta_pending = _read_container(path, ext, deadline)
 
     guessed = identity.parse(path.stem)
 
@@ -151,6 +183,43 @@ def _issue_from(path: Path, st, base: Path, deadline: float) -> dict:
     if title and identity.normalize(title) == identity.normalize(series):
         title = ""
 
+    fields = {
+        "series": series,
+        "number": number,
+        "volume": volume,
+        "title": title,
+        "year": year,
+        "summary": meta.get("summary", ""),
+        "publisher": meta.get("publisher", ""),
+        "writers": meta.get("writers", []),
+        "characters": meta.get("characters", []),
+        "language": meta.get("language", ""),
+        "page_count": meta.get("page_count", 0),
+        "rtl": bool(meta.get("rtl")),
+    }
+    return _issue_row(path, st, fmt, fields, meta_pending)
+
+
+def _issue_reused(path: Path, st, row: dict, series: str) -> dict:
+    """An unchanged file's row, taken over from the previous scan.
+
+    Everything in a row follows from the file's bytes and its place below the
+    location, and neither has changed (same path, size and mtime) -- except
+    whether a RAR/ACE has been repacked since, which _issue_row() asks the
+    conversion cache again, exactly as for a new file.
+    """
+    fields = {k: row.get(k) for k in _META_FIELDS}
+    fields["series"] = series
+    return _issue_row(path, st, row.get("format") or "", fields, False)
+
+
+def _issue_row(path: Path, st, fmt: str, fields: dict, meta_pending: bool) -> dict:
+    """The row for one issue, from its container format and its metadata --
+    the one place a row is put together, for new and for reused files alike,
+    so the two cannot differ."""
+    ext = path.suffix.lower()
+    series = fields["series"]
+    number = fields["number"]
     native = archive.is_native(fmt)
     direct = fmt in archive.DIRECT_FORMATS
     # A RAR/ACE that has already been repacked is readable and does NOT need
@@ -190,22 +259,24 @@ def _issue_from(path: Path, st, base: Path, deadline: float) -> dict:
         "readable": bool(native or direct or converted),
         "direct": direct,
         "needs_conversion": bool(fmt and not native and not direct and not converted),
-        # Consumed by _series_key() during grouping and then dropped by the
-        # filter below -- the series object above the issues already says it.
+        # Consumed by _series_key() during grouping; scan_comics() then drops
+        # it wherever the series object above the issue already says it.
         "series": series,
         "number": str(number or ""),
-        "volume": str(volume or ""),
-        "title": title,
-        "year": year,
-        "summary": meta.get("summary", ""),
-        "publisher": meta.get("publisher", ""),
-        "writers": meta.get("writers", []),
-        "characters": meta.get("characters", []),
-        "language": meta.get("language", ""),
-        "page_count": meta.get("page_count", 0),
-        "rtl": bool(meta.get("rtl")),
+        "volume": str(fields["volume"] or ""),
+        "title": fields["title"],
+        "year": fields["year"],
+        "summary": fields["summary"],
+        "publisher": fields["publisher"],
+        "writers": fields["writers"],
+        "characters": fields["characters"],
+        "language": fields["language"],
+        "page_count": fields["page_count"],
+        "rtl": bool(fields["rtl"]),
         "size": int(getattr(st, "st_size", 0) or 0),
         "added_at": int(getattr(st, "st_mtime", 0) or 0),
+        # ComicInfo.xml not read yet (time budget) -- see _read_container().
+        "meta_pending": bool(meta_pending),
     }
 
     # Drop what carries no information. This whole dict is stored as JSON in
@@ -215,9 +286,8 @@ def _issue_from(path: Path, st, base: Path, deadline: float) -> dict:
     # "characters": [] and "needs_conversion": false repeated five thousand
     # times. The frontend reads every one of these with `issue.x || default`,
     # so an absent key and an empty one are already the same thing to it.
-    #
-    # `series` goes too: it is identical to the series object that holds this
-    # issue, and repeating it per issue is another 90 KB saying nothing.
+    # (`series` is dropped later, in scan_comics(), where the series object
+    # that holds the issue is known.)
     return {k: v for k, v in row.items()
             if v not in (None, "", 0, False, []) or k in _ALWAYS_KEEP}
 
@@ -242,8 +312,34 @@ def _pick(issues, field):
     return "" if field != "year" else None
 
 
-def scan_comics(base) -> list:
-    """Index one library location. Returns a list of series dicts."""
+def _reuse_index(previous) -> dict:
+    """``{(path, size, int(mtime)): (row, series)}`` of the previous scan's rows
+    that may be taken over: everything but the rows whose ComicInfo.xml was
+    skipped for time, which are read again instead. *series* is the row's own
+    series spelling -- kept in the row when it differs from its group's,
+    otherwise the group's (see scan_comics)."""
+    index = {}
+    for group in previous or ():
+        name = group.get("series") or ""
+        for row in group.get("issues") or ():
+            if not row.get("path") or row.get("meta_pending"):
+                continue
+            key = (row["path"], row.get("size") or 0, row.get("added_at") or 0)
+            index[key] = (row, row.get("series") or name)
+    return index
+
+
+def scan_comics(base, previous=None) -> list:
+    """Index one library location. Returns a list of series dicts.
+
+    *previous* is this location's result of the last scan (same
+    COMICS_FORMAT_VERSION; anything else must not be passed). A file whose
+    path, size and mtime are unchanged is taken over from it instead of being
+    opened again -- that used to happen to every file on every scan, and the
+    ComicInfo time budget was spent on the same first files each time, so the
+    rest of a large library never got its metadata. Now the budget goes to new
+    and changed files only, and what it could not reach is read next time.
+    """
     base = Path(base)
     try:
         if not base.is_dir():
@@ -251,11 +347,16 @@ def scan_comics(base) -> list:
     except OSError:
         return []
 
+    reuse = _reuse_index(previous)
     deadline = time.monotonic() + _COMICINFO_TIME_BUDGET
     buckets: dict = {}
     for path, st in _walk_comic_files(base):
         try:
-            issue = _issue_from(path, st, base, deadline)
+            old = reuse.get((str(path), int(st.st_size), int(st.st_mtime)))
+            if old is not None:
+                issue = _issue_reused(path, st, *old)
+            else:
+                issue = _issue_from(path, st, base, deadline)
         except Exception:
             # One unreadable file must not cost the whole location.
             logger.debug("[Comics] Skipping %s", path, exc_info=True)
@@ -269,6 +370,9 @@ def scan_comics(base) -> list:
     for key, issues in buckets.items():
         # "series" survived this far so grouping could use it; from here the
         # series object carries it and 5,000 copies of the same string do not.
+        # An issue keeps its own only where it is spelled differently from the
+        # group's ("BATMAN" in a "Batman" group): the next scan needs that
+        # spelling to take the row over unchanged (see _reuse_index).
 
         issues.sort(key=lambda i: (identity.issue_sort_key(i.get("number") or ""),
                                    (i.get("file") or "").lower()))
@@ -292,7 +396,8 @@ def scan_comics(base) -> list:
             "readable_count": sum(1 for i in issues if i.get("readable")),
             "needs_conversion_count": sum(1 for i in issues if i.get("needs_conversion")),
             "added_at": max((i.get("added_at") or 0) for i in issues),
-            "issues": [{k: v for k, v in i.items() if k != "series"} for i in issues],
+            "issues": [{k: v for k, v in i.items() if k != "series" or v != series_name}
+                       for i in issues],
         })
 
     out.sort(key=lambda s: (s["sort_series"], s["volume"]))

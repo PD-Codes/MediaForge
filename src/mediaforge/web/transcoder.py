@@ -7,6 +7,7 @@ and calls ``probe_file`` / ``detect_available_encoders`` / ``get_best_encoder``
 directly; ``web/routes/library.py`` also calls ``probe_file`` for media info.
 """
 
+import copy
 import hashlib
 import os
 import json
@@ -17,7 +18,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from pathlib import Path
 
 try:
@@ -229,6 +230,16 @@ def get_best_encoder() -> tuple:
 
 # ── ffprobe ────────────────────────────────────────────────────────────────
 
+# Results of probe_file() for LOCAL files, keyed by (path, size, mtime): the
+# player calls /api/stream/start on every seek outside the buffer and every
+# audio/quality change, and /api/stream/subtitle and /api/stream/thumbs probe
+# too -- each one ran ffprobe again in the request thread (reading the MKV
+# header and cues, over SMB on a NAS) for a file that had not changed.
+_PROBE_CACHE: "OrderedDict[tuple, dict]" = OrderedDict()
+_PROBE_CACHE_MAX = 64
+_PROBE_CACHE_LOCK = threading.Lock()
+
+
 def probe_file(file_path: str, headers: dict | None = None, timeout: int = 30) -> dict | None:
     """Return media info dict or None on failure.
 
@@ -237,7 +248,35 @@ def probe_file(file_path: str, headers: dict | None = None, timeout: int = 30) -
     for a remote stream, but far too generous for a local library scan, where
     thousands of files on an unresponsive network share would otherwise add up
     to hours (see routes/library.py::_lib_scan_base).
+
+    Local files are answered from a small cache while their size and mtime are
+    unchanged (see _PROBE_CACHE); every caller gets its own copy.
     """
+    key = None
+    if not headers:
+        try:
+            st = os.stat(file_path)
+            key = (str(file_path), st.st_size, st.st_mtime_ns)
+        except (OSError, TypeError, ValueError):
+            key = None   # a URL or a vanished file: probe as before
+    if key is not None:
+        with _PROBE_CACHE_LOCK:
+            hit = _PROBE_CACHE.get(key)
+            if hit is not None:
+                _PROBE_CACHE.move_to_end(key)
+                return copy.deepcopy(hit)
+    info = _probe_file_uncached(file_path, headers=headers, timeout=timeout)
+    if key is not None and info is not None:
+        with _PROBE_CACHE_LOCK:
+            _PROBE_CACHE[key] = copy.deepcopy(info)
+            while len(_PROBE_CACHE) > _PROBE_CACHE_MAX:
+                _PROBE_CACHE.popitem(last=False)
+    return info
+
+
+def _probe_file_uncached(file_path: str, headers: dict | None = None,
+                         timeout: int = 30) -> dict | None:
+    """probe_file() without the cache: one ffprobe run."""
     try:
         cmd = [_ffprobe_bin(), "-v", "quiet", "-print_format", "json"]
         if headers:

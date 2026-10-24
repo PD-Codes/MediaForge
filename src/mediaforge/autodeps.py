@@ -995,6 +995,15 @@ def ensure_patchright_chromium():
         _log.debug("Running in Docker — skipping patchright chromium check (pre-installed in image)")
         return
 
+    # The check itself starts a second Python plus the Node driver -- 0.6 s on
+    # a fast box, 1-3 s on Windows, and with no network and no browser it
+    # blocked startup indefinitely. Once an install for this patchright
+    # version has succeeded and the browser folder is still there, skip it.
+    marker = _patchright_marker()
+    if marker is not None and marker.exists() and _patchright_chromium_present():
+        _log.debug("patchright chromium already installed (%s)", marker.name)
+        return
+
     try:
         _log.debug("Ensuring patchright chromium is installed...")
         subprocess.run(
@@ -1002,10 +1011,57 @@ def ensure_patchright_chromium():
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            timeout=900,
         )
         _log.debug("patchright chromium is ready")
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        if marker is not None:
+            try:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text("ok\n", encoding="utf-8")
+            except OSError:
+                pass
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
         _log.debug(f"patchright chromium install failed (non-fatal): {e}")
+
+
+def _patchright_marker():
+    """Marker file for "chromium installed for this patchright version", or
+    None when the version cannot be read (then the install always runs)."""
+    try:
+        from importlib.metadata import version as _version
+        ver = _version("patchright")
+    except Exception:
+        return None
+    from .config import MEDIAFORGE_CONFIG_DIR
+    safe = "".join(ch if ch.isalnum() or ch in ".-_" else "_" for ch in str(ver))
+    return Path(MEDIAFORGE_CONFIG_DIR) / (".patchright_chromium_" + safe)
+
+
+def _patchright_chromium_present() -> bool:
+    """A completed Chromium install in the Playwright browser cache."""
+    candidates = []
+    custom = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    if custom and custom != "0":
+        candidates.append(Path(custom).expanduser())
+    home = Path.home()
+    if sys.platform.startswith("win"):
+        local = os.environ.get("LOCALAPPDATA")
+        candidates.append(Path(local) / "ms-playwright" if local
+                          else home / "AppData" / "Local" / "ms-playwright")
+    elif sys.platform == "darwin":
+        candidates.append(home / "Library" / "Caches" / "ms-playwright")
+    else:
+        xdg = os.environ.get("XDG_CACHE_HOME")
+        candidates.append(Path(xdg) / "ms-playwright" if xdg else home / ".cache" / "ms-playwright")
+    for base in candidates:
+        try:
+            for entry in base.glob("chromium-*"):
+                # Playwright writes this file last, once a download is complete.
+                if (entry / "INSTALLATION_COMPLETE").exists():
+                    return True
+        except OSError:
+            continue
+    return False
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ Design notes
 
 from __future__ import annotations
 
+import functools
 import re
 
 # (cause_id, matcher) -- matcher is a lowercase substring, a tuple of
@@ -193,7 +194,13 @@ def classify(raw: str) -> str:
     """Return the cause id for one raw error string."""
     if not raw:
         return "unknown"
-    text = str(raw).lower()
+    return _classify_text(str(raw).lower())
+
+
+# Cached: /api/queue is polled every two seconds and classifies every error of
+# every failed job on each poll -- the same few strings, ~80 checks each.
+@functools.lru_cache(maxsize=4096)
+def _classify_text(text: str) -> str:
     for cause, matcher in _RULES:
         if isinstance(matcher, str):
             if matcher in text:

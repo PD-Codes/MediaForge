@@ -101,6 +101,11 @@ _events_lock = threading.Lock()
 
 _started = False
 _start_lock = threading.Lock()
+# The workers this process owns, or None for "every worker in _RECOVERY". The
+# worker host passes what MEDIAFORGE_WORKERS selected: without it, a host
+# running only `queue` found no encoding/upscale thread and started them
+# anyway, overriding the selection.
+_owned = None
 _stop = threading.Event()
 
 
@@ -306,6 +311,8 @@ def check_once() -> list[str]:
         recovery = _RECOVERY.get(worker)
         if not recovery:
             continue
+        if _owned is not None and worker not in _owned:
+            continue          # runs in another process (or nowhere, by choice)
 
         if not _thread_alive(recovery["thread"]):
             # Nothing to ask and nothing to wait for: start a new thread.
@@ -332,18 +339,21 @@ def _loop() -> None:
             logger.exception("[Watchdog] Check failed")
 
 
-def start() -> None:
+def start(owned=None) -> None:
     """Start the watchdog thread once. Idempotent.
 
     Only started where the workers actually run: in the web process by default,
     in the worker host when workers are external. Running it in both would mean
     two processes racing to restart the same worker.
+
+    `owned` limits it to those workers (see _owned); None watches all of them.
     """
-    global _started
+    global _started, _owned
     with _start_lock:
         if _started:
             return
         _started = True
+        _owned = None if owned is None else frozenset(owned)
         # Cleared inside the lock: a stop() landing between the flag and the
         # clear would be swallowed, leaving a watchdog that believes it is
         # stopped and keeps running.

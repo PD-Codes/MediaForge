@@ -139,8 +139,9 @@ def read(path, fmt=None) -> dict:
 
     Only looks at native containers: a RAR or ACE has to be converted before
     anything can be read out of it, and doing that during a scan would turn
-    indexing a library into unpacking it. The scanner reads the sidecar of a
-    converted archive on the next pass instead.
+    indexing a library into unpacking it. (Nothing reads the sidecar of the
+    converted copy either: a RAR/ACE issue keeps the metadata its file and
+    folder names give.)
     """
     fmt = fmt or archive.sniff(path)
     if not archive.is_native(fmt):
@@ -149,32 +150,83 @@ def read(path, fmt=None) -> dict:
     return parse_bytes(raw) if raw else {}
 
 
-def _read_member(path, fmt):
-    """The raw ComicInfo.xml bytes, found case-insensitively at any depth."""
-    try:
-        names = _member_names(path, fmt)
-    except Exception:
-        logger.debug("[Comics] Cannot list %s for ComicInfo", path, exc_info=True)
-        return None
+def read_open(fh, fmt, path) -> dict:
+    """read() for a file the caller already has open in binary mode.
 
-    # Prefer the one at the archive root; some archives carry a per-page copy
-    # in a subfolder, and the root one is the issue's own.
+    The scanner sniffs the format from this handle and then reads ZIP and TAR
+    through it as well -- one open of the file for the sniff, the listing and
+    the member, where read() costs three (on a network share, three round
+    trips plus two central-directory reads). *path* is for .cb7 only, whose
+    reader opens it by name.
+    """
+    if not archive.is_native(fmt):
+        return {}
+    if fmt == archive.FMT_7Z:
+        raw = _read_member(path, fmt)
+    else:
+        fh.seek(0)
+        raw = _read_member(fh, fmt)
+    return parse_bytes(raw) if raw else {}
+
+
+def _pick_member(names):
+    """The ComicInfo.xml to read out of these member names, or None.
+
+    Prefer the one at the archive root; some archives carry a per-page copy
+    in a subfolder, and the root one is the issue's own.
+    """
     candidates = [n for n in names if n.rsplit("/", 1)[-1].lower() == _COMICINFO_NAME]
     if not candidates:
         return None
     candidates.sort(key=lambda n: (n.count("/"), len(n)))
-    return _read_raw(path, candidates[0], fmt)
+    return candidates[0]
+
+
+def _read_member(source, fmt):
+    """The raw ComicInfo.xml bytes, found case-insensitively at any depth.
+
+    *source* is a path or an open binary file. ZIP and TAR are listed and read
+    through ONE open archive (each open re-reads the whole directory); .cb7
+    keeps the separate listing and read, see _read_raw().
+    """
+    import tarfile
+    import zipfile
+    if fmt not in (archive.FMT_ZIP, archive.FMT_TAR):
+        try:
+            names = _member_names(source, fmt)
+        except Exception:
+            logger.debug("[Comics] Cannot list %s for ComicInfo", source, exc_info=True)
+            return None
+        name = _pick_member(names)
+        return _read_raw(source, name, fmt) if name else None
+    try:
+        if fmt == archive.FMT_ZIP:
+            with zipfile.ZipFile(source) as zf:
+                name = _pick_member([i.filename for i in zf.infolist() if not i.is_dir()])
+                if name is None:
+                    return None
+                info = zf.getinfo(name)
+                if info.file_size > _MAX_COMICINFO_BYTES:
+                    return None
+                return zf.read(info)
+        opened = (tarfile.open(fileobj=source) if hasattr(source, "read")
+                  else tarfile.open(source))
+        with opened as tf:
+            name = _pick_member([m.name for m in tf.getmembers() if m.isfile()])
+            if name is None:
+                return None
+            member = tf.getmember(name)
+            if not member.isfile() or member.size > _MAX_COMICINFO_BYTES:
+                return None
+            fh = tf.extractfile(member)
+            return fh.read(_MAX_COMICINFO_BYTES) if fh else None
+    except Exception:
+        logger.debug("[Comics] Cannot read the ComicInfo of %s", source, exc_info=True)
+    return None
 
 
 def _member_names(path, fmt):
-    import tarfile
-    import zipfile
-    if fmt == archive.FMT_ZIP:
-        with zipfile.ZipFile(path) as zf:
-            return [i.filename for i in zf.infolist() if not i.is_dir()]
-    if fmt == archive.FMT_TAR:
-        with tarfile.open(path) as tf:
-            return [m.name for m in tf.getmembers() if m.isfile()]
+    """Member names of a .cb7 (ZIP and TAR are listed in _read_member())."""
     if fmt == archive.FMT_7Z:
         py7zr = archive._py7zr()
         if py7zr is None:
@@ -185,24 +237,9 @@ def _member_names(path, fmt):
 
 
 def _read_raw(path, name, fmt):
-    """Bytes of one member. Deliberately NOT archive.read_page(): that one
+    """Bytes of one .cb7 member. Deliberately NOT archive.read_page(): that one
     only returns page images, and this is the one member that is not one."""
-    import tarfile
-    import zipfile
     try:
-        if fmt == archive.FMT_ZIP:
-            with zipfile.ZipFile(path) as zf:
-                info = zf.getinfo(name)
-                if info.file_size > _MAX_COMICINFO_BYTES:
-                    return None
-                return zf.read(name)
-        if fmt == archive.FMT_TAR:
-            with tarfile.open(path) as tf:
-                member = tf.getmember(name)
-                if not member.isfile() or member.size > _MAX_COMICINFO_BYTES:
-                    return None
-                fh = tf.extractfile(member)
-                return fh.read(_MAX_COMICINFO_BYTES) if fh else None
         if fmt == archive.FMT_7Z:
             return archive._read_7z_member(path, name)
     except Exception:

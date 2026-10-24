@@ -17,11 +17,14 @@ key's own consent toggle rather than stream.play_events'.
 """
 
 from ..db import get_setting
+import threading
+
 from flask import jsonify
 from flask import render_template
 from flask import request
 from ..request_context import get_current_user_info as _get_current_user_info
 from .. import runtime_state
+from .. import sse_limits as _sse
 from ...logger import get_logger
 from ...telemetry import classify as telemetry_classify
 from ...telemetry import client as telemetry_client
@@ -29,6 +32,11 @@ from ...telemetry import events as telemetry_events
 
 
 logger = get_logger(__name__)
+
+# token -> generation of the member's newest event stream (see
+# api_syncplay_stream): an older stream of the same member stops itself.
+_STREAM_GEN: dict = {}
+_STREAM_GEN_LOCK = threading.Lock()
 
 
 _SYNCPLAY_STREAM_OK = {
@@ -151,11 +159,14 @@ def register_syncplay_routes(app):
         """Serve GET /api/syncplay/config: whether SyncPlay is enabled + the
         logged-in name to prefill the lobby. Called from static/syncplay_page.js
         during page init (the top-level `fetch('/api/syncplay/config')` call)."""
-        user, _ = _get_current_user_info()
+        user, is_admin = _get_current_user_info()
         return jsonify({
             "enabled": _syncplay_enabled(),
             "username": user or "",
-            "can_manage": bool(user) or not runtime_state.AUTH_ENABLED,
+            # Same rule as /api/syncplay/close-room, which this flag shows the
+            # "Close" buttons for: the instance owner only (is_admin is True
+            # with auth off).
+            "can_manage": bool(is_admin),
         })
     @app.route("/api/syncplay/join", methods=["POST"])
     def api_syncplay_join():
@@ -199,6 +210,18 @@ def register_syncplay_routes(app):
         q = sp.subscribe(token)
         if q is None:
             return jsonify({"error": "invalid token"}), 404
+        # This stream supersedes any earlier one of the same member: all of a
+        # member's streams drain the SAME queue, so after an EventSource
+        # reconnect the old generator -- still blocked in q.get() for up to
+        # 15 s -- took events meant for the new connection and wrote them to
+        # a socket nobody reads any more.
+        with _STREAM_GEN_LOCK:
+            my_gen = _STREAM_GEN.get(token, 0) + 1
+            _STREAM_GEN[token] = my_gen
+
+        def _superseded():
+            with _STREAM_GEN_LOCK:
+                return _STREAM_GEN.get(token) != my_gen
 
         @stream_with_context
         def gen():
@@ -206,16 +229,38 @@ def register_syncplay_routes(app):
             # for every connected member, so anything reported from here would
             # count heartbeats instead of usage. The session is reported once
             # at join (flag.syncplay above, detail.syncplay in syncplay_rooms).
-            yield "retry: 2000\n\n"
+            #
+            # Every open stream holds a server thread. Inside the generator,
+            # not before it: a slot taken here is released by the finally
+            # below on every way out, which is not true for a response that
+            # is never iterated.
+            if not _sse.try_acquire_stream():
+                # Too many open streams: say so and ask the browser to come
+                # back later instead of every 2 s.
+                yield "retry: 15000\n\n"
+                yield "event: busy\ndata: {}\n\n"
+                return
             try:
-                while sp.valid_token(token):
+                # Inside the try: a client gone before this first write still
+                # has to give its slot back.
+                yield "retry: 2000\n\n"
+                while sp.valid_token(token) and not _superseded():
                     try:
                         ev = q.get(timeout=15)
-                        sp.ack_drained(token, 1)
-                        yield "data: " + _json.dumps(ev) + "\n\n"
                     except _queue.Empty:
                         sp.heartbeat(token)
                         yield ": ping\n\n"
+                        continue
+                    if _superseded():
+                        # Not ours any more: hand it back to the stream that
+                        # replaced this one instead of losing it.
+                        try:
+                            q.put_nowait(ev)
+                        except Exception:
+                            pass
+                        break
+                    sp.ack_drained(token, 1)
+                    yield "data: " + _json.dumps(ev) + "\n\n"
             except BaseException as exc:
                 # A closed browser tab tears this generator down with
                 # GeneratorExit / ConnectionResetError / BrokenPipeError. That
@@ -235,6 +280,11 @@ def register_syncplay_routes(app):
                 if not telemetry_classify.is_client_disconnect(type(exc), exc):
                     logger.debug("[SyncPlay] SSE stream ended unexpectedly: %s", exc)
                 raise
+            finally:
+                _sse.release_stream()
+                with _STREAM_GEN_LOCK:
+                    if _STREAM_GEN.get(token) == my_gen:
+                        _STREAM_GEN.pop(token, None)
         resp = Response(gen(), mimetype="text/event-stream")
         resp.headers["Cache-Control"] = "no-cache"
         resp.headers["X-Accel-Buffering"] = "no"
@@ -431,7 +481,12 @@ def register_syncplay_routes(app):
         from the lobby directory. Called from static/syncplay_page.js's
         `S.closeRoomByName()`."""
         # Owner-only: this endpoint stays behind login_required (not exempt),
-        # so guests cannot close rooms — only the instance owner can.
+        # so guests cannot close rooms — only the instance owner can. Login
+        # alone was all it checked, though: any account, a kids account
+        # included, could force-close every room on the instance.
+        _user, _is_admin = _get_current_user_info()
+        if not _is_admin:
+            return jsonify({"error": "forbidden"}), 403
         from .. import syncplay_rooms as sp
         d = request.get_json(silent=True) or {}
         ok = sp.close_by_name((d.get("name") or "").strip())
@@ -514,14 +569,10 @@ def register_syncplay_routes(app):
         d = request.get_json(silent=True) or {}
         sp.typing(_sp_tok(d), bool(d.get("typing", False)))
         return jsonify({"ok": True})
-    @app.route("/api/syncplay/reaction", methods=["POST"])
-    def api_syncplay_reaction():
-        """Serve POST /api/syncplay/reaction: broadcast an emoji reaction to
-        the room. Called from static/syncplay_page.js's `S.react()`."""
-        from .. import syncplay_rooms as sp
-        d = request.get_json(silent=True) or {}
-        sp.reaction(_sp_tok(d), str(d.get("emoji", "")))
-        return jsonify({"ok": True})
+    # (A second view for POST /api/syncplay/reaction used to be registered
+    # here. Flask always dispatches the first one -- api_syncplay_react above,
+    # rate-limited and restricted to a fixed emoji set -- so this unthrottled
+    # free-text one was dead code that a reordering would have made live.)
     @app.route("/api/syncplay/track", methods=["POST"])
     def api_syncplay_track():
         """Serve POST /api/syncplay/track: relay a track-related setting

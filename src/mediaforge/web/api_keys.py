@@ -176,6 +176,10 @@ def _is_expired(expires_at) -> bool:
         return True
 
 
+# Seconds between two writes of api_keys.last_used for the same key.
+_LAST_USED_RESOLUTION = 60
+
+
 def verify(presented: str) -> dict | None:
     """Resolve a presented key to ``{"id", "name", "scopes"}`` or None.
 
@@ -191,7 +195,8 @@ def verify(presented: str) -> dict | None:
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT id, name, scopes, enabled, expires_at FROM api_keys WHERE key_hash = ?",
+            "SELECT id, name, scopes, enabled, expires_at, last_used FROM api_keys "
+            "WHERE key_hash = ?",
             (_hash(presented),)).fetchone()
         if not row or not row["enabled"] or _is_expired(row["expires_at"]):
             return None
@@ -201,12 +206,23 @@ def verify(presented: str) -> dict | None:
             scopes = []
         # Best effort, and deliberately not fatal: a read-only replica or a
         # locked database must not turn a valid key into an invalid one.
+        #
+        # At most once per _LAST_USED_RESOLUTION: an integration polling
+        # /api/v1/status every few seconds turned every poll into a write
+        # transaction -- one that waits behind a busy worker for up to the
+        # 30 s busy timeout. "Last used" at minute resolution says the same.
+        now = _dt.datetime.now()
         try:
-            conn.execute("UPDATE api_keys SET last_used = ? WHERE id = ?",
-                         (_dt.datetime.now().isoformat(timespec="seconds"), row["id"]))
-            conn.commit()
-        except Exception:
-            pass
+            prev = _dt.datetime.fromisoformat(row["last_used"]) if row["last_used"] else None
+        except (TypeError, ValueError):
+            prev = None
+        if prev is None or abs((now - prev).total_seconds()) >= _LAST_USED_RESOLUTION:
+            try:
+                conn.execute("UPDATE api_keys SET last_used = ? WHERE id = ?",
+                             (now.isoformat(timespec="seconds"), row["id"]))
+                conn.commit()
+            except Exception:
+                pass
         return {"id": row["id"], "name": row["name"], "scopes": scopes}
     except Exception as exc:
         logger.debug("[API keys] Verification failed: %s", exc)

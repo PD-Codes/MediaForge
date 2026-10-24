@@ -30,7 +30,10 @@
 // handling and a storage-quota story; a half-built version that silently keeps
 // the first 40 MB of a file is worse than not offering it at all.
 
-const CACHE_VERSION = "mediaforge-v6";
+// v7: versioned assets are no longer revalidated on every page load (see
+// cacheFirstVersioned). Bumped so the v6 cache, which kept every version of
+// every asset it ever saw, is dropped on activate.
+const CACHE_VERSION = "mediaforge-v7";
 const OFFLINE_URL = "/offline";
 
 // The shell: enough to render something recognisable without the network.
@@ -108,6 +111,42 @@ async function staleWhileRevalidate(request) {
   return fresh || Response.error();
 }
 
+/**
+ * Cache first, no revalidation. For versioned assets (/static/x.js?v=<mtime>).
+ *
+ * The URL changes whenever the file does, so a cached copy can never be
+ * stale -- but staleWhileRevalidate() still fired a background request for
+ * every one of the ~45 assets on every single page load. On a miss the new
+ * copy is stored and older versions of the same file are dropped; without
+ * that the cache kept every version of every asset forever.
+ */
+async function cacheFirstVersioned(request, url) {
+  const cache = await caches.open(CACHE_VERSION);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  let response;
+  try {
+    response = await fetch(request);
+  } catch (err) {
+    return Response.error();
+  }
+  if (response && response.status === 200 && response.type === "basic") {
+    const copy = response.clone();
+    cache.put(request, copy).then(async () => {
+      const keys = await cache.keys();
+      await Promise.all(keys.map((key) => {
+        const old = new URL(key.url);
+        if (old.pathname === url.pathname && old.search !== url.search) {
+          return cache.delete(key);
+        }
+        return null;
+      }));
+    }).catch(() => null);
+  }
+  return response;
+}
+
 /** Network first, cache as fallback, offline page as a last resort. */
 async function networkFirst(request) {
   const cache = await caches.open(CACHE_VERSION);
@@ -144,7 +183,9 @@ self.addEventListener("fetch", (event) => {
   if (request.headers.has("range")) return;
 
   if (isStaticAsset(url)) {
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(url.searchParams.has("v")
+      ? cacheFirstVersioned(request, url)
+      : staleWhileRevalidate(request));
     return;
   }
 

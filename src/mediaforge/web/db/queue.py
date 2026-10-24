@@ -340,6 +340,52 @@ def get_queue():
         conn.close()
 
 
+# Column list of download_queue minus `episodes`, read from the schema once.
+_QUEUE_LIST_COLUMNS: list = []
+
+
+def get_queue_without_episodes():
+    """get_queue() minus the `episodes` column.
+
+    `episodes` holds every episode URL of a job -- most of the table's bytes.
+    The queue hub polls the list every 2 s and never uses it.
+    """
+    conn = get_db()
+    try:
+        if not _QUEUE_LIST_COLUMNS:
+            cols = [r["name"] for r in conn.execute("PRAGMA table_info(download_queue)")]
+            _QUEUE_LIST_COLUMNS[:] = ['"%s"' % c for c in cols if c != "episodes"]
+        rows = conn.execute(
+            "SELECT %s FROM download_queue WHERE hidden = 0 ORDER BY position ASC, id ASC"
+            % ", ".join(_QUEUE_LIST_COLUMNS)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_queue_with_status(statuses, limit=None):
+    """Visible queue rows whose status is one of *statuses*, in queue order.
+
+    For views that show a handful of rows (the home dashboard panels poll
+    every 20 s): get_queue() reads every visible row, history included.
+    """
+    statuses = [str(s) for s in statuses or ()]
+    if not statuses:
+        return []
+    sql = ("SELECT * FROM download_queue WHERE hidden = 0 AND status IN (%s)"
+           " ORDER BY position ASC, id ASC" % ",".join("?" for _ in statuses))
+    params = list(statuses)
+    if limit:
+        sql += " LIMIT ?"
+        params.append(int(limit))
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+
 def get_queue_item(queue_id):
     conn = get_db()
     try:
@@ -449,6 +495,44 @@ def move_queue_item(queue_id, direction):
         conn.execute(
             "UPDATE download_queue SET position = ? WHERE id = ?",
             (item["position"], neighbor["id"]),
+        )
+        conn.commit()
+        return True, None
+    finally:
+        conn.close()
+
+
+def move_queue_item_to(queue_id, where):
+    """Move a queued item in front of ('top') or behind ('bottom') every other
+    queued item -- one UPDATE, instead of one swap transaction per place it
+    has to travel (move_queue_item() repeated up to the queue length)."""
+    conn = get_db()
+    try:
+        item = conn.execute(
+            "SELECT id, position FROM download_queue WHERE id = ? AND status = 'queued'",
+            (queue_id,),
+        ).fetchone()
+        if not item:
+            return False, "Item not found or not queued"
+        if where == "top":
+            edge = conn.execute(
+                "SELECT MIN(position) FROM download_queue WHERE status = 'queued' AND id != ?",
+                (queue_id,),
+            ).fetchone()[0]
+            if edge is None or item["position"] < edge:
+                return True, None
+            new_position = edge - 1
+        else:
+            edge = conn.execute(
+                "SELECT MAX(position) FROM download_queue WHERE status = 'queued' AND id != ?",
+                (queue_id,),
+            ).fetchone()[0]
+            if edge is None or item["position"] > edge:
+                return True, None
+            new_position = edge + 1
+        conn.execute(
+            "UPDATE download_queue SET position = ? WHERE id = ?",
+            (new_position, queue_id),
         )
         conn.commit()
         return True, None

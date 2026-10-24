@@ -1062,20 +1062,80 @@
   // once per answering source now, and /api/series SCRAPES the site -- without
   // this, a poster would be fetched again for every re-render.
   var _posterCache = {};
+  // series url -> poster_url|null, once its lookup has finished.
+  var _posterDone = {};
+
+  // Each lookup is a live scrape of the source page plus a TMDB lookup, with
+  // no server-side cache. A search over six sources used to start one per
+  // result, all at once -- dozens of scrapes that held the server's worker
+  // threads and hit the sites in one burst. Now only rows on or near the
+  // screen ask (renderSearchResults), and at most three at a time.
+  var POSTER_MAX_ACTIVE = 3;
+  var _posterQueue = [];     // jobs waiting for a free slot, oldest first
+  var _posterJobs = {};      // series url -> its job while still queued
+  var _posterActive = 0;
 
   function _posterFor(url) {
+    var queued = _posterJobs[url];
+    if (queued) queued.seq = S.searchSeq;   // still wanted by this search
     if (!_posterCache[url]) {
-      _posterCache[url] = fetch("/api/series?url=" + encodeURIComponent(url))
-        .then(function (res) { return res.ok ? res.json() : null; })
-        .then(function (data) { return (data && data.poster_url) || null; })
-        .catch(function () { return null; });   // the poster is decoration
+      _posterCache[url] = new Promise(function (resolve) {
+        var job = { url: url, seq: S.searchSeq, resolve: resolve };
+        _posterJobs[url] = job;
+        _posterQueue.push(job);
+      });
+      _posterPump();
     }
     return _posterCache[url];
+  }
+
+  function _posterPump() {
+    while (_posterActive < POSTER_MAX_ACTIVE && _posterQueue.length) {
+      var job = _posterQueue.shift();
+      delete _posterJobs[job.url];
+      if (job.seq !== S.searchSeq) {
+        // Queued for a search that has been replaced since and never started:
+        // dropped, so it does not hold up the posters of the current one. The
+        // URL is forgotten, so a later result list asks for it again.
+        delete _posterCache[job.url];
+        job.resolve(null);
+        continue;
+      }
+      _posterActive++;
+      _posterFetch(job);
+    }
+  }
+
+  function _posterFetch(job) {
+    fetch("/api/series?url=" + encodeURIComponent(job.url))
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) { return (data && data.poster_url) || null; })
+      .catch(function () { return null; })   // the poster is decoration
+      .then(function (poster) {
+        _posterDone[job.url] = poster;
+        _posterActive--;
+        job.resolve(poster);
+        _posterPump();
+      });
+  }
+
+  // Watches the poster slots of the current result list (renderSearchResults).
+  var _posterObserver = null;
+
+  /** Put a poster into its row. A slot whose list has been re-rendered since
+   *  is no longer on the page -- its successor asks for its own poster. */
+  function _fillPosterSlot(slot, poster) {
+    if (!poster || !slot.isConnected) return;
+    var src = safeUrl(typeof proxyImg === "function" ? proxyImg(poster) : poster);
+    if (!src) return;
+    slot.innerHTML = '<img src="' + escAttr(src) + '" alt="" loading="lazy" decoding="async">';
+    slot.classList.remove("seerr-card-poster-placeholder");
   }
 
   function renderSearchResults(results) {
     var container = $("seerrSearchResults");
     if (!container) return;
+    if (_posterObserver) { _posterObserver.disconnect(); _posterObserver = null; }
     // Shared wording with the main search box (app.js) -- the two fan out over
     // the same endpoint, so they should not say it differently.
     var pendingHtml = "";
@@ -1098,18 +1158,40 @@
     }).join("");
 
     // Posters load lazily in the background; a failure just leaves the
-    // placeholder in place.
-    results.forEach(function (r, i) {
-      if (!r.url) return;
-      _posterFor(r.url).then(function (poster) {
-        if (!poster) return;
-        var slot = container.querySelector('[data-poster-slot="' + i + '"]');
-        if (!slot) return;
-        var src = safeUrl(typeof proxyImg === "function" ? proxyImg(poster) : poster);
-        if (!src) return;
-        slot.innerHTML = '<img src="' + escAttr(src) + '" alt="" loading="lazy" decoding="async">';
-        slot.classList.remove("seerr-card-poster-placeholder");
-      });
+    // placeholder in place. Only rows within 200px of the visible part of the
+    // list ask for theirs; one already looked up is filled straight away.
+    //
+    // The slot ELEMENT is what a lookup fills. It used to be looked up again
+    // by its index once the poster arrived, and since the list is rebuilt per
+    // answering source (with new rows merged in between), index i could by
+    // then belong to another result -- which got the wrong poster.
+    function loadPoster(slot) {
+      // An observer entry can still arrive after the list was replaced.
+      if (!slot.isConnected) return;
+      var r = results[+slot.getAttribute("data-poster-slot")];
+      if (!r || !r.url) return;
+      _posterFor(r.url).then(function (poster) { _fillPosterSlot(slot, poster); });
+    }
+    var observer = null;
+    if (typeof IntersectionObserver === "function") {
+      observer = _posterObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          observer.unobserve(entry.target);
+          loadPoster(entry.target);
+        });
+      }, { root: container, rootMargin: "200px 0px" });
+    }
+    Array.prototype.forEach.call(container.querySelectorAll("[data-poster-slot]"), function (slot) {
+      var r = results[+slot.getAttribute("data-poster-slot")];
+      if (!r || !r.url) return;
+      if (Object.prototype.hasOwnProperty.call(_posterDone, r.url)) {
+        _fillPosterSlot(slot, _posterDone[r.url]);
+      } else if (observer) {
+        observer.observe(slot);
+      } else {
+        loadPoster(slot);                  // no IntersectionObserver: ask now
+      }
     });
   }
 

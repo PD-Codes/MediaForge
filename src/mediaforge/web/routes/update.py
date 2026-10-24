@@ -92,15 +92,31 @@ def ensure_auto_update_worker():
     _aut.start()
 
 
+# A forced check ("Check now") goes to the GitHub API, which allows 60
+# unauthenticated calls per hour and IP. Any account could force one per
+# request, and once the quota is gone every update check of the instance fails
+# for the rest of the hour. Forcing is therefore an admin action, at most once
+# per _FORCE_MIN_INTERVAL, and concurrent checks are never run twice.
+_FORCE_MIN_INTERVAL = 60.0
+_check_lock = threading.Lock()
+
+
 def register_update_routes(app):
     @app.route("/api/update-check", methods=["GET", "POST"])
     def api_update_check():
         import time
         data = request.get_json(silent=True) or {}
-        force = data.get("force", False)
-        stale = (time.time() - _update_cache["checked_at"]) > _UPDATE_CHECK_INTERVAL
-        if force or stale:
-            _do_update_check()
+        age = time.time() - _update_cache["checked_at"]
+        force = bool(data.get("force", False)) and age > _FORCE_MIN_INTERVAL
+        if force:
+            _u, _is_admin = _get_current_user_info()
+            force = bool(_is_admin)
+        stale = age > _UPDATE_CHECK_INTERVAL
+        if (force or stale) and _check_lock.acquire(blocking=False):
+            try:
+                _do_update_check()
+            finally:
+                _check_lock.release()
         _inst = selfupdate.detect_install()
         return jsonify({
             "local_version": _get_display_version(),

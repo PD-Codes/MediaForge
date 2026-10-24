@@ -43,6 +43,7 @@ from ._core import (  # noqa: F401
     _LOCK_PATH,
     _RUNTIME_SENSITIVE_KEYS,
     _SQL_IN_CHUNK,
+    _config_dir_ready,
     _configure_connection,
     _decrypt_value,
     _encrypt_existing_plaintext,
@@ -124,6 +125,7 @@ from .users import (  # noqa: F401
     verify_user,
 )
 from .queue import (  # noqa: F401
+    _QUEUE_LIST_COLUMNS,
     _CREATE_QUEUE_TABLE,
     add_to_queue,
     cancel_queue_item,
@@ -134,11 +136,14 @@ from .queue import (  # noqa: F401
     get_next_queued,
     get_queue,
     get_queue_item,
+    get_queue_with_status,
+    get_queue_without_episodes,
     get_running,
     init_queue_db,
     is_queue_cancelled,
     is_series_queued_or_running,
     move_queue_item,
+    move_queue_item_to,
     remove_from_queue,
     restart_queue_item_inplace,
     retry_single_episode,
@@ -232,7 +237,10 @@ from .audio_tracks import (  # noqa: F401
     set_cached_tracks,
 )
 from .library import (  # noqa: F401
+    _SHARED_LISTING,
+    _SHARED_LISTING_LOCK,
     get_all_library_cache,
+    get_all_library_cache_shared,
     get_library_aliases,
     get_library_cache_status,
     init_library_db,
@@ -259,6 +267,10 @@ from .notifications import (  # noqa: F401
     set_user_notif_prefs_bulk,
 )
 from .caches import (  # noqa: F401
+    TMDB_LIGHT_KEYS,
+    _TMDB_LIGHT_LOCK,
+    _TMDB_LIGHT_MAX,
+    _TMDB_LIGHT_MEMO,
     clear_provider_cache,
     clear_tmdb_cache,
     evict_provider_cache,
@@ -266,10 +278,12 @@ from .caches import (  # noqa: F401
     get_provider_cache,
     get_tmdb_cache,
     get_tmdb_cache_bulk,
+    get_tmdb_cache_bulk_light,
     init_provider_cache_db,
     init_tmdb_cache_db,
     set_provider_cache,
     set_tmdb_cache,
+    tmdb_light_projection,
 )
 from .calendar import (  # noqa: F401
     _calendar_ep_key,
@@ -346,6 +360,14 @@ from .catalogue_cache import (  # noqa: F401
     set_catalogue_ids_bulk,
 )
 from .browse_cache import (  # noqa: F401
+    _MEDIASCAN_IDS_LOCK,
+    _MEDIASCAN_IDS_MEMO,
+    _MS_PART_RE,
+    _MS_PUNCT_RE,
+    _MS_SEASON_RE,
+    _MS_STAFFEL_RE,
+    _MS_YEAR_RE,
+    _mediascan_norm_title,
     clear_mediascan_cache,
     evict_browse_cache,
     get_browse_cache_stale,

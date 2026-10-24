@@ -31,7 +31,12 @@ from mediaforge.web.routes import v1_api
 # ==========================================================================
 # Endpoints that match the settings pattern but are deliberately open to every
 # logged-in user. Keep this list short and justified.
-DELIBERATELY_OPEN = set()
+DELIBERATELY_OPEN = {
+    # The read-only display subset every page needs (source layout, CineInfo
+    # switches, language groups). No paths, no hosts, secrets only as "is one
+    # set" booleans -- see test_settings_client_endpoint_leaks_no_secrets.
+    "api_settings_client",
+}
 
 
 def _settings_rules(app):
@@ -1262,3 +1267,39 @@ def test_the_advanced_toggles_are_account_preferences_now(as_user):
     assert resp.status_code == 200
     assert as_user("user").post("/api/user/preferences",
                                 json={"ui_glow_effect": "maybe"}).status_code >= 400
+
+
+def test_settings_client_endpoint_leaks_no_secrets(app, as_user):
+    """GET /api/settings/client is open to every account (see DELIBERATELY_OPEN),
+    so it must stay a display subset: no secret values, no hosts, no paths."""
+    from mediaforge.web.db import delete_setting, get_setting, set_setting
+
+    secret = "tmdb-secret-key-for-the-test"
+    keys = ("cineinfo_tmdb_api_key", "download_path")
+    with app.app_context():
+        before = {k: get_setting(k) for k in keys}
+        set_setting("cineinfo_tmdb_api_key", secret)
+        set_setting("download_path", "/srv/very/private/path")
+    try:
+        client = as_user("user")
+        resp = client.get("/api/settings/client")
+        data = resp.get_json()
+        body = resp.get_data(as_text=True)
+        admin_only = client.get("/api/settings").status_code
+    finally:
+        # The test DB is shared by the whole session: put both keys back.
+        with app.app_context():
+            for k, v in before.items():
+                if v is None:
+                    delete_setting(k)
+                else:
+                    set_setting(k, v)
+
+    assert resp.status_code == 200
+
+    assert secret not in body
+    assert "/srv/very/private/path" not in body
+    # The key is reported as configured, never as its value.
+    assert data["cineinfo"]["tmdb_api_key"] is True
+    # The admin endpoint stays closed for the same account.
+    assert admin_only == 403

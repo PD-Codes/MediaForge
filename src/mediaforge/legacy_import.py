@@ -29,9 +29,16 @@ NEW_DIR = MEDIAFORGE_CONFIG_DIR
 # Old file name -> new file name. Everything else keeps its name.
 _RENAME = {
     "aniworld.db": "mediaforge.db",
+    # SQLite's write-ahead log belongs to the database file BY NAME. Copied
+    # under its old name, every transaction not yet checkpointed when the old
+    # app was stopped was silently lost.
+    "aniworld.db-wal": "mediaforge.db-wal",
 }
 # Never copy these (runtime lock / pid files, byte-code caches).
-_SKIP_NAMES = {"aniworld.pid", "mediaforge.pid", "__pycache__"}
+_SKIP_NAMES = {"aniworld.pid", "mediaforge.pid", "__pycache__",
+               # The WAL index is rebuilt by SQLite from the WAL itself; a
+               # copied one would only describe the old file.
+               "aniworld.db-shm"}
 _SKIP_SUFFIXES = {".pid", ".lock", ".pyc"}
 
 _MARKER = NEW_DIR / ".legacy_imported.json"

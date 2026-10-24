@@ -39,6 +39,10 @@ Design notes
   would be much worse than leaving a dead link.
 * **Never touches a non-MegaKino row.** The pattern requires both the old
   ``/watch/<slug>/<24-hex>`` shape and a host carrying the site's name.
+* **Never holds the database while it waits for the network.** Old URLs are
+  read first, looked up with no transaction open, and written afterwards in
+  short transactions. A favourite or auto-sync job whose new URL the user has
+  already re-added is the stale duplicate and is dropped instead of rewritten.
 """
 
 import re
@@ -180,85 +184,163 @@ def pending_count(conn=None):
             conn.close()
 
 
-def run_once():
-    """One migration pass. Returns (rewritten, unresolved)."""
+def _collect():
+    """Phase 1: every stored legacy URL, read in one go (no transaction kept).
+
+    Returns ``(columns, queue_rows)``: ``{(table, column): [old_url, ...]}`` and
+    ``[(row_id, raw_episodes_json, [episode_url, ...])]`` for queue rows whose
+    episode list holds legacy URLs.
+    """
+    import json
+
     conn = get_db()
-    cache = {}
-    rewritten = 0
-    unresolved = set()
     try:
+        columns = {}
         for table, column in _URL_COLUMNS:
             if not _table_exists(conn, table) or not _column_exists(conn, table, column):
                 continue
             rows = conn.execute(
                 "SELECT DISTINCT %s FROM %s WHERE %s LIKE '%%/watch/%%'" % (column, table, column)
             ).fetchall()
-            for row in rows:
-                old = row[0] or ""
+            olds = [r[0] for r in rows if MEGAKINO_LEGACY_PATTERN.match(r[0] or "")]
+            if olds:
+                columns[(table, column)] = olds
+        queue_rows = []
+        if _table_exists(conn, "download_queue"):
+            for row in conn.execute(
+                "SELECT id, episodes FROM download_queue WHERE episodes LIKE '%/watch/%'"
+            ).fetchall():
+                try:
+                    episodes = json.loads(row[1] or "[]")
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(episodes, list) or not episodes:
+                    continue
+                if any(MEGAKINO_LEGACY_PATTERN.match(str(e or "")) for e in episodes):
+                    queue_rows.append((row[0], row[1], episodes))
+        return columns, queue_rows
+    finally:
+        conn.close()
+
+
+def _resolve_all(old_urls, cache, mapping, unresolved):
+    """Phase 2: look the titles up -- network only, no database access.
+
+    Pauses after every search that actually went out (a title shared by many
+    rows is searched once). Stops searching new titles once this run's budget
+    is used up; titles already looked up still resolve.
+    """
+    budget_left = True
+    for old in old_urls:
+        if old in mapping or old in unresolved:
+            continue
+        key = _norm(slug_to_title(old))
+        if key not in cache and len(cache) >= _MAX_TITLES_PER_RUN:
+            if budget_left:
+                logger.info(
+                    "[MegaKino] Reached this run's lookup budget — the rest "
+                    "is picked up on the next start")
+                budget_left = False
+            continue
+        searched_before = len(cache)
+        new = _rewrite(old, cache)
+        if len(cache) > searched_before:
+            time.sleep(_SEARCH_DELAY)
+        if new:
+            mapping[old] = new
+        else:
+            unresolved.add(old)
+
+
+def _apply_column(conn, table, column, old, new):
+    """Rewrite *old* to *new* in one column. Returns the number of rows handled.
+
+    favourites (UNIQUE(series_url, added_by)) and autosync_jobs (UNIQUE
+    series_url) refuse the new URL when the user already re-added the title
+    under it -- the obvious reaction to a dead MegaKino entry. That used to
+    abort the whole run with an IntegrityError, roll back every rewrite of it
+    and repeat all searches on the next start, forever. The old row is then
+    the stale duplicate and goes, as the s.to -> serienstream.to migration of
+    autosync_jobs already does (db/autosync.py).
+    """
+    import sqlite3
+
+    sql = "UPDATE %s SET %s = ? WHERE %s = ?" % (table, column, column)
+    try:
+        return conn.execute(sql, (new, old)).rowcount
+    except sqlite3.IntegrityError:
+        pass
+    handled = 0
+    for (rowid,) in conn.execute(
+        "SELECT rowid FROM %s WHERE %s = ?" % (table, column), (old,)
+    ).fetchall():
+        try:
+            conn.execute("UPDATE %s SET %s = ? WHERE rowid = ?" % (table, column), (new, rowid))
+        except sqlite3.IntegrityError:
+            conn.execute("DELETE FROM %s WHERE rowid = ?" % table, (rowid,))
+            logger.info("[MegaKino] Dropped a stale %s entry for %s — it already "
+                        "exists under its new URL", table, new)
+        handled += 1
+    return handled
+
+
+def run_once():
+    """One migration pass. Returns (rewritten, unresolved).
+
+    Three phases, so the database is never locked while the network is used:
+    collect the old URLs (plain reads), resolve them (searches with a pause
+    in between, no transaction open), then write the result in one short
+    transaction per column. The old version updated row by row inside one
+    transaction that stayed open across up to 60 searches and their pauses --
+    minutes in which every other writer (queue, auto-sync, settings, watch
+    progress) waited and then failed with "database is locked".
+    """
+    import json
+
+    columns, queue_rows = _collect()
+    cache = {}
+    mapping = {}
+    unresolved = set()
+
+    _resolve_all([old for olds in columns.values() for old in olds],
+                 cache, mapping, unresolved)
+    _resolve_all([str(e or "") for _id, _raw, eps in queue_rows for e in eps
+                  if MEGAKINO_LEGACY_PATTERN.match(str(e or ""))],
+                 cache, mapping, unresolved)
+
+    rewritten = 0
+    conn = get_db()
+    try:
+        for (table, column), olds in columns.items():
+            for old in olds:
+                new = mapping.get(old)
+                if new:
+                    rewritten += _apply_column(conn, table, column, old, new)
+            conn.commit()
+        # download_queue.episodes is a JSON list the queue worker walks: a row
+        # is only written back when EVERY legacy entry in it resolved (a
+        # partial rewrite would be worse than none), and only if the list was
+        # not changed meanwhile.
+        for row_id, raw, episodes in queue_rows:
+            updated = []
+            for entry in episodes:
+                old = str(entry or "")
                 if not MEGAKINO_LEGACY_PATTERN.match(old):
+                    updated.append(entry)
                     continue
-                if len(cache) >= _MAX_TITLES_PER_RUN:
-                    logger.info(
-                        "[MegaKino] Reached this run's lookup budget — the rest "
-                        "is picked up on the next start")
-                    conn.commit()
-                    return rewritten, len(unresolved)
-                new = _rewrite(old, cache)
+                new = mapping.get(old)
                 if not new:
-                    unresolved.add(old)
-                    continue
-                conn.execute(
-                    "UPDATE %s SET %s = ? WHERE %s = ?" % (table, column, column),
-                    (new, old),
-                )
-                rewritten += 1
-                time.sleep(_SEARCH_DELAY)
-        _rewrite_queue_episode_lists(conn, cache, unresolved)
+                    updated = None
+                    break
+                updated.append(new)
+            if updated is None:
+                continue
+            conn.execute("UPDATE download_queue SET episodes = ? WHERE id = ? AND episodes = ?",
+                         (json.dumps(updated), row_id, raw))
         conn.commit()
     finally:
         conn.close()
     return rewritten, len(unresolved)
-
-
-def _rewrite_queue_episode_lists(conn, cache, unresolved):
-    """download_queue.episodes is a JSON list of episode URLs, not one URL.
-
-    Handled apart from the plain columns because a partial rewrite would be
-    worse than none: the list is what the queue worker walks, so a row is only
-    written back when EVERY entry in it resolved.
-    """
-    import json
-
-    if not _table_exists(conn, "download_queue"):
-        return
-    rows = conn.execute(
-        "SELECT id, episodes FROM download_queue WHERE episodes LIKE '%/watch/%'"
-    ).fetchall()
-    for row in rows:
-        try:
-            episodes = json.loads(row[1] or "[]")
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(episodes, list) or not episodes:
-            continue
-        if not any(MEGAKINO_LEGACY_PATTERN.match(str(e or "")) for e in episodes):
-            continue
-        updated = []
-        for entry in episodes:
-            old = str(entry or "")
-            if not MEGAKINO_LEGACY_PATTERN.match(old):
-                updated.append(entry)
-                continue
-            new = _rewrite(old, cache)
-            if not new:
-                unresolved.add(old)
-                updated = None
-                break
-            updated.append(new)
-        if updated is None:
-            continue
-        conn.execute("UPDATE download_queue SET episodes = ? WHERE id = ?",
-                     (json.dumps(updated), row[0]))
 
 
 def _worker():

@@ -20,19 +20,12 @@
 let queueModalOpen = false;
 let queuePollTimer = null;
 let badgePollTimer = null;
+// Nothing reads this any more. It used to be filled from /api/custom-paths on
+// every page load (this file is loaded globally) and then never looked at, so
+// the request is gone; the binding stays for third-party pages that might.
 let queueCustomPaths = [];
 let _queueIsPaused = false;
 let _queueFilter = "all";   // legacy status filter, see setQueueFilter()
-
-(async function loadQueueCustomPaths() {
-  try {
-    const resp = await fetch("/api/custom-paths");
-    const data = await resp.json();
-    queueCustomPaths = data.paths || [];
-  } catch (e) {
-    /* ignore */
-  }
-})();
 
 // =====================================================================
 // Shell
@@ -577,11 +570,17 @@ function _qInferredRunningId(queue) {
   return first ? first.id : null;
 }
 
-/** Normalise an encoding / upscaling queue row (they have the same shape). */
-function _qNormJob(item, queue) {
+/**
+ * Normalise an encoding / upscaling queue row (they have the same shape).
+ * `inferredId` is _qInferredRunningId(queue): _qhubEntries() works it out once
+ * per render and passes it in, because it scans the whole queue and asking it
+ * per row made every render quadratic. Left out, it is computed here.
+ */
+function _qNormJob(item, queue, inferredId) {
   const Q = window.QHub;
   const progress = _qhubModel[queue].progress || {};
-  const running = item.status === "running" || item.id === _qInferredRunningId(queue);
+  if (inferredId === undefined) inferredId = _qInferredRunningId(queue);
+  const running = item.status === "running" || item.id === inferredId;
   const totalFiles = item.total_files || 1;
   const curIdx = item.current_file_idx || 0;
   const filePct = running && progress.active ? (progress.percent || 0) : 0;
@@ -670,10 +669,12 @@ function _qhubEntries() {
     out = out.concat(_qhubModel.downloads.items.map(_qNormDownload));
   }
   if (pane === "all" || pane === "encoding") {
-    out = out.concat(_qhubModel.encoding.items.map(i => _qNormJob(i, "encoding")));
+    const encRunning = _qInferredRunningId("encoding");
+    out = out.concat(_qhubModel.encoding.items.map(i => _qNormJob(i, "encoding", encRunning)));
   }
   if (pane === "all" || pane === "upscaling") {
-    out = out.concat(_qhubModel.upscaling.items.map(i => _qNormJob(i, "upscaling")));
+    const upRunning = _qInferredRunningId("upscaling");
+    out = out.concat(_qhubModel.upscaling.items.map(i => _qNormJob(i, "upscaling", upRunning)));
   }
   return out;
 }
@@ -681,6 +682,22 @@ function _qhubEntries() {
 // =====================================================================
 // Rendering
 // =====================================================================
+
+// A download row's `errors` JSON, parsed once per row and render: a failed row
+// needs it twice (the restart button's count and the error panel), and the
+// hub renders every 2 s. The cache only exists while _qhubRenderNow() runs.
+let _qhubErrCache = null;   // Map row -> parsed value
+const _QHUB_ERR_BAD = {};   // "did not parse" marker
+
+function _qhubParseErrors(raw) {
+  if (_qhubErrCache && _qhubErrCache.has(raw)) return _qhubErrCache.get(raw);
+  let errs;
+  try {
+    errs = typeof raw.errors === "string" ? JSON.parse(raw.errors || "[]") : (raw.errors || []);
+  } catch (err) { errs = _QHUB_ERR_BAD; }
+  if (_qhubErrCache) _qhubErrCache.set(raw, errs);
+  return errs;
+}
 
 /** Action buttons of a row — same handler names as before. */
 function _qhubActions(e) {
@@ -714,8 +731,8 @@ function _qhubActions(e) {
   if (q === "downloads" && (e.state === "failed" || e.state === "cancelled")) {
     let errCount = 0;
     try {
-      const errs = typeof e.raw.errors === "string" ? JSON.parse(e.raw.errors || "[]") : (e.raw.errors || []);
-      errCount = errs.length;
+      const errs = _qhubParseErrors(e.raw);
+      if (errs !== _QHUB_ERR_BAD) errCount = errs.length;
     } catch (err) { }
     return '<button class="queue-restart" onclick="restartQueueItem(' + e.id + ')" title="'
       + (errCount > 0 ? errCount + t(" fehlerhafte Episoden neu starten", " failed episodes will be restarted")
@@ -745,10 +762,8 @@ function _qhubErrorList(e) {
   // Downloads: `errors` is a JSON array of {url, error} -- one entry per
   // episode that failed, so a 12-episode season can carry 12 of them.
   if (e.queue === "downloads") {
-    let errs = [];
-    try {
-      errs = typeof raw.errors === "string" ? JSON.parse(raw.errors || "[]") : (raw.errors || []);
-    } catch (err) { errs = []; }
+    let errs = _qhubParseErrors(raw);
+    if (errs === _QHUB_ERR_BAD) errs = [];
     if (Array.isArray(errs)) {
       errs.forEach(function (err) {
         if (!err) return;
@@ -1040,8 +1055,33 @@ function _qhubHero(e) {
     + '</div></div>';
 }
 
-/** The whole window body: hero + the three groups. */
+let _qhubRenderPending = false;   // a render is already booked for the next frame
+
+/**
+ * The whole window body: hero + the three groups.
+ *
+ * Called by up to three 2 s polls at once (downloads, encoding and upscaling on
+ * "Everything") and by every action. Calls in the same frame are merged into
+ * one render, and _qhubRenderNow() only writes the hero / the list when their
+ * markup changed: replacing the list on every poll dropped text selected in an
+ * error panel (it is there to be copied into bug reports) and the keyboard
+ * focus on a row, about 90 times a minute.
+ */
 function renderQueueHub() {
+  if (_qhubRenderPending) return;
+  _qhubRenderPending = true;
+  if (window.requestAnimationFrame) window.requestAnimationFrame(_qhubRenderFrame);
+  else setTimeout(_qhubRenderFrame, 16);
+}
+
+function _qhubRenderFrame() {
+  _qhubRenderPending = false;
+  _qhubErrCache = new Map();
+  _qhubRenderNow();
+  _qhubErrCache = null;
+}
+
+function _qhubRenderNow() {
   const list = document.getElementById("queueList");
   const heroBox = document.getElementById("qhubHero");
   if (!list || !heroBox) return;
@@ -1061,24 +1101,29 @@ function renderQueueHub() {
   // would show one item's speed and percentage on another item's card. An
   // entry waiting for a captcha is surfaced by the "Needs you" group.
   const heroItem = entries.filter(e => e.running)[0] || null;
-  if (heroItem) {
-    heroBox.innerHTML = _qhubHero(heroItem);
-    heroBox.style.display = "";
-  } else {
-    heroBox.innerHTML = "";
-    heroBox.style.display = "none";
+  // The last markup written is kept on the element; equal markup is not
+  // written again (see renderQueueHub).
+  const heroHtml = heroItem ? _qhubHero(heroItem) : "";
+  if (heroBox._mfLast !== heroHtml) {
+    heroBox.innerHTML = heroHtml;
+    heroBox._mfLast = heroHtml;
   }
+  heroBox.style.display = heroItem ? "" : "none";
 
   // ---- Groups -------------------------------------------------------
   const rest = entries.filter(e => e !== heroItem);
   const needsYou = rest.filter(e => e.attn || e.state === "failed" || e.state === "partial"
     || (e.state === "cancelled" && !e.running));
+  // Sets, not indexOf() inside the filters below: that was one scan of the
+  // group per row.
+  const needsYouSet = new Set(needsYou);
   // A second running job (an encode next to a download, on "Everything") used
   // to land under "Up next" although it is working right now. The hero can only
   // ever show one job, so everything else that runs gets its own group.
-  const alsoRunning = rest.filter(e => e.running && needsYou.indexOf(e) === -1);
-  const upNext = rest.filter(e => e.state === "queued" && needsYou.indexOf(e) === -1
-    && alsoRunning.indexOf(e) === -1);
+  const alsoRunning = rest.filter(e => e.running && !needsYouSet.has(e));
+  const alsoRunningSet = new Set(alsoRunning);
+  const upNext = rest.filter(e => e.state === "queued" && !needsYouSet.has(e)
+    && !alsoRunningSet.has(e));
   const doneToday = rest.filter(e => e.state === "completed" && Q.isToday(e.completed_at))
     .sort((a, b) => String(b.completed_at || "").localeCompare(String(a.completed_at || "")));
 
@@ -1108,7 +1153,10 @@ function renderQueueHub() {
           : t("Nichts zu tun. Alle Warteschlangen sind leer.", "Nothing to do. All queues are empty.");
     html = '<div class="queue-empty">' + Q.esc(msg) + '</div>';
   }
-  list.innerHTML = html;
+  if (list._mfLast !== html) {
+    list.innerHTML = html;
+    list._mfLast = html;
+  }
 
   // ---- The global pause button in the bar ---------------------------
   // Hidden while the hero already offers a contextual Pause, so the same
@@ -1234,6 +1282,11 @@ let captchaRefreshTimer = null;
 let captchaStatusTimer = null;
 
 function openCaptchaModal(queueId) {
+  // Stop the timers of an earlier open first. Overwriting them orphaned an
+  // 800 ms screenshot poll and a 1.5 s status poll that, once the captcha was
+  // gone, toasted "Captcha solved" every 1.5 s until the page was left.
+  if (captchaRefreshTimer) { clearInterval(captchaRefreshTimer); captchaRefreshTimer = null; }
+  if (captchaStatusTimer) { clearInterval(captchaStatusTimer); captchaStatusTimer = null; }
   captchaQueueId = queueId;
   captchaModalOpen = true;
   const overlay = document.getElementById("captchaOverlay");
@@ -1358,7 +1411,9 @@ function closeCaptchaModal() {
     const badge = document.getElementById("seerrBadge");
     if (!badge) return;
     try {
-      const resp = await fetch("/api/seerr/requests?take=1&skip=0");
+      // badge=1: a count may be up to 90 s old (see routes/seerr.py), so the
+      // poll stops refetching four upstream request lists every minute.
+      const resp = await fetch("/api/seerr/requests?take=1&skip=0&badge=1");
       if (!resp.ok) return;
       const data = await resp.json();
       if (data.error) { badge.style.display = "none"; return; }

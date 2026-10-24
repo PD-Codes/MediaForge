@@ -488,29 +488,44 @@
     return typeof target === "string" ? document.getElementById(target) : target;
   }
 
-  function paint(el, spec) {
-    var w = Math.max(80, Math.floor(el.clientWidth || el.getBoundingClientRect().width || 320));
+  // The placeholder's raw width and the width a chart is drawn at. Reading
+  // either forces a layout whenever the page was written to since the last
+  // read -- which is why renderAll() measures every chart before painting any.
+  function measure(el) {
+    var raw = el.clientWidth;
+    return { raw: raw, w: Math.max(80, Math.floor(raw || el.getBoundingClientRect().width || 320)) };
+  }
+
+  function paint(el, spec, w) {
+    if (w == null) w = measure(el).w;
     var build = BUILDERS[spec.type];
     if (!build) { el.innerHTML = ""; return; }
     el.innerHTML = build(spec, w);
   }
 
-  function render(target, spec) {
+  // `size` is optional and internal: renderAll() passes the measure() it took
+  // up front, so neither the paint nor the resize baseline reads the layout
+  // right after the previous chart was written.
+  function render(target, spec, size) {
     var el = resolve(target);
     if (!el || !spec) return null;
     spec._uid = spec._uid || ++uidSeq;
     destroy(el);
-    paint(el, spec);
+    paint(el, spec, size ? size.w : null);
     // Re-render at the new pixel width instead of scaling the SVG, so stroke
     // widths and label sizes stay constant across breakpoints.
     if (typeof ResizeObserver !== "undefined") {
-      var lastW = el.clientWidth;
+      var lastW = size ? size.raw : el.clientWidth;
       var raf = 0;
       var ro = new ResizeObserver(function () {
         if (Math.abs(el.clientWidth - lastW) < 8) return;
-        lastW = el.clientWidth;
+        // Measured here, where the layout is already up to date, and handed to
+        // the paint: measuring inside the frame callback forced one layout per
+        // chart, because every chart's paint dirties it for the next one.
+        var now = measure(el);
+        lastW = now.raw;
         cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(function () { paint(el, spec); });
+        raf = requestAnimationFrame(function () { paint(el, spec, now.w); });
       });
       ro.observe(el);
       mounted.set(el, ro);
@@ -534,10 +549,17 @@
   }
 
   function renderAll(root) {
+    var jobs = [];
     (root || document).querySelectorAll("[data-mfc-id]").forEach(function (el) {
       var spec = pending[el.getAttribute("data-mfc-id")];
-      if (spec) render(el, spec);
+      if (spec) jobs.push({ el: el, spec: spec });
     });
+    // All reads first, then all writes. Measuring each chart right after the
+    // previous one was painted forced a synchronous layout of the whole page
+    // per chart -- 13+ on the stats page, and again on every refresh during a
+    // library scan. Now it is one layout for the batch.
+    var sizes = jobs.map(function (job) { return measure(job.el); });
+    jobs.forEach(function (job, i) { render(job.el, job.spec, sizes[i]); });
   }
 
   global.MFCharts = {

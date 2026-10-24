@@ -156,7 +156,11 @@ def _migrate_dotenv_to_db():
     Used by: web/app.py (startup, before _sync_db_settings_to_env).
     """
     from pathlib import Path
-    env_path = Path.home() / ".mediaforge" / ".env"
+    from ..config import MEDIAFORGE_CONFIG_DIR
+    # The same file entry.py loads (MEDIAFORGE_CONFIG_DIR/.env). This was
+    # pinned to ~/.mediaforge, so with a custom config dir the .env was loaded
+    # on every start but never imported into the DB or retired.
+    env_path = Path(MEDIAFORGE_CONFIG_DIR) / ".env"
 
     if get_setting("env_migrated") == "1":
         # Already imported by a previous run. Older versions left the file in

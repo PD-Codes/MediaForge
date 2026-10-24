@@ -34,8 +34,8 @@ modules -- and the client prefers the key when one is present.
 from ..db import get_custom_paths
 from ..db import get_download_history
 from ..db import get_encoding_badge_count
-from ..db import get_queue
 from ..db import get_queue_stats
+from ..db import get_queue_with_status
 from ..db import get_upscale_badge_count
 from ..db import register_ui_pref_key
 from ..request_context import get_current_user_info
@@ -362,16 +362,14 @@ def _safe_count(fn) -> int:
 # ── built-in panels ──────────────────────────────────────────────────────
 
 def _panel_queue() -> dict:
-    # visible_only, because the item list below comes from get_queue(), which
-    # skips hidden rows. Counting differently from the list you are printing
+    # visible_only, because the item list below comes from
+    # get_queue_with_status(), which skips hidden rows. Counting differently from the list you are printing
     # next to it is how this panel said "3 failed" over an empty list.
     stats = get_queue_stats(visible_only=True)
     by_status = stats.get("by_status") or {}
     paused = is_queue_paused()
     items = []
-    for entry in get_queue() or []:
-        if entry.get("status") not in ("running", "queued"):
-            continue
+    for entry in get_queue_with_status(("running", "queued"), PANEL_MAX_ITEMS):
         total = entry.get("total_episodes") or 0
         current = entry.get("current_episode") or 0
         running = entry.get("status") == "running"
@@ -431,7 +429,7 @@ def _panel_library() -> dict:
     _compute_media_stats() counts per FILE with de-duplication, so it does not
     agree with the page.
     """
-    from ..db import get_all_library_cache
+    from ..db import get_all_library_cache_shared
     from ..media_kinds import KIND_VIDEO
     from .library import lib_path_keys_for_kind, lib_iter_cached_titles
     series = movies = episodes = 0
@@ -439,7 +437,7 @@ def _panel_library() -> dict:
     newest = []
     try:
         active = lib_path_keys_for_kind(KIND_VIDEO)
-        for path_key, entry in (get_all_library_cache() or {}).items():
+        for path_key, entry in (get_all_library_cache_shared() or {}).items():
             if path_key not in active:
                 continue          # leftover of a removed scan target
             # A cache entry is a dict, and with language separation on the
@@ -515,9 +513,7 @@ def _panel_system() -> dict:
                   "value_key": "hp_state_paused" if paused else "hp_state_running",
                   "tone": "warn" if paused else "ok"})
     items = []
-    for entry in get_queue() or []:
-        if entry.get("status") != "failed":
-            continue
+    for entry in get_queue_with_status(("failed",), PANEL_MAX_ITEMS):
         error = _clean_text(entry.get("error"))
         items.append({
             "title": entry.get("title") or "",

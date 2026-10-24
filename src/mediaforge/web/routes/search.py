@@ -73,6 +73,154 @@ from ...logger import get_logger
 logger = get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Series model instances shared between /api/series, /api/seasons and
+# /api/episodes.
+#
+# Opening one title in the download modal calls /api/series and /api/seasons
+# together and then /api/episodes once per season, in parallel -- and every one
+# of those built its own series model, i.e. fetched the identical series page
+# again: a 12-season show cost 14 GETs of the same page plus every season page
+# twice (once to count episodes for /api/seasons, once more for the episode
+# list), all fired at a site behind DDoS-Guard. Now the first request builds
+# the model and the others wait for it and reuse it, Season objects included.
+#
+# Only a model whose page was actually read (it has a title) is kept, so a
+# captcha or error page is retried by the next request instead of being
+# served for the whole TTL. Each model holds its pages' HTML, hence the small
+# size cap.
+# ---------------------------------------------------------------------------
+_SERIES_CACHE_TTL = 180.0
+_SERIES_CACHE_MAX = 16
+_series_cache: dict = {}            # url -> (expires_at, model)
+_series_cache_lock = threading.Lock()
+_series_build_locks: dict = {}      # url -> Lock, so one build per URL at a time
+
+
+def _cached_series_model(prov, url):
+    """prov.series_cls(url=url), reused for a few minutes (see above)."""
+    now = time.monotonic()
+    with _series_cache_lock:
+        hit = _series_cache.get(url)
+        if hit and hit[0] > now and isinstance(hit[1], prov.series_cls):
+            return hit[1]
+        build_lock = _series_build_locks.setdefault(url, threading.Lock())
+    with build_lock:
+        # Another request may have finished the same build while this one
+        # waited for the lock.
+        with _series_cache_lock:
+            hit = _series_cache.get(url)
+            if hit and hit[0] > time.monotonic() and isinstance(hit[1], prov.series_cls):
+                return hit[1]
+        model = prov.series_cls(url=url)
+        try:
+            ok = bool(getattr(model, "title", None))
+        except Exception:
+            ok = False
+        if ok:
+            with _series_cache_lock:
+                stamp = time.monotonic()
+                for key in [k for k, (exp, _m) in _series_cache.items() if exp <= stamp]:
+                    _series_cache.pop(key, None)
+                while len(_series_cache) >= _SERIES_CACHE_MAX:
+                    _series_cache.pop(next(iter(_series_cache)), None)
+                _series_cache[url] = (stamp + _SERIES_CACHE_TTL, model)
+    with _series_cache_lock:
+        if _series_build_locks.get(url) is build_lock and not build_lock.locked():
+            _series_build_locks.pop(url, None)
+    return model
+
+
+def _cached_season_model(prov, url, series):
+    """The Season object `series` already built for `url`, when it is exactly
+    what prov.season_cls(url=url, series=series) would build -- its page was
+    usually fetched by /api/seasons a moment ago. Otherwise a new one."""
+    try:
+        for season in (getattr(series, "seasons", None) or []) if series is not None else []:
+            if isinstance(season, prov.season_cls) and getattr(season, "url", None) == url:
+                return season
+    except Exception:
+        pass
+    return prov.season_cls(url=url, series=series)
+
+
+# ---------------------------------------------------------------------------
+# "Which episodes of this title are on disk?" for /api/episodes.
+#
+# Every scan root (x every language folder) was listed with Path.iterdir() and
+# stat()ed entry by entry BEFORE the name was checked -- one stat per title
+# folder of the whole library, per request, and the modal sends one request
+# per season at the same time. Over SMB that is seconds each. Now the name is
+# tested first (os.scandir, no stat), only matching folders are walked, and
+# the answer is shared for a short time so the parallel season requests of
+# one modal walk the disk once.
+# ---------------------------------------------------------------------------
+_DISK_EPISODES_TTL = 20.0
+_disk_episodes_cache: dict = {}     # key -> (expires_at, result)
+_disk_episodes_lock = threading.Lock()
+_disk_episodes_build_locks: dict = {}
+
+
+def _scan_disk_episodes(title_clean, aliases, bases):
+    """{(season, episode): base_meta} for files of `title_clean` under `bases`.
+
+    `bases` is a list of (base_dir, meta) pairs; `meta` is returned as given
+    with the matched title folder (a Path) prepended -- the first match wins,
+    in the order of `bases`, folders and files.
+    """
+    from pathlib import Path
+
+    found = {}
+    for base, meta in bases:
+        try:
+            with os.scandir(base) as it:
+                entries = list(it)
+        except OSError:
+            continue
+        for entry in entries:
+            if not _folder_holds(entry.name, title_clean, aliases):
+                continue
+            try:
+                if not entry.is_dir():
+                    continue
+            except OSError:
+                continue
+            folder = Path(entry.path)
+            for _dirpath, _dirs, files in os.walk(entry.path):
+                for name in files:
+                    m = EPISODE_MARKER_RE.search(name)
+                    if m:
+                        found.setdefault((int(m.group(1)), int(m.group(2))), (folder,) + tuple(meta))
+    return found
+
+
+def _disk_episodes(title_clean, aliases, bases):
+    """_scan_disk_episodes(), shared for a few seconds between requests that
+    ask about the same title over the same roots."""
+    key = (title_clean, tuple(str(b) for b, _m in bases))
+    now = time.monotonic()
+    with _disk_episodes_lock:
+        hit = _disk_episodes_cache.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+        build_lock = _disk_episodes_build_locks.setdefault(key, threading.Lock())
+    with build_lock:
+        with _disk_episodes_lock:
+            hit = _disk_episodes_cache.get(key)
+            if hit and hit[0] > time.monotonic():
+                return hit[1]
+        result = _scan_disk_episodes(title_clean, aliases, bases)
+        with _disk_episodes_lock:
+            stamp = time.monotonic()
+            for k in [k for k, (exp, _r) in _disk_episodes_cache.items() if exp <= stamp]:
+                _disk_episodes_cache.pop(k, None)
+            _disk_episodes_cache[key] = (stamp + _DISK_EPISODES_TTL, result)
+    with _disk_episodes_lock:
+        if _disk_episodes_build_locks.get(key) is build_lock and not build_lock.locked():
+            _disk_episodes_build_locks.pop(key, None)
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Advanced Search / TMDB Discover — shared helpers
 #  (rework July 2026: parameter whitelist, error sanitising, response cache)
@@ -92,16 +240,24 @@ _TMDB_SEASONS_TTL = 6 * 60 * 60    # 6 h  — season counts per TV id
 # reference data (rebuilding "networks" alone costs 35 upstream calls).
 _TMDB_CACHE_MAX_ENTRIES = 400
 _TMDB_SEASONS_MAX_ENTRIES = 2000
+# Full detail objects (with translations) are large -- tens of KB each -- so
+# they get a small bucket of their own instead of crowding out discover pages.
+_TMDB_DETAILS_MAX_ENTRIES = 64
+_TMDB_DETAILS_TTL = 60 * 60
 
 _tmdb_ref_cache: dict = {}
 _tmdb_seasons_cache: dict = {}
+_tmdb_details_cache: dict = {}
 _tmdb_ref_lock = threading.Lock()
 
 
 def _cache_bucket(key):
-    """Season counts live in their own bucket, everything else shares one."""
+    """Season counts and detail objects live in buckets of their own,
+    everything else shares one."""
     if key.startswith("seasons:"):
         return _tmdb_seasons_cache, _TMDB_SEASONS_MAX_ENTRIES
+    if key.startswith("details:"):
+        return _tmdb_details_cache, _TMDB_DETAILS_MAX_ENTRIES
     return _tmdb_ref_cache, _TMDB_CACHE_MAX_ENTRIES
 
 
@@ -139,11 +295,62 @@ def _ref_cache_put(key, value, ttl):
         bucket[key] = (now + ttl, now, value)
 
 
+# Keyword autocomplete over TMDB's daily export (one JSON object per line,
+# {"id":..,"name":".."}). The search used to test the query against the whole
+# raw line, so "na", "me", "am" or "id" matched the JSON keys of every line
+# and digits matched ids: the first 20 lines of the file came back whatever was
+# typed. It now matches the name only, and keeps recent answers per file.
+_KEYWORD_RESULTS_MAX = 64
+_KEYWORD_LIMIT = 20
+_keyword_results: dict = {}
+_keyword_results_lock = threading.Lock()
+
+
+def _search_keyword_export(path, query):
+    st = os.stat(path)
+    key = (st.st_mtime_ns, st.st_size, query)
+    with _keyword_results_lock:
+        hit = _keyword_results.get(key)
+        if hit is not None:
+            return hit
+    # Non-ASCII names may be stored as \uXXXX escapes, so look for the
+    # escaped spelling as well before decoding a candidate line.
+    escaped = json.dumps(query)[1:-1].lower()
+    if escaped == query:
+        escaped = None
+    results = []
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            low = line.lower()
+            # Cheap rejection first (most lines), then make sure the match
+            # lies in the name and not in the keys or the id.
+            if query not in low and (escaped is None or escaped not in low):
+                continue
+            pos = low.find('"name"') + 6
+            if pos < 6 or (low.find(query, pos) < 0
+                           and (escaped is None or low.find(escaped, pos) < 0)):
+                continue
+            try:
+                data = json.loads(line)
+            except ValueError:
+                continue
+            if query in str(data.get("name", "")).lower():
+                results.append(data)
+                if len(results) >= _KEYWORD_LIMIT:
+                    break
+    with _keyword_results_lock:
+        if len(_keyword_results) >= _KEYWORD_RESULTS_MAX:
+            _keyword_results.clear()
+        _keyword_results[key] = results
+    return results
+
+
 def clear_tmdb_discover_cache():
     """Drop every cached TMDB discover/reference response (called on cache clear)."""
     with _tmdb_ref_lock:
         _tmdb_ref_cache.clear()
         _tmdb_seasons_cache.clear()
+        _tmdb_details_cache.clear()
 
 
 def _safe_tmdb_error(exc):
@@ -261,7 +468,113 @@ def _sanitise_discover_params(raw_args):
     return params, page
 
 
-def _filter_and_dedup_providers(providers_map):
+# probe_redirect() verdicts, keyed by (redirect, label). Reopening the same
+# episode used to probe every hoster again, one after the other.
+_PROBE_TTL = 600.0
+_PROBE_MAX = 1024
+_probe_results: dict = {}
+_probe_results_lock = threading.Lock()
+
+
+def _probe_cached(redirect, name):
+    key = (redirect, name)
+    now = time.monotonic()
+    with _probe_results_lock:
+        hit = _probe_results.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+    result = probe_redirect(redirect, name)
+    # (True, None) is also what a network error looks like -- not kept, so a
+    # hiccup is not frozen in for ten minutes.
+    if result[1] is not None or not result[0]:
+        with _probe_results_lock:
+            if len(_probe_results) >= _PROBE_MAX:
+                stamp = time.monotonic()
+                for k in [k for k, (exp, _r) in _probe_results.items() if exp <= stamp]:
+                    _probe_results.pop(k, None)
+                while len(_probe_results) >= _PROBE_MAX:
+                    _probe_results.pop(next(iter(_probe_results)), None)
+            _probe_results[key] = (time.monotonic() + _PROBE_TTL, result)
+    return result
+
+
+# /api/veev/check launches a headless Chromium (hundreds of MB) and drives it
+# for up to 30 s inside the request thread. Unbounded, a double click, a
+# retrying client or a hostile account could start any number of them at once,
+# and the same episode was checked again on every attempt.
+_VEEV_CHECK_SLOTS = threading.BoundedSemaphore(2)
+# A request for an episode that is being checked right now waits for that
+# check (30 s browser timeout plus start-up); one for another episode only
+# briefly waits for a free slot, so queued checks cannot pin web threads.
+_VEEV_SAME_URL_WAIT = 40.0
+_VEEV_SLOT_WAIT = 10.0
+_VEEV_CHECK_TTL = 600.0
+_VEEV_CHECK_MAX = 256
+_veev_verdicts: dict = {}          # episode_url -> (expires, available)
+_veev_url_locks: dict = {}         # episode_url -> Lock (one check per URL)
+_veev_lock = threading.Lock()
+
+
+def _veev_cached(episode_url):
+    """Cached verdict (True/False) for *episode_url*, or None."""
+    with _veev_lock:
+        hit = _veev_verdicts.get(episode_url)
+        if hit and hit[0] > time.monotonic():
+            return hit[1]
+    return None
+
+
+def _veev_remember(episode_url, available):
+    with _veev_lock:
+        if len(_veev_verdicts) >= _VEEV_CHECK_MAX:
+            now = time.monotonic()
+            for k in [k for k, (exp, _a) in _veev_verdicts.items() if exp <= now]:
+                _veev_verdicts.pop(k, None)
+            while len(_veev_verdicts) >= _VEEV_CHECK_MAX:
+                _veev_verdicts.pop(next(iter(_veev_verdicts)), None)
+        _veev_verdicts[episode_url] = (time.monotonic() + _VEEV_CHECK_TTL, available)
+
+
+def _veev_url_lock(episode_url):
+    with _veev_lock:
+        lock = _veev_url_locks.get(episode_url)
+        if lock is None:
+            if len(_veev_url_locks) >= _VEEV_CHECK_MAX:
+                for k in [k for k, v in _veev_url_locks.items() if not v.locked()]:
+                    _veev_url_locks.pop(k, None)
+            lock = _veev_url_locks[episode_url] = threading.Lock()
+        return lock
+
+
+def _probe_candidates(providers_map):
+    """The (redirect, label) pairs _filter_and_dedup_providers() will probe."""
+    from ...extractors import provider_for_url
+    wp_by_lower = {w.lower(): w for w in WORKING_PROVIDERS}
+    pairs = []
+    for name, redirect in (providers_map or {}).items():
+        host_key = provider_for_url(redirect)
+        if name in WORKING_PROVIDERS or (host_key and host_key in wp_by_lower):
+            pairs.append((redirect, name))
+    return pairs
+
+
+def _probe_all(pairs):
+    """{(redirect, label): (available, host)} for every pair, probed in
+    parallel. One after the other, 3 languages x 4 hosters at 0.5-5 s each
+    kept the provider dropdown empty for up to a minute."""
+    from concurrent.futures import ThreadPoolExecutor
+    pairs = list(dict.fromkeys(pairs))
+    if not pairs:
+        return {}
+    if len(pairs) == 1:
+        return {pairs[0]: _probe_cached(*pairs[0])}
+    with ThreadPoolExecutor(max_workers=min(8, len(pairs)),
+                            thread_name_prefix="provider-probe") as pool:
+        results = list(pool.map(lambda pair: _probe_cached(*pair), pairs))
+    return dict(zip(pairs, results))
+
+
+def _filter_and_dedup_providers(providers_map, probes=None):
     """Turn a {provider_label: redirect_url} map into an ordered list of live,
     de-duplicated provider names for the provider dropdown.
 
@@ -277,6 +590,8 @@ def _filter_and_dedup_providers(providers_map):
     from ...extractors import provider_for_url
 
     wp_by_lower = {w.lower(): w for w in WORKING_PROVIDERS}
+    if probes is None:
+        probes = _probe_all(_probe_candidates(providers_map))
     seen = set()
     out = []
     for name, redirect in providers_map.items():
@@ -295,7 +610,7 @@ def _filter_and_dedup_providers(providers_map):
         host_key = provider_for_url(redirect)
         if name not in WORKING_PROVIDERS and not (host_key and host_key in wp_by_lower):
             continue
-        available, host_provider = probe_redirect(redirect, name)
+        available, host_provider = probes.get((redirect, name)) or _probe_cached(redirect, name)
         host_provider = host_provider or host_key
         if not available:
             continue
@@ -885,16 +1200,8 @@ def register_search_routes(app):
         if not dest_file.exists():
             return jsonify({"error": "Keyword data not downloaded yet. Please wait."}), 404
             
-        results = []
         try:
-            with open(dest_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    if query in line.lower():
-                        data = json.loads(line)
-                        results.append(data)
-                        if len(results) >= 20:
-                            break
-            return jsonify({"results": results})
+            return jsonify({"results": _search_keyword_export(dest_file, query)})
         except Exception as e:
             logger.error(f"Error searching TMDB keywords: {e}")
             return jsonify({"error": str(e)}), 500
@@ -1273,19 +1580,29 @@ def register_search_routes(app):
         if not api_key:
             return jsonify({"error": "No TMDB API Key"}), 400
             
-        tmdb_id = request.args.get("id")
         media_type = request.args.get("type", "tv")
-        
-        if not tmdb_id or media_type not in ["tv", "movie"]:
+        # The id goes into the upstream path: anything but a number would let
+        # a caller reach other TMDB endpoints with the instance's key.
+        try:
+            tmdb_id = int(request.args.get("id", ""))
+        except (TypeError, ValueError):
+            tmdb_id = 0
+        if tmdb_id <= 0 or media_type not in ["tv", "movie"]:
             return jsonify({"error": "Invalid params"}), 400
-            
+
         _ui_lang = session.get("ui_language", "de")
         _tmdb_lang = "en" if _ui_lang == "en" else "de"
+        cache_key = f"details:{media_type}:{tmdb_id}:{_tmdb_lang}"
+        cached = _ref_cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
         url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?language={_tmdb_lang}&api_key={api_key}&append_to_response=translations"
         try:
+            _tmdb_rl.acquire()
             resp = _req.get(url, headers={"accept": "application/json"}, timeout=10)
             resp.raise_for_status()
             data = resp.json()
+            _ref_cache_put(cache_key, data, _TMDB_DETAILS_TTL)
             return jsonify(data)
         except Exception as e:
             # Same leak as the other TMDB endpoints: requests puts the full
@@ -1410,7 +1727,7 @@ def register_search_routes(app):
                 return jsonify({
                     "error": f"Provider {prov.name} does not support series",
                 }), 400
-            series = prov.series_cls(url=url)
+            series = _cached_series_model(prov, url)
             poster = getattr(series, "poster_url", None)
             # s.to returns relative poster paths - make them absolute
             if poster and poster.startswith("/"):
@@ -1522,7 +1839,7 @@ def register_search_routes(app):
                 return jsonify({
                     "error": f"Provider {prov.name} does not support series",
                 }), 400
-            series = prov.series_cls(url=url)
+            series = _cached_series_model(prov, url)
             seasons_data = []
             for season in series.seasons:
                 seasons_data.append(
@@ -1620,20 +1937,11 @@ def register_search_routes(app):
                             roots.append(cpp)
                         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
                         lang_folders = LANG_FOLDERS
-                        ep_re = EPISODE_MARKER_RE  # shared: S(\d{1,4})E(\d{1,4})(?!\d)
                         bases = []
                         for root in roots:
                             bases.extend([root / lf for lf in lang_folders] if lang_sep else [root])
-                        for base in bases:
-                            if not base.is_dir():
-                                continue
-                            for folder in base.iterdir():
-                                if folder.is_dir() and _folder_holds(folder.name, title_clean, _aliases):
-                                    for f in folder.rglob("*"):
-                                        if f.is_file():
-                                            mm = ep_re.search(f.name)
-                                            if mm:
-                                                downloaded_eps.add((int(mm.group(1)), int(mm.group(2))))
+                        downloaded_eps = set(_disk_episodes(
+                            title_clean, _aliases, [(base, ()) for base in bases]))
                 except Exception:
                     pass
 
@@ -1681,23 +1989,14 @@ def register_search_routes(app):
                             if not cpp.is_absolute():
                                 cpp = _P.home() / cpp
                             roots.append(cpp)
-                        ep_re = EPISODE_MARKER_RE  # shared: S(\d{1,4})E(\d{1,4})(?!\d)
                         # With language separation on, hanime lands in the
                         # "japanese-dub" subfolder, not in the root itself.
                         lang_sep = os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0") == "1"
                         bases = []
                         for root in roots:
                             bases.extend([root / lf for lf in LANG_FOLDERS] if lang_sep else [root])
-                        for base in bases:
-                            if not base.is_dir():
-                                continue
-                            for folder in base.iterdir():
-                                if folder.is_dir() and _folder_holds(folder.name, title_clean, _aliases):
-                                    for f in folder.rglob("*"):
-                                        if f.is_file():
-                                            mm = ep_re.search(f.name)
-                                            if mm:
-                                                downloaded_eps.add((int(mm.group(1)), int(mm.group(2))))
+                        downloaded_eps = set(_disk_episodes(
+                            title_clean, _aliases, [(base, ()) for base in bases]))
                 except Exception:
                     pass
                 episodes_data = []
@@ -1732,10 +2031,10 @@ def register_search_routes(app):
             series_url = re.sub(r"/staffel-\d+/?$", "", url)
             series_url = re.sub(r"/filme/?$", "", series_url)
             try:
-                series = prov.series_cls(url=series_url) if prov.series_cls else None
+                series = _cached_series_model(prov, series_url) if prov.series_cls else None
             except Exception:
                 series = None
-            season = prov.season_cls(url=url, series=series)
+            season = _cached_season_model(prov, url, series)
 
             # Scan download directory for downloaded episodes.
             # Uses S##E### filename matching so it works regardless of
@@ -1782,30 +2081,17 @@ def register_search_routes(app):
                         or getattr(series, "title", "")
                     ).lower()
                 if title_clean:
-                    ep_re = EPISODE_MARKER_RE  # shared: S(\d{1,4})E(\d{1,4})(?!\d)
                     all_bases = []
                     for root, cp_id, cp_name in scan_roots:
                         if lang_sep:
                             all_bases.extend(
-                                [(root / lf, root, cp_id, cp_name) for lf in lang_folders]
+                                [(root / lf, (root, cp_id, cp_name)) for lf in lang_folders]
                             )
                         else:
-                            all_bases.append((root, root, cp_id, cp_name))
-                    for base, root, cp_id, cp_name in all_bases:
-                        if not base.is_dir():
-                            continue
-                        for folder in base.iterdir():
-                            if not folder.is_dir() or not _folder_holds(folder.name, title_clean, _aliases):
-                                continue
-                            for f in folder.rglob("*"):
-                                if f.is_file():
-                                    m = ep_re.search(f.name)
-                                    if m:
-                                        key = (int(m.group(1)), int(m.group(2)))
-                                        downloaded_eps.add(key)
-                                        ep_folders.setdefault(
-                                            key, (folder, root, cp_id, cp_name)
-                                        )
+                            all_bases.append((root, (root, cp_id, cp_name)))
+                    # {(season, episode): (folder, root, cp_id, cp_name)}
+                    ep_folders = dict(_disk_episodes(title_clean, _aliases, all_bases))
+                    downloaded_eps = set(ep_folders)
             except Exception:
                 pass
 
@@ -2075,8 +2361,10 @@ def register_search_routes(app):
                 # and series alike (MegaKino posts are user-edited and often keep
                 # dead/removed hoster embeds listed).
                 provider_info = {}
+                probes = _probe_all([pair for hosters in pd.values()
+                                     for pair in _probe_candidates(hosters)])
                 for label, hosters in pd.items():
-                    working = _filter_and_dedup_providers(hosters)
+                    working = _filter_and_dedup_providers(hosters, probes)
                     if working:
                         provider_info[label] = working
                 return jsonify({"providers": provider_info})
@@ -2153,8 +2441,12 @@ def register_search_routes(app):
             # label / site, movies and series alike (previously movies-only).
             # This is what keeps dead hosters and duplicate mirror labels out of
             # the provider dropdown for AniWorld/s.to series too.
+            # Every probe of every label at once, then the per-label pass
+            # reads the answers in the original order.
+            probes = _probe_all([pair for providers in raw_by_label.values()
+                                 for pair in _probe_candidates(providers)])
             for label, providers in raw_by_label.items():
-                working = _filter_and_dedup_providers(providers)
+                working = _filter_and_dedup_providers(providers, probes)
                 if working:
                     provider_info[label] = working
 
@@ -2171,11 +2463,50 @@ def register_search_routes(app):
         that the downloader uses and checking whether a 206-response CDN URL is
         captured.  If yes → available, if not → unavailable.
         """
+        # Every answer carries a "reason" code next to the (German) "error"
+        # text, so the UI can show the message in the user's language.
         data = request.get_json(silent=True) or {}
-        episode_url = (data.get("episode_url") or "").strip()
+        episode_url = str(data.get("episode_url") or "").strip()
         if not episode_url:
-            return jsonify({"available": False, "error": "episode_url fehlt"}), 400
+            return jsonify({"available": False, "reason": "missing_url",
+                            "error": "episode_url fehlt"}), 400
 
+        cached = _veev_cached(episode_url)
+        if cached is not None:
+            return _veev_verdict_response(cached)
+
+        # One check per episode at a time: a second request for the same URL
+        # waits for the first and then answers from the cache.
+        url_lock = _veev_url_lock(episode_url)
+        if not url_lock.acquire(timeout=_VEEV_SAME_URL_WAIT):
+            return _veev_busy_response()
+        try:
+            cached = _veev_cached(episode_url)
+            if cached is not None:
+                return _veev_verdict_response(cached)
+            if not _VEEV_CHECK_SLOTS.acquire(timeout=_VEEV_SLOT_WAIT):
+                return _veev_busy_response()
+            try:
+                return _veev_check_now(episode_url)
+            finally:
+                _VEEV_CHECK_SLOTS.release()
+        finally:
+            url_lock.release()
+
+    def _veev_verdict_response(available):
+        if available:
+            return jsonify({"available": True})
+        return jsonify({
+            "available": False,
+            "reason": "unavailable",
+            "error": "Dieser Film ist auf Veev momentan nicht verfügbar (kein Stream gefunden).",
+        })
+
+    def _veev_busy_response():
+        return jsonify({"available": False, "reason": "busy",
+                        "error": "Es laufen bereits Veev-Prüfungen, bitte gleich erneut versuchen."}), 429
+
+    def _veev_check_now(episode_url):
         try:
             from ...providers import resolve_provider
             from ...extractors.provider.veev import _extract_veev_details
@@ -2184,7 +2515,8 @@ def register_search_routes(app):
                 from mediaforge.providers import resolve_provider
                 from mediaforge.extractors.provider.veev import _extract_veev_details
             except ImportError as ie:
-                return jsonify({"available": False, "error": f"Import-Fehler: {ie}"}), 500
+                return jsonify({"available": False, "reason": "check_failed",
+                                "error": f"Import-Fehler: {ie}"}), 500
 
         try:
             # VeeV is a hoster offered by several providers (FilmPalast,
@@ -2198,19 +2530,18 @@ def register_search_routes(app):
             ep = prov.episode_cls(url=episode_url, selected_provider="VeeV")
             embed_url = ep.provider_url
         except Exception as e:
-            return jsonify({"available": False, "error": f"Episode konnte nicht aufgelöst werden: {e}"})
+            return jsonify({"available": False, "reason": "resolve_failed",
+                            "error": f"Episode konnte nicht aufgelöst werden: {e}"})
 
         try:
             cdn_url, _, _ = _extract_veev_details(embed_url, timeout_ms=30_000)
         except Exception as e:
-            return jsonify({"available": False, "error": f"Veev-Prüfung fehlgeschlagen: {e}"})
+            # Not cached: a browser or network hiccup must not stick for ten minutes.
+            return jsonify({"available": False, "reason": "check_failed",
+                            "error": f"Veev-Prüfung fehlgeschlagen: {e}"})
 
-        if cdn_url:
-            return jsonify({"available": True})
-        return jsonify({
-            "available": False,
-            "error": "Dieser Film ist auf Veev momentan nicht verfügbar (kein Stream gefunden).",
-        })
+        _veev_remember(episode_url, bool(cdn_url))
+        return _veev_verdict_response(bool(cdn_url))
     @app.route("/advanced-search")
     def advanced_search_page():
         """Render the advanced (TMDB discover) search page, if the feature is enabled.

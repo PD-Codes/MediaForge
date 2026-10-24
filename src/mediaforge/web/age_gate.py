@@ -189,7 +189,7 @@ def filter_library_titles(titles, limit=None) -> list:
         return titles
 
     from flask import session
-    from .db import get_tmdb_cache_bulk
+    from .db import get_tmdb_cache_bulk_light
     country = get_setting("cineinfo_country", "DE") or "DE"
     try:
         ui_lang = session.get("ui_language", "de")
@@ -199,7 +199,8 @@ def filter_library_titles(titles, limit=None) -> list:
     names = [str(t.get("folder") or "") for t in titles if isinstance(t, dict)]
     keys = {name: name + "|||" + country + "|||" + ui_lang for name in names if name}
     try:
-        cached = get_tmdb_cache_bulk(list(keys.values())) or {}
+        # Light projection: only the rating is read here (see db.caches).
+        cached = get_tmdb_cache_bulk_light(list(keys.values())) or {}
     except Exception:
         return titles          # no cache, no opinion -- do not hide the library
 

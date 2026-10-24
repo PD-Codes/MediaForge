@@ -42,6 +42,8 @@ logger = get_logger(__name__)
 # At most two conversions at a time. Unpacking a 12 MB AZW3 is a fraction of a
 # second, but a shelf-wide click storm should not be able to occupy every core.
 _MAX_PARALLEL = 2
+# See the KindleUnpack call in _convert().
+_STDOUT_REDIRECT_LOCK = threading.Lock()
 
 # Remember a failure for an hour: long enough that the client stops polling a
 # book that cannot be converted, short enough that a transient problem (a NAS
@@ -593,7 +595,13 @@ def _convert(src: Path, key: str) -> None:
         # None of it is actionable and all of it would land in the app log (and
         # in the console of anyone running MediaForge in a terminal), so it is
         # captured and only kept if the conversion actually fails.
-        with contextlib.redirect_stdout(chatter):
+        #
+        # Serialised: redirect_stdout() swaps the PROCESS-wide sys.stdout, and
+        # two conversions run in parallel. Overlapping in the wrong order (A
+        # in, B in, A out, B out) left sys.stdout pointing at A's dead buffer
+        # for the rest of the process -- console capture and the log saw
+        # nothing any more. One extraction at a time restores it in order.
+        with _STDOUT_REDIRECT_LOCK, contextlib.redirect_stdout(chatter):
             tmpdir, produced = mobi.extract(str(src))
         produced_path = Path(produced)
         if produced_path.suffix.lower() == ".epub":

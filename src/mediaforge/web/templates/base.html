@@ -1948,8 +1948,49 @@
      without internet access -- a LAN-only container, or one behind Gluetun:
      player.js falls back to video.canPlayType('application/vnd.apple.mpegurl'),
      and Chrome and Firefox answer "" to that, so every play click ended in the
-     generic error branch. It also kept a third-party origin in the CSP. #}
-  <script src="{{ url_for('static', filename='hls.min.js') }}"></script>
+     generic error branch. It also kept a third-party origin in the CSP.
+
+     hls.js, pdf.js, jszip and epub.js together are about a megabyte of
+     JavaScript that only the player and the eBook reader use. They used to be
+     loaded -- downloaded once, but parsed and run -- on every single page.
+     They are now fetched on first use through mfLoadLib(); player.js and
+     reader.js ask for them right before they need them. #}
+  <script>
+    window.MF_LIBS = {
+      hls: [{{ url_for('static', filename='hls.min.js')|tojson }}],
+      pdf: [{{ url_for('static', filename='pdf.min.js')|tojson }}],
+      // epub.js needs JSZip as a global, so it comes first.
+      epub: [{{ url_for('static', filename='jszip.min.js')|tojson }},
+             {{ url_for('static', filename='epub.min.js')|tojson }}]
+    };
+    // Load one of the libraries above once; resolves when all its files ran.
+    // A failed load is forgotten, so the next attempt tries again.
+    window.mfLoadLib = (function () {
+      var pending = {};
+      function loadScript(src) {
+        return new Promise(function (resolve, reject) {
+          var s = document.createElement('script');
+          s.src = src;
+          s.async = false;
+          s.onload = function () { resolve(); };
+          s.onerror = function () { reject(new Error('could not load ' + src)); };
+          document.head.appendChild(s);
+        });
+      }
+      return function (name) {
+        if (!pending[name]) {
+          var urls = (window.MF_LIBS || {})[name] || [];
+          pending[name] = urls.reduce(function (chain, src) {
+            return chain.then(function () { return loadScript(src); });
+          }, Promise.resolve()).catch(function (err) {
+            delete pending[name];
+            throw err;
+          });
+        }
+        return pending[name];
+      };
+    })();
+  </script>
   <script src="{{ url_for('static', filename='player.js') }}"></script>
 
   <!-- ══════════════════════════════════════════════════════════════════
@@ -2150,10 +2191,8 @@
      is: an install without internet access must still be able to read a book,
      and a CDN would put a third-party origin back into the CSP. The v3 build is
      deliberate -- pdf.js v4 ships .mjs only, and pyproject.toml's package-data
-     globs are extension-specific, so a .mjs would silently not be packaged. #}
-  <script src="{{ url_for('static', filename='pdf.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='jszip.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='epub.min.js') }}"></script>
+     globs are extension-specific, so a .mjs would silently not be packaged.
+     Loaded on first use, not here -- see window.MF_LIBS above the player. #}
   <script src="{{ url_for('static', filename='reader.js') }}"></script>
 
 

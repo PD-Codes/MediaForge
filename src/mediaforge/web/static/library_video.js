@@ -72,12 +72,17 @@ function libFilterTitles(items) {
   });
 }
 
+// One collator for every comparison. localeCompare(b, "de", {...}) builds a new
+// Intl.Collator on each call, which made sorting a large shelf ~35x slower on
+// every repaint. Same locale and options, so the order is unchanged.
+var _libVideoCollator = new Intl.Collator("de", { sensitivity: "base" });
+
 function libSortTitles(items) {
   return items.slice().sort(function(a, b) {
     var v;
     if (libSortKey === "size") v = (a.title.total_size || 0) - (b.title.total_size || 0);
     else if (libSortKey === "episodes") v = (a.title.total_episodes || 0) - (b.title.total_episodes || 0);
-    else v = (a.title.folder || "").localeCompare(b.title.folder || "", "de", { sensitivity: "base" });
+    else v = _libVideoCollator.compare(a.title.folder || "", b.title.folder || "");
     return libSortAsc ? v : -v;
   });
 }
@@ -162,6 +167,13 @@ function libPaintItems(items) {
   var listEl  = document.getElementById("libListView");
   var emptyEl = document.getElementById("libEmptyState");
   if (!gridEl || !listEl) return;
+
+  // A full repaint replaces every card, season and episode row, and with them
+  // every kebab key they carried. Without the reset each paint (card open,
+  // page, search keystroke, watcher refresh) added a new set of contexts --
+  // each holding every file path of a title -- for the life of the tab.
+  libResetMenuCtx();
+  _libUpscaleTitles = {};
 
   if (!items.length) {
     gridEl.hidden = true;
@@ -282,7 +294,7 @@ function libRenderCard(it, pfx) {
   h.push('<div class="mf-poster-progress"><div class="mf-poster-progress-fill" style="width:0%"></div></div>');
   h.push('</div>'); // art
   h.push('<div class="mf-poster-foot">');
-  h.push('<span class="lib-badge">' + title.total_episodes + (title.is_movie ? ' Film' : ' Ep.') + '</span>');
+  h.push('<span class="lib-badge">' + title.total_episodes + (title.is_movie ? ' ' + t('Film', 'Movie') : ' Ep.') + '</span>');
   h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(title.total_size) + '</span>');
   h.push('<button class="mf-icon-btn lib-kebab-btn mf-poster-kebab" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="' + t('Mehr Optionen', 'More Options') + '"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
   h.push('</div>'); // foot
@@ -315,7 +327,7 @@ function libRenderRow(it, pfx) {
   h.push('</div>'); // row-pills
   h.push('</div>'); // row-left
   h.push('<div class="lib-row-right">');
-  h.push('<span class="lib-badge">' + title.total_episodes + (title.is_movie ? ' Film' : ' Ep.') + '</span>');
+  h.push('<span class="lib-badge">' + title.total_episodes + (title.is_movie ? ' ' + t('Film', 'Movie') : ' Ep.') + '</span>');
   h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(title.total_size) + '</span>');
   h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="' + t('Mehr Optionen', 'More Options') + '"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
   h.push('</div>'); // row-right
@@ -403,7 +415,7 @@ function libRenderMovieFlat(title, li, langFolder, lfi, cpId) {
     h.push('<span class="lib-ep-title" id="' + rowId + 'Name">' + libEsc(title.folder) + '</span>');
     h.push('</div>');
     h.push('<div class="lib-info-meta">');
-    h.push('<span class="lib-movie-pill">Film</span>');
+    h.push('<span class="lib-movie-pill">' + t('Film', 'Movie') + '</span>');
     h.push(libCodecBadge(ep.file, ep.video_codec) + libResolutionBadge(ep.file, ep.resolution));
     h.push('<span class="lib-badge lib-badge-size lib-meta-size">' + libFmtSize(ep.size) + '</span>');
     h.push('</div>');
@@ -416,9 +428,9 @@ function libRenderMovieFlat(title, li, langFolder, lfi, cpId) {
       // Path and title come from disk and can contain quotes, so they go into
       // data-* attributes (HTML-escaped) instead of being interpolated into a
       // JS string inside an onclick attribute.
-      h.push('<button class="lib-action-btn lib-btn-play" data-libplay="' + libEscAttr(ep.path) + '" data-libplaytitle="' + libEscAttr(title.folder) + '" onclick="event.stopPropagation();libPlayFromButton(event,this)" title="Film abspielen"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>');
+      h.push('<button class="lib-action-btn lib-btn-play" data-libplay="' + libEscAttr(ep.path) + '" data-libplaytitle="' + libEscAttr(title.folder) + '" onclick="event.stopPropagation();libPlayFromButton(event,this)" title="' + t('Film abspielen', 'Play movie') + '"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>');
     }
-    h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="Mehr Optionen"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
+    h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="' + t('Mehr Optionen', 'More Options') + '"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
     h.push('</div>');
     if (ep.path) {
       h.push('<div class="lib-ep-progress-wrap" id="' + rowId + '_prog" data-lib-path="' + libEscAttr(ep.path) + '"><div class="lib-ep-progress-fill" style="width:0%"></div></div>');
@@ -477,7 +489,7 @@ function libRenderSeason(title, skey, titlePfx, li, langFolder, lfi, ti, cpId) {
   h.push('<span class="lib-badge">' + videoEps.length + ' Ep.</span>');
   h.push('<span class="lib-badge lib-badge-size">' + libFmtSize(seasonSize) + '</span>');
   if (libraryCanDelete) {
-    h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title='+t('Mehr Optionen', "More Options")+'><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
+    h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="' + t('Mehr Optionen', 'More Options') + '"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
   }
   h.push('</div>');
   h.push('</div>'); // season-row
@@ -579,10 +591,10 @@ function libRenderEpisode(ep, title, skey, cpId, langFolder) {
   // Play button (always visible, not in kebab)
   if (isVideo && ep.path) {
     // See the film row above: data-* attributes, not an onclick string.
-    h.push('<button class="lib-action-btn lib-btn-play" data-libplay="' + libEscAttr(ep.path) + '" data-libplaytitle="' + libEscAttr(_titleVal) + '" onclick="event.stopPropagation();libPlayFromButton(event,this)" title='+t("Abspielen","Play")+'><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>');
+    h.push('<button class="lib-action-btn lib-btn-play" data-libplay="' + libEscAttr(ep.path) + '" data-libplaytitle="' + libEscAttr(_titleVal) + '" onclick="event.stopPropagation();libPlayFromButton(event,this)" title="' + t("Abspielen", "Play") + '"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>');
   }
   // Kebab for rename/upscale/delete
-  h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title='+t("Mehr Optionen", "More Options")+'><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
+  h.push('<button class="lib-kebab-btn" data-libkey="' + menuKey + '" onclick="event.stopPropagation();libOpenMenu(this)" title="' + t("Mehr Optionen", "More Options") + '"><svg viewBox="0 0 6 24"><circle cx="3" cy="5" r="2"/><circle cx="3" cy="12" r="2"/><circle cx="3" cy="19" r="2"/></svg></button>');
   h.push('</div>');
   if (isVideo && ep.path) {
     h.push('<div class="lib-ep-progress-wrap" id="' + rowId + '_prog" data-lib-path="' + libEscAttr(ep.path) + '"><div class="lib-ep-progress-fill" style="width:0%"></div></div>');
@@ -856,9 +868,11 @@ function libCopyFromButton(btn) {
   libCopyToClipboard(btn.dataset.libcopy || "", btn);
 }
 
-async function libUpscaleTitle(event, titleKey, cpId, langFolder) {
+async function libUpscaleTitle(event, titleKey, cpId, langFolder, titleObj) {
   if (event) event.stopPropagation();
-  var title = _libUpscaleTitles[titleKey];
+  // titleObj: resolved when the menu opened (see libMenuItemsFor), because a
+  // background repaint before the click resets _libUpscaleTitles.
+  var title = titleObj || _libUpscaleTitles[titleKey];
   if (!title) return;
 
   // Collect all episode file paths for this title.
@@ -1322,7 +1336,9 @@ async function _libOpenAutosyncCreate(url, title, coverUrl) {
   try {
     var res = await Promise.all([
       fetch("/api/custom-paths").then(function(x){ return x.json(); }),
-      fetch("/api/settings").then(function(x){ return x.json(); }),
+      // The client subset, not /api/settings: that one is admin-only, so for
+      // every other account this read as "no language separation, no groups".
+      fetch("/api/settings/client").then(function(x){ return x.json(); }),
     ]);
     customPaths = (res[0] && res[0].paths) || [];
     defaultPathId = String((res[0] && res[0].autosync_default_path) || "");
@@ -1490,6 +1506,10 @@ function libMenuItemsFor(ctx) {
 
   if (type === 'title' || type === 'movie') {
     var pfx = ctx.pfx || '', upscaleKey = ctx.upscaleKey || '';
+    // Looked up while the button that opened the menu is still on screen: a
+    // watcher refresh between opening the menu and the click repaints the
+    // shelf and resets _libUpscaleTitles.
+    var upscaleTitle = _libUpscaleTitles[upscaleKey];
     var isMovieTitle = (type === 'movie') || !!ctx.isMovie;
     if (libraryCanDelete) {
       items.push({ label:t('Umbenennen', 'Rename'),  icon:ICO_RENAME,  fn:function(){ libStartRename(pfx, folder, cpId, lf); } });
@@ -1500,7 +1520,7 @@ function libMenuItemsFor(ctx) {
     if (!isMovieTitle) {
       items.push({ label:t('Zu Auto-Sync hinzufügen', 'Add to Auto-Sync'), icon:ICO_SYNC, fn:function(){ libAddToAutosync(folder); } });
     }
-    items.push({ label:t('Upscalen', 'Upscale'), icon:ICO_UPSCALE, fn:function(){ libUpscaleTitle(null, upscaleKey, cpId, lf); } });
+    items.push({ label:t('Upscalen', 'Upscale'), icon:ICO_UPSCALE, fn:function(){ libUpscaleTitle(null, upscaleKey, cpId, lf, upscaleTitle); } });
     if (type === 'movie' && ctx.epPath) {
       items.push({ label:t('Details', 'Details'), icon:ICO_INFO, fn:function(){ libOpenMediaInfo(ctx.epPath, folder); } });
     }

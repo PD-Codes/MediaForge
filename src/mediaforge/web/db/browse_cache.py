@@ -5,6 +5,9 @@ former single 6939-line ``db.py`` was split up and how the public API stayed
 byte-for-byte identical.
 """
 
+import re
+import threading
+
 from ...logger import get_logger
 
 from ._core import get_db
@@ -155,11 +158,43 @@ def replace_mediascan_cache(entries: list) -> None:
         conn.close()
 
 
+# get_mediascan_ids() is requested on every browse page (several times per
+# classic home page) and normalised 10k titles with five regexes each time --
+# ~200 ms per call -- for data that only changes when a MediaScan run
+# finishes. Kept until the row count or the newest updated_at changes.
+_MEDIASCAN_IDS_MEMO = {"key": None, "value": None}
+_MEDIASCAN_IDS_LOCK = threading.Lock()
+_MS_YEAR_RE = re.compile(r"\s*\(\d{4}\)\s*$")
+_MS_SEASON_RE = re.compile(r"\s*:?\s*season\s+\d+\s*$")
+_MS_STAFFEL_RE = re.compile(r"\s*:?\s*staffel\s+\d+\s*$")
+_MS_PART_RE = re.compile(r"\s*:?\s*part\s+\d+\s*$")
+_MS_PUNCT_RE = re.compile(r"[^\w\s]")
+
+
+def _mediascan_norm_title(t):
+    """lowercase, strip year/season suffixes and punctuation, collapse whitespace"""
+    t = (t or "").lower()
+    t = _MS_YEAR_RE.sub("", t)        # (2013)
+    t = _MS_SEASON_RE.sub("", t)
+    t = _MS_STAFFEL_RE.sub("", t)
+    t = _MS_PART_RE.sub("", t)
+    t = _MS_PUNCT_RE.sub("", t)       # strip punctuation
+    return " ".join(t.split())
+
+
 def get_mediascan_ids() -> dict:
     """Return sets of tmdb_ids, imdb_ids and normalised titles from the mediascan cache."""
-    import re as _re
     conn = get_db()
     try:
+        head = conn.execute(
+            "SELECT COUNT(*) AS n, MAX(updated_at) AS ts FROM mediascan_cache"
+        ).fetchone()
+        key = (head["n"], head["ts"]) if head else None
+        with _MEDIASCAN_IDS_LOCK:
+            if key is not None and _MEDIASCAN_IDS_MEMO["key"] == key:
+                cached = _MEDIASCAN_IDS_MEMO["value"]
+                # Fresh lists per call, so a caller can never change the memo.
+                return {k: list(v) for k, v in cached.items()}
         rows = conn.execute(
             "SELECT tmdb_id, imdb_id, title FROM mediascan_cache"
         ).fetchall()
@@ -167,17 +202,13 @@ def get_mediascan_ids() -> dict:
         imdb_ids = {r["imdb_id"] for r in rows if r["imdb_id"]}
         # Normalise titles for fuzzy front-end matching:
         # lowercase, strip year/season suffixes, collapse whitespace
-        def _norm(t):
-            t = (t or "").lower()
-            t = _re.sub(r"\s*\(\d{4}\)\s*$", "", t)   # (2013)
-            t = _re.sub(r"\s*:?\s*season\s+\d+\s*$", "", t)
-            t = _re.sub(r"\s*:?\s*staffel\s+\d+\s*$", "", t)
-            t = _re.sub(r"\s*:?\s*part\s+\d+\s*$", "", t)
-            t = _re.sub(r"[^\w\s]", "", t)               # strip punctuation
-            return " ".join(t.split())
-        titles = {_norm(r["title"]) for r in rows if r["title"]}
+        titles = {_mediascan_norm_title(r["title"]) for r in rows if r["title"]}
         titles.discard("")  # remove empty strings
-        return {"tmdb_ids": list(tmdb_ids), "imdb_ids": list(imdb_ids), "titles": list(titles)}
+        value = {"tmdb_ids": list(tmdb_ids), "imdb_ids": list(imdb_ids), "titles": list(titles)}
+        with _MEDIASCAN_IDS_LOCK:
+            _MEDIASCAN_IDS_MEMO["key"] = key
+            _MEDIASCAN_IDS_MEMO["value"] = value
+        return {k: list(v) for k, v in value.items()}
     finally:
         conn.close()
 

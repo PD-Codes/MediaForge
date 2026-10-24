@@ -944,7 +944,7 @@ def _extract_first_image(src: Path, fmt) -> tuple:
 # Status API
 # ---------------------------------------------------------------------------
 
-def conversion_status(src, start: bool = False) -> dict:
+def conversion_status(src, start: bool = False, respect_failures: bool = False) -> dict:
     """What can be done with this comic right now.
 
     Shaped like books.convert.conversion_status() and transcoder.thumbs_status()
@@ -962,6 +962,11 @@ def conversion_status(src, start: bool = False) -> dict:
     With *start* true a conversion is kicked off in the background if one is
     needed and no other is already running for this file; see
     :func:`request_conversion`.
+
+    *respect_failures* keeps a remembered failure in force even with *start*:
+    for automatic callers (the "prepare all" library setting), which used to
+    restart a corrupt or password-protected archive -- up to the 15-minute
+    extractor timeout, in one of the two slots -- on every shelf load.
     """
     src = Path(src)
     if src.suffix.lower() not in COMIC_EXTS:
@@ -1015,7 +1020,7 @@ def conversion_status(src, start: bool = False) -> dict:
             # the button did nothing at all until the entry expired, which is
             # how a single failed repack turned into an hour of a comic that
             # refused to open and a button that refused to react.
-            if not start:
+            if not start or respect_failures:
                 return {"ok": False, "reason": failed[1], "format": fmt}
             _failures.pop(key, None)
         if key in _jobs:

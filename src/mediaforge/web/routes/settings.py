@@ -103,6 +103,104 @@ def _cineinfo_sources_payload():
         return []
 
 
+def _home_sources_settings(sources_available):
+    """The "sources" block of the settings blob: home-page source order, the
+    sections shown per source and which sources are switched on.
+
+    Shared by GET /api/settings (admin) and GET /api/settings/client (every
+    account) so the two can never disagree about it. `sources_available` is
+    source_policy.search_sources() for the current user, resolved once by the
+    caller because the blob needs it twice.
+    """
+    return {
+        "order": get_setting("home_source_order", "aniworld,sto,filmpalast,megakino,filmo,nineanime,aniwaves,hanime"),
+        "section_order": {
+            "aniworld":  get_setting("home_section_order_aniworld",  "new,popular"),
+            "sto":       get_setting("home_section_order_sto",       "new,popular"),
+            "filmo":     get_setting("home_section_order_filmo",     "new,popular"),
+            "nineanime": get_setting("home_section_order_nineanime", "new,popular"),
+            "aniwaves":  get_setting("home_section_order_aniwaves",  "new,popular"),
+            "megakino": get_setting("home_section_order_megakino", "new_movies,popular_movies,new_series,popular_series"),
+            "hanime":   get_setting("home_section_order_hanime",   "new,trending"),
+        },
+        "sections": {
+            "aniworld": {
+                "new":     get_setting("source_show_new_aniworld",     "1"),
+                "popular": get_setting("source_show_popular_aniworld", "1"),
+            },
+            "sto": {
+                "new":     get_setting("source_show_new_sto",     "1"),
+                "popular": get_setting("source_show_popular_sto", "1"),
+            },
+            "filmo": {
+                "new":     get_setting("source_show_new_filmo",     "1"),
+                "popular": get_setting("source_show_popular_filmo", "1"),
+            },
+            "nineanime": {
+                "new":     get_setting("source_show_new_nineanime",     "1"),
+                "popular": get_setting("source_show_popular_nineanime", "1"),
+            },
+            "aniwaves": {
+                "new":     get_setting("source_show_new_aniwaves",     "1"),
+                "popular": get_setting("source_show_popular_aniwaves", "1"),
+            },
+            "megakino": {
+                "new_movies":     get_setting("source_show_new_movies_megakino",     "1"),
+                "popular_movies": get_setting("source_show_popular_movies_megakino", "1"),
+                "new_series":     get_setting("source_show_new_series_megakino",     "1"),
+                "popular_series": get_setting("source_show_popular_series_megakino", "1"),
+            },
+            "hanime": {
+                "new":        get_setting("source_show_new_hanime",        "1"),
+                "trending":   get_setting("source_show_trending_hanime",   "1"),
+                # Content-type filters (applied per item within the New/
+                # Trending lists, not separate sections like the two above).
+                "censored":   get_setting("source_show_censored_hanime",   "1"),
+                "uncensored": get_setting("source_show_uncensored_hanime", "1"),
+            },
+        },
+        # Every source that currently exists -- built-ins plus the
+        # ones installed modules registered. The Sources tab
+        # renders its rows from this instead of the five ids it
+        # used to hardcode, so a module source gets an on/off
+        # switch like any other.
+        "available": sources_available,
+        # Defaults come from source_policy (opt-out, except an
+        # adult source) rather than being repeated per id here.
+        # Kept as the "1"/"0" strings the frontend already reads.
+        "enabled": {
+            _s["id"]: ("1" if _s["enabled"] else "0")
+            for _s in sources_available
+        },
+        "hide_disabled_in_search": get_setting("sources_hide_in_search", "0"),
+    }
+
+
+def _cineinfo_display_settings():
+    """The CineInfo switches every page reads -- what to show, never the key.
+
+    `tmdb_api_key` is deliberately a boolean here. Every reader in the browser
+    only tests it for truthiness ("is TMDB configured?"), and the key itself
+    has no business in a response every logged-in account can fetch.
+    """
+    return {
+        "tmdb_api_key":   bool(get_setting("cineinfo_tmdb_api_key", "")),
+        "country":        get_setting("cineinfo_country",        "DE"),
+        "show_providers": get_setting("cineinfo_show_providers", "1"),
+        "show_genres":    get_setting("cineinfo_show_genres",    "0"),
+        "show_fsk":       get_setting("cineinfo_show_fsk",       "1"),
+        "show_rating":    get_setting("cineinfo_show_rating",    "0"),
+        "show_recommendations": get_setting("cineinfo_show_recommendations", "1"),
+        "show_trailer":   get_setting("cineinfo_show_trailer",   "1"),
+        "show_backdrop":  get_setting("cineinfo_show_backdrop",  "1"),
+        "show_hover_rating": get_setting("cineinfo_show_hover_rating", "0"),
+        "show_hover_genres": get_setting("cineinfo_show_hover_genres", "0"),
+        "show_hover_fsk": get_setting("cineinfo_show_hover_fsk", "0"),
+        "provider_order": get_setting("cineinfo_provider_order", "tmdb,crunchyroll,fernsehserien"),
+        "advanced_search": get_setting("cineinfo_advanced_search", "0"),
+    }
+
+
 def _language_group_error(language):
     """Reason a language value can't be used, or None if it's fine.
 
@@ -298,7 +396,9 @@ def register_settings_routes(app):
         sync_error_retry_time = get_setting("sync_error_retry_time") or os.environ.get("MEDIAFORGE_SYNC_ERROR_RETRY_TIME", "5min")
         sync_adaptive_enabled     = get_setting("sync_adaptive_enabled")     or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_ENABLED", "0")
         sync_adaptive_pause_after = get_setting("sync_adaptive_pause_after") or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_PAUSE_AFTER", "4w")
-        sync_adaptive_retry_value = int(get_setting("sync_adaptive_retry_value") or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_RETRY_VALUE", "2"))
+        # get_setting_int: a non-numeric environment value made this whole
+        # endpoint (and with it the settings page) answer with a 500.
+        sync_adaptive_retry_value = get_setting_int("sync_adaptive_retry_value", 2, "MEDIAFORGE_SYNC_ADAPTIVE_RETRY_VALUE")
         sync_adaptive_retry_unit  = get_setting("sync_adaptive_retry_unit")  or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_RETRY_UNIT", "days")
         history_retention_days = get_setting("history_retention_days") or os.environ.get("MEDIAFORGE_HISTORY_RETENTION_DAYS", "30")
         download_language    = get_setting("download_language")    or os.environ.get("MEDIAFORGE_LANGUAGE", "German Dub")
@@ -505,68 +605,7 @@ def register_settings_routes(app):
                 # ("home_feed_layout"/"home_feed_filters"), not here -- see
                 # routes/browse.py's feed_effective_config().
                 "home_page": _home_page_defaults(),
-                "sources": {
-                    "order": get_setting("home_source_order", "aniworld,sto,filmpalast,megakino,filmo,nineanime,aniwaves,hanime"),
-                    "section_order": {
-                        "aniworld":  get_setting("home_section_order_aniworld",  "new,popular"),
-                        "sto":       get_setting("home_section_order_sto",       "new,popular"),
-                        "filmo":     get_setting("home_section_order_filmo",     "new,popular"),
-                        "nineanime": get_setting("home_section_order_nineanime", "new,popular"),
-                        "aniwaves":  get_setting("home_section_order_aniwaves",  "new,popular"),
-                        "megakino": get_setting("home_section_order_megakino", "new_movies,popular_movies,new_series,popular_series"),
-                        "hanime":   get_setting("home_section_order_hanime",   "new,trending"),
-                    },
-                    "sections": {
-                        "aniworld": {
-                            "new":     get_setting("source_show_new_aniworld",     "1"),
-                            "popular": get_setting("source_show_popular_aniworld", "1"),
-                        },
-                        "sto": {
-                            "new":     get_setting("source_show_new_sto",     "1"),
-                            "popular": get_setting("source_show_popular_sto", "1"),
-                        },
-                        "filmo": {
-                            "new":     get_setting("source_show_new_filmo",     "1"),
-                            "popular": get_setting("source_show_popular_filmo", "1"),
-                        },
-                        "nineanime": {
-                            "new":     get_setting("source_show_new_nineanime",     "1"),
-                            "popular": get_setting("source_show_popular_nineanime", "1"),
-                        },
-                        "aniwaves": {
-                            "new":     get_setting("source_show_new_aniwaves",     "1"),
-                            "popular": get_setting("source_show_popular_aniwaves", "1"),
-                        },
-                        "megakino": {
-                            "new_movies":     get_setting("source_show_new_movies_megakino",     "1"),
-                            "popular_movies": get_setting("source_show_popular_movies_megakino", "1"),
-                            "new_series":     get_setting("source_show_new_series_megakino",     "1"),
-                            "popular_series": get_setting("source_show_popular_series_megakino", "1"),
-                        },
-                        "hanime": {
-                            "new":        get_setting("source_show_new_hanime",        "1"),
-                            "trending":   get_setting("source_show_trending_hanime",   "1"),
-                            # Content-type filters (applied per item within the New/
-                            # Trending lists, not separate sections like the two above).
-                            "censored":   get_setting("source_show_censored_hanime",   "1"),
-                            "uncensored": get_setting("source_show_uncensored_hanime", "1"),
-                        },
-                    },
-                    # Every source that currently exists -- built-ins plus the
-                    # ones installed modules registered. The Sources tab
-                    # renders its rows from this instead of the five ids it
-                    # used to hardcode, so a module source gets an on/off
-                    # switch like any other.
-                    "available": _sources_available,
-                    # Defaults come from source_policy (opt-out, except an
-                    # adult source) rather than being repeated per id here.
-                    # Kept as the "1"/"0" strings the frontend already reads.
-                    "enabled": {
-                        _s["id"]: ("1" if _s["enabled"] else "0")
-                        for _s in _sources_available
-                    },
-                    "hide_disabled_in_search": get_setting("sources_hide_in_search", "0"),
-                },
+                "sources": _home_sources_settings(_sources_available),
                 # Hoster order + fallback. "available" is every hoster with a
                 # working extractor; "order" is the user's ranking of them,
                 # which queue_worker.py walks when the hoster picked for a
@@ -608,6 +647,69 @@ def register_settings_routes(app):
                 },
             }
         )
+    @app.route("/api/settings/client", methods=["GET"])
+    def api_settings_client():
+        """Serve GET /api/settings/client: the part of the settings the
+        normal pages need, for every logged-in account.
+
+        GET /api/settings is admin-only (it carries the download path, DNS
+        and captcha setup, and API keys), but static/app.js used it on every
+        page for every user without checking the answer. A non-admin got a
+        403 that was read as "no settings": no CineInfo, no language groups,
+        and the home page un-hid every source block -- the "hanime 18+" one
+        and sources an admin had switched off included. This is the read-only
+        subset those pages actually use, with secrets reduced to "is one
+        set". It is also much cheaper than the full blob, which every page
+        load used to pay for.
+
+        Called from static/app.js's `loadGeneralSettings()`, static/autosync.js
+        and static/library_video.js. Modules can use it too.
+        """
+        from ..age_gate import allows_adult as _allows_adult
+
+        sources_available = _search_sources(include_adult=_allows_adult())
+        lang_separation = (get_setting("lang_separation")
+                           or os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0"))
+        sync_language = (get_setting("sync_language")
+                         or os.environ.get("MEDIAFORGE_SYNC_LANGUAGE", "German Dub"))
+        language_groups = get_language_groups()
+        # Same fallback as GET /api/settings: never hand out a default that
+        # no dropdown can preselect.
+        usable_groups = ({f"group:{g['id']}" for g in language_groups}
+                         if lang_separation == "1" else set())
+        if is_group_ref(sync_language) and sync_language not in usable_groups:
+            sync_language = "German Dub"
+        return jsonify({
+            "lang_separation": lang_separation,
+            "language_groups": language_groups,
+            "sync_language": sync_language,
+            # Read-only AutoSync schedule, shown on the AutoSync page.
+            "sync_schedule": (get_setting("sync_schedule")
+                              or os.environ.get("MEDIAFORGE_SYNC_SCHEDULE", "0")),
+            "sync_mode": (get_setting("sync_mode")
+                          or os.environ.get("MEDIAFORGE_SYNC_MODE", "interval")),
+            "sync_days": (get_setting("sync_days")
+                          or os.environ.get("MEDIAFORGE_SYNC_DAYS", "0,1,2,3,4,5,6")),
+            "sync_times": (get_setting("sync_times")
+                           or os.environ.get("MEDIAFORGE_SYNC_TIMES", "06:00")),
+            "sync_adaptive_enabled": (get_setting("sync_adaptive_enabled")
+                                      or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_ENABLED", "0")),
+            "sync_adaptive_retry_value": get_setting_int("sync_adaptive_retry_value", 2,
+                                                         "MEDIAFORGE_SYNC_ADAPTIVE_RETRY_VALUE"),
+            "sync_adaptive_retry_unit": (get_setting("sync_adaptive_retry_unit")
+                                         or os.environ.get("MEDIAFORGE_SYNC_ADAPTIVE_RETRY_UNIT", "days")),
+            "cineinfo": _cineinfo_display_settings(),
+            "crunchyroll": {
+                "enabled":        get_setting("crunchyroll_enabled",        "0"),
+                "show_providers": get_setting("crunchyroll_show_providers", "1"),
+                "locale":         get_setting("crunchyroll_locale",         "de-DE"),
+            },
+            "fernsehserien": {
+                "enabled":        get_setting("fernsehserien_enabled",        "0"),
+                "show_providers": get_setting("fernsehserien_show_providers", "1"),
+            },
+            "sources": _home_sources_settings(sources_available),
+        })
     @app.route("/api/console", methods=["GET"])
     def api_console():
         """Serve GET /api/console: read-only tail of the live console output
@@ -1021,7 +1123,10 @@ def register_settings_routes(app):
         static/settings.js (e.g. `saveLangSeparation()`), each of which PUTs
         just the fields it owns."""
         data = request.get_json(silent=True) or {}
-        logger.info("[Settings] PUT /api/settings received data: %r", data)
+        # Keys only: the body can carry secrets (the kids PIN, tokens), and
+        # this line lands in the log file and the web console.
+        logger.info("[Settings] PUT /api/settings received keys: %s",
+                    ", ".join(sorted(str(k) for k in data)) if isinstance(data, dict) else "-")
         if "download_path" in data:
             val = str(data["download_path"]).strip()
             set_setting("download_path", val)

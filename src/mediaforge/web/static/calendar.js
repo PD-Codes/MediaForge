@@ -18,7 +18,16 @@
   "use strict";
 
   var LOCALE = window.__LANG === "de" ? "de-DE" : "en-US";
+  // Every /api/calendar request re-runs the whole event aggregation (AutoSync
+  // jobs, every cached TMDB entry, library, Crunchyroll), and between two
+  // watcher syncs its answer does not change. So the 10 s cadence is kept
+  // only while something is moving -- the watcher scanning or not through its
+  // first sync yet, or the events having changed within the last few polls (a
+  // cold cache fills in over several cycles) -- and is a minute otherwise.
+  // The next change switches back to the fast one (see notePoll).
   var POLL_MS = 10000;
+  var POLL_IDLE_MS = 60000;
+  var POLL_FAST_AFTER_CHANGE = 3;          // unchanged polls before slowing down
 
   // One-time filter reset: the chip semantics changed (watchlist/lists are now
   // independent, additive chips). Stale saved "hidden" state from the old model
@@ -299,9 +308,15 @@
       })
       .then(function (data) {
         state.loaded = true;
-        if (data && data.error === "no_key") { showState("noKey"); return; }
+        if (data && data.error === "no_key") {
+          showState("noKey");
+          notePoll(false);
+          schedulePoll();
+          return;
+        }
         var events = (data && data.events) || [];
         var sig = _eventsSignature(events);
+        notePoll(sig !== state._sig);
         state.watcher = data.watcher || {};
         state.meta = data.meta || {};
         // On a silent poll, skip the (DOM-rebuilding) re-render when nothing
@@ -313,6 +328,7 @@
           render();
         }
         updateWatcherStatus(state.watcher);
+        schedulePoll();
       })
       .catch(function () {
         state.loaded = true;
@@ -323,6 +339,27 @@
           render();
         }
       });
+  }
+
+  // ── Poll cadence (see POLL_MS) ──
+  var pollHandle = null;
+  var pollEvery = 0;
+  var pollsSinceChange = 0;
+
+  function notePoll(changed) {
+    pollsSinceChange = changed ? 0 : pollsSinceChange + 1;
+  }
+
+  function schedulePoll() {
+    var w = state.watcher || {};
+    var busy = !!w.is_scanning || (!!w.active && !w.last_sync) ||
+      pollsSinceChange < POLL_FAST_AFTER_CHANGE;
+    var ms = busy ? POLL_MS : POLL_IDLE_MS;
+    if (pollHandle && ms === pollEvery) return;
+    if (pollHandle) window.mfPollStop(pollHandle);
+    pollEvery = ms;
+    // mfPoll: paused while the tab is hidden (static/mf_poll.js).
+    pollHandle = window.mfPoll(function () { load(true); }, ms);
   }
 
   function updateWatcherStatus(watcher) {
@@ -998,8 +1035,9 @@
     showState("loading");
     load();
 
-    // Poll calendar data & watcher status silently
-    window.mfPoll(function () { load(true); }, POLL_MS);
+    // Poll calendar data & watcher status silently. Starts at the fast
+    // cadence; every answer re-decides it (schedulePoll).
+    schedulePoll();
   }
 
   function closeFeed() {
