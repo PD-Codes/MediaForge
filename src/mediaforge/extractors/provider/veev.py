@@ -47,6 +47,33 @@ _CDN_PATTERN = re.compile(r"https?://[a-z0-9\-]+\.(veev\.to|veevcdn\.co)/")
 # Cache: embed_url -> cdn_url (so get_direct_link_from_veev is cheap on repeat calls)
 _cdn_cache_lock = threading.Lock()
 _cdn_cache: dict[str, str] = {}
+# CDN URLs are signed and expire; the cache used to keep them (and grow) for
+# the life of the process. Entries older than this are resolved again.
+_CDN_CACHE_TTL = 1800.0
+_CDN_CACHE_MAX = 256
+_cdn_cache_at: dict[str, float] = {}
+
+
+def _cdn_cache_put(embed_url: str, cdn_url: str) -> None:
+    import time as _t
+    with _cdn_cache_lock:
+        _cdn_cache[embed_url] = cdn_url
+        _cdn_cache_at[embed_url] = _t.monotonic()
+        while len(_cdn_cache) > _CDN_CACHE_MAX:
+            oldest = min(_cdn_cache_at, key=_cdn_cache_at.get)
+            _cdn_cache.pop(oldest, None)
+            _cdn_cache_at.pop(oldest, None)
+
+
+def _cdn_cache_get(embed_url: str):
+    import time as _t
+    with _cdn_cache_lock:
+        at = _cdn_cache_at.get(embed_url)
+        if at is None or _t.monotonic() - at >= _CDN_CACHE_TTL:
+            _cdn_cache.pop(embed_url, None)
+            _cdn_cache_at.pop(embed_url, None)
+            return None
+        return _cdn_cache.get(embed_url)
 
 
 def _get_headers() -> dict:
@@ -170,8 +197,7 @@ def download_from_veev(
     if not cdn_url:
         raise ValueError(f"VeeV: Keine CDN-URL gefunden ({embed_url})")
 
-    with _cdn_cache_lock:
-        _cdn_cache[embed_url] = cdn_url
+    _cdn_cache_put(embed_url, cdn_url)
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -209,18 +235,26 @@ def download_from_veev(
                     total_size = int(cl_hdr)
 
         if not total_size:
-            logger.warning("VeeV: Size not determined. Downloading whole file at once.")
-            resp = requests.get(
+            logger.warning("VeeV: Size not determined. Downloading in one stream.")
+            # Streamed to disk: reading resp.content held the whole episode
+            # (1-4 GB) in RAM at once -- an OOM kill of the app on a small NAS.
+            with requests.get(
                 cdn_url,
                 headers={
                     "User-Agent": user_agent,
                     "Referer": "https://veev.to/"
                 },
                 cookies=cookie_dict,
-                timeout=600
-            )
-            resp.raise_for_status()
-            out.write_bytes(resp.content)
+                stream=True,
+                timeout=(30, 600),
+            ) as resp:
+                resp.raise_for_status()
+                with open(out, "wb") as f_whole:
+                    for block in resp.iter_content(chunk_size=1024 * 1024):
+                        if cancel_event and cancel_event.is_set():
+                            raise RuntimeError("Download cancelled")
+                        if block:
+                            f_whole.write(block)
             return
 
         logger.debug(
@@ -272,7 +306,18 @@ def download_from_veev(
         start_time = time.monotonic()
         
         errors = []
-        
+        # One HTTP session per pool thread: a bare requests.get() per 10 MB
+        # range opened a new TCP + TLS connection every time (~200 handshakes
+        # for a 2 GB file).
+        _thread_sessions = threading.local()
+
+        def _session():
+            sess = getattr(_thread_sessions, "session", None)
+            if sess is None:
+                sess = requests.Session()
+                _thread_sessions.session = sess
+            return sess
+
         def download_chunk(range_tuple):
             nonlocal downloaded_bytes
             if cancel_event and cancel_event.is_set():
@@ -288,27 +333,34 @@ def download_from_veev(
             for attempt in range(5):
                 if cancel_event and cancel_event.is_set():
                     return
+                counted = 0   # bytes of THIS attempt already added to the total
                 try:
-                    r = requests.get(cdn_url, headers=headers, cookies=cookie_dict, stream=True, timeout=30)
-                    if r.status_code not in (200, 206):
-                        raise ValueError(f"HTTP {r.status_code}")
-                        
-                    current_offset = start_byte
-                    for block in r.iter_content(chunk_size=256 * 1024):  # 256 KB blocks
-                        if cancel_event and cancel_event.is_set():
-                            return
-                        if not block:
-                            continue
-                        with write_lock:
-                            f_out.seek(current_offset)
-                            f_out.write(block)
-                        current_offset += len(block)
-                        
-                        with stats_lock:
-                            downloaded_bytes += len(block)
-                            
+                    with _session().get(cdn_url, headers=headers, cookies=cookie_dict,
+                                        stream=True, timeout=30) as r:
+                        if r.status_code not in (200, 206):
+                            raise ValueError(f"HTTP {r.status_code}")
+
+                        current_offset = start_byte
+                        for block in r.iter_content(chunk_size=256 * 1024):  # 256 KB blocks
+                            if cancel_event and cancel_event.is_set():
+                                return
+                            if not block:
+                                continue
+                            with write_lock:
+                                f_out.seek(current_offset)
+                                f_out.write(block)
+                            current_offset += len(block)
+
+                            with stats_lock:
+                                downloaded_bytes += len(block)
+                            counted += len(block)
+
                     break  # Success
                 except Exception as chunk_err:
+                    # The retry fetches the whole range again; without this the
+                    # bytes of the failed attempt were counted twice (> 100 %).
+                    with stats_lock:
+                        downloaded_bytes -= counted
                     if attempt == 4:
                         logger.error("VeeV: Failed to download chunk %d-%d after 5 attempts", start_byte, end_byte)
                         errors.append(chunk_err)
@@ -409,9 +461,9 @@ def get_direct_link_from_veev(embed_url: str) -> str:
     if not embed_url:
         raise ValueError("Embed URL darf nicht leer sein")
 
-    with _cdn_cache_lock:
-        if embed_url in _cdn_cache:
-            return _cdn_cache[embed_url]
+    cached = _cdn_cache_get(embed_url)
+    if cached:
+        return cached
 
     logger.debug("VeeV: launching headless browser (stream_url path)")
     cdn_url, _, _ = _extract_veev_details(embed_url)
@@ -419,8 +471,7 @@ def get_direct_link_from_veev(embed_url: str) -> str:
     if not cdn_url:
         raise ValueError(f"VeeV: Keine Videoquelle gefunden ({embed_url})")
 
-    with _cdn_cache_lock:
-        _cdn_cache[embed_url] = cdn_url
+    _cdn_cache_put(embed_url, cdn_url)
 
     logger.debug("VeeV: CDN URL: %s…", cdn_url[:80])
     return cdn_url

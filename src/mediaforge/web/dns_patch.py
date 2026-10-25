@@ -10,6 +10,7 @@ ever tried the resolver the rest of the machine uses successfully.
 
 import ipaddress as _ipaddress
 import socket as _socket
+import time as _time
 
 from ..logger import get_logger
 
@@ -34,6 +35,27 @@ _DNS_NIQUESTS_MAP = {
 
 _original_getaddrinfo = _socket.getaddrinfo
 _active_dns_server: str | None = None
+
+# Names no public resolver can answer: sent to the configured server they only
+# cost a round trip (or its timeout) before the system resolver answered them.
+_LOCAL_SUFFIXES = (".local", ".localhost", ".internal", ".lan", ".home.arpa")
+
+# After the configured server timed out / refused, it is bypassed this long.
+_DNS_DOWN_BYPASS = 60.0
+
+
+def _wants_custom_dns(host) -> bool:
+    """True for a public DNS name; False for IP literals, single-label names
+    (Docker service names such as "jellyfin"), localhost and local suffixes."""
+    if not host or "." not in host.strip("."):
+        return False
+    try:
+        _ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    name = host.lower().rstrip(".")
+    return name != "localhost" and not name.endswith(_LOCAL_SUFFIXES)
 
 
 def _apply_dns_patch(server_ip: str | None, mode: str | None = None) -> None:
@@ -74,24 +96,32 @@ def _apply_dns_patch(server_ip: str | None, mode: str | None = None) -> None:
 
     _active_dns_server = server_ip
 
+    # One resolver for the process with dnspython's TTL-honouring cache. A new
+    # resolver and a fresh query used to be made for EVERY connection, and a
+    # server that did not answer stalled every connection for the full 5 s.
+    import dns.exception as _dns_exception  # type: ignore[import-untyped]
+    resolver = _dns_resolver.Resolver(configure=False)
+    resolver.nameservers = [server_ip]
+    resolver.timeout = 3
+    resolver.lifetime = 5
+    resolver.cache = _dns_resolver.LRUCache(2048)
+    down_until = [0.0]
+
     def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):  # noqa: A002
-        # Don't try to resolve bare IPs or empty strings
-        is_ip = False
-        if host:
+        name = host.decode("ascii", "ignore") if isinstance(host, bytes) else host
+        # An A record is all this asks for, so an explicit IPv6 lookup goes
+        # straight to the system resolver (it used to pay the query and then
+        # fail on the IPv4 answer).
+        if (family in (0, _socket.AF_INET) and isinstance(name, str)
+                and _wants_custom_dns(name) and _time.monotonic() >= down_until[0]):
             try:
-                _ipaddress.ip_address(host)
-                is_ip = True
-            except ValueError:
-                pass
-        if not is_ip and host:
-            try:
-                res = _dns_resolver.Resolver(configure=False)
-                res.nameservers = [server_ip]
-                res.timeout = 3
-                res.lifetime = 5
-                answers = res.resolve(host, "A")
-                resolved = str(answers[0])
-                return _original_getaddrinfo(resolved, port, family, type, proto, flags)
+                answers = resolver.resolve(name, "A")
+                return _original_getaddrinfo(str(answers[0]), port, family, type, proto, flags)
+            except (_dns_exception.Timeout, _dns_resolver.NoNameservers) as exc:
+                down_until[0] = _time.monotonic() + _DNS_DOWN_BYPASS
+                logger.warning("DNS server %s does not answer (%s) -- using the system "
+                               "resolver for the next %d s", server_ip, exc.__class__.__name__,
+                               int(_DNS_DOWN_BYPASS))
             except Exception:
                 pass  # fall back to system DNS on any error
         return _original_getaddrinfo(host, port, family, type, proto, flags)
@@ -105,6 +135,14 @@ def _apply_dns_patch(server_ip: str | None, mode: str | None = None) -> None:
     doh_urls = _DNS_NIQUESTS_MAP.get(mode) if mode in _DNS_NIQUESTS_MAP else "system"
     rebuild_global_session(doh_urls)
     set_active_dns_mode(mode)
+    # libcurl (curl_cffi: hoster pages, impersonated downloads) resolves in C
+    # and ignores both layers above. Its DoH hook used to be installed only
+    # right before an impersonated download, which no caller ever requested.
+    try:
+        from ..config import ensure_curl_cffi_doh
+        ensure_curl_cffi_doh()
+    except Exception:
+        logger.debug("curl_cffi DoH hook not installed", exc_info=True)
 
 
 # Known CDN / edge networks — used to label shared anycast IPs so that several

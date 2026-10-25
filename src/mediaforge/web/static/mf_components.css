@@ -121,8 +121,8 @@ input.mf-search-input::-webkit-search-cancel-button { display: none; }
   margin-bottom: 18px;
   background: var(--bg-base);
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
   border-radius: 15px;
 }
 
@@ -375,9 +375,9 @@ input.mf-search-input::-webkit-search-cancel-button { display: none; }
   gap: 7px;
   padding: 12px;
   border-radius: var(--radius-md);
-  background: rgba(10, 8, 20, 0.9);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(10, 8, 20, 0.94);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
   opacity: 0;
   transition: opacity var(--transition), transform var(--transition);
 }
@@ -416,8 +416,9 @@ input.mf-search-input::-webkit-search-cancel-button { display: none; }
   justify-content: center;
   padding: 4px;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.6);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
 }
 
 body.mf-select-mode .mf-poster-select,

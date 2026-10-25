@@ -246,16 +246,28 @@ def check_libplacebo_support():
         return False
 
 
-def get_available_engines():
+_ENGINES = {"value": None}
+_ENGINES_LOCK = threading.Lock()
+
+
+def get_available_engines(refresh=False):
     """Return dict: {engine_name: bool}.
 
     Used by: upscale_file() to auto-select an engine, and
     mediaforge.web.routes.upscale (reports available engines to the UI).
+
+    Detected once per process: it spawns mpv and ffmpeg and, for libplacebo, a
+    Vulkan init test with a 15 s timeout -- and it ran again before every
+    single file of a season job. *refresh* (the "check engines" button)
+    detects again, e.g. after mpv was installed.
     """
-    return {
-        "mpv":        check_mpv_encode_support(),
-        "libplacebo": check_libplacebo_support(),
-    }
+    with _ENGINES_LOCK:
+        if refresh or _ENGINES["value"] is None:
+            _ENGINES["value"] = {
+                "mpv":        check_mpv_encode_support(),
+                "libplacebo": check_libplacebo_support(),
+            }
+        return dict(_ENGINES["value"])
 
 
 # ---------------------------------------------------------------------------

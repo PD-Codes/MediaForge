@@ -30,7 +30,7 @@ from ..telemetry import client as telemetry_client
 from ..telemetry import events as telemetry_events
 from .db import (
     get_setting,
-    get_tmdb_cache,
+    get_tmdb_cache_bulk_light,
     replace_mediascan_cache,
 )
 
@@ -251,22 +251,37 @@ def _mediascan_resolve_ids(entries: list) -> list:
     by looking up the imdb_id in the local CineInfo tmdb_cache (free, no API call).
     This helps with Plex anime items that only have TVDB/IMDB GUIDs.
     """
-    import json as _json
     country = get_setting("cineinfo_country", "DE") or "DE"
-    resolved = improved = 0
+    pending = [e for e in entries if not e.get("tmdb_id") and e.get("imdb_id")]
+    if not pending:
+        return entries
 
-    for entry in entries:
-        if entry.get("tmdb_id"):
-            continue  # already have it
-        imdb_id = entry.get("imdb_id")
-        if not imdb_id:
-            continue
-        # Look up  imdb_id|||country  in the CineInfo cache
-        cached = get_tmdb_cache(f"{imdb_id}|||{country}")
-        if cached and cached.get("found") and cached.get("tmdb_id"):
-            entry["tmdb_id"] = str(cached["tmdb_id"])
+    # CineInfo writes "<imdb_id>|||<country>|||<ui language>" (see
+    # tmdb_cache._tmdb_lookup_cached). This looked up "<imdb_id>|||<country>",
+    # a key nothing ever writes, so the pass never resolved anything -- at the
+    # cost of one connection per entry. Now one bulk read over both languages.
+    keys = {}
+    for entry in pending:
+        for lang in ("de", "en"):
+            keys["%s|||%s|||%s" % (entry["imdb_id"], country, lang)] = entry["imdb_id"]
+    try:
+        hits = get_tmdb_cache_bulk_light(list(keys))
+    except Exception:
+        logger.debug("[MediaScan] CineInfo cache read failed", exc_info=True)
+        hits = {}
+    found = {}
+    for key, imdb_id in keys.items():
+        info = hits.get(key)
+        if info and info.get("found") and info.get("tmdb_id") and imdb_id not in found:
+            found[imdb_id] = str(info["tmdb_id"])
+
+    resolved = len(pending)
+    improved = 0
+    for entry in pending:
+        tmdb_id = found.get(entry["imdb_id"])
+        if tmdb_id:
+            entry["tmdb_id"] = tmdb_id
             improved += 1
-        resolved += 1
 
     if improved:
         logger.info("[MediaScan] Resolved %d/%d IMDB→TMDB IDs from CineInfo cache", improved, resolved)

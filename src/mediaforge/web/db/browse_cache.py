@@ -223,11 +223,17 @@ def get_mediascan_ids_by_type(media_type: str) -> set:
     namespaces, an id can coincidentally exist in both) needs the type-
     scoped version to avoid querying the wrong endpoint for every id --
     see web/thirdparties/mediacalendar/service.py's _resolve_library()."""
+    # MediaScan stores series as 'show' (Jellyfin "Series" and the Plex
+    # section type both map to it), while callers ask in TMDB's vocabulary
+    # ('tv'). Both spellings are accepted either way.
+    series_types = ("show", "tv")
+    types = series_types if media_type in series_types else (media_type,)
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT tmdb_id FROM mediascan_cache WHERE media_type = ? AND tmdb_id IS NOT NULL AND tmdb_id != ''",
-            (media_type,),
+            "SELECT tmdb_id FROM mediascan_cache WHERE media_type IN (%s)"
+            " AND tmdb_id IS NOT NULL AND tmdb_id != ''" % ",".join("?" for _ in types),
+            types,
         ).fetchall()
         return {r["tmdb_id"] for r in rows}
     finally:
@@ -270,8 +276,10 @@ def get_mediascan_series() -> list:
     """Return all series from mediascan_cache as a list of dicts with tmdb_id, title, imdb_id."""
     conn = get_db()
     try:
+        # 'show' is what MediaScan writes; filtering on 'tv' alone matched
+        # nothing, so the calendar's "media library" overlay was always empty.
         rows = conn.execute(
-            "SELECT tmdb_id, imdb_id, title FROM mediascan_cache WHERE media_type = 'tv'"
+            "SELECT tmdb_id, imdb_id, title FROM mediascan_cache WHERE media_type IN ('show', 'tv')"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:

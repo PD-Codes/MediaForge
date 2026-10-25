@@ -1825,7 +1825,17 @@ def register_browse_routes(app):
         aliases = {}
         try:
             from ..library_aliases import alias_index
-            aliases = alias_index()
+            # Only aliases of folders this caller may see: the index covers
+            # every location, so handing it over whole told a group restricted
+            # to some locations the folder names of all the others.
+            visible = {str(f or "").strip().lower() for f in folders}
+            aliases = {key: folder for key, folder in alias_index().items()
+                       if folder in visible}
         except Exception:
             logger.debug("[Browse] Alias index unavailable", exc_info=True)
-        return jsonify({"folders": folders, "aliases": aliases})
+        resp = jsonify({"folders": folders, "aliases": aliases})
+        # Every page asks for this list on load; it rarely changes, so the
+        # browser revalidates and usually gets an empty 304 instead of the
+        # whole list (hundreds of KB with a large alias index).
+        resp.add_etag()
+        return resp.make_conditional(request)

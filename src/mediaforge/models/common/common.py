@@ -14,6 +14,8 @@ reads the user's encoding settings from the SQLite DB, and the
 ProviderData container used by AniWorld/s.to episodes to look up
 per-(Audio, Subtitles) hoster links.
 """
+import contextlib
+import functools as _functools
 import getpass
 import hashlib
 import os
@@ -113,6 +115,13 @@ except ImportError:
 # Precompile regex for forbidden filename characters
 FORBIDDEN_CHARS = re.compile(r'[<>:"/\\|?*]')
 
+
+
+def _insecure_tls():
+    """yt-dlp's nocheckcertificate: off unless MEDIAFORGE_INSECURE_DOWNLOAD_TLS=1
+    (see config.INSECURE_DOWNLOAD_TLS)."""
+    from ...config import INSECURE_DOWNLOAD_TLS
+    return INSECURE_DOWNLOAD_TLS
 
 def _effective_provider(episode):
     """Provider whose HTTP headers actually apply to *episode*'s stream.
@@ -446,6 +455,9 @@ _LOOSE_MIN_REVERSE = 10
 def loose_title_key(title) -> str:
     """Punctuation-insensitive comparison key for a series/movie title.
 
+    Memoised (see _loose_title_key_cached): folder scans call it for every
+    folder entry against every title, and it is a pure function of its input.
+
     The Python twin of static/app.js's ``_looseTitleKey``; the two must agree,
     because the same "is this already on disk?" question is answered on both
     sides (the badge on a card, and the per-episode ticks in the download
@@ -468,7 +480,12 @@ def loose_title_key(title) -> str:
     """
     if not title:
         return ""
-    text = _html_unescape(str(title)).lower()
+    return _loose_title_key_cached(str(title))
+
+
+@_functools.lru_cache(maxsize=16384)
+def _loose_title_key_cached(title: str) -> str:
+    text = _html_unescape(title).lower()
     # Straighten the quote characters scrapes disagree about before dropping
     # them, so the two sides cannot differ by an apostrophe alone.
     for src, dst in (("‘", "'"), ("’", "'"), ("′", "'"),
@@ -830,7 +847,11 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
     reader_thread.start()
 
     # --- main loop: consume lines, log them, and watch for stalls ---
-    stderr_lines = []  # collect non-progress stderr lines for error reporting
+    # Non-progress stderr lines for the error report. Bounded: a damaged stream
+    # that logs a warning per packet grew this list by megabytes, and only the
+    # last 20 useful lines are ever reported.
+    from collections import deque as _deque
+    stderr_lines = _deque(maxlen=200)
     kill_reason = None  # set when *we* killed ffmpeg, so the error can say so
     last_frame = None
     last_time = None
@@ -1012,7 +1033,7 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label="", cancel_even
         # Prefer real diagnostics over banner leftovers, and keep the tail:
         # ffmpeg prints the line that explains the failure last.
         _useful = [ln for ln in stderr_lines if not _RE_BANNER.match(ln)]
-        _detail_lines = (_useful or stderr_lines)[-20:]
+        _detail_lines = (_useful or list(stderr_lines))[-20:]
         detail = "\n".join(_detail_lines) if _detail_lines else f"exit code {process.returncode}"
         if len(detail) > 4000:
             # Keep the end -- that is where the cause is.
@@ -1099,7 +1120,7 @@ def _cleanup_partial_downloads(output_path, reason="cancelled"):
 cleanup_partial_downloads = _cleanup_partial_downloads
 
 
-def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=None, impersonate=None, audio_lang=None, format_override=None, want_subtitles=False):
+def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=None, impersonate=None, audio_lang=None, format_override=None, want_subtitles=False, public_only=False):
     """Download an HLS stream using yt-dlp with concurrent fragment downloads.
 
     Significantly faster than ffmpeg for HLS/m3u8 streams because yt-dlp fetches
@@ -1137,6 +1158,11 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
     debug_mode = os.getenv("MEDIAFORGE_DEBUG_MODE", "0") == "1"
     is_tty = sys.stderr.isatty()
     n_fragments = int(os.getenv("MEDIAFORGE_CONCURRENT_FRAGMENTS", "8"))
+    if public_only:
+        # A URL a user typed in (Direct Link): every connection must be checked
+        # against private addresses (netguard.public_only), and that check is
+        # per thread -- parallel fragment workers would run outside it.
+        n_fragments = 1
 
     # outtmpl without extension — yt-dlp appends %(ext)s itself
     outtmpl = str(output_path.with_suffix("")) + ".%(ext)s"
@@ -1237,7 +1263,7 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
         "overwrites": True,
         # Resilience: retry each fragment up to 10x with exponential back-off,
         # use a generous socket timeout so slow CDNs don't time out mid-segment.
-        "nocheckcertificate": True,
+        "nocheckcertificate": _insecure_tls(),
         "retries": 10,
         "fragment_retries": 50,  # cap to avoid infinite loops on broken CDN segments
         "socket_timeout": 30,
@@ -1281,7 +1307,9 @@ def _run_ytdlp_download(url, output_path, headers=None, label="", cancel_event=N
         _ffmpeg_progress.update(percent=0.0, time="", speed="", bandwidth="", active=True, phase="download")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        from ...netguard import public_only as _public_only
+        with (_public_only() if public_only else contextlib.nullcontext()), \
+                yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ret = ydl.download([url])
 
         if is_tty and not debug_mode:
@@ -1405,7 +1433,34 @@ def _subtitle_search_meta(episode):
                 return value
         return None
 
+    def _model_attr(model, *names):
+        for name in names:
+            try:
+                value = getattr(model, name, None)
+            except Exception:
+                value = None
+            if value not in (None, "", 0):
+                return value
+        return None
+
+    # AniWorld and s.to hand out MODELS for ``series`` and ``season``, not a
+    # name and a number: the search used to send str() of the series object
+    # ("<...AniworldSeries object at 0x...>") and drop the season, so the
+    # title fallback never matched for the two main sources. Both objects are
+    # cached on the episode and their pages were loaded for the file name
+    # already, so reading them here costs no request.
+    series = _attr("series")
+    imdb_id = _attr("imdb_id")
+    if series is not None and not isinstance(series, str):
+        model = series
+        series = _model_attr(model, "title", "title_en", "title_de")
+        if not isinstance(series, str):
+            series = None
+        if imdb_id is None:
+            imdb_id = _model_attr(model, "imdb_id", "imdb")
     season = _attr("season", "season_number")
+    if season is not None and not isinstance(season, (int, str)):
+        season = _model_attr(season, "season_number")
     # ``file_episode_number`` is the number that matches the file on disk; the
     # plain one can be a page-display number (see the AniWorld absolute-episode
     # option), and OpenSubtitles indexes by the real broadcast number.
@@ -1420,10 +1475,10 @@ def _subtitle_search_meta(episode):
         episode_no = None
 
     return {
-        "query": _attr("series", "title_en", "title_de", "title"),
+        "query": series or _attr("title_en", "title_de", "title"),
         "season": season,
         "episode": episode_no,
-        "imdb_id": _attr("imdb_id"),
+        "imdb_id": imdb_id,
         "tmdb_id": _attr("tmdb_id"),
     }
 
@@ -1579,26 +1634,6 @@ def _embed_subtitles(video_path, subs, label="", cancel_event=None):
     return video_path
 
 
-def _replace_destination(dst, replace_existing):
-    """Delete *dst* before a quality upgrade overwrites it.
-
-    ``_move_with_progress`` falls back to a chunked copy when ``rename()`` hits
-    an existing file (Windows never overwrites on rename), which would stream
-    gigabytes through Python for what is a same-device move. Removing the old
-    file first keeps the fast rename path — and only ever runs when the quality
-    check already decided this exact file is to be replaced.
-    """
-    if not replace_existing:
-        return
-    dst = Path(dst)
-    try:
-        if dst.exists():
-            dst.unlink()
-    except OSError as exc:
-        # Not fatal: the move below still succeeds via the copy path.
-        logger.warning("[QUALITY UPGRADE] could not remove %s: %s", dst, exc)
-
-
 def _move_with_progress(src, dst, label="", cancel_event=None):
     """Move *src* to *dst* while streaming progress into _ffmpeg_progress.
 
@@ -1619,9 +1654,11 @@ def _move_with_progress(src, dst, label="", cancel_event=None):
         )
 
     try:
-        # Try fast same-device rename first
+        # Same device: one atomic rename. os.replace() also overwrites an
+        # existing destination on Windows (Path.rename() refuses), so a track
+        # merge or quality upgrade on one volume is no longer a full copy.
         try:
-            src.rename(dst)
+            os.replace(src, dst)
             with _ffmpeg_progress_lock:
                 _ffmpeg_progress.update(percent=100.0, eta_sec=0, speed="")
             return
@@ -1633,8 +1670,24 @@ def _move_with_progress(src, dst, label="", cancel_event=None):
         copied = 0
         start = _time.time()
 
+        # The copy goes into a part file next to the destination, which is
+        # swapped in at the very end. Writing into *dst* directly truncated an
+        # EXISTING library file the moment the copy started (a track merge or
+        # quality upgrade moves over the old episode), and the error / cancel
+        # cleanup then deleted it: the episode the user already had was gone.
+        # Only the part file is ever removed now. It also keeps a half-copied
+        # file out of MediaScan, the dupe check and Jellyfin/Plex.
+        part = dst.with_name(dst.name + ".mfpart")
+
+        def _drop_part():
+            try:
+                if part.exists():
+                    part.unlink()
+            except OSError:
+                logger.warning("Unvollständige Zieldatei %s konnte nicht entfernt werden", part)
+
         try:
-            with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
+            with open(src, "rb") as fsrc, open(part, "wb") as fdst:
                 while True:
                     chunk = fsrc.read(CHUNK)
                     if not chunk:
@@ -1656,25 +1709,16 @@ def _move_with_progress(src, dst, label="", cancel_event=None):
                         )
                     if cancel_event is not None and cancel_event.is_set():
                         break
-        except Exception:
-            # A failed cross-device copy used to leave the truncated file at
-            # the destination: the cancel path below removed it, the error
-            # path did not. MediaScan, the dupe check and Jellyfin/Plex all
-            # then saw the episode as present, so the next sync skipped it --
-            # and what was there could not be played.
-            try:
-                if dst.exists():
-                    dst.unlink()
-            except OSError:
-                logger.warning("Unvollständige Zieldatei %s konnte nicht entfernt werden", dst)
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Download cancelled")
+            os.replace(part, dst)
+        except BaseException as exc:
+            _drop_part()
+            if isinstance(exc, RuntimeError) and str(exc) == "Download cancelled":
+                # The user's cancel: the merged/new temp result goes as well.
+                if src.exists():
+                    src.unlink()
             raise
-
-        if cancel_event is not None and cancel_event.is_set():
-            if dst.exists():
-                dst.unlink()
-            if src.exists():
-                src.unlink()
-            raise RuntimeError("Download cancelled")
         src.unlink()
         with _ffmpeg_progress_lock:
             _ffmpeg_progress.update(percent=100.0, eta_sec=0, speed="")
@@ -1945,7 +1989,9 @@ def download(self, cancel_event=None):
             else:
                 _to_move2 = _maybe_upscale_before_move(temp_full, ep_label, cancel_event)
                 _to_move2 = _embed_subtitles(_to_move2, _subtitle_files, ep_label, cancel_event)
-                _replace_destination(target_path, replace_existing)
+                # A quality upgrade replaces target_path here: the move swaps the
+                # new file in atomically and leaves the old one untouched until
+                # then (it used to be deleted first, so a failed copy lost both).
                 _move_with_progress(_to_move2, target_path, label=ep_label, cancel_event=cancel_event)
 
             if temp_full.exists():
@@ -2030,71 +2076,10 @@ def download(self, cancel_event=None):
             if raw_video.exists():
                 raw_video.unlink()
 
-        if need_audio and need_video:
-            import threading as _th
-            _exc = [None, None]
-            _cancel = _th.Event()
-            _proc_a = [None]  # holds the audio ffmpeg Popen
-            _proc_v = [None]  # holds the video ffmpeg Popen
-            # Bridge external cancel_event → internal _cancel.
-            #
-            # Polled, not an untimed wait on the external event: that event belongs to
-            # ONE download attempt and is never set when that attempt succeeds, so an
-            # unbounded wait() parked this daemon thread forever. One leaked thread per
-            # successfully downloaded episode — after a few hundred episodes the process
-            # hits its thread ceiling and every later Thread.start() anywhere in the app
-            # dies with "RuntimeError: can't start new thread" (autosync's prefetch pool
-            # was the usual victim). _finished below is what lets it exit.
-            _finished = _th.Event()
-            if cancel_event is not None:
-                def _ext_watcher():
-                    while not _finished.wait(0.5):
-                        if cancel_event.is_set():
-                            _cancel.set()
-                            return
-                _th.Thread(target=_ext_watcher, daemon=True,
-                           name="dl-cancel-bridge").start()
-
-            def _run_audio():
-                try:
-                    _dl_audio(_cancel, _proc_a)
-                except Exception as e:
-                    _exc[0] = e
-                    # Kill the video process if still running
-                    _cancel.set()
-                    if _proc_v[0] is not None:
-                        try:
-                            _proc_v[0].kill()
-                        except Exception:
-                            pass
-
-            def _run_video():
-                try:
-                    _dl_video(_cancel, _proc_v)
-                except Exception as e:
-                    _exc[1] = e
-                    # Kill the audio process if still running
-                    _cancel.set()
-                    if _proc_a[0] is not None:
-                        try:
-                            _proc_a[0].kill()
-                        except Exception:
-                            pass
-
-            t_a = _th.Thread(target=_run_audio, daemon=True)
-            t_v = _th.Thread(target=_run_video, daemon=True)
-            t_a.start()
-            t_v.start()
-            try:
-                t_a.join()
-                t_v.join()
-            finally:
-                _finished.set()  # release the cancel bridge, success or failure
-            if _exc[0]:
-                raise _exc[0]
-            if _exc[1]:
-                raise _exc[1]
-        elif need_audio:
+        # Both streams at once never reaches this point: that is the
+        # full-stream path above, which always returns. (A parallel
+        # audio+video branch used to sit here, unreachable.)
+        if need_audio:
             _dl_audio(cancel_event=cancel_event)
         elif need_video:
             _dl_video(cancel_event=cancel_event)
@@ -2170,6 +2155,15 @@ def download(self, cancel_event=None):
                 pass
 
         _remove_empty_dirs(self._folder_path, self._base_folder)
+
+        # The stream URL an extractor's embed cache handed out did not work
+        # (MegaPlay/EchoVideo): the next attempt resolves the embed again.
+        if not _downloads_done and not _is_cancellation(_exc, cancel_event):
+            try:
+                from ...extractors.provider._jwplayer_embed import forget_last_served
+                forget_last_served()
+            except Exception:
+                pass
 
         # The temp files are gone either way -- the raw download cannot be
         # resumed -- but the queue worker still needs to know WHY this failed:

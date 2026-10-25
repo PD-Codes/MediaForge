@@ -77,6 +77,13 @@ _EP_TOKEN_ALT_RE = re.compile(r"(?<![\dxX])(\d{1,4})[xX](\d{1,4})(?![\dxX])")
 # Settings
 # ---------------------------------------------------------------------------
 
+
+def _insecure_tls():
+    """yt-dlp's nocheckcertificate: off unless MEDIAFORGE_INSECURE_DOWNLOAD_TLS=1
+    (see config.INSECURE_DOWNLOAD_TLS)."""
+    from ...config import INSECURE_DOWNLOAD_TLS
+    return INSECURE_DOWNLOAD_TLS
+
 def _get_setting(key, default="0"):
     """Read an app setting without importing the web stack at module load.
 
@@ -277,7 +284,7 @@ def _probe_remote_with_ytdlp(stream_url: str, headers: dict | None = None):
         "skip_download": True,
         "http_headers": headers or {},
         "socket_timeout": 20,
-        "nocheckcertificate": True,
+        "nocheckcertificate": _insecure_tls(),
         "noplaylist": True,
         "js_runtimes": {"node": {}, "deno": {}},
     }

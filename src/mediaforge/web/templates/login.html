@@ -4,10 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ _('Sign in') }} — MediaForge</title>
-    {# No webfont link here on purpose. This is the first screen an instance
-       ever renders, and an install without outbound internet used to wait on a
-       Google Fonts request before falling back. base.css already declares the
-       system font stack after "Inter". #}
+    {# No external webfont: Inter ships with the app (@font-face in base.css),
+       so even an install without outbound internet renders at once. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='variables.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}" />

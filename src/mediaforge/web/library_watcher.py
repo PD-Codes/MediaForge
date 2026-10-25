@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -64,6 +63,10 @@ if WATCHDOG_AVAILABLE:
             # after every finished download. Collecting them lets the callback
             # rescan just the affected title folders.
             self._pending: set = set()
+            # One callback at a time per location. A Timer per debounce window
+            # used to start a second scan while the first was still running
+            # (a long scan, events keep arriving); see _fire().
+            self._running = False
 
         def _is_relevant(self, path: str) -> bool:
             p = Path(path)
@@ -92,11 +95,22 @@ if WATCHDOG_AVAILABLE:
 
         def _fire(self) -> None:
             with self._lock:
+                if self._running:
+                    # The paths stay pending; the running callback picks them
+                    # up by rescheduling when it is done.
+                    return
                 changed, self._pending = self._pending, set()
+                self._running = True
             try:
                 self.scan_callback(self.path_key, changed)
             except Exception:
                 logger.exception("Library scan callback failed for path_key=%s", self.path_key)
+            finally:
+                with self._lock:
+                    self._running = False
+                    again = bool(self._pending)
+                if again:
+                    self._schedule_scan()
 
         # watchdog callbacks
         def on_created(self, event):

@@ -920,6 +920,10 @@ def unregister_module(name):
         from ..uptime_monitor import unregister_monitor_site
         from ..cineinfo.registry import unregister_cineinfo_owner
         from ..routes.image_proxy import unregister_image_hosts
+        # The catalogue was missing here: after a live uninstall it stayed on
+        # the Catalogue page (the gate fails open for an unknown item id) and
+        # the background store kept calling the unloaded module's fetch.
+        from ...catalogue import unregister_catalogue
         for item_id in ids:
             unregister_provider(item_id)
             unregister_home_feed_source(item_id)
@@ -931,6 +935,7 @@ def unregister_module(name):
             unregister_monitor_site(item_id)
             unregister_cineinfo_owner(item_id)
             unregister_image_hosts(item_id)
+            unregister_catalogue(item_id)
     except Exception:
         logger.exception("[Registry] Failed to clean up content/search/cineinfo/hoster/mirror/uptime/image-host sources for module '%s'", name)
     _ITEMS = [item for item in _ITEMS if item["id"] not in ids]

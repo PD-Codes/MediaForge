@@ -1993,11 +1993,12 @@ def register_settings_routes(app):
         without needing a restart to confirm it. Never raises -- a failure
         here must not turn a settings change into a 500."""
         try:
-            from ...telemetry import events as _tel_events
-            from ...telemetry.client import get_client as _tel_get_client
-            event = _tel_events.build_system_info_event()
-            if event:
-                _tel_get_client().submit(event)
+            # Off-thread: building the event runs sysinfo.collect(), whose cold
+            # first run (an install that had not consented yet never warmed it)
+            # spawns ~10 ffmpeg / nvidia-smi probes with 5 s timeouts -- inside
+            # the waitress thread of the consent save.
+            from ...telemetry.hooks import emit_system_info as _tel_emit
+            _tel_emit()
         except Exception:
             logger.debug("[Telemetry] immediate kick-event failed", exc_info=True)
 

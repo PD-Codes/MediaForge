@@ -817,7 +817,10 @@
       });
     }
 
-    loadFacets();
-    reload();
+    // On /monitoring the panel loads when it is first opened (mfLazyPanel,
+    // monitoring.html); the standalone page loads at once.
+    var start = function () { loadFacets(); reload(); };
+    if (window.mfLazyPanel) window.mfLazyPanel("history", start);
+    else start();
   });
 })();

@@ -1,6 +1,7 @@
 """Auto-sync worker — periodic new/missing-episode detection and queueing."""
 
 import json
+import os
 import queue as _queue_module
 import re
 import threading
@@ -78,6 +79,47 @@ _last_history_prune: "float" = 0.0  # throttle: download-history retention prune
 _pd_pool = None
 _pd_pool_lock = threading.Lock()
 
+
+
+# Sub-folders of a scan root, shared by every job:
+# {root: (mtime_ns, listed_at, [(name, path)])}. Every due job listed every scan
+# root again -- a "Sync all" over 300 jobs read the same SMB directory 300
+# times. A root's mtime changes whenever a folder is added to or removed from
+# it, which is exactly when the listing goes stale; the TTL covers file systems
+# with a coarse mtime.
+_ROOT_FOLDERS: dict = {}
+_ROOT_FOLDERS_LOCK = threading.Lock()
+_ROOT_FOLDERS_TTL = 60.0
+
+
+def _root_folders(base) -> list:
+    """``[(name, path)]`` of the directories directly under *base* (cached)."""
+    key = str(base)
+    try:
+        mtime = os.stat(key).st_mtime_ns
+    except OSError:
+        return []
+    now = time.monotonic()
+    with _ROOT_FOLDERS_LOCK:
+        hit = _ROOT_FOLDERS.get(key)
+        if hit and hit[0] == mtime and now - hit[1] < _ROOT_FOLDERS_TTL:
+            return hit[2]
+    folders = []
+    try:
+        with os.scandir(key) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir():
+                        folders.append((entry.name, entry.path))
+                except OSError:
+                    continue
+    except OSError:
+        return []
+    with _ROOT_FOLDERS_LOCK:
+        if len(_ROOT_FOLDERS) > 256:
+            _ROOT_FOLDERS.clear()
+        _ROOT_FOLDERS[key] = (mtime, now, folders)
+    return folders
 
 def _get_pd_pool():
     """Return the shared prefetch pool, creating it on first use.
@@ -875,23 +917,16 @@ def _run_autosync_for_job(job, force_notify=False, queue_downloads: bool = True,
                 # from the directory listing itself on Windows (and from d_type
                 # on most Linux filesystems). The name test goes first because
                 # it costs nothing at all.
-                with os.scandir(base) as _entries:
-                    _folders = []
-                    for _entry in _entries:
-                        # Same rule the download dialog uses: a plain startswith()
-                        # here meant a job created from one provider could not see
-                        # episodes a different provider had already written, and
-                        # re-downloaded the lot. folder_holds_title() adds the alias
-                        # index, which covers a provider that calls the show by a
-                        # different name entirely.
-                        if not _folder_holds(_entry.name, title_clean, _alias_cache):
-                            continue
-                        try:
-                            if not _entry.is_dir():
-                                continue
-                        except OSError:
-                            continue
-                        _folders.append(Path(_entry.path))
+                _folders = []
+                for _name, _path in _root_folders(base):
+                    # Same rule the download dialog uses: a plain startswith()
+                    # here meant a job created from one provider could not see
+                    # episodes a different provider had already written, and
+                    # re-downloaded the lot. folder_holds_title() adds the alias
+                    # index, which covers a provider that calls the show by a
+                    # different name entirely.
+                    if _folder_holds(_name, title_clean, _alias_cache):
+                        _folders.append(Path(_path))
                 for folder in _folders:
                     for f in folder.rglob("*"):
                         if f.is_file():

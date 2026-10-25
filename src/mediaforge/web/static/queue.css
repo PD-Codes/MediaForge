@@ -147,13 +147,48 @@
   gap: 4px;
 }
 
+/* The moving diagonal "in progress" stripes of every queue progress fill
+   (queue window, queue hub hero, home run strip in index.css). They sit on a
+   pseudo-element one stripe wider than the fill and move via transform: the
+   old background-position animation repainted the bar on the main thread
+   every frame for as long as a download ran. */
+.queue-progress-fill::after,
+.qhub-hero-fill::after,
+.home-run-fill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: -1rem;
+  background-image: linear-gradient(45deg,
+      rgba(255, 255, 255, 0.16) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.16) 50%,
+      rgba(255, 255, 255, 0.16) 75%,
+      transparent 75%,
+      transparent);
+  background-size: 1rem 1rem;
+  animation: queue-progress-stripes 1s linear infinite;
+  pointer-events: none;
+}
+
 @keyframes queue-progress-stripes {
-  0% {
-    background-position: 1rem 0;
+  from {
+    transform: translateX(0);
   }
 
-  100% {
-    background-position: 0 0;
+  to {
+    transform: translateX(-1rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue-progress-fill::after,
+  .qhub-hero-fill::after,
+  .home-run-fill::after {
+    animation: none;
   }
 }
 
@@ -174,18 +209,9 @@
 .queue-progress-fill {
   height: 100%;
   background-color: var(--accent);
-  /* Diagonal stripe pattern, animated via background-position below
-     (queue-progress-stripes) for a moving "in progress" effect */
-  background-image: linear-gradient(45deg,
-      rgba(255, 255, 255, 0.15) 25%,
-      transparent 25%,
-      transparent 50%,
-      rgba(255, 255, 255, 0.15) 50%,
-      rgba(255, 255, 255, 0.15) 75%,
-      transparent 75%,
-      transparent);
-  background-size: 1rem 1rem;
-  animation: queue-progress-stripes 1s linear infinite;
+  /* Moving "in progress" stripes: .queue-progress-fill::after above. */
+  position: relative;
+  overflow: hidden;
   border-radius: 99px;
   transition: width 0.4s ease;
 }
@@ -1330,24 +1356,12 @@
   display: block;
   height: 100%;
   border-radius: 99px;
-  /* background-COLOR, not the shorthand: the shorthand would wipe the stripe
-     image below, and the per-queue colour overrides further down would do the
-     same. Every one of them sets background-color only. */
   background-color: var(--accent);
-  /* The moving diagonal stripes — same pattern and same keyframes the old
-     queue modal used (queue-progress-stripes, further up this file). They say
-     "still working" even while the width sits still, which is most of the
-     time on a long episode. */
-  background-image: linear-gradient(45deg,
-      rgba(255, 255, 255, 0.16) 25%,
-      transparent 25%,
-      transparent 50%,
-      rgba(255, 255, 255, 0.16) 50%,
-      rgba(255, 255, 255, 0.16) 75%,
-      transparent 75%,
-      transparent);
-  background-size: 1rem 1rem;
-  animation: queue-progress-stripes 1s linear infinite;
+  /* The moving diagonal stripes (.queue-progress-fill::after, further up this
+     file) say "still working" even while the width sits still, which is most
+     of the time on a long episode. */
+  position: relative;
+  overflow: hidden;
   transition: width 0.4s ease;
 }
 
@@ -1357,7 +1371,7 @@
 
 /* Paused: the stripes stop instead of pretending something is happening.
    Set from renderQueueHub() whenever the download queue is on hold. */
-.qhub-hero-card.is-paused .qhub-hero-fill { animation-play-state: paused; }
+.qhub-hero-card.is-paused .qhub-hero-fill::after { animation-play-state: paused; }
 
 /* Second track: the episode / file being worked on right now. Thinner and a
    shade quieter than the overall bar, so the hierarchy reads at a glance —

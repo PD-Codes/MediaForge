@@ -17,6 +17,8 @@ models/megakino_to/{episode,movie}.py.
 import json
 import logging
 import re
+import threading
+import time
 
 try:
     from ...config import GLOBAL_SESSION, DEFAULT_USER_AGENT
@@ -41,14 +43,29 @@ def _split_embed(embed_url):
     return host, filecode, query
 
 
-def get_stream_data(embed_url, headers=None, timeout=20):
+# The last /api/stream answer per embed URL. The direct-link path always asks
+# again (a fresh token); the subtitle and preview paths reuse it for a while --
+# they used to POST the identical request again right after every download.
+_DATA_TTL = 600.0
+_DATA_MAX = 128
+_data_cache = {}              # embed URL -> (stored_at, payload)
+_data_lock = threading.Lock()
+
+
+def get_stream_data(embed_url, headers=None, timeout=20, reuse=False):
     """Call the VIDARA /api/stream endpoint and return the parsed JSON payload.
 
     Domain-agnostic: the API host is derived from the embed URL, so every
-    VIDARA / Vidavaca mirror works.
+    VIDARA / Vidavaca mirror works. *reuse* accepts an answer from the last
+    few minutes (see _data_cache).
     """
     if not embed_url:
         raise ValueError("Embed URL cannot be empty")
+    if reuse:
+        with _data_lock:
+            hit = _data_cache.get(embed_url)
+        if hit and time.monotonic() - hit[0] < _DATA_TTL:
+            return hit[1]
 
     host, filecode, query = _split_embed(embed_url)
     api_url = host + "/api/stream" + (("?" + query) if query else "")
@@ -66,9 +83,14 @@ def get_stream_data(embed_url, headers=None, timeout=20):
             headers=req_headers, timeout=timeout,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
     except Exception as exc:
         raise ValueError(f"VIDARA API request failed for {embed_url}: {exc}") from exc
+    with _data_lock:
+        _data_cache[embed_url] = (time.monotonic(), data)
+        while len(_data_cache) > _DATA_MAX:
+            _data_cache.pop(next(iter(_data_cache)), None)
+    return data
 
 
 def _stream_from_data(data, embed_url, name="VIDARA"):
@@ -105,7 +127,7 @@ def get_subtitles_from_vidara(embed_url, headers=None, timeout=20):
     Returns [] on any failure -- subtitles must never break a download.
     """
     try:
-        data = get_stream_data(embed_url, headers=headers, timeout=timeout)
+        data = get_stream_data(embed_url, headers=headers, timeout=timeout, reuse=True)
         return absolutize(tracks_from_config(data), embed_url)
     except Exception as exc:
         logger.debug("VIDARA subtitle extraction failed for %s: %s", embed_url, exc)
@@ -114,7 +136,7 @@ def get_subtitles_from_vidara(embed_url, headers=None, timeout=20):
 
 def get_preview_image_link_from_vidara(embed_url, headers=None, timeout=20):
     """Return the VIDARA thumbnail/preview image URL, if any."""
-    data = get_stream_data(embed_url, headers=headers, timeout=timeout)
+    data = get_stream_data(embed_url, headers=headers, timeout=timeout, reuse=True)
     thumb = (data or {}).get("thumbnail")
     if not thumb:
         raise ValueError(f"No thumbnail in VIDARA API response for {embed_url}")

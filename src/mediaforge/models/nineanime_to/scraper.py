@@ -316,12 +316,27 @@ def _parse_top_anime(html, tab="top-viewed-day", limit=None):
     return cards
 
 
+# The homepage HTML for a short while: the "new" and "popular" rows both read
+# it, and each browse refresh fetched it twice in a row.
+_HOME_TTL = 120.0
+_home_memo = {"at": 0.0, "html": None}
+
+
+def _get_home():
+    import time as _t
+    if _home_memo["html"] is not None and _t.monotonic() - _home_memo["at"] < _HOME_TTL:
+        return _home_memo["html"]
+    html = _get("/")
+    _home_memo.update(at=_t.monotonic(), html=html)
+    return html
+
+
 def fetch_new(limit=24):
     """"Neueste" -- homepage "Recently Updated" row (links to the newest
     episode of each recently-updated series, same as the site's own
     homepage presents it)."""
     try:
-        html = _get("/")
+        html = _get_home()
     except Exception as e:
         logger.warning("9anime new-episodes fetch failed: %s: %s", type(e).__name__, e)
         return None
@@ -333,7 +348,7 @@ def fetch_new(limit=24):
 def fetch_popular(limit=24):
     """"Beliebte" -- homepage "Top Anime" widget, daily-most-viewed tab."""
     try:
-        html = _get("/")
+        html = _get_home()
     except Exception as e:
         logger.warning("9anime popular fetch failed: %s: %s", type(e).__name__, e)
         return None

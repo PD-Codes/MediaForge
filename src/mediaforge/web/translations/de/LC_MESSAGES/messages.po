@@ -12750,3 +12750,35 @@ msgstr "Automatische Installation fehlgeschlagen:"
 #: src/mediaforge/web/templates/settings.html
 msgid "Show display mode in Settings"
 msgstr "Anzeigemodus in den Einstellungen anzeigen"
+
+#: src/mediaforge/web/templates/autosync.html
+msgid "Import"
+msgstr "Import"
+
+#: src/mediaforge/web/templates/base.html
+msgid "Log"
+msgstr "Protokoll"
+
+#: src/mediaforge/web/templates/base.html
+msgid "Media Info"
+msgstr "Medieninfo"
+
+#: src/mediaforge/web/templates/base.html
+msgid "GitHub Repository"
+msgstr "GitHub-Repository"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Issue Tracker"
+msgstr "Issue-Tracker"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "e.g. 1.1.1.1"
+msgstr "z. B. 1.1.1.1"
+
+#: src/mediaforge/web/templates/settings.html
+msgid "Display name"
+msgstr "Anzeigename"
+
+#: src/mediaforge/web/templates/integrations.html
+msgid "Metadata"
+msgstr "Metadaten"

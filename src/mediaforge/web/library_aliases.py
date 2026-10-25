@@ -182,6 +182,20 @@ def alias_index() -> dict:
     """
     from ..models.common.common import loose_title_key
 
+    # Rebuilding the index costs one full table read, a JSON parse per row and
+    # a key per alias (~60 ms for a library with 30k aliases) and it ran on
+    # every page init, download-modal open and AutoSync job. The table only
+    # changes when the resolver writes (resolved_at is stamped on every write,
+    # a prune changes the row count), so that pair says whether the last index
+    # is still the answer -- across processes, too. The TTL is a safety net.
+    fingerprint = _alias_fingerprint()
+    now = time.monotonic()
+    with _INDEX_LOCK:
+        memo = _INDEX_MEMO
+        if (fingerprint is not None and memo["fp"] == fingerprint
+                and now - memo["at"] < _INDEX_TTL):
+            return memo["index"]
+
     out = {}
     for folder, row in get_library_aliases().items():
         for name in [folder] + list(row.get("aliases") or []):
@@ -191,7 +205,30 @@ def alias_index() -> dict:
             # every pass would make the answer depend on dict order.
             if key and key not in out:
                 out[key] = folder
+    with _INDEX_LOCK:
+        _INDEX_MEMO.update(fp=fingerprint, at=now, index=out)
     return out
+
+
+# The last alias_index() result. Shared and READ-ONLY for callers.
+_INDEX_MEMO = {"fp": None, "at": 0.0, "index": {}}
+_INDEX_LOCK = threading.Lock()
+_INDEX_TTL = 300.0
+
+
+def _alias_fingerprint():
+    """``(row count, newest resolved_at)`` of library_aliases, or None."""
+    from .db import get_db
+
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*), MAX(resolved_at) FROM library_aliases").fetchone()
+        return (row[0], row[1])
+    except Exception:
+        return None
+    finally:
+        conn.close()
 
 
 def folder_holds_title(folder_name, title, index=None) -> bool:

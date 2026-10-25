@@ -155,7 +155,8 @@ function libRenderSearchResults(query) {
   var matches = libFlattenTitles(libLocations).filter(function(it) {
     return libTitleMatchesQuery(it.title, q);
   });
-  libPaintItems(matches);
+  // In the chosen sort order, like the unfiltered shelf.
+  libPaintItems(libSortTitles(matches));
 }
 
 // Re-paint using the data already in memory (no network round-trip) —

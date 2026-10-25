@@ -65,7 +65,10 @@ class SerienstreamSeason:
     @property
     def series(self):
         if self._series is None:
-            series_url = "-".join(self.url.split("-")[:-2])
+            # Cut at "/staffel-N" like SerienstreamEpisode.series does. Cutting
+            # at the last dashes turned .../serie/breaking-bad/staffel-1 into
+            # .../serie/breaking (another show) and failed for one-word slugs.
+            series_url = self.url.rstrip("/").rsplit("/staffel-", 1)[0]
             from .series import SerienstreamSeries
 
             self._series = SerienstreamSeries(series_url)

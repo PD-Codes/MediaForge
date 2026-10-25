@@ -1627,4 +1627,7 @@ function renderStats(data, container) {
   }
 }
 
-loadStats();
+// On /monitoring the Statistics panel loads when it is first opened
+// (mfLazyPanel, monitoring.html); the standalone page loads at once.
+if (window.mfLazyPanel) window.mfLazyPanel("stats", function () { loadStats(); });
+else loadStats();

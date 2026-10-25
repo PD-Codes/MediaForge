@@ -9,7 +9,7 @@ import sqlite3
 from ...config import MEDIAFORGE_CONFIG_DIR
 from ...logger import get_logger
 
-from ._core import DB_PATH, get_db
+from ._core import DB_PATH, _configure_connection, get_db
 from .encoding import _busy_paths, _row_paths
 
 logger = get_logger(__name__)
@@ -61,6 +61,17 @@ def init_upscale_queue_db():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_upscale_queue_item "
                 "ON upscale_queue (queue_item_id, status)"
+            )
+        except Exception:
+            pass
+        # Status lookups (both claims, the encoding claim's running-upscale
+        # check every 4 s, badge counts) were full scans -- and `status` sits
+        # behind the `files` JSON column, so every finished season job's
+        # overflow pages were read along with it.
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_upscale_queue_status "
+                "ON upscale_queue (status, position)"
             )
         except Exception:
             pass
@@ -145,10 +156,10 @@ def append_download_upscale_file(queue_item_id, title, file_path, output_path):
 
     fp  = str(file_path)
     out = str(output_path) if output_path else fp
-    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    # Configured like every other connection (synchronous=NORMAL, cache,
+    # journal_size_limit): these used to commit with FULL sync.
+    conn = _configure_connection(
+        sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False))
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = None
@@ -238,10 +249,10 @@ def finalize_upscale_item(item_id, processed_count):
 
     Used by: web/upscale_worker.py.
     """
-    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    # Configured like every other connection (synchronous=NORMAL, cache,
+    # journal_size_limit): these used to commit with FULL sync.
+    conn = _configure_connection(
+        sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False))
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
@@ -327,11 +338,19 @@ def claim_next_upscale_queued():
 
     Used by: mediaforge/web/upscale_worker.py (background upscale worker loop).
     """
-    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    # Configured like every other connection (synchronous=NORMAL, cache,
+    # journal_size_limit): these used to commit with FULL sync.
+    conn = _configure_connection(
+        sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False))
     try:
+        # Idle tick -- nothing queued, the common case every few seconds:
+        # answer with a plain read instead of taking the write lock.
+        # fetchall() finishes the statement, so no read transaction is still
+        # open when BEGIN IMMEDIATE runs.
+        if not conn.execute(
+            "SELECT 1 FROM upscale_queue WHERE status = 'queued' LIMIT 1"
+        ).fetchall():
+            return None
         conn.execute("BEGIN IMMEDIATE")
         running = conn.execute(
             "SELECT id FROM upscale_queue WHERE status = 'running' LIMIT 1"

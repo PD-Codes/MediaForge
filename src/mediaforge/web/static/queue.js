@@ -1382,6 +1382,17 @@ function closeCaptchaModal() {
       const data = await resp.json();
       applyDownloadBadge(data.badge || 0, data.urls || []);
       paintRunStrip(data);
+      // Encoding/upscale counts arrive with this answer; their own badge
+      // polls skip a tick while these are fresh (window._mfEncodingBadgeAt /
+      // _mfUpscaleBadgeAt, see encoding_queue.js and upscale_queue.js).
+      if (typeof data.encoding === "number" && typeof _updateEncodingBadges === "function") {
+        _updateEncodingBadges(data.encoding);
+        window._mfEncodingBadgeAt = Date.now();
+      }
+      if (typeof data.upscale === "number" && typeof _updateUpscaleBadges === "function") {
+        _updateUpscaleBadges(data.upscale);
+        window._mfUpscaleBadgeAt = Date.now();
+      }
     } catch (e) { /* ignore */ }
   }
   // A progress bar at 5s reads as broken, so the page that shows one polls at

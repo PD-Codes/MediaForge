@@ -26,6 +26,8 @@ Used by: extractors/provider/echovideo.py and extractors/provider/megaplay.py.
 import logging
 import re
 import threading
+import time
+from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
@@ -179,19 +181,61 @@ def resolve_jwplayer_embed(embed_url, referer, label, timeout_ms=25_000,
     return {"url": url, "tracks": list((js_result or {}).get("tracks") or [])}
 
 
-class EmbedCache:
-    """Tiny per-extractor positive cache (embed_url -> resolved dict)."""
+# The (cache, key) this thread was last handed, so a download that failed with
+# it can drop exactly that entry (see forget_last_served).
+_last_served = threading.local()
 
-    def __init__(self):
+
+class EmbedCache:
+    """Small per-extractor positive cache (embed_url -> resolved dict).
+
+    Entries expire after *ttl* seconds and at most *max_entries* are kept. The
+    resolved URL is a tokenised CDN path: kept forever (as before), a token
+    that had expired, a changed CDN node or a sniffed ad playlist was handed to
+    every retry and every later re-download of the episode until a restart.
+    """
+
+    def __init__(self, ttl=1800.0, max_entries=256):
         self._lock = threading.Lock()
-        self._data = {}
+        self._data = OrderedDict()   # key -> (stored_at, value)
+        self._ttl = ttl
+        self._max = max_entries
 
     def get(self, key):
         with self._lock:
-            return self._data.get(key)
+            hit = self._data.get(key)
+            if hit is None:
+                return None
+            if time.monotonic() - hit[0] >= self._ttl:
+                self._data.pop(key, None)
+                return None
+            value = hit[1]
+        _last_served.entry = (self, key)
+        return value
 
     def set(self, key, value):
         if not value:
             return
         with self._lock:
-            self._data[key] = value
+            self._data[key] = (time.monotonic(), value)
+            self._data.move_to_end(key)
+            while len(self._data) > self._max:
+                self._data.popitem(last=False)
+        _last_served.entry = (self, key)
+
+    def forget(self, key):
+        with self._lock:
+            self._data.pop(key, None)
+
+
+def forget_last_served():
+    """Drop the resolution this thread was handed last.
+
+    Called by the download path when a download failed before its streams
+    were on disk: the next attempt must resolve the embed again instead of
+    getting the same dead URL (hanime does the same with forget_video).
+    """
+    entry = getattr(_last_served, "entry", None)
+    _last_served.entry = None
+    if entry is not None:
+        entry[0].forget(entry[1])

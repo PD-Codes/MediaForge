@@ -1353,7 +1353,7 @@ async function openEditModal(id) {
     _editExtraGet = () => (extraRow && extraRow.hidden ? [] : editExtraPicked);
     rebuildEditExtras();
 
-    document.getElementById("editProvider").value = job.provider || "VOE";
+    mfSelectValue(document.getElementById("editProvider"), job.provider || "VOE");
     document.getElementById("editEnabled").value = job.enabled ? "1" : "0";
 
     // Populate path dropdown

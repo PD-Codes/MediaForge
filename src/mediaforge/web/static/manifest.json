@@ -1,7 +1,7 @@
 {
   "name": "MediaForge",
   "short_name": "MediaForge",
-  "description": "Anime-Episoden von AniWorld und S.TO herunterladen und verwalten",
+  "description": "Self-hosted downloader, library and player for anime, series and movies",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0f",

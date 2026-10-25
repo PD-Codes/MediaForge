@@ -485,8 +485,26 @@ def _cards_from_html(html):
     return [_card_from_poster(a) for a in _soup(html).select("a.poster")]
 
 
+# The last listing per (path, limit) for a short while: "new" and "popular"
+# series read the same listing, and every browse refresh fetched and parsed its
+# two pages twice in a row.
+_LISTING_TTL = 120.0
+_listing_memo = {}
+
+
 def _listing(path, page=1, limit=24):
     """Cards from a DLE listing page (20 per page, hence the page walk)."""
+    import time as _t
+    hit = _listing_memo.get((path, limit))
+    if hit and _t.monotonic() - hit[0] < _LISTING_TTL:
+        return list(hit[1])
+    cards = _listing_fetch(path, limit)
+    if cards:
+        _listing_memo[(path, limit)] = (_t.monotonic(), list(cards))
+    return cards
+
+
+def _listing_fetch(path, limit):
     cards = []
     try:
         page_no = 1

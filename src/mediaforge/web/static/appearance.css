@@ -80,14 +80,51 @@ body.header-color-help h2 {
   }
 }
 
-body.skeleton-loader .browse-card:not(.loaded),
 body.skeleton-loader .card:not(.loaded),
 body.skeleton-loader .result-card:not(.loaded),
-body.skeleton-loader .skeleton {
+body.skeleton-loader .skeleton:not(.browse-card) {
   background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-hover) 50%, var(--bg-elevated) 75%);
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.5s infinite linear;
   border-color: var(--bg-hover) !important;
+}
+
+/* Poster cards: a static base plus a highlight that sweeps across via
+   transform only (compositor, no repaint). The background-position shimmer
+   repainted every card on the main thread each frame -- and with lazy-loaded
+   posters every card below the fold stays unloaded, so it ran for the whole
+   life of the page (120 cards: ~2,300 paints in 3 s of idling).
+   .browse-card is position: relative + overflow: hidden (cards.css). */
+body.skeleton-loader .browse-card:not(.loaded) {
+  background: var(--bg-elevated);
+  border-color: var(--bg-hover) !important;
+}
+
+body.skeleton-loader .browse-card:not(.loaded)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--bg-hover), transparent);
+  /* It sweeps over the card's text too: translucent, so the title stays readable. */
+  opacity: 0.6;
+  transform: translateX(-100%);
+  animation: skeleton-sweep 1.5s infinite linear;
+  pointer-events: none;
+}
+
+@keyframes skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.skeleton-loader .browse-card:not(.loaded)::after,
+  body.skeleton-loader .card:not(.loaded),
+  body.skeleton-loader .result-card:not(.loaded),
+  body.skeleton-loader .skeleton {
+    animation: none;
+  }
 }
 
 /* Make image transparent while loading so skeleton background shimmers through */
@@ -219,7 +256,8 @@ body.click-effect .browse-card {
 
   cursor: pointer;
   transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.2s ease;
-  will-change: transform;
+  /* No will-change here: it promoted EVERY card to its own compositor layer
+     for the page lifetime; the :active transition promotes it when needed. */
 }
 
 /* Click bounce: hover state (brighten) */

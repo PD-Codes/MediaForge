@@ -6,6 +6,7 @@ German-only): see scraper.parse_provider_rows.
 """
 import os
 import re
+import time
 from pathlib import Path
 
 try:
@@ -26,6 +27,8 @@ except ImportError:  # pragma: no cover
 # imdb() hasn't been resolved yet vs. "resolved to nothing" -- see that
 # property. None is a legitimate cached result (TMDB unconfigured or no hit).
 _UNSET = object()
+# How long a minted hoster URL is reused (see FilmoMovie.provider_url).
+_PROVIDER_URL_TTL = 60.0
 
 
 class FilmoMovie:
@@ -60,6 +63,8 @@ class FilmoMovie:
         self.__is_downloaded = None
 
         self.__imdb = _UNSET
+        # (language, provider) -> resolved hoster URL, see provider_url.
+        self.__provider_url_memo = None
 
     # -----------------------------
     # Page fetch (HTML + CSRF share one request; both are needed to mint a
@@ -88,6 +93,7 @@ class FilmoMovie:
         self.__csrf = None
         self.__meta = None
         self.__provider_data = None
+        self.__provider_url_memo = None
 
     @property
     def _meta(self):
@@ -267,9 +273,27 @@ class FilmoMovie:
 
     @property
     def provider_url(self):
-        """The resolved hoster URL (e.g. https://voe.sx/e/<id>) -- mints a
-        fresh one-shot token on every access, since filmo.to's tokens are
-        short-lived and tied to the chip that produced them."""
+        """The resolved hoster URL (e.g. https://voe.sx/e/<id>).
+
+        Reused for a minute per language + provider. One download attempt
+        reads this 4-5 times (dedup pre-resolve, _effective_provider, the
+        headers, stream_url, the subtitle fallback), and every read used to run
+        the whole mint flow again -- POST /n, GET /n/<token>, the hoster page --
+        against a DDoS-Guard-fronted endpoint. Only the mint TOKEN is one-shot;
+        the hoster URL it leads to stays valid.
+        """
+        key = (self.selected_language, self.selected_provider)
+        memo = self.__provider_url_memo
+        if memo and memo[0] == key and time.monotonic() - memo[2] < _PROVIDER_URL_TTL:
+            return memo[1]
+        url = self._mint_provider_url()
+        self.__provider_url_memo = (key, url, time.monotonic())
+        return url
+
+    def _mint_provider_url(self):
+        """Mint a fresh one-shot token for the selected chip and follow it to
+        the hoster URL (filmo.to's tokens are short-lived and tied to the chip
+        that produced them)."""
         chip = self._selected_chip
         try:
             return scraper.resolve_provider_url(chip["data_p"], self._csrf, self.url)

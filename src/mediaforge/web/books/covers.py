@@ -232,9 +232,13 @@ def sidecar_cover(path):
     return "", b""
 
 
-def cover_path(src, start_conversion: bool = True):
+def cover_path(src, start_conversion: bool = True, resolved: bool = False):
     """The cached cover for *src*, producing it once if needed. None if there
     is none to have.
+
+    *resolved*: *src* is already canonical (it came out of
+    routes/library.lib_resolve_library_file), so the cache key need not
+    resolve it again -- see covercache.CoverCache.cache_key.
 
     None is a normal answer, not a failure: a PDF, a DRM-wrapped AZW, an EPUB
     that ships no image. The shelf draws its placeholder and moves on.
@@ -248,7 +252,7 @@ def cover_path(src, start_conversion: bool = True):
     """
     src = Path(src)
     try:
-        key = cache_key(src)
+        key = cache_key(src, resolved=resolved)
     except OSError:
         return None
 

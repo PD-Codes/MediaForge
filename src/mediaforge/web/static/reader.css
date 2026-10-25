@@ -83,8 +83,8 @@ body.reader-open { overflow: hidden; }
   right: 0;
   z-index: 5;
   background: var(--mfr-chrome);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
   transition: opacity 0.28s ease, transform 0.28s ease;
 }
 

@@ -424,11 +424,12 @@ def download_file(api_key, token, base, file_id, dest):
         # temp drive.
         content = requests.get(link, timeout=30, stream=True)
         content.raise_for_status()
-        data = b""
+        data = bytearray()   # += on bytes copied the whole buffer per chunk
         for chunk in content.iter_content(65536):
             data += chunk
             if len(data) > _MAX_SUBTITLE_BYTES:
                 raise ValueError("subtitle exceeds 4 MB — refusing")
+        data = bytes(data)
         if not data.strip():
             return False
         Path(dest).write_bytes(data)

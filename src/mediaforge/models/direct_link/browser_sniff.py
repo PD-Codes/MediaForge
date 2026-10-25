@@ -28,6 +28,23 @@ _MEDIA_URL_RE = re.compile(r"\.m3u8(\?|$)|\.mp4(\?|$)", re.IGNORECASE)
 _NOISE_HINTS = ("adsystem", "banner", "/ads/", "doubleclick", "googlesyndication")
 
 
+
+def _guard_route(route):
+    """Abort a sniff-browser request whose target is not a public address
+    (web/stream_proxy.is_safe_url, cached per host)."""
+    try:
+        from ...web.stream_proxy import is_safe_url
+        url = route.request.url
+        if url.startswith(("data:", "blob:")) or is_safe_url(url):
+            route.continue_()
+            return
+    except Exception:
+        pass
+    try:
+        route.abort("blockedbyclient")
+    except Exception:
+        pass
+
 def sniff_media_url(url, timeout=20):
     """Load *url* in a headless browser and return (stream_url, headers) for
     the first .m3u8/.mp4 network request observed, or None if nothing shows
@@ -62,7 +79,13 @@ def sniff_media_url(url, timeout=20):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
-                page = browser.new_context(ignore_https_errors=True).new_page()
+                # Certificate errors are no longer ignored, and every request
+                # the page makes is checked like the URL itself: the page is
+                # the user's, and its script, iframes and redirects used to
+                # reach LAN hosts (router/NAS admin pages) from the server.
+                context = browser.new_context()
+                context.route("**/*", _guard_route)
+                page = context.new_page()
                 page.on("request", _on_request)
 
                 try:

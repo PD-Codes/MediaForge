@@ -7,6 +7,7 @@ byte-for-byte identical.
 
 import os
 import sqlite3
+import threading
 from ...config import MEDIAFORGE_CONFIG_DIR
 from ...logger import get_logger
 
@@ -327,6 +328,10 @@ def _configure_connection(conn):
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA cache_size=-16000")   # 16 MB page cache, negative = KiB
     conn.execute("PRAGMA temp_store=MEMORY")
+    # The -wal file now lives as long as the process (see _ensure_anchor) and
+    # SQLite reuses it instead of shrinking it, so cap what a big write (a
+    # catalogue save, a snapshot restore) leaves behind on disk: 64 MiB.
+    conn.execute("PRAGMA journal_size_limit=67108864")
     return conn
 
 
@@ -354,6 +359,97 @@ class ContextConnection(sqlite3.Connection):
 
 _config_dir_ready = False
 
+# One idle connection per process that is never used for anything. Without it
+# the normal state of the app is "no connection open", and SQLite's last-close
+# path checkpoints the WAL and unlinks -wal/-shm on EVERY worker call -- the
+# next call recreates both, so each small worker commit cost a checkpoint with
+# 4 fdatasync and an idle NAS disk never spun down. While any connection stays
+# open, nobody is "last", commits stay plain WAL appends and SQLite's own
+# auto-checkpoint does the rest.
+#
+# Rules, because a connection nobody looks at must not cause trouble: it runs
+# no queries and holds no transaction (autocommit, one PRAGMA, fully fetched),
+# so it never pins a WAL snapshot or blocks a checkpoint; it is opened only
+# after startup (arm_db_anchor(), called by dbmigrate.run_pending() -- i.e.
+# after entry.py's legacy import and the migrations) and only for a database
+# that already exists, so it never creates one. Nothing in the app deletes or
+# replaces the database file while it runs (restore_snapshot() goes through
+# the backup API), which matters on Windows, where an open handle blocks that.
+_anchor = None
+_anchor_armed = False
+_anchor_lock = threading.Lock()
+
+
+def arm_db_anchor() -> None:
+    """Let get_db() open this process' idle anchor connection (once).
+
+    Called at the end of startup migrations. A process that never calls it
+    (a CLI tool, a unit test without the app) keeps the old behaviour.
+    """
+    global _anchor_armed
+    _anchor_armed = True
+
+
+def _ensure_anchor() -> None:
+    """Open the anchor connection if it is not open yet (see _anchor)."""
+    global _anchor, _anchor_armed
+    with _anchor_lock:
+        if _anchor is not None or not _anchor_armed:
+            return
+        if not DB_PATH.exists():
+            return  # never create the database from here; retried next call
+        conn = None
+        try:
+            conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False,
+                                   isolation_level=None)
+            # fetchall() runs the statement to completion: no read transaction
+            # is left open behind it.
+            conn.execute("PRAGMA journal_mode=WAL").fetchall()
+        except sqlite3.Error as exc:
+            # Not worth retrying on every get_db(): everything still works
+            # without it, just with the old WAL churn.
+            logger.warning("[DB] Could not open the anchor connection: %s", exc)
+            _anchor_armed = False
+            if conn is not None:
+                conn.close()
+            return
+        _anchor = conn
+
+
+def _close_anchor() -> None:
+    """Close the anchor (tests, shutdown). get_db() reopens it while armed."""
+    global _anchor
+    with _anchor_lock:
+        conn, _anchor = _anchor, None
+    if conn is not None:
+        conn.close()
+
+
+def optimize_db() -> None:
+    """Hourly maintenance: PRAGMA optimize + a passive checkpoint.
+
+    PRAGMA optimize is SQLite's own "refresh statistics where that helps",
+    with its default mask (bounded work, never a forced ANALYZE). A blanket
+    ANALYZE was tried and deliberately left out: with statistics the planner
+    walked download_history through its status index for every non-indexed
+    sort and the history list's title/size/duration/speed sorts got twice as
+    slow (17 -> 38 ms on 120k rows). The queries that needed a better plan
+    (Wrapped recap) now ask for it themselves.
+
+    The PASSIVE checkpoint never waits for readers or writers. It keeps the
+    main file current while the anchor keeps the WAL alive, so an idle app's
+    database file does not lag behind its -wal for long (relevant for anyone
+    copying the config folder as a backup while the app runs).
+
+    Called from the hourly maintenance loop in app.py.
+    """
+    conn = get_db()
+    try:
+        conn.execute("PRAGMA optimize").fetchall()
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchall()
+    finally:
+        conn.close()
+
 
 def get_db():
     """Return a SQLite connection for the current context.
@@ -372,6 +468,8 @@ def get_db():
         # access (get_db() runs dozens of times per request).
         MEDIAFORGE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         _config_dir_ready = True
+    if _anchor is None and _anchor_armed:
+        _ensure_anchor()
     try:
         from flask import g, has_app_context
         if has_app_context():

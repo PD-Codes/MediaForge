@@ -292,6 +292,32 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
         return "en"
 
     babel.init_app(app, locale_selector=get_locale)
+
+    # Every template _() resolved domain -> locale -> translations through
+    # several context-local lookups (~7.8 us per call; base.html has ~200 of
+    # them, the settings page ~850 -- a third of its render time). The locale
+    # is fixed per request already (Flask-Babel stores it on the context), so
+    # the translations object is looked up once per request instead.
+    import flask_babel as _flask_babel
+    from flask import g as _flask_g
+
+    def _request_translations():
+        try:
+            tr = _flask_g.get("_mf_translations")
+        except RuntimeError:          # no app context: plain lookup
+            return _flask_babel.get_translations()
+        if tr is None:
+            tr = _flask_babel.get_translations()
+            _flask_g._mf_translations = tr
+        return tr
+
+    app.jinja_env.install_gettext_callables(
+        gettext=lambda s: _request_translations().ugettext(s),
+        ngettext=lambda s, p, n: _request_translations().ungettext(s, p, n),
+        newstyle=True,
+        pgettext=lambda c, s: _request_translations().upgettext(c, s),
+        npgettext=lambda c, s, p, n: _request_translations().unpgettext(c, s, p, n),
+    )
     app_version = _get_display_version()
     import mediaforge.web.runtime_state as _rtstate
     _rtstate.AUTH_ENABLED = auth_enabled
@@ -776,6 +802,22 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
     # hoster() mutates it at runtime, so a module that brings its own hoster
     # appears in the dropdown without a restart.
     @app.context_processor
+    def _inject_telemetry_consent():
+        """``telemetry_consent_pending``: show the first-run consent dialog.
+
+        Admins only (the consent endpoint is admin-only too). Read from the
+        telemetry settings' short-lived cache, so it costs no extra request.
+        """
+        from flask import session as _sess
+        if _sess.get("user_role") != "admin":
+            return {"telemetry_consent_pending": False}
+        try:
+            from ..telemetry import settings as _tel_settings
+            return {"telemetry_consent_pending": _tel_settings.is_consent_given() is None}
+        except Exception:
+            return {"telemetry_consent_pending": False}
+
+    @app.context_processor
     def _inject_shared_modal_context():
         from ..languages import burned_subtitle_labels
 
@@ -899,6 +941,13 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
                         "[DB] Evicted %d orphaned catalogue(s)", dropped)
             except Exception as exc:
                 get_logger(__name__).warning("[DB] Catalogue eviction failed: %s", exc)
+            try:
+                # After the deletes above: refresh the query planner
+                # statistics and checkpoint the WAL (see db.optimize_db()).
+                from .db import optimize_db as _optimize_db
+                _optimize_db()
+            except Exception as exc:
+                get_logger(__name__).debug("[DB] Optimize pass failed: %s", exc)
             _wr.done("cache_evict", next_run=_next_run_iso())
 
     threading.Thread(target=_tmdb_cache_eviction_loop, daemon=True,
@@ -1131,8 +1180,8 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             # an EPUB renders as unstyled text with broken images. It does not
             # widen what a *page* may load -- a blob URL can only be created by
             # script already running on this origin.
-            "style-src 'self' 'unsafe-inline' blob: https://fonts.googleapis.com; "
-            "font-src 'self' blob: https://fonts.gstatic.com; "
+            "style-src 'self' 'unsafe-inline' blob:; "
+            "font-src 'self' blob:; "
             "img-src 'self' data: blob: https:; "
             "connect-src 'self' blob:; "
             "worker-src 'self' blob:; "
@@ -1140,7 +1189,7 @@ def create_app(auth_enabled=True, sso_enabled=False, force_sso=False):
             "object-src 'none'; "
             "base-uri 'self'; "
             "frame-ancestors 'none';"
-            "frame-src 'self' blob: https://www.youtube.com;"
+            "frame-src 'self' blob: https://www.youtube.com https://www.youtube-nocookie.com;"
         )
         response.headers.setdefault("Content-Security-Policy", _csp)
         # HSTS — only sent when HTTPS is confirmed (SESSION_COOKIE_SECURE flag set by create_app)

@@ -223,27 +223,16 @@
   display: block;
   height: 100%;
   border-radius: 999px;
-  /* background-COLOR, not the shorthand — the shorthand would wipe the stripe
-     image below. Same reasoning as .qhub-hero-fill in queue.css. */
   background-color: var(--accent);
   /* The same moving stripes as the queue window, so the two read as one thing:
-     the pattern and the keyframes (queue-progress-stripes) live in queue.css,
-     which base.html loads on every page. */
-  background-image: linear-gradient(45deg,
-      rgba(255, 255, 255, 0.16) 25%,
-      transparent 25%,
-      transparent 50%,
-      rgba(255, 255, 255, 0.16) 50%,
-      rgba(255, 255, 255, 0.16) 75%,
-      transparent 75%,
-      transparent);
-  background-size: 1rem 1rem;
-  animation: queue-progress-stripes 1s linear infinite;
+     drawn by .home-run-fill::after in queue.css (loaded on every page). */
+  position: relative;
+  overflow: hidden;
   transition: width 0.4s ease;
 }
 
 /* Paused queue: freeze the stripes instead of pretending something moves. */
-.home-run-bar.is-paused .home-run-fill { animation-play-state: paused; }
+.home-run-bar.is-paused .home-run-fill::after { animation-play-state: paused; }
 
 @media (prefers-reduced-motion: reduce) {
   .home-run-fill {
@@ -2584,9 +2573,9 @@ a.hp-item:focus-visible {
   top: 0;
   z-index: 30;
   padding: 12px 0;
-  background: color-mix(in srgb, var(--bg-base) 88%, transparent);
-  backdrop-filter: blur(16px) saturate(1.3);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  background: color-mix(in srgb, var(--bg-base) 96%, transparent);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
   border-bottom: 1px solid var(--border);
 }
 

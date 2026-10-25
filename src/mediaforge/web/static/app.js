@@ -4833,7 +4833,9 @@ function _mfMountTrailer() {
   if (!el || el.querySelector("iframe")) return;
   const key = el.dataset.key || "";
   if (!/^[A-Za-z0-9_-]{5,20}$/.test(key)) return;
-  el.innerHTML = `<iframe src="https://www.youtube.com/embed/${key}" allowfullscreen></iframe>`;
+  // youtube-nocookie: YouTube's privacy-enhanced embed sets no tracking
+  // cookies until the trailer is actually played.
+  el.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${key}" allowfullscreen></iframe>`;
 }
 
 (function () {

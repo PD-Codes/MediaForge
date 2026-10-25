@@ -115,8 +115,33 @@
 {# MFCharts must load before stats.js, which draws the Statistics panel. #}
 <script src="{{ url_for('static', filename='mf-charts.js') }}"></script>
 <script>
+  // The three dashboards load their data when their panel is first opened
+  // (stats.js, history.js and uptime.js register here via mfLazyPanel). They
+  // used to fetch everything on arrival -- statistics, three history
+  // requests and an UpTime poll every 10-60 s -- while the Overview showed.
+  // A panel with a stop function (UpTime's polling) is stopped on leaving.
+  window.MF_LAZY_PANELS = {};
+  window._mfActiveMonTab = null;
+  function _mfSyncLazyPanels() {
+    Object.keys(window.MF_LAZY_PANELS).forEach(function (key) {
+      var p = window.MF_LAZY_PANELS[key];
+      if (key === window._mfActiveMonTab) {
+        if (!p.running) { p.running = true; p.start(); }
+      } else if (p.running && p.stop) {
+        p.running = false;
+        p.stop();
+      }
+    });
+  }
+  window.mfLazyPanel = function (name, start, stop) {
+    window.MF_LAZY_PANELS[name] = { start: start, stop: stop || null, running: false };
+    _mfSyncLazyPanels();
+  };
+
   // Client-side tab switching for Monitoring — mirrors settings.js's switchTab.
   function switchMonTab(name) {
+    window._mfActiveMonTab = name;
+    _mfSyncLazyPanels();
     document.querySelectorAll('#monitoringMenu .settings-tab').forEach(function (b) {
       b.classList.toggle('active', b.dataset.montab === name);
     });
@@ -138,7 +163,9 @@
 </script>
 <script src="{{ url_for('static', filename='stats.js') }}"></script>
 <script src="{{ url_for('static', filename='history.js') }}"></script>
+{% if uptime_enabled %}
 <script src="{{ url_for('static', filename='uptime.js') }}"></script>
+{% endif %}
 {# Collapsible behaviour + the generic enable toggle/field saving for the
    module panels above (see _settings_card_macro.html). #}
 <script src="{{ url_for('static', filename='extension_cards.js') }}"></script>

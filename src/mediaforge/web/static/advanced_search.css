@@ -290,9 +290,9 @@
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(0, 0, 0, 0.75);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 999px;
   font-size: 0.72rem;
@@ -337,14 +337,14 @@
   min-height: 40px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.65);
   color: #fff;
   font-family: inherit;
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
   transition: background 0.18s ease, border-color 0.18s ease;
 }
 

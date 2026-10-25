@@ -9,7 +9,7 @@ import threading
 
 from ...logger import get_logger
 
-from ._core import get_db
+from ._core import get_db, _sql_chunks
 
 logger = get_logger(__name__)
 
@@ -348,11 +348,23 @@ def prune_library_cache(valid_keys):
         conn.close()
 
 
-def invalidate_library_cache():
-    """Mark all cache entries as stale (scanned_at=0) so next call triggers a rescan."""
+def invalidate_library_cache(path_keys=None):
+    """Mark cache entries as stale (scanned_at=0) so the next pass rescans them.
+
+    *path_keys* limits it to those locations; None marks every location. A
+    delete, rename or move touches one location, and marking all of them made
+    the next auto-rescan walk the whole library again.
+    """
     conn = get_db()
     try:
-        conn.execute("UPDATE library_cache SET scanned_at=0")
+        if path_keys is None:
+            conn.execute("UPDATE library_cache SET scanned_at=0")
+        else:
+            for chunk, placeholders in _sql_chunks(list(path_keys)):
+                conn.execute(
+                    "UPDATE library_cache SET scanned_at=0 WHERE path_key IN (%s)" % placeholders,
+                    chunk,
+                )
         conn.commit()
     finally:
         conn.close()

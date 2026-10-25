@@ -452,8 +452,9 @@ def register_stream_routes(app):
     def api_proxy_resource(token, b64):
         """Fetch + (for playlists) rewrite a provider resource through the proxy."""
         from flask import Response as _Response
-        from ..stream_proxy import (get_proxy_session, b64d, fetch,
-                                    is_playlist, rewrite_playlist, is_safe_url)
+        from ..stream_proxy import (MAX_PLAYLIST_BYTES, STREAM_CHUNK, b64d,
+                                    get_proxy_session, is_playlist, is_safe_url,
+                                    iter_body, open_upstream, rewrite_playlist)
         sess = get_proxy_session(token)
         if not sess:
             return "Session not found", 404
@@ -464,19 +465,38 @@ def register_stream_routes(app):
         if not is_safe_url(url):
             return "Forbidden", 403
         try:
-            code, up_headers, data, final_url = fetch(
+            code, up_headers, upstream, final_url = open_upstream(
                 url, sess["headers"], request.headers.get("Range"))
         except Exception as exc:
             logger.debug("[StreamProxy] fetch failed: %s", exc)
             return jsonify({"error": "Upstream nicht erreichbar"}), 502
 
-        if is_playlist(data):
+        try:
+            first = upstream.read(STREAM_CHUNK)
+        except Exception as exc:
+            upstream.close()
+            logger.debug("[StreamProxy] read failed: %s", exc)
+            return jsonify({"error": "Upstream nicht erreichbar"}), 502
+
+        if is_playlist(first):
+            # Playlists are small and have to be rewritten as a whole.
+            try:
+                data = first + upstream.read(MAX_PLAYLIST_BYTES + 1 - len(first))
+            finally:
+                upstream.close()
+            if len(data) > MAX_PLAYLIST_BYTES:
+                return jsonify({"error": "Playlist zu groß"}), 502
             text = data.decode("utf-8", "replace")
             proxy_base = f"/api/proxy/{token}/r/"
             body = rewrite_playlist(text, final_url, proxy_base)
             resp = _Response(body, mimetype="application/vnd.apple.mpegurl")
         else:
-            resp = _Response(data, status=code)
+            # Segments and keys are passed through as they arrive instead of
+            # being read whole first: the player gets the first bytes after
+            # one chunk, not after the whole segment, and memory per request
+            # stays at one chunk.
+            resp = _Response(iter_body(upstream, first), status=code,
+                             direct_passthrough=True)
             for h in ("Content-Type", "Content-Range", "Accept-Ranges", "Content-Length"):
                 if h in up_headers:
                     resp.headers[h] = up_headers[h]
@@ -593,7 +613,6 @@ def register_stream_routes(app):
     def api_stream_playlist(token):
         """Serve the HLS master playlist for a session."""
         from ..transcoder import get_session
-        import time as _t
         sess = get_session(token)
         if not sess:
             return "Session not found", 404

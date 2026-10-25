@@ -2,6 +2,7 @@ import re
 from html import unescape
 
 from ...config import MEDIAFORGE_SERIES_PATTERN, GLOBAL_SESSION, logger
+from ..common.page_cache import fetch_page, forget as forget_page
 from ..common import clean_title
 from .season import AniworldSeason
 
@@ -124,7 +125,8 @@ class AniworldSeries:
     def _html(self):
         if self.__html is None:
             logger.debug(f"fetching ({self.url})...")
-            resp = GLOBAL_SESSION.get(self.url)
+            # Shared for a short while across series objects (see page_cache).
+            resp = fetch_page(GLOBAL_SESSION, self.url)
             # Kept so a parse failure can say whether we were even served the page. A
             # scraper that reports "no title" without saying "…and by the way, that was a
             # 403 of 1.2 KB" is making you guess at the one thing it knows.
@@ -292,6 +294,9 @@ class AniworldSeries:
         # identical from the outside ("title is None") and have three different fixes, and
         # the person reading the job card should not have to go and find out which.
         self.__page_problem = self.__diagnose(html)
+        # Not a page worth sharing: the next series object fetches it again
+        # instead of getting this copy from the page cache.
+        forget_page(self.url)
         raw_head = (html or "")[:300]
         # Only show the snippet when it's plausibly text: __diagnose() already told us
         # (via page_problem) when the body is undecoded binary, and dumping 300 characters

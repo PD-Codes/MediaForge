@@ -42,6 +42,25 @@ _impl_cache = {"ts": 0.0, "names": None}
 _IMPL_CACHE_TTL = 300.0
 
 
+class _MuteThread(_logging.Filter):
+    """Drops the records of one thread (the stub probe below)."""
+
+    def __init__(self, ident):
+        super().__init__()
+        self.ident = ident
+
+    def filter(self, record):
+        return record.thread != self.ident
+
+
+def _all_handlers():
+    handlers = set(_logging.getLogger().handlers)
+    for lg in list(_logging.root.manager.loggerDict.values()):
+        for handler in getattr(lg, "handlers", None) or ():
+            handlers.add(handler)
+    return handlers
+
+
 def _extractor_implemented(name):
     """True if extractors/provider/ has a real (non-stub) extractor for *name*.
 
@@ -53,7 +72,13 @@ def _extractor_implemented(name):
     fn = provider_functions.get(f"get_direct_link_from_{name.lower()}")
     if fn is None:
         return False
-    _logging.disable(_logging.CRITICAL)
+    # Only THIS thread's records are dropped. logging.disable() is process
+    # wide: while the probe ran, every other thread's log lines -- ERRORs the
+    # telemetry handler should have seen included -- were thrown away too.
+    mute = _MuteThread(threading.get_ident())
+    handlers = _all_handlers()
+    for handler in handlers:
+        handler.addFilter(mute)
     try:
         fn("")
     except NotImplementedError:
@@ -61,7 +86,8 @@ def _extractor_implemented(name):
     except Exception:
         return True
     finally:
-        _logging.disable(_logging.NOTSET)
+        for handler in handlers:
+            handler.removeFilter(mute)
     return True
 
 

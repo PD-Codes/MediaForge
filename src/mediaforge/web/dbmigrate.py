@@ -56,7 +56,6 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import os
-import shutil
 import sqlite3
 import threading
 
@@ -321,11 +320,15 @@ def delete_snapshot(snapshot_id: str) -> bool:
         logger.warning("[Migrate] Could not delete snapshot %s: %s", snapshot_id, exc)
         return False
     meta = SNAPSHOT_DIR / (snapshot_id + ".json")
-    if meta.exists():
-        try:
-            meta.unlink()
-        except Exception:
-            pass
+    # Snapshot files carry a WAL header (the backup copies page 1), so
+    # verify/restore opening one leaves an empty -wal and a -shm next to it.
+    for side in (meta, SNAPSHOT_DIR / (snapshot_id + ".db-wal"),
+                 SNAPSHOT_DIR / (snapshot_id + ".db-shm")):
+        if side.exists():
+            try:
+                side.unlink()
+            except Exception:
+                pass
     return True
 
 
@@ -368,16 +371,61 @@ def verify_snapshot(snapshot_id: str) -> dict:
     return result
 
 
+# How long a restore waits for the write lock before giving up (seconds). A
+# worker transaction normally holds it for milliseconds; without a bound, a
+# stuck writer would hang the restore request forever (the backup API retries
+# a busy destination indefinitely).
+_RESTORE_LOCK_WAIT = 60.0
+
+
+def _restore_into_live(path, db_path) -> None:
+    """Copy the snapshot at *path* into the live database through SQLite.
+
+    Restoring underneath SQLite (deleting -wal/-shm and copying over the main
+    file) is what this replaced, and it broke both ways at once: every
+    connection opened before the restore -- the request's, the workers', the
+    process' idle anchor -- kept the unlinked WAL, new connections failed with
+    "disk I/O error", and the last old connection to close checkpointed the
+    pre-restore WAL into the restored file, silently undoing the restore. On
+    Windows an open handle refuses the delete outright.
+
+    The backup API writes into the live database as one ordinary write
+    transaction (through the WAL, under the normal write lock): connections
+    that are open keep working and see the restored content on their next read,
+    and nothing has to be deleted or replaced on disk. A failure rolls the
+    transaction back and leaves the live database as it was.
+    """
+    src = sqlite3.connect("file:%s?mode=ro" % path.as_posix(), uri=True, timeout=15)
+    try:
+        live = sqlite3.connect(str(db_path), timeout=_RESTORE_LOCK_WAIT)
+        try:
+            def _give_up_when_locked(status, remaining, total):
+                # 5/6 = SQLITE_BUSY/SQLITE_LOCKED: the busy handler already
+                # waited the full timeout. Raising aborts the backup, which
+                # rolls the destination back.
+                if status in (5, 6):
+                    raise sqlite3.OperationalError(
+                        "database is locked -- restore not started, try again")
+
+            src.backup(live, progress=_give_up_when_locked)
+        finally:
+            live.close()
+    finally:
+        src.close()
+
+
 def restore_snapshot(snapshot_id: str) -> dict:
-    """Replace the live database with a snapshot.
+    """Replace the live database's content with a snapshot.
 
     Refuses to run unless the snapshot passes ``verify_snapshot()`` -- restoring
     a corrupt file over a working database turns a recoverable situation into
     an unrecoverable one. Takes a snapshot of the *current* state first, so the
     restore itself is undoable.
 
-    The caller must restart the app afterwards: open connections (workers,
-    request contexts) still point at the replaced inode.
+    The copy goes through SQLite's backup API (see ``_restore_into_live``), so
+    it is safe while workers and requests have the database open. The caller
+    must still restart the app afterwards: in-memory state (caches, a worker's
+    current job) still describes the database as it was before.
     """
     from .db import DB_PATH
 
@@ -389,14 +437,7 @@ def restore_snapshot(snapshot_id: str) -> dict:
     pre = snapshot(reason="pre-restore", note="automatic, before restoring %s" % snapshot_id)
 
     try:
-        # Remove the sidecars explicitly. A leftover -wal from the old database
-        # applied on top of the restored main file would replay transactions
-        # that the snapshot deliberately does not contain.
-        for suffix in ("-wal", "-shm"):
-            side = str(DB_PATH) + suffix
-            if os.path.exists(side):
-                os.remove(side)
-        shutil.copyfile(str(path), str(DB_PATH))
+        _restore_into_live(path, DB_PATH)
     except Exception as exc:
         logger.error("[Migrate] Restore of %s failed: %s", snapshot_id, exc)
         return {"ok": False, "error": str(exc), "rollback_snapshot": (pre or {}).get("id")}
@@ -436,7 +477,7 @@ def run_pending(*, allow_snapshot: bool = True) -> dict:
     Safe to call repeatedly and from a single process only -- guarded by a
     module lock, and by SQLite's own write lock across processes.
     """
-    from .db import get_db
+    from .db import arm_db_anchor, get_db
 
     with _lock:
         conn = get_db()
@@ -513,6 +554,12 @@ def run_pending(*, allow_snapshot: bool = True) -> dict:
             }
         finally:
             conn.close()
+            # Past the point where anything at startup could want the database
+            # file to itself (entry.py's legacy import ran before the app was
+            # built; migrations are done): get_db() may now keep the idle
+            # anchor connection open. Also after a failed migration -- the
+            # rollback path (restore_snapshot) is safe with it.
+            arm_db_anchor()
 
 
 # ---------------------------------------------------------------------------

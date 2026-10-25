@@ -103,6 +103,8 @@ function _startUpscaleBadgePoll() {
   // mfPoll: paused while the tab is hidden (static/mf_poll.js).
   _upscaleBadgePoll = window.mfPoll(async () => {
     if (_upscalePaneActive()) return;   // the hub's own 2s poll is running
+    // queue.js's badge poll brought the count within the last few seconds.
+    if (window._mfUpscaleBadgeAt && Date.now() - window._mfUpscaleBadgeAt < 7000) return;
     try {
       const d = await (await fetch("/api/upscale/badge")).json();
       if (d.ok) _updateUpscaleBadges(d.count || 0);

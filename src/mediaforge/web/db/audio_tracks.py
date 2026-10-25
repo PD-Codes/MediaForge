@@ -36,6 +36,12 @@ logger = get_logger(__name__)
 # stale in a harmful way -- but a library that is reorganised often would grow
 # the table forever. Pruned against the paths a scan actually saw.
 _PRUNE_BATCH = 500
+# Keyset cursor of prune_audio_track_cache(): (probed_at, path) of the last row
+# it checked. Rows of files that still exist are never deleted, so restarting
+# from the oldest row each time re-checked the same 500 files every hour and
+# never reached the stale rows behind them. In memory only: after a restart the
+# walk simply begins at the oldest row again.
+_PRUNE_CURSOR = [None]
 
 
 def init_audio_track_db():
@@ -51,6 +57,11 @@ def init_audio_track_db():
                 probed_at   REAL NOT NULL DEFAULT 0
             )
         """)
+        # Serves the prune's keyset walk (covering: no table lookups).
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audio_track_probed "
+            "ON audio_track_cache (probed_at, path)"
+        )
         conn.commit()
     finally:
         conn.close()
@@ -134,17 +145,33 @@ def prune_audio_track_cache(max_age_days=90):
 
     Checked against the filesystem rather than against a caller-supplied path
     list: the cache is written from several places (auto-sync, the library
-    scan) and none of them knows the whole set. Only the oldest rows are
-    stat()ed per call so this cannot turn into a full library walk.
+    scan) and none of them knows the whole set. Only one batch of rows is
+    stat()ed per call so this cannot turn into a full library walk; each call
+    continues where the previous one stopped (see _PRUNE_CURSOR).
     """
     cutoff = time.time() - max_age_days * 86400
     conn = get_db()
     try:
-        rows = conn.execute(
-            "SELECT path FROM audio_track_cache WHERE probed_at < ? "
-            "ORDER BY probed_at LIMIT ?",
-            (cutoff, _PRUNE_BATCH),
-        ).fetchall()
+        after = _PRUNE_CURSOR[0]
+        if after is None:
+            rows = conn.execute(
+                "SELECT probed_at, path FROM audio_track_cache WHERE probed_at < ? "
+                "ORDER BY probed_at, path LIMIT ?",
+                (cutoff, _PRUNE_BATCH),
+            ).fetchall()
+        else:
+            # Strictly behind the cursor in (probed_at, path) order; the plain
+            # `probed_at >= ?` lets the index start the range there.
+            rows = conn.execute(
+                "SELECT probed_at, path FROM audio_track_cache "
+                "WHERE probed_at < ? AND probed_at >= ? "
+                "  AND (probed_at > ? OR path > ?) "
+                "ORDER BY probed_at, path LIMIT ?",
+                (cutoff, after[0], after[0], after[1], _PRUNE_BATCH),
+            ).fetchall()
+        # A short batch means the end was reached: start over next time.
+        _PRUNE_CURSOR[0] = ((rows[-1]["probed_at"], rows[-1]["path"])
+                            if len(rows) == _PRUNE_BATCH else None)
         gone = [r["path"] for r in rows if not os.path.exists(r["path"])]
         for i in range(0, len(gone), 100):
             chunk = gone[i:i + 100]

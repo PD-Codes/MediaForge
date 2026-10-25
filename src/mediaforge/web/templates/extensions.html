@@ -7,9 +7,8 @@
      horizontally on narrow screens (unwrapped badge rows, a fixed-min-width
      textarea, an unwrapped header button row). See extensions.css. -->
 <link rel="stylesheet" href="{{ url_for('static', filename='extensions.css') }}">
-<!-- mf_components.css is not loaded globally: the store toolbar uses .mf-search
-     and the catalog's empty state uses .mf-empty from it. -->
-<link rel="stylesheet" href="{{ url_for('static', filename='mf_components.css') }}">
+<!-- The store toolbar's .mf-search and the catalog's .mf-empty come from
+     mf_components.css, which base.html loads globally. -->
 {% endblock %}
 {% block content %}
 <div class="settings-container extensions-page">

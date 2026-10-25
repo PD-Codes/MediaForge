@@ -527,6 +527,18 @@ def register_queue_routes(app):
                 _running["status"] = "running"
                 _running["foreign"] = True
 
+        # The encoding and upscale badge counts ride along (two COUNTs), so
+        # the sidebar's two other 8-second badge polls can skip their own
+        # request while this one runs (static/encoding_queue.js,
+        # static/upscale_queue.js).
+        from ..db import get_encoding_badge_count, get_upscale_badge_count
+        extra = {}
+        for name, fn in (("encoding", get_encoding_badge_count),
+                         ("upscale", get_upscale_badge_count)):
+            try:
+                extra[name] = fn()
+            except Exception:
+                pass
         return jsonify({
             "ok": True,
             "badge": info["active"],
@@ -535,6 +547,7 @@ def register_queue_routes(app):
             "queued": info.get("queued", 0),
             "ffmpeg_progress": get_ffmpeg_progress(),
             "paused": is_queue_paused(),
+            **extra,
         })
     @app.route("/api/queue/pause", methods=["POST"])
     def api_queue_pause():

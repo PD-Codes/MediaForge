@@ -536,6 +536,18 @@ def iter_candidates(url, from_primary=False):
         yield map_url(url, host), headers, verify, site, idx
 
 
+def _close_quietly(resp) -> None:
+    """Release a response that is not handed to the caller. For stream=True
+    requests (the domain feed) a dropped response held its pooled connection
+    until garbage collection."""
+    if resp is None:
+        return
+    try:
+        resp.close()
+    except Exception:
+        pass
+
+
 def request_with_failover(session, method, url, budget=None, probe=False, **kwargs):
     """Perform ``session.request(method, url)`` against the site's mirrors,
     moving on to the next host whenever one is unreachable or answers with a
@@ -612,6 +624,7 @@ def request_with_failover(session, method, url, budget=None, probe=False, **kwar
                 "[Mirrors] %s: host %s answered HTTP %s — trying next mirror",
                 cand_site, urlsplit(cand_url).hostname, resp.status_code,
             )
+            _close_quietly(last_resp)   # superseded: free its pooled connection
             last_resp = resp
             if not probe:
                 mark_failed(cand_site, idx)
@@ -632,13 +645,16 @@ def request_with_failover(session, method, url, budget=None, probe=False, **kwar
                 _LAST_HOST_RETRY_DELAY,
             )
             time.sleep(_LAST_HOST_RETRY_DELAY)
+            _close_quietly(resp)
             try:
                 resp = session.request(method, cand_url, **call_kwargs)
             except Exception as exc:
                 last_exc = exc
+                _close_quietly(last_resp)
                 last_resp = None
                 continue
             if resp.status_code in _FAILOVER_STATUSES:
+                _close_quietly(last_resp)
                 last_resp = resp
                 continue
 

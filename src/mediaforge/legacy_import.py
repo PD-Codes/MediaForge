@@ -106,12 +106,23 @@ def run_import(overwrite: bool = False) -> dict:
         return result
 
     NEW_DIR.mkdir(parents=True, exist_ok=True)
+    db_copied = False
+    # sorted(): "aniworld.db" comes before "aniworld.db-wal", so the database
+    # is decided before its log.
     for entry in sorted(LEGACY_DIR.iterdir()):
         if _should_skip(entry.name):
             continue
         target = NEW_DIR / _target_name(entry.name)
+        if entry.name == "aniworld.db-wal" and not db_copied:
+            # A WAL belongs to the database file it was written for. Next to
+            # an existing mediaforge.db (kept, not overwritten) the old log
+            # would be replayed into the wrong database on the next open.
+            result["skipped"].append(entry.name)
+            continue
         try:
             if _copy_entry(entry, target, overwrite):
+                if entry.name == "aniworld.db":
+                    db_copied = True
                 result["copied"].append(entry.name)
             else:
                 result["skipped"].append(entry.name)

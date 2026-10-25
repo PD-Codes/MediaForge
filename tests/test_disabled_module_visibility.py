@@ -43,10 +43,8 @@ def _fake_direct_link(url):
 def module_registered(app):
     """A module that registered a hoster and a mirror list, switched ON.
 
-    Module-scoped: unregister_hoster() deliberately leaves the name in
-    config.SUPPORTED_PROVIDERS (harmless once the extractor is gone, see its
-    docstring), so registering the same name a second time is refused. Each
-    test re-enables it through the autouse fixture below instead.
+    Module-scoped: registered once for the whole file; each test re-enables
+    it through the autouse fixture below instead of registering again.
     """
     from mediaforge.web.db import set_setting
 
@@ -186,3 +184,21 @@ def test_a_builtin_hoster_is_never_hidden():
     usable = runtime_state.enabled_providers()
     assert usable, "the hoster list was emptied"
     assert set(usable) == {p for p in runtime_state.WORKING_PROVIDERS if p != HOSTER}
+
+
+def test_hoster_can_be_registered_again_after_unregister():
+    """A live upgrade / reinstall runs register(app) again after
+    unregister_module(); the second register_hoster() used to be refused
+    because the name stayed in SUPPORTED_PROVIDERS."""
+    from mediaforge import config
+
+    kwargs = dict(get_direct_link=lambda url: url, host_patterns=("reupgrade.example",))
+    extractors.register_hoster("test-reupgrade", "ReUpgradeHoster", **kwargs)
+    try:
+        extractors.unregister_hoster("test-reupgrade")
+        assert "ReUpgradeHoster" not in config.SUPPORTED_PROVIDERS
+        assert "reupgrade.example" not in extractors.HOST_PROVIDER_MAP
+        extractors.register_hoster("test-reupgrade", "ReUpgradeHoster", **kwargs)
+        assert "ReUpgradeHoster" in config.SUPPORTED_PROVIDERS
+    finally:
+        extractors.unregister_hoster("test-reupgrade")

@@ -28,11 +28,11 @@
       </button>
       <button class="btn btn-ghost autosync-hdr-btn" onclick="exportAutosync()" title="{{ _('Export all jobs as JSON') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Export
+        {{ _('Export') }}
       </button>
       <label class="btn btn-ghost autosync-hdr-btn autosync-import-lbl" title="{{ _('Import jobs from JSON') }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="17"/></svg>
-        Import
+        {{ _('Import') }}
         <input type="file" id="importFileInput" accept=".json" style="display:none;" onchange="importAutosync(this)" />
       </label>
     </div>
@@ -202,10 +202,10 @@
     </div>
     <div class="settings-row" style="margin-bottom: 12px">
       <label class="settings-field-label" style="min-width: 80px">{{ _('Provider') }}</label>
+      {# Every enabled hoster (supported_providers, app.py); mfSelectValue()
+         keeps a stored hoster that is not in the list selectable. #}
       <select id="editProvider" class="sync-select">
-        <option>VOE</option>
-        <option>Vidmoly</option>
-        <option>Vidoza</option>
+        {% for p in supported_providers %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
       </select>
     </div>
     <div class="settings-row" style="margin-bottom: 12px">

@@ -27,6 +27,13 @@ from .resolver import (
 logger = get_logger(__name__)
 
 
+
+def _insecure_tls():
+    """yt-dlp's nocheckcertificate: off unless MEDIAFORGE_INSECURE_DOWNLOAD_TLS=1
+    (see config.INSECURE_DOWNLOAD_TLS)."""
+    from ...config import INSECURE_DOWNLOAD_TLS
+    return INSECURE_DOWNLOAD_TLS
+
 class UnsafeUrlError(ValueError):
     """Raised when a URL points at a non-http(s) scheme or an internal address.
 
@@ -285,13 +292,17 @@ def probe_direct_link_formats(url):
         "skip_download": True,
         "http_headers": headers,
         "socket_timeout": 20,
-        "nocheckcertificate": True,
+        "nocheckcertificate": _insecure_tls(),
         "noplaylist": True,
         "js_runtimes": {"node": {}, "deno": {}},
     }
 
+    # The SSRF gate above checked the URL once; yt-dlp then follows redirects
+    # and playlist URLs on its own. public_only() checks every connection of
+    # this thread instead (see netguard.py).
+    from ...netguard import public_only
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with public_only(), yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(probe_url, download=False)
     except Exception as e:
         raise RuntimeError(str(e)) from e

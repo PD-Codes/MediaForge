@@ -90,8 +90,15 @@ def is_adult_provider(provider) -> bool:
     first, before touching any provider-specific data. If you are adding a
     new adult-gated provider to the app: add it to the check below, don't
     create a second guard function.
+
+    Spelling-tolerant on purpose: the queue rows of this source carry
+    ``"hanime"`` (not ``"hanime_tv"``), and an exact match on ``hanime_tv``
+    let the stage-4 download events of those rows through with title and
+    error text. Any id that normalises to something starting with "hanime"
+    counts.
     """
-    return (provider or "").strip().lower() == "hanime_tv"
+    key = _NON_ALNUM_RE.sub("_", str(provider or "").lower()).strip("_")
+    return key.startswith("hanime")
 
 
 def shorten_path(path) -> str:

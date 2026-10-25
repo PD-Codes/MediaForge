@@ -10,6 +10,7 @@ from ...config import (
     SERIENSTREAM_EPISODE_PATTERN,
     logger,
 )
+from ..common.page_cache import fetch_page
 from ...extractors import provider_functions
 from ...languages import (
     ENGLISH_DUB,
@@ -209,7 +210,9 @@ class SerienstreamEpisode:
             if not self.url:
                 raise ValueError("Episode URL is missing for season extraction.")
             season_url = self.url.rsplit("/episode-", 1)[0]
-            self._season = SerienstreamSeason(url=season_url)
+            # The episode's series object goes along, so the season (and the
+            # episodes it builds) share it instead of deriving their own.
+            self._season = SerienstreamSeason(url=season_url, series=self.series)
         return self._season
 
     @property
@@ -449,7 +452,8 @@ class SerienstreamEpisode:
             if not self.url:
                 raise ValueError("Episode URL is missing for HTML fetch.")
             logger.debug(f"fetching ({self.url})...")
-            resp = GLOBAL_SESSION.get(self.url)
+            # Shared for a short while across episode objects (see page_cache).
+            resp = fetch_page(GLOBAL_SESSION, self.url)
             self.__html = resp.text
         return self.__html
 

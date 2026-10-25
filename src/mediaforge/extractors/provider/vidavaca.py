@@ -37,7 +37,7 @@ def get_subtitles_from_vidavaca(embed_url, headers=None, timeout=20):
     Returns [] on any failure -- subtitles must never break a download.
     """
     try:
-        data = _get_stream_data(embed_url, headers=headers, timeout=timeout)
+        data = _get_stream_data(embed_url, headers=headers, timeout=timeout, reuse=True)
         return absolutize(tracks_from_config(data), embed_url)
     except Exception as exc:
         logger.debug("Vidavaca subtitle extraction failed for %s: %s", embed_url, exc)
@@ -46,7 +46,7 @@ def get_subtitles_from_vidavaca(embed_url, headers=None, timeout=20):
 
 def get_preview_image_link_from_vidavaca(embed_url, headers=None, timeout=20):
     """Return the Vidavaca thumbnail/preview image URL, if any."""
-    data = _get_stream_data(embed_url, headers=headers, timeout=timeout)
+    data = _get_stream_data(embed_url, headers=headers, timeout=timeout, reuse=True)
     thumb = (data or {}).get("thumbnail")
     if not thumb:
         raise ValueError(f"No thumbnail in Vidavaca API response for {embed_url}")

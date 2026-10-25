@@ -1699,6 +1699,33 @@ def _lib_resolved_bases(targets):
     return bases
 
 
+def _lib_invalidate_paths(*paths):
+    """Mark only the locations that hold *paths* as stale.
+
+    A delete, rename or move used to mark EVERY location stale, so the next
+    auto-rescan walked the whole library -- every root, over SMB too -- for
+    one renamed folder. A location counts when a path lies inside it or when it
+    lies inside the path (nested locations). If nothing matches, every
+    location is marked, so an unexpected layout cannot leave a stale listing.
+    """
+    from pathlib import Path as _P
+    resolved = []
+    for p in paths:
+        if not p:
+            continue
+        try:
+            resolved.append(_P(p).resolve())
+        except (OSError, ValueError):
+            continue
+    keys = set()
+    for cp_id, base in _lib_resolved_bases(_lib_build_scan_targets()):
+        for rp in resolved:
+            if rp == base or base in rp.parents or rp in base.parents:
+                keys.add(_lib_path_key(cp_id))
+                break
+    invalidate_library_cache(sorted(keys) if keys else None)
+
+
 def lib_resolve_library_file(path, exts=None, scoped=True):
     """Resolve *path* and return it only if it is a real media file inside one
     of the configured scan targets; otherwise None.
@@ -1822,7 +1849,7 @@ def _lib_move_worker(job_id, src, dst):
             except OSError:
                 pass
             else:
-                invalidate_library_cache()
+                _lib_invalidate_paths(src, dst)
                 with _move_jobs_lock:
                     job["status"] = "done"
                     job["_final_at"] = _time.time()
@@ -1881,7 +1908,7 @@ def _lib_move_worker(job_id, src, dst):
         if leftovers:
             logger.warning("[LibMove] Move job %s: copied, but %d item(s) could not be "
                            "removed from the source", job_id, len(leftovers))
-        invalidate_library_cache()
+        _lib_invalidate_paths(src, dst)
         with _move_jobs_lock:
             job["status"] = "done"
             job["_final_at"] = _time.time()
@@ -1949,7 +1976,7 @@ def _lib_move_loose_files_worker(job_id, file_paths, dst_dir):
                 pass
             src_file.unlink()
 
-        invalidate_library_cache()
+        _lib_invalidate_paths(dst_dir, *file_paths)
         with _move_jobs_lock:
             job["status"] = "done"
             job["_final_at"] = _time.time()
@@ -2476,7 +2503,7 @@ def register_library_routes(app):
         resolved = lib_resolve_library_file(request.args.get("path", ""), exts=BOOK_ALL_EXTS)
         if resolved is None:
             return jsonify({"error": "not found"}), 404
-        cached = book_covers.cover_path(resolved, start_conversion=False)
+        cached = book_covers.cover_path(resolved, start_conversion=False, resolved=True)
         if cached is None:
             # A cover that does not exist YET is not a fact worth remembering.
             # Browsers heuristically cache a 404 that carries no caching
@@ -2749,7 +2776,7 @@ def register_library_routes(app):
 
         if deleted == 0:
             return jsonify({"error": "Nothing found to delete"}), 404
-        invalidate_library_cache()
+        _lib_invalidate_paths(dl_base)
         return jsonify({"ok": True, "deleted": deleted})
     @app.route("/api/library/media_info", methods=["POST"])
     def api_library_media_info():
@@ -3002,7 +3029,7 @@ def register_library_routes(app):
                 return jsonify({"error": "Target name already exists"}), 409
             title_path.rename(dst)
 
-        invalidate_library_cache()
+        _lib_invalidate_paths(title_path, dst)
         return jsonify({"ok": True})
     @app.route("/api/library/move", methods=["POST"])
     def api_library_move():

@@ -248,7 +248,10 @@ def _group_by_franchise(hits):
 _CATALOG_TTL = 1800.0            # 30 min
 _CATALOG_PAGE_SIZE = 24          # what one "page" means to the callers below
 _catalog_lock = threading.Lock()
-_catalog_cache = {"entries": None, "ts": 0.0}
+_catalog_cache = {"entries": None, "ts": 0.0, "failed_at": 0.0, "error": None}
+# After a failed fetch the error is repeated for this long instead of every
+# caller re-downloading 4 MB under the lock, one after another.
+_CATALOG_FAIL_TTL = 60.0
 
 
 def _catalog_entries(force=False):
@@ -262,10 +265,23 @@ def _catalog_entries(force=False):
         if (not force and cached is not None
                 and time.monotonic() - _catalog_cache["ts"] < _CATALOG_TTL):
             return cached
+        if (not force and _catalog_cache["error"] is not None
+                and time.monotonic() - _catalog_cache["failed_at"] < _CATALOG_FAIL_TTL):
+            if cached is not None:
+                return cached          # stale beats nothing while the backend is down
+            raise _catalog_cache["error"]
 
-        resp = _http_get(HANIME_SEARCH_URL)
-        resp.raise_for_status()
-        data = resp.json()
+        try:
+            resp = _http_get(HANIME_SEARCH_URL)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            _catalog_cache["error"] = exc
+            _catalog_cache["failed_at"] = time.monotonic()
+            if cached is not None:
+                return cached
+            raise
+        _catalog_cache["error"] = None
         # Flat list today; tolerate the old {"hits": [...]} envelope (and the
         # JSON-string variant it used) in case a mirror still serves it.
         if isinstance(data, dict):
@@ -462,7 +478,11 @@ def _video_cache_get(slug):
 
 def _video_cache_put(slug, detail, stream):
     with _video_cache_lock:
-        _video_cache[slug] = (time.time(), (detail, stream))
+        now = time.time()
+        # Expired entries used to stay forever (one per video ever opened).
+        for key in [k for k, e in _video_cache.items() if now - e[0] >= _video_cache_ttl]:
+            _video_cache.pop(key, None)
+        _video_cache[slug] = (now, (detail, stream))
 
 
 _video_inflight_locks = {}

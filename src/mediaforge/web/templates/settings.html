@@ -337,7 +337,7 @@
               d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22">
             </path>
           </svg>
-          GitHub Repository
+          {{ _('GitHub Repository') }}
         </a>
         <a href="https://github.com/PD-Codes/MediaForge/issues" target="_blank" rel="noopener noreferrer"
           class="btn btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px;">
@@ -347,7 +347,7 @@
             <line x1="12" y1="9" x2="12" y2="13"></line>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          Issue Tracker
+          {{ _('Issue Tracker') }}
         </a>
       </div>
     </div>
@@ -645,8 +645,8 @@
       <div class="settings-row">
         <select class="mf-token-input" id="defaultThemeMode" onchange="saveAppearanceDefaults()"
                 aria-label="{{ _('Dark or light') }}">
-          <option value="dark">Dark</option>
-          <option value="light">Light</option>
+          <option value="dark">{{ _('Dark') }}</option>
+          <option value="light">{{ _('Light') }}</option>
         </select>
       </div>
       {# Same shape as the accent block on the profile page: preset swatches
@@ -904,13 +904,11 @@
         </div>
         <div class="settings-field">
           <label class="settings-field-label">{{ _('Default Provider') }}</label>
+          {# Every enabled hoster, module hosters included (supported_providers,
+             app.py). Hard-coded lists here could not offer a module's hoster
+             and disagreed with each other. #}
           <select id="downloadProvider" onchange="saveDownloadProvider()" class="sync-select">
-            <option value="VOE">VOE</option>
-            <option value="Vidmoly">Vidmoly</option>
-            <option value="Vidoza">Vidoza</option>
-            <option value="Filemoon">Filemoon</option>
-            <option value="Doodstream">Doodstream</option>
-            <option value="Vidara">Vidara</option>
+            {% for p in supported_providers %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
           </select>
         </div>
       </div>
@@ -1179,9 +1177,7 @@
         <div class="settings-field">
           <label class="settings-field-label">{{ _('Default Provider') }}</label>
           <select id="syncProvider" onchange="saveSyncDefaults()" class="sync-select">
-            <option>VOE</option>
-            <option>Vidmoly</option>
-            <option>Vidoza</option>
+            {% for p in supported_providers %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
           </select>
         </div>
         {# Where a NEW sync job downloads to. settings.js has always had the
@@ -1333,7 +1329,7 @@
         </div>
         <div class="settings-field" id="dnsCustomField" style="display:none;flex:1;min-width:180px">
           <label class="settings-field-label">{{ _('DNS Server IP') }}</label>
-          <input type="text" id="dnsServer" placeholder="z.B. 1.1.1.1" />
+          <input type="text" id="dnsServer" placeholder="{{ _('e.g. 1.1.1.1') }}" />
         </div>
         <button onclick="saveDnsSettings()">{{ _('Save') }}</button>
       </div>
@@ -1559,7 +1555,7 @@
             <input type="text" id="oidcIssuerUrl" placeholder="https://keycloak.example.com/realms/myrealm" />
           </div>
           <div class="settings-field" style="flex:1;min-width:160px;">
-            <label class="settings-field-label">Display-Name</label>
+            <label class="settings-field-label">{{ _('Display name') }}</label>
             <input type="text" id="oidcDisplayName" placeholder="SSO" />
           </div>
         </div>

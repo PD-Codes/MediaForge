@@ -11,9 +11,10 @@
   <title>{% block title %}MediaForge{% endblock %}</title>
   <link rel="manifest" href="/static/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  {# Inter is served locally (@font-face in base.css). The preload URL must be
+     the one base.css resolves -- no ?v= cache-buster -- or it is fetched twice. #}
+  <link rel="preload" href="{{ request.script_root }}/static/fonts/inter-latin-wght-normal.woff2"
+    as="font" type="font/woff2" crossorigin />
   <!-- Former style.css, split by function for easier editing (see style.css
        itself for the full breakdown). Order matters: variables first (everything
        else references var(--...)), base second (reset that others build on). -->
@@ -240,6 +241,9 @@
       box-shadow: 0 0 18px var(--accent-glow, rgba(124,58,237,0.4));
     }
     @keyframes pl-spin { to { transform: rotate(360deg); } }
+    /* Faded out: stop the spinner. The loader is only made transparent, and its
+       infinite rotation kept the compositor at 60 fps on every idle page. */
+    html:not([data-page-loading]) #page-loader:not(.active) .page-loader-spinner { animation: none; }
   </style>
   <div id="page-loader"><div class="page-loader-spinner"></div></div>
 
@@ -611,7 +615,7 @@
         </a>
 
         <a href="https://github.com/PD-Codes/MediaForge" target="_blank" rel="noopener noreferrer"
-          class="footer-action-icon" title="GitHub Repository">
+          class="footer-action-icon" title="{{ _('GitHub Repository') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
             stroke-linejoin="round">
             <path
@@ -691,6 +695,11 @@
   <main class="main-content">
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // The page content is parsed: show it now (the loader fades out) instead
+    // of keeping it covered until every script below has been loaded and run.
+    document.documentElement.removeAttribute('data-page-loading');
+  </script>
 
   <!-- ===== Queue hub =====================================================
        ONE window for all three queues. "Alles" merges downloads, encoding and
@@ -783,7 +792,7 @@
       <p class="update-overlay-text" id="updateOverlayText"></p>
       <div class="update-overlay-version" id="updateOverlayVersion" style="display:none"></div>
       <details class="update-overlay-log" id="updateOverlayLogWrap" style="display:none">
-        <summary>Log</summary>
+        <summary>{{ _('Log') }}</summary>
         <pre id="updateOverlayLog"></pre>
       </details>
       <div class="update-overlay-actions" id="updateOverlayActions" style="display:none">
@@ -894,7 +903,7 @@
     onclick="if(event.target===this)libCloseMediaInfoModal()">
     <div class="lib-media-info-modal">
       <div class="modal-header" style="margin-bottom:18px">
-        <h2 class="modal-title">Media Info</h2>
+        <h2 class="modal-title">{{ _('Media Info') }}</h2>
         <button class="modal-close" onclick="libCloseMediaInfoModal()" aria-label="{{ _('Close') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
             stroke-linejoin="round">
@@ -977,20 +986,47 @@
       return isNaN(parsed.getTime()) ? null : parsed;
     };
 
+    // toLocale*String() with a locale and options builds a new Intl formatter
+    // on every call (~50 us each, ~30x a reused one) -- and history, UpTime and
+    // the audit log call these once or twice per row. Same output, reused.
+    var _mfDtf = {};
+    function _mfFormatter(key, locale, opts) {
+      var cacheKey = key + '|' + locale;
+      return _mfDtf[cacheKey] || (_mfDtf[cacheKey] = new Intl.DateTimeFormat(locale, opts));
+    }
     window.mfFormatDate = function (value) {
       var d = window.mfParseDate(value);
       if (!d) return '';
-      return d.toLocaleDateString(window.mfLocale(),
-        { day: '2-digit', month: '2-digit', year: 'numeric' });
+      return _mfFormatter('d', window.mfLocale(),
+        { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
     };
 
     window.mfFormatTime = function (value) {
       var d = window.mfParseDate(value);
       if (!d) return '';
       return window.__LANG === 'de'
-        ? d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hour12: false })
-        : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        ? _mfFormatter('t', 'de-DE', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
+        : _mfFormatter('t', 'en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(d);
     };
+
+    /** Select *value* in *select*; an option is added for a value the list
+        does not have (a hoster that is switched off or comes from a removed
+        module). select.value = unknown left NO option selected, and the next
+        save sent "" and overwrote the stored choice. */
+    window.mfSelectValue = function (select, value) {
+      if (!select) return;
+      select.value = value;
+      if (value && select.value !== value) {
+        var o = document.createElement('option');
+        o.value = value;
+        o.textContent = value;
+        select.appendChild(o);
+        select.value = value;
+      }
+    };
+
+    /** Every enabled hoster, module hosters included -- for pickers built in JS. */
+    window.MF_PROVIDERS = {{ (supported_providers or []) | tojson }};
 
     window.mfFormatDateTime = function (value) {
       var d = window.mfParseDate(value);
@@ -1643,19 +1679,15 @@
     // shows the dialog when consent_given is still null (i.e. truly the
     // first run) -- once answered, either "Yes" or "No" is a permanent
     // answer that only changes again via the Settings page.
+    // The flag is rendered server-side (telemetry_consent_pending, admins
+    // only): every page view used to fetch the whole 13.7 KB telemetry
+    // registry from /api/settings/telemetry just to learn this one boolean.
+    {% if telemetry_consent_pending %}
     (function () {
-      fetch('/api/settings/telemetry')
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-          // A non-ok response (not logged in yet, non-admin account, or the
-          // route simply not reachable this early) must never block the
-          // rest of the UI -- just skip showing the dialog this time.
-          if (!data || data.consent_given !== null) return;
-          var overlay = document.getElementById('telemetryConsentOverlay');
-          if (overlay) overlay.style.display = 'block';
-        })
-        .catch(function () { /* offline first load -- skip, never block the UI */ });
+      var overlay = document.getElementById('telemetryConsentOverlay');
+      if (overlay) overlay.style.display = 'block';
     })();
+    {% endif %}
 
     function _telemetryConsentAnswer(granted) {
       var overlay = document.getElementById('telemetryConsentOverlay');
@@ -1677,7 +1709,7 @@
             stroke-linejoin="round">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
-          Dark
+          {{ _('Dark') }}
         </button>
         <button class="appearance-theme-btn" id="themeBtnLight" onclick="setTheme('light')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -1692,7 +1724,7 @@
             <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
           </svg>
-          Light
+          {{ _('Light') }}
         </button>
       </div>
     </div>
@@ -1711,7 +1743,6 @@
 
 
 
-  <div id="toast" class="toast"></div>
 
   <!-- ===== Player Modal =====
        Every control lives inside #playerVideoWrap and floats above the
@@ -2210,10 +2241,13 @@
 
       // Hide once DOM is ready (works on all devices, no touch/mouse listeners needed)
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () { setTimeout(hideLoader, 60); });
+        document.addEventListener('DOMContentLoaded', hideLoader);
       } else {
-        setTimeout(hideLoader, 60);
+        hideLoader();
       }
+      // Back/forward cache: the page comes back exactly as it was left -- with
+      // the loader shown by the click that navigated away.
+      window.addEventListener('pageshow', function (e) { if (e.persisted) hideLoader(); });
 
       // Desktop only: show loader on click for smooth departure animation
       // Detect touch device and skip to avoid issues with synthetic mouse events on mobile
@@ -2230,7 +2264,12 @@
             return true;
           } catch (e) { return false; }
         }
-        document.addEventListener('mousedown', function (e) {
+        // On click, not mousedown: mousedown fired before anyone knew whether
+        // a navigation would follow, so a sub-menu chevron inside a link (it
+        // prevents the navigation), a right/middle/ctrl click or a drag left
+        // the page covered by the loader for good.
+        document.addEventListener('click', function (e) {
+          if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           var a = e.target.closest('a[href]');
           if (a && isInternal(a)) {
             loader.style.transition = 'none';

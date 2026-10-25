@@ -1144,7 +1144,7 @@ function updateUpscaleHint(mode) {
     after_download:  {{ _("After download") | tojson }},
   };
   const el = document.getElementById("active-upscale-label");
-  if (el) el.textContent = labels[mode] || mode || "Deaktiviert";
+  if (el) el.textContent = labels[mode] || mode || labels.disabled;
   // Show hint if at least one thing is set
   const hint = document.getElementById("active-mode-hint");
   if (hint && mode && mode !== "disabled") hint.style.display = "block";

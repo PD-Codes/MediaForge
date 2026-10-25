@@ -753,10 +753,29 @@ def _sync_session_user_agent(page) -> None:
         return
     if ua and isinstance(ua, str):
         try:
-            from ..config import GLOBAL_SESSION
+            from ..config import GLOBAL_SESSION, store_clearance
             GLOBAL_SESSION.headers["User-Agent"] = ua
+            # Every other thread too: the clearance cookie is bound to this UA.
+            store_clearance(user_agent=ua)
         except Exception:
             pass
+
+
+def _publish_solve_cookies(context) -> None:
+    """Put the solved context's cookies into this thread's session and the
+    clearance cookies among them into every thread's (config.store_clearance)."""
+    from ..config import GLOBAL_SESSION, store_clearance
+    try:
+        cookies = context.cookies()
+    except Exception:
+        return
+    for cookie in cookies:
+        GLOBAL_SESSION.cookies.set(
+            cookie["name"],
+            cookie["value"],
+            domain=cookie.get("domain", "").lstrip("."),
+        )
+    store_clearance(cookies)
 
 
 class CaptchaEnvironmentError(Exception):
@@ -803,8 +822,14 @@ class _BrowserHandle:
         self.context = context
         self._browser = browser
         self._got_lock = got_lock
+        self._closed = False
 
     def close(self):
+        # Idempotent: the solvers close on their success path AND in their
+        # finally clause, and the profile lock must be released exactly once.
+        if self._closed:
+            return
+        self._closed = True
         try:
             self.context.close()
         except Exception:
@@ -1717,7 +1742,6 @@ def _solve_captcha_cli(url: str) -> bool:
             "Bitte installieren mit: pip install patchright && patchright install chromium"
         )
 
-    from ..config import GLOBAL_SESSION
     from ..logger import get_logger
     from ..telemetry import client as telemetry_client
     from ..telemetry import events as telemetry_events
@@ -1800,12 +1824,7 @@ def _solve_captcha_cli(url: str) -> bool:
                             final_url = page.url
                         except Exception:
                             final_url = url
-                    for cookie in context.cookies():
-                        GLOBAL_SESSION.cookies.set(
-                            cookie["name"],
-                            cookie["value"],
-                            domain=cookie.get("domain", "").lstrip("."),
-                        )
+                    _publish_solve_cookies(context)
                     logger.info("CAPTCHA solved — cookies injected into session")
                 else:
                     logger.warning("CAPTCHA timeout after 5 minutes")
@@ -1903,7 +1922,6 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
             "Bitte installieren mit: pip install patchright && patchright install chromium"
         )
 
-    from ..config import GLOBAL_SESSION
     from ..logger import get_logger
     from ..telemetry import client as telemetry_client
     from ..telemetry import events as telemetry_events
@@ -1919,6 +1937,11 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
         except Exception:
             pass
 
+    # Closed in the finally below as well: an exception between the launch and
+    # the close on the success path (a page.goto timeout, a failed evaluate)
+    # used to leave the persistent-profile lock taken until the process ended,
+    # so every later solve ran without the warm profile.
+    _handle = None
     try:
         # Checked before anything is launched: an extractor's own retry loop
         # (e.g. extractors/provider/voe.py) can call back in here several times
@@ -1942,7 +1965,11 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
 
             solved = False
             challenge_solver = _ChallengeSolver()
-            for _ in range(_captcha_timeout(300)):  # ~1s per iteration
+            # A real deadline: each iteration takes a screenshot, polls every
+            # frame and then waits 1 s, so counting iterations made the
+            # documented 5-minute timeout several minutes longer.
+            _solve_deadline = _time.monotonic() + _captcha_timeout(300)
+            while _time.monotonic() < _solve_deadline:
                 # Download cancelled while we were solving: stop here and let
                 # the browser go. Checked first in the loop so the tear-down
                 # happens within one iteration (~1s) of the click on "Cancel".
@@ -2003,12 +2030,7 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
                 pass
 
             if solved:
-                for cookie in context.cookies():
-                    GLOBAL_SESSION.cookies.set(
-                        cookie["name"],
-                        cookie["value"],
-                        domain=cookie.get("domain", "").lstrip("."),
-                    )
+                _publish_solve_cookies(context)
                 logger.info("CAPTCHA solved — cookies injected into session")
             else:
                 logger.warning("CAPTCHA timeout after 5 minutes")
@@ -2052,6 +2074,8 @@ def _solve_captcha_interactive(url: str, queue_id: int) -> bool:
         return False
 
     finally:
+        if _handle is not None:
+            _handle.close()
         if _on_captcha_end is not None:
             try:
                 _on_captcha_end(queue_id)
@@ -2163,7 +2187,6 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
             "Bitte installieren mit: pip install patchright && patchright install chromium"
         )
 
-    from ..config import GLOBAL_SESSION
     from ..logger import get_logger
     from ..telemetry import client as telemetry_client
     from ..telemetry import events as telemetry_events
@@ -2181,6 +2204,7 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
             except Exception:
                 pass
 
+    _handle = None   # closed in the finally below too (see _solve_captcha_interactive)
     try:
         # Checked before anything is launched — see the same call in
         # _solve_captcha_interactive for why.
@@ -2452,12 +2476,7 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
                 _time.sleep(0.8)
 
             if final_url:
-                for cookie in context.cookies():
-                    GLOBAL_SESSION.cookies.set(
-                        cookie["name"],
-                        cookie["value"],
-                        domain=cookie.get("domain", "").lstrip("."),
-                    )
+                _publish_solve_cookies(context)
             else:
                 logger.warning("CAPTCHA timeout in solve_sto_modal")
                 telemetry_client.submit(telemetry_events.build_feature_detail_event(
@@ -2528,6 +2547,8 @@ def solve_sto_modal(episode_url: str, provider_name: str, language_label: str,
         return None
 
     finally:
+        if _handle is not None:
+            _handle.close()
         if queue_id is not None:
             if _on_captcha_end is not None:
                 try:

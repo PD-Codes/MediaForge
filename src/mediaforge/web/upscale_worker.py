@@ -210,19 +210,36 @@ def _upscale_worker():
             _job_started = time.monotonic()
             _report_upscale_started()
 
-            # Progress-poll thread: mirrors anime4k live progress -> DB every 2s
+            # Progress-poll thread: mirrors anime4k live progress -> DB. It
+            # used to write (and check the cancel flag, a second connection)
+            # every 2 s for the whole job -- hours of commits for values that
+            # mostly had not moved. Now a write needs the value to have moved
+            # by half a percent, or 30 s to have passed; the live percentage
+            # of the running file comes from memory anyway (/api/upscale/progress).
             import threading as _th
             _poll_stop = _th.Event()
             def _progress_poller():
+                last_value = None
+                last_write = 0.0
                 while not _poll_stop.wait(2):
                     prog = get_upscale_progress()
-                    if prog.get("active") and not is_upscale_cancelled(item["id"]):
-                        _cur_idx = item.get("_runtime_file_idx", 0)
-                        _tot = max(item.get("total_files", 1), 1)
-                        _base = _cur_idx / _tot * 100
-                        _file_pct = prog.get("percent", 0.0) / _tot
-                        update_upscale_progress(item["id"],
-                            min(round(_base + _file_pct, 1), 99.9))
+                    if not prog.get("active"):
+                        continue
+                    _cur_idx = item.get("_runtime_file_idx", 0)
+                    _tot = max(item.get("total_files", 1), 1)
+                    _base = _cur_idx / _tot * 100
+                    _file_pct = prog.get("percent", 0.0) / _tot
+                    value = min(round(_base + _file_pct, 1), 99.9)
+                    now = time.monotonic()
+                    if value == last_value:
+                        continue
+                    if (last_value is not None and abs(value - last_value) < 0.5
+                            and now - last_write < 30):
+                        continue
+                    if is_upscale_cancelled(item["id"]):
+                        continue
+                    update_upscale_progress(item["id"], value)
+                    last_value, last_write = value, now
             _pt = _th.Thread(target=_progress_poller, daemon=True)
             _pt.start()
 

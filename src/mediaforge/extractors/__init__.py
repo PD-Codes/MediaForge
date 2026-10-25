@@ -186,6 +186,10 @@ def get_subtitles_for(url, fallback_provider=None, headers=None):
 # Third-party hosters
 # ---------------------------------------------------------------------------
 _EXTRA_HOSTERS = {}  # item_id -> provider key (lowercase)
+# item_id -> what register_hoster() added besides provider_functions, so
+# unregister_hoster() can take exactly that back out: (display name,
+# {host: previous HOST_PROVIDER_MAP value or None}, header tables it filled).
+_EXTRA_HOSTER_ADDED = {}
 
 
 def register_hoster(
@@ -256,14 +260,21 @@ def register_hoster(
         provider_functions[f"get_preview_image_link_from_{key}"] = get_preview_image
     if get_subtitles is not None:
         provider_functions[f"get_subtitles_from_{key}"] = get_subtitles
+    previous_hosts = {}
     for host in host_patterns:
-        HOST_PROVIDER_MAP[host.lower()] = key
+        host = host.lower()
+        previous_hosts.setdefault(host, HOST_PROVIDER_MAP.get(host))
+        HOST_PROVIDER_MAP[host] = key
+    header_tables = []
     if headers:
-        _config.PROVIDER_HEADERS_D.setdefault(name, dict(headers))
-        _config.PROVIDER_HEADERS_W.setdefault(name, dict(headers))
+        for table in (_config.PROVIDER_HEADERS_D, _config.PROVIDER_HEADERS_W):
+            if name not in table:
+                table[name] = dict(headers)
+                header_tables.append(table)
 
     _config.SUPPORTED_PROVIDERS.append(name)
     _EXTRA_HOSTERS[item_id] = key
+    _EXTRA_HOSTER_ADDED[item_id] = (name, previous_hosts, header_tables)
 
     try:
         from ..web import runtime_state as _runtime_state
@@ -301,18 +312,38 @@ def hoster_owner(name) -> str | None:
 
 
 def unregister_hoster(item_id) -> None:
-    """Drop a hoster previously added via :func:`register_hoster`. Leaves
-    ``config.SUPPORTED_PROVIDERS``/``HOST_PROVIDER_MAP`` entries in place
-    (harmless once ``provider_functions`` no longer resolves them -- callers
-    already treat an unresolvable provider as "not implemented") but removes
-    it from ``provider_functions`` and refreshes ``WORKING_PROVIDERS`` so it
-    stops being offered."""
+    """Drop a hoster previously added via :func:`register_hoster`: its
+    ``provider_functions``, its name in ``config.SUPPORTED_PROVIDERS``, the
+    ``HOST_PROVIDER_MAP`` entries it set (a built-in mapping it had replaced
+    comes back) and the header entries it added; then refreshes
+    ``WORKING_PROVIDERS`` so it stops being offered.
+
+    The name used to stay in SUPPORTED_PROVIDERS, so the module's next
+    ``register(app)`` -- a live upgrade, a reinstall, the rollback of a failed
+    upgrade -- was refused as "name already registered" and the module was
+    left without its hoster until a restart."""
     key = _EXTRA_HOSTERS.pop(item_id, None)
     if key is None:
         return
     provider_functions.pop(f"get_direct_link_from_{key}", None)
     provider_functions.pop(f"get_preview_image_link_from_{key}", None)
     provider_functions.pop(f"get_subtitles_from_{key}", None)
+    added = _EXTRA_HOSTER_ADDED.pop(item_id, None)
+    if added is not None:
+        from .. import config as _config
+        name, previous_hosts, header_tables = added
+        # In place: other modules hold a reference to this very list.
+        while name in _config.SUPPORTED_PROVIDERS:
+            _config.SUPPORTED_PROVIDERS.remove(name)
+        for host, previous in previous_hosts.items():
+            if HOST_PROVIDER_MAP.get(host) != key:
+                continue
+            if previous is None:
+                HOST_PROVIDER_MAP.pop(host, None)
+            else:
+                HOST_PROVIDER_MAP[host] = previous
+        for table in header_tables:
+            table.pop(name, None)
     try:
         from ..web import runtime_state as _runtime_state
         _runtime_state.refresh_working_providers()

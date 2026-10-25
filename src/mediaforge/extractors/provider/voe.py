@@ -23,6 +23,7 @@ import binascii
 import json
 import logging
 import re
+import threading
 import time
 
 import niquests
@@ -216,6 +217,7 @@ def get_direct_link_from_voe(embeded_voe_link, headers=None, max_retries=3, time
             source = extract_voe_source_from_html(html)
             if source:
                 logger.debug(f"VOE source extracted on attempt {attempt + 1}")
+                _remember_tracks(embeded_voe_link, html, embeded_voe_link)
                 return source
 
             # Fallback: follow the redirect URL embedded in the page
@@ -245,6 +247,10 @@ def get_direct_link_from_voe(embeded_voe_link, headers=None, max_retries=3, time
                             html = resp.text
                         break
                     except (niquests.RequestException, Exception) as err:
+                        # A cancelled captcha is the user's answer, not a
+                        # network hiccup: no sleep, no further page fetch.
+                        if "Download cancelled" in str(err):
+                            raise
                         if redirect_attempt == max_retries - 1:
                             raise ValueError(f"Weiterleitung konnte nach {max_retries} Versuchen nicht geladen werden: {err}") from err
                         continue
@@ -256,10 +262,12 @@ def get_direct_link_from_voe(embeded_voe_link, headers=None, max_retries=3, time
                 raise ValueError("Keine VOE-Videoquelle auf der Seite gefunden.")
             
             logger.debug(f"VOE source extracted on attempt {attempt + 1}")
+            _remember_tracks(embeded_voe_link, html, redirect_url if redirect_match else embeded_voe_link)
             return source
             
         except (niquests.RequestException, Exception) as err:
-            if any(k in str(err) for k in ("Wartungsmodus", "Keine VOE-Videoquelle", "nicht verfügbar")):
+            if any(k in str(err) for k in ("Wartungsmodus", "Keine VOE-Videoquelle", "nicht verfügbar",
+                                           "Download cancelled")):
                 raise
             if attempt == max_retries - 1:
                 raise ValueError(f"VOE-Seite konnte nach {max_retries} Versuchen nicht geladen werden: {err}") from err
@@ -267,6 +275,36 @@ def get_direct_link_from_voe(embeded_voe_link, headers=None, max_retries=3, time
             continue
     
     raise ValueError("Unexpected error in get_direct_link_from_voe")
+
+
+# The subtitle tracks of the player config the direct-link path just decoded,
+# per embed URL. The config holds the stream AND the tracks, but the tracks were
+# thrown away and get_subtitles_from_voe() fetched (and decoded) the embed page
+# and its redirect target again after every download -- which could even hit a
+# VOE captcha a second time just to look for subtitles.
+_TRACKS_TTL = 600.0
+_TRACKS_MAX = 128
+_tracks_cache = {}            # embed URL -> (stored_at, tracks)
+_tracks_lock = threading.Lock()
+
+
+def _remember_tracks(embed_url, html, page_url):
+    try:
+        tracks = absolutize(_voe_tracks_from_html(html), page_url)
+    except Exception:
+        return
+    with _tracks_lock:
+        _tracks_cache[embed_url] = (time.monotonic(), tracks)
+        while len(_tracks_cache) > _TRACKS_MAX:
+            _tracks_cache.pop(next(iter(_tracks_cache)), None)
+
+
+def _remembered_tracks(embed_url):
+    with _tracks_lock:
+        hit = _tracks_cache.get(embed_url)
+    if hit and time.monotonic() - hit[0] < _TRACKS_TTL:
+        return list(hit[1])
+    return None
 
 
 def get_subtitles_from_voe(embeded_voe_link, headers=None, timeout=30):
@@ -279,6 +317,9 @@ def get_subtitles_from_voe(embeded_voe_link, headers=None, timeout=30):
 
     Returns [] on any failure -- subtitles must never break a download.
     """
+    remembered = _remembered_tracks(embeded_voe_link)
+    if remembered is not None:
+        return remembered
     try:
         if headers is None:
             headers = PROVIDER_HEADERS_D.get("VOE", {"User-Agent": DEFAULT_USER_AGENT})

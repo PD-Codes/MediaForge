@@ -9,7 +9,7 @@ import sqlite3
 from ...config import MEDIAFORGE_CONFIG_DIR
 from ...logger import get_logger
 
-from ._core import DB_PATH, get_db
+from ._core import DB_PATH, _configure_connection, get_db
 
 logger = get_logger(__name__)
 
@@ -208,11 +208,19 @@ def claim_next_encoding_queued():
 
     Used by: mediaforge/web/encoding_worker.py (background encoding worker loop).
     """
-    conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    # Configured like every other connection (synchronous=NORMAL, cache,
+    # journal_size_limit): these used to commit with FULL sync.
+    conn = _configure_connection(
+        sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False))
     try:
+        # Idle tick -- nothing queued, the common case every few seconds:
+        # answer with a plain read instead of taking the write lock.
+        # fetchall() finishes the statement, so no read transaction is still
+        # open when BEGIN IMMEDIATE runs.
+        if not conn.execute(
+            "SELECT 1 FROM encoding_queue WHERE status = 'queued' LIMIT 1"
+        ).fetchall():
+            return None
         conn.execute("BEGIN IMMEDIATE")
         running = conn.execute(
             "SELECT id FROM encoding_queue WHERE status = 'running' LIMIT 1"

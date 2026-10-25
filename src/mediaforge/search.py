@@ -39,6 +39,7 @@ _homepage_cache_ttl = 3600.0  # 1 hour
 _homepage_refreshing = False   # background refresh in progress
 _homepage_lock = _threading.Lock()
 _series_html_content = None
+_series_html_at = 0.0         # unix timestamp of the last successful fetch
 _series_lock = _threading.Lock()
 
 
@@ -80,7 +81,10 @@ def query(keyword):
     Used by: ``web/routes/search.py`` and ``web/routes/autosync.py`` (imported
     there as ``aniworld_query``).
     """
-    response = GLOBAL_SESSION.post(SEARCH_URL, data={"keyword": keyword}, timeout=10)
+    # budget: one total time limit across the mirror list. Without it a dead
+    # primary cost the full timeout per mirror (3 x 10 s) while the browser had
+    # long given up on the request.
+    response = GLOBAL_SESSION.post(SEARCH_URL, data={"keyword": keyword}, timeout=10, budget=12)
     try:
         return response.json()  # Returns a list of dicts
     except ValueError:
@@ -306,21 +310,31 @@ def fetch_popular_animes():
 
 
 def _fetch_series_homepage():
-    """Fetch the s.to popular series page, using a simple module-level cache."""
-    global _series_html_content
-    if _series_html_content is not None:
+    """Fetch the s.to popular series page, cached for the same hour as the
+    AniWorld homepage (_fetch_homepage).
+
+    The copy used to be kept for the life of the process, so the s.to rows
+    ("Neue Staffeln", "Meistgesehen") and everything prefetched from them were
+    frozen until a restart -- the hourly browse refresh only re-parsed the
+    first fetch. A failed refresh keeps serving the previous copy.
+    """
+    global _series_html_content, _series_html_at
+    if (_series_html_content is not None
+            and _time.time() - _series_html_at < _homepage_cache_ttl):
         return _series_html_content
     with _series_lock:
-        if _series_html_content is not None:  # double-check after acquiring lock
+        if (_series_html_content is not None  # double-check after acquiring lock
+                and _time.time() - _series_html_at < _homepage_cache_ttl):
             return _series_html_content
         try:
             response = GLOBAL_SESSION.get("https://serienstream.to/beliebte-serien")
             response.raise_for_status()
             _series_html_content = response.text
+            _series_html_at = _time.time()
             return _series_html_content
         except Exception as e:
             logger.error(f"Failed to fetch s.to popular series page: {e}")
-            return None
+            return _series_html_content
 
 
 def _extract_series_cards(section_html):
@@ -547,7 +561,7 @@ def query_s_to(keyword):
     """
     # Use query params to ensure proper URL encoding (spaces, umlauts, etc.)
     url = "https://serienstream.to/api/search/suggest"
-    response = GLOBAL_SESSION.get(url, params={"term": keyword}, timeout=10)
+    response = GLOBAL_SESSION.get(url, params={"term": keyword}, timeout=10, budget=12)  # see query()
 
     data = response.json()
     shows = data.get("shows", []) or []

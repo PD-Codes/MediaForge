@@ -9,6 +9,7 @@ import datetime as _dt
 from ...logger import get_logger
 
 from ._core import get_db
+from .history import _window_bound
 
 logger = get_logger(__name__)
 
@@ -276,6 +277,13 @@ def get_stats_trends(days=STATS_TRENDS_DEFAULT_DAYS):
     """
     days = _stats_clamp_days(days)
     since = f"-{days - 1} days"
+    # The window test is on the LOCAL calendar day -- a function of the column,
+    # which no index can serve, so each of the seven window queries below
+    # scanned the whole history. The UTC bound in front of it is a strict
+    # superset (the earliest qualifying instant is at most ~days*24h + 2h back,
+    # DST included; the bound is (days+1)*24h back), so the finished_at index
+    # narrows the scan and the exact test still decides. Same rows as before.
+    bound = f"-{days + 1} days"
     conn = get_db()
     try:
         # Guard: the table may not exist yet on a very old DB that has not run
@@ -295,6 +303,8 @@ def get_stats_trends(days=STATS_TRENDS_DEFAULT_DAYS):
                 "available": False,
             }
 
+        win_sql = _window_bound(conn, "finished_at", days)
+
         # localtime() so "per day" matches the user's calendar, not UTC.
         rows = conn.execute(
             "SELECT date(finished_at, 'localtime') AS d, "
@@ -306,9 +316,10 @@ def get_stats_trends(days=STATS_TRENDS_DEFAULT_DAYS):
             "       COALESCE(SUM(duration_sec), 0) AS dur "
             "FROM download_history "
             "WHERE finished_at IS NOT NULL "
+            + win_sql +
             "  AND date(finished_at, 'localtime') >= date('now', 'localtime', ?) "
             "GROUP BY d ORDER BY d",
-            (since,),
+            (bound, since),
         ).fetchall()
         by_day = {r["d"]: r for r in rows}
 
@@ -338,9 +349,10 @@ def get_stats_trends(days=STATS_TRENDS_DEFAULT_DAYS):
             "       COUNT(*) AS cnt "
             "FROM download_history "
             "WHERE finished_at IS NOT NULL "
+            + win_sql +
             "  AND date(finished_at, 'localtime') >= date('now', 'localtime', ?) "
             "GROUP BY h, w",
-            (since,),
+            (bound, since),
         ).fetchall():
             h, w, cnt = r["h"], r["w"], r["cnt"]
             if h is None or w is None:
@@ -362,9 +374,10 @@ def get_stats_trends(days=STATS_TRENDS_DEFAULT_DAYS):
                     "       COALESCE(SUM(size_mb), 0) AS size_mb, AVG(avg_speed_mbps) AS spd "
                     "FROM download_history "
                     "WHERE finished_at IS NOT NULL "
+                    + win_sql +
                     "  AND date(finished_at, 'localtime') >= date('now', 'localtime', ?) "
                     f"GROUP BY k ORDER BY cnt DESC LIMIT 12",
-                    (since,),
+                    (bound, since),
                 ).fetchall()
             ]
 
@@ -383,8 +396,9 @@ def get_stats_trends(days=STATS_TRENDS_DEFAULT_DAYS):
             "       MAX(size_mb) AS max_size, MAX(avg_speed_mbps) AS max_spd "
             "FROM download_history "
             "WHERE finished_at IS NOT NULL "
+            + win_sql +
             "  AND date(finished_at, 'localtime') >= date('now', 'localtime', ?)",
-            (since,),
+            (bound, since),
         ).fetchone()
         cnt = tot["cnt"] or 0
         ok = tot["ok_cnt"] or 0
@@ -395,9 +409,10 @@ def get_stats_trends(days=STATS_TRENDS_DEFAULT_DAYS):
                 "SELECT title, COUNT(*) AS cnt, COALESCE(SUM(size_mb), 0) AS size_mb "
                 "FROM download_history "
                 "WHERE finished_at IS NOT NULL "
+                + win_sql +
                 "  AND date(finished_at, 'localtime') >= date('now', 'localtime', ?) "
                 "GROUP BY title ORDER BY cnt DESC, size_mb DESC LIMIT 10",
-                (since,),
+                (bound, since),
             ).fetchall()
         ]
 

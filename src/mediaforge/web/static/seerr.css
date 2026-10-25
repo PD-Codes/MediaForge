@@ -441,9 +441,9 @@ body.mf-select-mode .seerr-row,
   display: none;
   padding: 3px 9px 3px 7px;
   border-radius: 999px;
-  background: rgba(6, 6, 12, 0.82);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: rgba(6, 6, 12, 0.9);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
   /* Purely informational — it must never swallow a tap meant for the card. */
   pointer-events: none;
   transition: opacity var(--transition);

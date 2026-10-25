@@ -63,6 +63,7 @@ def _tmdb_keywords_sync_worker():
                 if mtime.date() == datetime.utcnow().date():
                     download_needed = False
 
+            download_failed = None
             if download_needed:
                 logger.info(f"Downloading TMDB keywords from {url}")
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -79,10 +80,16 @@ def _tmdb_keywords_sync_worker():
                     logger.info("Successfully downloaded TMDB keywords.")
                 except Exception as e:
                     logger.warning(f"Failed to download TMDB keywords: {e}")
+                    download_failed = e
 
-            _wr.done("tmdb_keywords",
-                     detail="downloaded" if download_needed else "already current",
-                     next_run=_next_run_iso())
+            if download_failed is not None:
+                # Reported as what it is: this used to say "downloaded" in the
+                # Operations view whether or not the download worked.
+                _wr.fail("tmdb_keywords", str(download_failed))
+            else:
+                _wr.done("tmdb_keywords",
+                         detail="downloaded" if download_needed else "already current",
+                         next_run=_next_run_iso())
 
         except Exception as e:
             logger.error(f"Error in TMDB keywords sync worker: {e}")

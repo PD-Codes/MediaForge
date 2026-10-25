@@ -26,7 +26,10 @@
     "English Dub",
     "English Dub (German Sub)",
   ];
-  const DEFAULT_PROVIDERS = ["VOE", "Vidmoly", "Vidoza"];
+  // Every enabled hoster (base.html, module hosters included); the static
+  // list is only the fallback for a page without base.html.
+  const DEFAULT_PROVIDERS = (window.MF_PROVIDERS && window.MF_PROVIDERS.length)
+    ? window.MF_PROVIDERS.slice() : ["VOE", "Vidmoly", "Vidoza"];
 
   function el(tag, props, children) {
     const node = document.createElement(tag);
@@ -545,7 +548,9 @@
 
     const provSelect = el("select", { class: "asf-select" },
       providers.map((p) => el("option", { value: p, text: p })));
-    provSelect.value = (existing && existing.provider) || opts.currentProvider || providers[0];
+    const wantedProvider = (existing && existing.provider) || opts.currentProvider || providers[0];
+    if (window.mfSelectValue) window.mfSelectValue(provSelect, wantedProvider);
+    else provSelect.value = wantedProvider;
 
     const pathSelect = el("select", { class: "asf-select" }, [
       el("option", { value: "", text: tr("Standard", "Default") }),

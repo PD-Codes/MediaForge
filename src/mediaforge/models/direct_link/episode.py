@@ -109,5 +109,6 @@ class DirectLinkEpisode:
             label=ep_label,
             cancel_event=cancel_event,
             format_override=self.format_id,
+            public_only=True,
         )
         return True

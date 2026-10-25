@@ -70,6 +70,13 @@ _LANG_3_ALIASES = {
 _LANG_SPLIT_RE = re.compile(r"[-_]")
 
 
+
+def _insecure_tls():
+    """yt-dlp's nocheckcertificate: off unless MEDIAFORGE_INSECURE_DOWNLOAD_TLS=1
+    (see config.INSECURE_DOWNLOAD_TLS)."""
+    from ...config import INSECURE_DOWNLOAD_TLS
+    return INSECURE_DOWNLOAD_TLS
+
 def _get_setting(key, default="1"):
     """Read an app setting without importing the web stack at module load.
 
@@ -262,11 +269,12 @@ def fetch_hoster_subtitles(tracks, output_path, headers=None):
                 url, headers=headers or None, timeout=20, stream=True
             )
             resp.raise_for_status()
-            payload = b""
+            payload = bytearray()   # += on bytes copied the whole buffer per chunk
             for chunk in resp.iter_content(65536):
                 payload += chunk
                 if len(payload) > 8 * 1024 * 1024:
                     raise ValueError("subtitle exceeds 8 MB — refusing")
+            payload = bytes(payload)
             if not payload.strip():
                 continue
             dest.write_bytes(payload)
@@ -311,7 +319,7 @@ def list_available_subtitles(url, headers=None):
         "quiet": True, "no_warnings": True, "noprogress": True,
         "logger": _QuietLogger(), "skip_download": True,
         "http_headers": headers or {}, "socket_timeout": 20,
-        "nocheckcertificate": True, "noplaylist": True,
+        "nocheckcertificate": _insecure_tls(), "noplaylist": True,
         "js_runtimes": {"node": {}, "deno": {}},
     }
     try:

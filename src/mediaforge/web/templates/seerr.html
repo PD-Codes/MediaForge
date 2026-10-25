@@ -1,9 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Seerr Requests') }} — MediaForge{% endblock %}
 {% block styles %}
-{# forms.css (.chb-main, .mf-segmented, …) and modals.css are already loaded
-   globally by base.html; mf_components.css is not, so link it here. #}
-<link rel="stylesheet" href="{{ url_for('static', filename='mf_components.css') }}">
+{# forms.css (.chb-main, .mf-segmented, …), modals.css and mf_components.css
+   are loaded globally by base.html. #}
 <link rel="stylesheet" href="{{ url_for('static', filename='seerr.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
 {% endblock %}

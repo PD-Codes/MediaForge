@@ -91,6 +91,8 @@ function _startEncodingBadgePoll() {
   // mfPoll: paused while the tab is hidden (static/mf_poll.js).
   window.mfPoll(async () => {
     if (_encodingPaneActive()) return;   // the hub's own 2s poll is running
+    // queue.js's badge poll brought the count within the last few seconds.
+    if (window._mfEncodingBadgeAt && Date.now() - window._mfEncodingBadgeAt < 7000) return;
     try {
       const d = await (await fetch("/api/encoding/queue/badge")).json();
       if (d.ok) _updateEncodingBadges(d.count || 0);

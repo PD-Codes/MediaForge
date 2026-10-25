@@ -68,6 +68,15 @@ def init_download_history_db():
             "CREATE INDEX IF NOT EXISTS idx_download_history_target_path "
             "ON download_history(target_path)"
         )
+        # "When did it happen" is COALESCE(finished_at, created_at) everywhere:
+        # the history list's default sort, the `since` filter, the summary's
+        # daily series, the Wrapped recap and the hourly prune. An expression
+        # index only serves queries that use the identical expression, so keep
+        # it written exactly like this in all of them.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_download_history_eff "
+            "ON download_history(COALESCE(finished_at, created_at))"
+        )
         # Migration: add error column for existing DBs
         try:
             conn.execute("ALTER TABLE download_history ADD COLUMN error TEXT")
@@ -129,6 +138,36 @@ def get_download_history_meta_for_path(target_path: str):
         conn.close()
 
 
+def _window_bound(conn, expr, days):
+    """SQL fragment ``AND <expr> >= datetime('now', ?)`` for a `days` window.
+
+    The caller binds ``-(days + 1) days`` and keeps its exact local-day test;
+    the fragment is a strict superset of it that an index on `expr` can serve.
+    When the window spans more than a quarter of the history the index is switched
+    off with a unary + (same rows, plain scan): a range scan plus one table
+    lookup per row is then slower than the scan it replaces (measured: 365 days
+    of a two-year 120k-row history, 497 -> 688 ms). `expr` is a literal from
+    this package, never input.
+    """
+    indexed = _range_is_narrow(conn, expr, "datetime('now', ?)", f"-{days + 1} days")
+    return "  AND %s%s >= datetime('now', ?) " % ("" if indexed else "+", expr)
+
+
+def _range_is_narrow(conn, expr, start_sql, param):
+    """True when [start, now] covers less than a quarter of the history's time span.
+
+    Two O(log n) lookups (MIN over an indexed expression). Used to decide
+    whether an index range scan is worth it -- see _window_bound().
+    """
+    span, width = conn.execute(
+        "SELECT julianday('now') - julianday(MIN(%s)), julianday('now') - julianday(%s) "
+        "FROM download_history" % (expr, start_sql), (param,)
+    ).fetchone()
+    # Crossover measured on 120k rows over two years: 90 days (1/8) clearly
+    # faster with the index, 365 days (1/2) clearly slower.
+    return span is not None and width is not None and width * 4 < span
+
+
 def _history_where(username=None, search=None, status=None, source=None, since=None,
                    provider=None, language=None):
     """Build a (where_sql, params) pair shared by list/summary/export/clear."""
@@ -186,6 +225,12 @@ def get_download_history(username=None, search=None, status=None, source=None,
             "SELECT COUNT(*) AS cnt FROM download_history" + where_sql, params
         ).fetchone()["cnt"]
         order_expr = HISTORY_SORT_COLUMNS.get(sort, HISTORY_SORT_COLUMNS["date"])
+        if search:
+            # A title search matches few rows: walking idx_download_history_eff
+            # in date order until a page is full then visits most of the table
+            # with a lookup per row (5x slower than scan + sort, measured). The
+            # unary + sorts the same way without the index.
+            order_expr = "+" + order_expr
         order_dir = "ASC" if str(direction).lower() == "asc" else "DESC"
         rows = conn.execute(
             "SELECT * FROM download_history" + where_sql +
@@ -213,6 +258,14 @@ def get_download_history_summary(username=None, search=None, status=None, source
     try:
         where_sql, params = _history_where(username, search, status, source, since,
                                            provider, language)
+        if since and not _range_is_narrow(
+                conn, "COALESCE(finished_at, created_at)", "?", since):
+            # Aggregates read every matching row: for a `since` range spanning
+            # most of the history the index range + a lookup per row is slower
+            # than the plain scan. Same rows either way.
+            where_sql = where_sql.replace(
+                "COALESCE(finished_at, created_at) >= ?",
+                "+COALESCE(finished_at, created_at) >= ?", 1)
 
         tot = conn.execute(
             "SELECT COUNT(*) AS cnt, "
@@ -230,8 +283,12 @@ def get_download_history_summary(username=None, search=None, status=None, source
         ok = tot["ok_cnt"] or 0
 
         # Per-day series. localtime() so "per day" matches the user's calendar.
+        # The UTC bound in front is a strict superset of the local-day test
+        # (see get_stats_trends) that idx_download_history_eff can serve; the
+        # exact test still decides.
         day_where = where_sql + (" AND " if where_sql else " WHERE ") + \
-            "COALESCE(finished_at, created_at) IS NOT NULL " \
+            "COALESCE(finished_at, created_at) IS NOT NULL " + \
+            _window_bound(conn, "COALESCE(finished_at, created_at)", days) + \
             "AND date(COALESCE(finished_at, created_at), 'localtime') >= date('now', 'localtime', ?)"
         day_rows = conn.execute(
             "SELECT date(COALESCE(finished_at, created_at), 'localtime') AS d, "
@@ -240,7 +297,7 @@ def get_download_history_summary(username=None, search=None, status=None, source
             "       SUM(CASE WHEN status <> 'completed' THEN 1 ELSE 0 END) AS bad_cnt, "
             "       COALESCE(SUM(size_mb), 0) AS size_mb "
             "FROM download_history" + day_where + " GROUP BY d ORDER BY d",
-            params + [f"-{days - 1} days"],
+            params + [f"-{days + 1} days", f"-{days - 1} days"],
         ).fetchall()
         by_day = {r["d"]: r for r in day_rows}
         today = _dt.datetime.now().date()
@@ -256,18 +313,29 @@ def get_download_history_summary(username=None, search=None, status=None, source
                 "size_mb": round(r["size_mb"] or 0.0, 2) if r else 0.0,
             })
 
+        # All four breakdowns from ONE scan (it was one full scan per column):
+        # group by the four columns together -- a few hundred combinations at
+        # most -- and fold that per column below.
+        combos = conn.execute(
+            "SELECT COALESCE(status, '') AS st, COALESCE(provider, '') AS pr, "
+            "       COALESCE(source, '') AS so, COALESCE(language, '') AS la, "
+            "       COUNT(*) AS cnt, SUM(size_mb) AS size_mb "
+            "FROM download_history" + where_sql + " GROUP BY st, pr, so, la", params
+        ).fetchall()
+
         def _group(column):
-            # Column names are literals from this function only, never input.
-            return [
-                {"name": r["k"] or "", "count": r["cnt"],
-                 "size_mb": round(r["size_mb"] or 0.0, 2)}
-                for r in conn.execute(
-                    f"SELECT COALESCE({column}, '') AS k, COUNT(*) AS cnt, "
-                    "COALESCE(SUM(size_mb), 0) AS size_mb "
-                    "FROM download_history" + where_sql +
-                    " GROUP BY k ORDER BY cnt DESC LIMIT 12", params
-                ).fetchall()
-            ]
+            acc = {}
+            for r in combos:
+                cnt, size = acc.get(r[column], (0, None))
+                part = r["size_mb"]
+                if part is not None:
+                    size = part if size is None else size + part
+                acc[r[column]] = (cnt + r["cnt"], size)
+            # Count descending, ties by name descending: exactly the order the
+            # former per-column "GROUP BY k ORDER BY cnt DESC LIMIT 12" gave.
+            top = sorted(acc.items(), key=lambda kv: (kv[1][0], kv[0]), reverse=True)[:12]
+            return [{"name": k or "", "count": cnt, "size_mb": round(size or 0.0, 2)}
+                    for k, (cnt, size) in top]
 
         return {
             "totals": {
@@ -285,10 +353,10 @@ def get_download_history_summary(username=None, search=None, status=None, source
             },
             "days": days,
             "daily": daily,
-            "by_status": _group("status"),
-            "by_provider": _group("provider"),
-            "by_source": _group("source"),
-            "by_language": _group("language"),
+            "by_status": _group("st"),
+            "by_provider": _group("pr"),
+            "by_source": _group("so"),
+            "by_language": _group("la"),
         }
     finally:
         conn.close()

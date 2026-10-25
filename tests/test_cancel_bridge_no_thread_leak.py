@@ -16,7 +16,9 @@ COMMON = Path(__file__).resolve().parents[1] / "src" / "mediaforge" / "models" /
 
 def test_cancel_bridge_waits_with_a_timeout():
     src = COMMON.read_text(encoding="utf-8")
-    assert "_finished.set()" in src, "cancel bridge lost its release signal"
+    # The parallel audio+video branch that needed the bridge turned out to be
+    # unreachable (that case is the full-stream path) and was removed. What
+    # stays guarded: nothing may wait on the external event without a timeout.
     # A bare wait() on the *external* cancel event can never time out.
     assert not re.search(r"\bcancel_event\.wait\(\s*\)", src), (
         "cancel_event.wait() without a timeout parks the bridge thread forever"

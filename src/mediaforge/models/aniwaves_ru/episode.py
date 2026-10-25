@@ -12,6 +12,7 @@ Two ways an instance comes to exist:
 """
 import os
 import re
+import time
 from pathlib import Path
 
 try:
@@ -61,6 +62,8 @@ _LABEL_TO_LANG = {v: k for k, v in _LANG_LABELS.items()}
 _WORKING_SERVER_NAME = "vidplay"
 
 _UNSET = object()
+# How long a resolved embed URL is reused (see AniwavesEpisode.provider_url).
+_RESOLVED_TTL = 60.0
 
 
 class AniwavesEpisode:
@@ -100,6 +103,8 @@ class AniwavesEpisode:
         self.__file_extension = None
         self.__episode_path = None
         self.__is_downloaded = None
+        # link_id -> (embed URL, monotonic time), see provider_url.
+        self.__resolved = {}
 
     # -----------------------------
     # Fields parsed straight from the URL
@@ -266,7 +271,14 @@ class AniwavesEpisode:
                 f"Language '{self.selected_language}' with provider "
                 f"'{self.selected_provider}' is not available for episode: {self.url}"
             )
-        return scraper.resolve_source(link_id, referer=self.url)
+        # One download attempt reads this 4-5 times; each read used to repeat
+        # the GET /ajax/sources call. Reused per link_id for a minute.
+        hit = self.__resolved.get(link_id)
+        if hit and time.monotonic() - hit[1] < _RESOLVED_TTL:
+            return hit[0]
+        url = scraper.resolve_source(link_id, referer=self.url)
+        self.__resolved[link_id] = (url, time.monotonic())
+        return url
 
     @property
     def stream_url(self):

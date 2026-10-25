@@ -49,6 +49,9 @@ def get_direct_link_from_vidoza(embeded_vidoza_link):
 
     except niquests.RequestException as err:
         raise ValueError(f"Failed to fetch Vidoza page: {err}") from err
+    # Used to fall off the end and return None, which yt-dlp then reported as
+    # a generic error instead of this one.
+    raise ValueError("Vidoza: Keine Videoquelle auf der Seite gefunden.")
 
 
 def get_subtitles_from_vidoza(embeded_vidoza_link, headers=None):

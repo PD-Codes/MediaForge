@@ -19,6 +19,7 @@ addresses are rejected (SSRF guard).
 """
 
 import base64
+import http.client
 import ipaddress
 import re
 import socket
@@ -101,6 +102,25 @@ def b64d(s: str) -> str:
 
 # ── SSRF guard ────────────────────────────────────────────────────────────────────
 
+def _forbidden_ip(addr) -> bool:
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return (ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_multicast or ip.is_reserved or ip.is_unspecified)
+
+
+# Host verdicts of is_safe_url(). A stream asks for a segment every few seconds
+# and every one of them used to cost a DNS lookup here and another one for the
+# connection. Caching the verdict is safe because the connection itself is
+# checked again (see _safe_create_connection), so a host that changes its DNS
+# answer after the check still cannot be reached at a private address.
+_SAFE_HOST_TTL = 60.0
+_safe_hosts: dict = {}
+_safe_hosts_lock = threading.Lock()
+
+
 def is_safe_url(url: str) -> bool:
     """Reject non-http(s) schemes and hosts resolving to private/loopback/link-local
     addresses, so the proxy can't be used to reach internal network services."""
@@ -110,20 +130,77 @@ def is_safe_url(url: str) -> bool:
     host = parts.hostname
     if not host:
         return False
+    now = time.monotonic()
+    with _safe_hosts_lock:
+        hit = _safe_hosts.get(host)
+        if hit and hit[0] > now:
+            return hit[1]
     try:
         infos = socket.getaddrinfo(host, None)
     except Exception:
         return False
-    for info in infos:
-        addr = info[4][0]
+    verdict = not any(_forbidden_ip(info[4][0]) for info in infos)
+    with _safe_hosts_lock:
+        if len(_safe_hosts) > 512:
+            _safe_hosts.clear()
+        _safe_hosts[host] = (now + _SAFE_HOST_TTL, verdict)
+    return verdict
+
+
+def _safe_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
+                            source_address=None, *args, **kwargs):
+    """socket.create_connection() that refuses forbidden addresses.
+
+    is_safe_url() resolves the host once and the connection used to resolve it
+    again -- a host with a zero-TTL record could pass the check with a public
+    address and then be connected at 127.0.0.1 or a LAN address (DNS
+    rebinding), and the proxy hands the body back to the browser. Here the
+    addresses that are checked are the ones that are connected to.
+    """
+    host, port = address[0], address[1]
+    infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    if not infos or any(_forbidden_ip(info[4][0]) for info in infos):
+        raise OSError("connection to a forbidden address refused")
+    err = None
+    for family, socktype, proto, _canon, sockaddr in infos:
+        sock = None
         try:
-            ip = ipaddress.ip_address(addr)
-        except ValueError:
-            continue
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_multicast or ip.is_reserved or ip.is_unspecified):
-            return False
-    return True
+            sock = socket.socket(family, socktype, proto)
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            err = exc
+            if sock is not None:
+                sock.close()
+    raise err or OSError("could not connect")
+
+
+class _SafeHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _safe_create_connection
+
+
+class _SafeHTTPSConnection(http.client.HTTPSConnection):
+    # TLS still verifies against the URL's host name (server_hostname is
+    # self.host); only the TCP target is vetted.
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = _safe_create_connection
+
+
+class _SafeHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_SafeHTTPConnection, req)
+
+
+class _SafeHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_SafeHTTPSConnection, req, context=self._context)
 
 
 # ── Fetching ────────────────────────────────────────────────────────────────────────
@@ -152,11 +229,30 @@ class _CheckedRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-_proxy_opener = urllib.request.build_opener(_CheckedRedirectHandler)
+def _build_opener():
+    # With an explicit HTTP(S) proxy configured the TCP peer is the proxy (often
+    # a LAN address), so the connect-time check cannot apply; is_safe_url()
+    # and the per-redirect check still do.
+    if urllib.request.getproxies():
+        return urllib.request.build_opener(_CheckedRedirectHandler)
+    return urllib.request.build_opener(_CheckedRedirectHandler,
+                                       _SafeHTTPHandler, _SafeHTTPSHandler)
 
 
-def fetch(url: str, headers: dict, range_header: str | None = None) -> tuple:
-    """Fetch a URL with the provider headers. Returns (code, headers, data, final_url)."""
+_proxy_opener = _build_opener()
+
+# Read size when passing a body through.
+STREAM_CHUNK = 64 * 1024
+# A playlist is read whole (it is rewritten); one larger than this is refused.
+MAX_PLAYLIST_BYTES = 8 * 1024 * 1024
+
+
+def open_upstream(url: str, headers: dict, range_header: str | None = None):
+    """Open *url* with the provider headers, without reading the body.
+
+    Returns ``(code, headers, response, final_url)``; the caller reads and
+    closes ``response``.
+    """
     req = urllib.request.Request(url)
     for k, v in (headers or {}).items():
         req.add_header(k, v)
@@ -166,15 +262,47 @@ def fetch(url: str, headers: dict, range_header: str | None = None) -> tuple:
         req.add_header("Range", range_header)
     # Opened through the checked opener, not urlopen(): see _CheckedRedirectHandler.
     resp = _proxy_opener.open(req, timeout=30)
-    # One byte over the limit is enough to notice and refuse.
-    data = resp.read(MAX_PROXY_BYTES + 1)
-    if len(data) > MAX_PROXY_BYTES:
-        raise ValueError(f"upstream response larger than {MAX_PROXY_BYTES} bytes")
     final_url = resp.geturl()
     # Belt and braces: geturl() is the address the body actually came from.
     if final_url != url and not is_safe_url(final_url):
+        resp.close()
         raise ValueError("upstream resolved to a forbidden address")
-    return resp.getcode(), dict(resp.headers), data, final_url
+    return resp.getcode(), dict(resp.headers), resp, final_url
+
+
+def fetch(url: str, headers: dict, range_header: str | None = None) -> tuple:
+    """Fetch a URL with the provider headers. Returns (code, headers, data, final_url)."""
+    code, up_headers, resp, final_url = open_upstream(url, headers, range_header)
+    try:
+        # One byte over the limit is enough to notice and refuse.
+        data = resp.read(MAX_PROXY_BYTES + 1)
+    finally:
+        resp.close()
+    if len(data) > MAX_PROXY_BYTES:
+        raise ValueError(f"upstream response larger than {MAX_PROXY_BYTES} bytes")
+    return code, up_headers, data, final_url
+
+
+def iter_body(resp, first: bytes = b""):
+    """Yield *first*, then the rest of *resp* in chunks, at most
+    MAX_PROXY_BYTES in total; closes *resp* when done or abandoned."""
+    sent = 0
+    try:
+        if first:
+            sent += len(first)
+            yield first
+        while sent <= MAX_PROXY_BYTES:
+            chunk = resp.read(STREAM_CHUNK)
+            if not chunk:
+                return
+            sent += len(chunk)
+            if sent > MAX_PROXY_BYTES:
+                logger.warning("[StreamProxy] upstream body over %d bytes cut off",
+                               MAX_PROXY_BYTES)
+                return
+            yield chunk
+    finally:
+        resp.close()
 
 
 def is_playlist(data: bytes) -> bool:

@@ -281,7 +281,7 @@ def register_upscale_routes(app):
         """
         try:
             from ...anime4k.anime4k import get_available_engines, list_available_shaders
-            engines  = get_available_engines()
+            engines  = get_available_engines(refresh=True)
             shaders  = list_available_shaders("high") + list_available_shaders("low")
             shaders  = sorted(set(shaders))
             return jsonify({"ok": True, "engines": engines, "shaders_available": len(shaders) > 0})

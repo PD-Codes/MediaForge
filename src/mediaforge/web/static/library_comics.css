@@ -27,12 +27,13 @@
   min-width: 22px;
   padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.8);
   color: #fff;
   font-size: 0.72rem;
   font-weight: 700;
   text-align: center;
-  backdrop-filter: blur(2px);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
 }
 
 .mf-comic-sub {

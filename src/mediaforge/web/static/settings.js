@@ -125,7 +125,7 @@ async function loadSettings() {
     if (dlLangEl && data.download_language) dlLangEl.value = data.download_language;
 
     const dlProvEl = document.getElementById("downloadProvider");
-    if (dlProvEl && data.download_provider) dlProvEl.value = data.download_provider;
+    if (dlProvEl && data.download_provider) mfSelectValue(dlProvEl, data.download_provider);
 
     const nmTplEl = document.getElementById("namingTemplate");
     // Same broken "{season:02d}" spelling as the old Reset button used to
@@ -177,7 +177,7 @@ async function loadSettings() {
     let currentSyncLang = data.sync_language;
     if (currentSyncLang === "All Languages" && !isLangSep) currentSyncLang = "German Dub";
     updateSyncLanguageDropdown(isLangSep, currentSyncLang);
-    if (syncProviderSelect && data.sync_provider) syncProviderSelect.value = data.sync_provider;
+    if (syncProviderSelect && data.sync_provider) mfSelectValue(syncProviderSelect, data.sync_provider);
     if (syncPathUnavailableSelect && data.sync_path_unavailable_action) syncPathUnavailableSelect.value = data.sync_path_unavailable_action;
     const defaultThemeMode = document.getElementById("defaultThemeMode");
     if (defaultThemeMode && data.default_theme_mode) {
@@ -1001,7 +1001,8 @@ async function saveSyncWeekly() {
 async function saveSyncDefaults() {
   const body = {};
   if (syncLanguageSelect) body.sync_language = syncLanguageSelect.value;
-  if (syncProviderSelect) body.sync_provider = syncProviderSelect.value;
+  // Never send an empty hoster: it would overwrite the stored default.
+  if (syncProviderSelect && syncProviderSelect.value) body.sync_provider = syncProviderSelect.value;
   try {
     const resp = await fetch("/api/settings", {
       method: "PUT",

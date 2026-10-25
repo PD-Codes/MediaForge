@@ -408,9 +408,12 @@
   animation: ms-pulse 1.4s ease-in-out infinite;
 }
 
+/* transform, not margin-left: the margin version relaid out the bar every
+   frame. The bar is 40 % wide, so -100 % / 250 % of itself = -40 % / 100 % of
+   the track. */
 @keyframes ms-pulse {
-  0%   { margin-left: -40%; }
-  100% { margin-left: 100%; }
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
 }
 
 .integ-warn-box {

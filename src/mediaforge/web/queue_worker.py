@@ -786,6 +786,16 @@ def _queue_worker():
                 time.sleep(30)
                 continue
 
+            # Paused: do not claim either. Claiming first showed the next job
+            # as "running" for the whole pause, filed a "download_started"
+            # audit entry for a download that did not start and kept the
+            # heartbeat at "working". (A pause that begins after the claim is
+            # still honoured below.)
+            if is_queue_paused():
+                _wr.idle("queue", detail="paused")
+                time.sleep(2)
+                continue
+
             _final_status_set = False
             with _queue_lock:
                 item = claim_next_queued()

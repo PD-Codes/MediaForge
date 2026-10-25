@@ -81,6 +81,5 @@
   </div>
 </div>
 {% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='devinfos.js') }}"></script>
-{% endblock %}
+{# devinfos.js is loaded by base.html on every page; a second copy here ran
+   its polling twice and bound the "mark as read" click twice (two POSTs). #}

@@ -28,6 +28,7 @@ from datetime import datetime
 from datetime import timedelta
 from flask import jsonify
 from flask import render_template
+from flask import request
 from flask import session
 import json
 import threading
@@ -235,7 +236,38 @@ def _library_tv_ids(api_key, country, live_budget=0):
     _tmdb_lookup_cached() caches misses as well, so a folder name TMDB does
     not recognise is not retried until that entry's TTL expires.
     """
-    titles = _library_series_titles()
+    return _resolve_tv_titles(_library_series_titles(), api_key, country, live_budget)
+
+
+def _mediascan_tv_ids(api_key, country, live_budget=0):
+    """TMDB tv ids of the MediaScan library series (Jellyfin/Plex inventory).
+
+    Rows that carry a tmdb_id are used as they are; a title-only row is
+    resolved like the local library's folders (_library_tv_ids): one bulk
+    cache read, at most `live_budget` real lookups. This used to do one live
+    lookup per title-only row -- inside the /api/calendar request, and again
+    in every 10 s watcher cycle -- which went unnoticed only because the series
+    query never matched anything (see db.get_mediascan_series()).
+    """
+    ids = []
+    titles = []
+    for item in get_mediascan_series():
+        tid = item.get("tmdb_id")
+        if tid:
+            try:
+                ids.append(int(tid))
+            except (TypeError, ValueError):
+                pass
+        elif (item.get("title") or "").strip():
+            titles.append(item["title"].strip())
+    if titles:
+        ids.extend(_resolve_tv_titles(titles, api_key, country, live_budget))
+    return sorted(set(ids))
+
+
+def _resolve_tv_titles(titles, api_key, country, live_budget=0):
+    """TMDB tv ids for *titles*, cache first (see _library_tv_ids)."""
+    titles = list(dict.fromkeys(t for t in titles if t))
     if not titles:
         return []
     # Exactly the cache-key layout _tmdb_lookup_cached() writes for a title.
@@ -602,25 +634,12 @@ def _calendar_watcher_loop():
             # Non-priority 2.3: Media Library series
             mediathek_media_targets = []
             if get_setting("cineinfo_calendar_mediathek", "0") == "1":
-                mediathek_series = get_mediascan_series()
-                for item in mediathek_series:
-                    tid = item.get("tmdb_id")
-                    if tid:
-                        try:
-                            mediathek_media_targets.append((int(tid), "tv"))
-                        except ValueError:
-                            pass
-                    elif item.get("title"):
-                        title = item.get("title").strip()
-                        try:
-                            info = lookup_media(title, media_type="tv", api_key=api_key,
-                                                country=country, ui_lang=ui_lang)
-                            if info:
-                                tid = info.get("tmdb_id")
-                                if tid:
-                                    mediathek_media_targets.append((int(tid), "tv"))
-                        except Exception as exc:
-                            logger.debug("[Calendar Watcher] TMDB lookup failed for library series %s: %s", title, exc)
+                try:
+                    mediathek_media_targets = [
+                        (tid, "tv") for tid in
+                        _mediascan_tv_ids(api_key, country, _LIB_RESOLVE_BATCH)]
+                except Exception as exc:
+                    logger.debug("[Calendar Watcher] MediaScan series lookup failed: %s", exc)
 
             # Deduplicate Mediathek targets against priority targets
             priority_set = {tid for tid, mt in priority_media_targets}
@@ -966,25 +985,12 @@ def collect_calendar_events(api_key, country, ui_lang, username, is_admin):
 
     # 3. Media Library series (optional overlay)
     if get_setting("cineinfo_calendar_mediathek", "0") == "1":
-        mediathek_tv_ids = []
-        for item in get_mediascan_series():
-            tid = item.get("tmdb_id")
-            if tid:
-                try:
-                    mediathek_tv_ids.append(int(tid))
-                except ValueError:
-                    pass
-            elif item.get("title"):
-                title = item.get("title").strip()
-                try:
-                    info = lookup_media(title, media_type="tv", api_key=api_key,
-                                        country=country, ui_lang=ui_lang)
-                    if info:
-                        tid = info.get("tmdb_id")
-                        if tid:
-                            mediathek_tv_ids.append(int(tid))
-                except Exception:
-                    continue
+        # Never a live TMDB lookup while the page waits: the watcher
+        # resolves title-only rows in the background.
+        try:
+            mediathek_tv_ids = _mediascan_tv_ids(api_key, country, 0)
+        except Exception:
+            mediathek_tv_ids = []
 
         if mediathek_tv_ids:
             for ep in get_calendar_episodes_from_db(mediathek_tv_ids):
@@ -1278,7 +1284,7 @@ def register_calendar_routes(app):
         _report_calendar_used()
 
         events, meta = collect_calendar_events(api_key, country, ui_lang, username, is_admin)
-        return jsonify({
+        resp = jsonify({
             "events": events,
             "watcher": {
                 "active": _calendar_watcher_active,
@@ -1287,6 +1293,11 @@ def register_calendar_routes(app):
             },
             "meta": meta,
         })
+        # The page polls this while it is open and the answer carries every
+        # event of every tracked show (thousands with a big watchlist). While
+        # nothing changed the browser revalidates and gets an empty 304.
+        resp.add_etag()
+        return resp.make_conditional(request)
 
     @app.route("/api/calendar/feed")
     def api_calendar_feed():

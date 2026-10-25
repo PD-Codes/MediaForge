@@ -1217,23 +1217,6 @@ def typing(token: str, is_typing: bool) -> bool:
     return True
 
 
-def reaction(token: str, emoji: str) -> bool:
-    """Broadcast a short emoji reaction from a member (not persisted)."""
-    emoji = (emoji or "").strip()[:8]
-    if not emoji:
-        return False
-    room = room_for_token(token)
-    if not room:
-        return False
-    with room.lock:
-        m = room.members.get(token)
-        if not m:
-            return False
-        m.touch()
-        room.broadcast({"type": "reaction", "name": m.name, "emoji": emoji})
-    return True
-
-
 def set_track(host_token: str, kind: str, value) -> bool:
     """Host syncs playback rate / subtitle / audio track to everyone."""
     if kind not in ("rate", "subtitle", "audio"):

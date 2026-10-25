@@ -728,7 +728,11 @@ def _start_uptime_monitor():
             # wait() and wakes it immediately.
             _uptime_wake.clear()
             try:
-                cfg = _uptime_config()
+                # The enabled flag alone first: building the full config costs
+                # one settings read per tracked site plus six more, and while
+                # UpTime is off (the default) that ran every 10 s for nothing.
+                cfg = (_uptime_config()
+                       if get_setting("uptime_enabled", "0") == "1" else None)
             except Exception:
                 cfg = None
             if not cfg or not cfg["enabled"]:

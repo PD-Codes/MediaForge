@@ -49,10 +49,14 @@
     {% endfor %}
   </div>
 
+  {# Settings is admin-only (others are redirected home), and the custom paths
+     live on its Downloads tab -- "#paths" is no tab and opened the overview. #}
+  {% if not auth_enabled or (current_user and current_user.role == 'admin') %}
   <p class="lib-hub-foot">
     {{ _('Which library a folder shows up in is set per download path.') }}
-    <a href="{{ url_for('settings_page') }}#paths">{{ _('Configure paths') }}</a>
+    <a href="{{ url_for('settings_page') }}#downloads">{{ _('Configure paths') }}</a>
   </p>
+  {% endif %}
 
 </div>
 {% endblock %}

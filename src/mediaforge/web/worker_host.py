@@ -265,6 +265,15 @@ def run(workers=None) -> int:
     _wait_for_schema()
     _init_tables()
     _prepare_environment()
+    # The web process arms its idle anchor connection at the end of its
+    # migrations (dbmigrate.run_pending); this process never runs them, and
+    # without the anchor every worker write recreated and unlinked the
+    # -wal/-shm files (see db._core.arm_db_anchor). The schema is ready here.
+    try:
+        from .db import arm_db_anchor
+        arm_db_anchor()
+    except Exception:
+        logger.debug("[WorkerHost] DB anchor not armed", exc_info=True)
 
     _audit.audit("system", "worker_host_started", target=",".join(names),
                  detail={"pid": os.getpid()}, severity="notice",

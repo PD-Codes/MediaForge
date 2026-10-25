@@ -12,6 +12,7 @@ from ...config import (
     NAMING_TEMPLATE,
     logger,
 )
+from ..common.page_cache import fetch_page
 from ...extractors import provider_functions
 from ..common import ProviderData, check_downloaded
 from ..common.common import (
@@ -441,7 +442,8 @@ class AniworldEpisode:
     def _html(self):
         if self.__html is None:
             logger.debug(f"fetching ({self.url})...")
-            resp = GLOBAL_SESSION.get(self.url)
+            # Shared for a short while across episode objects (see page_cache).
+            resp = fetch_page(GLOBAL_SESSION, self.url)
             self.__html = resp.text
         return self.__html
 

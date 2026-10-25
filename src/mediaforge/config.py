@@ -16,6 +16,7 @@ import time
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from urllib.parse import urljoin as _urljoin
 from urllib.parse import urlparse as _urlparse
 
 import fake_useragent
@@ -89,6 +90,13 @@ NAMING_TEMPLATE = os.getenv(
 # Video codec configuration
 VIDEO_CODEC = os.getenv("MEDIAFORGE_VIDEO_CODEC", "copy")
 
+# yt-dlp transfers (downloads, quality probe, subtitles, Direct Link probe)
+# verify TLS certificates. They used to accept ANY certificate, so anyone on
+# the path (public Wi-Fi, a hostile VPN exit) could swap playlists, segments or
+# subtitles -- straight into the library and into ffmpeg's parsers. Escape
+# hatch for a hoster CDN with a broken certificate chain only.
+INSECURE_DOWNLOAD_TLS = os.getenv("MEDIAFORGE_INSECURE_DOWNLOAD_TLS", "0") == "1"
+
 # Simple codec mapping using ffmpeg defaults
 VIDEO_CODEC_MAP = {
     "copy": "copy",
@@ -148,8 +156,24 @@ def _fetch_redirect_page(url: str, timeout: int, referer: str | None = None):
 
 def _fetch_redirect_page_url(url: str, timeout: int, referer: str | None = None):
     """Like ``_fetch_redirect_page`` but also returns the final resolved URL
-    (after following redirects), so callers can identify the real hoster host."""
+    (after following redirects), so callers can identify the real hoster host.
+
+    The first hop -- the SITE's redirect endpoint (aniworld.to/redirect/...,
+    s.to/r?...) -- goes through GLOBAL_SESSION, i.e. the configured DNS (DoH)
+    and the mirror failover. Sent straight through curl_cffi it ignored both:
+    behind an ISP DNS block the probe failed, the error path reported every
+    hoster as available and the mirrored-label dedupe stopped working. Only the
+    hoster page it points to is fetched with curl_cffi.
+    """
     headers = {"Referer": referer} if referer else None
+    try:
+        first = GLOBAL_SESSION.get(url, allow_redirects=False, timeout=timeout, headers=headers)
+        location = first.headers.get("Location") if 300 <= first.status_code < 400 else None
+        if not location:
+            return first.text, first.status_code, first.url
+        url = _urljoin(first.url or url, location)
+    except Exception as exc:
+        logger.debug(f"Site hop for {url} failed through the session: {exc}")
     try:
         from curl_cffi import requests as curl_requests
         resp = curl_requests.get(
@@ -585,6 +609,61 @@ def dns_fallback_hosts() -> list:
                       if (now - ts) <= _DNS_FALLBACK_TTL)
 
 
+# Anti-bot clearance earned by a captcha solve, shared by every thread.
+#
+# GLOBAL_SESSION is one session PER THREAD, and a solve runs inside the
+# download attempt's own thread: the cf_clearance cookie and the browser UA it
+# is bound to were written into that thread's session only and died with it, so
+# the next attempt, the next episode, AutoSync and every request thread were
+# challenged again -- one captcha per episode while a site was challenging.
+# Only clearance cookies are shared (see _CLEARANCE_COOKIE_RE), never the whole
+# jar: filmo.to's Laravel session flow relies on per-flow cookies.
+_CLEARANCE_COOKIE_RE = re.compile(r"^(cf_clearance|__cf_bm|__cflb|cf_chl_\w+|_*ddg\w*)$",
+                                  re.IGNORECASE)
+_CLEARANCE_LOCK = threading.Lock()
+_CLEARANCE = {"cookies": {}, "ua": None, "version": 0}
+
+
+def store_clearance(cookies=(), user_agent=None) -> None:
+    """Make a solve's clearance cookies and browser UA available to all threads.
+
+    *cookies* are browser-context cookie dicts (``name``/``value``/``domain``);
+    anything that is not a clearance cookie is ignored. Every thread's session
+    picks the result up on its next request (``_SessionProxy._get_session``).
+    """
+    changed = False
+    with _CLEARANCE_LOCK:
+        for cookie in cookies or ():
+            try:
+                name, value = cookie["name"], cookie["value"]
+            except (KeyError, TypeError):
+                continue
+            if not _CLEARANCE_COOKIE_RE.match(str(name)):
+                continue
+            key = (name, str(cookie.get("domain", "")).lstrip("."))
+            if _CLEARANCE["cookies"].get(key) != value:
+                _CLEARANCE["cookies"][key] = value
+                changed = True
+        if user_agent and _CLEARANCE["ua"] != user_agent:
+            _CLEARANCE["ua"] = user_agent
+            changed = True
+        if changed:
+            _CLEARANCE["version"] += 1
+
+
+def _apply_clearance(session) -> None:
+    with _CLEARANCE_LOCK:
+        cookies = dict(_CLEARANCE["cookies"])
+        ua = _CLEARANCE["ua"]
+    for (name, domain), value in cookies.items():
+        try:
+            session.cookies.set(name, value, domain=domain)
+        except Exception:
+            logger.debug("[Captcha] Could not apply clearance cookie %s", name, exc_info=True)
+    if ua:
+        session.headers["User-Agent"] = ua
+
+
 class _SessionProxy:
     """
     Thread-local HTTP session pool.
@@ -605,6 +684,17 @@ class _SessionProxy:
         if not hasattr(local, "session") or getattr(local, "session_resolver", None) != resolver:
             local.session = _make_session(resolver)
             local.session_resolver = resolver
+            local.clearance_version = 0
+            # The DNS fallback session shares the primary's cookie jar (see
+            # _get_system_session). After a DNS-mode change in another thread
+            # it would keep the OLD jar here, splitting the two again.
+            if hasattr(local, "system_session"):
+                del local.system_session
+        # One int compare per request; the cookies are copied only after a new
+        # solve (see store_clearance).
+        if getattr(local, "clearance_version", 0) != _CLEARANCE["version"]:
+            local.clearance_version = _CLEARANCE["version"]
+            _apply_clearance(local.session)
         return local.session
 
     def _get_system_session(self):
@@ -816,8 +906,11 @@ def _chromium_map_hosts():
     Falls back to the static tuple above if the mirror registry is unavailable.
     """
     try:
-        from .mirrors import all_hosts
-        hosts = all_hosts()
+        from .mirrors import INFRA_MIRRORS, all_hosts
+        # MediaForge's own servers are never opened by the captcha browser.
+        infra = {h for hosts in INFRA_MIRRORS.values() for h in hosts}
+        infra |= {"www." + h for h in infra}
+        hosts = tuple(h for h in all_hosts() if h not in infra)
     except Exception:
         hosts = ()
     return tuple(dict.fromkeys(tuple(_CHROMIUM_MAP_HOSTS) + tuple(hosts)))
@@ -826,6 +919,9 @@ def _chromium_map_hosts():
 _CHROMIUM_MAP_LOCK = threading.Lock()
 _CHROMIUM_MAP_CACHE = {"mode": None, "ts": 0.0, "rules": []}
 _CHROMIUM_MAP_TTL = 600  # re-resolve the pinned hosts at most every 10 minutes
+_CHROMIUM_MAP_PARTIAL_TTL = 120   # some hosts did not resolve
+_CHROMIUM_MAP_EMPTY_TTL = 60      # nothing resolved (DoH endpoint filtered?)
+_CHROMIUM_MAP_DEADLINE = 6.0      # total wait for one round of lookups
 
 
 def _looks_like_ipv4(value):
@@ -869,21 +965,41 @@ def _chromium_host_map_rules():
     endpoint = _DOH_JSON_ENDPOINTS.get(ACTIVE_DNS_MODE)
     if not endpoint:
         return []
+    # The lookups ran one after another (~24 hosts, each allowed 10 s) while
+    # the user waited for the captcha window, and a result with nothing in it
+    # was not cached -- with the DoH endpoint filtered, every launch paid
+    # minutes. Now they run in parallel under one deadline, and every outcome
+    # is cached (shorter when incomplete). The lock makes a concurrent launch
+    # wait for this round instead of starting its own.
+    from concurrent.futures import ThreadPoolExecutor, wait as _wait
     with _CHROMIUM_MAP_LOCK:
         now = _time.monotonic()
         cache = _CHROMIUM_MAP_CACHE
-        if (cache["mode"] == ACTIVE_DNS_MODE and cache["rules"]
-                and now - cache["ts"] < _CHROMIUM_MAP_TTL):
+        if cache["mode"] == ACTIVE_DNS_MODE and now - cache["ts"] < cache.get("ttl", _CHROMIUM_MAP_TTL):
             return list(cache["rules"])
-        rules = []
-        for host in _chromium_map_hosts():
-            ip = _doh_resolve_a(host, endpoint)
+        hosts = _chromium_map_hosts()
+        pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="doh-pin")
+        try:
+            futures = {pool.submit(_doh_resolve_a, host, endpoint): host for host in hosts}
+            done, _pending = _wait(futures, timeout=_CHROMIUM_MAP_DEADLINE)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        resolved = {}
+        for fut in done:
+            try:
+                ip = fut.result()
+            except Exception:
+                ip = None
             if ip:
-                rules.append("MAP %s %s" % (host, ip))
-        if rules:  # cache only a usable result; retry next launch otherwise
-            cache["mode"] = ACTIVE_DNS_MODE
-            cache["ts"] = now
-            cache["rules"] = list(rules)
+                resolved[futures[fut]] = ip
+        rules = ["MAP %s %s" % (host, resolved[host]) for host in hosts if host in resolved]
+        if not rules:
+            ttl = _CHROMIUM_MAP_EMPTY_TTL
+        elif len(rules) < len(hosts):
+            ttl = _CHROMIUM_MAP_PARTIAL_TTL
+        else:
+            ttl = _CHROMIUM_MAP_TTL
+        cache.update(mode=ACTIVE_DNS_MODE, ts=_time.monotonic(), rules=list(rules), ttl=ttl)
         return rules
 
 

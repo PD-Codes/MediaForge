@@ -70,9 +70,14 @@
   // few days wide. The locale still comes from the app language (see
   // mfLocale in base.html): `undefined` here meant the browser's, which is a
   // different setting and disagreed with the rest of the app.
+  // One formatter for the page (see mfFormatDate in base.html for why).
+  let spanFormatter = null;
   function fmtSpanPart(d) {
-    return d.toLocaleDateString(window.mfLocale ? window.mfLocale() : "en-US",
-                                { day: "2-digit", month: "2-digit" });
+    if (!spanFormatter) {
+      spanFormatter = new Intl.DateTimeFormat(window.mfLocale ? window.mfLocale() : "en-US",
+                                              { day: "2-digit", month: "2-digit" });
+    }
+    return spanFormatter.format(d);
   }
 
   function fmtSpan(s, e) {
@@ -550,7 +555,14 @@
       closeAllDetails(); refresh({ force: true });
     });
     initGridEvents();
-    startPolling();
-    document.addEventListener("visibilitychange", function () { if (document.hidden) stopPolling(); else startPolling(); });
+    // On /monitoring the status is polled only while the UpTime panel is the
+    // open one (mfLazyPanel, monitoring.html); the standalone page polls at once.
+    const lazy = !!window.mfLazyPanel;
+    if (lazy) window.mfLazyPanel("uptime", startPolling, stopPolling);
+    else startPolling();
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) stopPolling();
+      else if (!lazy || window._mfActiveMonTab === "uptime") startPolling();
+    });
   });
 })();

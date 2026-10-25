@@ -379,7 +379,8 @@ def _encoding_worker():
                 _encoding_progress.update(active=False, percent=0.0, time="", speed="", file="")
 
             # Final status
-            if not is_encoding_cancelled(item["id"]):
+            _was_cancelled = is_encoding_cancelled(item["id"])
+            if not _was_cancelled:
                 if _overall_failed == 0:
                     set_encoding_status(item["id"], "completed")
                 elif _overall_failed < _total_files:
@@ -404,8 +405,14 @@ def _encoding_worker():
             try:
                 from .audit_hooks import record_job
 
-                record_job("encoding",
-                           "encoding_failed" if _overall_failed else "encoding_completed",
+                # A user cancel used to be filed as "encoding_failed" (the
+                # cancel exception counts as a failed file) or, before the
+                # first file, as "encoding_completed".
+                if _was_cancelled:
+                    _action = "encoding_cancelled"
+                else:
+                    _action = "encoding_failed" if _overall_failed else "encoding_completed"
+                record_job("encoding", _action,
                            item.get("title") or item.get("file_path", ""),
                            job_id=item.get("id"), failed=_overall_failed,
                            total=_total_files)

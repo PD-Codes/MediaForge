@@ -156,7 +156,10 @@
   border-radius: var(--radius-md);
   padding: 14px 16px;
   gap: 14px;
-  transition: all var(--transition);
+  /* Only what actually changes (hover, disabled): "all" also transitioned
+     every layout property on each re-render of a list with hundreds of jobs. */
+  transition: transform var(--transition), border-color var(--transition),
+              box-shadow var(--transition), opacity var(--transition);
 }
 
 .sync-card:hover {
@@ -378,7 +381,8 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  backdrop-filter: blur(12px);
+  /* No backdrop-filter: behind this (nearly) opaque background the blur was invisible,
+     but it made the element its own render pass on every scroll frame. */
   animation: slideDown 0.2s ease;
 }
 
