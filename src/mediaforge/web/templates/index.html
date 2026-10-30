@@ -3,6 +3,7 @@
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='home_gaps.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='hanime.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='english_only.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='devinfo_banner.css') }}">
@@ -1237,11 +1238,15 @@
 </div>
 {% endif %}
 {% include "shared_modals.html" %}
+{% include "_gap_fill_modal.html" %}
 {# Same "Could be for you" Details button as above -- markup only needed
    in the new_home layout. #}
 {% if new_home %}{% include "mf_detail_modal.html" %}{% endif %}
 {% endblock %} {% block scripts %}
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='gap_downloads.js') }}"></script>
+<script src="{{ url_for('static', filename='home_gaps.js') }}"></script>
+<script src="{{ url_for('static', filename='gap_batch.js') }}"></script>
 {% if new_home %}<script src="{{ url_for('static', filename='home_feed.js') }}"></script>
 <script src="{{ url_for('static', filename='mf_detail_modal.js') }}"></script>
 <script src="{{ url_for('static', filename='home_panels.js') }}"></script>

@@ -600,6 +600,7 @@ def _compute_media_stats(cache=None):
                 "title": agg["title"],
                 "location": agg["location"],
                 "missing": missing,
+                "ignored_slots": sorted((ig or {}).get("slots") or []),
             })
         else:
             complete += 1
