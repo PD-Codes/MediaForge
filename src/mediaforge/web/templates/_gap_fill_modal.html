@@ -1,0 +1,42 @@
+<div class="directlink-overlay" id="gapFillOverlay" style="display:none">
+  <div class="directlink-modal gap-fill-modal" role="dialog" aria-modal="true"
+       aria-labelledby="gapFillTitle" aria-describedby="gapFillStatus" tabindex="-1">
+    <button type="button" class="close" id="gapFillClose" aria-label="{{ _('Close') }}">×</button>
+    <h2 class="dl-title" id="gapFillTitle"></h2>
+    <p class="dl-hint" id="gapFillSlots"></p>
+    <p id="gapFillStatus" role="status" aria-live="polite"></p>
+    <div class="gap-fill-fields">
+      <label for="gapFillSource">{{ _('Source') }}</label>
+      <select id="gapFillSource" disabled></select>
+      <label for="gapFillLanguage">{{ _('Language') }}</label>
+      <select id="gapFillLanguage" disabled></select>
+      <label for="gapFillProvider">{{ _('Provider') }}</label>
+      <select id="gapFillProvider" disabled></select>
+    </div>
+    <label class="gap-fill-select-all"><input type="checkbox" class="chb-main" id="gapFillSelectAll" disabled>
+      <span id="gapFillSelectAllLabel"></span></label>
+    <ul id="gapFillEpisodes" class="gap-fill-episodes"></ul>
+    <div class="dl-modal-actions">
+      <button type="button" class="btn-download-selected" id="gapFillAllSubmit" disabled></button>
+      <button type="button" class="btn-download-selected" id="gapFillSubmit" disabled></button>
+    </div>
+  </div>
+</div>
+<div class="directlink-overlay" id="gapBatchOverlay" style="display:none">
+  <div class="directlink-modal gap-fill-modal" role="dialog" aria-modal="true"
+       aria-labelledby="gapBatchTitle" aria-describedby="gapBatchStatus" tabindex="-1">
+    <button type="button" class="close" id="gapBatchClose" aria-label="{{ _('Close') }}">×</button>
+    <h2 class="dl-title" id="gapBatchTitle"></h2>
+    <p id="gapBatchStatus" role="status" aria-live="polite"></p>
+    <div class="gap-fill-fields">
+      <label for="gapBatchLanguage">{{ _('Language') }}</label>
+      <select id="gapBatchLanguage" disabled></select>
+      <label for="gapBatchProvider">{{ _('Provider') }}</label>
+      <select id="gapBatchProvider" disabled></select>
+    </div>
+    <ul id="gapBatchEntries" class="gap-batch-entries"></ul>
+    <div class="dl-modal-actions">
+      <button type="button" class="btn-download-selected" id="gapBatchSubmit" disabled></button>
+    </div>
+  </div>
+</div>

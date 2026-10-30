@@ -649,7 +649,7 @@
          head(HT("dash_gaps"), HT("dash_gap_count").replace("{}", String(total)),
               OWN_ICONS.gaps),
          '<ul class="dash-gaps">' + paged.rowsHtml + '</ul>' + paged.pagerHtml,
-         '<a class="hp-more" href="/stats">' + esc(HT("dash_gaps_all")) + ' ›</a>');
+         '<a class="hp-more" href="/stats#incomplete">' + esc(HT("dash_gaps_all")) + ' ›</a>');
   }
 
   /** Same hashing home_feed.js and the Library page use for placeholder art,
@@ -971,11 +971,10 @@
     }
     ev.preventDefault();
     if (el.hasAttribute("data-gap-search")) {
-      // Hand the title to the ordinary search: it is the one place that
-      // knows which of the enabled sources actually has this series.
-      const input = document.getElementById("searchInput");
-      if (input) input.value = el.getAttribute("data-gap-search");
-      if (typeof window.doSearch === "function") window.doSearch();
+      const item = (feedPersonal.gaps || []).find(function (gap) {
+        return gap.title === el.getAttribute("data-gap-search");
+      });
+      if (item) window.openGapFill(item);
       return;
     }
     ignoreGap(el);
