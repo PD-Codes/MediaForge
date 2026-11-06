@@ -83,9 +83,6 @@ KNOWN_MISSING = {
     ("mediaforge/models/aniworld_to/episode.py", "mediaforge.aniskip"),
     ("mediaforge/models/aniworld_to/series.py", "mediaforge.aniskip"),
     ("mediaforge/models/common/common.py", "mediaforge.aniskip"),
-    # Same class again, found by this test: vendor/crypto.py is not in the
-    # tree. Only reached when Crunchyroll sealed credentials are configured.
-    ("mediaforge/vendor/crunchyroll_api.py", "mediaforge.vendor.crypto"),
 }
 
 
