@@ -672,6 +672,10 @@ def register_settings_routes(app):
                            or os.environ.get("MEDIAFORGE_LANG_SEPARATION", "0"))
         sync_language = (get_setting("sync_language")
                          or os.environ.get("MEDIAFORGE_SYNC_LANGUAGE", "German Dub"))
+        download_language = (get_setting("download_language")
+                             or os.environ.get("MEDIAFORGE_LANGUAGE", "German Dub"))
+        download_provider = (get_setting("download_provider")
+                             or os.environ.get("MEDIAFORGE_PROVIDER", "VOE"))
         language_groups = get_language_groups()
         # Same fallback as GET /api/settings: never hand out a default that
         # no dropdown can preselect.
@@ -679,7 +683,11 @@ def register_settings_routes(app):
                          if lang_separation == "1" else set())
         if is_group_ref(sync_language) and sync_language not in usable_groups:
             sync_language = "German Dub"
+        if is_group_ref(download_language) and download_language not in usable_groups:
+            download_language = "German Dub"
         return jsonify({
+            "download_language": download_language,
+            "download_provider": download_provider,
             "lang_separation": lang_separation,
             "language_groups": language_groups,
             "sync_language": sync_language,
