@@ -18,20 +18,23 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Optional
 import base64
+import logging
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+import re
 import requests
-import random
-import string
+import time
+import uuid
+from datetime import date as _date
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterator, List, Optional, Union
-import re
 from difflib import SequenceMatcher
 from typing import List, Optional
 
@@ -89,7 +92,7 @@ BASE = "https://www.crunchyroll.com"
 TOKEN = f"{BASE}/auth/v1/token"
 
 # Account / index / profile
-INDEX = f"{BASE}/index/v2"
+INDEX = f"{BASE}/index/v2"  # legacy CMS signing; optional, may be gone
 ME = f"{BASE}/accounts/v1/me"
 PROFILE = f"{BASE}/accounts/v1/me/profile"
 MULTIPROFILE = f"{BASE}/accounts/v1/me/multiprofile"
@@ -108,8 +111,11 @@ MOVIES = f"{BASE}/content/v2/cms/movie_listings/{{}}/movies"
 STREAMS = f"{BASE}/content/v2/cms/videos/{{}}/streams"
 
 # User-scoped ({} = account_id)
-WATCHLIST = f"{BASE}/content/v2/{{}}/watchlist"
+# Listing the watchlist uses the "discover" variant, which returns full panels.
+WATCHLIST = f"{BASE}/content/v2/discover/{{}}/watchlist"
+# Adding/removing items (and the per-id lookup) use the plain variant.
 WATCHLIST_ADD = f"{BASE}/content/v2/{{}}/watchlist"
+WATCHLIST_ITEM = f"{BASE}/content/v2/{{}}/watchlist/{{}}"     # account_id, content_id
 CONTINUE_WATCHING = f"{BASE}/content/v2/{{}}/continue_watching"
 HISTORY = f"{BASE}/content/v2/{{}}/watch-history"
 PLAYHEADS = f"{BASE}/content/v2/{{}}/playheads"
@@ -121,19 +127,37 @@ CUSTOM_LIST_ITEMS = f"{BASE}/content/v2/{{}}/custom-lists/{{}}"  # account_id, l
 # Discover / seasons / categories
 SEASONAL_TAGS = f"{BASE}/content/v2/discover/seasonal_tags"
 CATEGORIES = f"{BASE}/content/v1/tenant_categories"
-SIMILAR = f"{BASE}/content/v2/discover/{{}}/similar_to"  # account_id
+SIMILAR = f"{BASE}/content/v2/discover/{{}}/similar_to/{{}}"  # account_id, series_id
 
 # Basic-auth client credentials required by the token endpoint.
-# This is the publicly known Android TV client, which accepts credential
-# (password) login. The previous web client ("cr_web:") returns invalid_client.
-# Decodes to: rjs0ltx0dbwkliwxdzdf:4V7rf21-UFXeZ-5XAd0X_QPwr1gu_i1s
-BASIC_AUTH = "Basic cmpzMGx0eDBkYndrbGl3eGR6ZGY6NFY3cmYyMS1VRlhlWi01WEFkMFhfUVB3cjFndV9pMXM="
+# Crunchyroll rotates these app credentials every few weeks; an outdated value
+# makes every login fail with HTTP 401 "invalid_client". The bundled default is
+# the Android TV client (it accepts password login). When it stops working, the
+# client fetches the current set from PLATFORM_CREDENTIALS_URL automatically
+# (see Config.auto_update_credentials) or you can pass Config.basic_auth.
+# Decodes to: er9ngg2ko5ohirla51i2:Vl1T0Pn8QZJ6wz46xXDlHzDFP5tZX1oq (app 3.76.0)
+BASIC_AUTH = "Basic ZXI5bmdnMmtvNW9oaXJsYTUxaTI6VmwxVDBQbjhRWko2d3o0NnhYRGxIekRGUDV0Wlgxb3E="
+
+# User agent of the Android TV app matching BASIC_AUTH. Crunchyroll checks that
+# the user agent fits the client credentials, so both are updated together.
+ANDROID_TV_USER_AGENT_TEMPLATE = (
+    "Crunchyroll/ANDROIDTV/{version}_{version_code} "
+    "(Android 13.0; en-US; TCL-S5400AF Build/TP1A.220624.014)"
+)
+USER_AGENT = ANDROID_TV_USER_AGENT_TEMPLATE.format(version="3.76.0", version_code="22366")
+
+# Community-maintained, automatically updated app credentials (same source the
+# crunchyroll-rs library uses). Only the "android_tv" entry is used.
+PLATFORM_CREDENTIALS_URL = (
+    "https://raw.githubusercontent.com/crunchy-labs/artifacts/refs/heads/main/credentials.json"
+)
 
 # Default device type sent with the token request (matches crunchyroll-rs).
 DEVICE_TYPE = "0000-0000-0000-0000"
 
-# User agent of a regular browser to reduce Cloudflare blocks.
-USER_AGENT = (
+# Regular browser user agent, only used for scraping public HTML pages
+# (simulcast calendar). API requests use USER_AGENT above.
+BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
@@ -164,8 +188,10 @@ NEWS_FEED = f"{BASE}/content/v2/discover/news_feed"
 RECOMMENDATIONS = f"{BASE}/content/v2/discover/{{}}/recommendations"  # account_id
 
 # Anonymous client credentials (grant_type=client_id) for public metadata
-# without a user account. Decodes to t-kdgp2h8c3jub8fn0fq:yfLDfMfrYvKXh4JXS1LEI2cCqu1v5Wan
-ANON_BASIC_AUTH = "Basic dC1rZGdwMmg4YzNqdWI4Zm4wZnE6eWZMRGZNZnJZdktYaDRKWFMxTEVJMmNDcXUxdjVXYW4="
+# without a user account. The former dedicated anonymous client
+# (t-kdgp2h8c3jub8fn0fq) was deactivated ("client_inactive"); the Android TV
+# client issues anonymous tokens as well, so the same credentials are used.
+ANON_BASIC_AUTH = BASIC_AUTH
 
 
 # ======================================================================
@@ -208,6 +234,38 @@ class Config:
     # Encryption: pass sealed (encrypted) credentials + the key instead of plaintext.
     secret_key: Optional[str] = None
     sealed_credentials: Optional[str] = None
+    # Token endpoint client credentials ("Basic ..." header value). Leave unset
+    # to use the bundled default. Crunchyroll rotates these regularly.
+    basic_auth: Optional[str] = None
+    # When the token endpoint rejects the client credentials (invalid_client),
+    # fetch the current ones from ``credentials_url`` and retry once.
+    auto_update_credentials: bool = True
+    credentials_url: Optional[str] = None
+
+
+def atomic_write(path: str, payload: bytes) -> None:
+    """Write ``payload`` to ``path`` atomically with owner-only permissions.
+
+    The data goes to a temporary file in the same directory first and is then
+    moved over the target, so a crash never leaves a half-written session file
+    and an existing file with broader permissions is replaced (not reused).
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".session-", suffix=".tmp", dir=directory)
+    try:
+        # mkstemp already creates the file with mode 0o600 on POSIX.
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 class SessionStore(ABC):
@@ -266,15 +324,15 @@ class FileSessionStore(SessionStore):
             return None
         try:
             with open(self.path, "r", encoding="utf-8") as fh:
-                return json.load(fh)
-        except (OSError, json.JSONDecodeError):
+                data = json.load(fh)
+        except (OSError, ValueError):
             return None
+        # Ignore files that do not contain a session object.
+        return data if isinstance(data, dict) else None
 
     def save(self, data: Dict) -> None:
-        directory = os.path.dirname(os.path.abspath(self.path))
-        os.makedirs(directory, exist_ok=True)
-        with open(self.path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
+        # Owner-only, atomic write (the file contains tokens).
+        atomic_write(self.path, json.dumps(data, indent=2).encode("utf-8"))
 
     def clear(self) -> None:
         try:
@@ -304,9 +362,11 @@ never exist in plaintext at rest or in the host's long-lived config.
 
 
 
+logger = logging.getLogger(__name__)
 
-def _fernet(key):
-    """Return a Fernet instance, raising a helpful error if cryptography is missing."""
+
+def _fernet_class():
+    """Return the Fernet class, raising a helpful error if cryptography is missing."""
     try:
         from cryptography.fernet import Fernet
     except ImportError as exc:  # pragma: no cover - depends on environment
@@ -314,15 +374,22 @@ def _fernet(key):
             "Encryption requires the 'cryptography' package. "
             'Install it with: pip install "crunchyroll-api[crypto]"'
         ) from exc
+    return Fernet
+
+
+def _fernet(key):
+    """Return a Fernet instance for ``key`` (str or bytes)."""
     if isinstance(key, str):
         key = key.encode()
-    return Fernet(key)
+    try:
+        return _fernet_class()(key)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError("Invalid encryption key (expected a Fernet key).") from exc
 
 
 def generate_key() -> str:
     """Generate a fresh random Fernet key (store it somewhere safe)."""
-    from cryptography.fernet import Fernet  # local import (optional dep)
-    return Fernet.generate_key().decode()
+    return _fernet_class().generate_key().decode()
 
 
 def key_from_password(password: str, salt: Optional[bytes] = None) -> Tuple[str, bytes]:
@@ -361,7 +428,13 @@ def unseal_credentials(token, key) -> Dict[str, str]:
         raise
     except Exception as exc:
         raise ConfigError("Could not decrypt credentials (wrong key or corrupt token).") from exc
-    return json.loads(data.decode())
+    try:
+        creds = json.loads(data.decode())
+    except ValueError as exc:
+        raise ConfigError("Sealed credentials are not valid JSON.") from exc
+    if not isinstance(creds, dict):
+        raise ConfigError("Sealed credentials have an unexpected format.")
+    return creds
 
 
 class EncryptedFileSessionStore(SessionStore):
@@ -381,20 +454,29 @@ class EncryptedFileSessionStore(SessionStore):
         try:
             with open(self.path, "rb") as fh:
                 blob = fh.read()
-            if not blob:
-                return None
-            return json.loads(_fernet(self._key).decrypt(blob).decode())
-        except ConfigError:
-            raise
-        except Exception:
+        except OSError:
             return None
+        if not blob:
+            return None
+        fernet = _fernet(self._key)  # may raise ConfigError if crypto is missing
+        from cryptography.fernet import InvalidToken
+        try:
+            data = json.loads(fernet.decrypt(blob).decode())
+        except InvalidToken:
+            logger.warning(
+                "Could not decrypt session file %s: invalid token "
+                "(wrong key or corrupt file). Ignoring the cached session.",
+                self.path,
+            )
+            return None
+        except (ValueError, UnicodeDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
 
     def save(self, data: Dict) -> None:
-        directory = os.path.dirname(os.path.abspath(self.path))
-        os.makedirs(directory, exist_ok=True)
+        # Owner-only, atomic write, same as FileSessionStore.
         blob = _fernet(self._key).encrypt(json.dumps(data).encode())
-        with open(self.path, "wb") as fh:
-            fh.write(blob)
+        atomic_write(self.path, blob)
 
     def clear(self) -> None:
         try:
@@ -784,6 +866,9 @@ A free TMDB API key is required (https://www.themoviedb.org/settings/api).
 
 TMDB_BASE = "https://api.themoviedb.org/3"
 
+# IMDB title ids look like tt0123456 (7 or more digits).
+_IMDB_ID_RE = re.compile(r"^tt\d{7,10}$")
+
 
 class TMDBClient:
     """Thin client for the few TMDB endpoints we need."""
@@ -799,14 +884,26 @@ class TMDBClient:
         if not api_key:
             raise ConfigError("A TMDB API key is required for TMDB/IMDB lookups.")
         self.api_key = api_key
+        # v4 read access tokens are long JWTs; v3 keys are short hex strings.
+        self._is_v4_token = api_key.count(".") == 2 and len(api_key) > 60
         self.language = language
         self.http = http_session or requests.Session()
         self.timeout = timeout
 
     def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         params = dict(params or {})
-        params["api_key"] = self.api_key
-        resp = self.http.get(f"{TMDB_BASE}{path}", params=params, timeout=self.timeout)
+        headers = {}
+        if self._is_v4_token:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        else:
+            params["api_key"] = self.api_key
+        try:
+            resp = self.http.get(
+                f"{TMDB_BASE}{path}", params=params, headers=headers, timeout=self.timeout
+            )
+        except requests.RequestException as exc:
+            # Keep the API key out of the message (it may be part of the URL).
+            raise TMDBError(f"TMDB request failed: {type(exc).__name__}") from None
         if resp.status_code == 404:
             raise NotFoundError(f"TMDB resource not found: {path}")
         try:
@@ -826,6 +923,10 @@ class TMDBClient:
         """
         if media_type not in ("tv", "movie"):
             raise TMDBError("media_type must be 'tv' or 'movie'.")
+        try:
+            tmdb_id = int(tmdb_id)
+        except (TypeError, ValueError) as exc:
+            raise TMDBError(f"Invalid TMDB id '{tmdb_id}'.") from exc
 
         details = self._get(
             f"/{media_type}/{tmdb_id}",
@@ -859,6 +960,9 @@ class TMDBClient:
 
     def titles_from_imdb(self, imdb_id: str) -> Dict[str, Any]:
         """Resolve an IMDB id (ttXXXXXXX) to TMDB media type, id and titles."""
+        imdb_id = (imdb_id or "").strip()
+        if not _IMDB_ID_RE.match(imdb_id):
+            raise TMDBError(f"Invalid IMDB id '{imdb_id}', expected e.g. tt22248376.")
         data = self._get(f"/find/{imdb_id}", {"external_source": "imdb_id"})
         for media_type, key in (("tv", "tv_results"), ("movie", "movie_results")):
             results = data.get(key) or []
@@ -896,19 +1000,20 @@ _EXPIRY_LEEWAY = 30
 # Crunchyroll caps ``n`` at 100 on list endpoints; larger limits are paginated.
 _MAX_PAGE_N = 100
 
+# Upper bound for the in-memory GET cache (entries).
+_MAX_CACHE_ENTRIES = 256
+
+# A "Basic ..." header value: base64 of "client_id:client_secret".
+_BASIC_TOKEN_RE = re.compile(r"^[A-Za-z0-9+/]{16,200}={0,2}$")
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
 def _generate_device_id() -> str:
-    """Generate a stable-looking random device id (UUID-ish)."""
-    chars = string.ascii_lowercase + string.digits
-
-    def block(n: int) -> str:
-        return "".join(random.choices(chars, k=n))
-
-    return f"{block(8)}-{block(4)}-{block(4)}-{block(4)}-{block(12)}"
+    """Generate a random device id (proper UUID4)."""
+    return str(uuid.uuid4())
 
 
 class CrunchyrollClient:
@@ -958,7 +1063,6 @@ class CrunchyrollClient:
         # Decrypt sealed credentials (if provided) into email/password in-process.
         if (self.config.sealed_credentials and self.config.secret_key
                 and not (self.config.email and self.config.password)):
-            from .crypto import unseal_credentials
             creds = unseal_credentials(self.config.sealed_credentials, self.config.secret_key)
             self.config.email = creds.get("email")
             self.config.password = creds.get("password")
@@ -973,12 +1077,18 @@ class CrunchyrollClient:
         # Active account/session state (populated after login).
         self._account: Dict[str, Any] = {}
         self._active_profile_id: Optional[str] = None
+        self._anonymous = False
+        # Token-endpoint client credentials fetched at runtime (see
+        # _update_platform_credentials) or restored from a cached session.
+        self._basic_auth: Optional[str] = None
+        self._credentials_fetched = False
 
-        # An impersonating session (curl_cffi) already sends the User-Agent and
-        # sec-ch-ua headers that match its TLS fingerprint; overriding the UA
-        # makes the two disagree, which Cloudflare treats as a bot. Only set the
-        # UA on a plain session, or when the caller asked for one explicitly.
-        if self.config.user_agent or not getattr(self.http, "impersonate", None):
+        # An impersonating session (e.g. curl_cffi) already sends a User-Agent
+        # and sec-ch-ua headers that match its TLS fingerprint; overriding the
+        # UA makes the two disagree, which Cloudflare treats as a bot. Only set
+        # the UA on a plain session, or when the caller asked for one explicitly.
+        self._impersonating = bool(getattr(self.http, "impersonate", None))
+        if self.config.user_agent or not self._impersonating:
             self.http.headers.update(
                 {"User-Agent": self.config.user_agent or USER_AGENT}
             )
@@ -1015,13 +1125,30 @@ class CrunchyrollClient:
         """Drop the local session and clear the store."""
         self._account = {}
         self._active_profile_id = None
+        self._anonymous = False
+        self.http.headers.pop("Authorization", None)
+        self.clear_cache()
         self.store.clear()
 
     def _restore(self, cached: Dict[str, Any]) -> bool:
         """Restore a cached session; refresh if expired."""
         self._account = dict(cached)
         self._active_profile_id = cached.get("active_profile_id")
+        self._anonymous = False
+        # A refresh token only works with the client credentials it was issued for.
+        stored_basic = cached.get("basic_auth")
+        if isinstance(stored_basic, str) and stored_basic.startswith("Basic "):
+            self._basic_auth = stored_basic
         self._set_auth_header()
+        if self._try_restore(cached):
+            return True
+        # Failed restore: drop the stale session so is_authenticated stays honest.
+        self._account = {}
+        self._active_profile_id = None
+        self.http.headers.pop("Authorization", None)
+        return False
+
+    def _try_restore(self, cached: Dict[str, Any]) -> bool:
         expires = cached.get("expires")
         if not expires:
             return False
@@ -1048,7 +1175,92 @@ class CrunchyrollClient:
         body["device_type"] = DEVICE_TYPE
         return body
 
-    def _authenticate(self, refresh: bool = False, profile_id: Optional[str] = None) -> None:
+    # -- client credentials (Basic auth for the token endpoint) ---------- #
+    def _current_basic_auth(self) -> str:
+        """Client credentials to use: explicit config > fetched/restored > bundled."""
+        configured = (self.config.basic_auth or "").strip()
+        if configured:
+            return configured if configured.startswith("Basic ") else f"Basic {configured}"
+        return self._basic_auth or BASIC_AUTH
+
+    @staticmethod
+    def _is_invalid_client(resp: requests.Response) -> bool:
+        """True if the token endpoint rejected the app client credentials."""
+        if resp.status_code not in (400, 401, 403):
+            return False
+        return "invalid_client" in (resp.text or "")
+
+    def _update_platform_credentials(self) -> bool:
+        """Fetch the current Android TV client credentials (once per client).
+
+        Crunchyroll rotates the app credentials every few weeks. The community
+        keeps an up-to-date copy in the crunchy-labs/artifacts repository.
+        Returns True if new credentials were loaded.
+        """
+        if (not self.config.auto_update_credentials or self.config.basic_auth
+                or self._credentials_fetched):
+            return False
+        self._credentials_fetched = True
+        url = self.config.credentials_url or PLATFORM_CREDENTIALS_URL
+        try:
+            # Never send the Crunchyroll bearer token to a third-party host.
+            resp = self.http.get(
+                url, headers={"Authorization": None}, timeout=self.config.timeout
+            )
+            if not 200 <= resp.status_code < 300:
+                return False
+            info = resp.json()["android_tv"]
+            token = str(info["basic_auth_token"]).strip()
+            version = str(info.get("version") or "")
+            version_code = str(info.get("version_code") or "")
+        except Exception:
+            # Best effort: any transport (requests, curl_cffi) or format error
+            # just means "no update available".
+            return False
+        if not _BASIC_TOKEN_RE.match(token):
+            return False
+        new_auth = f"Basic {token}"
+        if new_auth == self._current_basic_auth():
+            return False
+        self._basic_auth = new_auth
+        # The user agent has to match the app the credentials belong to.
+        if (not self.config.user_agent and not self._impersonating
+                and version and version_code):
+            self.http.headers["User-Agent"] = ANDROID_TV_USER_AGENT_TEMPLATE.format(
+                version=version, version_code=version_code
+            )
+        return True
+
+    def _token_request(self, data: Dict[str, str]) -> requests.Response:
+        """POST to the token endpoint, refreshing rotated client credentials once."""
+        def post() -> requests.Response:
+            headers = {
+                "Authorization": self._current_basic_auth(),
+                "Content-Type": "application/x-www-form-urlencoded",
+                "ETP-Anonymous-ID": self.device_id,
+            }
+            return self.http.post(
+                TOKEN, headers=headers, data=data, timeout=self.config.timeout
+            )
+
+        resp = post()
+        if self._is_invalid_client(resp) and self._update_platform_credentials():
+            resp = post()
+        return resp
+
+    def _optional_get(self, url: str) -> Dict[str, Any]:
+        """GET that never triggers a re-login and returns {} on API errors."""
+        try:
+            return self._request("GET", url, authed=True, _retry=True)
+        except CrunchyrollError:
+            return {}
+
+    def _authenticate(
+        self,
+        refresh: bool = False,
+        profile_id: Optional[str] = None,
+        _allow_fallback: bool = True,
+    ) -> None:
         """Request a token and load account data.
 
         Grant selection mirrors the official clients:
@@ -1056,74 +1268,113 @@ class CrunchyrollClient:
         - refresh_token             -> renew an existing session
         - refresh_token_profile_id  -> switch to a specific profile
         """
-        headers = {
-            "Authorization": BASIC_AUTH,
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
+        if self._anonymous:
+            # Anonymous sessions have no refresh token; just issue a new one.
+            self.login_anonymous()
+            return
 
-        have_refresh = bool(self._account.get("refresh_token"))
+        previous = dict(self._account)
+        have_refresh = bool(previous.get("refresh_token"))
+        has_credentials = bool(self.config.email and self.config.password)
 
         if profile_id and have_refresh:
             # Explicit profile switch.
+            grant = "refresh_token_profile_id"
             data = self._auth_body({
-                "refresh_token": self._account["refresh_token"],
-                "grant_type": "refresh_token_profile_id",
+                "refresh_token": previous["refresh_token"],
+                "grant_type": grant,
                 "profile_id": profile_id,
             })
         elif refresh and have_refresh:
+            grant = "refresh_token"
             data = self._auth_body({
-                "refresh_token": self._account["refresh_token"],
-                "grant_type": "refresh_token",
+                "refresh_token": previous["refresh_token"],
+                "grant_type": grant,
             })
         else:
+            if not has_credentials:
+                raise LoginError(
+                    "The session expired and no email/password is configured; "
+                    "log in again with credentials."
+                )
+            grant = "password"
             data = self._auth_body({
                 "username": self.config.email or "",
                 "password": self.config.password or "",
-                "grant_type": "password",
+                "grant_type": grant,
             })
 
-        resp = self.http.post(
-            TOKEN, headers=headers, data=data, timeout=self.config.timeout
-        )
-        if resp.status_code == 400:
-            if refresh or profile_id:
-                # Refresh/profile token invalid -> start over with credentials.
-                self._account.pop("refresh_token", None)
-                return self._authenticate(refresh=False)
+        resp = self._token_request(data)
+
+        if resp.status_code in (400, 401) and grant != "password":
+            # Refresh/profile token rejected (expired, revoked or issued for an
+            # older client) -> start over with credentials, then restore the profile.
+            if not _allow_fallback:
+                raise LoginError(f"Could not switch to profile '{profile_id}'.")
+            if not has_credentials:
+                raise LoginError(
+                    "The stored session was rejected and no email/password is "
+                    "configured; log in again with credentials."
+                )
+            self._account = {}
+            if not self._credentials_fetched:
+                # Credentials restored from an old session may be outdated.
+                self._basic_auth = None
+            wanted_profile = profile_id or previous.get("active_profile_id")
+            self._authenticate(refresh=False)
+            if wanted_profile and wanted_profile != self._account.get("profile_id"):
+                self._authenticate(profile_id=wanted_profile, _allow_fallback=False)
+            return
+
+        if self._is_invalid_client(resp):
+            raise LoginError(
+                "Crunchyroll rejected the app client credentials (invalid_client). "
+                "They are rotated regularly; update the library or pass "
+                "Config.basic_auth with current credentials."
+            )
+        if resp.status_code in (400, 401) and grant == "password":
             raise LoginError("Failed to authenticate: invalid credentials.")
         token = self._parse_response(resp)
+        if "access_token" not in token:
+            raise LoginError("Token response did not contain an access token.")
 
         account: Dict[str, Any] = {}
         account["access_token"] = token["access_token"]
         account["token_type"] = token.get("token_type", "Bearer")
-        account["refresh_token"] = token.get("refresh_token")
-        account["account_id"] = token.get("account_id")
+        # Some refresh responses omit the refresh token; keep the old one then.
+        account["refresh_token"] = token.get("refresh_token") or previous.get("refresh_token")
+        account["account_id"] = token.get("account_id") or previous.get("account_id")
         account["profile_id"] = token.get("profile_id")
-        expires_in = float(token.get("expires_in", 300))
+        account["basic_auth"] = self._current_basic_auth()
+        try:
+            expires_in = float(token.get("expires_in", 300))
+        except (TypeError, ValueError):
+            expires_in = 300.0
         account["expires"] = (_utcnow() + timedelta(seconds=expires_in)).isoformat()
 
         # Authorize follow-up requests.
         self._account = account
         self._set_auth_header()
 
-        # /index/v2 -> CMS signing material (bucket, policy, signature, key_pair_id)
-        index = self._request("GET", INDEX, authed=True)
-        cms = index.get("cms_web") or index.get("cms") or {}
+        # /index/v2 -> legacy CMS signing material. Newer API versions do not
+        # need it (and may not serve it), so a failure must not break the login.
+        cms = {}
+        index = self._optional_get(INDEX)
+        if isinstance(index, dict):
+            cms = index.get("cms_web") or index.get("cms") or {}
         account["cms_bucket"] = cms.get("bucket", "")
         account["cms_policy"] = cms.get("policy", "")
         account["cms_signature"] = cms.get("signature", "")
         account["cms_key_pair_id"] = cms.get("key_pair_id", "")
 
         # /accounts/v1/me -> account id (if not present in token)
-        try:
-            me = self._request("GET", ME, authed=True)
-            account["account_id"] = me.get("account_id", account.get("account_id"))
-        except CrunchyrollError:
-            pass
+        me = self._optional_get(ME)
+        if me.get("account_id"):
+            account["account_id"] = me["account_id"]
 
         # /accounts/v1/me/profile -> default languages
-        try:
-            profile = self._request("GET", PROFILE, authed=True)
+        profile = self._optional_get(PROFILE)
+        if profile:
             account["default_audio_language"] = profile.get(
                 "preferred_content_audio_language"
             )
@@ -1131,14 +1382,15 @@ class CrunchyrollClient:
                 "preferred_content_subtitle_language"
             )
             account["profile_name"] = profile.get("profile_name")
-        except CrunchyrollError:
-            pass
 
-        if profile_id:
-            account["active_profile_id"] = profile_id
-            self._active_profile_id = profile_id
+        # Keep the selected profile across token refreshes.
+        active = profile_id or (previous.get("active_profile_id") if grant == "refresh_token" else None)
+        if active:
+            account["active_profile_id"] = active
+        self._active_profile_id = active
 
         self._account = account
+        self._anonymous = False
         self.store.save(account)
 
     def _set_auth_header(self) -> None:
@@ -1178,6 +1430,8 @@ class CrunchyrollClient:
         """
         self._ensure_authenticated()
         self._authenticate(profile_id=profile_id)
+        # Cached responses may be profile-specific.
+        self.clear_cache()
         return True
 
     @property
@@ -1187,6 +1441,16 @@ class CrunchyrollClient:
     # ------------------------------------------------------------------ #
     # Low-level request helpers
     # ------------------------------------------------------------------ #
+    def _require_account_id(self) -> str:
+        """Return the account id, refusing anonymous sessions."""
+        account_id = self.account_id
+        if not account_id:
+            raise NotAuthenticatedError(
+                "This action requires a user account; log in with credentials "
+                "(anonymous sessions have no account id)."
+            )
+        return account_id
+
     def _bucket(self) -> str:
         bucket = self._account.get("cms_bucket")
         if not bucket:
@@ -1194,11 +1458,13 @@ class CrunchyrollClient:
         return bucket
 
     def _cms_params(self) -> Dict[str, str]:
-        return {
+        """Legacy CMS signing parameters (only sent when the API provided them)."""
+        params = {
             "Policy": self._account.get("cms_policy", ""),
             "Signature": self._account.get("cms_signature", ""),
             "Key-Pair-Id": self._account.get("cms_key_pair_id", ""),
         }
+        return {k: v for k, v in params.items() if v}
 
     def _request(
         self,
@@ -1219,11 +1485,13 @@ class CrunchyrollClient:
 
         cache_key = None
         if method.upper() == "GET" and self.config.cache_ttl > 0:
-            import time as _time
             cache_key = url + "?" + repr(sorted(params.items()))
             hit = self._cache.get(cache_key)
-            if hit and (_time.time() - hit[0]) < self.config.cache_ttl:
+            if hit and (time.time() - hit[0]) < self.config.cache_ttl:
                 return hit[1]
+            if hit:
+                # Stale entry: drop it now instead of overwriting later.
+                del self._cache[cache_key]
 
         resp = self.http.request(
             method,
@@ -1234,7 +1502,7 @@ class CrunchyrollClient:
             timeout=self.config.timeout,
         )
 
-        if resp.status_code == 401 and authed and not _retry:
+        if resp.status_code == 401 and authed and not _retry and self.is_authenticated:
             # Token likely expired mid-flight: refresh once and retry.
             self._authenticate(refresh=True)
             return self._request(
@@ -1243,8 +1511,15 @@ class CrunchyrollClient:
             )
         result = self._parse_response(resp)
         if cache_key is not None:
-            import time as _time
-            self._cache[cache_key] = (_time.time(), result)
+            now = time.time()
+            # Evict expired entries and cap the cache size.
+            expired = [k for k, v in self._cache.items()
+                       if (now - v[0]) >= self.config.cache_ttl]
+            for k in expired:
+                del self._cache[k]
+            while len(self._cache) >= _MAX_CACHE_ENTRIES:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[cache_key] = (now, result)
         return result
 
     def _parse_response(self, resp: requests.Response) -> Dict[str, Any]:
@@ -1336,7 +1611,7 @@ class CrunchyrollClient:
         self._ensure_authenticated()
         params = {
             "q": query,
-            "n": limit,
+            "n": min(limit, _MAX_PAGE_N),
             "type": search_type,
             "locale": self.config.locale,
         }
@@ -1470,7 +1745,7 @@ class CrunchyrollClient:
         ``start`` offset.
         """
         self._ensure_authenticated()
-        url = WATCHLIST.format(self.account_id)
+        url = WATCHLIST.format(self._require_account_id())
         out: List[WatchlistItem] = []
         start = 0
         while len(out) < limit:
@@ -1491,7 +1766,7 @@ class CrunchyrollClient:
     def add_to_watchlist(self, content_id: str) -> bool:
         """Add a series/movie to the watchlist."""
         self._ensure_authenticated()
-        url = WATCHLIST.format(self.account_id)
+        url = WATCHLIST_ADD.format(self._require_account_id())
         self._request(
             "POST", url, params={"locale": self.config.locale},
             json_data={"content_id": content_id},
@@ -1501,14 +1776,14 @@ class CrunchyrollClient:
     def remove_from_watchlist(self, content_id: str) -> bool:
         """Remove a single item from the watchlist."""
         self._ensure_authenticated()
-        url = f"{WATCHLIST.format(self.account_id)}/{content_id}"
+        url = WATCHLIST_ITEM.format(self._require_account_id(), content_id)
         self._request("DELETE", url, params={"locale": self.config.locale})
         return True
 
     def get_continue_watching(self, limit: int = 100) -> List[Any]:
         """Items to continue watching."""
         self._ensure_authenticated()
-        url = CONTINUE_WATCHING.format(self.account_id)
+        url = CONTINUE_WATCHING.format(self._require_account_id())
         data = self._request(
             "GET", url,
             params={"n": min(limit, _MAX_PAGE_N), "locale": self.config.locale},
@@ -1518,7 +1793,7 @@ class CrunchyrollClient:
     def get_history(self, page: int = 1, page_size: int = 50) -> List[Any]:
         """Watch history of the active profile."""
         self._ensure_authenticated()
-        url = HISTORY.format(self.account_id)
+        url = HISTORY.format(self._require_account_id())
         data = self._request(
             "GET", url,
             params={"page": page, "page_size": page_size, "locale": self.config.locale},
@@ -1528,14 +1803,14 @@ class CrunchyrollClient:
     def list_custom_lists(self) -> List[Dict[str, Any]]:
         """Return the account's custom lists (Crunchylists) with id and name."""
         self._ensure_authenticated()
-        url = CUSTOM_LISTS.format(self.account_id)
+        url = CUSTOM_LISTS.format(self._require_account_id())
         data = self._request("GET", url, params={"locale": self.config.locale})
         return data.get("data", [])
 
     def get_custom_list(self, list_id: str) -> List[Any]:
         """Return the items of a single custom list."""
         self._ensure_authenticated()
-        url = CUSTOM_LIST_ITEMS.format(self.account_id, list_id)
+        url = CUSTOM_LIST_ITEMS.format(self._require_account_id(), list_id)
         data = self._request("GET", url, params={"locale": self.config.locale})
         return [parse_item(i) for i in data.get("data", [])]
 
@@ -1618,17 +1893,37 @@ class CrunchyrollClient:
         episode releases. Note: Crunchyroll usually lists releases only up to
         the current day, and the page markup may change, so this is best-effort.
         """
-        import re
-        from datetime import date as _date
-
         if date is None:
             date = _date.today().isoformat()
-        url = f"{SIMULCAST_CALENDAR}?date={date}"
+        else:
+            try:
+                date = _date.fromisoformat(str(date)).isoformat()
+            except ValueError as exc:
+                raise CrunchyrollError(f"Invalid date '{date}', expected YYYY-MM-DD.") from exc
+        params = {"date": date}
         if premium_only:
-            url += "&filter=premium"
+            params["filter"] = "premium"
 
-        resp = self.http.get(url, timeout=self.config.timeout)
-        html = getattr(resp, "text", "") or ""
+        # Public HTML page: browser user agent, no API bearer token.
+        resp = self.http.get(
+            SIMULCAST_CALENDAR, params=params,
+            headers={"Authorization": None, "User-Agent": BROWSER_USER_AGENT},
+            timeout=self.config.timeout,
+        )
+        html = resp.text or ""
+        if not 200 <= resp.status_code < 300:
+            if "cloudflare" in html.lower():
+                raise CloudflareBlockError(
+                    f"[{resp.status_code}] Simulcast calendar blocked by Cloudflare."
+                )
+            raise CrunchyrollError(f"[{resp.status_code}] Could not load the simulcast calendar.")
+        final_url = str(getattr(resp, "url", "") or "")
+        if final_url and "simulcastcalendar" not in final_url:
+            # Crunchyroll redirects the old calendar page in some regions.
+            raise CrunchyrollError(
+                f"The simulcast calendar is not available (redirected to {final_url}). "
+                "Use list_simulcast_seasons() and get_season_anime() instead."
+            )
 
         items: List[Dict[str, Any]] = []
         # Each release is a schema.org microdata block (itemprop attributes).
@@ -1685,26 +1980,32 @@ class CrunchyrollClient:
         Premium/account features (watchlist, history, streams of premium-only
         content) are not available in anonymous mode.
         """
-        headers = {
-            "Authorization": ANON_BASIC_AUTH,
-            "Content-Type": "application/x-www-form-urlencoded",
-            "ETP-Anonymous-ID": self.device_id,
-        }
         data = self._auth_body({"grant_type": "client_id"})
-        resp = self.http.post(
-            TOKEN, headers=headers, data=data, timeout=self.config.timeout
-        )
+        resp = self._token_request(data)
+        if self._is_invalid_client(resp):
+            raise LoginError(
+                "Crunchyroll rejected the app client credentials (invalid_client). "
+                "They are rotated regularly; update the library or pass "
+                "Config.basic_auth with current credentials."
+            )
         token = self._parse_response(resp)
+        if "access_token" not in token:
+            raise LoginError("Token response did not contain an access token.")
+        try:
+            expires_in = float(token.get("expires_in", 300))
+        except (TypeError, ValueError):
+            expires_in = 300.0
         account: Dict[str, Any] = {
             "access_token": token["access_token"],
             "token_type": token.get("token_type", "Bearer"),
-            "expires": (_utcnow() + timedelta(
-                seconds=float(token.get("expires_in", 300)))).isoformat(),
+            "expires": (_utcnow() + timedelta(seconds=expires_in)).isoformat(),
         }
         self._account = account
+        self._active_profile_id = None
+        self._anonymous = True
         self._set_auth_header()
-        index = self._request("GET", INDEX, authed=True)
-        cms = index.get("cms_web") or index.get("cms") or {}
+        index = self._optional_get(INDEX)
+        cms = (index.get("cms_web") or index.get("cms") or {}) if isinstance(index, dict) else {}
         account["cms_bucket"] = cms.get("bucket", "")
         account["cms_policy"] = cms.get("policy", "")
         account["cms_signature"] = cms.get("signature", "")
@@ -1782,7 +2083,13 @@ class CrunchyrollClient:
 
     def download_subtitle(self, subtitle) -> bytes:
         """Download the raw subtitle file (.ass/.vtt) for a Subtitle track."""
-        resp = self.http.get(subtitle.url, timeout=self.config.timeout)
+        url = getattr(subtitle, "url", "") or ""
+        if not url.startswith("https://"):
+            raise CrunchyrollError(f"Refusing to download subtitle from non-HTTPS URL: {url!r}")
+        # Subtitles live on a CDN; do not forward the API bearer token there.
+        resp = self.http.get(url, headers={"Authorization": None}, timeout=self.config.timeout)
+        if not 200 <= resp.status_code < 300:
+            raise CrunchyrollError(f"[{resp.status_code}] Subtitle download failed.")
         return resp.content
 
     def invalidate_stream(self, media_id: str, token: str) -> bool:
@@ -1800,10 +2107,10 @@ class CrunchyrollClient:
     def get_similar(self, series_id: str, *, limit: int = 20) -> List[Any]:
         """Return series/movies similar to the given series."""
         self._ensure_authenticated()
-        url = SIMILAR.format(self.account_id)
+        url = SIMILAR.format(self._require_account_id(), series_id)
         data = self._request(
             "GET", url,
-            params={"guid": series_id, "n": limit, "locale": self.config.locale},
+            params={"n": min(limit, _MAX_PAGE_N), "start": 0, "locale": self.config.locale},
         )
         return [parse_item(i) for i in data.get("data", [])]
 
@@ -1826,7 +2133,7 @@ class CrunchyrollClient:
     def get_home_feed(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Return the raw home-feed items (mixed resource types)."""
         self._ensure_authenticated()
-        url = HOME_FEED.format(self.account_id)
+        url = HOME_FEED.format(self._require_account_id())
         data = self._request(
             "GET", url, params={"n": limit, "locale": self.config.locale}
         )
@@ -1845,7 +2152,7 @@ class CrunchyrollClient:
     def get_recommendations(self, limit: int = 20) -> List[Any]:
         """Return recommended series/movies for the account."""
         self._ensure_authenticated()
-        url = RECOMMENDATIONS.format(self.account_id)
+        url = RECOMMENDATIONS.format(self._require_account_id())
         data = self._request(
             "GET", url, params={"n": limit, "locale": self.config.locale}
         )

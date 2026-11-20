@@ -863,12 +863,8 @@
       }).join("");
       grid.querySelectorAll("[data-gap]").forEach(function (btn) {
         btn.addEventListener("click", function () {
-          // Hand the title to the ordinary search: it is the one place that
-          // knows which of the enabled sources actually has this series, and
-          // duplicating that decision here would be a second, worse answer.
-          const input = document.getElementById("searchInput");
-          if (input) input.value = btn.dataset.gap;
-          if (typeof doSearch === "function") doSearch();
+          const item = gaps.find(function (gap) { return gap.title === btn.dataset.gap; });
+          if (item) window.openGapFill(item);
         });
       });
       // "Not interested in this one." Writes the same media_ignored entry the

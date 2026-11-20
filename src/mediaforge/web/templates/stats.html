@@ -3,13 +3,19 @@
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='mf-charts.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='home_gaps.css') }}">
 {% endblock %}
 
 {% block content %}
 {% include "_stats_body.html" %}
+{% include "_gap_fill_modal.html" %}
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='mf-charts.js') }}"></script>
+<script src="{{ url_for('static', filename='gap_downloads.js') }}"></script>
+<script src="{{ url_for('static', filename='home_gaps.js') }}"></script>
+<script src="{{ url_for('static', filename='gap_batch.js') }}"></script>
 <script src="{{ url_for('static', filename='stats.js') }}"></script>
 {% endblock %}

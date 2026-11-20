@@ -1303,3 +1303,34 @@ def test_settings_client_endpoint_leaks_no_secrets(app, as_user):
     assert data["cineinfo"]["tmdb_api_key"] is True
     # The admin endpoint stays closed for the same account.
     assert admin_only == 403
+
+
+def test_settings_client_download_defaults(app, as_user, monkeypatch):
+    from mediaforge.web.db import delete_setting, get_setting, set_setting
+
+    keys = ("download_language", "download_provider")
+    with app.app_context():
+        before = {key: get_setting(key) for key in keys}
+    monkeypatch.setenv("MEDIAFORGE_LANGUAGE", "English Sub")
+    monkeypatch.setenv("MEDIAFORGE_PROVIDER", "Filemoon")
+    try:
+        with app.app_context():
+            for key in keys:
+                delete_setting(key)
+        client = as_user("user")
+        data = client.get("/api/settings/client").get_json()
+        assert data["download_language"] == "English Sub"
+        assert data["download_provider"] == "Filemoon"
+        with app.app_context():
+            set_setting("download_language", "German Sub")
+            set_setting("download_provider", "Vidoza")
+        data = client.get("/api/settings/client").get_json()
+        assert data["download_language"] == "German Sub"
+        assert data["download_provider"] == "Vidoza"
+    finally:
+        with app.app_context():
+            for key, value in before.items():
+                if value is None:
+                    delete_setting(key)
+                else:
+                    set_setting(key, value)

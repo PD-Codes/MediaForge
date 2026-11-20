@@ -5,6 +5,8 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='settings_rows.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='mf-charts.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='stats.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='shared_modals.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='home_gaps.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='history.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='uptime.css') }}">
 {# Module panels below use the shared settings-card markup, which the
@@ -112,6 +114,10 @@
 {% endblock %}
 
 {% block scripts %}
+{% include "_gap_fill_modal.html" %}
+<script src="{{ url_for('static', filename='gap_downloads.js') }}"></script>
+<script src="{{ url_for('static', filename='home_gaps.js') }}"></script>
+<script src="{{ url_for('static', filename='gap_batch.js') }}"></script>
 {# MFCharts must load before stats.js, which draws the Statistics panel. #}
 <script src="{{ url_for('static', filename='mf-charts.js') }}"></script>
 <script>

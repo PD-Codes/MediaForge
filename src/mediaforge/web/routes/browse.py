@@ -749,9 +749,11 @@ def _feed_gap_rows(lib_titles, limit=12):
         # get_media_ignores() keys by the lower-cased folder name (see its
         # docstring); looking up the raw folder silently ignored every ignore.
         entry = ignores.get(folder.lower()) or ignores.get(folder)
+        ignored_slots = []
         if entry:
             slots = entry.get("slots") if isinstance(entry, dict) else entry
             slots = set(slots or [])
+            ignored_slots = sorted(slots)
             if "__all__" in slots:
                 continue
             missing = [m for m in missing if m not in slots]
@@ -761,6 +763,8 @@ def _feed_gap_rows(lib_titles, limit=12):
             "title": folder,
             "folder": folder,
             "missing": missing[:12],
+            "missing_slots": missing,
+            "ignored_slots": ignored_slots,
             "missing_count": len(missing),
             # Both are shown: "3 missing" is the headline, the slot list is
             # what makes it actionable.

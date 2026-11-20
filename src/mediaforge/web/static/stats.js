@@ -684,6 +684,7 @@ function _renderSpeedTable() {
  * keyed by folder and survives paging, filtering and tab switches.
  */
 var _ignSel = { series: {}, slots: {}, titles: {} };
+var _gapRows = Object.create(null);
 
 function _ignHasSelection() {
   return Object.keys(_ignSel.series).length > 0 ||
@@ -715,12 +716,14 @@ function statsIgnToggleSeries(box) {
   if (!row) return;
   var folder = row.getAttribute("data-folder");
   if (box.checked) {
-    _ignSel.series[folder] = true;
+    _ignSel.series[folder] = ((_gapRows[folder] || {}).missing || []).slice();
+    delete _ignSel.slots[folder];
     // Remember the title with the selection: the full series list no longer
     // lives in the browser, so it cannot be looked up at submit time.
     _ignSel.titles[folder] = row.getAttribute("data-title") || folder;
   } else {
     delete _ignSel.series[folder];
+    delete _ignSel.slots[folder];
   }
   _updateIgnActions();
 }
@@ -732,6 +735,10 @@ function statsIgnToggleSlot(box) {
   var slot = box.getAttribute("data-slot");
   var checked = box.checked;
   _ignSel.titles[folder] = row.getAttribute("data-title") || folder;
+  if (_ignSel.series[folder]) {
+    _ignSel.slots[folder] = _ignSel.series[folder].slice();
+    delete _ignSel.series[folder];
+  }
   var list = _ignSel.slots[folder] || (_ignSel.slots[folder] = []);
   var at = list.indexOf(slot);
   if (checked && at === -1) list.push(slot);
@@ -747,13 +754,39 @@ function statsIgnClearSelection() {
 /** Keep the action bar's counter/disabled state in sync without a re-render. */
 function _updateIgnActions() {
   var btn = document.getElementById("ignApplyBtn");
+  var downloadBtn = document.getElementById("gapDownloadSelectedBtn");
   var info = document.getElementById("ignSelInfo");
   var n = _ignSelectionCount();
   if (btn) btn.disabled = !n;
+  if (downloadBtn) downloadBtn.disabled = !n;
   if (info) {
     info.textContent = n
       ? t(n + " ausgewählt", n + " selected")
       : t("Nichts ausgewählt", "Nothing selected");
+  }
+  document.querySelectorAll("#incompleteBody tr[data-folder]").forEach(function (row) {
+    var folder = row.dataset.folder;
+    var whole = !!_ignSel.series[folder];
+    var picked = _ignSel.slots[folder] || [];
+    var slots = row.querySelectorAll(".ign-slot");
+    var count = 0;
+    slots.forEach(function (box) {
+      box.checked = whole || picked.indexOf(box.dataset.slot) !== -1;
+      if (box.checked) count++;
+    });
+    var series = row.querySelector(".ign-series");
+    if (series) {
+      series.checked = whole || (slots.length > 0 && count === slots.length);
+      series.indeterminate = count > 0 && count < slots.length;
+    }
+  });
+  var seriesBoxes = Array.from(document.querySelectorAll("#incompleteBody .ign-series"));
+  var pageSelection = document.querySelector("#incompleteTableHost thead input");
+  if (pageSelection) {
+    pageSelection.checked = seriesBoxes.length > 0 && seriesBoxes.every(function (box) { return box.checked; });
+    pageSelection.indeterminate = !pageSelection.checked && seriesBoxes.some(function (box) {
+      return box.checked || box.indeterminate;
+    });
   }
 }
 
@@ -763,10 +796,11 @@ function toggleAllIncomplete(cb) {
   document.querySelectorAll("#incompleteBody tr[data-folder]").forEach(function (tr) {
     var folder = tr.dataset.folder;
     if (cb.checked) {
-      _ignSel.series[folder] = true;
+      _ignSel.series[folder] = ((_gapRows[folder] || {}).missing || []).slice();
       _ignSel.titles[folder] = tr.dataset.title || folder;
     } else {
       delete _ignSel.series[folder];
+      delete _ignSel.slots[folder];
     }
     var box = tr.querySelector(".ign-series");
     if (box) box.checked = cb.checked;
@@ -801,10 +835,11 @@ function _incompleteTableHtml(info) {
     '</tr></thead><tbody id="incompleteBody">';
   info.items.forEach(function (item) {
     var miss = item.missing || [];
+    _gapRows[item.folder] = item;
     var seriesChecked = !!_ignSel.series[item.folder];
     var picked = _ignSel.slots[item.folder] || [];
     var chips = miss.map(function (sl) {
-      var on = picked.indexOf(sl) !== -1 ? " checked" : "";
+      var on = seriesChecked || picked.indexOf(sl) !== -1 ? " checked" : "";
       return '<label class="ignore-slot-chip is-selectable"><input type="checkbox" class="ign-slot chb-main"' +
         on + ' data-slot="' + escHtml(sl) + '" onchange="statsIgnToggleSlot(this)"> ' +
         escHtml(sl) + "</label>";
@@ -812,11 +847,13 @@ function _incompleteTableHtml(info) {
     mh += '<tr data-folder="' + escHtml(item.folder) + '" data-title="' + escHtml(item.title || "") + '">' +
       '<td class="td-check" data-label=""><input type="checkbox" class="ign-series chb-main"' +
       (seriesChecked ? " checked" : "") + ' onchange="statsIgnToggleSeries(this)" title="' +
-      escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) + '"><span class="td-check-label">' +
-      escHtml(t("Ganze Serie ignorieren", "Ignore whole series")) + "</span></td>" +
+      escHtml(t("Alle Lücken dieser Serie auswählen", "Select all gaps of this series")) + '"><span class="td-check-label">' +
+      escHtml(t("Serie auswählen", "Select series")) + "</span></td>" +
       '<td class="dup-title-cell" data-label="' + escHtml(t("Serie", "Series")) + '" title="' +
       escHtml(item.title) + '"><span class="dup-title-text">' + escHtml(item.title) + "</span>" +
-      '<span class="miss-count">' + miss.length + " " + escHtml(t("fehlend", "missing")) + "</span></td>" +
+      '<span class="miss-count">' + miss.length + " " + escHtml(t("fehlend", "missing")) + "</span>" +
+      '<button type="button" class="btn btn-ghost" onclick="statsOpenGapFill(this)">' +
+      escHtml(t("Lücken füllen", "Fill gaps")) + "</button></td>" +
       '<td data-label="' + escHtml(t("Speicherort", "Location")) + '">' + escHtml(item.location) + "</td>" +
       '<td data-label="' + escHtml(t("Fehlende Episoden", "Missing episodes")) +
       '"><div class="ignore-slot-wrap">' + chips + "</div></td></tr>";
@@ -828,7 +865,9 @@ function _incompleteTableHtml(info) {
     '<button type="button" class="btn btn-ghost ignore-restore-btn" onclick="statsIgnClearSelection()">' +
     escHtml(t("Auswahl leeren", "Clear selection")) + "</button>" +
     '<button type="button" class="btn-download-selected" id="ignApplyBtn" onclick="mediaIgnoreSelected()">' +
-    escHtml(t("Auswahl ignorieren", "Ignore selected")) + "</button></div>";
+    escHtml(t("Auswahl ignorieren", "Ignore selected")) + "</button>" +
+    '<button type="button" class="btn-download-selected" id="gapDownloadSelectedBtn" onclick="statsDownloadSelectedGaps()">' +
+    escHtml(t("Auswahl herunterladen", "Download selected")) + "</button></div>";
   return mh;
 }
 
@@ -1148,17 +1187,40 @@ function _renderDuplicatesTable(info) {
 // Ignore / restore actions
 // ---------------------------------------------------------------
 
+function statsOpenGapFill(button) {
+  var row = _ignRowOf(button);
+  var item = row && _gapRows[row.dataset.folder];
+  if (item) window.openGapFill(item);
+}
+
+function statsDownloadSelectedGaps() {
+  var folders = new Set(Object.keys(_ignSel.series).concat(Object.keys(_ignSel.slots)));
+  var items = [];
+  folders.forEach(function (folder) {
+    var row = _gapRows[folder];
+    var slots = _ignSel.series[folder] || _ignSel.slots[folder];
+    if (row && slots && slots.length) items.push(Object.assign({}, row, { missing_slots: slots.slice() }));
+  });
+  window.openGapFillBatch(items, function (item) {
+    delete _ignSel.series[item.folder];
+    delete _ignSel.slots[item.folder];
+    delete _ignSel.titles[item.folder];
+    _updateIgnActions();
+  });
+}
+
 function mediaIgnoreSelected() {
   // Read from _ignSel, not the DOM: with pagination the checkboxes of every
   // other page do not exist, so a DOM scan would drop those selections.
   var items = {};
   Object.keys(_ignSel.series).forEach(function (folder) {
-    items[folder] = { folder: folder, title: _ignSel.titles[folder] || folder, all: true };
+    var slots = _ignSel.series[folder];
+    if (slots.length) items[folder] = { folder: folder, title: _ignSel.titles[folder] || folder, slots: slots.slice() };
   });
   Object.keys(_ignSel.slots).forEach(function (folder) {
     var slots = _ignSel.slots[folder] || [];
     if (!slots.length) return;
-    if (items[folder] && items[folder].all) return;  // whole series covers it
+    if (items[folder]) return;
     items[folder] = { folder: folder, title: _ignSel.titles[folder] || folder, slots: slots.slice() };
   });
 
@@ -1631,3 +1693,14 @@ function renderStats(data, container) {
 // (mfLazyPanel, monitoring.html); the standalone page loads at once.
 if (window.mfLazyPanel) window.mfLazyPanel("stats", function () { loadStats(); });
 else loadStats();
+
+function openLinkedIncompleteModal() {
+  if (window.location.hash !== "#incomplete") return;
+  // The gap list has its own endpoint and also works with media stats disabled.
+  _modalView.incomplete.q = "";
+  switchIncompleteView("incomplete");
+  openIncompleteModal();
+}
+
+window.addEventListener("hashchange", openLinkedIncompleteModal);
+openLinkedIncompleteModal();
