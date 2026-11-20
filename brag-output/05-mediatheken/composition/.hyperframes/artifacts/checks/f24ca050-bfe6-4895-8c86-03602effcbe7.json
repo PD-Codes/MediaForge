@@ -1,0 +1,665 @@
+{
+  "ok": true,
+  "strict": false,
+  "browserSkipped": false,
+  "lint": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 10,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "duplicate_media_discovery_risk",
+        "severity": "warning",
+        "message": "Detected 2 matching img entries with the same source/start/duration.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Avoid duplicated media nodes that can be discovered twice during compilation."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"bg\"> is a timeline element that contains nested <div>. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#bg",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"bg\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"tagclip\"> is a timeline element that contains nested <div>. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#tagclip",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"tagclip\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s1\"> is a timeline element that contains nested <div id=\"s1-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s1",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s1\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s2\"> is a timeline element that contains nested <div id=\"s2-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s2",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s2\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s3\"> is a timeline element that contains nested <div id=\"s3-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s3",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s3\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s4\"> is a timeline element that contains nested <div id=\"s4-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s4",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s4\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s5\"> is a timeline element that contains nested <div id=\"s5-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s5",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s5\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s6\"> is a timeline element that contains nested <div>. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s6",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s6\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"curclip\"> is a timeline element that contains nested <div id=\"rip\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#curclip",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\05-mediatheken\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"curclip\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      }
+    ],
+    "filesScanned": 1
+  },
+  "runtime": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 5,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "clip_media_fit",
+        "severity": "warning",
+        "message": "Audio \"a-world\" is 0.12s but its slot (data-duration) is 0.20s — the slot is shortened to the media length when rendered. Set data-duration to ~0.12s if that isn't intended.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {
+          "data-composition-id": "main",
+          "data-start": "0",
+          "data-duration": "23",
+          "data-width": "1080",
+          "data-height": "1920"
+        },
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 1920
+        },
+        "time": 0
+      },
+      {
+        "code": "clip_media_fit",
+        "severity": "warning",
+        "message": "Audio \"a-skip\" is 0.04s but its slot (data-duration) is 0.10s — the slot is shortened to the media length when rendered. Set data-duration to ~0.04s if that isn't intended.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {
+          "data-composition-id": "main",
+          "data-start": "0",
+          "data-duration": "23",
+          "data-width": "1080",
+          "data-height": "1920"
+        },
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 1920
+        },
+        "time": 0
+      },
+      {
+        "code": "clip_media_fit",
+        "severity": "warning",
+        "message": "Audio \"a-book\" is 0.14s but its slot (data-duration) is 0.20s — the slot is shortened to the media length when rendered. Set data-duration to ~0.14s if that isn't intended.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {
+          "data-composition-id": "main",
+          "data-start": "0",
+          "data-duration": "23",
+          "data-width": "1080",
+          "data-height": "1920"
+        },
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 1920
+        },
+        "time": 0
+      },
+      {
+        "code": "clip_media_fit",
+        "severity": "warning",
+        "message": "Audio \"a-pick\" is 0.04s but its slot (data-duration) is 0.10s — the slot is shortened to the media length when rendered. Set data-duration to ~0.04s if that isn't intended.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {
+          "data-composition-id": "main",
+          "data-start": "0",
+          "data-duration": "23",
+          "data-width": "1080",
+          "data-height": "1920"
+        },
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 1920
+        },
+        "time": 0
+      },
+      {
+        "code": "clip_media_fit",
+        "severity": "warning",
+        "message": "Audio \"a-setup\" is 0.33s but its slot (data-duration) is 0.40s — the slot is shortened to the media length when rendered. Set data-duration to ~0.33s if that isn't intended.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {
+          "data-composition-id": "main",
+          "data-start": "0",
+          "data-duration": "23",
+          "data-width": "1080",
+          "data-height": "1920"
+        },
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 1080,
+          "height": 1920
+        },
+        "time": 0
+      }
+    ]
+  },
+  "layout": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 3,
+    "infoCount": 3,
+    "findings": [
+      {
+        "code": "container_overflow",
+        "severity": "warning",
+        "time": 3.833,
+        "selector": "#hill2",
+        "message": "Element extends outside a clipping layout container.",
+        "rect": {
+          "left": 452,
+          "top": 927,
+          "right": 1252,
+          "bottom": 1187,
+          "width": 800,
+          "height": 260
+        },
+        "containerSelector": "#player",
+        "fixHint": "Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.",
+        "containerRect": {
+          "left": 70,
+          "top": 600,
+          "right": 1010,
+          "bottom": 1129,
+          "width": 940,
+          "height": 529
+        },
+        "overflow": {
+          "right": 242,
+          "bottom": 58
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 452,
+          "y": 927,
+          "width": 800,
+          "height": 260
+        },
+        "firstSeen": 3.833,
+        "lastSeen": 6.389,
+        "occurrences": 2,
+        "heldMs": 0,
+        "times": [
+          3.833,
+          6.389
+        ]
+      },
+      {
+        "code": "container_overflow",
+        "severity": "warning",
+        "time": 3.833,
+        "selector": "#hill1",
+        "message": "Element extends outside a clipping layout container.",
+        "rect": {
+          "left": 12,
+          "top": 947,
+          "right": 1068,
+          "bottom": 1247,
+          "width": 1056,
+          "height": 300
+        },
+        "containerSelector": "#player",
+        "fixHint": "Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.",
+        "containerRect": {
+          "left": 70,
+          "top": 600,
+          "right": 1010,
+          "bottom": 1129,
+          "width": 940,
+          "height": 529
+        },
+        "overflow": {
+          "left": 58,
+          "right": 58,
+          "bottom": 118
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 12,
+          "y": 947,
+          "width": 1056,
+          "height": 300
+        },
+        "firstSeen": 3.833,
+        "lastSeen": 6.389,
+        "occurrences": 2,
+        "heldMs": 0,
+        "times": [
+          3.833,
+          6.389
+        ]
+      },
+      {
+        "code": "panel_out_of_canvas",
+        "severity": "warning",
+        "time": 3.833,
+        "selector": "#hill2",
+        "message": "Painted panel extends outside the composition canvas.",
+        "rect": {
+          "left": 452,
+          "top": 927,
+          "right": 1252,
+          "bottom": 1187,
+          "width": 800,
+          "height": 260
+        },
+        "containerSelector": "#root",
+        "text": "",
+        "fixHint": "Move the panel inward, or mark intentional off-canvas animation with data-layout-allow-overflow.",
+        "containerRect": {
+          "left": 0,
+          "top": 0,
+          "right": 1080,
+          "bottom": 1920,
+          "width": 1080,
+          "height": 1920
+        },
+        "overflow": {
+          "right": 172
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 452,
+          "y": 927,
+          "width": 800,
+          "height": 260
+        },
+        "firstSeen": 3.833,
+        "lastSeen": 6.389,
+        "occurrences": 2,
+        "heldMs": 0,
+        "times": [
+          3.833,
+          6.389
+        ]
+      },
+      {
+        "code": "container_overflow",
+        "severity": "info",
+        "time": 3.833,
+        "selector": "#still",
+        "message": "Element extends outside a clipping layout container.",
+        "rect": {
+          "left": -22.97,
+          "top": 529.27,
+          "right": 1102.97,
+          "bottom": 1199.73,
+          "width": 1125.93,
+          "height": 670.46
+        },
+        "containerSelector": "#player",
+        "fixHint": "Resize/reposition the child or container, or mark intentional overflow with data-layout-allow-overflow.",
+        "containerRect": {
+          "left": 70,
+          "top": 600,
+          "right": 1010,
+          "bottom": 1129,
+          "width": 940,
+          "height": 529
+        },
+        "overflow": {
+          "left": 92.97,
+          "right": 92.97,
+          "top": 70.73,
+          "bottom": 70.73
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": -22.97,
+          "y": 529.27,
+          "width": 1125.93,
+          "height": 670.46
+        },
+        "firstSeen": 3.833,
+        "lastSeen": 6.389,
+        "occurrences": 2,
+        "heldMs": 0,
+        "times": [
+          3.833,
+          6.389
+        ]
+      },
+      {
+        "code": "content_overlap",
+        "severity": "info",
+        "time": 11.05,
+        "selector": "#cover > i:nth-of-type(1)",
+        "message": "Two text blocks overlap and may render unreadable.",
+        "rect": {
+          "left": 134,
+          "top": 966.05,
+          "right": 269.16,
+          "bottom": 1002.05,
+          "width": 135.16,
+          "height": 36
+        },
+        "containerSelector": "div.p",
+        "text": "A. Lindqvist",
+        "fixHint": "Give each block its own zone, or put data-layout-allow-overlap on the text or on a container inside the scene. A marker on the scene root does not apply.",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 134,
+          "y": 966.05,
+          "width": 135.16,
+          "height": 36
+        },
+        "firstSeen": 11.05,
+        "lastSeen": 11.05,
+        "occurrences": 1,
+        "heldMs": 0,
+        "times": [
+          11.05
+        ]
+      },
+      {
+        "code": "content_overlap",
+        "severity": "info",
+        "time": 11.05,
+        "selector": "#b-one",
+        "message": "Two text blocks overlap and may render unreadable.",
+        "rect": {
+          "left": 412,
+          "top": 948.05,
+          "right": 770.48,
+          "bottom": 992.05,
+          "width": 358.48,
+          "height": 44
+        },
+        "containerSelector": "div.p",
+        "text": "One book. One entry.",
+        "fixHint": "Give each block its own zone, or put data-layout-allow-overlap on the text or on a container inside the scene. A marker on the scene root does not apply.",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 412,
+          "y": 948.05,
+          "width": 358.48,
+          "height": 44
+        },
+        "firstSeen": 11.05,
+        "lastSeen": 11.05,
+        "occurrences": 1,
+        "heldMs": 0,
+        "times": [
+          11.05
+        ]
+      }
+    ],
+    "duration": 23,
+    "samples": [
+      1.278,
+      3.833,
+      6.389,
+      8.944,
+      11.5,
+      14.056,
+      16.611,
+      19.167,
+      21.722
+    ],
+    "transitionSamples": [],
+    "transitionSamplesDropped": 0,
+    "tolerance": 2,
+    "totalIssueCount": 6,
+    "truncated": false
+  },
+  "motion": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "enabled": false,
+    "samples": 0
+  },
+  "contrast": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "enabled": true,
+    "samples": [
+      1.278,
+      6.389,
+      11.5,
+      16.611,
+      21.722
+    ],
+    "checked": 60,
+    "passed": 60
+  },
+  "craft": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 3,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"One book. One entry.\" (4 words) is on screen 1.23 s (±0.01 s), under its 1.27 s floor: hold it about 0.5 s + 0.3 s a word (1.70 s here) before it leaves or changes; see references/motion.md.",
+        "text": "One book. One entry.",
+        "selector": "#b-one",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 412,
+          "y": 962,
+          "width": 358.48,
+          "height": 44
+        },
+        "time": 9.906,
+        "words": 4,
+        "seconds": 1.234,
+        "floorSeconds": 1.275
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"The map ended where the river did, and so, she decided, w...\" (32 words) is on screen 1.87 s (±0.01 s), under its 7.57 s floor: hold it about 0.5 s + 0.3 s a word (10.10 s here) before it leaves or changes; see references/motion.md.",
+        "text": "The map ended where the river did, and so, she decided, would her patience. She folded it twice, set it on the windowsill and went looking for the road nobody had drawn.",
+        "selector": "div.p",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 140,
+          "y": 828.51,
+          "width": 776.84,
+          "height": 232
+        },
+        "time": 11.07,
+        "words": 32,
+        "seconds": 1.867,
+        "floorSeconds": 7.575
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"Your place, saved per book\" (5 words) is on screen 1.44 s (±0.01 s), under its 1.50 s floor: hold it about 0.5 s + 0.3 s a word (2.00 s here) before it leaves or changes; see references/motion.md.",
+        "text": "Your place, saved per book",
+        "selector": "#s3-note > span:nth-of-type(1)",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 342.25,
+          "y": 1533.09,
+          "width": 395.48,
+          "height": 36
+        },
+        "time": 11.5,
+        "words": 5,
+        "seconds": 1.438,
+        "floorSeconds": 1.5
+      }
+    ],
+    "enabled": true,
+    "step": 0.125,
+    "samples": 184
+  },
+  "hdr": {
+    "autoPromotion": null,
+    "inspection": "available"
+  },
+  "snapshots": {
+    "enabled": false,
+    "files": [],
+    "times": [],
+    "findingFiles": []
+  }
+}

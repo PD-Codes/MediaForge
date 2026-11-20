@@ -1,0 +1,391 @@
+{
+  "version": 1,
+  "historyId": "5f708cc3-6e4f-4043-8783-c726c0b4c24c",
+  "currentRevision": "88d40774-dac1-4fae-89e7-92f8c5b493b2",
+  "pendingChanges": false,
+  "files": {
+    ".media/manifest.jsonl": {
+      "hash": "e336d5d7f64524f5b4fe65889fb11c9abd6b4304e449adc22a76b540b03a62ad",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\e3\\e336d5d7f64524f5b4fe65889fb11c9abd6b4304e449adc22a76b540b03a62ad"
+    },
+    "AGENTS.md": {
+      "hash": "1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\1b\\1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060"
+    },
+    "CLAUDE.md": {
+      "hash": "1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\1b\\1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060"
+    },
+    "assets/audio-env.js": {
+      "hash": "51e8e1cc60a89fa0fb31abd3bfb26c03108b32a12f2e82d4caf7ff19d64bb8eb",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\51\\51e8e1cc60a89fa0fb31abd3bfb26c03108b32a12f2e82d4caf7ff19d64bb8eb"
+    },
+    "assets/icon.svg": {
+      "hash": "183de4bae56a4b566ef0ca4e9a956d34fcffdab5f73dc95bb672e40d2b6e6138",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\18\\183de4bae56a4b566ef0ca4e9a956d34fcffdab5f73dc95bb672e40d2b6e6138"
+    },
+    "assets/mf.css": {
+      "hash": "22d61868c2dd6f374f02ff1caba08c2acd2daa4a18f3c925ed46d9750d7f1c04",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\22\\22d61868c2dd6f374f02ff1caba08c2acd2daa4a18f3c925ed46d9750d7f1c04"
+    },
+    "assets/mf.js": {
+      "hash": "721ac4ab337d94e1c30481a71ecfb4f451497cbcdbce196b69d566a21dc9ab47",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\72\\721ac4ab337d94e1c30481a71ecfb4f451497cbcdbce196b69d566a21dc9ab47"
+    },
+    "assets/sfx/card-place-2.ogg": {
+      "hash": "903d5050718595e87864dd755643b476ab1a5533080dcc2dddc72570d33ba9f8",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\90\\903d5050718595e87864dd755643b476ab1a5533080dcc2dddc72570d33ba9f8"
+    },
+    "assets/sfx/card-place-4.ogg": {
+      "hash": "18e3ba713b7259605fd27cdc048085ed56cf86b32403f070b6cb125019f77183",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\18\\18e3ba713b7259605fd27cdc048085ed56cf86b32403f070b6cb125019f77183"
+    },
+    "assets/sfx/click1.ogg": {
+      "hash": "59175ac17cd49a68dd736285738441287636112a84a6f7ce0d89921bda5a5360",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\59\\59175ac17cd49a68dd736285738441287636112a84a6f7ce0d89921bda5a5360"
+    },
+    "assets/sfx/impactBell_heavy_000.ogg": {
+      "hash": "94b8bb5f2d43ab65e4bcc32b28562416e9bc2c51d9fd4be1e333660ee52f977f",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\94\\94b8bb5f2d43ab65e4bcc32b28562416e9bc2c51d9fd4be1e333660ee52f977f"
+    },
+    "assets/sfx/impactSoft_medium_001.ogg": {
+      "hash": "7642a4fd43e547afe4f7adfadb3dabb681c0ff512f52c1674bae30a726841faf",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\76\\7642a4fd43e547afe4f7adfadb3dabb681c0ff512f52c1674bae30a726841faf"
+    },
+    "assets/sfx/impactWood_light_002.ogg": {
+      "hash": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\b1\\b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc"
+    },
+    "assets/sfx/notification.mp3": {
+      "hash": "b1559967dedb7994a82371f10cec9f7f3992e6b147b4cd88d62112bcdc3f9ba3",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\b1\\b1559967dedb7994a82371f10cec9f7f3992e6b147b4cd88d62112bcdc3f9ba3"
+    },
+    "assets/sfx/switch_001.ogg": {
+      "hash": "3b74efad87f1e69dbd1d05c5ad952ab90859b5a3d11da6ec5bd79b4f03b42afa",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\3b\\3b74efad87f1e69dbd1d05c5ad952ab90859b5a3d11da6ec5bd79b4f03b42afa"
+    },
+    "assets/sfx/switch_006.ogg": {
+      "hash": "2676ddc4e341ee557b4d1dc8767ef8655540d66fb3ded6a1614080dbc4dc6f18",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\26\\2676ddc4e341ee557b4d1dc8767ef8655540d66fb3ded6a1614080dbc4dc6f18"
+    },
+    "assets/sfx/whoosh-cine.mp3": {
+      "hash": "0a0f3505856fdfa84ac6b86b3c55ccd0ef1eb4ff0907d7b6934002218a73404e",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\0a\\0a0f3505856fdfa84ac6b86b3c55ccd0ef1eb4ff0907d7b6934002218a73404e"
+    },
+    "hyperframes.json": {
+      "hash": "3af6ecb4d7f8c0cf28a50880f71291f27406c4548e5db2ea2d57430abd99e0e1",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\3a\\3af6ecb4d7f8c0cf28a50880f71291f27406c4548e5db2ea2d57430abd99e0e1"
+    },
+    "index.html": {
+      "hash": "b13c5eded33d1f95addae108d2be9745c5c11adbcc82dab4d151a585c0e7e63c",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\b1\\b13c5eded33d1f95addae108d2be9745c5c11adbcc82dab4d151a585c0e7e63c"
+    },
+    "meta.json": {
+      "hash": "e3540c56465f912de5fcb25ba2d6916539feb8e6d07022b0d3c00094cec114ff",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\e3\\e3540c56465f912de5fcb25ba2d6916539feb8e6d07022b0d3c00094cec114ff"
+    },
+    "package.json": {
+      "hash": "074c2445f5ff9ce123b749737d825cf0810e3e5e825119557f6ff8a798ca88b4",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\07\\074c2445f5ff9ce123b749737d825cf0810e3e5e825119557f6ff8a798ca88b4"
+    },
+    "assets/music/bed.mp3": {
+      "hash": "aa56ab1cdcbef6b05566c6a7c114323078580ccf6a740a9e6c6b6c4b40b4389f",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\aa\\aa56ab1cdcbef6b05566c6a7c114323078580ccf6a740a9e6c6b6c4b40b4389f"
+    }
+  },
+  "revisions": {
+    "88d40774-dac1-4fae-89e7-92f8c5b493b2": {
+      "actor": {
+        "kind": "outside",
+        "name": "Outside"
+      },
+      "label": "Changed outside the app",
+      "startedAt": 1793221355469,
+      "endedAt": 1793221355470,
+      "files": {
+        "index.html": {
+          "before": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\93\\93c5aa52465ddb02ca46a310576d8ffce06b0877a6132bebcaed738e1d33adde",
+          "after": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\5f708cc3-6e4f-4043-8783-c726c0b4c24c\\blobs\\b1\\b13c5eded33d1f95addae108d2be9745c5c11adbcc82dab4d151a585c0e7e63c"
+        }
+      }
+    }
+  },
+  "checks": {
+    "latest": {
+      "revision": null,
+      "id": "afde6b4b-972e-4ec2-94ad-4a437444c848"
+    },
+    "revisions": {},
+    "unversioned": [
+      {
+        "id": "afde6b4b-972e-4ec2-94ad-4a437444c848",
+        "scope": "project",
+        "report": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\checks\\afde6b4b-972e-4ec2-94ad-4a437444c848.json",
+        "metadata": {
+          "ok": true,
+          "browserSkipped": false,
+          "options": {
+            "samples": 9,
+            "atTransitions": false,
+            "maxIssues": 80,
+            "collapseStatic": true,
+            "tolerance": 2,
+            "timeout": 3000,
+            "contrast": true,
+            "strict": false,
+            "snapshots": false,
+            "browserGpuMode": "auto"
+          }
+        },
+        "createdAt": 1793221326602,
+        "contentHash": "e7b80241c5a3f509762eb52544be7253f70586e49832fc3b22dc972d80bfb922",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "snapshots": {
+    "latest": {
+      "revision": null,
+      "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-10"
+    },
+    "revisions": {},
+    "unversioned": [
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-0",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-00-at-0.2s.png",
+        "time": 0.2,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334808,
+        "contentHash": "9887288aa92fb37be1f738c51fc978fa38123632b207c9164bc611075428a883",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-1",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-01-at-2.4s.png",
+        "time": 2.4,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334808,
+        "contentHash": "a49370bd8414b0560b19e6cc2649ef99bd463de8bd6d9119854344a198e8ee2e",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-2",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-02-at-5.6s.png",
+        "time": 5.6,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334808,
+        "contentHash": "d6038e8f14db2bb0049d46d9b9dfc6b4e94a3610d26908f31adb6513198ed238",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-3",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-03-at-6.6s.png",
+        "time": 6.6,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334808,
+        "contentHash": "a7faa2b54e412f4f27f19f338e0e5cdb6c1d37286df3a46e722b19b2ea7e9f81",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-4",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-04-at-9.3s.png",
+        "time": 9.3,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334808,
+        "contentHash": "dd2efcf1017ba2acf500963cb6393c90f915b94a20625e62b4d12c96975924ee",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-5",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-05-at-10.5s.png",
+        "time": 10.5,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334808,
+        "contentHash": "f85e54a09f056d9e9d120deb3e12476a41dfb01becc008ae603753f14c38e80e",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-6",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-06-at-14.2s.png",
+        "time": 14.2,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334809,
+        "contentHash": "d89da9148c40dfc0090fe746948ad46e44115ec443d80910890cd71f108ecd1b",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-7",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-07-at-17s.png",
+        "time": 17,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334809,
+        "contentHash": "9a0753be7b83e0082dd5a1f40612ad522b1d21dfa7a488feae10dba6bb7115c5",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-8",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-08-at-18.3s.png",
+        "time": 18.3,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334809,
+        "contentHash": "348bec4f574cfec2e2d373f3c3a06fafc58d9e1caf76b3c528940340d9543ef0",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-9",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-09-at-20.5s.png",
+        "time": 20.5,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334810,
+        "contentHash": "67c3ee8728220ce0863fae3992c8bdd807d925a2923a6f1f5f86f4bd9559d34b",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "f6f073b9-c2a5-4fe7-a061-02c2b759ee86-10",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\composition\\.hyperframes\\artifacts\\snapshots\\a3658365-1129-4bc3-8cc2-4217bd879498\\frame-10-at-21.34s.png",
+        "time": 21.34,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221334810,
+        "contentHash": "da34beb6dd74cf6c9ef81801fec24718c05da303cfb6ddf7f0f3ae981974d386",
+        "revision": null,
+        "inputFingerprint": "150b8a8a9e681e5c00f5376889344d3cb1a4b8194b2d3bce2f2a27fb3176ca5a",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "renders": {
+    "latest": {
+      "id": "bc1062dd-4392-48c8-bb25-ef7a50a36c79",
+      "completedAt": 1793221395855,
+      "output": "R:\\1Github\\MediaForge\\brag-output\\03-autosync\\brag.mp4",
+      "status": "completed",
+      "revision": "88d40774-dac1-4fae-89e7-92f8c5b493b2"
+    },
+    "retainedRevisions": [
+      "88d40774-dac1-4fae-89e7-92f8c5b493b2"
+    ]
+  },
+  "pendingArtifactCleanup": []
+}

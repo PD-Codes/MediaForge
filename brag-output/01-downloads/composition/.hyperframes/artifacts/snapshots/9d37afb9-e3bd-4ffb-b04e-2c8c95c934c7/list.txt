@@ -1,0 +1,10 @@
+frame-00-at-0.3s.png
+frame-01-at-1.3s.png
+frame-02-at-2.2s.png
+frame-03-at-4.4s.png
+frame-04-at-6.4s.png
+frame-05-at-9.2s.png
+frame-06-at-13.2s.png
+frame-07-at-14.3s.png
+frame-08-at-17.6s.png
+frame-09-at-20.5s.png

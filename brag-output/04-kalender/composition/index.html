@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait"
+  data-composition-variables='[
+    {"id":"color-ground","type":"color","label":"Background","default":"#0d0d14"},
+    {"id":"color-ink","type":"color","label":"Text","default":"#f0f0f8"},
+    {"id":"color-accent","type":"color","label":"Accent","default":"#7c3aed"}
+  ]'>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <link rel="stylesheet" href="assets/mf.css" />
+    <style>
+      :root { --c-series: #7c3aed; --c-movie: #3b82f6; --c-cr: #f47521; }
+      #cal { top: 600px; height: 880px; }
+      #cal .sub-h { font-size: 28px; color: var(--ink-2); font-weight: 700; margin-top: 4px; }
+      .seg3 { position: absolute; right: 40px; top: 30px; width: 420px; height: 64px; border-radius: 20px; background: var(--bg-elevated); border: 2px solid var(--line); }
+      .seg3 .k { position: absolute; left: 4px; top: 4px; width: 136px; height: 52px; border-radius: 16px; background: var(--accent); }
+      .seg3 .o { position: absolute; top: 0; width: 140px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; }
+      .layer { position: absolute; left: 24px; right: 24px; top: 140px; bottom: 24px; }
+      .wd { position: absolute; top: 0; width: 120px; text-align: center; font-size: 28px; font-weight: 700; color: var(--ink-2); }
+      .cell { position: absolute; width: 120px; height: 128px; border-radius: 18px; background: var(--bg-elevated); border: 2px solid var(--line); }
+      .cell .n { position: absolute; left: 12px; top: 6px; font-size: 28px; font-weight: 700; color: var(--ink); }
+      .cell.out .n { color: #8a8aa6; }
+      .cell.out { background: rgba(26, 26, 40, 0.45); }
+      .chip { position: absolute; left: 10px; right: 10px; height: 22px; border-radius: 8px; }
+      .chip.s { background: var(--c-series); } .chip.m { background: var(--c-movie); } .chip.c { background: var(--c-cr); }
+      #today { position: absolute; width: 120px; height: 128px; border-radius: 18px; border: 5px solid var(--success); box-shadow: 0 0 40px rgba(34, 197, 94, 0.5); }
+      .legend { position: absolute; left: 0; right: 0; top: 1510px; display: flex; justify-content: center; gap: 30px; font-size: 30px; font-weight: 700; color: var(--ink-2); }
+      .legend span { display: flex; align-items: center; gap: 12px; }
+      .legend i { width: 26px; height: 26px; border-radius: 8px; display: block; }
+
+      .wrow { position: absolute; left: 0; right: 0; height: 88px; display: flex; align-items: center; gap: 14px; padding: 0 18px; border-radius: 20px;
+        background: var(--bg-elevated); border: 2px solid var(--line); }
+      .wrow .d { width: 130px; font-size: 30px; font-weight: 900; letter-spacing: -0.02em; }
+      .wrow.now { border-color: rgba(34, 197, 94, 0.7); }
+      .tchip { padding: 10px 18px; border-radius: 14px; font-size: 28px; font-weight: 700; color: #fff; white-space: nowrap; }
+      .tchip.s { background: #6d28d9; } .tchip.m { background: #1d4ed8; } .tchip.c { background: #b4500f; }
+
+      .acard { position: absolute; left: 0; right: 0; height: 120px; border-radius: 24px; padding: 0 26px; display: flex; align-items: center; gap: 22px;
+        background: var(--bg-elevated); border: 2px solid var(--line); }
+      .acard .bar { width: 10px; height: 76px; border-radius: 5px; flex: none; }
+      .acard .w { width: 210px; font-size: 28px; font-weight: 700; color: var(--ink-2); }
+      .acard .t { flex: 1; font-size: 34px; font-weight: 900; letter-spacing: -0.025em; }
+      .acard .e { font-size: 28px; font-weight: 700; color: var(--ink-2); }
+
+      #modal-dim { position: absolute; inset: 0; background: rgba(5, 5, 10, 0.72); }
+      #modal { top: 640px; height: 760px; }
+      #m-poster { position: absolute; left: 40px; top: 40px; width: 250px; height: 370px; border-radius: 24px;
+        background: radial-gradient(circle at 30% 20%, #a78bfa 0%, #7c3aed 40%, #1e1b4b 100%); }
+      #m-poster div { position: absolute; left: 22px; bottom: 22px; right: 22px; font-size: 40px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; color: #fff; }
+      #modal .r { position: absolute; left: 330px; right: 40px; }
+      #m-close { position: absolute; left: 40px; right: 40px; top: 620px; }
+
+      #sub { top: 600px; height: 530px; }
+      #sub .abs { position: absolute; left: 40px; right: 40px; }
+      #url { top: 196px; height: 100px; border-radius: 22px; background: #1e1e30; border: 2px solid var(--line); display: flex; align-items: center; padding: 0 26px;
+        font-size: 28px; white-space: nowrap; overflow: hidden; }
+      .app { position: absolute; width: 455px; height: 130px; border-radius: 28px; display: flex; align-items: center; gap: 22px; padding: 0 30px;
+        background: var(--bg-card); border: 2px solid var(--line); font-size: 36px; font-weight: 900; letter-spacing: -0.03em; }
+      .app i { width: 54px; height: 54px; border-radius: 16px; display: block; flex: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="22" data-width="1080" data-height="1920">
+      <div id="bg" class="clip" data-start="0" data-duration="22" data-track-index="0" style="position:absolute;inset:0;z-index:0">
+        <div class="ground"></div>
+        <div id="glow-a" class="glow"></div>
+        <div id="glow-b" class="glow blue"></div>
+      </div>
+
+      <div id="tagclip" class="clip" data-start="0" data-duration="18.8" data-track-index="1" style="position:absolute;inset:0;z-index:30">
+        <div class="tagrow"><div id="tag" class="tag"><img src="assets/icon.svg" alt="" />MediaForge<span class="dot"></span><span class="tep">Calendar · 4/5</span></div></div>
+      </div>
+
+      <!-- S1+S2+S3: one calendar stage; captions change, views morph -->
+      <div id="s1" class="scene clip" data-start="0" data-duration="10.4" data-track-index="2" style="z-index:5">
+        <div id="s1-w" class="wrap">
+          <div id="cap1" class="caption h-l">When's the next <span class="acc">episode?</span></div>
+          <div id="cap2" class="caption h-l">Already on the <span class="acc">calendar.</span></div>
+          <div id="cap3" class="caption h-l">Month. Week. <span class="acc">Agenda.</span></div>
+          <div id="cal" class="panel">
+            <div class="panel-head" style="height:120px">
+              <div><div class="panel-title">Calendar</div><div class="sub-h">November 2026</div></div>
+            </div>
+            <div class="seg3" id="seg"><div class="k" id="seg-k"></div><div class="o" id="o1" style="left:0">Month</div><div class="o" id="o2" style="left:140px">Week</div><div class="o" id="o3" style="left:280px">Agenda</div></div>
+            <div class="layer" id="lay-month"><div class="wd" style="left:0px">Mon</div><div class="wd" style="left:127px">Tue</div><div class="wd" style="left:254px">Wed</div><div class="wd" style="left:381px">Thu</div><div class="wd" style="left:508px">Fri</div><div class="wd" style="left:635px">Sat</div><div class="wd" style="left:762px">Sun</div><div class="cell out" style="left:0px;top:44px"><div class="n">26</div></div><div class="cell out" style="left:127px;top:44px"><div class="n">27</div></div><div class="cell out" style="left:254px;top:44px"><div class="n">28</div><div class="chip s" style="top:50px"></div></div><div class="cell out" style="left:381px;top:44px"><div class="n">29</div></div><div class="cell out" style="left:508px;top:44px"><div class="n">30</div><div class="chip m" style="top:50px"></div></div><div class="cell out" style="left:635px;top:44px"><div class="n">31</div></div><div class="cell" style="left:762px;top:44px"><div class="n">1</div></div><div class="cell" style="left:0px;top:178px"><div class="n">2</div></div><div class="cell" style="left:127px;top:178px"><div class="n">3</div><div class="chip s" style="top:50px"></div></div><div class="cell" style="left:254px;top:178px"><div class="n">4</div><div class="chip c" style="top:50px"></div></div><div class="cell" style="left:381px;top:178px"><div class="n">5</div></div><div class="cell" style="left:508px;top:178px"><div class="n">6</div><div class="chip s" style="top:50px"></div></div><div class="cell" style="left:635px;top:178px"><div class="n">7</div></div><div class="cell" style="left:762px;top:178px"><div class="n">8</div><div class="chip m" style="top:50px"></div></div><div class="cell" style="left:0px;top:312px"><div class="n">9</div></div><div class="cell" style="left:127px;top:312px"><div class="n">10</div><div class="chip s" style="top:50px"></div></div><div class="cell" style="left:254px;top:312px"><div class="n">11</div><div class="chip c" style="top:50px"></div></div><div class="cell" style="left:381px;top:312px"><div class="n">12</div></div><div class="cell" style="left:508px;top:312px"><div class="n">13</div></div><div class="cell" style="left:635px;top:312px"><div class="n">14</div></div><div class="cell" style="left:762px;top:312px"><div class="n">15</div></div><div class="cell" style="left:0px;top:446px"><div class="n">16</div><div class="chip s" style="top:50px"></div></div><div class="cell" style="left:127px;top:446px"><div class="n">17</div><div class="chip m" style="top:50px"></div></div><div class="cell" style="left:254px;top:446px"><div class="n">18</div><div class="chip s" style="top:50px"></div><div class="chip c" style="top:82px"></div></div><div class="cell" style="left:381px;top:446px"><div class="n">19</div></div><div class="cell" style="left:508px;top:446px"><div class="n">20</div><div class="chip s" style="top:50px"></div></div><div class="cell" style="left:635px;top:446px"><div class="n">21</div><div class="chip m" style="top:50px"></div><div class="chip s" style="top:82px"></div></div><div class="cell" style="left:762px;top:446px"><div class="n">22</div></div><div class="cell" style="left:0px;top:580px"><div class="n">23</div><div class="chip s" style="top:50px"></div></div><div class="cell" style="left:127px;top:580px"><div class="n">24</div></div><div class="cell" style="left:254px;top:580px"><div class="n">25</div><div class="chip c" style="top:50px"></div></div><div class="cell" style="left:381px;top:580px"><div class="n">26</div></div><div class="cell" style="left:508px;top:580px"><div class="n">27</div><div class="chip s" style="top:50px"></div></div><div class="cell" style="left:635px;top:580px"><div class="n">28</div><div class="chip m" style="top:50px"></div></div><div class="cell" style="left:762px;top:580px"><div class="n">29</div></div><div id="today" style="left:254px;top:446px"></div></div>
+            <div class="layer" id="lay-week">
+              <div class="wrow" style="top:0"><div class="d">Mon 16</div><span class="tchip s">Neon Ronin</span></div>
+              <div class="wrow" style="top:100px"><div class="d">Tue 17</div><span class="tchip m">Atlas</span></div>
+              <div class="wrow now" style="top:200px"><div class="d">Wed 18</div><span class="tchip s">Starpath</span><span class="tchip c">Glasshouse</span></div>
+              <div class="wrow" style="top:300px"><div class="d">Thu 19</div></div>
+              <div class="wrow" style="top:400px"><div class="d">Fri 20</div><span class="tchip s">Cold Echo</span></div>
+              <div class="wrow" style="top:500px"><div class="d">Sat 21</div><span class="tchip m">Nightmoth</span><span class="tchip s">Neon Ronin</span></div>
+              <div class="wrow" style="top:600px"><div class="d">Sun 22</div><span class="tchip s">The Last Station</span></div>
+            </div>
+            <div class="layer" id="lay-agenda">
+              <div class="acard" id="ag1" style="top:0"><div class="bar" style="background:#7c3aed"></div><div class="w">Wed 18 · 20:00</div><div class="t">Starpath</div><div class="e">S2 E08</div></div>
+              <div class="acard" style="top:134px"><div class="bar" style="background:#f47521"></div><div class="w">Wed 18 · 17:30</div><div class="t">Glasshouse</div><div class="e">E05</div></div>
+              <div class="acard" style="top:268px"><div class="bar" style="background:#7c3aed"></div><div class="w">Fri 20 · 21:00</div><div class="t">Cold Echo</div><div class="e">S1 E04</div></div>
+              <div class="acard" style="top:402px"><div class="bar" style="background:#3b82f6"></div><div class="w">Sat 21</div><div class="t">Nightmoth</div><div class="e">Movie</div></div>
+              <div class="acard" style="top:536px"><div class="bar" style="background:#7c3aed"></div><div class="w">Sun 22 · 20:15</div><div class="t">The Last Station</div><div class="e">S3 E02</div></div>
+            </div>
+          </div>
+          <div class="legend" id="legend"><span><i style="background:#7c3aed"></i>Series</span><span><i style="background:#3b82f6"></i>Movies</span><span><i style="background:#f47521"></i>Crunchyroll</span></div>
+        </div>
+      </div>
+
+      <!-- S4 detail modal (over the agenda) -->
+      <div id="s4" class="scene clip" data-start="10.4" data-duration="4.2" data-track-index="3" style="z-index:6">
+        <div id="s4-w" class="wrap">
+          <div id="modal-dim"></div>
+          <div id="cap4" class="caption h-l">Every entry, <span class="acc">in detail.</span></div>
+          <div id="modal" class="panel">
+            <div id="m-poster"><div>Star&shy;path</div></div>
+            <div class="r" style="top:44px;font-size:56px;font-weight:900;letter-spacing:-0.045em">Starpath</div>
+            <div class="r" style="top:122px;font-size:36px;font-weight:700">S2 · E08 · Stardust</div>
+            <div class="r" style="top:180px;font-size:32px;font-weight:700;color:var(--ink-2)">Wed, Nov 18 · 20:00</div>
+            <div class="r" style="top:250px;display:flex;flex-wrap:wrap;gap:12px"><span class="pill vio">Series</span><span class="pill ok">Auto-Sync</span><span class="pill">aniworld.to</span></div>
+            <div class="r" style="left:40px;top:450px;font-size:34px;line-height:1.35;font-weight:700;color:var(--ink-2)">Your Auto-Sync job picks it up on its next check.</div>
+            <div id="m-close" class="btn ghost">Close</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S5 subscription -->
+      <div id="s5" class="scene clip" data-start="14.6" data-duration="4.2" data-track-index="4" style="z-index:7">
+        <div id="s5-w" class="wrap">
+          <div id="cap5" class="caption h-l">On your <span class="acc">phone, too.</span></div>
+          <div id="sub" class="panel">
+            <div class="panel-head"><div class="panel-title">Calendar subscription</div><span class="pill vio">iCal</span></div>
+            <div class="label" style="position:absolute;left:40px;top:146px">Subscription URL</div>
+            <div id="url" class="abs mono">http://mediaforge.lan/api/calendar/feed.ics</div>
+            <div class="abs" style="top:340px;display:flex;gap:16px">
+              <div id="copy" class="btn" style="width:300px;position:relative"><span id="copy-a">Copy</span><span id="copy-b" style="position:absolute">Copied ✓</span></div>
+              <div class="btn ghost" style="flex:1">Generate new URL</div>
+            </div>
+          </div>
+          <div class="label" id="works" style="position:absolute;left:70px;top:1180px">Subscribe in</div>
+          <div class="app" id="ap1" style="left:70px;top:1220px"><i style="background:#4285f4"></i>Google Calendar</div>
+          <div class="app" id="ap2" style="left:555px;top:1220px"><i style="background:#ff3b30"></i>Apple Calendar</div>
+          <div class="app" id="ap3" style="left:70px;top:1370px"><i style="background:#0a84ff"></i>Thunderbird</div>
+          <div class="app" id="ap4" style="left:555px;top:1370px"><i style="background:#39b54a"></i>DAVx5</div>
+        </div>
+      </div>
+
+      <!-- S6 outro -->
+      <div id="s6" class="scene clip" data-start="18.8" data-duration="3.2" data-track-index="5" style="z-index:10">
+        <div class="outro">
+          <img id="o-logo" class="logo" src="assets/icon.svg" alt="" />
+          <div id="o-name" class="name">MediaForge</div>
+          <div id="o-claim" class="claim">Your release plan. Automatic.</div>
+          <div id="o-inst" class="install mono"><b>pip install</b> mediaforge</div>
+        </div>
+      </div>
+
+      <div id="curclip" class="clip" data-start="5.6" data-duration="10.3" data-track-index="8" style="position:absolute;inset:0;z-index:40" data-layout-ignore>
+        <div id="rip" class="ripple"></div>
+        <svg id="cur" class="cursor" viewBox="0 0 32 32"><path d="M4 2l20 12-9 2 5 10-4 2-5-10-7 6z" fill="#fff" stroke="#0d0d14" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- audio -->
+      <audio id="bed" data-start="0" data-duration="22" data-track-index="10" data-volume="0.42" data-fade-out="1.5" src="assets/music/bed.mp3"></audio>
+      <audio id="a-fan" data-start="0.12" data-duration="0.72" data-track-index="11" data-volume="0.55" src="assets/sfx/card-fan-1.ogg"></audio>
+      <audio id="a-drop1" data-start="1.07" data-duration="0.11" data-track-index="12" data-volume="0.6" src="assets/sfx/drop_001.ogg"></audio>
+      <audio id="a-ans" data-start="3.70" data-duration="0.19" data-track-index="11" data-volume="0.6" src="assets/sfx/drop_003.ogg"></audio>
+      <audio id="a-today" data-start="4.23" data-duration="0.21" data-track-index="12" data-volume="0.55" src="assets/sfx/impactGlass_light_002.ogg"></audio>
+      <audio id="a-week" data-start="6.35" data-duration="0.06" data-track-index="11" data-volume="0.7" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="a-week2" data-start="6.36" data-duration="0.05" data-track-index="12" data-volume="0.6" src="assets/sfx/select_008.ogg"></audio>
+      <audio id="a-ag" data-start="8.45" data-duration="0.06" data-track-index="11" data-volume="0.7" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="a-ag2" data-start="8.46" data-duration="0.05" data-track-index="12" data-volume="0.6" src="assets/sfx/select_008.ogg"></audio>
+      <audio id="a-open" data-start="10.55" data-duration="0.06" data-track-index="11" data-volume="0.7" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="a-modal" data-start="10.6" data-duration="0.19" data-track-index="12" data-volume="0.55" src="assets/sfx/drop_003.ogg"></audio>
+      <audio id="a-wh" data-start="14.42" data-duration="0.57" data-track-index="13" data-volume="0.5" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-copy" data-start="15.81" data-duration="0.06" data-track-index="11" data-volume="0.7" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="a-copied" data-start="15.86" data-duration="0.21" data-track-index="12" data-volume="0.55" src="assets/sfx/impactGlass_light_002.ogg"></audio>
+      <audio id="a-apps" data-start="16.32" data-duration="0.72" data-track-index="11" data-volume="0.5" src="assets/sfx/card-fan-1.ogg"></audio>
+      <audio id="a-logo" data-start="18.8" data-duration="0.66" data-track-index="14" data-volume="0.75" src="assets/sfx/impactBell_heavy_003.ogg"></audio>
+    </div>
+    <script src="assets/audio-env.js"></script>
+    <script src="assets/mf.js"></script>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const M = window.MF;
+      // vol-9 beat grid: 1.07, 1.59, 2.12, 2.65, 3.18, 3.70, 4.23 ... strong cues 3.70, 4.23, 6.34, 10.54, 12.65
+
+      M.audio(tl, "#glow-a", { base: 0.55, amp: 0.45, scale: 0.05 });
+      tl.fromTo("#glow-b", { x: 0, y: 0 }, { x: -260, y: 500, duration: 22, ease: "none" }, 0);
+      tl.fromTo("#tag", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 0.1);
+      tl.to("#tag", { opacity: 0, duration: 0.2, ease: "power2.in" }, 18.55);
+
+      // ---------- month: chips rain onto days ----------
+      tl.set(["#cap2", "#cap3"], { opacity: 0 }, 0);
+      tl.set(["#lay-week", "#lay-agenda"], { opacity: 0 }, 0);
+      tl.set(["#o1"], { color: "#ffffff" }, 0);
+      tl.set(["#o2", "#o3"], { color: "#a3a3c2" }, 0);
+      tl.fromTo(".chip", { opacity: 0, y: -60 }, { opacity: 1, y: 0, duration: 0.35, ease: "back.out(1.6)", stagger: 0.07 }, 0.12);
+      tl.fromTo("#legend", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 1.6);
+      tl.to("#cap1", { opacity: 0, filter: "blur(12px)", duration: 0.18, ease: "power2.in" }, 3.45);
+      tl.fromTo("#cap2", { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.25, ease: "power3.out" }, 3.70); // beat-locked: 3.70s
+      tl.fromTo("#today", { opacity: 0, scale: 1.5 }, { opacity: 1, scale: 1, duration: 0.35, ease: "expo.out" }, 4.23); // beat-locked: 4.23s
+
+      // ---------- views: month -> week -> agenda ----------
+      tl.set("#cur", { x: 980, y: 1700, scale: 1, opacity: 0 }, 0);
+      tl.to("#cur", { opacity: 1, duration: 0.2 }, 5.6);
+      tl.to("#cap2", { opacity: 0, filter: "blur(12px)", duration: 0.18, ease: "power2.in" }, 6.1);
+      tl.fromTo("#cap3", { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.25, ease: "power3.out" }, 6.34);
+      M.click(tl, "#cur", "#rip", 760, 662, 6.34, 0.6); // beat-locked: 6.34s
+      tl.to("#seg-k", { x: 140, duration: 0.3, ease: "power3.inOut" }, 6.34);
+      tl.to("#o1", { color: "#a3a3c2", duration: 0.2 }, 6.36);
+      tl.to("#o2", { color: "#ffffff", duration: 0.2 }, 6.42);
+      tl.to(["#lay-month", "#legend"], { opacity: 0, filter: "blur(10px)", duration: 0.18, ease: "power2.in" }, 6.36);
+      tl.fromTo("#lay-week", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out" }, 6.5);
+      tl.fromTo("#lay-week .wrow", { opacity: 0, x: 60 }, { opacity: 1, x: 0, duration: 0.3, ease: "expo.out", stagger: 0.05 }, 6.5);
+      M.click(tl, "#cur", "#rip", 900, 662, 8.44, 0.5);
+      tl.to("#seg-k", { x: 280, duration: 0.3, ease: "power3.inOut" }, 8.44);
+      tl.to("#o2", { color: "#a3a3c2", duration: 0.2 }, 8.46);
+      tl.to("#o3", { color: "#ffffff", duration: 0.2 }, 8.52);
+      tl.to("#lay-week", { opacity: 0, filter: "blur(10px)", duration: 0.18, ease: "power2.in" }, 8.46);
+      tl.fromTo("#lay-agenda", { opacity: 0 }, { opacity: 1, duration: 0.2 }, 8.6);
+      tl.fromTo("#lay-agenda .acard", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out", stagger: 0.06 }, 8.6);
+
+      // ---------- detail ----------
+      M.click(tl, "#cur", "#rip", 560, 800, 10.54, 0.7); // beat-locked: 10.54s
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 10.75);
+      tl.fromTo("#modal-dim", { opacity: 0 }, { opacity: 1, duration: 0.25 }, 10.4);
+      tl.fromTo("#modal", { y: 500, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "expo.out" }, 10.6);
+      M.blurIn(tl, "#cap4", 10.75, 0.25);
+      tl.fromTo("#m-poster", { scale: 0.85, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.45, ease: "expo.out" }, 10.85);
+      tl.to("#s4-w", { y: -300, opacity: 0, filter: "blur(16px)", duration: 0.26, ease: "power3.in" }, 14.36);
+
+      // ---------- subscription ----------
+      tl.fromTo("#sub", { y: 380, opacity: 0, filter: "blur(16px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, 14.6);
+      M.blurIn(tl, "#cap5", 14.7, 0.22);
+      tl.set("#copy-b", { opacity: 0 }, 0);
+      tl.set("#cur", { x: 960, y: 1500 }, 14.9);
+      tl.to("#cur", { opacity: 1, duration: 0.15 }, 15.0);
+      M.click(tl, "#cur", "#rip", 260, 992, 15.8, 0.6);
+      tl.to("#copy", { scale: 0.95, duration: 0.08, ease: "power2.in" }, 15.8);
+      tl.to("#copy", { scale: 1, duration: 0.2, ease: "power3.out" }, 15.88);
+      tl.to("#copy-a", { opacity: 0, duration: 0.1 }, 15.85);
+      tl.to("#copy-b", { opacity: 1, duration: 0.15 }, 15.88);
+      tl.to("#copy", { backgroundColor: "#16a34a", duration: 0.2 }, 15.85);
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 16.2);
+      tl.fromTo("#works", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 16.2);
+      tl.fromTo(["#ap1", "#ap2", "#ap3", "#ap4"], { opacity: 0, y: 50, scale: 0.92 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "expo.out", stagger: 0.08 }, 16.32);
+      tl.to("#s5-w", { opacity: 0, scale: 0.95, filter: "blur(12px)", duration: 0.22, ease: "power3.in" }, 18.56);
+
+      // ---------- outro ----------
+      tl.fromTo("#o-logo", { opacity: 0, scale: 0.4, rotation: -12 }, { opacity: 1, scale: 1, rotation: 0, duration: 0.6, ease: "back.out(1.5)" }, 18.8);
+      tl.fromTo("#o-name", { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 19.05);
+      M.blurIn(tl, "#o-claim", 19.4, 0.25);
+      tl.fromTo("#o-inst", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 19.8);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

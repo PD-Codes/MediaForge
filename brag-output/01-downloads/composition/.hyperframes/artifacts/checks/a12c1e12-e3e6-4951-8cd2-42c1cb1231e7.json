@@ -1,0 +1,1645 @@
+{
+  "ok": false,
+  "strict": false,
+  "browserSkipped": false,
+  "lint": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 62,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "duplicate_media_discovery_risk",
+        "severity": "warning",
+        "message": "Detected 2 matching img entries with the same source/start/duration.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Avoid duplicated media nodes that can be discovered twice during compilation."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"bg\"> is a timeline element that contains nested <div>. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#bg",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"bg\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"tagclip\"> is a timeline element that contains nested <div id=\"tag\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#tagclip",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"tagclip\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s1\"> is a timeline element that contains nested <div id=\"s1-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s1",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s1\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s2\"> is a timeline element that contains nested <div id=\"s2-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s2",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s2\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s3\"> is a timeline element that contains nested <div id=\"s3-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s3",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s3\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s4\"> is a timeline element that contains nested <div id=\"s4-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s4",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s4\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s5\"> is a timeline element that contains nested <div id=\"s5-w\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s5",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s5\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"s6\"> is a timeline element that contains nested <div>. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#s6",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"s6\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "nested_structure_needs_subcomposition",
+        "severity": "warning",
+        "message": "<div id=\"curclip\"> is a timeline element that contains nested <div id=\"rip\">. The timeline shows one row per top-level element, and the root composition is built only from sub-compositions.",
+        "selector": "#curclip",
+        "dataAttributes": {},
+        "sourceFile": "R:\\1Github\\MediaForge\\brag-output\\01-downloads\\composition\\index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Move <div id=\"curclip\"> and its contents into a sub-composition file and mount it with data-composition-src."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/impactPunch_medium_002.ogg at 1.08-22s, assets/sfx/switch_002.ogg at 3.56-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/impactPunch_medium_002.ogg at 1.08-22s, assets/sfx/switch_002.ogg at 4.65-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/impactPunch_medium_002.ogg at 1.08-22s, assets/sfx/mouseclick1.ogg at 6.29-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/impactPunch_medium_002.ogg at 1.08-22s, assets/sfx/mouseclick1.ogg at 13.81-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/impactPunch_medium_002.ogg at 1.08-22s, assets/sfx/card-slide-3.ogg at 15.82-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/impactPunch_medium_002.ogg at 1.08-22s, assets/sfx/card-slide-3.ogg at 16.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/impactPunch_heavy_001.ogg at 1.36-22s, assets/sfx/switch_005.ogg at 4.11-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/impactPunch_heavy_001.ogg at 1.36-22s, assets/sfx/switch_005.ogg at 5.2-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/impactPunch_heavy_001.ogg at 1.36-22s, assets/sfx/chips-collide-2.ogg at 8.62-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/impactPunch_heavy_001.ogg at 1.36-22s, assets/sfx/click3.ogg at 14.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/impactPunch_heavy_001.ogg at 1.36-22s, assets/sfx/card-slide-6.ogg at 16.37-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/impactPunch_heavy_001.ogg at 1.36-22s, assets/sfx/card-slide-6.ogg at 17.46-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 13 overlap (assets/sfx/whoosh-short.mp3 at 2.44-22s, assets/sfx/whoosh-short.mp3 at 7-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 13 overlap (assets/sfx/whoosh-short.mp3 at 2.44-22s, assets/sfx/whoosh-short.mp3 at 11.42-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 13 overlap (assets/sfx/whoosh-short.mp3 at 2.44-22s, assets/sfx/whoosh-short.mp3 at 15.22-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 3.56-22s, assets/sfx/switch_002.ogg at 4.65-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 3.56-22s, assets/sfx/mouseclick1.ogg at 6.29-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 3.56-22s, assets/sfx/mouseclick1.ogg at 13.81-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 3.56-22s, assets/sfx/card-slide-3.ogg at 15.82-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 3.56-22s, assets/sfx/card-slide-3.ogg at 16.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 4.11-22s, assets/sfx/switch_005.ogg at 5.2-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 4.11-22s, assets/sfx/chips-collide-2.ogg at 8.62-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 4.11-22s, assets/sfx/click3.ogg at 14.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 4.11-22s, assets/sfx/card-slide-6.ogg at 16.37-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 4.11-22s, assets/sfx/card-slide-6.ogg at 17.46-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 4.65-22s, assets/sfx/mouseclick1.ogg at 6.29-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 4.65-22s, assets/sfx/mouseclick1.ogg at 13.81-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 4.65-22s, assets/sfx/card-slide-3.ogg at 15.82-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/switch_002.ogg at 4.65-22s, assets/sfx/card-slide-3.ogg at 16.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 5.2-22s, assets/sfx/chips-collide-2.ogg at 8.62-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 5.2-22s, assets/sfx/click3.ogg at 14.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 5.2-22s, assets/sfx/card-slide-6.ogg at 16.37-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/switch_005.ogg at 5.2-22s, assets/sfx/card-slide-6.ogg at 17.46-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/mouseclick1.ogg at 6.29-22s, assets/sfx/mouseclick1.ogg at 13.81-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/mouseclick1.ogg at 6.29-22s, assets/sfx/card-slide-3.ogg at 15.82-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/mouseclick1.ogg at 6.29-22s, assets/sfx/card-slide-3.ogg at 16.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 13 overlap (assets/sfx/whoosh-short.mp3 at 7-22s, assets/sfx/whoosh-short.mp3 at 11.42-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 13 overlap (assets/sfx/whoosh-short.mp3 at 7-22s, assets/sfx/whoosh-short.mp3 at 15.22-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/chips-collide-2.ogg at 8.62-22s, assets/sfx/click3.ogg at 14.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/chips-collide-2.ogg at 8.62-22s, assets/sfx/card-slide-6.ogg at 16.37-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/chips-collide-2.ogg at 8.62-22s, assets/sfx/card-slide-6.ogg at 17.46-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 13 overlap (assets/sfx/whoosh-short.mp3 at 11.42-22s, assets/sfx/whoosh-short.mp3 at 15.22-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 14 overlap (assets/sfx/keypress-004.wav at 11.92-22s, assets/sfx/keypress-019.wav at 12.41-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 14 overlap (assets/sfx/keypress-004.wav at 11.92-22s, assets/sfx/keypress-011.wav at 12.9-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 15 overlap (assets/sfx/keypress-011.wav at 12.17-22s, assets/sfx/keypress-004.wav at 12.66-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 14 overlap (assets/sfx/keypress-019.wav at 12.41-22s, assets/sfx/keypress-011.wav at 12.9-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/mouseclick1.ogg at 13.81-22s, assets/sfx/card-slide-3.ogg at 15.82-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/mouseclick1.ogg at 13.81-22s, assets/sfx/card-slide-3.ogg at 16.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/click3.ogg at 14.91-22s, assets/sfx/card-slide-6.ogg at 16.37-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/click3.ogg at 14.91-22s, assets/sfx/card-slide-6.ogg at 17.46-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 11 overlap (assets/sfx/card-slide-3.ogg at 15.82-22s, assets/sfx/card-slide-3.ogg at 16.91-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      },
+      {
+        "code": "duplicate_audio_track",
+        "severity": "warning",
+        "message": "Multiple audible <audio>/<video> elements on track 12 overlap (assets/sfx/card-slide-6.ogg at 16.37-22s, assets/sfx/card-slide-6.ogg at 17.46-22s). This causes layered audio playback.",
+        "selector": "[data-composition-id]",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        },
+        "time": 0,
+        "fixHint": "Use non-overlapping time windows or different track indices."
+      }
+    ],
+    "filesScanned": 1
+  },
+  "runtime": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "layout": {
+    "ok": false,
+    "errorCount": 5,
+    "warningCount": 0,
+    "infoCount": 2,
+    "findings": [
+      {
+        "code": "text_box_overflow",
+        "severity": "error",
+        "time": 1.222,
+        "selector": "span.ep",
+        "message": "Text extends outside its nearest visual/container box.",
+        "rect": {
+          "left": 455.63,
+          "top": 233,
+          "right": 682.4,
+          "bottom": 269,
+          "width": 226.77,
+          "height": 36
+        },
+        "containerSelector": "span.ep",
+        "text": "Downloads · 1/5",
+        "fixHint": "Text is 227px x 36px inside 229px x 88px and overflows by up to 28px; widen the container to at least ~257px, or allow wrapping with max-width/fitTextFontSize.",
+        "containerRect": {
+          "left": 425.63,
+          "top": 207,
+          "right": 654.37,
+          "bottom": 295,
+          "width": 228.73,
+          "height": 88
+        },
+        "overflow": {
+          "right": 28.03
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 455.63,
+          "y": 233,
+          "width": 226.77,
+          "height": 36
+        },
+        "firstSeen": 1.222,
+        "lastSeen": 18.333,
+        "occurrences": 8,
+        "heldMs": 0,
+        "times": [
+          1.222,
+          3.667,
+          6.111,
+          8.556,
+          11,
+          13.444,
+          15.889,
+          18.333
+        ]
+      },
+      {
+        "code": "content_overlap",
+        "severity": "error",
+        "time": 6.5,
+        "selector": "#s2-btn-a",
+        "message": "Two text blocks overlap and may render unreadable.",
+        "rect": {
+          "left": 438.11,
+          "top": 1407.01,
+          "right": 641.89,
+          "bottom": 1452.99,
+          "width": 203.78,
+          "height": 45.98
+        },
+        "containerSelector": "#s2-btn-b",
+        "text": "Jetzt laden",
+        "fixHint": "Give each block its own zone, or put data-layout-allow-overlap on the text or on a container inside the scene. A marker on the scene root does not apply.",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 438.11,
+          "y": 1407.01,
+          "width": 203.78,
+          "height": 45.98
+        },
+        "firstSeen": 6.5,
+        "lastSeen": 7.125,
+        "occurrences": 6,
+        "heldMs": 625,
+        "times": [
+          6.5,
+          6.625,
+          6.75,
+          6.875,
+          7,
+          7.125
+        ]
+      },
+      {
+        "code": "text_box_overflow",
+        "severity": "error",
+        "time": 8.556,
+        "selector": "#q2 > div:nth-of-type(3)",
+        "message": "Text extends outside its nearest visual/container box.",
+        "rect": {
+          "left": 144,
+          "top": 1064,
+          "right": 468.78,
+          "bottom": 1097,
+          "width": 324.78,
+          "height": 33
+        },
+        "containerSelector": "#q2",
+        "text": "Lädt herunter · 11,8 MB/s",
+        "fixHint": "Text is 325px x 33px inside 856px x 172px and overflows by up to 11px; increase the container height to at least ~183px, or allow wrapping with max-width/fitTextFontSize.",
+        "containerRect": {
+          "left": 112,
+          "top": 914,
+          "right": 968,
+          "bottom": 1086,
+          "width": 856,
+          "height": 172
+        },
+        "overflow": {
+          "bottom": 11
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 144,
+          "y": 1064,
+          "width": 324.78,
+          "height": 33
+        },
+        "firstSeen": 8.556,
+        "lastSeen": 11,
+        "occurrences": 2,
+        "heldMs": 0,
+        "times": [
+          8.556,
+          11
+        ]
+      },
+      {
+        "code": "text_box_overflow",
+        "severity": "error",
+        "time": 8.556,
+        "selector": "#q3 > div:nth-of-type(3)",
+        "message": "Text extends outside its nearest visual/container box.",
+        "rect": {
+          "left": 144,
+          "top": 1256,
+          "right": 462.19,
+          "bottom": 1289,
+          "width": 318.19,
+          "height": 33
+        },
+        "containerSelector": "#q3",
+        "text": "Lädt herunter · 9,6 MB/s",
+        "fixHint": "Text is 318px x 33px inside 856px x 172px and overflows by up to 11px; increase the container height to at least ~183px, or allow wrapping with max-width/fitTextFontSize.",
+        "containerRect": {
+          "left": 112,
+          "top": 1106,
+          "right": 968,
+          "bottom": 1278,
+          "width": 856,
+          "height": 172
+        },
+        "overflow": {
+          "bottom": 11
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 144,
+          "y": 1256,
+          "width": 318.19,
+          "height": 33
+        },
+        "firstSeen": 8.556,
+        "lastSeen": 11,
+        "occurrences": 2,
+        "heldMs": 0,
+        "times": [
+          8.556,
+          11
+        ]
+      },
+      {
+        "code": "text_box_overflow",
+        "severity": "error",
+        "time": 8.556,
+        "selector": "#q4 > div:nth-of-type(3)",
+        "message": "Text extends outside its nearest visual/container box.",
+        "rect": {
+          "left": 144,
+          "top": 1448,
+          "right": 425.41,
+          "bottom": 1481,
+          "width": 281.41,
+          "height": 33
+        },
+        "containerSelector": "#q4",
+        "text": "In der Warteschlange",
+        "fixHint": "Text is 281px x 33px inside 856px x 172px and overflows by up to 11px; increase the container height to at least ~183px, or allow wrapping with max-width/fitTextFontSize.",
+        "containerRect": {
+          "left": 112,
+          "top": 1298,
+          "right": 968,
+          "bottom": 1470,
+          "width": 856,
+          "height": 172
+        },
+        "overflow": {
+          "bottom": 11
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 144,
+          "y": 1448,
+          "width": 281.41,
+          "height": 33
+        },
+        "firstSeen": 8.556,
+        "lastSeen": 11,
+        "occurrences": 2,
+        "heldMs": 0,
+        "times": [
+          8.556,
+          11
+        ]
+      },
+      {
+        "code": "text_occluded",
+        "severity": "info",
+        "time": 1.222,
+        "selector": "#s1-reel > div:nth-of-type(6)",
+        "message": "Text is hidden beneath an opaque element.",
+        "rect": {
+          "left": 320.05,
+          "top": 112,
+          "right": 759.94,
+          "bottom": 267,
+          "width": 439.89,
+          "height": 155
+        },
+        "containerSelector": "#tag",
+        "text": "9anime",
+        "fixHint": "Give the text its own zone, raise its stacking order above the covering element, or mark intentional layering with data-layout-allow-occlusion.",
+        "coveredFraction": 0.19,
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 320.05,
+          "y": 112,
+          "width": 439.89,
+          "height": 155
+        },
+        "firstSeen": 1.222,
+        "lastSeen": 1.222,
+        "occurrences": 1,
+        "heldMs": 0,
+        "times": [
+          1.222
+        ]
+      },
+      {
+        "code": "text_box_overflow",
+        "severity": "info",
+        "time": 8.556,
+        "selector": "#q1s",
+        "message": "Text extends outside its nearest visual/container box.",
+        "rect": {
+          "left": 144,
+          "top": 872,
+          "right": 474.69,
+          "bottom": 905,
+          "width": 330.69,
+          "height": 33
+        },
+        "containerSelector": "#q1",
+        "text": "Lädt herunter · 14,2 MB/s",
+        "fixHint": "Text is 331px x 33px inside 856px x 172px and overflows by up to 11px; increase the container height to at least ~183px, or allow wrapping with max-width/fitTextFontSize.",
+        "containerRect": {
+          "left": 112,
+          "top": 722,
+          "right": 968,
+          "bottom": 894,
+          "width": 856,
+          "height": 172
+        },
+        "overflow": {
+          "bottom": 11
+        },
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 144,
+          "y": 872,
+          "width": 330.69,
+          "height": 33
+        },
+        "firstSeen": 8.556,
+        "lastSeen": 8.556,
+        "occurrences": 1,
+        "heldMs": 0,
+        "times": [
+          8.556
+        ]
+      }
+    ],
+    "duration": 22,
+    "samples": [
+      1.222,
+      3.667,
+      6.111,
+      8.556,
+      11,
+      13.444,
+      15.889,
+      18.333,
+      20.778
+    ],
+    "transitionSamples": [],
+    "transitionSamplesDropped": 0,
+    "tolerance": 2,
+    "totalIssueCount": 7,
+    "truncated": false
+  },
+  "motion": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "enabled": false,
+    "samples": 0
+  },
+  "contrast": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "enabled": true,
+    "samples": [
+      1.222,
+      6.111,
+      11,
+      15.889,
+      20.778
+    ],
+    "checked": 61,
+    "passed": 61
+  },
+  "craft": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 10,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"s.to\" (2 words) is on screen 0.17 s (±0.01 s), under its 0.40 s floor: hold it about 0.5 s + 0.3 s a word (1.10 s here) before it leaves or changes; see references/motion.md.",
+        "text": "s.to",
+        "selector": "#s1-reel > div:nth-of-type(2)",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 427.64,
+          "y": 787.4,
+          "width": 224.72000000000003,
+          "height": 32.60000000000002
+        },
+        "time": 0.367,
+        "words": 2,
+        "seconds": 0.172,
+        "floorSeconds": 0.4
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"filmpalast.to\" (2 words) is on screen 0.07 s (±0.01 s), under its 0.40 s floor: hold it about 0.5 s + 0.3 s a word (1.10 s here) before it leaves or changes; see references/motion.md.",
+        "text": "filmpalast.to",
+        "selector": "#s1-reel > div:nth-of-type(3)",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 170.25,
+          "y": 710.89,
+          "width": 739.48,
+          "height": 109.11000000000001
+        },
+        "time": 0.5,
+        "words": 2,
+        "seconds": 0.07,
+        "floorSeconds": 0.4
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"filmo.to\" (2 words) is on screen 0.07 s (±0.01 s), under its 0.40 s floor: hold it about 0.5 s + 0.3 s a word (1.10 s here) before it leaves or changes; see references/motion.md.",
+        "text": "filmo.to",
+        "selector": "#s1-reel > div:nth-of-type(5)",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 313.09,
+          "y": 640,
+          "width": 453.82,
+          "height": 34.07000000000005
+        },
+        "time": 0.57,
+        "words": 2,
+        "seconds": 0.07,
+        "floorSeconds": 0.4
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"9anime\" (1 word) is on screen 0.07 s (±0.01 s), under its 0.40 s floor: hold it about 0.5 s + 0.3 s a word (0.80 s here) before it leaves or changes; see references/motion.md.",
+        "text": "9anime",
+        "selector": "#s1-reel > div:nth-of-type(6)",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 320.05,
+          "y": 699.07,
+          "width": 439.89000000000004,
+          "height": 120.92999999999995
+        },
+        "time": 0.602,
+        "words": 1,
+        "seconds": 0.07,
+        "floorSeconds": 0.4
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"hanime.tv\" (2 words) is on screen 0.13 s (±0.01 s), under its 0.40 s floor: hold it about 0.5 s + 0.3 s a word (1.10 s here) before it leaves or changes; see references/motion.md.",
+        "text": "hanime.tv",
+        "selector": "#s1-reel > div:nth-of-type(8)",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 240.8,
+          "y": 640,
+          "width": 598.3900000000001,
+          "height": 102.36000000000001
+        },
+        "time": 0.672,
+        "words": 2,
+        "seconds": 0.133,
+        "floorSeconds": 0.4
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"Serien · Filme · Anime · Direkt-Links\" (5 words) is on screen 0.83 s (±0.01 s), under its 1.50 s floor: hold it about 0.5 s + 0.3 s a word (2.00 s here) before it leaves or changes; see references/motion.md.",
+        "text": "Serien · Filme · Anime · Direkt-Links",
+        "selector": "#s1-sub",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 204.53,
+          "y": 1090,
+          "width": 670.94,
+          "height": 49
+        },
+        "time": 1.773,
+        "words": 5,
+        "seconds": 0.828,
+        "floorSeconds": 1.5
+      },
+      {
+        "code": "text_below_floor",
+        "severity": "warning",
+        "message": "Type floor is 28 px (2.6% of the 1080 px short side, what a phone can read) and 8 text elements stay under it for 0.5 s or more, the smallest \"Sprache\" at 26 px: set reading text to at least 28 px, or put data-layout-ignore on text that is texture rather than reading; see references/look.md.",
+        "text": "Sprache",
+        "selector": "span.label",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 112,
+          "y": 1353.15,
+          "width": 138.28,
+          "height": 31
+        },
+        "time": 2.75,
+        "times": [
+          2.75,
+          7.375,
+          7.5,
+          7.5,
+          7.625,
+          7.625,
+          8.75,
+          11.75
+        ],
+        "fontPx": 26,
+        "floorPx": 28,
+        "seconds": 4.5,
+        "elements": [
+          {
+            "selector": "span.label",
+            "text": "Sprache",
+            "fontPx": 26,
+            "time": 2.75,
+            "seconds": 4.5
+          },
+          {
+            "selector": "div.label",
+            "text": "Qualität wählen",
+            "fontPx": 26,
+            "time": 11.75,
+            "seconds": 3.75
+          },
+          {
+            "selector": "div.panel-head > div:nth-of-type(1) > div:nth-of-type(2)",
+            "text": "4 Downloads laufen oder warten",
+            "fontPx": 27,
+            "time": 7.375,
+            "seconds": 4.25
+          },
+          {
+            "selector": "#q1s",
+            "text": "Lädt herunter · 14,2 MB/s",
+            "fontPx": 27,
+            "time": 7.5,
+            "seconds": 1.25
+          },
+          {
+            "selector": "#q2 > div:nth-of-type(3)",
+            "text": "Lädt herunter · 11,8 MB/s",
+            "fontPx": 27,
+            "time": 7.5,
+            "seconds": 4.125
+          },
+          {
+            "selector": "#q3 > div:nth-of-type(3)",
+            "text": "Lädt herunter · 9,6 MB/s",
+            "fontPx": 27,
+            "time": 7.625,
+            "seconds": 4
+          },
+          {
+            "selector": "#q4 > div:nth-of-type(3)",
+            "text": "In der Warteschlange",
+            "fontPx": 27,
+            "time": 7.625,
+            "seconds": 4
+          },
+          {
+            "selector": "#q1d",
+            "text": "Fertig ✓",
+            "fontPx": 27,
+            "time": 8.75,
+            "seconds": 2.875
+          }
+        ]
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"4 Episode(n) eingereiht.\" (4 words) is on screen 0.77 s (±0.01 s), under its 1.27 s floor: hold it about 0.5 s + 0.3 s a word (1.70 s here) before it leaves or changes; see references/motion.md.",
+        "text": "4 Episode(n) eingereiht.",
+        "selector": "#s2-btn-b",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 320.25,
+          "y": 1407.13,
+          "width": 439.5,
+          "height": 45.74000000000001
+        },
+        "time": 6.438,
+        "words": 4,
+        "seconds": 0.766,
+        "floorSeconds": 1.275
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"Lädt herunter · 14,2 MB/s\" (6 words) is on screen 1.27 s (±0.01 s), under its 1.72 s floor: hold it about 0.5 s + 0.3 s a word (2.30 s here) before it leaves or changes; see references/motion.md.",
+        "text": "Lädt herunter · 14,2 MB/s",
+        "selector": "#q1s",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 144,
+          "y": 877.08,
+          "width": 330.69,
+          "height": 33
+        },
+        "time": 7.406,
+        "words": 6,
+        "seconds": 1.266,
+        "floorSeconds": 1.725
+      },
+      {
+        "code": "line_unread",
+        "severity": "warning",
+        "message": "\"als Audiospur in derselben Datei\" (5 words) is on screen 0.97 s (±0.01 s), under its 1.50 s floor: hold it about 0.5 s + 0.3 s a word (2.00 s here) before it leaves or changes; see references/motion.md.",
+        "text": "als Audiospur in derselben Datei",
+        "selector": "#p4 > div:nth-of-type(2) > div:nth-of-type(2)",
+        "dataAttributes": {},
+        "sourceFile": "index.html",
+        "bbox": {
+          "x": 330.5,
+          "y": 1323.5,
+          "width": 505.31999999999994,
+          "height": 39
+        },
+        "time": 17.5,
+        "words": 5,
+        "seconds": 0.969,
+        "floorSeconds": 1.5
+      }
+    ],
+    "enabled": true,
+    "step": 0.125,
+    "samples": 176
+  },
+  "hdr": {
+    "autoPromotion": null,
+    "inspection": "available"
+  },
+  "snapshots": {
+    "enabled": false,
+    "files": [],
+    "times": [],
+    "findingFiles": []
+  }
+}

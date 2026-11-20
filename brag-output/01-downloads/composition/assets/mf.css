@@ -1,0 +1,132 @@
+/* MediaForge brag series: shared look. Tokens from src/mediaforge/web/static/variables.css */
+:root {
+  --bg-base: #0d0d14;
+  --bg-surface: #13131e;
+  --bg-elevated: #1a1a28;
+  --bg-card: #16162a;
+  --bg-hover: #22223a;
+  --accent: #7c3aed;
+  --accent-2: #2563eb;
+  --accent-ink: #b9a3ff;
+  --ink: #f0f0f8;
+  --ink-2: #a3a3c2;
+  --line: rgba(255, 255, 255, 0.12);
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --info: #3b82f6;
+  --font: "Inter", sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 1080px; height: 1920px; overflow: hidden;
+  background: var(--bg-base); font-family: var(--font); color: var(--ink);
+}
+#root { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg-base); }
+
+/* ground */
+.ground { position: absolute; inset: 0; background: var(--bg-base); }
+.glow {
+  position: absolute; width: 1500px; height: 1500px; border-radius: 50%;
+  left: -210px; top: 260px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.42) 0%, rgba(124, 58, 237, 0.16) 38%, rgba(13, 13, 20, 0) 68%);
+}
+.glow.blue {
+  width: 1100px; height: 1100px; left: 360px; top: -260px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.30) 0%, rgba(37, 99, 235, 0.08) 42%, rgba(13, 13, 20, 0) 68%);
+}
+
+/* scenes */
+.scene { position: absolute; inset: 0; }
+.wrap { position: absolute; inset: 0; }
+
+/* series tag */
+.tagrow { position: absolute; left: 0; right: 0; top: 210px; display: flex; justify-content: center; }
+.tag {
+  display: flex; align-items: center; gap: 18px; white-space: nowrap;
+  padding: 16px 30px 16px 18px; border-radius: 999px;
+  background: rgba(22, 22, 42, 0.92); border: 2px solid var(--line);
+  font-size: 30px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em;
+}
+.tag img { width: 46px; height: 46px; border-radius: 11px; }
+.tag .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-2); }
+.tag .tep { color: var(--ink-2); font-weight: 700; }
+
+/* headlines */
+.h-xl { font-weight: 900; font-size: 150px; line-height: 0.95; letter-spacing: -0.055em; }
+.h-l { font-weight: 900; font-size: 112px; line-height: 0.98; letter-spacing: -0.05em; }
+.h-m { font-weight: 900; font-size: 84px; line-height: 1.02; letter-spacing: -0.045em; }
+.acc { color: var(--accent-ink); }
+.sub { font-size: 40px; font-weight: 700; color: var(--ink-2); letter-spacing: -0.015em; }
+.caption { position: absolute; left: 90px; right: 90px; top: 340px; text-align: left; }
+
+/* panels */
+.panel {
+  position: absolute; left: 70px; right: 70px;
+  background: var(--bg-card); border: 2px solid var(--line); border-radius: 40px;
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(124, 58, 237, 0.08);
+  overflow: hidden;
+}
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 34px 40px; border-bottom: 2px solid var(--line); background: var(--bg-surface);
+}
+.panel-title { font-size: 40px; font-weight: 900; letter-spacing: -0.03em; }
+.panel-body { padding: 36px 40px; }
+.label { font-size: 28px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.08em; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 12px; white-space: nowrap;
+  padding: 12px 24px; border-radius: 999px; font-size: 28px; font-weight: 700;
+  background: var(--bg-elevated); border: 2px solid var(--line); color: var(--ink);
+}
+.pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pill.ok { background: rgba(34, 197, 94, 0.16); border-color: rgba(34, 197, 94, 0.5); color: #6ee79a; }
+.pill.warn { background: rgba(245, 158, 11, 0.16); border-color: rgba(245, 158, 11, 0.5); color: #fcc463; }
+.pill.info { background: rgba(59, 130, 246, 0.16); border-color: rgba(59, 130, 246, 0.5); color: #9cc3ff; }
+.pill.vio { background: rgba(124, 58, 237, 0.2); border-color: rgba(124, 58, 237, 0.6); color: var(--accent-ink); }
+
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  height: 104px; border-radius: 28px; background: var(--accent); color: #fff;
+  font-size: 38px; font-weight: 900; letter-spacing: -0.02em;
+  box-shadow: 0 18px 50px rgba(124, 58, 237, 0.45);
+}
+.btn.ghost { background: var(--bg-elevated); border: 2px solid var(--line); box-shadow: none; color: var(--ink); }
+
+.row {
+  display: flex; align-items: center; gap: 24px;
+  padding: 24px 28px; border-radius: 26px; background: var(--bg-elevated); border: 2px solid var(--line);
+}
+.row + .row { margin-top: 16px; }
+.row .t { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+.row .s { font-size: 28px; font-weight: 400; color: var(--ink-2); margin-top: 4px; }
+.grow { flex: 1; min-width: 0; }
+
+.check {
+  position: relative; width: 52px; height: 52px; border-radius: 14px; flex: none;
+  border: 3px solid rgba(255, 255, 255, 0.28); background: var(--bg-surface);
+}
+.check .fill { position: absolute; inset: -3px; border-radius: 14px; background: var(--accent); }
+.check svg { position: absolute; inset: 8px; width: 30px; height: 30px; }
+
+.bar { position: relative; height: 16px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.bar .f { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2)); transform-origin: 0 50%; }
+.bar .f.ok { background: var(--success); }
+
+.cursor { position: absolute; width: 64px; height: 64px; z-index: 50; }
+.ripple { opacity: 0; position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.7); z-index: 49; }
+
+.mono { font-family: "JetBrains Mono", monospace; }
+
+/* outro */
+.outro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.outro .logo { width: 260px; height: 260px; border-radius: 58px; box-shadow: 0 30px 120px rgba(124, 58, 237, 0.55); }
+.outro .name { margin-top: 56px; font-size: 140px; font-weight: 900; letter-spacing: -0.06em; }
+.outro .claim { margin-top: 26px; font-size: 44px; font-weight: 700; color: var(--ink-2); letter-spacing: -0.02em; }
+.outro .install {
+  margin-top: 70px; padding: 26px 44px; border-radius: 24px; background: var(--bg-card);
+  border: 2px solid var(--line); font-size: 40px; color: var(--ink);
+}
+.outro .install b { color: var(--accent-ink); font-weight: 700; }

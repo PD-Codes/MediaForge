@@ -1,0 +1,5 @@
+# TikTok caption
+
+You're asleep, MediaForge isn't. Auto-Sync checks your series on a schedule and downloads new episodes on its own, with a dry run before anything happens.
+
+#mediaforge #selfhosted #automation #homelab #anime #series #opensource

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait"
+  data-composition-variables='[
+    {"id":"color-ground","type":"color","label":"Background","default":"#0d0d14"},
+    {"id":"color-ink","type":"color","label":"Text","default":"#f0f0f8"},
+    {"id":"color-accent","type":"color","label":"Accent","default":"#7c3aed"}
+  ]'>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <link rel="stylesheet" href="assets/mf.css" />
+    <style>
+      /* mini MediaForge UI that theme packs recolour (colours are CSS variables) */
+      .mock {
+        --m-bg: #0d0d14; --m-surface: #13131e; --m-card: #16162a; --m-accent: #7c3aed; --m-ink: #f0f0f8; --m-ink2: #9191b0;
+        position: absolute; left: 110px; width: 860px; height: 640px; border-radius: 34px; overflow: hidden;
+        background: var(--m-bg); border: 3px solid rgba(255, 255, 255, 0.14); box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6);
+      }
+      .mock .top { position: absolute; left: 0; right: 0; top: 0; height: 76px; background: var(--m-surface); }
+      .mock .logo { position: absolute; left: 26px; top: 20px; width: 36px; height: 36px; border-radius: 10px; background: var(--m-accent); }
+      .mock .search { position: absolute; left: 230px; top: 20px; width: 420px; height: 36px; border-radius: 18px; background: var(--m-card); }
+      .mock .side { position: absolute; left: 0; top: 76px; bottom: 0; width: 190px; background: var(--m-surface); }
+      .mock .nav { position: absolute; left: 24px; height: 22px; border-radius: 11px; background: var(--m-ink2); opacity: 0.55; }
+      .mock .nav.on { opacity: 1; background: var(--m-accent); height: 44px; left: 14px; width: 162px; border-radius: 14px; }
+      .mock .h { position: absolute; left: 230px; top: 108px; font-size: 40px; font-weight: 900; letter-spacing: -0.03em; color: var(--m-ink); }
+      .mock .card { position: absolute; top: 180px; width: 180px; height: 300px; border-radius: 20px; background: var(--m-card); overflow: hidden; }
+      .mock .poster { position: absolute; left: 0; right: 0; top: 0; height: 200px; background: var(--m-accent); opacity: 0.55; }
+      .mock .l1 { position: absolute; left: 16px; top: 222px; width: 130px; height: 18px; border-radius: 9px; background: var(--m-ink); opacity: 0.85; }
+      .mock .l2 { position: absolute; left: 16px; top: 254px; width: 90px; height: 14px; border-radius: 7px; background: var(--m-ink2); }
+      .mock .btn2 { position: absolute; left: 230px; top: 520px; width: 600px; height: 76px; border-radius: 20px; background: var(--m-accent); }
+
+      #s1-mock { top: 720px; }
+      #s1-name { position: absolute; left: 0; right: 0; top: 1410px; display: flex; justify-content: center; }
+      #s4-mock { top: 470px; }
+
+      /* store */
+      #s2-panel { top: 540px; height: 1000px; }
+      .tabs { position: absolute; left: 40px; top: 136px; display: flex; gap: 14px; }
+      .facet { position: absolute; left: 40px; width: 220px; height: 70px; border-radius: 20px; display: flex; align-items: center;
+        padding: 0 22px; font-size: 30px; font-weight: 700; color: var(--ink-2); }
+      .facet.on { background: rgba(124, 58, 237, 0.2); color: var(--accent-ink); border: 2px solid rgba(124, 58, 237, 0.55); }
+      .srow { position: absolute; left: 280px; right: 40px; height: 108px; border-radius: 24px; padding: 16px 26px;
+        background: var(--bg-elevated); border: 2px solid var(--line); }
+      .srow .t { font-size: 34px; font-weight: 900; letter-spacing: -0.03em; }
+      .srow .s { font-size: 28px; color: var(--ink-2); margin-top: 2px; font-weight: 700; }
+      .srow .s b { color: #6ee79a; font-weight: 700; }
+      .srow .s i { font-style: normal; color: var(--accent-ink); }
+      #s2-sel { position: absolute; left: 280px; right: 40px; top: 718px; height: 108px; border-radius: 24px;
+        border: 4px solid var(--accent); box-shadow: 0 0 40px rgba(124, 58, 237, 0.5); }
+
+      /* detail */
+      #s3-panel { top: 540px; height: 940px; }
+      #s3-panel .abs { position: absolute; left: 40px; right: 40px; }
+      #s3-desc { font-size: 38px; line-height: 1.32; font-weight: 700; letter-spacing: -0.02em; }
+      #s3-row { position: absolute; left: 40px; right: 40px; top: 600px; height: 96px; display: flex; align-items: center; gap: 22px;
+        padding: 0 28px; border-radius: 24px; background: var(--bg-elevated); border: 2px solid var(--line); }
+      #s3-row .t { font-size: 34px; font-weight: 700; flex: 1; letter-spacing: -0.02em; }
+      #s3-btn { position: absolute; left: 40px; right: 40px; top: 780px; overflow: hidden; }
+      #s3-prog { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: rgba(255, 255, 255, 0.22); transform-origin: 0 50%; }
+      #s3-btn span { position: relative; }
+      #s3-done { position: absolute; left: 40px; right: 40px; top: 780px; background: #16a34a; box-shadow: 0 18px 50px rgba(34, 197, 94, 0.4); }
+
+      /* theme grid */
+      .th { position: absolute; width: 300px; height: 190px; border-radius: 28px; padding: 22px 24px; background: var(--bg-card);
+        border: 2px solid var(--line); }
+      .th .sw { display: flex; gap: 10px; }
+      .th .sw i { width: 40px; height: 40px; border-radius: 12px; display: block; border: 2px solid rgba(255, 255, 255, 0.12); }
+      .th .n { margin-top: 18px; font-size: 30px; font-weight: 900; letter-spacing: -0.03em; line-height: 1.1; }
+      .thsel { position: absolute; width: 300px; height: 190px; border-radius: 28px; border: 5px solid #fff; box-shadow: 0 0 40px rgba(255, 255, 255, 0.35); }
+
+      /* build your own */
+      .kind { position: absolute; height: 120px; width: 450px; border-radius: 30px; display: flex; align-items: center; gap: 22px; padding: 0 30px;
+        background: var(--bg-card); border: 2px solid var(--line); font-size: 36px; font-weight: 900; letter-spacing: -0.03em; }
+      .kind i { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); display: block; flex: none; }
+      #s5-url { position: absolute; left: 0; right: 0; top: 1150px; display: flex; justify-content: center; }
+      #s5-url div { padding: 24px 40px; border-radius: 24px; background: rgba(124, 58, 237, 0.18); border: 2px solid rgba(124, 58, 237, 0.6);
+        font-size: 38px; color: var(--ink); }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="22" data-width="1080" data-height="1920">
+      <div id="bg" class="clip" data-start="0" data-duration="22" data-track-index="0" style="position:absolute;inset:0;z-index:0">
+        <div class="ground"></div>
+        <div id="glow-a" class="glow"></div>
+        <div id="glow-b" class="glow blue"></div>
+      </div>
+
+      <div id="tagclip" class="clip" data-start="0" data-duration="17.85" data-track-index="1" style="position:absolute;inset:0;z-index:30">
+        <div class="tagrow"><div id="tag" class="tag"><img src="assets/icon.svg" alt="" />MediaForge<span class="dot"></span><span class="tep">Modules · 2/5</span></div></div>
+      </div>
+
+      <!-- S1 hook: one UI, three theme packs -->
+      <div id="s1" class="scene clip" data-start="0" data-duration="3.0" data-track-index="2" style="z-index:5">
+        <div id="s1-w" class="wrap">
+          <div id="s1-cap" class="caption h-xl">Make it <span class="acc">yours.</span></div>
+          <div id="s1-mock" class="mock" data-layout-ignore>
+            <div class="top"><div class="logo"></div><div class="search"></div></div>
+            <div class="side"><div class="nav on" style="top:30px"></div><div class="nav" style="top:110px;width:120px"></div><div class="nav" style="top:160px;width:140px"></div><div class="nav" style="top:210px;width:100px"></div><div class="nav" style="top:260px;width:130px"></div></div>
+            <div class="h">Library</div>
+            <div class="card" style="left:230px"><div class="poster"></div><div class="l1"></div><div class="l2"></div></div>
+            <div class="card" style="left:440px"><div class="poster"></div><div class="l1"></div><div class="l2"></div></div>
+            <div class="card" style="left:650px"><div class="poster"></div><div class="l1"></div><div class="l2"></div></div>
+            <div class="btn2"></div>
+          </div>
+          <div id="s1-name"><span id="s1-pill" class="pill vio" style="font-size:32px;padding:14px 30px">MediaForge default</span></div>
+        </div>
+      </div>
+
+      <!-- S2 store -->
+      <div id="s2" class="scene clip" data-start="3.0" data-duration="3.6" data-track-index="3" style="z-index:6">
+        <div id="s2-w" class="wrap">
+          <div id="s2-cap" class="caption h-l">The <span class="acc">store.</span></div>
+          <div id="s2-panel" class="panel">
+            <div class="panel-head"><div class="panel-title">Module Manager</div><span class="pill ok">Official store</span></div>
+            <div class="tabs"><span class="pill">Installed</span><span class="pill on">Store</span><span class="pill">Settings</span></div>
+            <div class="facet on" style="top:230px">All</div>
+            <div class="facet" style="top:310px">Modules</div>
+            <div class="facet" style="top:390px">Themes</div>
+            <div class="facet" style="top:470px">Integrations</div>
+            <div class="facet" style="top:550px">Sources</div>
+            <div class="srow" id="r1" style="top:230px"><div class="t">AniFilter</div><div class="s">Module · <b>Verified</b></div></div>
+            <div class="srow" id="r2" style="top:352px"><div class="t">Anime Seasons</div><div class="s">Module · <i>Official</i></div></div>
+            <div class="srow" id="r3" style="top:474px"><div class="t">Discord Request Bot</div><div class="s">Module · <b>Verified</b></div></div>
+            <div class="srow" id="r4" style="top:596px"><div class="t">Jellyfin Connector</div><div class="s">Module · <b>Verified</b></div></div>
+            <div class="srow" id="r5" style="top:718px"><div class="t">Resolution Badge</div><div class="s">Module · <b>Verified</b></div></div>
+            <div class="srow" id="r6" style="top:840px"><div class="t">Planned Releases</div><div class="s">Module · <b>Verified</b></div></div>
+            <div id="s2-sel"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S3 install -->
+      <div id="s3" class="scene clip" data-start="6.6" data-duration="4.4" data-track-index="4" style="z-index:7">
+        <div id="s3-w" class="wrap">
+          <div id="s3-cap" class="caption h-l">One <span class="acc">click.</span></div>
+          <div id="s3-panel" class="panel">
+            <div class="panel-head"><div class="panel-title">Resolution Badge</div><span class="pill">v1.0.1</span></div>
+            <div class="abs" style="top:150px;display:flex;gap:14px"><span class="pill vio">Module</span><span class="pill ok">Verified</span></div>
+            <div class="abs" style="top:230px"><span class="pill" style="font-size:28px">Signed by MediaForge Module Store</span></div>
+            <div id="s3-desc" class="abs" style="top:330px">Shows the stream resolution of each episode in the download modal, before downloading.</div>
+            <div class="label" style="position:absolute;left:40px;top:548px">In the download modal</div>
+            <div id="s3-row"><div class="t">E01 · The Departure</div><span id="s3-badge" class="pill info">1080p</span></div>
+            <div id="s3-btn" class="btn"><div id="s3-prog"></div><span id="s3-btn-t">Install now</span></div>
+            <div id="s3-done" class="btn">Installed ✓</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S4 theme packs -->
+      <div id="s4" class="scene clip" data-start="11.0" data-duration="4.6" data-track-index="5" style="z-index:8">
+        <div id="s4-w" class="wrap">
+          <div id="s4-cap" class="caption h-l" style="top:330px">28 <span class="acc">theme packs.</span></div>
+          <div id="s4-mock" class="mock" data-layout-ignore>
+            <div class="top"><div class="logo"></div><div class="search"></div></div>
+            <div class="side"><div class="nav on" style="top:30px"></div><div class="nav" style="top:110px;width:120px"></div><div class="nav" style="top:160px;width:140px"></div><div class="nav" style="top:210px;width:100px"></div><div class="nav" style="top:260px;width:130px"></div></div>
+            <div class="h">Library</div>
+            <div class="card" style="left:230px"><div class="poster"></div><div class="l1"></div><div class="l2"></div></div>
+            <div class="card" style="left:440px"><div class="poster"></div><div class="l1"></div><div class="l2"></div></div>
+            <div class="card" style="left:650px"><div class="poster"></div><div class="l1"></div><div class="l2"></div></div>
+            <div class="btn2"></div>
+          </div>
+          <div class="th" id="t1" style="left:70px;top:1150px"><div class="sw"><i style="background:#282a36"></i><i style="background:#bd93f9"></i><i style="background:#ff79c6"></i><i style="background:#50fa7b"></i></div><div class="n">Dracula</div></div>
+          <div class="th" id="t2" style="left:390px;top:1150px"><div class="sw"><i style="background:#2e3440"></i><i style="background:#88c0d0"></i><i style="background:#81a1c1"></i><i style="background:#eceff4"></i></div><div class="n">Nord</div></div>
+          <div class="th" id="t3" style="left:710px;top:1150px"><div class="sw"><i style="background:#0a0a12"></i><i style="background:#fcee0a"></i><i style="background:#00f0ff"></i><i style="background:#ff003c"></i></div><div class="n">Cyberpunk 2077</div></div>
+          <div class="th" id="t4" style="left:70px;top:1360px"><div class="sw"><i style="background:#0f380f"></i><i style="background:#306230"></i><i style="background:#8bac0f"></i><i style="background:#9bbc0f"></i></div><div class="n">Gameboy Classic</div></div>
+          <div class="th" id="t5" style="left:390px;top:1360px"><div class="sw"><i style="background:#2a1b26"></i><i style="background:#ff7aa2"></i><i style="background:#c77dff"></i><i style="background:#ffe4ec"></i></div><div class="n">Sakura Theme</div></div>
+          <div class="th" id="t6" style="left:710px;top:1360px"><div class="sw"><i style="background:#24273a"></i><i style="background:#c6a0f6"></i><i style="background:#8aadf4"></i><i style="background:#cad3f5"></i></div><div class="n">Catppuccin Macchiato</div></div>
+          <div class="thsel" id="sel3" style="left:710px;top:1150px"></div>
+          <div class="thsel" id="sel2" style="left:390px;top:1150px"></div>
+        </div>
+      </div>
+
+      <!-- S5 build your own -->
+      <div id="s5" class="scene clip" data-start="15.6" data-duration="2.25" data-track-index="6" style="z-index:9">
+        <div id="s5-w" class="wrap">
+          <div id="s5-cap" class="caption h-l">Or build <span class="acc">your own.</span></div>
+          <div class="kind" id="k1" style="left:70px;top:620px"><i></i>Content source</div>
+          <div class="kind" id="k2" style="left:560px;top:620px"><i></i>Subtitle source</div>
+          <div class="kind" id="k3" style="left:70px;top:770px"><i></i>CineInfo source</div>
+          <div class="kind" id="k4" style="left:560px;top:770px"><i></i>New tab</div>
+          <div class="kind" id="k5" style="left:70px;top:920px"><i></i>Dashboard widget</div>
+          <div class="kind" id="k6" style="left:560px;top:920px"><i></i>Event hooks</div>
+          <div id="s5-url"><div class="mono">mediaforge.pd-codes.net</div></div>
+        </div>
+      </div>
+
+      <!-- S6 outro -->
+      <div id="s6" class="scene clip" data-start="17.85" data-duration="4.15" data-track-index="7" style="z-index:10">
+        <div class="outro">
+          <img id="o-logo" class="logo" src="assets/icon.svg" alt="" />
+          <div id="o-name" class="name">MediaForge</div>
+          <div id="o-claim" class="claim">11 modules. 28 themes. One store.</div>
+          <div id="o-inst" class="install mono"><b>pip install</b> mediaforge</div>
+        </div>
+      </div>
+
+      <div id="curclip" class="clip" data-start="3.0" data-duration="12.5" data-track-index="8" style="position:absolute;inset:0;z-index:40" data-layout-ignore>
+        <div id="rip" class="ripple"></div>
+        <svg id="cur" class="cursor" viewBox="0 0 32 32"><path d="M4 2l20 12-9 2 5 10-4 2-5-10-7 6z" fill="#fff" stroke="#0d0d14" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- audio -->
+      <audio id="bed" data-start="0" data-duration="22" data-track-index="10" data-volume="0.4" data-fade-out="1.5" src="assets/music/bed.mp3"></audio>
+      <audio id="a-th1" data-start="0.55" data-duration="0.2" data-track-index="11" data-volume="0.55" src="assets/sfx/switch7.ogg"></audio>
+      <audio id="a-th2" data-start="1.08" data-duration="0.06" data-track-index="11" data-volume="0.6" src="assets/sfx/switch12.ogg"></audio>
+      <audio id="a-hook" data-start="1.56" data-duration="0.94" data-track-index="12" data-volume="0.6" src="assets/sfx/cards-pack-open-1.ogg"></audio>
+      <audio id="a-wh1" data-start="2.86" data-duration="0.57" data-track-index="13" data-volume="0.5" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-rows1" data-start="3.70" data-duration="0.6" data-track-index="11" data-volume="0.55" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="a-rows2" data-start="4.06" data-duration="0.6" data-track-index="12" data-volume="0.5" src="assets/sfx/card-slide-5.ogg"></audio>
+      <audio id="a-pick" data-start="5.81" data-duration="0.06" data-track-index="11" data-volume="0.7" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="a-wh2" data-start="6.44" data-duration="0.57" data-track-index="13" data-volume="0.5" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-inst" data-start="8.97" data-duration="0.06" data-track-index="11" data-volume="0.7" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="a-done" data-start="9.96" data-duration="0.26" data-track-index="12" data-volume="0.6" src="assets/sfx/chips-collide-1.ogg"></audio>
+      <audio id="a-badge" data-start="10.21" data-duration="0.19" data-track-index="11" data-volume="0.6" src="assets/sfx/drop_002.ogg"></audio>
+      <audio id="a-wh3" data-start="10.84" data-duration="0.57" data-track-index="13" data-volume="0.5" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-grid" data-start="11.3" data-duration="0.6" data-track-index="11" data-volume="0.5" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="a-cp" data-start="12.66" data-duration="0.2" data-track-index="12" data-volume="0.6" src="assets/sfx/switch7.ogg"></audio>
+      <audio id="a-nord" data-start="14.23" data-duration="0.2" data-track-index="12" data-volume="0.6" src="assets/sfx/switch7.ogg"></audio>
+      <audio id="a-wh4" data-start="15.42" data-duration="0.57" data-track-index="13" data-volume="0.5" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-kinds" data-start="15.82" data-duration="0.6" data-track-index="11" data-volume="0.5" src="assets/sfx/card-slide-5.ogg"></audio>
+      <audio id="a-logo" data-start="17.92" data-duration="0.3" data-track-index="14" data-volume="0.75" src="assets/sfx/impactBell_heavy_004.ogg"></audio>
+    </div>
+    <script src="assets/audio-env.js"></script>
+    <script src="assets/mf.js"></script>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const M = window.MF;
+      const THEMES = {
+        base: { "--m-bg": "#0d0d14", "--m-surface": "#13131e", "--m-card": "#16162a", "--m-accent": "#7c3aed", "--m-ink": "#f0f0f8", "--m-ink2": "#9191b0" },
+        lcars: { "--m-bg": "#000000", "--m-surface": "#1a1206", "--m-card": "#2a1c08", "--m-accent": "#ff9900", "--m-ink": "#ffcc99", "--m-ink2": "#99ccff" },
+        matrix: { "--m-bg": "#000000", "--m-surface": "#001a0a", "--m-card": "#002a10", "--m-accent": "#00ff66", "--m-ink": "#b6ffcc", "--m-ink2": "#00b347" },
+        cyber: { "--m-bg": "#0a0a12", "--m-surface": "#14141f", "--m-card": "#1c1b29", "--m-accent": "#fcee0a", "--m-ink": "#f3f3f3", "--m-ink2": "#00f0ff" },
+        nord: { "--m-bg": "#2e3440", "--m-surface": "#3b4252", "--m-card": "#434c5e", "--m-accent": "#88c0d0", "--m-ink": "#eceff4", "--m-ink2": "#d8dee9" },
+      };
+      const flood = (sel, theme, t) => tl.to(sel, Object.assign({ duration: 0.35, ease: "power2.inOut" }, THEMES[theme]), t);
+
+      M.audio(tl, "#glow-a", { base: 0.55, amp: 0.45, scale: 0.06 });
+      tl.fromTo("#glow-b", { x: 0, y: 0 }, { x: -300, y: 480, duration: 22, ease: "none" }, 0);
+      tl.fromTo("#tag", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 0.1);
+      tl.to("#tag", { opacity: 0, duration: 0.2, ease: "power2.in" }, 17.6);
+
+      // ---------- S1: one UI, three looks (beat-grid 0.55, 1.08; line beat-locked 1.60) ----------
+      tl.set("#s1-mock", THEMES.base, 0);
+      tl.fromTo("#s1-mock", { y: 40, scale: 0.97 }, { y: 0, scale: 1, duration: 0.5, ease: "expo.out" }, 0);
+      
+      flood("#s1-mock", "lcars", 0.45);
+      tl.set("#s1-pill", { textContent: "Star Trek LCARS" }, 0.55);
+      flood("#s1-mock", "matrix", 0.98);
+      tl.set("#s1-pill", { textContent: "Matrix Terminal" }, 1.08);
+      flood("#s1-mock", "base", 1.5);
+      tl.set("#s1-pill", { textContent: "MediaForge default" }, 1.6);
+      tl.fromTo("#s1-cap", { opacity: 0, scale: 1.12, filter: "blur(16px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.3, ease: "expo.out" }, 1.6); // beat-locked: 1.60s
+      tl.to("#s1-w", { x: -1080, filter: "blur(10px)", duration: 0.32, ease: "power3.in" }, 2.7);
+
+      // ---------- S2: store browser ----------
+      tl.fromTo("#s2-panel", { x: 1080, filter: "blur(10px)" }, { x: 0, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, 3.0);
+      M.blurIn(tl, "#s2-cap", 3.15, 0.22);
+      tl.fromTo(["#r1", "#r2", "#r3", "#r4", "#r5", "#r6"], { opacity: 0, x: 80 }, { opacity: 1, x: 0, duration: 0.35, ease: "expo.out", stagger: 0.07 }, 3.7); // beat-locked: 3.70s
+      tl.set("#cur", { x: 960, y: 1760, scale: 1, opacity: 0 }, 0);
+      tl.to("#cur", { opacity: 1, duration: 0.2 }, 4.5);
+      tl.fromTo("#s2-sel", { opacity: 0 }, { opacity: 1, duration: 0.15 }, 5.8);
+      M.click(tl, "#cur", "#rip", 620, 1318, 5.8, 0.8); // beat-locked: 5.80s
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 6.2);
+      tl.to("#s2-w", { x: -1080, filter: "blur(10px)", duration: 0.32, ease: "power3.in" }, 6.3);
+
+      // ---------- S3: install ----------
+      tl.fromTo("#s3-panel", { x: 1080, filter: "blur(10px)" }, { x: 0, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, 6.6);
+      M.blurIn(tl, "#s3-cap", 6.75, 0.22);
+      tl.set("#s3-prog", { scaleX: 0 }, 0);
+      tl.set("#s3-badge", { opacity: 0, scale: 0.4 }, 0);
+      tl.to("#cur", { opacity: 1, duration: 0.2 }, 8.1);
+      M.click(tl, "#cur", "#rip", 560, 1372, 8.96, 0.6); // beat-locked: 8.96s
+      tl.to("#s3-btn", { scale: 0.96, duration: 0.08, ease: "power2.in" }, 8.96);
+      tl.to("#s3-btn", { scale: 1, duration: 0.2, ease: "power3.out" }, 9.04);
+      tl.to("#s3-prog", { scaleX: 1, duration: 0.9, ease: "power1.inOut" }, 9.05);
+      tl.fromTo("#s3-btn-t", { opacity: 1 }, { opacity: 0, duration: 0.1 }, 9.93);
+      tl.fromTo("#s3-done", { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.25, ease: "expo.out" }, 9.95);
+      tl.to("#s3-badge", { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(1.8)" }, 10.2);
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 9.6);
+      tl.to("#s3-w", { x: -1080, filter: "blur(10px)", duration: 0.32, ease: "power3.in" }, 10.7);
+
+      // ---------- S4: theme packs recolour the UI live ----------
+      tl.set("#s4-mock", Object.assign({ scale: 0.86, transformOrigin: "50% 0%" }, THEMES.base), 0);
+      tl.fromTo("#s4-mock", { opacity: 0, x: 1080 }, { opacity: 1, x: 0, duration: 0.5, ease: "expo.out" }, 11.0);
+      M.blurIn(tl, "#s4-cap", 11.15, 0.22);
+      tl.fromTo(["#t1", "#t2", "#t3", "#t4", "#t5", "#t6"], { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out", stagger: 0.06 }, 11.3);
+      tl.set(["#sel3", "#sel2"], { opacity: 0 }, 0);
+      tl.set("#cur", { x: 980, y: 1800 }, 11.4);
+      tl.to("#cur", { opacity: 1, duration: 0.2 }, 11.6);
+      M.click(tl, "#cur", "#rip", 860, 1250, 12.65, 0.7); // beat-locked: 12.65s
+      tl.to("#sel3", { opacity: 1, duration: 0.12 }, 12.65);
+      flood("#s4-mock", "cyber", 12.65);
+      M.click(tl, "#cur", "#rip", 540, 1250, 14.22, 0.6);
+      tl.to("#sel3", { opacity: 0, duration: 0.12 }, 14.22);
+      tl.to("#sel2", { opacity: 1, duration: 0.12 }, 14.22);
+      flood("#s4-mock", "nord", 14.22);
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 15.0);
+      tl.to("#s4-w", { x: -1080, filter: "blur(10px)", duration: 0.32, ease: "power3.in" }, 15.3);
+
+      // ---------- S5: build your own ----------
+      M.blurIn(tl, "#s5-cap", 15.62, 0.22);
+      tl.fromTo(["#k1", "#k2", "#k3", "#k4", "#k5", "#k6"], { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(1.4)", stagger: 0.06 }, 15.82);
+      tl.fromTo("#s5-url", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out" }, 16.3);
+      tl.to("#s5-w", { opacity: 0, scale: 0.95, filter: "blur(12px)", duration: 0.22, ease: "power3.in" }, 17.62);
+
+      // ---------- S6: outro ----------
+      tl.fromTo("#o-logo", { opacity: 0, scale: 0.4, rotation: -12 }, { opacity: 1, scale: 1, rotation: 0, duration: 0.6, ease: "back.out(1.5)" }, 17.91); // beat-locked: 17.91s
+      tl.fromTo("#o-name", { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 18.2);
+      M.blurIn(tl, "#o-claim", 18.55, 0.25);
+      tl.fromTo("#o-inst", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 19.0);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

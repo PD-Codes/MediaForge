@@ -1,0 +1,589 @@
+{
+  "version": 1,
+  "historyId": "93fc6b70-45f8-4557-ab52-d6ffbae0750f",
+  "currentRevision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+  "pendingChanges": false,
+  "files": {
+    ".media/manifest.jsonl": {
+      "hash": "fbea4e8d6690cb514247092a7a6302df1a6130530fbe7b74185d2a487eb608d7",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\fb\\fbea4e8d6690cb514247092a7a6302df1a6130530fbe7b74185d2a487eb608d7"
+    },
+    "AGENTS.md": {
+      "hash": "1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\1b\\1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060"
+    },
+    "CLAUDE.md": {
+      "hash": "1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\1b\\1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060"
+    },
+    "assets/audio-env.js": {
+      "hash": "309f60442240ac9bf30a22875d18e4730b6b92b7f28e03be0a56b04500c019ef",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\30\\309f60442240ac9bf30a22875d18e4730b6b92b7f28e03be0a56b04500c019ef"
+    },
+    "assets/icon.svg": {
+      "hash": "183de4bae56a4b566ef0ca4e9a956d34fcffdab5f73dc95bb672e40d2b6e6138",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\18\\183de4bae56a4b566ef0ca4e9a956d34fcffdab5f73dc95bb672e40d2b6e6138"
+    },
+    "assets/mf.css": {
+      "hash": "22d61868c2dd6f374f02ff1caba08c2acd2daa4a18f3c925ed46d9750d7f1c04",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\22\\22d61868c2dd6f374f02ff1caba08c2acd2daa4a18f3c925ed46d9750d7f1c04"
+    },
+    "assets/mf.js": {
+      "hash": "721ac4ab337d94e1c30481a71ecfb4f451497cbcdbce196b69d566a21dc9ab47",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\72\\721ac4ab337d94e1c30481a71ecfb4f451497cbcdbce196b69d566a21dc9ab47"
+    },
+    "assets/sfx/card-fan-1.ogg": {
+      "hash": "7a9758ccad8899baef1b9f60b4064e4baa724a548293832fdaea07e6e07e638d",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\7a\\7a9758ccad8899baef1b9f60b4064e4baa724a548293832fdaea07e6e07e638d"
+    },
+    "assets/sfx/click-soft.mp3": {
+      "hash": "075e17bdac5c13662a1c9530050e0046f81d4138e00eb3bf30427a7b4404103d",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\07\\075e17bdac5c13662a1c9530050e0046f81d4138e00eb3bf30427a7b4404103d"
+    },
+    "assets/sfx/drop_001.ogg": {
+      "hash": "692ee3a6f1821402ca649ff735bee9591dc4846c8098fc7d6a90fd15fa57c1af",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\69\\692ee3a6f1821402ca649ff735bee9591dc4846c8098fc7d6a90fd15fa57c1af"
+    },
+    "assets/sfx/drop_003.ogg": {
+      "hash": "43d086d50f90493a98cd2e09aa6dbf150d164f1578e1ec768d21cb185571ad87",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\43\\43d086d50f90493a98cd2e09aa6dbf150d164f1578e1ec768d21cb185571ad87"
+    },
+    "assets/sfx/impactBell_heavy_003.ogg": {
+      "hash": "5572ccdeb3b62373b86fa955355b3a222c36e815f0636ba16165189a21cf2514",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\55\\5572ccdeb3b62373b86fa955355b3a222c36e815f0636ba16165189a21cf2514"
+    },
+    "assets/sfx/impactGlass_light_002.ogg": {
+      "hash": "710db7451bb7857b9140dfe6afe4621ea2188ad65eda3919c569d1bb285b933d",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\71\\710db7451bb7857b9140dfe6afe4621ea2188ad65eda3919c569d1bb285b933d"
+    },
+    "assets/sfx/mouseclick1.ogg": {
+      "hash": "ece1210c62ccae6c9ea4f4c59466d9d453d6b357c7d4b1a6c31196e5e6fea1bf",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\ec\\ece1210c62ccae6c9ea4f4c59466d9d453d6b357c7d4b1a6c31196e5e6fea1bf"
+    },
+    "assets/sfx/rollover2.ogg": {
+      "hash": "d0bc0fcba496d73df1da8c145e5330df75f87ab5a4f33a9b71461b006b5c338e",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\d0\\d0bc0fcba496d73df1da8c145e5330df75f87ab5a4f33a9b71461b006b5c338e"
+    },
+    "assets/sfx/select_008.ogg": {
+      "hash": "f703b6b1c62dae1c246a46d5c2442802588f68be2df4d17e0d65cf7e0dbfc826",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\f7\\f703b6b1c62dae1c246a46d5c2442802588f68be2df4d17e0d65cf7e0dbfc826"
+    },
+    "assets/sfx/whoosh-short.mp3": {
+      "hash": "c2efd9d902a59bf9ec5019035d7deadd17762136896b6e3cb6dd99ea50997a30",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\c2\\c2efd9d902a59bf9ec5019035d7deadd17762136896b6e3cb6dd99ea50997a30"
+    },
+    "hyperframes.json": {
+      "hash": "3af6ecb4d7f8c0cf28a50880f71291f27406c4548e5db2ea2d57430abd99e0e1",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\3a\\3af6ecb4d7f8c0cf28a50880f71291f27406c4548e5db2ea2d57430abd99e0e1"
+    },
+    "index.html": {
+      "hash": "7c33d329812a964e263e36e54efe7a4fd344a377b1ae5c5f018b2761ef10c5d0",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\7c\\7c33d329812a964e263e36e54efe7a4fd344a377b1ae5c5f018b2761ef10c5d0"
+    },
+    "meta.json": {
+      "hash": "4c7148cfe4c018e5179254a8abaeda212481e774c76fd2d817b847a566e16fe8",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\4c\\4c7148cfe4c018e5179254a8abaeda212481e774c76fd2d817b847a566e16fe8"
+    },
+    "package.json": {
+      "hash": "074c2445f5ff9ce123b749737d825cf0810e3e5e825119557f6ff8a798ca88b4",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\07\\074c2445f5ff9ce123b749737d825cf0810e3e5e825119557f6ff8a798ca88b4"
+    },
+    "assets/music/bed.mp3": {
+      "hash": "f5793597e520aa8fa9cce91086816fc1e15e3aac0128bcf375df51ba70c0dc63",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\f5\\f5793597e520aa8fa9cce91086816fc1e15e3aac0128bcf375df51ba70c0dc63"
+    }
+  },
+  "revisions": {
+    "d1edccbb-5f33-4646-ba08-dd6aee561b17": {
+      "actor": {
+        "kind": "outside",
+        "name": "Outside"
+      },
+      "label": "Changed outside the app",
+      "startedAt": 1793221532420,
+      "endedAt": 1793221532422,
+      "files": {
+        "index.html": {
+          "before": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\3a\\3af5e2c2d41aecac9ed0e51ef493fd872c6cb42d874b980e634d73ecbaf02792",
+          "after": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\8b\\8b1bd928d115e31b54ddbeae9819cd6f02ee60d80e91f7939096cdd5adb80dde"
+        }
+      }
+    },
+    "7b26d2c8-6fac-415d-ba10-360319a47c1e": {
+      "actor": {
+        "kind": "outside",
+        "name": "Outside"
+      },
+      "label": "Changed outside the app",
+      "startedAt": 1793221556720,
+      "endedAt": 1793221556721,
+      "files": {
+        "index.html": {
+          "before": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\8b\\8b1bd928d115e31b54ddbeae9819cd6f02ee60d80e91f7939096cdd5adb80dde",
+          "after": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\93fc6b70-45f8-4557-ab52-d6ffbae0750f\\blobs\\7c\\7c33d329812a964e263e36e54efe7a4fd344a377b1ae5c5f018b2761ef10c5d0"
+        }
+      }
+    }
+  },
+  "checks": {
+    "latest": {
+      "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+      "id": "22d867ad-a0fb-4c83-b175-466f85883718"
+    },
+    "revisions": {
+      "d1edccbb-5f33-4646-ba08-dd6aee561b17": [
+        {
+          "id": "5cee6cdf-f276-464d-a343-eddc77faf65c",
+          "scope": "project",
+          "metadata": {
+            "ok": true,
+            "browserSkipped": false,
+            "options": {
+              "samples": 9,
+              "atTransitions": false,
+              "maxIssues": 80,
+              "collapseStatic": true,
+              "tolerance": 2,
+              "timeout": 3000,
+              "contrast": true,
+              "strict": false,
+              "snapshots": false,
+              "browserGpuMode": "auto"
+            }
+          },
+          "createdAt": 1793221540567,
+          "contentHash": "8b61d9d5eaf6ae50cd3248db4bf88aec78666293935b2f949faabe2320bd085a",
+          "revision": "d1edccbb-5f33-4646-ba08-dd6aee561b17",
+          "inputFingerprint": "58e77bd21847a059b9f95d64c8ea5d8c0187d7efce96b0d249106f0932429f1a",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision",
+          "status": "cleaned",
+          "cleanedAfterRender": "18bebf75-fa90-458a-9f6d-7ff0f29b4008"
+        }
+      ],
+      "7b26d2c8-6fac-415d-ba10-360319a47c1e": [
+        {
+          "id": "22d867ad-a0fb-4c83-b175-466f85883718",
+          "scope": "project",
+          "report": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\checks\\22d867ad-a0fb-4c83-b175-466f85883718.json",
+          "metadata": {
+            "ok": true,
+            "browserSkipped": false,
+            "options": {
+              "samples": 9,
+              "atTransitions": false,
+              "maxIssues": 80,
+              "collapseStatic": true,
+              "tolerance": 2,
+              "timeout": 3000,
+              "contrast": true,
+              "strict": false,
+              "snapshots": false,
+              "browserGpuMode": "auto"
+            }
+          },
+          "createdAt": 1793221568698,
+          "contentHash": "8b61d9d5eaf6ae50cd3248db4bf88aec78666293935b2f949faabe2320bd085a",
+          "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+          "inputFingerprint": "4922e237bf58640e1c5084270329321f47d0ed8af4e34f66870476544930ffc1",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        }
+      ]
+    },
+    "unversioned": [
+      {
+        "id": "a1feecff-a7b6-45d3-aa65-8c0c13215f27",
+        "scope": "project",
+        "report": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\checks\\a1feecff-a7b6-45d3-aa65-8c0c13215f27.json",
+        "metadata": {
+          "ok": false,
+          "browserSkipped": false,
+          "options": {
+            "samples": 9,
+            "atTransitions": false,
+            "maxIssues": 80,
+            "collapseStatic": true,
+            "tolerance": 2,
+            "timeout": 3000,
+            "contrast": true,
+            "strict": false,
+            "snapshots": false,
+            "browserGpuMode": "auto"
+          }
+        },
+        "createdAt": 1793221508866,
+        "contentHash": "3903f3c1dd6579214fbca28979ad04264a863e3dd91c0532d9703ddf823ce14c",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "snapshots": {
+    "latest": {
+      "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+      "id": "26ff061a-435e-498b-968c-078334deaf0b-5"
+    },
+    "revisions": {
+      "7b26d2c8-6fac-415d-ba10-360319a47c1e": [
+        {
+          "scope": "full",
+          "id": "26ff061a-435e-498b-968c-078334deaf0b-0",
+          "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\c5488d6f-da66-4f27-b098-38c6d10b575c\\frame-00-at-0.3s.png",
+          "time": 0.3,
+          "metadata": {
+            "width": 1080,
+            "height": 1920,
+            "zoomScale": 1,
+            "browserGpuMode": "auto",
+            "warnings": [],
+            "partial": false
+          },
+          "createdAt": 1793221578991,
+          "contentHash": "8914b18a310782b7488fbd15b66a7cd6a927e61191c7af6028d559e95b6f101f",
+          "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+          "inputFingerprint": "4922e237bf58640e1c5084270329321f47d0ed8af4e34f66870476544930ffc1",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        },
+        {
+          "scope": "full",
+          "id": "26ff061a-435e-498b-968c-078334deaf0b-1",
+          "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\c5488d6f-da66-4f27-b098-38c6d10b575c\\frame-01-at-6.6s.png",
+          "time": 6.6,
+          "metadata": {
+            "width": 1080,
+            "height": 1920,
+            "zoomScale": 1,
+            "browserGpuMode": "auto",
+            "warnings": [],
+            "partial": false
+          },
+          "createdAt": 1793221578992,
+          "contentHash": "b8be5b1e4991eb8f42807d4e053f13d19ee0d5b773d22bcd40879d53e48fe90e",
+          "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+          "inputFingerprint": "4922e237bf58640e1c5084270329321f47d0ed8af4e34f66870476544930ffc1",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        },
+        {
+          "scope": "full",
+          "id": "26ff061a-435e-498b-968c-078334deaf0b-2",
+          "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\c5488d6f-da66-4f27-b098-38c6d10b575c\\frame-02-at-8.8s.png",
+          "time": 8.8,
+          "metadata": {
+            "width": 1080,
+            "height": 1920,
+            "zoomScale": 1,
+            "browserGpuMode": "auto",
+            "warnings": [],
+            "partial": false
+          },
+          "createdAt": 1793221578992,
+          "contentHash": "4c39f24289b63fc75ad73ddb3517f325afb4ee1f014037d135b595c6ef35d59a",
+          "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+          "inputFingerprint": "4922e237bf58640e1c5084270329321f47d0ed8af4e34f66870476544930ffc1",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        },
+        {
+          "scope": "full",
+          "id": "26ff061a-435e-498b-968c-078334deaf0b-3",
+          "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\c5488d6f-da66-4f27-b098-38c6d10b575c\\frame-03-at-12s.png",
+          "time": 12,
+          "metadata": {
+            "width": 1080,
+            "height": 1920,
+            "zoomScale": 1,
+            "browserGpuMode": "auto",
+            "warnings": [],
+            "partial": false
+          },
+          "createdAt": 1793221578993,
+          "contentHash": "5a51217e256f3d73d7e8d897adbac3d35546b69d67529cf82904622a0587e16f",
+          "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+          "inputFingerprint": "4922e237bf58640e1c5084270329321f47d0ed8af4e34f66870476544930ffc1",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        },
+        {
+          "scope": "full",
+          "id": "26ff061a-435e-498b-968c-078334deaf0b-4",
+          "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\c5488d6f-da66-4f27-b098-38c6d10b575c\\frame-04-at-16.8s.png",
+          "time": 16.8,
+          "metadata": {
+            "width": 1080,
+            "height": 1920,
+            "zoomScale": 1,
+            "browserGpuMode": "auto",
+            "warnings": [],
+            "partial": false
+          },
+          "createdAt": 1793221578993,
+          "contentHash": "7e24d82488c0dfb6cb4110ac89724c796851fdff1cd652ccc66d1b9700e816a4",
+          "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+          "inputFingerprint": "4922e237bf58640e1c5084270329321f47d0ed8af4e34f66870476544930ffc1",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        },
+        {
+          "scope": "full",
+          "id": "26ff061a-435e-498b-968c-078334deaf0b-5",
+          "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\c5488d6f-da66-4f27-b098-38c6d10b575c\\frame-05-at-21.34s.png",
+          "time": 21.34,
+          "metadata": {
+            "width": 1080,
+            "height": 1920,
+            "zoomScale": 1,
+            "browserGpuMode": "auto",
+            "warnings": [],
+            "partial": false
+          },
+          "createdAt": 1793221578994,
+          "contentHash": "7856c6cc76a8053d99cd221b0b10254d24cee346f003fde82b8c829dc75e815f",
+          "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e",
+          "inputFingerprint": "4922e237bf58640e1c5084270329321f47d0ed8af4e34f66870476544930ffc1",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        }
+      ]
+    },
+    "unversioned": [
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-0",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-00-at-0.3s.png",
+        "time": 0.3,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516793,
+        "contentHash": "ece217574a6da1c41f7f00ee033816e526c2cedc1e0cbb9ab052853dfb969584",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-1",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-01-at-2.4s.png",
+        "time": 2.4,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516793,
+        "contentHash": "3cbb70b9113f3e5e8b55066d8d1260daf54158fd4ce9e8edd761b6dd2b19f060",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-2",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-02-at-4.8s.png",
+        "time": 4.8,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516793,
+        "contentHash": "4e132c6fe10c340d872fcaf176249f162b96d8aa9f2e2c8be396980cb8cf76f4",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-3",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-03-at-7.4s.png",
+        "time": 7.4,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516794,
+        "contentHash": "b482cc7fa3506c340189bde94aca95e60a5f7e8ab01ce1f975feade32fd80dac",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-4",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-04-at-9.6s.png",
+        "time": 9.6,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516794,
+        "contentHash": "5c4d6f29c016fd79cd35a61b4acd4fa529af9ae1a8b42d66cb680c8ec38e983a",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-5",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-05-at-12s.png",
+        "time": 12,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516794,
+        "contentHash": "a02d3829e9df99111920bb9e8fa8a0b39d608b6a8b419cef233c292c0d2c338b",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-6",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-06-at-15.2s.png",
+        "time": 15.2,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516794,
+        "contentHash": "56459e93b07a62644f7f00381e173b98d228459752c63dbc5a81bff249f95074",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-7",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-07-at-16.6s.png",
+        "time": 16.6,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516794,
+        "contentHash": "12113426432158f54d1f8d0e77487e177f9428d20c7d0589449f551f448a99b3",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-8",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-08-at-17.8s.png",
+        "time": 17.8,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516795,
+        "contentHash": "2b4adc380f487da632fa388adf961c92645e4e4673aa43945979048e60ec79b3",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-9",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-09-at-20.5s.png",
+        "time": 20.5,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516795,
+        "contentHash": "6465154ea2aaec721e8a61dc15d1933268aa6d283b6bf8f06a03b744fa708418",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "01326415-918d-4905-97a7-d373705c3e11-10",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\composition\\.hyperframes\\artifacts\\snapshots\\9d0605a7-201d-4a83-9e3c-356e7f5e8c0b\\frame-10-at-21.34s.png",
+        "time": 21.34,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221516795,
+        "contentHash": "7856c6cc76a8053d99cd221b0b10254d24cee346f003fde82b8c829dc75e815f",
+        "revision": null,
+        "inputFingerprint": "87c1f44260d33fe1b183192d9d7a19e6589247fb5a2898ee342e6b9ef1c20f14",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "renders": {
+    "latest": {
+      "id": "18bebf75-fa90-458a-9f6d-7ff0f29b4008",
+      "completedAt": 1793221640880,
+      "output": "R:\\1Github\\MediaForge\\brag-output\\04-kalender\\brag.mp4",
+      "status": "completed",
+      "revision": "7b26d2c8-6fac-415d-ba10-360319a47c1e"
+    },
+    "retainedRevisions": [
+      "7b26d2c8-6fac-415d-ba10-360319a47c1e"
+    ]
+  },
+  "pendingArtifactCleanup": []
+}

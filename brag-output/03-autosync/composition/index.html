@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait"
+  data-composition-variables='[
+    {"id":"color-ground","type":"color","label":"Background","default":"#0d0d14"},
+    {"id":"color-ink","type":"color","label":"Text","default":"#f0f0f8"},
+    {"id":"color-accent","type":"color","label":"Accent","default":"#7c3aed"}
+  ]'>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <link rel="stylesheet" href="assets/mf.css" />
+    <style>
+      /* S1 night */
+      #s1-clock { position: absolute; left: 0; right: 0; top: 520px; text-align: center; font-size: 230px; font-weight: 700;
+        letter-spacing: -0.06em; color: var(--ink); }
+      #s1-a { position: absolute; left: 0; right: 0; top: 880px; text-align: center; color: var(--ink-2); }
+      #s1-b { position: absolute; left: 0; right: 0; top: 1010px; text-align: center; }
+
+      /* S2 jobs */
+      #s2-sub { position: absolute; left: 90px; right: 90px; top: 470px; font-size: 38px; line-height: 1.3; font-weight: 700; color: var(--ink-2); letter-spacing: -0.02em; }
+      .job { position: absolute; width: 455px; height: 330px; border-radius: 34px; padding: 30px; background: var(--bg-card);
+        border: 2px solid var(--line); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5); }
+      .job .t { font-size: 40px; font-weight: 900; letter-spacing: -0.035em; line-height: 1.05; height: 92px; }
+      .job .pills { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+      .job .meta { position: absolute; left: 30px; right: 20px; bottom: 28px; font-size: 28px; font-weight: 700; color: var(--ink-2); }
+      #j1sel { position: absolute; left: 70px; top: 660px; width: 455px; height: 330px; border-radius: 34px; border: 5px solid var(--accent);
+        box-shadow: 0 0 50px rgba(124, 58, 237, 0.55); }
+
+      /* S3 schedule */
+      #s3-panel { top: 540px; height: 940px; }
+      #s3-panel .label { position: absolute; left: 40px; }
+      #seg { position: absolute; left: 40px; right: 40px; top: 190px; height: 90px; border-radius: 26px; background: var(--bg-elevated);
+        border: 2px solid var(--line); }
+      #seg-k { position: absolute; left: 6px; top: 6px; width: 424px; height: 74px; border-radius: 20px; background: var(--accent); }
+      #seg .o { position: absolute; top: 0; width: 430px; height: 86px; display: flex; align-items: center; justify-content: center;
+        font-size: 32px; font-weight: 900; letter-spacing: -0.02em; }
+      .day { position: absolute; top: 360px; width: 112px; height: 72px; border-radius: 20px; display: flex; align-items: center; justify-content: center;
+        font-size: 30px; font-weight: 700; background: var(--bg-elevated); border: 2px solid var(--line); }
+      .day .on { position: absolute; inset: -2px; border-radius: 20px; background: var(--accent); }
+      .day span { position: relative; }
+      #s3-btn { position: absolute; left: 40px; right: 40px; top: 800px; }
+
+      /* S4 dry run */
+      #s4-panel { top: 540px; height: 930px; }
+      #s4-panel .abs { position: absolute; left: 40px; right: 40px; }
+      #s4-group { position: absolute; left: 40px; right: 40px; top: 250px; height: 270px; border-radius: 26px; padding: 26px 30px;
+        background: var(--bg-elevated); border: 2px solid var(--line); }
+      #s4-group .li { font-size: 36px; font-weight: 700; margin-top: 18px; letter-spacing: -0.02em; }
+      #s4-would { font-size: 52px; font-weight: 900; letter-spacing: -0.04em; color: var(--accent-ink); }
+      #s4-hint { font-size: 32px; line-height: 1.32; color: var(--ink-2); font-weight: 700; }
+      #s4-close { position: absolute; left: 40px; right: 40px; top: 800px; }
+
+      /* S5 run */
+      #s5-btn { position: absolute; left: 70px; right: 70px; top: 560px; }
+      .run { position: absolute; left: 70px; right: 70px; height: 110px; border-radius: 26px; padding: 0 30px; display: flex; align-items: center; gap: 18px;
+        background: var(--bg-card); border: 2px solid var(--line); }
+      .run .t { flex: 1; font-size: 36px; font-weight: 900; letter-spacing: -0.03em; }
+      .run .st { position: relative; width: 300px; height: 56px; }
+      .run .st .pill { position: absolute; right: 0; top: 0; }
+      #toast { position: absolute; left: 70px; right: 70px; top: 1250px; height: 250px; border-radius: 28px; padding: 28px 34px 28px 46px;
+        background: #1b1c2e; border: 2px solid var(--line); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6); overflow: hidden; }
+      #toast .edge { position: absolute; left: 0; top: 0; bottom: 0; width: 12px; background: #5865f2; }
+      #toast .tt { font-size: 40px; font-weight: 900; letter-spacing: -0.03em; }
+      #toast .f { display: flex; gap: 70px; margin-top: 18px; }
+      #toast .f b { display: block; font-size: 28px; color: var(--ink-2); }
+      #toast .f span { display: block; font-size: 36px; font-weight: 900; margin-top: 4px; }
+      #toast .ft { margin-top: 20px; font-size: 28px; color: var(--ink-2); font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="22" data-width="1080" data-height="1920">
+      <div id="bg" class="clip" data-start="0" data-duration="22" data-track-index="0" style="position:absolute;inset:0;z-index:0">
+        <div class="ground"></div>
+        <div id="glow-a" class="glow"></div>
+        <div id="glow-b" class="glow blue"></div>
+      </div>
+
+      <div id="tagclip" class="clip" data-start="0" data-duration="19" data-track-index="1" style="position:absolute;inset:0;z-index:30">
+        <div class="tagrow"><div id="tag" class="tag"><img src="assets/icon.svg" alt="" />MediaForge<span class="dot"></span><span class="tep">Auto-Sync · 3/5</span></div></div>
+      </div>
+
+      <!-- S1 night hook -->
+      <div id="s1" class="scene clip" data-start="0" data-duration="3.0" data-track-index="2" style="z-index:5">
+        <div id="s1-w" class="wrap">
+          <div id="s1-clock" class="mono">2:59</div>
+          <div id="s1-a" class="h-l">You're asleep.</div>
+          <div id="s1-b" class="h-l"><span class="acc">MediaForge</span> isn't.</div>
+        </div>
+      </div>
+
+      <!-- S2 jobs -->
+      <div id="s2" class="scene clip" data-start="3.0" data-duration="4.0" data-track-index="3" style="z-index:6">
+        <div id="s2-w" class="wrap">
+          <div id="s2-cap" class="caption h-l">Auto-Sync.</div>
+          <div id="s2-sub">Automatically search for new episodes and download them on a schedule.</div>
+          <div class="job" id="j1" style="left:70px;top:660px"><div class="t">Starpath</div><div class="pills"><span class="pill">aniworld.to</span><span class="pill vio">Running</span></div><div class="meta">Last checked · 03:00</div></div>
+          <div class="job" id="j2" style="left:555px;top:660px"><div class="t">Neon Ronin</div><div class="pills"><span class="pill">s.to</span><span class="pill info">Queued</span></div><div class="meta">Next check · in 4 min</div></div>
+          <div class="job" id="j3" style="left:70px;top:1020px"><div class="t">Cold Echo</div><div class="pills"><span class="pill">aniworld.to</span><span class="pill ok">Enabled</span></div><div class="meta">Next check · Sat 20:00</div></div>
+          <div class="job" id="j4" style="left:555px;top:1020px"><div class="t">The Last Station</div><div class="pills"><span class="pill">s.to</span><span class="pill warn">Wait (Hold)</span></div><div class="meta">Path unavailable</div></div>
+          <div id="j1sel"></div>
+        </div>
+      </div>
+
+      <!-- S3 schedule -->
+      <div id="s3" class="scene clip" data-start="7.0" data-duration="4.5" data-track-index="4" style="z-index:7">
+        <div id="s3-w" class="wrap">
+          <div id="s3-cap" class="caption h-l">Your <span class="acc">schedule.</span></div>
+          <div id="s3-panel" class="panel">
+            <div class="panel-head"><div class="panel-title">Edit sync job</div><span class="pill vio">Starpath</span></div>
+            <div class="label" style="top:146px">Mode</div>
+            <div id="seg"><div id="seg-k"></div><div class="o" id="seg-a" style="left:0">Interval</div><div class="o" id="seg-b" style="left:430px">Weekly schedule</div></div>
+            <div class="label" style="top:316px">Days</div>
+            <div class="day" style="left:40px"><span>Mon</span></div>
+            <div class="day" style="left:160px"><span>Tue</span></div>
+            <div class="day" style="left:280px"><div class="on" id="d3"></div><span>Wed</span></div>
+            <div class="day" style="left:400px"><span>Thu</span></div>
+            <div class="day" style="left:520px"><span>Fri</span></div>
+            <div class="day" style="left:640px"><div class="on" id="d6"></div><span>Sat</span></div>
+            <div class="day" style="left:760px"><span>Sun</span></div>
+            <div class="label" style="top:476px">Time</div>
+            <div style="position:absolute;left:40px;top:522px"><span class="pill mono" style="font-size:36px;padding:12px 28px">20:00</span></div>
+            <div class="label" style="top:636px">Seasons &amp; episodes</div>
+            <div style="position:absolute;left:40px;top:682px;display:flex;gap:14px"><span class="pill on">Season 2</span><span class="pill">E1 – E12</span><span class="pill">Ger-Sub</span></div>
+            <div id="s3-btn" class="btn">Save</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S4 dry run -->
+      <div id="s4" class="scene clip" data-start="11.5" data-duration="4.0" data-track-index="5" style="z-index:8">
+        <div id="s4-w" class="wrap">
+          <div id="s4-cap" class="caption h-l">Test it <span class="acc">first.</span></div>
+          <div id="s4-panel" class="panel">
+            <div class="panel-head"><div class="panel-title">Dry run: Starpath</div><span class="pill">Close</span></div>
+            <div class="abs" id="s4-stats" style="top:150px;display:flex;gap:14px"><span class="pill info">Found online · 14</span><span class="pill">already local · 12</span></div>
+            <div id="s4-group">
+              <div style="display:flex;gap:12px;align-items:center"><span style="font-size:34px;font-weight:900">German</span><span class="pill">Episode</span><span class="pill">2</span></div>
+              <div class="li" id="li1">S2 E07</div>
+              <div class="li" id="li2">S2 E08</div>
+            </div>
+            <div class="abs" id="s4-would" style="top:560px">Would queue 2 episode(s).</div>
+            <div class="abs" id="s4-hint" style="top:650px">None of this was executed or saved — the job's schedule is unchanged too.</div>
+            <div id="s4-close" class="btn ghost">Close</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S5 sync all -->
+      <div id="s5" class="scene clip" data-start="15.5" data-duration="3.5" data-track-index="6" style="z-index:9">
+        <div id="s5-w" class="wrap">
+          <div id="s5-cap" class="caption h-l">Then it <span class="acc">runs.</span></div>
+          <div id="s5-btn" class="btn">Sync all</div>
+          <div class="run" id="u1" style="top:720px"><div class="t">Starpath</div><div class="st"><span class="pill info" id="u1a">Queued</span><span class="pill vio" id="u1b">Running</span></div></div>
+          <div class="run" id="u2" style="top:846px"><div class="t">Neon Ronin</div><div class="st"><span class="pill info" id="u2a">Queued</span><span class="pill vio" id="u2b">Running</span></div></div>
+          <div class="run" id="u3" style="top:972px"><div class="t">Cold Echo</div><div class="st"><span class="pill info">Queued</span></div></div>
+          <div class="run" id="u4" style="top:1098px"><div class="t">The Last Station</div><div class="st"><span class="pill warn">Wait (Hold)</span></div></div>
+          <div id="toast"><div class="edge"></div>
+            <div class="tt">Starpath</div>
+            <div class="f"><div><b>New episodes</b><span>2</span></div><div><b>Status</b><span>Available online</span></div></div>
+            <div class="ft">MediaForge - Auto-Sync</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S6 outro -->
+      <div id="s6" class="scene clip" data-start="19.0" data-duration="3.0" data-track-index="7" style="z-index:10">
+        <div class="outro">
+          <img id="o-logo" class="logo" src="assets/icon.svg" alt="" />
+          <div id="o-name" class="name">MediaForge</div>
+          <div id="o-claim" class="claim">Set it up once. Never search again.</div>
+          <div id="o-inst" class="install mono"><b>pip install</b> mediaforge</div>
+        </div>
+      </div>
+
+      <div id="curclip" class="clip" data-start="5.4" data-duration="11.2" data-track-index="8" style="position:absolute;inset:0;z-index:40" data-layout-ignore>
+        <div id="rip" class="ripple"></div>
+        <svg id="cur" class="cursor" viewBox="0 0 32 32"><path d="M4 2l20 12-9 2 5 10-4 2-5-10-7 6z" fill="#fff" stroke="#0d0d14" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- audio: the bed enters at the track's strong section (15.02 s into the file) -->
+      <audio id="bed" data-start="0" data-duration="22" data-media-start="15.02" data-track-index="10" data-volume="0.38" data-fade-in="0.3" data-fade-out="1.5" src="assets/music/bed.mp3"></audio>
+      <audio id="a-tick" data-start="0.5" data-duration="0.27" data-track-index="11" data-volume="0.6" src="assets/sfx/impactWood_light_002.ogg"></audio>
+      <audio id="a-sleep" data-start="1.0" data-duration="0.19" data-track-index="12" data-volume="0.6" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
+      <audio id="a-mf" data-start="1.5" data-duration="0.46" data-track-index="11" data-volume="0.65" src="assets/sfx/card-place-2.ogg"></audio>
+      <audio id="a-swell" data-start="0.5" data-duration="4.3" data-track-index="13" data-volume="0.35" src="assets/sfx/whoosh-cine.mp3"></audio>
+      <audio id="a-j1" data-start="3.5" data-duration="0.6" data-track-index="11" data-volume="0.55" src="assets/sfx/card-place-4.ogg"></audio>
+      <audio id="a-j2" data-start="4.0" data-duration="0.46" data-track-index="12" data-volume="0.55" src="assets/sfx/card-place-2.ogg"></audio>
+      <audio id="a-j3" data-start="4.5" data-duration="0.6" data-track-index="11" data-volume="0.55" src="assets/sfx/card-place-4.ogg"></audio>
+      <audio id="a-j4" data-start="5.0" data-duration="0.46" data-track-index="12" data-volume="0.55" src="assets/sfx/card-place-2.ogg"></audio>
+      <audio id="a-pick" data-start="6.01" data-duration="0.1" data-track-index="11" data-volume="0.7" src="assets/sfx/click1.ogg"></audio>
+      <audio id="a-mode" data-start="8.0" data-duration="0.62" data-track-index="12" data-volume="0.6" src="assets/sfx/switch_001.ogg"></audio>
+      <audio id="a-wed" data-start="8.5" data-duration="0.61" data-track-index="11" data-volume="0.55" src="assets/sfx/switch_006.ogg"></audio>
+      <audio id="a-sat" data-start="9.0" data-duration="0.61" data-track-index="12" data-volume="0.55" src="assets/sfx/switch_006.ogg"></audio>
+      <audio id="a-save" data-start="10.51" data-duration="0.1" data-track-index="11" data-volume="0.7" src="assets/sfx/click1.ogg"></audio>
+      <audio id="a-dry" data-start="11.5" data-duration="0.19" data-track-index="12" data-volume="0.6" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
+      <audio id="a-li1" data-start="12.75" data-duration="0.46" data-track-index="11" data-volume="0.5" src="assets/sfx/card-place-2.ogg"></audio>
+      <audio id="a-li2" data-start="13.0" data-duration="0.6" data-track-index="12" data-volume="0.5" src="assets/sfx/card-place-4.ogg"></audio>
+      <audio id="a-would" data-start="13.5" data-duration="0.27" data-track-index="11" data-volume="0.6" src="assets/sfx/impactWood_light_002.ogg"></audio>
+      <audio id="a-sync" data-start="16.01" data-duration="0.1" data-track-index="11" data-volume="0.7" src="assets/sfx/click1.ogg"></audio>
+      <audio id="a-run1" data-start="16.5" data-duration="0.62" data-track-index="12" data-volume="0.5" src="assets/sfx/switch_001.ogg"></audio>
+      <audio id="a-run2" data-start="17.0" data-duration="0.61" data-track-index="11" data-volume="0.5" src="assets/sfx/switch_006.ogg"></audio>
+      <audio id="a-toast" data-start="17.28" data-duration="1.6" data-track-index="13" data-volume="0.6" src="assets/sfx/notification.mp3"></audio>
+      <audio id="a-logo" data-start="19.0" data-duration="1.48" data-track-index="14" data-volume="0.7" src="assets/sfx/impactBell_heavy_000.ogg"></audio>
+    </div>
+    <script src="assets/audio-env.js"></script>
+    <script src="assets/mf.js"></script>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const M = window.MF;
+      // Beat grid of the bed (entered at 15.02 s): every 0.5 s; strong cues at 1.0, 2.0, 3.0, 5.0, 6.0, 8.0.
+
+      M.audio(tl, "#glow-a", { base: 0.5, amp: 0.5, scale: 0.06 });
+      // night: the blue glow dominates, violet rises at the payoff
+      tl.fromTo("#glow-b", { x: -200, y: 300, scale: 1.4 }, { x: 0, y: 0, scale: 1, duration: 3.0, ease: "power2.inOut" }, 0);
+      tl.to("#glow-b", { x: -300, y: 500, duration: 19, ease: "none" }, 3.0);
+      tl.fromTo("#tag", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 0.1);
+      tl.to("#tag", { opacity: 0, duration: 0.2, ease: "power2.in" }, 18.75);
+
+      // ---------- S1 night ----------
+      tl.set("#s1-clock", { textContent: "2:59" }, 0);
+      tl.set("#s1-clock", { textContent: "3:00" }, 0.5); // beat-grid: 0.5
+      tl.fromTo("#s1-clock", { scale: 1.06 }, { scale: 1, duration: 0.3, ease: "expo.out" }, 0.5);
+      tl.fromTo("#s1-a", { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.25, ease: "power3.out" }, 1.0); // beat-locked: 1.00s
+      tl.fromTo("#s1-b", { opacity: 0, scale: 1.15, filter: "blur(16px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.3, ease: "expo.out" }, 1.5); // beat-grid: 1.50s
+      tl.to("#s1-w", { y: -260, opacity: 0, filter: "blur(14px)", duration: 0.28, ease: "power3.in" }, 2.75);
+
+      // ---------- S2 jobs ----------
+      M.blurIn(tl, "#s2-cap", 3.0, 0.22);
+      M.blurIn(tl, "#s2-sub", 3.15, 0.25);
+      [3.5, 4.0, 4.5, 5.0].forEach((t, i) => { // beat-grid: 3.5, 4.0, 4.5, 5.0
+        tl.fromTo("#j" + (i + 1), { opacity: 0, y: 70, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "expo.out" }, t);
+      });
+      tl.set("#cur", { x: 980, y: 1700, scale: 1, opacity: 0 }, 0);
+      tl.to("#cur", { opacity: 1, duration: 0.2 }, 5.4);
+      tl.fromTo("#j1sel", { opacity: 0 }, { opacity: 1, duration: 0.15 }, 6.0);
+      M.click(tl, "#cur", "#rip", 300, 830, 6.0, 0.55); // beat-locked: 6.00s
+      tl.to(["#j2", "#j3", "#j4", "#s2-sub"], { opacity: 0, filter: "blur(10px)", duration: 0.25, ease: "power2.in" }, 6.4);
+      tl.to(["#j1", "#j1sel"], { scale: 1.6, x: 240, y: 280, opacity: 0, duration: 0.5, ease: "power3.in" }, 6.5);
+      tl.to("#s2-cap", { opacity: 0, duration: 0.2 }, 6.6);
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 6.4);
+
+      // ---------- S3 schedule ----------
+      tl.fromTo("#s3-panel", { opacity: 0, scale: 0.9, filter: "blur(14px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, 7.0);
+      M.blurIn(tl, "#s3-cap", 7.1, 0.22);
+      tl.set(["#d3", "#d6"], { opacity: 0, scale: 0.6 }, 0);
+      tl.set("#seg-a", { color: "#ffffff" }, 0);
+      tl.set("#seg-b", { color: "#a3a3c2" }, 0);
+      tl.to("#cur", { opacity: 1, duration: 0.2 }, 7.4);
+      M.click(tl, "#cur", "#rip", 755, 775, 8.0, 0.6); // beat-locked: 8.00s
+      tl.to("#seg-k", { x: 430, duration: 0.35, ease: "power3.inOut" }, 8.0);
+      tl.to("#seg-a", { color: "#a3a3c2", duration: 0.2 }, 8.05);
+      tl.to("#seg-b", { color: "#ffffff", duration: 0.2 }, 8.15);
+      M.click(tl, "#cur", "#rip", 406, 935, 8.5, 0.4);
+      tl.to("#d3", { opacity: 1, scale: 1, duration: 0.2, ease: "back.out(1.6)" }, 8.5);
+      M.click(tl, "#cur", "#rip", 766, 935, 9.0, 0.4);
+      tl.to("#d6", { opacity: 1, scale: 1, duration: 0.2, ease: "back.out(1.6)" }, 9.0);
+      M.click(tl, "#cur", "#rip", 560, 1392, 10.5, 0.7);
+      tl.to("#s3-btn", { scale: 0.96, duration: 0.08, ease: "power2.in" }, 10.5);
+      tl.to("#s3-btn", { scale: 1, duration: 0.2, ease: "power3.out" }, 10.58);
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 10.9);
+      tl.to("#s3-w", { x: -1080, filter: "blur(10px)", duration: 0.3, ease: "power3.in" }, 11.2);
+
+      // ---------- S4 dry run ----------
+      tl.fromTo("#s4-panel", { x: 1080, filter: "blur(10px)" }, { x: 0, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, 11.5);
+      M.blurIn(tl, "#s4-cap", 11.6, 0.22);
+      tl.fromTo("#s4-stats", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, 12.0);
+      tl.fromTo("#s4-group", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out" }, 12.3);
+      tl.fromTo("#li1", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.3, ease: "expo.out" }, 12.75);
+      tl.fromTo("#li2", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.3, ease: "expo.out" }, 13.0);
+      tl.fromTo("#s4-would", { opacity: 0, scale: 1.08, filter: "blur(10px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.3, ease: "expo.out" }, 13.5);
+      M.blurIn(tl, "#s4-hint", 13.2, 0.25);
+      tl.fromTo("#s4-close", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 13.9);
+      tl.to("#s4-w", { x: -1080, filter: "blur(10px)", duration: 0.3, ease: "power3.in" }, 15.2);
+
+      // ---------- S5 sync all ----------
+      M.blurIn(tl, "#s5-cap", 15.5, 0.22);
+      tl.fromTo("#s5-btn", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 15.5);
+      tl.fromTo(["#u1", "#u2", "#u3", "#u4"], { opacity: 0, x: 80 }, { opacity: 1, x: 0, duration: 0.35, ease: "expo.out", stagger: 0.06 }, 15.6);
+      tl.set(["#u1b", "#u2b"], { opacity: 0 }, 0);
+      tl.set("#cur", { x: 980, y: 1500 }, 15.3);
+      tl.to("#cur", { opacity: 1, duration: 0.15 }, 15.45);
+      M.click(tl, "#cur", "#rip", 560, 612, 16.0, 0.5);
+      tl.to("#s5-btn", { scale: 0.96, duration: 0.08, ease: "power2.in" }, 16.0);
+      tl.to("#s5-btn", { scale: 1, duration: 0.2, ease: "power3.out" }, 16.08);
+      tl.to("#u1a", { opacity: 0, duration: 0.12 }, 16.5);
+      tl.fromTo("#u1b", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.25, ease: "back.out(1.6)" }, 16.5);
+      tl.to("#u2a", { opacity: 0, duration: 0.12 }, 17.0);
+      tl.fromTo("#u2b", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.25, ease: "back.out(1.6)" }, 17.0);
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 16.4);
+      tl.fromTo("#toast", { opacity: 0, y: 120 }, { opacity: 1, y: 0, duration: 0.45, ease: "expo.out" }, 17.3);
+      tl.to("#s5-w", { opacity: 0, scale: 0.95, filter: "blur(12px)", duration: 0.22, ease: "power3.in" }, 18.76);
+
+      // ---------- S6 outro ----------
+      tl.fromTo("#o-logo", { opacity: 0, scale: 0.4, rotation: -12 }, { opacity: 1, scale: 1, rotation: 0, duration: 0.6, ease: "back.out(1.5)" }, 19.0); // beat-grid: 19.0
+      tl.fromTo("#o-name", { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 19.25);
+      M.blurIn(tl, "#o-claim", 19.55, 0.25);
+      tl.fromTo("#o-inst", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 19.9);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

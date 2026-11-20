@@ -1,0 +1,494 @@
+{
+  "version": 1,
+  "historyId": "c6b3a908-d5a6-416f-ac6f-4ed663e340ad",
+  "currentRevision": "af5a2769-12f8-4424-a58c-89a4f607aad7",
+  "pendingChanges": false,
+  "files": {
+    ".media/manifest.jsonl": {
+      "hash": "73188c14fca60474003c2f0d0f4b2697d967d89f58016143e6a52f2026b13625",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\73\\73188c14fca60474003c2f0d0f4b2697d967d89f58016143e6a52f2026b13625"
+    },
+    "AGENTS.md": {
+      "hash": "1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\1b\\1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060"
+    },
+    "CLAUDE.md": {
+      "hash": "1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\1b\\1b36171117cb7c18f4100a0db6a3782ff2e096115995733200445cc2e80a4060"
+    },
+    "assets/audio-env.js": {
+      "hash": "c0d466adbe944ba117d041a1218ed26edbbd30a8fec6ebf4201b67cd80ac87b2",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\c0\\c0d466adbe944ba117d041a1218ed26edbbd30a8fec6ebf4201b67cd80ac87b2"
+    },
+    "assets/icon.svg": {
+      "hash": "183de4bae56a4b566ef0ca4e9a956d34fcffdab5f73dc95bb672e40d2b6e6138",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\18\\183de4bae56a4b566ef0ca4e9a956d34fcffdab5f73dc95bb672e40d2b6e6138"
+    },
+    "assets/mf.css": {
+      "hash": "22d61868c2dd6f374f02ff1caba08c2acd2daa4a18f3c925ed46d9750d7f1c04",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\22\\22d61868c2dd6f374f02ff1caba08c2acd2daa4a18f3c925ed46d9750d7f1c04"
+    },
+    "assets/mf.js": {
+      "hash": "721ac4ab337d94e1c30481a71ecfb4f451497cbcdbce196b69d566a21dc9ab47",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\72\\721ac4ab337d94e1c30481a71ecfb4f451497cbcdbce196b69d566a21dc9ab47"
+    },
+    "assets/sfx/card-slide-1.ogg": {
+      "hash": "006cf9822d15d7063f8899e56041f41646df30adb6fbd8b974ee5d5420012690",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\00\\006cf9822d15d7063f8899e56041f41646df30adb6fbd8b974ee5d5420012690"
+    },
+    "assets/sfx/card-slide-5.ogg": {
+      "hash": "8638ab0c17f029aded0e27a4f9b9bb9f8c621b19a6e9975e855cb40ea63e2201",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\86\\8638ab0c17f029aded0e27a4f9b9bb9f8c621b19a6e9975e855cb40ea63e2201"
+    },
+    "assets/sfx/cards-pack-open-1.ogg": {
+      "hash": "1214059fdfbf1c396c0702244fc833739cc346d326a71e450b731f456e54d6fb",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\12\\1214059fdfbf1c396c0702244fc833739cc346d326a71e450b731f456e54d6fb"
+    },
+    "assets/sfx/chips-collide-1.ogg": {
+      "hash": "f41b3d106360fc68ebc061a211d4265b4cb5fa1fbe86e4d57d3673510e2c3784",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\f4\\f41b3d106360fc68ebc061a211d4265b4cb5fa1fbe86e4d57d3673510e2c3784"
+    },
+    "assets/sfx/click-soft.mp3": {
+      "hash": "075e17bdac5c13662a1c9530050e0046f81d4138e00eb3bf30427a7b4404103d",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\07\\075e17bdac5c13662a1c9530050e0046f81d4138e00eb3bf30427a7b4404103d"
+    },
+    "assets/sfx/drop_002.ogg": {
+      "hash": "4ac4d1cef7e936965cbf795852ca2020300b9e2ba7daa59f2bf4f1f7bf416218",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\4a\\4ac4d1cef7e936965cbf795852ca2020300b9e2ba7daa59f2bf4f1f7bf416218"
+    },
+    "assets/sfx/impactBell_heavy_004.ogg": {
+      "hash": "49fe4fafa2001bd0d312976796824571ca8429851f285997e1327d17bb34fd00",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\49\\49fe4fafa2001bd0d312976796824571ca8429851f285997e1327d17bb34fd00"
+    },
+    "assets/sfx/mouseclick1.ogg": {
+      "hash": "ece1210c62ccae6c9ea4f4c59466d9d453d6b357c7d4b1a6c31196e5e6fea1bf",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\ec\\ece1210c62ccae6c9ea4f4c59466d9d453d6b357c7d4b1a6c31196e5e6fea1bf"
+    },
+    "assets/sfx/switch12.ogg": {
+      "hash": "dab0c21eacb6536724d139c27c0d60c932c87171752dc8d24d7a826694377f94",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\da\\dab0c21eacb6536724d139c27c0d60c932c87171752dc8d24d7a826694377f94"
+    },
+    "assets/sfx/switch7.ogg": {
+      "hash": "7a3032d1dae63d1096cf2f1e59cb43e598d5229dcb9617e9d3fb13e96c78d5f2",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\7a\\7a3032d1dae63d1096cf2f1e59cb43e598d5229dcb9617e9d3fb13e96c78d5f2"
+    },
+    "assets/sfx/whoosh-short.mp3": {
+      "hash": "c2efd9d902a59bf9ec5019035d7deadd17762136896b6e3cb6dd99ea50997a30",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\c2\\c2efd9d902a59bf9ec5019035d7deadd17762136896b6e3cb6dd99ea50997a30"
+    },
+    "hyperframes.json": {
+      "hash": "3af6ecb4d7f8c0cf28a50880f71291f27406c4548e5db2ea2d57430abd99e0e1",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\3a\\3af6ecb4d7f8c0cf28a50880f71291f27406c4548e5db2ea2d57430abd99e0e1"
+    },
+    "index.html": {
+      "hash": "0738c7555ab51b11a543a38846e7b669df0943e065e7b2e30ed6cee23d8e6d78",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\07\\0738c7555ab51b11a543a38846e7b669df0943e065e7b2e30ed6cee23d8e6d78"
+    },
+    "meta.json": {
+      "hash": "4c94bda7a082132a753d6ce82bd809e6abc98488298272a1d8a22048c9392470",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\4c\\4c94bda7a082132a753d6ce82bd809e6abc98488298272a1d8a22048c9392470"
+    },
+    "package.json": {
+      "hash": "074c2445f5ff9ce123b749737d825cf0810e3e5e825119557f6ff8a798ca88b4",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\07\\074c2445f5ff9ce123b749737d825cf0810e3e5e825119557f6ff8a798ca88b4"
+    },
+    "assets/music/bed.mp3": {
+      "hash": "364a546834db4c0c2e3b3240eb6df03e98b7362230154b04c5c614442f6660d7",
+      "content": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\36\\364a546834db4c0c2e3b3240eb6df03e98b7362230154b04c5c614442f6660d7"
+    }
+  },
+  "revisions": {
+    "ce668ce3-c2c1-46dc-996b-a0195a47f00d": {
+      "actor": {
+        "kind": "outside",
+        "name": "Outside"
+      },
+      "label": "Changed outside the app",
+      "startedAt": 1793221113464,
+      "endedAt": 1793221113465,
+      "files": {
+        "index.html": {
+          "before": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\7a\\7ab325e092aa68ed1178ebfa5458b19f7edc01e7fc3e85ae2cbba0a4664600cc",
+          "after": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\26\\26a15602e2fe626b33ec971b1b06c3e460c3fd5b3760968e5ef9506f41f4b27a"
+        }
+      }
+    },
+    "af5a2769-12f8-4424-a58c-89a4f607aad7": {
+      "actor": {
+        "kind": "outside",
+        "name": "Outside"
+      },
+      "label": "Changed outside the app",
+      "startedAt": 1793221143695,
+      "endedAt": 1793221143709,
+      "files": {
+        "assets/mf.css": {
+          "before": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\91\\916ede0a05cd883f6d12e8015d1ac767a709317aa7cb6757b0ce01edc1a04d2e",
+          "after": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\22\\22d61868c2dd6f374f02ff1caba08c2acd2daa4a18f3c925ed46d9750d7f1c04"
+        },
+        "index.html": {
+          "before": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\26\\26a15602e2fe626b33ec971b1b06c3e460c3fd5b3760968e5ef9506f41f4b27a",
+          "after": "C:\\Users\\TheMRX\\.cache\\hyperframes\\history\\c6b3a908-d5a6-416f-ac6f-4ed663e340ad\\blobs\\07\\0738c7555ab51b11a543a38846e7b669df0943e065e7b2e30ed6cee23d8e6d78"
+        }
+      }
+    }
+  },
+  "checks": {
+    "latest": {
+      "revision": "af5a2769-12f8-4424-a58c-89a4f607aad7",
+      "id": "140a5764-d01b-45eb-8ae3-88824877e058"
+    },
+    "revisions": {
+      "ce668ce3-c2c1-46dc-996b-a0195a47f00d": [
+        {
+          "id": "f85454e7-5f2d-4b07-a138-9523ac7faeb1",
+          "scope": "project",
+          "metadata": {
+            "ok": true,
+            "browserSkipped": false,
+            "options": {
+              "samples": 9,
+              "atTransitions": false,
+              "maxIssues": 80,
+              "collapseStatic": true,
+              "tolerance": 2,
+              "timeout": 3000,
+              "contrast": true,
+              "strict": false,
+              "snapshots": false,
+              "browserGpuMode": "auto"
+            }
+          },
+          "createdAt": 1793221127344,
+          "contentHash": "592afae49dc7863e4c4e421496cffe9c8b1333d72a6752b05b68dfe5dceac112",
+          "revision": "ce668ce3-c2c1-46dc-996b-a0195a47f00d",
+          "inputFingerprint": "5f9b711c0f409db24f107c279d9ede511edeed8d50049b1a75514cf9d870832d",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision",
+          "status": "cleaned",
+          "cleanedAfterRender": "74b71df1-5a10-4f71-8171-10a26ed656f0"
+        }
+      ],
+      "af5a2769-12f8-4424-a58c-89a4f607aad7": [
+        {
+          "id": "140a5764-d01b-45eb-8ae3-88824877e058",
+          "scope": "project",
+          "report": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\checks\\140a5764-d01b-45eb-8ae3-88824877e058.json",
+          "metadata": {
+            "ok": true,
+            "browserSkipped": false,
+            "options": {
+              "samples": 9,
+              "atTransitions": false,
+              "maxIssues": 80,
+              "collapseStatic": true,
+              "tolerance": 2,
+              "timeout": 3000,
+              "contrast": true,
+              "strict": false,
+              "snapshots": false,
+              "browserGpuMode": "auto"
+            }
+          },
+          "createdAt": 1793221153830,
+          "contentHash": "170647649ec9c0a35c6694e29993b3d5f77d4ce6b9fe8b16b2369558e6fdf0b2",
+          "revision": "af5a2769-12f8-4424-a58c-89a4f607aad7",
+          "inputFingerprint": "1d42be83893fdde79a417e1d21bcac2b92ecc7ba5ea4b229a5058c201a24d1b2",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        }
+      ]
+    },
+    "unversioned": [
+      {
+        "id": "f52a49d0-7e7c-4d34-917e-d46142f8f448",
+        "scope": "project",
+        "report": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\checks\\f52a49d0-7e7c-4d34-917e-d46142f8f448.json",
+        "metadata": {
+          "ok": false,
+          "browserSkipped": false,
+          "options": {
+            "samples": 9,
+            "atTransitions": false,
+            "maxIssues": 80,
+            "collapseStatic": true,
+            "tolerance": 2,
+            "timeout": 3000,
+            "contrast": true,
+            "strict": false,
+            "snapshots": false,
+            "browserGpuMode": "auto"
+          }
+        },
+        "createdAt": 1793221071809,
+        "contentHash": "194b4aa7f3f876074d84b0dc2028f5a27bbae7473eac7c68eebe26fa824188c3",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "snapshots": {
+    "latest": {
+      "revision": null,
+      "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-11"
+    },
+    "revisions": {},
+    "unversioned": [
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-0",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-00-at-0.7s.png",
+        "time": 0.7,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079832,
+        "contentHash": "2521cfdbbdc240da67f824048157b4cc13957e8efca4eb2bcbe6441e7a46d31a",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-1",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-01-at-1.3s.png",
+        "time": 1.3,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079832,
+        "contentHash": "14725487998134f5f8221ab553eb674e4b98595840144598700bb2d260265e05",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-2",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-02-at-2.3s.png",
+        "time": 2.3,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079832,
+        "contentHash": "ef5795c36585fec465f71f2718e3cd2135a553e8b981102f3724e22f7e4c0f86",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-3",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-03-at-4.6s.png",
+        "time": 4.6,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079832,
+        "contentHash": "c55503c9304a0054c08df64b79ecd1f13311364cfc20fb6c016ff6a79ebc1092",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-4",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-04-at-6s.png",
+        "time": 6,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079833,
+        "contentHash": "218521bf5bebb2c1bdfee242ae4fb2b022890cab6f694a5718707457c55dfdcb",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-5",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-05-at-8s.png",
+        "time": 8,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079833,
+        "contentHash": "10def7408ac12d9653822983f7753b2137d65f5966c452a6f3fa54512915a90c",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-6",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-06-at-10.4s.png",
+        "time": 10.4,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079833,
+        "contentHash": "9765d63c0766f166f40d41d5abc29207be63ecf320e6398f15300a9527ea93b2",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-7",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-07-at-13.2s.png",
+        "time": 13.2,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079833,
+        "contentHash": "7f59d40fd76a0c250a31a06c2df491ffa58371c86ce910708899ec989ce8332a",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-8",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-08-at-14.8s.png",
+        "time": 14.8,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079834,
+        "contentHash": "8b2e0d164aa63d8cacc2e7a8dc85939beeb52d12bcbb08a3f27034b489c3305f",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-9",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-09-at-17s.png",
+        "time": 17,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079834,
+        "contentHash": "2a54fc1976f2378d4d13d39dcff95c8f27577c4ad74ca5ed9a969cd7d0e82df7",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-10",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-10-at-20s.png",
+        "time": 20,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079834,
+        "contentHash": "252f75b76f160d74edb9bfb9c1376d17894896f4b2afa58dfd59a16aecfe2efd",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "scope": "full",
+        "id": "22cbdb05-7fea-4b48-ae6d-13833c130e5a-11",
+        "image": "R:\\1Github\\MediaForge\\brag-output\\02-module\\composition\\.hyperframes\\artifacts\\snapshots\\8b46ffcf-a491-485b-87db-c995c38514dd\\frame-11-at-21.34s.png",
+        "time": 21.34,
+        "metadata": {
+          "width": 1080,
+          "height": 1920,
+          "zoomScale": 1,
+          "browserGpuMode": "auto",
+          "warnings": [],
+          "partial": false
+        },
+        "createdAt": 1793221079835,
+        "contentHash": "9f68bb6e88dfeb11760c19d37cf662b7b2926c30d1ada8ed6f7e54461c6080a1",
+        "revision": null,
+        "inputFingerprint": "6bdb11b11fdca79165455c88362cd9104237fda9684dc6387eea359bae2afe2d",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "renders": {
+    "latest": {
+      "id": "74b71df1-5a10-4f71-8171-10a26ed656f0",
+      "completedAt": 1793221273031,
+      "output": "R:\\1Github\\MediaForge\\brag-output\\02-module\\brag.mp4",
+      "status": "completed",
+      "revision": "af5a2769-12f8-4424-a58c-89a4f607aad7"
+    },
+    "retainedRevisions": [
+      "af5a2769-12f8-4424-a58c-89a4f607aad7"
+    ]
+  },
+  "pendingArtifactCleanup": []
+}

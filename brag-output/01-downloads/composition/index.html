@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait"
+  data-composition-variables='[
+    {"id":"color-ground","type":"color","label":"Background","default":"#0d0d14"},
+    {"id":"color-ink","type":"color","label":"Text","default":"#f0f0f8"},
+    {"id":"color-accent","type":"color","label":"Accent","default":"#7c3aed"}
+  ]'>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <link rel="stylesheet" href="assets/mf.css" />
+    <style>
+      /* S1 hook */
+      #s1-slot { position: absolute; left: 70px; right: 70px; top: 640px; height: 180px; overflow: hidden; text-align: center; }
+      #s1-reel { position: absolute; left: 0; right: 0; top: 0; }
+      #s1-reel div { height: 180px; line-height: 180px; font-size: 128px; font-weight: 900; letter-spacing: -0.055em; white-space: nowrap; }
+      #s1-reel .last { color: var(--ink); }
+      #s1-click { position: absolute; left: 0; right: 0; top: 860px; text-align: center; font-size: 170px; font-weight: 900; letter-spacing: -0.06em; color: var(--accent-ink); }
+      #s1-sub { position: absolute; left: 0; right: 0; top: 1090px; text-align: center; }
+
+      /* S2 modal */
+      #s2-panel { top: 560px; height: 960px; }
+      #s2-panel .abs { position: absolute; left: 40px; right: 40px; }
+      .ep { position: absolute; left: 40px; right: 40px; height: 88px; display: flex; align-items: center; gap: 24px;
+        padding: 0 28px; border-radius: 24px; background: var(--bg-elevated); border: 2px solid var(--line); }
+      .ep .t { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; flex: 1; }
+      .ep .s { font-size: 28px; color: var(--ink-2); }
+      #s2-btn { position: absolute; left: 40px; right: 40px; top: 816px; }
+
+      /* S3 queue */
+      #s3-panel { top: 540px; height: 1010px; }
+      .q { position: absolute; left: 40px; right: 40px; height: 200px; padding: 26px 30px; border-radius: 26px;
+        background: var(--bg-elevated); border: 2px solid var(--line); }
+      .q .top { display: flex; align-items: center; gap: 16px; }
+      .q .t { flex: 1; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+      .q .bar { margin-top: 26px; }
+      .q .st { margin-top: 18px; font-size: 28px; color: var(--ink-2); font-weight: 700; }
+      .q .st.ok { color: #6ee79a; }
+
+      /* S4 direct link */
+      #s4-panel { top: 560px; height: 830px; }
+      #s4-input { position: absolute; left: 40px; right: 40px; top: 150px; height: 110px; border-radius: 24px;
+        background: #1e1e30; border: 2px solid rgba(124, 58, 237, 0.7); display: flex; align-items: center; padding: 0 30px;
+        font-size: 29px; color: var(--ink); white-space: nowrap; overflow: hidden; }
+      #s4-caret { display: inline-block; width: 3px; height: 40px; background: var(--accent-ink); margin-left: 4px; }
+      .qv { position: absolute; left: 40px; right: 40px; height: 96px; display: flex; align-items: center; gap: 24px;
+        padding: 0 30px; border-radius: 24px; background: var(--bg-elevated); border: 2px solid var(--line); }
+      .qv .t { font-size: 38px; font-weight: 900; letter-spacing: -0.03em; width: 140px; }
+      .qv .s { font-size: 28px; color: var(--ink-2); flex: 1; }
+      #s4-sel { position: absolute; left: 40px; right: 40px; top: 360px; height: 96px; border-radius: 24px;
+        border: 4px solid var(--accent); box-shadow: 0 0 40px rgba(124, 58, 237, 0.5); }
+      #s4-btn { position: absolute; left: 40px; right: 40px; top: 690px; }
+
+      /* S5 post-processing */
+      .pp { position: absolute; left: 70px; right: 70px; height: 184px; display: flex; align-items: center; gap: 34px;
+        padding: 0 40px; border-radius: 36px; background: var(--bg-card); border: 2px solid var(--line);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5); }
+      .pp .ic { width: 104px; height: 104px; border-radius: 28px; flex: none; display: flex; align-items: center; justify-content: center;
+        background: rgba(124, 58, 237, 0.22); border: 2px solid rgba(124, 58, 237, 0.6); }
+      .pp .ic svg { width: 56px; height: 56px; }
+      .pp .t { font-size: 50px; font-weight: 900; letter-spacing: -0.04em; }
+      .pp .s { font-size: 32px; color: var(--ink-2); margin-top: 6px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="22" data-width="1080" data-height="1920">
+      <!-- ground + music-reactive glow -->
+      <div id="bg" class="clip" data-start="0" data-duration="22" data-track-index="0" style="position:absolute;inset:0;z-index:0">
+        <div class="ground"></div>
+        <div id="glow-a" class="glow"></div>
+        <div id="glow-b" class="glow blue"></div>
+      </div>
+
+      <!-- series tag -->
+      <div id="tagclip" class="clip" data-start="0" data-duration="18.5" data-track-index="1" style="position:absolute;inset:0;z-index:30">
+        <div class="tagrow"><div id="tag" class="tag"><img src="assets/icon.svg" alt="" />MediaForge<span class="dot"></span><span class="tep">Downloads · 1/5</span></div></div>
+      </div>
+
+      <!-- S1 hook -->
+      <div id="s1" class="scene clip" data-start="0" data-duration="2.6" data-track-index="2" style="z-index:5">
+        <div id="s1-w" class="wrap">
+          <div id="s1-slot" data-layout-allow-overflow>
+            <div id="s1-reel">
+              <div>aniworld.to</div><div>s.to</div><div>filmpalast.to</div><div>MegaKino</div>
+              <div>filmo.to</div><div>9anime</div><div>aniwaves</div><div>hanime.tv</div><div class="last">8 sources.</div>
+            </div>
+          </div>
+          <div id="s1-click">1 click.</div>
+                  </div>
+      </div>
+
+      <!-- S2 download modal -->
+      <div id="s2" class="scene clip" data-start="2.6" data-duration="4.6" data-track-index="3" style="z-index:6">
+        <div id="s2-w" class="wrap">
+          <div id="s2-cap" class="caption h-l">Pick.</div>
+          <div id="s2-panel" class="panel">
+            <div class="panel-head">
+              <div class="panel-title">Starpath</div>
+              <span class="pill vio">aniworld.to</span>
+            </div>
+            <div class="abs" style="top:150px;font-size:36px;font-weight:900;letter-spacing:-0.03em">What do you want to download?</div>
+            <div class="abs" style="top:214px;display:flex;gap:14px">
+              <span class="pill">Season 1</span><span class="pill on">Season 2</span><span class="pill">Movies</span>
+            </div>
+            <div class="ep" style="top:300px"><div class="check"><div class="fill" id="c1"></div><svg id="k1" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div class="t">E01 · The Departure</div><div class="s">24 min</div></div>
+            <div class="ep" style="top:400px"><div class="check"><div class="fill" id="c2"></div><svg id="k2" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div class="t">E02 · Cold Light</div><div class="s">24 min</div></div>
+            <div class="ep" style="top:500px"><div class="check"><div class="fill" id="c3"></div><svg id="k3" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div class="t">E03 · Radio Silence</div><div class="s">23 min</div></div>
+            <div class="ep" style="top:600px"><div class="check"><div class="fill" id="c4"></div><svg id="k4" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div class="t">E04 · Stardust</div><div class="s">24 min</div></div>
+            <div class="abs" style="top:716px;display:flex;align-items:center;gap:14px">
+              <span class="label" style="margin-right:10px">Language</span><span class="pill on">German</span><span class="pill">Ger-Sub</span><span class="pill">Eng-Sub</span>
+            </div>
+            <div id="s2-btn" class="btn"><span id="s2-btn-a">Download now</span></div>
+            <div id="s2-btn-b" class="btn" style="position:absolute;left:40px;right:40px;top:816px;background:#16a34a;box-shadow:0 18px 50px rgba(34,197,94,0.4)">4 episodes queued ✓</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S3 queue -->
+      <div id="s3" class="scene clip" data-start="7.2" data-duration="4.4" data-track-index="4" style="z-index:7">
+        <div id="s3-w" class="wrap">
+          <div id="s3-cap" class="caption h-l">Download.</div>
+          <div id="s3-panel" class="panel">
+            <div class="panel-head">
+              <div><div class="panel-title">Download queue</div><div style="font-size:28px;color:var(--ink-2);margin-top:6px;font-weight:700">4 downloads are running or waiting</div></div>
+              <span class="pill vio">Live</span>
+            </div>
+            <div class="q" id="q1" style="top:150px">
+              <div class="top"><div class="t">Starpath · S2 E01</div><span class="pill">VOE</span><span class="pill info">1080p</span></div>
+              <div class="bar"><div class="f" id="q1f"></div><div class="f ok" id="q1ok"></div></div>
+              <div class="st" id="q1s">Downloading · 14.2 MB/s</div>
+            </div>
+            <div class="q" id="q2" style="top:364px">
+              <div class="top"><div class="t">Starpath · S2 E02</div><span class="pill">Vidoza</span><span class="pill info">1080p</span></div>
+              <div class="bar"><div class="f" id="q2f"></div></div>
+              <div class="st">Downloading · 11.8 MB/s</div>
+            </div>
+            <div class="q" id="q3" style="top:578px">
+              <div class="top"><div class="t">Starpath · S2 E03</div><span class="pill">Filemoon</span><span class="pill info">1080p</span></div>
+              <div class="bar"><div class="f" id="q3f"></div></div>
+              <div class="st">Downloading · 9.6 MB/s</div>
+            </div>
+            <div class="q" id="q4" style="top:792px">
+              <div class="top"><div class="t">Starpath · S2 E04</div><span class="pill">VOE</span><span class="pill info">1080p</span></div>
+              <div class="bar"><div class="f" id="q4f"></div></div>
+              <div class="st">Queued</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S4 direct link -->
+      <div id="s4" class="scene clip" data-start="11.6" data-duration="3.8" data-track-index="5" style="z-index:8">
+        <div id="s4-w" class="wrap">
+          <div id="s4-cap" class="caption h-l">Any <span class="acc">link.</span></div>
+          <div id="s4-panel" class="panel">
+            <div class="panel-head">
+              <div class="panel-title">Direct Link</div>
+              <span class="pill vio">.m3u8 · MP4 · yt-dlp</span>
+            </div>
+            <div id="s4-input" class="mono"><span id="s4-url"></span><span id="s4-caret"></span></div>
+            <div class="label" style="position:absolute;left:40px;top:300px">Pick a quality</div>
+            <div class="qv" id="v1" style="top:360px"><div class="t">1080p</div><div class="s">1920×1080 · 5.8 Mbit/s</div></div>
+            <div class="qv" id="v2" style="top:470px"><div class="t">720p</div><div class="s">1280×720 · 3.1 Mbit/s</div></div>
+            <div class="qv" id="v3" style="top:580px"><div class="t">480p</div><div class="s">854×480 · 1.4 Mbit/s</div></div>
+            <div id="s4-sel"></div>
+            <div id="s4-btn" class="btn">Add to queue</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- S5 post-processing -->
+      <div id="s5" class="scene clip" data-start="15.4" data-duration="3.1" data-track-index="6" style="z-index:9">
+        <div id="s5-w" class="wrap">
+          <div id="s5-cap" class="caption h-l">Finished <span class="acc">for you.</span></div>
+          <div class="pp" id="p1" style="top:600px"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#b9a3ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></div><div><div class="t">H.265 · NVENC</div><div class="s">Encoding on the GPU</div></div></div>
+          <div class="pp" id="p2" style="top:806px"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#b9a3ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></div><div><div class="t">Anime4K</div><div class="s">Upscaling</div></div></div>
+          <div class="pp" id="p3" style="top:1012px"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#b9a3ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 15h4M13 15h5M6 11h8"/></svg></div><div><div class="t">Subtitles</div><div class="s">muxed in as switchable tracks</div></div></div>
+          <div class="pp" id="p4" style="top:1218px"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#b9a3ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 010 7M19 5a10 10 0 010 14"/></svg></div><div><div class="t">Extra language</div><div class="s">merged as an audio track</div></div></div>
+        </div>
+      </div>
+
+      <!-- S6 outro -->
+      <div id="s6" class="scene clip" data-start="18.5" data-duration="3.5" data-track-index="7" style="z-index:10">
+        <div class="outro">
+          <img id="o-logo" class="logo" src="assets/icon.svg" alt="" />
+          <div id="o-name" class="name">MediaForge</div>
+          <div id="o-claim" class="claim">Free. Self-hosted. Open source.</div>
+          <div id="o-inst" class="install mono"><b>pip install</b> mediaforge</div>
+        </div>
+      </div>
+
+      <!-- cursor (above everything) -->
+      <div id="curclip" class="clip" data-start="2.6" data-duration="12.8" data-track-index="8" style="position:absolute;inset:0;z-index:40" data-layout-ignore>
+        <div id="rip" class="ripple"></div>
+        <svg id="cur" class="cursor" viewBox="0 0 32 32"><path d="M4 2l20 12-9 2 5 10-4 2-5-10-7 6z" fill="#fff" stroke="#0d0d14" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- audio -->
+      <audio id="bed" data-start="0" data-duration="22" data-track-index="10" data-volume="0.4" data-fade-out="1.4" src="assets/music/bed.mp3"></audio>
+      <audio id="a-lock" data-start="1.08" data-duration="1.4" data-track-index="11" data-volume="0.6" src="assets/sfx/impactPunch_medium_002.ogg"></audio>
+      <audio id="a-klick" data-start="1.36" data-duration="1.4" data-track-index="12" data-volume="0.75" src="assets/sfx/impactPunch_heavy_001.ogg"></audio>
+      <audio id="a-wh1" data-start="2.44" data-duration="0.7" data-track-index="13" data-volume="0.55" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-c1" data-start="3.56" data-duration="0.7" data-track-index="11" data-volume="0.55" src="assets/sfx/switch_002.ogg"></audio>
+      <audio id="a-c2" data-start="4.11" data-duration="0.7" data-track-index="12" data-volume="0.55" src="assets/sfx/switch_005.ogg"></audio>
+      <audio id="a-c3" data-start="4.65" data-duration="0.7" data-track-index="11" data-volume="0.55" src="assets/sfx/switch_002.ogg"></audio>
+      <audio id="a-c4" data-start="5.20" data-duration="0.7" data-track-index="12" data-volume="0.55" src="assets/sfx/switch_005.ogg"></audio>
+      <audio id="a-go" data-start="5.75" data-duration="0.7" data-track-index="11" data-volume="0.7" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="a-wh2" data-start="7.0" data-duration="0.7" data-track-index="13" data-volume="0.5" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-done" data-start="8.62" data-duration="1.4" data-track-index="12" data-volume="0.55" src="assets/sfx/chips-collide-2.ogg"></audio>
+      <audio id="a-wh3" data-start="11.42" data-duration="0.7" data-track-index="13" data-volume="0.5" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-k1" data-start="11.92" data-duration="0.7" data-track-index="14" data-volume="0.3" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="a-k2" data-start="12.17" data-duration="0.7" data-track-index="15" data-volume="0.3" src="assets/sfx/keypress-011.wav"></audio>
+      <audio id="a-k3" data-start="12.41" data-duration="0.7" data-track-index="14" data-volume="0.3" src="assets/sfx/keypress-019.wav"></audio>
+      <audio id="a-k4" data-start="12.66" data-duration="0.7" data-track-index="15" data-volume="0.3" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="a-k5" data-start="12.90" data-duration="0.7" data-track-index="14" data-volume="0.3" src="assets/sfx/keypress-011.wav"></audio>
+      <audio id="a-pick" data-start="13.81" data-duration="0.7" data-track-index="11" data-volume="0.65" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="a-queue" data-start="14.91" data-duration="0.7" data-track-index="12" data-volume="0.65" src="assets/sfx/click3.ogg"></audio>
+      <audio id="a-wh4" data-start="15.22" data-duration="0.7" data-track-index="13" data-volume="0.5" src="assets/sfx/whoosh-short.mp3"></audio>
+      <audio id="a-p1" data-start="15.82" data-duration="1.4" data-track-index="11" data-volume="0.6" src="assets/sfx/card-slide-3.ogg"></audio>
+      <audio id="a-p2" data-start="16.10" data-duration="1.4" data-track-index="12" data-volume="0.6" src="assets/sfx/card-slide-6.ogg"></audio>
+      <audio id="a-p3" data-start="16.37" data-duration="1.4" data-track-index="11" data-volume="0.6" src="assets/sfx/card-slide-3.ogg"></audio>
+      <audio id="a-p4" data-start="16.64" data-duration="1.4" data-track-index="12" data-volume="0.6" src="assets/sfx/card-slide-6.ogg"></audio>
+      <audio id="a-logo" data-start="18.56" data-duration="1.4" data-track-index="16" data-volume="0.75" src="assets/sfx/impactBell_heavy_000.ogg"></audio>
+    </div>
+    <script src="assets/audio-env.js"></script>
+    <script src="assets/mf.js"></script>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const M = window.MF;
+
+      // music-reactive glow (whole film)
+      M.audio(tl, "#glow-a", { base: 0.55, amp: 0.45, scale: 0.06 });
+      tl.fromTo("#glow-b", { x: 0, y: 0 }, { x: -260, y: 520, duration: 22, ease: "none" }, 0);
+
+      // tag
+      tl.fromTo("#tag", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 0.1);
+      tl.to("#tag", { opacity: 0, duration: 0.2, ease: "power2.in" }, 18.2);
+
+      // ---------- S1 hook: slot reel locks on "8 sources." ----------
+      tl.fromTo("#s1-reel", { y: 0 }, { y: -8 * 180, duration: 1.0, ease: "power4.inOut" }, 0.08); // lands 1.08
+      tl.fromTo("#s1-reel", { filter: "blur(0px)" }, { filter: "blur(10px)", duration: 0.45, ease: "power2.in", yoyo: true, repeat: 1 }, 0.1);
+      tl.fromTo("#s1-click", { opacity: 0, scale: 1.4, filter: "blur(16px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.28, ease: "expo.out" }, 1.37); // beat-locked: 1.37s
+      tl.to("#s1-w", { y: -260, opacity: 0, filter: "blur(14px)", duration: 0.25, ease: "power3.in" }, 2.36);
+
+      // ---------- S2 download modal ----------
+      tl.fromTo("#s2-panel", { y: 380, opacity: 0, filter: "blur(16px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, 2.6);
+      M.blurIn(tl, "#s2-cap", 2.7, 0.2);
+      tl.set("#cur", { x: 940, y: 1760, scale: 1 }, 0);
+      tl.fromTo("#cur", { opacity: 0 }, { opacity: 1, duration: 0.2 }, 2.95);
+      const checks = [[3.55, 904], [4.10, 1004], [4.64, 1104], [5.19, 1204]]; // beat-grid: 3.55, 4.10, 4.64, 5.19
+      tl.set(["#c1", "#c2", "#c3", "#c4"], { scale: 0 }, 0);
+      tl.set(["#k1", "#k2", "#k3", "#k4"], { opacity: 0, scale: 0.4 }, 0);
+      checks.forEach(([t, y], i) => {
+        M.click(tl, "#cur", "#rip", 172, y + 8, t, i === 0 ? 0.55 : 0.4);
+        tl.to("#c" + (i + 1), { scale: 1, duration: 0.18, ease: "back.out(1.6)" }, t);
+        tl.to("#k" + (i + 1), { opacity: 1, scale: 1, duration: 0.2, ease: "back.out(1.8)" }, t + 0.04);
+      });
+      M.click(tl, "#cur", "#rip", 560, 1436, 5.74, 0.45); // beat-grid: 5.74
+      tl.to("#s2-btn", { scale: 0.96, duration: 0.08, ease: "power2.in" }, 5.74);
+      tl.to("#s2-btn", { scale: 1, duration: 0.2, ease: "power3.out" }, 5.82);
+      tl.fromTo("#s2-btn-a", { opacity: 1 }, { opacity: 0, duration: 0.1 }, 5.82);
+      tl.fromTo("#s2-btn-b", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.25, ease: "expo.out" }, 5.84);
+      tl.to("#cur", { opacity: 0, duration: 0.15 }, 6.2);
+      tl.to("#s2-w", { y: -300, opacity: 0, filter: "blur(16px)", duration: 0.28, ease: "power3.in" }, 6.95);
+
+      // ---------- S3 queue ----------
+      tl.fromTo("#s3-panel", { y: 380, opacity: 0, filter: "blur(16px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, 7.2);
+      M.blurIn(tl, "#s3-cap", 7.3, 0.2);
+      tl.fromTo(["#q1", "#q2", "#q3", "#q4"], { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out", stagger: 0.07 }, 7.35);
+      tl.fromTo("#q1f", { scaleX: 0.58 }, { scaleX: 1, duration: 1.3, ease: "power1.inOut" }, 7.3);
+      tl.fromTo("#q1ok", { opacity: 0 }, { opacity: 1, duration: 0.2 }, 8.6);
+      tl.set("#q1s", { textContent: "Downloading · 14.2 MB/s", color: "#a3a3c2" }, 0);
+      tl.set("#q1s", { textContent: "Done ✓", color: "#6ee79a" }, 8.6);
+      tl.fromTo("#q1", { borderColor: "rgba(255,255,255,0.12)" }, { borderColor: "rgba(34,197,94,0.6)", duration: 0.3 }, 8.6);
+      tl.fromTo("#q2f", { scaleX: 0.3 }, { scaleX: 0.92, duration: 4.1, ease: "none" }, 7.3);
+      tl.fromTo("#q3f", { scaleX: 0.06 }, { scaleX: 0.58, duration: 4.1, ease: "none" }, 7.3);
+      tl.fromTo("#q4f", { scaleX: 0 }, { scaleX: 0, duration: 0.1 }, 7.3);
+      tl.to("#s3-w", { y: -300, opacity: 0, filter: "blur(16px)", duration: 0.28, ease: "power3.in" }, 11.4);
+
+      // ---------- S4 direct link ----------
+      tl.fromTo("#s4-panel", { y: 380, opacity: 0, filter: "blur(16px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, 11.6);
+      M.blurIn(tl, "#s4-cap", 11.7, 0.2);
+      tl.set("#s4-url", { textContent: "" }, 0);
+      M.type(tl, "#s4-url", "https://cdn.example.net/stream/master.m3u8", 11.92, 38);
+      tl.fromTo(["#v1", "#v2", "#v3"], { opacity: 0, x: 60 }, { opacity: 1, x: 0, duration: 0.35, ease: "expo.out", stagger: 0.08 }, 13.1);
+      tl.fromTo("#s4-sel", { opacity: 0, scale: 1.04 }, { opacity: 1, scale: 1, duration: 0.2, ease: "expo.out" }, 13.82);
+      tl.set("#cur", { x: 940, y: 1700 }, 12.9);
+      tl.to("#cur", { opacity: 1, duration: 0.15 }, 13.0);
+      M.click(tl, "#cur", "#rip", 300, 976, 13.8, 0.6);
+      M.click(tl, "#cur", "#rip", 600, 1316, 14.9, 0.6);
+      tl.to("#s4-btn", { scale: 0.96, duration: 0.08, ease: "power2.in" }, 14.9);
+      tl.to("#s4-btn", { scale: 1, duration: 0.2, ease: "power3.out" }, 14.98);
+      tl.to("#cur", { opacity: 0, duration: 0.12 }, 15.15);
+      tl.to("#s4-w", { y: -300, opacity: 0, filter: "blur(16px)", duration: 0.26, ease: "power3.in" }, 15.18);
+
+      // ---------- S5 post-processing (beat-locked 15.82, then every half beat; all four stay on screen) ----------
+      M.blurIn(tl, "#s5-cap", 15.45, 0.22);
+      [15.82, 16.10, 16.37, 16.64].forEach((t, i) => {
+        tl.fromTo("#p" + (i + 1), { opacity: 0, x: i % 2 ? 160 : -160, filter: "blur(12px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.4, ease: "expo.out" }, t);
+      });
+      tl.to("#s5-w", { opacity: 0, scale: 0.94, filter: "blur(14px)", duration: 0.25, ease: "power3.in" }, 18.25);
+
+      // ---------- S6 outro ----------
+      tl.fromTo("#o-logo", { opacity: 0, scale: 0.4, rotation: -12 }, { opacity: 1, scale: 1, rotation: 0, duration: 0.6, ease: "back.out(1.5)" }, 18.55); // beat-locked: 18.55s
+      tl.fromTo("#o-name", { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 18.85);
+      M.blurIn(tl, "#o-claim", 19.2, 0.25);
+      tl.fromTo("#o-inst", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, 19.6);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
